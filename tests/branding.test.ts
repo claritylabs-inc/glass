@@ -14,11 +14,11 @@ describe("getDefaultBranding", () => {
     expect(b.logoUrl).toBeTruthy();
   });
 
-  it("does not contain Glass in any user-facing field", () => {
+  it("keeps platform-owned user-facing fields branded", () => {
     const b = getDefaultBranding();
-    for (const val of Object.values(b)) {
-      expect(val).not.toMatch(/Glass/i);
-    }
+    expect(b.brandName).toMatch(/Glass/i);
+    expect(b.shortBrandName).toMatch(/Glass/i);
+    expect(b.agentDisplayName).toMatch(/Glass/i);
   });
 });
 

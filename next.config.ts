@@ -82,6 +82,11 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["canvas"],
   turbopack: {
     root: process.cwd(),
+    resolveAlias: {
+      "pdfjs-dist": "pdfjs-dist/legacy/build/pdf.mjs",
+      "pdfjs-dist/build/pdf.worker.mjs":
+        "pdfjs-dist/legacy/build/pdf.worker.mjs",
+    },
   },
 };
 

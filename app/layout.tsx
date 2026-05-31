@@ -7,6 +7,7 @@ import { AuthGuard } from "@/components/auth-guard";
 import { AppToaster } from "@/components/ui/toaster";
 import { BrandThemeApplier } from "@/components/brand-theme-applier";
 import { getViewerBranding } from "@/lib/viewer-branding";
+import { getClientPortalUrl } from "@/convex/lib/domains";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -38,6 +39,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const icon = branding?.iconUrl ?? undefined;
 
   return {
+    metadataBase: new URL(getClientPortalUrl()),
     title: {
       default: title,
       template: `${title} - %s`,

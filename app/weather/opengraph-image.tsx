@@ -1,7 +1,6 @@
 import { ImageResponse } from "next/og";
 import { BrandLockup, ogFonts } from "../opengraph-image";
 
-export const runtime = "edge";
 export const alt = "Glass from Clarity Labs - AI Weather Report";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";

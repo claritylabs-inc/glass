@@ -3,7 +3,6 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { BrandLockup, ogFonts } from "../../opengraph-image";
 
-export const runtime = "edge";
 export const alt = "Glass from Clarity Labs";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";

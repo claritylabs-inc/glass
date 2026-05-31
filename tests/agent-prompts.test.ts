@@ -2,37 +2,39 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-/**
- * Static analysis: confirm user-facing "Glass" strings are removed from
- * agent system prompts and convex action files.
- */
-
 const AGENT_ACTION_FILES = [
   "convex/actions/handleInboundEmail.ts",
   "convex/actions/processThreadChat.ts",
   "convex/actions/generateEmailBody.ts",
 ];
 
-// Lines that are comments, internal identifiers, or regex patterns that intentionally
-// reference the old string for backward-compat matching — allowed to remain.
-const ALLOW_PATTERNS = [
-  /\/\/.*Glass/,       // comment lines
-  /GlassClient/,       // internal type identifier
-  /GlassBot/,          // User-Agent string (not user-facing copy)
-];
-
-function isAllowed(line: string): boolean {
-  return ALLOW_PATTERNS.some((p) => p.test(line));
-}
-
-describe("Agent prompts: no user-facing Glass strings", () => {
+describe("Agent prompts: platform branding is explicit", () => {
   for (const relPath of AGENT_ACTION_FILES) {
-    it(`${relPath} has no user-facing "Glass" copy`, () => {
+    it(`${relPath} avoids bare legacy metadata branding`, () => {
       const src = readFileSync(join(__dirname, "..", relPath), "utf-8");
       const violations = src
         .split("\n")
-        .filter((line) => /Glass/.test(line) && !isAllowed(line));
+        .filter((line) => /default:\s*["']Glass["']|siteName:\s*["']Glass["']/.test(line));
       expect(violations).toEqual([]);
     });
   }
+
+  it("uses current Glass sender and signature copy where email is user-facing", () => {
+    const emailBody = readFileSync(
+      join(__dirname, "..", "convex/actions/generateEmailBody.ts"),
+      "utf-8",
+    );
+    const inboundEmail = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundEmail.ts"),
+      "utf-8",
+    );
+    const threadChat = readFileSync(
+      join(__dirname, "..", "convex/actions/processThreadChat.ts"),
+      "utf-8",
+    );
+
+    expect(emailBody).toContain("sent with Glass");
+    expect(inboundEmail).toContain("Glass from Clarity Labs");
+    expect(threadChat).toContain('getNotificationFromAddress("Glass Notifications")');
+  });
 });

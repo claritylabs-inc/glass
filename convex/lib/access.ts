@@ -21,6 +21,13 @@ export type OrgAccess = {
   connectedClientOrgId?: Id<"organizations">;
 };
 
+export type CurrentOrgAccess = OrgAccess & {
+  orgId: Id<"organizations">;
+  accessType: "member";
+  role: "admin" | "member";
+  brokerOrgId: undefined;
+};
+
 // ── Auth primitive ──────────────────────────────────────────────────────────
 
 /** Require an authenticated session. Throws if not logged in. */
@@ -152,8 +159,12 @@ export async function getOrgAccess(ctx: Ctx, orgId: Id<"organizations">): Promis
   throw new Error("Unauthorized");
 }
 
+function errorHasMessage(error: unknown, message: string) {
+  return error instanceof Error && error.message === message;
+}
+
 async function shouldSuppressOperatorTeardownUnauthorized(ctx: Ctx, error: unknown) {
-  if (!(error instanceof Error) || error.message !== "Unauthorized") return false;
+  if (!errorHasMessage(error, "Unauthorized")) return false;
   const [operator, impersonation] = await Promise.all([
     getActiveOperatorProfile(ctx),
     getActiveOperatorImpersonation(ctx),
@@ -171,6 +182,97 @@ export async function getOrgAccessForQuery(
     if (await shouldSuppressOperatorTeardownUnauthorized(ctx, error)) return null;
     throw error;
   }
+}
+
+function toCurrentOrgAccess(access: OrgAccess): CurrentOrgAccess {
+  if (access.accessType !== "member" || !access.role) {
+    throw new Error("No organization membership");
+  }
+  return {
+    ...access,
+    orgId: access.org._id,
+    accessType: "member",
+    role: access.role,
+    brokerOrgId: undefined,
+  };
+}
+
+async function getFirstOrgMembershipForUser(ctx: Ctx, userId: Id<"users">) {
+  return await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .first();
+}
+
+async function resolveCurrentOrgAccess(
+  ctx: Ctx,
+  userId: Id<"users">,
+  options: { requireMembership: boolean },
+): Promise<CurrentOrgAccess | null> {
+  const impersonation = await getActiveOperatorImpersonation(ctx);
+  if (impersonation) {
+    return toCurrentOrgAccess(await getOrgAccess(ctx, impersonation.session.targetOrgId));
+  }
+
+  const membership = await getFirstOrgMembershipForUser(ctx, userId);
+  if (!membership) {
+    if (options.requireMembership) throw new Error("No organization membership");
+    return null;
+  }
+
+  try {
+    return toCurrentOrgAccess(await getOrgAccess(ctx, membership.orgId));
+  } catch (error) {
+    if (!options.requireMembership && errorHasMessage(error, "Organization not found")) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Resolve the viewer's current org context.
+ *
+ * This is the canonical helper for legacy "current org" surfaces that do not
+ * take an explicit orgId. Operator impersonation is treated as current direct
+ * membership in the impersonated target org.
+ */
+export async function requireCurrentOrgAccess(ctx: Ctx): Promise<CurrentOrgAccess> {
+  const { userId } = await requireAuth(ctx);
+  const access = await resolveCurrentOrgAccess(ctx, userId, { requireMembership: true });
+  if (!access) throw new Error("No organization membership");
+  return access;
+}
+
+/**
+ * Non-throwing current-org lookup for query surfaces that can render an empty
+ * state while auth or operator impersonation is tearing down.
+ */
+export async function getCurrentOrgAccess(ctx: Ctx): Promise<CurrentOrgAccess | null> {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) return null;
+  return await resolveCurrentOrgAccess(ctx, userId, { requireMembership: false });
+}
+
+export async function requireCurrentOrgAdmin(ctx: Ctx): Promise<CurrentOrgAccess> {
+  const access = await requireCurrentOrgAccess(ctx);
+  if (access.role !== "admin") throw new Error("Admin access required");
+  return access;
+}
+
+export async function getCurrentOrgForUser(
+  ctx: Ctx,
+  userId: Id<"users">,
+): Promise<{
+  orgId: Id<"organizations">;
+  role: "admin" | "member";
+  org: Doc<"organizations">;
+} | null> {
+  const membership = await getFirstOrgMembershipForUser(ctx, userId);
+  if (!membership) return null;
+  const org = await ctx.db.get(membership.orgId);
+  if (!org) return null;
+  return { orgId: membership.orgId, role: membership.role, org };
 }
 
 // ── Capability helpers ──────────────────────────────────────────────────────

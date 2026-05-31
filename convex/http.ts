@@ -6,6 +6,26 @@ import { auth } from "./auth";
 import { isImessageInboundEnabled } from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
+import {
+  type McpPolicySummarySource,
+  type McpQuoteSummarySource,
+  policyMatchesMcpFilters,
+  policyMatchesSearch,
+  quoteMatchesMcpFilters,
+  toCertificateDto,
+  toMcpConnectedVendorPolicyDto,
+  toMcpMyPolicyDto,
+  toMcpPolicySearchResultDto,
+  toMcpPolicySummaryDto,
+  toMcpQuoteSummaryDto,
+  toMcpThreadMessageDto,
+  toMcpThreadSummaryDto,
+  toNotificationDto,
+  toOrgDto,
+  toPolicyDto,
+  toPolicyFileDto,
+  toPolicyStatsDto,
+} from "./lib/apiDto";
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
@@ -541,28 +561,6 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
   };
 }
 
-function serializeCertificate(certificate: any) {
-  return {
-    id: certificate._id,
-    policy_id: certificate.policyId,
-    file_id: certificate.fileId,
-    file_name: certificate.fileName,
-    certificate_holder: certificate.certificateHolder ?? null,
-    certificate_holder_name: certificate.certificateHolderName ?? null,
-    source: certificate.source ?? null,
-    authority_type: certificate.authorityType ?? "non_binding",
-    certification_status: certificate.certificationStatus ?? "not_applicable",
-    partner_org_id: certificate.partnerOrgId ?? null,
-    partner_program_id: certificate.partnerProgramId ?? null,
-    template_id: certificate.templateId ?? null,
-    approval_id: certificate.approvalId ?? null,
-    standing_authorization_id: certificate.standingAuthorizationId ?? null,
-    disclaimer: certificate.disclaimer ?? null,
-    created_at: certificate.createdAt,
-    url: certificate.url ?? null,
-  };
-}
-
 // GET /mcp/policies/list
 http.route({
   path: "/mcp/policies/list",
@@ -580,33 +578,12 @@ http.route({
       const type = getQueryParam(request, "type");
 
 
-      const filtered = policies.filter((p: any) => {
-        if (carrier && p.carrier !== carrier) return false;
-        if (year && p.policyYear !== parseInt(year)) return false;
-        if (type && !(p.policyTypes ?? []).includes(type)) return false;
-        return true;
-      });
+      const filtered = policies.filter((policy) =>
+        policyMatchesMcpFilters(policy, { carrier, year, type })
+      );
 
       // Return lightweight summaries
-      return jsonResponse(
-        filtered.map(
-(p: any) => ({
-          _id: p._id,
-          carrier: p.carrier,
-          security: p.security,
-          broker: p.broker,
-          policyNumber: p.policyNumber,
-          policyTypes: p.policyTypes,
-          policyYear: p.policyYear,
-          effectiveDate: p.effectiveDate,
-          expirationDate: p.expirationDate,
-          premium: p.premium,
-          insuredName: p.insuredName,
-          summary: p.summary,
-          isRenewal: p.isRenewal,
-          coverages: p.coverages,
-        })),
-      );
+      return jsonResponse(filtered.map(toMcpPolicySummaryDto));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -660,13 +637,7 @@ http.route({
       }
       const url = await ctx.storage.getUrl(found.fileId as Id<"_storage">);
       if (!url) return jsonResponse({ error: "Original policy PDF is not available" }, 404);
-      return jsonResponse({
-        id: found._id,
-        file_id: found.fileId,
-        file_name: found.fileName ?? `${found.policyNumber ?? "policy"}.pdf`,
-        content_type: "application/pdf",
-        url,
-      });
+      return jsonResponse(toPolicyFileDto(found, url));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -688,39 +659,9 @@ http.route({
         orgId: identity.orgId as Id<"organizations">,
       });
 
-      const query = q.toLowerCase();
-      const results = policies.filter(
-(p: any) => {
-        const searchable = [
-          p.carrier,
-          p.policyNumber,
-          p.insuredName,
-          p.summary,
-          p.security,
-          p.broker,
-          ...(p.policyTypes ?? []),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return searchable.includes(query);
-      });
+      const results = policies.filter((policy) => policyMatchesSearch(policy, q));
 
-      return jsonResponse(
-        results.map(
-(p: any) => ({
-          _id: p._id,
-          carrier: p.carrier,
-          policyNumber: p.policyNumber,
-          policyTypes: p.policyTypes,
-          policyYear: p.policyYear,
-          effectiveDate: p.effectiveDate,
-          expirationDate: p.expirationDate,
-          premium: p.premium,
-          insuredName: p.insuredName,
-          summary: p.summary,
-        })),
-      );
+      return jsonResponse(results.map(toMcpPolicySearchResultDto));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -739,27 +680,7 @@ http.route({
         orgId: identity.orgId as Id<"organizations">,
       });
 
-      const byType: Record<string, number> = {};
-      const byCarrier: Record<string, number> = {};
-      const byYear: Record<string, number> = {};
-
-      for (const p of policies) {
-
-        const pa = p as any;
-        const types = pa.policyTypes ?? ["other"];
-        for (const t of types) {
-          byType[t] = (byType[t] || 0) + 1;
-        }
-        byCarrier[pa.carrier] = (byCarrier[pa.carrier] || 0) + 1;
-        byYear[pa.policyYear] = (byYear[pa.policyYear] || 0) + 1;
-      }
-
-      return jsonResponse({
-        totalPolicies: policies.length,
-        byType,
-        byCarrier,
-        byYear,
-      });
+      return jsonResponse(toPolicyStatsDto(policies));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -781,7 +702,7 @@ http.route({
         orgId: identity.orgId as Id<"organizations">,
         policyId: policyId as Id<"policies">,
       });
-      return jsonResponse(certificates.map(serializeCertificate));
+      return jsonResponse(certificates.map(toCertificateDto));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -837,33 +758,11 @@ http.route({
       const carrier = getQueryParam(request, "carrier");
       const year = getQueryParam(request, "year");
 
-      const filtered = quotes.filter(
-(q: any) => {
-        if (carrier && q.carrier !== carrier) return false;
-        if (year && q.policyYear !== parseInt(year)) return false;
-        return true;
-      });
-
-      return jsonResponse(
-        filtered.map(
-(q: any) => ({
-          _id: q._id,
-          carrier: q.carrier,
-          security: q.security,
-          broker: q.broker,
-          quoteNumber: q.quoteNumber,
-          policyTypes: q.policyTypes,
-          quoteYear: q.quoteYear,
-          proposedEffectiveDate: q.proposedEffectiveDate,
-          proposedExpirationDate: q.proposedExpirationDate,
-          quoteExpirationDate: q.quoteExpirationDate,
-          premium: q.premium,
-          insuredName: q.insuredName,
-          summary: q.summary,
-          isRenewal: q.isRenewal,
-          coverages: q.coverages,
-        })),
+      const filtered = quotes.filter((quote) =>
+        quoteMatchesMcpFilters(quote, { carrier, year })
       );
+
+      return jsonResponse(filtered.map(toMcpQuoteSummaryDto));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -907,16 +806,7 @@ http.route({
       const threads = await ctx.runQuery(internal.threads.listByOrg, {
         orgId: identity.orgId as Id<"organizations">,
       });
-      return jsonResponse(
-        threads.map(
-(t: any) => ({
-          _id: t._id,
-          title: t.title,
-          lastMessageAt: t.lastMessageAt,
-          archivedAt: t.archivedAt,
-          _creationTime: t._creationTime,
-        })),
-      );
+      return jsonResponse(threads.map(toMcpThreadSummaryDto));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -945,18 +835,7 @@ http.route({
       const messages = await ctx.runQuery(internal.threads.messagesInternal, {
         threadId: threadId as Id<"threads">,
       });
-      return jsonResponse(
-        messages.map(
-(m: any) => ({
-          _id: m._id,
-          role: m.role,
-          channel: m.channel,
-          content: m.content,
-          userName: m.userName,
-          fromEmail: m.fromEmail,
-          _creationTime: m._creationTime,
-        })),
-      );
+      return jsonResponse(messages.map(toMcpThreadMessageDto));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -1310,21 +1189,15 @@ async function handleToolCall(
 
   switch (name) {
     case "list_policies": {
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-      const filtered = policies.filter(
-(p: any) => {
-        if (args.carrier && p.carrier !== args.carrier) return false;
-        if (args.year && p.policyYear !== parseInt(args.year as string)) return false;
-        if (args.type && !(p.policyTypes ?? []).includes(args.type)) return false;
-        return true;
-      });
-      return { content: [{ type: "text", text: JSON.stringify(filtered.map(
-(p: any) => ({
-        _id: p._id, carrier: p.carrier, security: p.security, broker: p.broker,
-        policyNumber: p.policyNumber, policyTypes: p.policyTypes, policyYear: p.policyYear,
-        effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium,
-        insuredName: p.insuredName, summary: p.summary, isRenewal: p.isRenewal, coverages: p.coverages,
-      })), null, 2) }] };
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId }) as McpPolicySummarySource[];
+      const filtered = policies.filter((policy) =>
+        policyMatchesMcpFilters(policy, {
+          carrier: typeof args.carrier === "string" ? args.carrier : null,
+          year: typeof args.year === "string" ? args.year : null,
+          type: typeof args.type === "string" ? args.type : null,
+        })
+      );
+      return { content: [{ type: "text", text: JSON.stringify(filtered.map(toMcpPolicySummaryDto), null, 2) }] };
     }
     case "get_policy": {
       if (!args.id) throw new Error("Missing id parameter");
@@ -1346,45 +1219,19 @@ async function handleToolCall(
       return {
         content: [{
           type: "text",
-          text: JSON.stringify({
-            id: found._id,
-            file_id: found.fileId,
-            file_name: found.fileName ?? `${found.policyNumber ?? "policy"}.pdf`,
-            content_type: "application/pdf",
-            url,
-          }, null, 2),
+          text: JSON.stringify(toPolicyFileDto(found, url), null, 2),
         }],
       };
     }
     case "search_policies": {
       if (!args.q) throw new Error("Missing q parameter");
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-      const query = (args.q as string).toLowerCase();
-      const results = policies.filter(
-(p: any) => {
-        const searchable = [p.carrier, p.policyNumber, p.insuredName, p.summary, p.security, p.broker, ...(p.policyTypes ?? [])].filter(Boolean).join(" ").toLowerCase();
-        return searchable.includes(query);
-      });
-      return { content: [{ type: "text", text: JSON.stringify(results.map(
-(p: any) => ({
-        _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber, policyTypes: p.policyTypes,
-        policyYear: p.policyYear, effectiveDate: p.effectiveDate, expirationDate: p.expirationDate,
-        premium: p.premium, insuredName: p.insuredName, summary: p.summary,
-      })), null, 2) }] };
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId }) as McpPolicySummarySource[];
+      const results = policies.filter((policy) => policyMatchesSearch(policy, args.q as string));
+      return { content: [{ type: "text", text: JSON.stringify(results.map(toMcpPolicySearchResultDto), null, 2) }] };
     }
     case "get_policy_stats": {
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-      const byType: Record<string, number> = {};
-      const byCarrier: Record<string, number> = {};
-      const byYear: Record<string, number> = {};
-      for (const p of policies) {
-
-        const pa = p as any;
-        for (const t of (pa.policyTypes ?? ["other"])) byType[t] = (byType[t] || 0) + 1;
-        byCarrier[pa.carrier] = (byCarrier[pa.carrier] || 0) + 1;
-        byYear[pa.policyYear] = (byYear[pa.policyYear] || 0) + 1;
-      }
-      return { content: [{ type: "text", text: JSON.stringify({ totalPolicies: policies.length, byType, byCarrier, byYear }, null, 2) }] };
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId }) as McpPolicySummarySource[];
+      return { content: [{ type: "text", text: JSON.stringify(toPolicyStatsDto(policies), null, 2) }] };
     }
     case "list_policy_certificates": {
       const policyId = args.policyId ?? args.policy_id;
@@ -1393,7 +1240,7 @@ async function handleToolCall(
         orgId,
         policyId: policyId as Id<"policies">,
       });
-      return { content: [{ type: "text", text: JSON.stringify(certificates.map(serializeCertificate), null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify(certificates.map(toCertificateDto), null, 2) }] };
     }
     case "generate_policy_certificate": {
       requireMcpWriteScope(identity);
@@ -1411,21 +1258,14 @@ async function handleToolCall(
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
     case "list_quotes": {
-      const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId });
-      const filtered = quotes.filter(
-(q: any) => {
-        if (args.carrier && q.carrier !== args.carrier) return false;
-        if (args.year && q.policyYear !== parseInt(args.year as string)) return false;
-        return true;
-      });
-      return { content: [{ type: "text", text: JSON.stringify(filtered.map(
-(q: any) => ({
-        _id: q._id, carrier: q.carrier, security: q.security, broker: q.broker,
-        quoteNumber: q.quoteNumber, policyTypes: q.policyTypes, quoteYear: q.quoteYear,
-        proposedEffectiveDate: q.proposedEffectiveDate, proposedExpirationDate: q.proposedExpirationDate,
-        quoteExpirationDate: q.quoteExpirationDate, premium: q.premium, insuredName: q.insuredName,
-        summary: q.summary, isRenewal: q.isRenewal, coverages: q.coverages,
-      })), null, 2) }] };
+      const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, { orgId }) as McpQuoteSummarySource[];
+      const filtered = quotes.filter((quote) =>
+        quoteMatchesMcpFilters(quote, {
+          carrier: typeof args.carrier === "string" ? args.carrier : null,
+          year: typeof args.year === "string" ? args.year : null,
+        })
+      );
+      return { content: [{ type: "text", text: JSON.stringify(filtered.map(toMcpQuoteSummaryDto), null, 2) }] };
     }
     case "get_quote": {
       if (!args.id) throw new Error("Missing id parameter");
@@ -1438,20 +1278,14 @@ async function handleToolCall(
     }
     case "list_threads": {
       const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });
-      return { content: [{ type: "text", text: JSON.stringify(threads.map(
-(t: any) => ({
-        _id: t._id, title: t.title, lastMessageAt: t.lastMessageAt, archivedAt: t.archivedAt, _creationTime: t._creationTime,
-      })), null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify(threads.map(toMcpThreadSummaryDto), null, 2) }] };
     }
     case "get_thread_messages": {
       if (!args.threadId) throw new Error("Missing threadId parameter");
       const thread = await ctx.runQuery(internal.threads.getInternal, { id: args.threadId as Id<"threads"> });
       if (!thread || (thread as Record<string, unknown>).orgId !== identity.orgId) throw new Error("Not found");
       const messages = await ctx.runQuery(internal.threads.messagesInternal, { threadId: args.threadId as Id<"threads"> });
-      return { content: [{ type: "text", text: JSON.stringify(messages.map(
-(m: any) => ({
-        _id: m._id, role: m.role, channel: m.channel, content: m.content, userName: m.userName, fromEmail: m.fromEmail, _creationTime: m._creationTime,
-      })), null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify(messages.map(toMcpThreadMessageDto), null, 2) }] };
     }
     case "get_org_info": {
       const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
@@ -1586,18 +1420,12 @@ async function handleToolCall(
         vendorOrgId,
       });
       if (!allowed) throw new Error("Connected vendor not found");
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: vendorOrgId });
-      return { content: [{ type: "text", text: JSON.stringify(policies.map((p: any) => ({
-        _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber, policyTypes: p.policyTypes,
-        effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium, insuredName: p.insuredName,
-      })), null, 2) }] };
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: vendorOrgId }) as McpPolicySummarySource[];
+      return { content: [{ type: "text", text: JSON.stringify(policies.map(toMcpConnectedVendorPolicyDto), null, 2) }] };
     }
     case "list_my_policies": {
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
-      return { content: [{ type: "text", text: JSON.stringify(policies.map((p: any) => ({
-        _id: p._id, carrier: p.carrier, policyNumber: p.policyNumber,
-        policyTypes: p.policyTypes, effectiveDate: p.effectiveDate, expirationDate: p.expirationDate, premium: p.premium,
-      })), null, 2) }] };
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId }) as McpPolicySummarySource[];
+      return { content: [{ type: "text", text: JSON.stringify(policies.map(toMcpMyPolicyDto), null, 2) }] };
     }
     case "list_insurance_requirements": {
       const requirements = await ctx.runQuery((internal as any).compliance.listRequirementsInternal, { orgId });
@@ -2040,7 +1868,7 @@ http.route({
       const orgs = await ctx.runQuery((internal as any).orgs.getOrgsByUserId, { userId: identity.userId }).catch(() => null);
       return jsonResponse({
         user: { id: identity.userId, name: user?.name, email: user?.email },
-        accessible_orgs: Array.isArray(orgs) ? orgs.map((o: any) => ({ id: o._id, name: o.name, created_at: o._creationTime, industry: o.industry })) : [],
+        accessible_orgs: Array.isArray(orgs) ? orgs.map(toOrgDto) : [],
       });
     } catch (e) {
       if (e instanceof Response) return e;
@@ -2058,7 +1886,7 @@ http.route({
       const identity = await requireApiAuth(ctx, request);
       const org = await ctx.runQuery(internal.orgs.getInternal, { id: identity.orgId });
       if (!org) return jsonResponse({ error: { code: "not_found", message: "Org not found" } }, 404);
-      return jsonResponse({ id: org._id, name: org.name, created_at: org._creationTime, industry: org.industry });
+      return jsonResponse(toOrgDto(org));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
@@ -2168,11 +1996,7 @@ http.route({
       const identity = await requireApiAuth(ctx, request);
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: identity.orgId });
       return jsonResponse({
-        data: policies.map((p: any) => ({
-          id: p._id, carrier: p.carrier, policy_number: p.policyNumber,
-          policy_types: p.policyTypes, effective_date: p.effectiveDate,
-          expiration_date: p.expirationDate, premium: p.premium, created_at: p._creationTime,
-        })),
+        data: policies.map(toPolicyDto),
       });
     } catch (e) {
       if (e instanceof Response) return e;
@@ -2193,11 +2017,7 @@ http.route({
         ctx.runQuery(internal.policies.listAllInternal, { orgId: identity.orgId }).then((ps: any[]) => ps.find((p: any) => p._id === policyId))
       );
       if (!policy) return jsonResponse({ error: { code: "not_found", message: "Policy not found" } }, 404);
-      return jsonResponse({
-        id: policy._id, carrier: policy.carrier, policy_number: policy.policyNumber,
-        policy_types: policy.policyTypes, effective_date: policy.effectiveDate,
-        expiration_date: policy.expirationDate, premium: policy.premium, created_at: policy._creationTime,
-      });
+      return jsonResponse(toPolicyDto(policy));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
@@ -2222,13 +2042,7 @@ http.route({
       const url = await ctx.storage.getUrl(policy.fileId as Id<"_storage">);
       if (!url) return jsonResponse({ error: { code: "not_found", message: "Original policy PDF is not available" } }, 404);
       return jsonResponse({
-        data: {
-          id: policy._id,
-          file_id: policy.fileId,
-          file_name: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
-          content_type: "application/pdf",
-          url,
-        },
+        data: toPolicyFileDto(policy, url),
       });
     } catch (e) {
       if (e instanceof Response) return e;
@@ -2251,7 +2065,7 @@ http.route({
         policyId,
       });
       return jsonResponse({
-        data: certificates.map(serializeCertificate),
+        data: certificates.map(toCertificateDto),
         next_cursor: null,
       });
     } catch (e) {
@@ -2354,11 +2168,7 @@ http.route({
       if (!allowed) return jsonResponse({ error: { code: "not_found", message: "Vendor not found" } }, 404);
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: vendorOrgId });
       return jsonResponse({
-        data: policies.map((p: any) => ({
-          id: p._id, carrier: p.carrier, policy_number: p.policyNumber,
-          policy_types: p.policyTypes, effective_date: p.effectiveDate,
-          expiration_date: p.expirationDate, premium: p.premium, created_at: p._creationTime,
-        })),
+        data: policies.map(toPolicyDto),
         next_cursor: null,
       });
     } catch (e) {
@@ -2457,9 +2267,7 @@ http.route({
         userId: identity.userId,
       }).catch(() => []);
       return jsonResponse({
-        data: (Array.isArray(notifs) ? notifs : []).map((n: any) => ({
-          id: n._id, type: n.type, message: n.message ?? n.body, read: !!n.read, created_at: n._creationTime,
-        })),
+        data: (Array.isArray(notifs) ? notifs : []).map(toNotificationDto),
       });
     } catch (e) {
       if (e instanceof Response) return e;
