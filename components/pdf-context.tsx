@@ -1,6 +1,12 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 
 export type PdfHighlightBox = {
   page: number;
@@ -27,16 +33,16 @@ interface PdfContextValue {
   highlightedPage: number | null;
   highlightBoxes: PdfHighlightBox[];
   /** Imperatively open a PDF by URL, optionally jumping to a page */
-  openWithUrl: (url: string, page?: number, highlightBoxes?: PdfHighlightBox[]) => void;
+  openWithUrl: (
+    url: string,
+    page?: number,
+    highlightBoxes?: PdfHighlightBox[],
+  ) => void;
 }
 
 const PdfContext = createContext<PdfContextValue | null>(null);
 
-export function PdfProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function PdfProvider({ children }: { children: React.ReactNode }) {
   const [fileUrl, setFileUrlState] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [numPages, setNumPages] = useState(0);
@@ -55,44 +61,61 @@ export function PdfProvider({
       setCurrentPage(clamped);
       setIsPdfOpen(true);
       setHighlightedPage(clamped);
+      setHighlightBoxes([]);
     },
-    [fileUrl, numPages]
+    [fileUrl, numPages],
   );
 
-  const openWithUrl = useCallback((url: string, page?: number, boxes?: PdfHighlightBox[]) => {
-    setFileUrlState(url);
-    setIsPdfOpen(true);
-    setCurrentPage(page ?? 1);
-    setHighlightedPage(page ?? null);
-    setHighlightBoxes(boxes ?? []);
-    setNumPages(0);
-  }, []);
+  const openWithUrl = useCallback(
+    (url: string, page?: number, boxes?: PdfHighlightBox[]) => {
+      setFileUrlState(url);
+      setIsPdfOpen(true);
+      setCurrentPage(page ?? 1);
+      setHighlightedPage(page ?? null);
+      setHighlightBoxes(boxes ?? []);
+      setNumPages(0);
+    },
+    [],
+  );
 
   const togglePdf = useCallback(() => setIsPdfOpen((v) => !v), []);
   const openPdf = useCallback(() => setIsPdfOpen(true), []);
   const closePdf = useCallback(() => setIsPdfOpen(false), []);
 
-  const value = useMemo(() => ({
-    currentPage,
-    numPages,
-    setNumPages,
-    navigateToPage,
-    isPdfOpen,
-    togglePdf,
-    openPdf,
-    closePdf,
-    fileUrl,
-    setFileUrl,
-    highlightedPage,
-    highlightBoxes,
-    openWithUrl,
-  }), [currentPage, numPages, setNumPages, navigateToPage, isPdfOpen, togglePdf, openPdf, closePdf, fileUrl, setFileUrl, highlightedPage, highlightBoxes, openWithUrl]);
-
-  return (
-    <PdfContext.Provider value={value}>
-      {children}
-    </PdfContext.Provider>
+  const value = useMemo(
+    () => ({
+      currentPage,
+      numPages,
+      setNumPages,
+      navigateToPage,
+      isPdfOpen,
+      togglePdf,
+      openPdf,
+      closePdf,
+      fileUrl,
+      setFileUrl,
+      highlightedPage,
+      highlightBoxes,
+      openWithUrl,
+    }),
+    [
+      currentPage,
+      numPages,
+      setNumPages,
+      navigateToPage,
+      isPdfOpen,
+      togglePdf,
+      openPdf,
+      closePdf,
+      fileUrl,
+      setFileUrl,
+      highlightedPage,
+      highlightBoxes,
+      openWithUrl,
+    ],
   );
+
+  return <PdfContext.Provider value={value}>{children}</PdfContext.Provider>;
 }
 
 const NOOP_PDF: PdfContextValue = {
