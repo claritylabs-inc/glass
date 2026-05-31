@@ -1926,7 +1926,7 @@ export const run = internalAction({
       // Tool call display names for the "thinking" UI
       const TOOL_LABELS: Record<string, string> = {
         lookup_policy: "Searching policies...",
-        lookup_policy_section: "Reading policy sections...",
+        lookup_policy_section: "Reading policy sources...",
         attach_policy_document: "Attaching policy PDF...",
         compare_coverages: "Comparing coverages...",
         lookup_compliance_requirements: "Checking requirements...",
@@ -1967,7 +1967,7 @@ export const run = internalAction({
       let reasoning = "";
       let hasStartedReasoning = false;
       let lastReasoningFlush = dayjs().valueOf();
-      const citedSections = new Set<string>(); // titles from lookup_policy_section results
+      const citedSections = new Set<string>(); // source/outline titles from lookup_policy_section results
       const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
       const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
@@ -2167,7 +2167,7 @@ export const run = internalAction({
                 data: (part as Record<string, unknown>).output,
               });
             }
-            // Capture cited section titles and policy IDs from lookup_policy_section results
+            // Capture cited source/outline titles and policy IDs from lookup_policy_section results
             if (
               lastToolName === "lookup_policy_section" &&
               (part as Record<string, unknown>).output

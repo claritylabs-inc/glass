@@ -1099,6 +1099,9 @@ export default defineSchema({
           formType: v.string(), // coverage, endorsement, declarations, application, notice, other
           pageStart: v.optional(v.number()),
           pageEnd: v.optional(v.number()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
         }),
       ),
     ),
@@ -1110,6 +1113,9 @@ export default defineSchema({
           amountValue: v.optional(v.number()),
           type: v.optional(v.string()), // tax, fee, surcharge, assessment
           description: v.optional(v.string()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
         }),
       ),
     ),
@@ -1119,6 +1125,9 @@ export default defineSchema({
           line: v.string(),
           amount: v.string(),
           amountValue: v.optional(v.number()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
         }),
       ),
     ),
@@ -1160,6 +1169,7 @@ export default defineSchema({
         originalContent: v.optional(v.string()),
         resolvedOriginalContent: v.optional(v.string()),
         recordId: v.optional(v.string()),
+        documentNodeId: v.optional(v.string()),
         sourceSpanIds: v.optional(v.array(v.string())),
         sourceTextHash: v.optional(v.string()),
         extractionReviewStatus: v.optional(v.string()),
@@ -1183,6 +1193,8 @@ export default defineSchema({
       }),
     ),
     // Full document structure with provenance
+    documentMetadata: v.optional(v.any()),
+    documentOutline: v.optional(v.any()),
     // Extracted document structure (sections, endorsements, conditions, etc.)
     // Uses v.any() because the cl-sdk document schema evolves frequently
     document: v.optional(v.any()),
@@ -1225,6 +1237,9 @@ export default defineSchema({
           value: v.string(),
           subject: v.optional(v.string()),
           context: v.optional(v.string()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
         }),
       ),
     ),
@@ -1762,6 +1777,10 @@ export default defineSchema({
     pageEnd: v.optional(v.number()),
     sectionId: v.optional(v.string()),
     formNumber: v.optional(v.string()),
+    sourceUnit: v.optional(v.string()),
+    parentSpanId: v.optional(v.string()),
+    table: v.optional(v.any()),
+    location: v.optional(v.any()),
     text: v.string(),
     textHash: v.string(),
     bbox: v.optional(v.any()),
@@ -1771,7 +1790,8 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
     .index("by_spanId", ["spanId"])
-    .index("by_policyId_spanId", ["policyId", "spanId"]),
+    .index("by_policyId_spanId", ["policyId", "spanId"])
+    .index("by_policyId_parentSpanId", ["policyId", "parentSpanId"]),
 
   // Embedded chunks over source spans. Unlike documentChunks, these preserve
   // sourceSpanIds so exact policy facts can cite the raw evidence unit.

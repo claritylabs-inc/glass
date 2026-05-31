@@ -13,16 +13,20 @@ export interface GlassSourceSpan {
   pageEnd?: number;
   sectionId?: string;
   formNumber?: string;
+  sourceUnit?: string;
+  parentSpanId?: string;
+  table?: Record<string, unknown>;
   text: string;
   textHash: string;
   hash: string;
+  bbox?: Array<{ page: number; x: number; y: number; width: number; height: number }>;
   location?: {
     page?: number;
     startPage?: number;
     endPage?: number;
     fieldPath?: string;
   };
-  metadata?: Record<string, string>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface GlassSourceChunk {

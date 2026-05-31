@@ -12,6 +12,12 @@ import {
   getModelForOrg,
   getProviderOptionsForTask,
 } from "../lib/models";
+import {
+  formatDocumentMetadataForPrompt,
+  formatDocumentOutlineForPrompt,
+  getPolicyDocumentMetadata,
+  getPolicyDocumentOutline,
+} from "../lib/policyDocumentStructure";
 
 type OverlayFieldMapping = {
   fields?: Array<Record<string, unknown>>;
@@ -96,6 +102,11 @@ async function resolveCustomSmartFields(
   );
   if (customFields.length === 0) return fieldMapping as CoiOverlayMapping;
 
+  const document = policy.document && typeof policy.document === "object" && !Array.isArray(policy.document)
+    ? policy.document as Record<string, unknown>
+    : {};
+  const documentMetadata = getPolicyDocumentMetadata(policy);
+  const documentOutline = getPolicyDocumentOutline(policy);
   const policyContext = trimForPrompt({
     policyNumber: policy.policyNumber,
     policyTypes: policy.policyTypes,
@@ -105,10 +116,29 @@ async function resolveCustomSmartFields(
     expirationDate: policy.expirationDate,
     limits: policy.limits,
     coverages: policy.coverages,
-    endorsements: policy.endorsements,
-    exclusions: policy.exclusions,
-    conditions: policy.conditions,
+    deductibles: policy.deductibles,
+    premiumBreakdown: policy.premiumBreakdown,
+    taxesAndFees: policy.taxesAndFees,
+    formInventory: policy.formInventory,
     declarations: policy.declarations,
+    supplementaryFacts: policy.supplementaryFacts,
+    documentMetadata,
+    documentOutline,
+    documentMetadataSummary: formatDocumentMetadataForPrompt(policy, {
+      maxChars: 5000,
+      includeSourceSpanIds: true,
+    }),
+    documentOutlineSummary: formatDocumentOutlineForPrompt(policy, {
+      maxNodes: 24,
+      maxChars: 7000,
+      includeSourceSpanIds: true,
+    }),
+    sections: document.sections,
+    definitions: document.definitions,
+    coveredReasons: document.coveredReasons,
+    endorsements: document.endorsements,
+    exclusions: document.exclusions,
+    conditions: document.conditions,
     document: policy.document,
     partnerProgram: program
       ? {

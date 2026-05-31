@@ -223,6 +223,8 @@ export function insuranceDocToPolicy(
 
   // Document structure (sections, endorsements, definitions, covered reasons, conditions, exclusions)
   const document: Record<string, unknown> = {};
+  fields.documentMetadata = sanitizeNulls(d.documentMetadata ?? {});
+  fields.documentOutline = sanitizeNulls(d.documentOutline ?? []);
   if (d.sections?.length) document.sections = sanitizeNulls(d.sections);
   if (d.definitions?.length)
     document.definitions = sanitizeNulls(d.definitions);
@@ -331,6 +333,8 @@ export function policyToInsuranceDoc(p: any): InsuranceDocument {
     minimumPremium: p.minPremium,
     depositPremium: p.depositPremium,
     // Document structure
+    documentMetadata: (p.documentMetadata as unknown) ?? {},
+    documentOutline: Array.isArray(p.documentOutline) ? p.documentOutline : [],
     sections: p.document?.sections,
     definitions: p.document?.definitions,
     coveredReasons: p.document?.coveredReasons,

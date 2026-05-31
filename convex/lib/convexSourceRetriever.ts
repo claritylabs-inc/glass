@@ -17,13 +17,16 @@ type SourceSpan = {
   pageEnd?: number;
   sectionId?: string;
   formNumber?: string;
+  sourceUnit?: string;
+  parentSpanId?: string;
+  table?: Record<string, unknown>;
   text: string;
   hash: string;
   textHash?: string;
   bbox?: Array<{ page: number; x: number; y: number; width: number; height: number }>;
   chunkId?: string;
-  metadata?: Record<string, string>;
-  location?: { page?: number };
+  metadata?: Record<string, unknown>;
+  location?: Record<string, unknown>;
 };
 
 type SourceRetrievalQuery = {
@@ -59,10 +62,14 @@ type SourceSpanDoc = {
   pageEnd?: number;
   sectionId?: string;
   formNumber?: string;
+  sourceUnit?: string;
+  parentSpanId?: string;
+  table?: Record<string, unknown>;
+  location?: Record<string, unknown>;
   text: string;
   textHash: string;
   bbox?: SourceSpan["bbox"];
-  metadata?: Record<string, string>;
+  metadata?: Record<string, unknown>;
 };
 
 function toSourceSpan(span: SourceSpanDoc, chunkId?: string): SourceSpan {
@@ -75,13 +82,16 @@ function toSourceSpan(span: SourceSpanDoc, chunkId?: string): SourceSpan {
     pageEnd: span.pageEnd,
     sectionId: span.sectionId,
     formNumber: span.formNumber,
+    sourceUnit: span.sourceUnit,
+    parentSpanId: span.parentSpanId,
+    table: span.table,
     text: span.text,
     hash: span.textHash,
     textHash: span.textHash,
     bbox: span.bbox,
     chunkId,
     metadata: span.metadata,
-    location: span.pageStart ? { page: span.pageStart } : undefined,
+    location: span.location ?? (span.pageStart ? { page: span.pageStart } : undefined),
   };
 }
 
@@ -95,9 +105,7 @@ function fallbackSpan(chunk: SourceChunkDoc): SourceSpan {
     hash: String(chunk.metadata?.textHash ?? chunk.chunkId),
     textHash: String(chunk.metadata?.textHash ?? chunk.chunkId),
     chunkId: chunk.chunkId,
-    metadata: Object.fromEntries(
-      Object.entries(chunk.metadata ?? {}).map(([key, value]) => [key, String(value)]),
-    ),
+    metadata: chunk.metadata,
   };
 }
 

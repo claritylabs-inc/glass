@@ -33,7 +33,7 @@ Core layers:
 - Backend: Convex queries, mutations, actions, scheduler, file storage, vector search
 - Browser sync: `@claritylabs/cl-sync` provides reusable IndexedDB-backed local-first sync primitives. The package is maintained as the sibling public package `../cl-sync`; Glass owns only its app-specific collections and cache policies under `lib/sync/`.
 - AI runtime: Vercel AI SDK (`ai`)
-- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@1.3.x`
+- Extraction, query agent, and prompts: `@claritylabs/cl-sdk@2.x`
 - Providers: OpenAI, Anthropic, DeepSeek
 - PDF parsing: policy and quote extraction use the single stable `cl-sdk` pipeline. When the Railway extraction worker is available, Glass first preprocesses PDFs with LiteParse, building hierarchical page/row/cell source spans from positioned text, preserving bounding boxes for exact source citation highlights, and capturing bounded page screenshots for multimodal page-scoped model calls. Glass then passes the original PDF bytes plus those spans into `cl-sdk`; if LiteParse fails or times out, Glass falls back to raw PDF bytes plus local PDF.js source spans. LiteParse is hosted inside `extraction-worker/`, not as a separate service, feature flag, or callback interception layer.
 - Email: outbound + inbound via Resend, plus user-connected generic IMAP mailboxes for live agent search/read. All outbound Resend calls go through `convex/lib/resend.ts` (`sendResendEmail`). The primary signed-in web app is `app.glass.insure` for both broker and client users; broker/client landing is role-based after sign-in. `glass.claritylabs.inc` is the legacy browser host and redirects to `app.glass.insure`. `auth.glass.insure` is an auth/invite email sender domain rather than a separate web app host. Agent mail defaults to `glass.insure`, notification mail defaults to `notifications.glass.insure`, and auth/invite mail defaults to `auth.glass.insure`; legacy inbound agent addresses at `glass.claritylabs.inc` and `dev.claritylabs.inc` remain recognized. Inbound webhook at `POST /resend-inbound`.
@@ -209,15 +209,16 @@ Notes:
 
 ### Extraction Shape
 
-`cl-sdk` 0.17 adds first-class `definitions` and `coveredReasons` arrays, plus premium promotion from declaration fields into `premium`, `totalCost`, and `taxesAndFees`.
+`cl-sdk` 2.0 is a breaking source-native extraction contract. `PolicyDocument` and `QuoteDocument` require `documentMetadata` and `documentOutline`; Glass persists those fields on `policies` and renders non-empty outlines as the primary policy breakdown. Keep SDK interpretation labels (`type`, `label`, `interpretationLabels`) as hints inside the original source hierarchy. Do not regroup source text into Glass-owned buckets when an outline is available.
 
 Glass persists:
 
 - Top-level policy financials: `premium`, `totalCost`, `taxesAndFees`, `premiumBreakdown`, `minPremium`, `depositPremium`
 - Extracted dates are normalized to `MM/DD/YYYY` before persistence where the source value is parseable. Monetary and limit-like fields keep user-facing display strings while also storing numeric companions such as `premiumAmount`, `totalCostAmount`, coverage `limitAmount` / `deductibleAmount`, and row-level `amountValue` for deterministic comparison.
+- Source document structure: top-level `documentMetadata` and `documentOutline` from `cl-sdk` v2. Existing rows may lack those fields; source-native preview surfaces should show a re-extraction warning instead of pretending legacy categories are equivalent to the original document structure.
 - Document detail: `document.sections`, `document.definitions`, `document.coveredReasons`, `document.endorsements`, `document.exclusions`, `document.conditions`
 - Declarations, form inventory, and supplementary facts as top-level policy fields
-- Raw source evidence in `sourceSpans` and embedded `sourceChunks` when cl-sdk returns source spans/chunks. These source units preserve stable `sourceSpanIds` for exact policy citations.
+- Raw source evidence in `sourceSpans` and embedded `sourceChunks` when cl-sdk returns source spans/chunks. Source spans preserve `sourceUnit`, `parentSpanId`, table location, page/character location, bounding boxes, and stable `sourceSpanIds`; `sourceSpans.listSpansByPolicyAndSpanIds` returns requested spans plus related parent/child spans so table-cell facts can highlight their parent row or fall back to the source page.
 - Glass runs all post-extraction cleanup through `postProcessExtractionDocument()`: deterministic policy-period fallback, evidence-backed field review, `insuranceDocToPolicy()`, coverage declaration scoping, review-copy polish, and organization-name normalization. Keep new cross-cutting extraction cleanup in this pipeline rather than adding one-off fallback extractors inside `policyExtraction.ts` or `documentMapping.ts`.
 - Field review is configured as reusable groups in `extractionFieldReview.ts`. It uses source spans and document sections, applies only evidence-quoted corrections for registered fields, and runs on the low-cost `classification` route. `EXTRACTION_FIELD_REVIEW_MODE=skip|auto|always` controls whether it is disabled, runs only for missing group fields, or runs for all groups with evidence.
 - The policy-period fallback still performs a deterministic source-span check over raw PDF text before persistence. Clear `PERIOD OF INSURANCE` / `POLICY PERIOD` / `POLICY TERM` source text, including day-month-year table layouts, is allowed to override missing, malformed, or conflicting SDK `effectiveDate` / `expirationDate` values.

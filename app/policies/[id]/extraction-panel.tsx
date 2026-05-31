@@ -21,6 +21,8 @@ type PolicySubsection = {
   title?: string;
   content: string;
   pageNumber?: number;
+  documentNodeId?: string;
+  sourceSpanIds?: string[];
 };
 
 type PolicySection = {
@@ -31,6 +33,44 @@ type PolicySection = {
   pageStart: number;
   pageEnd?: number;
   subsections?: PolicySubsection[];
+  documentNodeId?: string;
+  sourceSpanIds?: string[];
+  sourceTextHash?: string;
+};
+
+type DocumentOutlineNode = {
+  id: string;
+  title?: string;
+  originalTitle?: string;
+  sectionNumber?: string;
+  pageStart?: number;
+  pageEnd?: number;
+  formNumber?: string;
+  formTitle?: string;
+  excerpt?: string;
+  content?: string;
+  sourceSpanIds?: string[];
+  children?: DocumentOutlineNode[];
+};
+
+type DocumentMetadata = {
+  tableOfContents?: Array<{
+    title?: string;
+    level?: number;
+    pageStart?: number;
+    pageEnd?: number;
+    documentNodeId?: string;
+    sourceSpanIds?: string[];
+  }>;
+  pageMap?: Array<{
+    page?: number;
+    label?: string;
+    formNumber?: string;
+    formTitle?: string;
+    sectionTitle?: string;
+    extractorNames?: string[];
+    sourceSpanIds?: string[];
+  }>;
 };
 
 type ContactEntry = {
@@ -222,6 +262,8 @@ type PolicyDocument = {
   claimsContact?: ClaimsContact;
   complaintContact?: ComplaintContact;
   regulatoryContext?: RegulatoryContext;
+  documentMetadata?: DocumentMetadata;
+  documentOutline?: DocumentOutlineNode[];
 };
 
 // ─── Shared sub-components (moved from page.tsx) ─────────────────────────────
@@ -364,6 +406,145 @@ function groupRowsBySection(rows: DataRow[]) {
   }
 
   return sections;
+}
+
+function recordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === "object" && !Array.isArray(item),
+      )
+    : [];
+}
+
+function nodeIdsFromOutline(nodes: DocumentOutlineNode[]): Set<string> {
+  const ids = new Set<string>();
+  const visit = (node: DocumentOutlineNode) => {
+    ids.add(node.id);
+    for (const child of node.children ?? []) visit(child);
+  };
+  for (const node of nodes) visit(node);
+  return ids;
+}
+
+function extractedFactRowsForNode(
+  policyDocument: PolicyDocument,
+  nodeId: string,
+): DataRow[] {
+  const rows: DataRow[] = [];
+  const push = (row: DataRow) => {
+    if (row.label && row.value) rows.push(row);
+  };
+
+  for (const coverage of policyDocument.coverages ?? []) {
+    if ((coverage as { documentNodeId?: string }).documentNodeId !== nodeId)
+      continue;
+    push({
+      label: coverage.name ?? "Coverage",
+      value: [
+        coverage.limit ? `Limit ${coverage.limit}` : undefined,
+        coverage.deductible ? `Deductible ${coverage.deductible}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" | "),
+      sourceSpanIds: sourceSpanIdsFrom(coverage),
+      pageNumber: coverage.pageNumber,
+    });
+  }
+
+  for (const definition of policyDocument.definitions ?? []) {
+    if ((definition as { documentNodeId?: string }).documentNodeId !== nodeId)
+      continue;
+    push({
+      label: definition.term ?? "Definition",
+      value: definition.definition ?? definition.originalContent ?? "",
+      sourceSpanIds: sourceSpanIdsFrom(definition),
+      pageNumber: definition.pageNumber,
+    });
+  }
+
+  for (const reason of policyDocument.coveredReasons ?? []) {
+    if ((reason as { documentNodeId?: string }).documentNodeId !== nodeId)
+      continue;
+    push({
+      label: reason.title ?? reason.coverageName ?? "Covered reason",
+      value: reason.content ?? "",
+      sourceSpanIds: sourceSpanIdsFrom(reason),
+      pageNumber: reason.pageNumber,
+    });
+  }
+
+  for (const item of [
+    ...recordArray(policyDocument.endorsements),
+    ...recordArray(policyDocument.exclusions),
+    ...recordArray(policyDocument.conditions),
+    ...recordArray(policyDocument.taxesAndFees),
+    ...recordArray(policyDocument.premiumBreakdown),
+    ...recordArray(policyDocument.supplementaryFacts),
+  ]) {
+    if (item.documentNodeId !== nodeId) continue;
+    push({
+      label:
+        stringifyValue(
+          item.title ?? item.name ?? item.line ?? item.key ?? item.term,
+        ) || "Extracted detail",
+      value:
+        stringifyValue(
+          item.content ??
+            item.value ??
+            item.amount ??
+            item.description ??
+            item.excerpt,
+        ) || stringifyValue(item),
+      sourceSpanIds: sourceSpanIdsFrom(item),
+      pageNumber: firstNumericPage(item.pageNumber, item.pageStart),
+    });
+  }
+
+  return rows;
+}
+
+function unlinkedExtractedFactRows(
+  policyDocument: PolicyDocument,
+  outlineNodeIds: Set<string>,
+): DataRow[] {
+  const rows: DataRow[] = [];
+  const push = (
+    label: string | undefined,
+    value: string | undefined,
+    item: unknown,
+    pageNumber?: number,
+  ) => {
+    if (!label || !value) return;
+    const nodeId =
+      item && typeof item === "object"
+        ? (item as { documentNodeId?: unknown }).documentNodeId
+        : undefined;
+    if (typeof nodeId === "string" && outlineNodeIds.has(nodeId)) return;
+    rows.push({ label, value, sourceSpanIds: sourceSpanIdsFrom(item), pageNumber });
+  };
+
+  for (const coverage of policyDocument.coverages ?? []) {
+    push(
+      coverage.name ?? "Coverage",
+      [
+        coverage.limit ? `Limit ${coverage.limit}` : undefined,
+        coverage.deductible ? `Deductible ${coverage.deductible}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" | "),
+      coverage,
+      coverage.pageNumber,
+    );
+  }
+  for (const line of policyDocument.premiumBreakdown ?? []) {
+    push(line.line ?? "Premium line", line.amount, line);
+  }
+  for (const fee of policyDocument.taxesAndFees ?? []) {
+    push(fee.name ?? "Tax or fee", fee.amount, fee);
+  }
+
+  return rows;
 }
 
 // ─── Exclusion / Condition / Endorsement cards ───────────────────────────────
@@ -688,7 +869,6 @@ function StructuredItemsCard<T>({
                 sourceSpanIds={sourceSpanIds}
                 sourceSpans={sourceSpans}
                 fallbackPage={page}
-                label="Proof"
               />
               {page != null && sourceSpanIds.length === 0 && (
                 <PageRef page={page} />
@@ -958,7 +1138,6 @@ function KeyValueTable({
                   sourceSpanIds={row.sourceSpanIds}
                   sourceSpans={sourceSpans}
                   fallbackPage={row.pageNumber}
-                  label="Proof"
                 />
                 {row.pageNumber != null && !row.sourceSpanIds?.length && (
                   <PageRef page={row.pageNumber} />
@@ -1024,6 +1203,198 @@ function SectionedDataCard({
           />
         </GroupSection>
       ))}
+    </div>
+  );
+}
+
+function DocumentMetadataPanel({
+  metadata,
+  sourceSpans,
+}: {
+  metadata?: DocumentMetadata;
+  sourceSpans?: SourceSpanDoc[];
+}) {
+  const toc = metadata?.tableOfContents ?? [];
+  const pageMap = metadata?.pageMap ?? [];
+  if (toc.length === 0 && pageMap.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card">
+      <div className="border-b border-foreground/4 px-5 py-3">
+        <p className="text-sm font-medium text-foreground">
+          Document navigation
+        </p>
+      </div>
+      <div className="divide-y divide-foreground/6">
+        {toc.length > 0 && (
+          <div className="px-5 py-3">
+            <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+              Table of contents
+            </p>
+            <div className="mt-2 space-y-1.5">
+              {toc.slice(0, 12).map((entry, index) => (
+                <div
+                  key={`${entry.documentNodeId ?? entry.title ?? "toc"}:${index}`}
+                  className="flex min-w-0 items-center gap-2 text-label-sm"
+                  style={{ paddingLeft: `${Math.max((entry.level ?? 1) - 1, 0) * 12}px` }}
+                >
+                  <span className="min-w-0 flex-1 truncate text-foreground">
+                    {entry.title ?? "Untitled section"}
+                  </span>
+                  <SourceEvidenceButton
+                    sourceSpanIds={entry.sourceSpanIds}
+                    sourceSpans={sourceSpans}
+                    fallbackPage={entry.pageStart}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {pageMap.length > 0 && (
+          <div className="px-5 py-3">
+            <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+              Page map
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {pageMap.slice(0, 24).map((entry, index) => (
+                <SourceEvidenceButton
+                  key={`${entry.page ?? index}:${entry.formNumber ?? ""}`}
+                  sourceSpanIds={entry.sourceSpanIds}
+                  sourceSpans={sourceSpans}
+                  fallbackPage={entry.page}
+                  label={entry.formNumber ?? `Page ${entry.page ?? index + 1}`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OutlineNodeRow({
+  node,
+  policyDocument,
+  sourceSpans,
+  depth = 0,
+}: {
+  node: DocumentOutlineNode;
+  policyDocument: PolicyDocument;
+  sourceSpans?: SourceSpanDoc[];
+  depth?: number;
+}) {
+  const factRows = extractedFactRowsForNode(policyDocument, node.id);
+  const children = node.children ?? [];
+  const sourceSpanIds = sourceSpanIdsFrom(node);
+
+  return (
+    <div className="border-t border-foreground/6 first:border-t-0">
+      <div className="px-5 py-3" style={{ paddingLeft: `${20 + depth * 18}px` }}>
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="min-w-0 truncate text-sm font-medium text-foreground">
+                {node.title ?? node.originalTitle ?? "Untitled section"}
+              </p>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+              {node.formNumber ? <span>{node.formNumber}</span> : null}
+              {node.pageStart ? (
+                <span>
+                  p.{node.pageStart}
+                  {node.pageEnd && node.pageEnd !== node.pageStart
+                    ? `-${node.pageEnd}`
+                    : ""}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <SourceEvidenceButton
+            sourceSpanIds={sourceSpanIds}
+            sourceSpans={sourceSpans}
+            fallbackPage={node.pageStart}
+          />
+        </div>
+        {node.excerpt || node.content ? (
+          <div className="mt-2 text-label-sm leading-5 text-muted-foreground">
+            <DocContent>{node.excerpt ?? node.content ?? ""}</DocContent>
+          </div>
+        ) : null}
+        {factRows.length > 0 ? (
+          <div className="mt-3 overflow-hidden rounded-md border border-foreground/6">
+            <KeyValueTable
+              rows={factRows}
+              sourceSpans={sourceSpans}
+              className="border-0"
+            />
+          </div>
+        ) : null}
+      </div>
+      {children.map((child) => (
+        <OutlineNodeRow
+          key={child.id}
+          node={child}
+          policyDocument={policyDocument}
+          sourceSpans={sourceSpans}
+          depth={depth + 1}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SourceBackedBreakdown({
+  policyDocument,
+  sourceSpans,
+  topLevelRows,
+}: {
+  policyDocument: PolicyDocument;
+  sourceSpans?: SourceSpanDoc[];
+  topLevelRows: DataRow[];
+}) {
+  const outline = policyDocument.documentOutline ?? [];
+  const outlineNodeIds = nodeIdsFromOutline(outline);
+  const unlinkedRows = unlinkedExtractedFactRows(policyDocument, outlineNodeIds);
+
+  return (
+    <div className="space-y-4">
+      <DocumentMetadataPanel
+        metadata={policyDocument.documentMetadata}
+        sourceSpans={sourceSpans}
+      />
+      {topLevelRows.length > 0 && (
+        <DataCard
+          title="Policy facts"
+          rows={topLevelRows}
+          sourceSpans={sourceSpans}
+        />
+      )}
+      <div className="rounded-lg border border-foreground/6 bg-card">
+        <div className="border-b border-foreground/4 px-5 py-3">
+          <p className="text-sm font-medium text-foreground">
+            Source document outline
+          </p>
+        </div>
+        <div>
+          {outline.map((node) => (
+            <OutlineNodeRow
+              key={node.id}
+              node={node}
+              policyDocument={policyDocument}
+              sourceSpans={sourceSpans}
+            />
+          ))}
+        </div>
+      </div>
+      {unlinkedRows.length > 0 && (
+        <DataCard
+          title="Unlinked extracted facts"
+          rows={unlinkedRows}
+          sourceSpans={sourceSpans}
+        />
+      )}
     </div>
   );
 }
@@ -1114,6 +1485,7 @@ export function ExtractionCards({
   const fees = costsAndFees?.fees ?? [];
   const exclusions = policyDocument?.exclusions ?? [];
   const conditions = policyDocument?.conditions ?? [];
+  const documentOutline = policyDocument?.documentOutline ?? [];
   const carrierDisplay =
     policyDocument?.carrierLegalName ||
     policyDocument?.security ||
@@ -1167,6 +1539,8 @@ export function ExtractionCards({
     .filter((row) => row.value);
 
   const hasAnyData =
+    documentOutline.length > 0 ||
+    Boolean(policyDocument?.documentMetadata) ||
     topLevelRows.length > 0 ||
     coverages.length > 0 ||
     declarations.length > 0 ||
@@ -1188,6 +1562,17 @@ export function ExtractionCards({
     policyDocument?.regulatoryContext;
 
   if (!hasAnyData) return null;
+  if (!policyDocument) return null;
+
+  if (documentOutline.length > 0) {
+    return (
+      <SourceBackedBreakdown
+        policyDocument={policyDocument}
+        sourceSpans={sourceSpans}
+        topLevelRows={topLevelRows}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1211,16 +1596,15 @@ export function ExtractionCards({
             sourceSpans={sourceSpans}
             getBadges={(coverage) =>
               [
-                coverage.limit
+                coverage.coverageCode
                   ? {
-                      label: coverage.limit,
-                      className:
-                        "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+                      label: coverage.coverageCode,
+                      className: "bg-foreground/5 text-muted-foreground",
                     }
                   : undefined,
-                coverage.deductible
+                coverage.formNumber
                   ? {
-                      label: "Deductible",
+                      label: coverage.formNumber,
                       className: "bg-foreground/5 text-muted-foreground",
                     }
                   : undefined,

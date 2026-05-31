@@ -7,6 +7,7 @@ import { searchPolicyDocument } from "./aiUtils";
 import type { GlassSourceSpan } from "./pdfSourceSpans";
 import { preparePdfTextWithParserFallback } from "./doclingPreprocessor";
 import { makeEmbedText } from "./sdkCallbacks";
+import { formatSourceSpanLabel } from "./policyDocumentStructure";
 
 type LookupResult = Record<string, unknown>;
 type SourceSpanDoc = {
@@ -17,6 +18,10 @@ type SourceSpanDoc = {
   pageEnd?: number;
   sectionId?: string;
   formNumber?: string;
+  sourceUnit?: string;
+  parentSpanId?: string;
+  table?: Record<string, unknown>;
+  location?: Record<string, unknown>;
   text: string;
   textHash?: string;
   semanticScore?: number;
@@ -55,10 +60,19 @@ function scoreSpan(query: string, terms: string[], span: SourceSpanDoc): number 
   return score;
 }
 
+function sourceSpanIdsFromResult(result: LookupResult): string[] {
+  const ids = result.sourceSpanIds;
+  return Array.isArray(ids)
+    ? ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+}
+
 function attachSourceSpans(result: LookupResult, spans: Array<SourceSpanDoc & { score: number }>): LookupResult {
   const resultText = `${textValue(result.title)} ${textValue(result.content)}`.toLowerCase();
+  const citedIds = new Set(sourceSpanIdsFromResult(result));
   const matched = spans
     .filter((span) => {
+      if (span.spanId && citedIds.has(span.spanId)) return true;
       if (span.score <= 0) return false;
       if (!resultText) return true;
       const title = textValue(result.title).toLowerCase();
@@ -71,11 +85,15 @@ function attachSourceSpans(result: LookupResult, spans: Array<SourceSpanDoc & { 
     .slice(0, 3);
 
   if (matched.length === 0) return result;
+  const sourceSpanIds = [
+    ...citedIds,
+    ...matched.map((span) => span.spanId).filter((id): id is string => Boolean(id)),
+  ];
   return {
     ...result,
     evidenceSource: "extracted_data_and_original_pdf",
     originalPdfChecked: true,
-    sourceSpanIds: matched.map((span) => span.spanId).filter(Boolean),
+    sourceSpanIds: [...new Set(sourceSpanIds)],
     sourceSpans: matched.map((span) => ({
       id: span.spanId,
       sourceKind: span.sourceKind,
@@ -83,6 +101,10 @@ function attachSourceSpans(result: LookupResult, spans: Array<SourceSpanDoc & { 
       pageEnd: span.pageEnd,
       sectionId: span.sectionId,
       formNumber: span.formNumber,
+      sourceUnit: span.sourceUnit,
+      parentSpanId: span.parentSpanId,
+      table: span.table,
+      location: span.location,
       bbox: span.bbox,
       metadata: span.metadata,
       confidence: span.score >= 6 ? "high" : span.score >= 2 ? "medium" : "low",
@@ -96,7 +118,7 @@ function sourceOnlyResults(spans: Array<SourceSpanDoc & { score: number }>, maxR
     .filter((span) => span.score > 0)
     .slice(0, maxResults)
     .map((span) => ({
-      title: span.sectionId ?? span.formNumber ?? `Source evidence${span.pageStart ? ` page ${span.pageStart}` : ""}`,
+      title: formatSourceSpanLabel(span),
       type: "original_pdf_source_span",
       evidenceSource: "original_pdf",
       originalPdfChecked: true,
@@ -111,6 +133,10 @@ function sourceOnlyResults(spans: Array<SourceSpanDoc & { score: number }>, maxR
         pageEnd: span.pageEnd,
         sectionId: span.sectionId,
         formNumber: span.formNumber,
+        sourceUnit: span.sourceUnit,
+        parentSpanId: span.parentSpanId,
+        table: span.table,
+        location: span.location,
         bbox: span.bbox,
         metadata: span.metadata,
         text: span.text.slice(0, 1200),
@@ -118,11 +144,10 @@ function sourceOnlyResults(spans: Array<SourceSpanDoc & { score: number }>, maxR
     }));
 }
 
-function toSourceSpanDoc(span: GlassSourceSpan | { id: string; documentId: string; sourceKind: string; pageStart?: number; pageEnd?: number; sectionId?: string; formNumber?: string; text: string; textHash?: string; hash?: string; bbox?: Array<{ page: number; x: number; y: number; width: number; height: number }>; metadata?: Record<string, unknown> }): SourceSpanDoc {
-  const spanWithLocation = span as typeof span & {
-    bbox?: Array<{ page: number; x: number; y: number; width: number; height: number }>;
-    metadata?: Record<string, unknown>;
-  };
+function toSourceSpanDoc(span: GlassSourceSpan): SourceSpanDoc {
+  const metadataSourceUnit = typeof span.metadata?.sourceUnit === "string"
+    ? span.metadata.sourceUnit
+    : undefined;
   return {
     spanId: span.id,
     documentId: span.documentId,
@@ -131,10 +156,14 @@ function toSourceSpanDoc(span: GlassSourceSpan | { id: string; documentId: strin
     pageEnd: span.pageEnd,
     sectionId: span.sectionId,
     formNumber: span.formNumber,
+    sourceUnit: span.sourceUnit ?? metadataSourceUnit,
+    parentSpanId: span.parentSpanId,
+    table: span.table,
+    location: span.location,
     text: span.text,
     textHash: span.textHash ?? span.hash,
-    bbox: spanWithLocation.bbox,
-    metadata: spanWithLocation.metadata,
+    bbox: span.bbox,
+    metadata: span.metadata,
   };
 }
 
@@ -151,6 +180,10 @@ async function loadStoredSourceSpans(
       pageEnd: doc.pageEnd,
       sectionId: doc.sectionId,
       formNumber: doc.formNumber,
+      sourceUnit: doc.sourceUnit,
+      parentSpanId: doc.parentSpanId,
+      table: doc.table,
+      location: doc.location,
       text: doc.text,
       textHash: doc.textHash,
       bbox: doc.bbox,
@@ -221,6 +254,7 @@ async function searchSemanticSourceChunks(
         documentId: chunk.documentId,
         sourceKind: "policy_pdf",
         text: chunk.text,
+        metadata: chunk.metadata,
         semanticScore: result._score,
       });
     }

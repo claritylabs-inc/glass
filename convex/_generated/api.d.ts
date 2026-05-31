@@ -125,6 +125,7 @@ import type * as lib_pceIntake from "../lib/pceIntake.js";
 import type * as lib_pdfFiller from "../lib/pdfFiller.js";
 import type * as lib_pdfSourceSpans from "../lib/pdfSourceSpans.js";
 import type * as lib_pipelineMutations from "../lib/pipelineMutations.js";
+import type * as lib_policyDocumentStructure from "../lib/policyDocumentStructure.js";
 import type * as lib_policyLookup from "../lib/policyLookup.js";
 import type * as lib_policyPeriodExtraction from "../lib/policyPeriodExtraction.js";
 import type * as lib_policyToolResolution from "../lib/policyToolResolution.js";
@@ -286,6 +287,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pdfFiller": typeof lib_pdfFiller;
   "lib/pdfSourceSpans": typeof lib_pdfSourceSpans;
   "lib/pipelineMutations": typeof lib_pipelineMutations;
+  "lib/policyDocumentStructure": typeof lib_policyDocumentStructure;
   "lib/policyLookup": typeof lib_policyLookup;
   "lib/policyPeriodExtraction": typeof lib_policyPeriodExtraction;
   "lib/policyToolResolution": typeof lib_policyToolResolution;

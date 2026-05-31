@@ -20,6 +20,10 @@ const sourceSpanInsertFields = {
   pageEnd: v.optional(v.number()),
   sectionId: v.optional(v.string()),
   formNumber: v.optional(v.string()),
+  sourceUnit: v.optional(v.string()),
+  parentSpanId: v.optional(v.string()),
+  table: v.optional(v.any()),
+  location: v.optional(v.any()),
   text: v.string(),
   textHash: v.string(),
   bbox: v.optional(v.any()),
@@ -63,30 +67,40 @@ export const listSpansByPolicyAndSpanIds = query({
       .query("sourceSpans")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
       .collect();
-    const direct = spans.filter((span) => wanted.has(span.spanId));
-    const relatedIds = new Set<string>();
-    for (const span of direct) {
+    const byId = new Map(spans.map((span) => [span.spanId, span]));
+    const relatedIds = new Set(wanted);
+    const parentFor = (span: (typeof spans)[number]) => {
       const metadata = (span.metadata ?? {}) as Record<string, unknown>;
-      for (const value of [metadata.parentSpanId, metadata.rowSpanId]) {
-        if (typeof value === "string" && value.length > 0) {
-          relatedIds.add(value);
+      const table = (span.table ?? {}) as Record<string, unknown>;
+      const parent =
+        span.parentSpanId ??
+        table.rowSpanId ??
+        table.tableSpanId ??
+        metadata.parentSpanId ??
+        metadata.rowSpanId ??
+        metadata.tableSpanId;
+      return typeof parent === "string" && parent.length > 0 ? parent : undefined;
+    };
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const span of spans) {
+        const parentId = parentFor(span);
+        if (relatedIds.has(span.spanId) && parentId && !relatedIds.has(parentId)) {
+          relatedIds.add(parentId);
+          changed = true;
+        }
+        if (parentId && relatedIds.has(parentId) && !relatedIds.has(span.spanId)) {
+          relatedIds.add(span.spanId);
+          changed = true;
         }
       }
     }
-    for (const span of spans) {
-      const metadata = (span.metadata ?? {}) as Record<string, unknown>;
-      const parentSpanId = metadata.parentSpanId;
-      const rowSpanId = metadata.rowSpanId;
-      if (
-        (typeof parentSpanId === "string" && wanted.has(parentSpanId)) ||
-        (typeof rowSpanId === "string" && wanted.has(rowSpanId))
-      ) {
-        relatedIds.add(span.spanId);
-      }
-    }
-    return spans.filter(
-      (span) => wanted.has(span.spanId) || relatedIds.has(span.spanId),
-    );
+
+    return [...relatedIds]
+      .map((spanId) => byId.get(spanId))
+      .filter((span): span is NonNullable<typeof span> => Boolean(span));
   },
 });
 

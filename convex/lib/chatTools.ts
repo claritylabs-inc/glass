@@ -154,13 +154,13 @@ export const confirmPolicyFact = tool({
 
 export const lookupPolicySection = tool({
   description:
-    "Search within a specific policy's extracted document and original PDF source evidence for detailed content about a topic. Use this for coverage details, covered reasons, exclusions, conditions, endorsements, definitions, or exact policy language that is not in summary data. Returns matching policy wording, structured entries, and sourceSpanIds for original-PDF evidence when available.",
+    "Search within a specific policy's source-native document outline and original PDF evidence for detailed content about a topic. Use this for coverage wording, declarations, forms, endorsements, exclusions, conditions, definitions, certificate wording, or any exact policy language that is not answered by summary data. Returns matching outline entries, source evidence, and sourceSpanIds for original-PDF evidence when available.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy ID to search within"),
     query: z
       .string()
       .describe(
-        "What to search for — coverage name, section title, topic, or keywords",
+        "What to search for — coverage name, form number, original heading, topic, clause label, or keywords",
       ),
   }),
 });
