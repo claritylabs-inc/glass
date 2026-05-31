@@ -2252,7 +2252,7 @@ export function UnifiedThreadContent({
       {/* Messages — full height, content scrolls under the input overlay */}
       <div
         ref={messagesRef}
-        className="absolute inset-0 overflow-y-auto p-4 pr-5"
+        className="absolute inset-0 overflow-y-auto scrollbar-hide p-4 pr-5"
       >
         <div className="max-w-2xl mx-auto space-y-4">
           {messages && messages.length === 0 && (

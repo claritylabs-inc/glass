@@ -298,7 +298,7 @@ function ShellContent({
             onMobileMenuToggle={() => setMobileOpen((v) => !v)}
           />
           <div className="relative min-w-0 flex-1 overflow-hidden">
-            <main className="absolute inset-0 min-w-0 overflow-y-auto">
+            <main className="absolute inset-0 min-w-0 overflow-y-auto scrollbar-hide">
               <div className="w-full min-w-0 px-6 py-6 pb-32 lg:px-8">
                 {children}
               </div>
