@@ -442,7 +442,7 @@ describe("directed email sending", () => {
 
     expect(source).toContain("sendTextConfirmation");
     expect(source).toContain("thread?.threadPhone");
-    expect(source).toContain("/send");
+    expect(source).toContain("sendOutboundImessage");
     expect(source).toContain("Email sent to ${pending.recipientEmail}");
     expect(source).toContain("insertImessageMessage");
   });

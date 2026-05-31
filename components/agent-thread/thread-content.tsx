@@ -899,7 +899,6 @@ function UnifiedThreadActions({
     }
     const lines: string[] = [];
     lines.push(`Thread: ${thread.title}`);
-    if (thread.threadEmail) lines.push(`Thread email: ${thread.threadEmail}`);
     lines.push(`Messages: ${messages.length}`);
     lines.push("─".repeat(50));
     for (const msg of messages) {
@@ -1746,34 +1745,6 @@ export function ThreadContextLink({
   return null;
 }
 
-/* ── Thread email mailto link ── */
-function ThreadEmailLink({
-  threadEmail,
-  subject,
-}: {
-  threadEmail?: string;
-  subject?: string;
-}) {
-  if (!threadEmail) return null;
-  const subjectParam = subject
-    ? `?subject=Re: ${encodeURIComponent(subject)}`
-    : "";
-  return (
-    <div className="flex items-center justify-center pb-2">
-      <a
-        href={`mailto:${threadEmail}${subjectParam}`}
-        className="inline-flex items-center gap-1.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors no-underline flex-wrap justify-center"
-      >
-        <MailIcon className="w-3 h-3 shrink-0" />
-        <span>Continue via email —</span>
-        <span className="font-mono text-muted-foreground/50 break-all">
-          {threadEmail}
-        </span>
-      </a>
-    </div>
-  );
-}
-
 function QueuedThreadMessage({
   message,
   sending,
@@ -2070,7 +2041,7 @@ export function UnifiedThreadContent({
     return lastUserIndex > lastAgentIndex;
   }, [messages]);
   const isAgentActive = isAgentProcessing || isAwaitingAgent;
-  const isInputBusy = false;
+  const isInputBusy = isSubmitting || sendingQueuedNow;
   const inputBusyLabel = "Sending";
 
   const sendThreadMessage = useCallback(
@@ -2078,6 +2049,7 @@ export function UnifiedThreadContent({
       const text = message.text.trim();
       if (!text && message.files.length === 0) return;
       if (!thread) return;
+      setIsSubmitting(true);
       const content = text || "(attached files)";
       const clientMutationId = createClientMutationId("message");
       const referencedPolicyIds = message.references
@@ -2104,22 +2076,22 @@ export function UnifiedThreadContent({
             }))
           : undefined;
 
-      await appendOptimisticSend({
-        threadId,
-        orgId: thread.orgId,
-        content,
-        clientMutationId,
-        userId: viewerId as Id<"users"> | undefined,
-        userName: viewerEmail ?? "You",
-        attachments: optimisticAttachments,
-        referencedPolicyIds,
-        referencedQuoteIds,
-        referencedRequirementIds,
-        referencedMailboxIds,
-      });
-      setChatError(null);
-
       try {
+        await appendOptimisticSend({
+          threadId,
+          orgId: thread.orgId,
+          content,
+          clientMutationId,
+          userId: viewerId as Id<"users"> | undefined,
+          userName: viewerEmail ?? "You",
+          attachments: optimisticAttachments,
+          referencedPolicyIds,
+          referencedQuoteIds,
+          referencedRequirementIds,
+          referencedMailboxIds,
+        });
+        setChatError(null);
+
         // Upload files first if any
         const attachments: {
           filename: string;
@@ -2206,10 +2178,14 @@ export function UnifiedThreadContent({
 
   const handleSend = useCallback(
     (message: PromptInputMessage) => {
+      if (isAgentActive) {
+        setQueuedMessage(message);
+        return;
+      }
       if (isInputBusy) return;
       void sendThreadMessage(message);
     },
-    [isInputBusy, sendThreadMessage],
+    [isAgentActive, isInputBusy, sendThreadMessage],
   );
 
   const sendQueuedNow = useCallback(async () => {
@@ -2381,12 +2357,6 @@ export function UnifiedThreadContent({
       </div>
       {/* Input — overlaid at bottom, content scrolls under it */}
       <ChatInputOverlay>
-        {messages && messages.length > 0 && thread.threadEmail && (
-          <ThreadEmailLink
-            threadEmail={thread.threadEmail}
-            subject={thread.title !== "New chat" ? thread.title : undefined}
-          />
-        )}
         {queuedMessage ? (
           <QueuedThreadMessage
             message={queuedMessage}

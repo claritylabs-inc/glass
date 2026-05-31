@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { getClientPortalUrl } from "@/convex/lib/domains";
 
 const TITLE = "Glass from Clarity Labs";
 const DESCRIPTION = "AI Weather Report — current model routing across Glass.";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(getClientPortalUrl()),
   title: `${TITLE} - AI Weather Report`,
   description: DESCRIPTION,
   openGraph: {

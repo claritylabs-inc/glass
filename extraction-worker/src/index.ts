@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { Output, generateText as aiGenerateText } from "ai";
+import { Output, generateText as aiGenerateText, gateway } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -63,9 +63,22 @@ type WorkerModelRoute = {
   model: string;
 };
 
+type WorkerRouteSource = "broker" | "global" | "static" | "configured" | "default" | "fallback";
+
 type WorkerModelSettings = {
   routes?: Partial<Record<ModelTask | string, WorkerModelRoute>>;
+  routeSources?: Partial<Record<ModelTask | string, WorkerRouteSource | string>>;
   providerKeys?: Partial<Record<ModelProvider | string, string>>;
+};
+
+type ResolvedWorkerModelRoute = {
+  task: ModelTask;
+  model: LanguageModel;
+  route: WorkerModelRoute;
+  routeSource: WorkerRouteSource;
+  transport: "direct" | "gateway";
+  capabilities: ModelCapabilities;
+  providerOptions?: ProviderOptions;
 };
 
 type ModelCallTrace = {
@@ -280,40 +293,166 @@ function readSourceKind(value: unknown): "policy_pdf" | "application_pdf" | "ema
   return "policy_pdf";
 }
 
-const DEFAULT_ROUTES: Record<ModelTask, WorkerModelRoute> = {
+const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
   classification: { provider: "openai", model: "gpt-5.4-nano" },
   extraction: { provider: "openai", model: "gpt-5.4-nano" },
 };
 
+const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
+  provider: "openai",
+  model: "gpt-5.4-mini",
+};
+
+const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([
+  "openai",
+  "anthropic",
+  "google",
+  "xai",
+  "mistral",
+  "cohere",
+  "deepseek",
+]);
+
+const QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
+  "extraction_review",
+  "extraction_referential_lookup",
+]);
+
 function isModelProvider(value: string): value is ModelProvider {
-  return [
-    "openai",
-    "anthropic",
-    "google",
-    "xai",
-    "mistral",
-    "cohere",
-    "deepseek",
-  ].includes(value);
+  return WORKER_MODEL_PROVIDERS.has(value as ModelProvider);
+}
+
+function isWorkerModelRoute(value: unknown): value is WorkerModelRoute {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const route = value as Record<string, unknown>;
+  return (
+    typeof route.provider === "string" &&
+    isModelProvider(route.provider) &&
+    typeof route.model === "string" &&
+    route.model.length > 0
+  );
+}
+
+function readRouteSource(value: unknown): WorkerRouteSource | undefined {
+  if (
+    value === "broker" ||
+    value === "global" ||
+    value === "static" ||
+    value === "configured" ||
+    value === "default" ||
+    value === "fallback"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function providerModel(provider: ModelProvider, model: string, apiKey?: string): LanguageModel {
+  switch (provider) {
+    case "openai":
+      return (apiKey ? createOpenAI({ apiKey }) : createOpenAI())(model);
+    case "anthropic":
+      return (apiKey ? createAnthropic({ apiKey }) : createAnthropic())(model);
+    case "google":
+      return (apiKey ? createGoogleGenerativeAI({ apiKey }) : createGoogleGenerativeAI())(model);
+    case "xai":
+      return (apiKey ? createXai({ apiKey }) : createXai())(model);
+    case "mistral":
+      return (apiKey ? createMistral({ apiKey }) : createMistral())(model);
+    case "cohere":
+      return (apiKey ? createCohere({ apiKey }) : createCohere())(model);
+    case "deepseek":
+      return (apiKey ? createDeepSeek({ apiKey }) : createDeepSeek())(model);
+  }
+}
+
+function directProviderApiKey(provider: ModelProvider): string | undefined {
+  switch (provider) {
+    case "openai":
+      return process.env.OPENAI_API_KEY;
+    case "anthropic":
+      return process.env.ANTHROPIC_API_KEY;
+    case "google":
+      return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY;
+    case "xai":
+      return process.env.XAI_API_KEY;
+    case "mistral":
+      return process.env.MISTRAL_API_KEY;
+    case "cohere":
+      return process.env.COHERE_API_KEY;
+    case "deepseek":
+      return process.env.DEEPSEEK_API_KEY;
+  }
+}
+
+function gatewayModelId(route: WorkerModelRoute): string {
+  return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
+}
+
+function nativeProviderModel(route: WorkerModelRoute): string | null {
+  switch (route.provider) {
+    case "anthropic":
+      if (route.model === "claude-3-haiku") return "claude-3-haiku-20240307";
+      return route.model.replace(/\.(\d+)/g, "-$1");
+    case "deepseek":
+      return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
+        ? route.model
+        : null;
+    default:
+      return route.model;
+  }
+}
+
+function getProviderOptionsForRoute(route: WorkerModelRoute): ProviderOptions | undefined {
+  if (route.provider === "openai" && route.model === "gpt-5.5") {
+    return { openai: { reasoningEffort: "none" } };
+  }
+  return undefined;
+}
+
+function mergeProviderOptions(
+  ...options: Array<ProviderOptions | undefined>
+): ProviderOptions | undefined {
+  const merged: Record<string, unknown> = {};
+  for (const option of options) {
+    if (!option) continue;
+    for (const [provider, value] of Object.entries(option)) {
+      const existing = merged[provider];
+      if (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        existing &&
+        typeof existing === "object" &&
+        !Array.isArray(existing)
+      ) {
+        merged[provider] = {
+          ...(existing as Record<string, unknown>),
+          ...(value as Record<string, unknown>),
+        };
+      } else {
+        merged[provider] = value;
+      }
+    }
+  }
+  return Object.keys(merged).length > 0 ? (merged as ProviderOptions) : undefined;
+}
+
+function routeTransport(route: WorkerModelRoute, apiKey?: string): "direct" | "gateway" {
+  const nativeModel = nativeProviderModel(route);
+  const canUseDirectProvider = !!nativeModel && !!(apiKey || directProviderApiKey(route.provider));
+  return canUseDirectProvider ? "direct" : "gateway";
 }
 
 function routeToModel(route: WorkerModelRoute, apiKey?: string): LanguageModel {
-  switch (route.provider) {
-    case "openai":
-      return createOpenAI(apiKey ? { apiKey } : undefined)(route.model);
-    case "anthropic":
-      return createAnthropic(apiKey ? { apiKey } : undefined)(route.model);
-    case "google":
-      return createGoogleGenerativeAI(apiKey ? { apiKey } : undefined)(route.model);
-    case "xai":
-      return createXai(apiKey ? { apiKey } : undefined)(route.model);
-    case "mistral":
-      return createMistral(apiKey ? { apiKey } : undefined)(route.model);
-    case "cohere":
-      return createCohere(apiKey ? { apiKey } : undefined)(route.model);
-    case "deepseek":
-      return createDeepSeek(apiKey ? { apiKey } : undefined)(route.model);
+  const nativeModel = nativeProviderModel(route);
+  if (apiKey && nativeModel) {
+    return providerModel(route.provider, nativeModel, apiKey);
   }
+  if (nativeModel && directProviderApiKey(route.provider)) {
+    return providerModel(route.provider, nativeModel);
+  }
+  return gateway(gatewayModelId(route));
 }
 
 function modelTaskForTaskKind(taskKind?: string): ModelTask {
@@ -321,37 +460,161 @@ function modelTaskForTaskKind(taskKind?: string): ModelTask {
   return "extraction";
 }
 
-function getModelForTaskKind(taskKind: string | undefined, settings?: WorkerModelSettings): {
-  model: LanguageModel;
-  route: WorkerModelRoute;
-  routeSource: string;
-  transport: "direct";
-  capabilities: ModelCapabilities;
-} {
+function apiKeyForRoute(
+  route: WorkerModelRoute,
+  routeSource: WorkerRouteSource,
+  settings?: WorkerModelSettings,
+): string | undefined {
+  if (routeSource === "broker" || routeSource === "configured") {
+    return settings?.providerKeys?.[route.provider];
+  }
+  return undefined;
+}
+
+function resolveModelForTaskKind(
+  taskKind: string | undefined,
+  settings?: WorkerModelSettings,
+): ResolvedWorkerModelRoute {
   const task = modelTaskForTaskKind(taskKind);
-  const configuredRoute = settings?.routes?.[task];
-  const route =
-    configuredRoute && isModelProvider(configuredRoute.provider)
-      ? configuredRoute
-      : DEFAULT_ROUTES[task];
-  const apiKey = settings?.providerKeys?.[route.provider];
+  const settingsRoute = settings?.routes?.[task];
+  const configuredRoute = isWorkerModelRoute(settingsRoute) ? settingsRoute : undefined;
+  const configuredRouteSource = readRouteSource(settings?.routeSources?.[task]);
+  const hasRequiredBrokerKey =
+    configuredRouteSource !== "broker" ||
+    !!(configuredRoute && settings?.providerKeys?.[configuredRoute.provider]);
+  const canUseConfiguredRoute = !!configuredRoute && hasRequiredBrokerKey;
+  const route = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
+  const routeSource = canUseConfiguredRoute
+    ? (configuredRouteSource ?? "configured")
+    : "default";
+  const apiKey = apiKeyForRoute(route, routeSource, settings);
   return {
     model: routeToModel(route, apiKey),
+    task,
     route,
-    routeSource: configuredRoute ? "configured" : "default",
-    transport: "direct",
+    routeSource,
+    transport: routeTransport(route, apiKey),
     capabilities: modelCapabilitiesForRoute(route.model),
+    providerOptions: getProviderOptionsForRoute(route),
   };
 }
 
-function getFallbackModel(taskKind?: string): LanguageModel | null {
-  if (
-    taskKind === "extraction_review" ||
-    taskKind === "extraction_referential_lookup"
-  ) {
-    return routeToModel({ provider: "openai", model: "gpt-5.4-mini" });
+function sameRoute(left: WorkerModelRoute, right: WorkerModelRoute): boolean {
+  return left.provider === right.provider && left.model === right.model;
+}
+
+function resolveFallbackModel(
+  task: ModelTask,
+  taskKind: string | undefined,
+  primaryRoute: WorkerModelRoute,
+): ResolvedWorkerModelRoute | null {
+  if (task === "classification" || task === "extraction") {
+    if (!taskKind || !QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) return null;
   }
-  return null;
+  if (sameRoute(primaryRoute, WORKER_FALLBACK_ROUTE)) return null;
+  return {
+    task,
+    model: routeToModel(WORKER_FALLBACK_ROUTE),
+    route: WORKER_FALLBACK_ROUTE,
+    routeSource: "fallback",
+    transport: routeTransport(WORKER_FALLBACK_ROUTE),
+    capabilities: modelCapabilitiesForRoute(WORKER_FALLBACK_ROUTE.model),
+    providerOptions: getProviderOptionsForRoute(WORKER_FALLBACK_ROUTE),
+  };
+}
+
+function isMissingApiKeyError(error: unknown): boolean {
+  return /api key is missing/i.test(errorMessage(error));
+}
+
+function providerOptionsForModelCall(
+  route: ResolvedWorkerModelRoute,
+  providerOptions: ProviderOptions | undefined,
+): ProviderOptions | undefined {
+  return mergeProviderOptions(route.providerOptions, providerOptions);
+}
+
+function modelRouteTrace(route: ResolvedWorkerModelRoute) {
+  return {
+    provider: route.route.provider,
+    model: route.route.model,
+    routeSource: route.routeSource,
+    transport: route.transport,
+  };
+}
+
+async function recordModelCallError(
+  opts: {
+    job: Pick<ClaimedJob, "state">;
+    route: ResolvedWorkerModelRoute;
+    label: string;
+    taskKind?: string;
+    startedAt: number;
+    attempt: number;
+    error: unknown;
+    details: unknown;
+  },
+) {
+  await recordTraceEvent(opts.job, {
+    kind: "model_call",
+    label: opts.label,
+    task: opts.route.task,
+    taskKind: opts.taskKind,
+    ...modelRouteTrace(opts.route),
+    attempt: opts.attempt,
+    status: "error",
+    durationMs: nowMs() - opts.startedAt,
+    error: errorMessage(opts.error),
+    details: opts.details,
+  });
+}
+
+async function recordModelCallComplete(
+  opts: {
+    job: Pick<ClaimedJob, "state">;
+    route: ResolvedWorkerModelRoute;
+    label: string;
+    taskKind?: string;
+    startedAt: number;
+    attempt: number;
+    usage: ReturnType<typeof mapUsage>;
+    details: unknown;
+  },
+) {
+  await recordTraceEvent(opts.job, {
+    kind: "model_call",
+    label: opts.label,
+    task: opts.route.task,
+    taskKind: opts.taskKind,
+    ...modelRouteTrace(opts.route),
+    attempt: opts.attempt,
+    status: "complete",
+    durationMs: nowMs() - opts.startedAt,
+    inputTokens: opts.usage.inputTokens,
+    outputTokens: opts.usage.outputTokens,
+    details: opts.details,
+  });
+}
+
+function shouldReturnEmptySections(prompt: string, error: unknown): boolean {
+  return (
+    prompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER) &&
+    errorMessage(error).includes("No output generated")
+  );
+}
+
+function maxOutputTokensForRoute(maxTokens: number, route: ResolvedWorkerModelRoute): number {
+  return route.capabilities.maxOutputTokens ?? maxTokens;
+}
+
+function logFallback(
+  primary: ResolvedWorkerModelRoute,
+  fallback: ResolvedWorkerModelRoute,
+  error: unknown,
+) {
+  console.warn(
+    `Primary extraction model (${primary.route.provider}/${primary.route.model}) failed: ${errorMessage(error)}. Retrying with ${fallback.route.provider}/${fallback.route.model}.`,
+  );
 }
 
 function readTraceDetails(params: { trace?: unknown }): ModelCallTrace | undefined {
@@ -508,10 +771,6 @@ function addPolicyPeriodGuidance(prompt: string): string {
   return `${prompt}${POLICY_PERIOD_EXTRACTION_GUIDANCE}`;
 }
 
-function getEffectiveMaxTokens(maxTokens: number, capabilities: ModelCapabilities): number {
-  return capabilities.maxOutputTokens ?? maxTokens;
-}
-
 type ExtractionImage = {
   imageBase64: string;
   mimeType: string;
@@ -617,22 +876,6 @@ function buildPromptInput(prompt: string, providerOptions?: Record<string, unkno
 }
 
 
-async function generateWithFallback(
-  options: Parameters<typeof aiGenerateText>[0],
-  taskKind?: string,
-) {
-  try {
-    return await aiGenerateText(options);
-  } catch (error) {
-    const fallback = getFallbackModel(taskKind);
-    if (!fallback || /api key is missing/i.test(errorMessage(error))) throw error;
-    return await aiGenerateText({
-      ...options,
-      model: fallback,
-    });
-  }
-}
-
 async function recordTraceEvent(job: Pick<ClaimedJob, "state">, event: {
   kind: "model_call" | "worker" | "phase" | "embedding_batch" | "artifact";
   phase?: string;
@@ -675,43 +918,40 @@ function buildWorkerExtractor(opts: {
     const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
-    const route = getModelForTaskKind(taskKind, opts.modelSettings);
-    const task = modelTaskForTaskKind(taskKind);
-    const label = modelTraceLabel("generateText", taskKind, task, trace);
-    const maxOutputTokens = getEffectiveMaxTokens(params.maxTokens, route.capabilities);
+    const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
+    const label = modelTraceLabel("generateText", taskKind, route.task, trace);
+    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route);
+    const callProviderOptions = providerOptionsForModelCall(
+      route,
+      providerOptions as ProviderOptions | undefined,
+    );
     const startedAt = nowMs();
     try {
-      const result = await generateWithFallback({
+      const result = await aiGenerateText({
         model: route.model,
         system: params.system,
         ...buildPromptInput(guidedPrompt, providerOptions),
         maxOutputTokens,
-        providerOptions: providerOptions as ProviderOptions | undefined,
-      }, taskKind);
+        providerOptions: callProviderOptions,
+      });
       const usage = mapUsage(result.usage);
-      await recordTraceEvent(opts.job, {
-        kind: "model_call",
+      await recordModelCallComplete({
+        job: opts.job,
+        route,
         label,
-        task,
         taskKind,
-        provider: route.route.provider,
-        model: route.route.model,
-        routeSource: route.routeSource,
-        transport: route.transport,
         attempt: 1,
-        status: "complete",
-        durationMs: nowMs() - startedAt,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
+        startedAt,
+        usage,
         details: modelTraceDetails({
           kind: "generateText",
           label,
-          task,
+          task: route.task,
           taskKind,
           prompt: guidedPrompt,
           system: params.system,
           maxOutputTokens,
-          providerOptions: providerOptions as ProviderOptions | undefined,
+          providerOptions: callProviderOptions,
           trace,
           output: result.text,
           outputKind: "text",
@@ -722,32 +962,97 @@ function buildWorkerExtractor(opts: {
         usage,
       };
     } catch (error) {
-      await recordTraceEvent(opts.job, {
-        kind: "model_call",
+      await recordModelCallError({
+        job: opts.job,
+        route,
         label,
-        task,
         taskKind,
-        provider: route.route.provider,
-        model: route.route.model,
-        routeSource: route.routeSource,
-        transport: route.transport,
         attempt: 1,
-        status: "error",
-        durationMs: nowMs() - startedAt,
-        error: errorMessage(error),
+        startedAt,
+        error,
         details: modelTraceDetails({
           kind: "generateText",
           label,
-          task,
+          task: route.task,
           taskKind,
           prompt: guidedPrompt,
           system: params.system,
           maxOutputTokens,
-          providerOptions: providerOptions as ProviderOptions | undefined,
+          providerOptions: callProviderOptions,
           trace,
         }),
       });
-      throw error;
+
+      const fallback = isMissingApiKeyError(error)
+        ? null
+        : resolveFallbackModel(route.task, taskKind, route.route);
+      if (!fallback) throw error;
+
+      logFallback(route, fallback, error);
+      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback);
+      const fallbackProviderOptions = providerOptionsForModelCall(
+        fallback,
+        providerOptions as ProviderOptions | undefined,
+      );
+      const fallbackStartedAt = nowMs();
+      try {
+        const fallbackResult = await aiGenerateText({
+          model: fallback.model,
+          system: params.system,
+          ...buildPromptInput(guidedPrompt, providerOptions),
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+        });
+        const usage = mapUsage(fallbackResult.usage);
+        await recordModelCallComplete({
+          job: opts.job,
+          route: fallback,
+          label,
+          taskKind,
+          attempt: 2,
+          startedAt: fallbackStartedAt,
+          usage,
+          details: modelTraceDetails({
+            kind: "generateText",
+            label,
+            task: fallback.task,
+            taskKind,
+            prompt: guidedPrompt,
+            system: params.system,
+            maxOutputTokens: fallbackMaxOutputTokens,
+            providerOptions: fallbackProviderOptions,
+            trace,
+            output: fallbackResult.text,
+            outputKind: "text",
+          }),
+        });
+        return {
+          text: fallbackResult.text,
+          usage,
+        };
+      } catch (fallbackError) {
+        await recordModelCallError({
+          job: opts.job,
+          route: fallback,
+          label,
+          taskKind,
+          attempt: 2,
+          startedAt: fallbackStartedAt,
+          error: fallbackError,
+          details: modelTraceDetails({
+            kind: "generateText",
+            label,
+            task: fallback.task,
+            taskKind,
+            prompt: guidedPrompt,
+            system: params.system,
+            maxOutputTokens: fallbackMaxOutputTokens,
+            providerOptions: fallbackProviderOptions,
+            trace,
+          }),
+        });
+        throw fallbackError;
+      }
     }
   };
 
@@ -756,44 +1061,41 @@ function buildWorkerExtractor(opts: {
     const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
-    const route = getModelForTaskKind(taskKind, opts.modelSettings);
-    const task = modelTaskForTaskKind(taskKind);
-    const label = modelTraceLabel("generateObject", taskKind, task, trace);
-    const maxOutputTokens = getEffectiveMaxTokens(params.maxTokens, route.capabilities);
+    const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
+    const label = modelTraceLabel("generateObject", taskKind, route.task, trace);
+    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route);
+    const callProviderOptions = providerOptionsForModelCall(
+      route,
+      providerOptions as ProviderOptions | undefined,
+    );
     const startedAt = nowMs();
     try {
-      const result = await generateWithFallback({
+      const result = await aiGenerateText({
         model: route.model,
         system: params.system,
         ...buildPromptInput(guidedPrompt, providerOptions),
         output: Output.object({ schema: params.schema }),
         maxOutputTokens,
-        providerOptions: providerOptions as ProviderOptions | undefined,
-      }, taskKind);
+        providerOptions: callProviderOptions,
+      });
       const usage = mapUsage(result.usage);
-      await recordTraceEvent(opts.job, {
-        kind: "model_call",
+      await recordModelCallComplete({
+        job: opts.job,
+        route,
         label,
-        task,
         taskKind,
-        provider: route.route.provider,
-        model: route.route.model,
-        routeSource: route.routeSource,
-        transport: route.transport,
         attempt: 1,
-        status: "complete",
-        durationMs: nowMs() - startedAt,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
+        startedAt,
+        usage,
         details: modelTraceDetails({
           kind: "generateObject",
           label,
-          task,
+          task: route.task,
           taskKind,
           prompt: guidedPrompt,
           system: params.system,
           maxOutputTokens,
-          providerOptions: providerOptions as ProviderOptions | undefined,
+          providerOptions: callProviderOptions,
           trace,
           output: result.output,
           outputKind: "object",
@@ -804,30 +1106,24 @@ function buildWorkerExtractor(opts: {
         usage,
       };
     } catch (error) {
-      const isSectionsExtractor = guidedPrompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
-      if (isSectionsExtractor && errorMessage(error).includes("No output generated")) {
-        await recordTraceEvent(opts.job, {
-          kind: "model_call",
+      if (shouldReturnEmptySections(guidedPrompt, error)) {
+        await recordModelCallError({
+          job: opts.job,
+          route,
           label,
-          task,
           taskKind,
-          provider: route.route.provider,
-          model: route.route.model,
-          routeSource: route.routeSource,
-          transport: route.transport,
           attempt: 1,
-          status: "error",
-          durationMs: nowMs() - startedAt,
-          error: errorMessage(error),
+          startedAt,
+          error,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
-            task,
+            task: route.task,
             taskKind,
             prompt: guidedPrompt,
             system: params.system,
             maxOutputTokens,
-            providerOptions: providerOptions as ProviderOptions | undefined,
+            providerOptions: callProviderOptions,
             trace,
             output: { sections: [] },
             outputKind: "object",
@@ -835,37 +1131,104 @@ function buildWorkerExtractor(opts: {
         });
         return { object: { sections: [] }, usage: undefined };
       }
-      await recordTraceEvent(opts.job, {
-        kind: "model_call",
+
+      await recordModelCallError({
+        job: opts.job,
+        route,
         label,
-        task,
         taskKind,
-        provider: route.route.provider,
-        model: route.route.model,
-        routeSource: route.routeSource,
-        transport: route.transport,
         attempt: 1,
-        status: "error",
-        durationMs: nowMs() - startedAt,
-        error: errorMessage(error),
+        startedAt,
+        error,
         details: modelTraceDetails({
           kind: "generateObject",
           label,
-          task,
+          task: route.task,
           taskKind,
           prompt: guidedPrompt,
           system: params.system,
           maxOutputTokens,
-          providerOptions: providerOptions as ProviderOptions | undefined,
+          providerOptions: callProviderOptions,
           trace,
         }),
       });
-      throw error;
+
+      const fallback = isMissingApiKeyError(error)
+        ? null
+        : resolveFallbackModel(route.task, taskKind, route.route);
+      if (!fallback) throw error;
+
+      logFallback(route, fallback, error);
+      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback);
+      const fallbackProviderOptions = providerOptionsForModelCall(
+        fallback,
+        providerOptions as ProviderOptions | undefined,
+      );
+      const fallbackStartedAt = nowMs();
+      try {
+        const fallbackResult = await aiGenerateText({
+          model: fallback.model,
+          system: params.system,
+          ...buildPromptInput(guidedPrompt, providerOptions),
+          output: Output.object({ schema: params.schema }),
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+        });
+        const usage = mapUsage(fallbackResult.usage);
+        await recordModelCallComplete({
+          job: opts.job,
+          route: fallback,
+          label,
+          taskKind,
+          attempt: 2,
+          startedAt: fallbackStartedAt,
+          usage,
+          details: modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task: fallback.task,
+            taskKind,
+            prompt: guidedPrompt,
+            system: params.system,
+            maxOutputTokens: fallbackMaxOutputTokens,
+            providerOptions: fallbackProviderOptions,
+            trace,
+            output: fallbackResult.output,
+            outputKind: "object",
+          }),
+        });
+        return {
+          object: fallbackResult.output!,
+          usage,
+        };
+      } catch (fallbackError) {
+        await recordModelCallError({
+          job: opts.job,
+          route: fallback,
+          label,
+          taskKind,
+          attempt: 2,
+          startedAt: fallbackStartedAt,
+          error: fallbackError,
+          details: modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task: fallback.task,
+            taskKind,
+            prompt: guidedPrompt,
+            system: params.system,
+            maxOutputTokens: fallbackMaxOutputTokens,
+            providerOptions: fallbackProviderOptions,
+            trace,
+          }),
+        });
+        throw fallbackError;
+      }
     }
   };
 
   const concurrency = readBoundedIntEnv("EXTRACTION_CONCURRENCY", 6, 1, 8);
-  const extractionRoute = getModelForTaskKind("extraction_focused", opts.modelSettings);
+  const extractionRoute = resolveModelForTaskKind("extraction_focused", opts.modelSettings);
   return createExtractor({
     generateText,
     generateObject,
