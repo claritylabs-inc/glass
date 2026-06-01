@@ -4,6 +4,14 @@ import { useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
+import {
+  Table as UiTable,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -42,6 +50,8 @@ type DocumentOutlineNode = {
   id: string;
   title?: string;
   originalTitle?: string;
+  type?: string;
+  label?: string;
   sectionNumber?: string;
   pageStart?: number;
   pageEnd?: number;
@@ -51,6 +61,7 @@ type DocumentOutlineNode = {
   content?: string;
   sourceSpanIds?: string[];
   children?: DocumentOutlineNode[];
+  metadata?: Record<string, unknown>;
 };
 
 type DocumentMetadata = {
@@ -264,6 +275,7 @@ type PolicyDocument = {
   regulatoryContext?: RegulatoryContext;
   documentMetadata?: DocumentMetadata;
   documentOutline?: DocumentOutlineNode[];
+  operationalProfile?: unknown;
 };
 
 // ─── Shared sub-components (moved from page.tsx) ─────────────────────────────
@@ -417,16 +429,6 @@ function recordArray(value: unknown): Array<Record<string, unknown>> {
     : [];
 }
 
-function nodeIdsFromOutline(nodes: DocumentOutlineNode[]): Set<string> {
-  const ids = new Set<string>();
-  const visit = (node: DocumentOutlineNode) => {
-    ids.add(node.id);
-    for (const child of node.children ?? []) visit(child);
-  };
-  for (const node of nodes) visit(node);
-  return ids;
-}
-
 function extractedFactRowsForNode(
   policyDocument: PolicyDocument,
   nodeId: string,
@@ -499,49 +501,6 @@ function extractedFactRowsForNode(
       sourceSpanIds: sourceSpanIdsFrom(item),
       pageNumber: firstNumericPage(item.pageNumber, item.pageStart),
     });
-  }
-
-  return rows;
-}
-
-function unlinkedExtractedFactRows(
-  policyDocument: PolicyDocument,
-  outlineNodeIds: Set<string>,
-): DataRow[] {
-  const rows: DataRow[] = [];
-  const push = (
-    label: string | undefined,
-    value: string | undefined,
-    item: unknown,
-    pageNumber?: number,
-  ) => {
-    if (!label || !value) return;
-    const nodeId =
-      item && typeof item === "object"
-        ? (item as { documentNodeId?: unknown }).documentNodeId
-        : undefined;
-    if (typeof nodeId === "string" && outlineNodeIds.has(nodeId)) return;
-    rows.push({ label, value, sourceSpanIds: sourceSpanIdsFrom(item), pageNumber });
-  };
-
-  for (const coverage of policyDocument.coverages ?? []) {
-    push(
-      coverage.name ?? "Coverage",
-      [
-        coverage.limit ? `Limit ${coverage.limit}` : undefined,
-        coverage.deductible ? `Deductible ${coverage.deductible}` : undefined,
-      ]
-        .filter(Boolean)
-        .join(" | "),
-      coverage,
-      coverage.pageNumber,
-    );
-  }
-  for (const line of policyDocument.premiumBreakdown ?? []) {
-    push(line.line ?? "Premium line", line.amount, line);
-  }
-  for (const fee of policyDocument.taxesAndFees ?? []) {
-    push(fee.name ?? "Tax or fee", fee.amount, fee);
   }
 
   return rows;
@@ -1221,72 +1180,182 @@ function SectionedDataCard({
   );
 }
 
-function DocumentMetadataPanel({
-  metadata,
+function nodeKind(node: DocumentOutlineNode) {
+  return node.type ?? node.label;
+}
+
+function nodeKindLabel(node: DocumentOutlineNode) {
+  return formatStructuredLabel(nodeKind(node)) ?? "Source span";
+}
+
+function isNodeKind(node: DocumentOutlineNode, kind: string) {
+  return nodeKind(node) === kind;
+}
+
+function metadataNumber(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+) {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function metadataBoolean(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+) {
+  const value = metadata?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function truncateInline(value: string, maxLength = 96) {
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.length > maxLength
+    ? `${text.slice(0, maxLength - 1).trimEnd()}…`
+    : text;
+}
+
+function isGenericNodeTitle(title: string | undefined, kind: string | undefined) {
+  if (!title || !kind) return false;
+  const normalizedTitle = title.toLowerCase().replace(/\s+/g, "_");
+  return (
+    normalizedTitle === kind ||
+    /^(text|table|row|column|header row|table row|table cell)(\s+\d+)?$/i.test(
+      title,
+    )
+  );
+}
+
+function nodeDisplayTitle(node: DocumentOutlineNode) {
+  const title = node.title ?? node.originalTitle;
+  const kind = nodeKind(node);
+  if (title && !isGenericNodeTitle(title, kind)) return title;
+  const text = node.excerpt ?? node.content;
+  if (text) return truncateInline(text);
+  return title ?? nodeKindLabel(node);
+}
+
+function nodeBodyText(node: DocumentOutlineNode) {
+  const text = node.excerpt ?? node.content;
+  if (!text) return undefined;
+  return text.trim() === nodeDisplayTitle(node).trim() ? undefined : text;
+}
+
+function sortedTableCells(cells: DocumentOutlineNode[]) {
+  return [...cells].sort((left, right) => {
+    const leftIndex = metadataNumber(left.metadata, "columnIndex") ?? 0;
+    const rightIndex = metadataNumber(right.metadata, "columnIndex") ?? 0;
+    return leftIndex - rightIndex || left.id.localeCompare(right.id);
+  });
+}
+
+function tableRowsForNode(node: DocumentOutlineNode) {
+  const rows = (node.children ?? []).filter((child) =>
+    isNodeKind(child, "table_row"),
+  );
+  if (rows.length > 0) {
+    return rows.map((row) => ({
+      row,
+      cells: sortedTableCells(
+        (row.children ?? []).filter((child) =>
+          isNodeKind(child, "table_cell"),
+        ),
+      ),
+    }));
+  }
+  const directCells = sortedTableCells(
+    (node.children ?? []).filter((child) => isNodeKind(child, "table_cell")),
+  );
+  return directCells.length > 0 ? [{ row: node, cells: directCells }] : [];
+}
+
+function tableCellValue(cell: DocumentOutlineNode) {
+  return cell.excerpt ?? cell.content ?? nodeDisplayTitle(cell);
+}
+
+function sourceSpanIdsForTableRow(
+  row: DocumentOutlineNode,
+  cells: DocumentOutlineNode[],
+) {
+  return [
+    ...new Set([
+      ...sourceSpanIdsFrom(row),
+      ...cells.flatMap((cell) => sourceSpanIdsFrom(cell)),
+    ]),
+  ];
+}
+
+function SourceNodeTable({
+  node,
   sourceSpans,
   fileUrl,
 }: {
-  metadata?: DocumentMetadata;
+  node: DocumentOutlineNode;
   sourceSpans?: SourceSpanDoc[];
   fileUrl?: string;
 }) {
-  const toc = metadata?.tableOfContents ?? [];
-  const pageMap = metadata?.pageMap ?? [];
-  if (toc.length === 0 && pageMap.length === 0) return null;
+  const rows = tableRowsForNode(node);
+  if (!rows.length) return null;
+  const maxColumnCount = Math.max(...rows.map((row) => row.cells.length), 1);
+  const firstRow = rows[0];
+  const firstRowIsHeader =
+    rows.length > 1 &&
+    Boolean(firstRow) &&
+    (metadataBoolean(firstRow.row.metadata, "isHeader") ??
+      firstRow.cells.some((cell) =>
+        metadataBoolean(cell.metadata, "isHeader"),
+      ));
+  const headerCells = firstRowIsHeader
+    ? firstRow.cells.map(tableCellValue)
+    : Array.from(
+        { length: maxColumnCount },
+        (_, index) => `Column ${index + 1}`,
+      );
+  const bodyRows = firstRowIsHeader ? rows.slice(1) : rows;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card">
-      <div className="border-b border-foreground/4 px-5 py-3">
-        <p className="text-sm font-medium text-foreground">
-          Document navigation
-        </p>
-      </div>
-      <div className="divide-y divide-foreground/6">
-        {toc.length > 0 && (
-          <div className="px-5 py-3">
-            <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
-              Table of contents
-            </p>
-            <div className="mt-2 space-y-1.5">
-              {toc.slice(0, 12).map((entry, index) => (
-                <div
-                  key={`${entry.documentNodeId ?? entry.title ?? "toc"}:${index}`}
-                  className="flex min-w-0 items-center gap-2 text-label-sm"
-                  style={{ paddingLeft: `${Math.max((entry.level ?? 1) - 1, 0) * 12}px` }}
+    <div className="overflow-hidden rounded-md border border-foreground/6">
+      <UiTable className="text-label-sm [&_td]:whitespace-normal [&_th]:whitespace-normal">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            {Array.from({ length: maxColumnCount }, (_, index) => (
+              <TableHead
+                key={`head-${index}`}
+                className="h-8 bg-muted/40 px-3 text-xs font-medium text-muted-foreground"
+              >
+                {headerCells[index] ?? `Column ${index + 1}`}
+              </TableHead>
+            ))}
+            <TableHead className="h-8 w-px bg-muted/40 px-3 text-xs font-medium text-muted-foreground">
+              Source
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {bodyRows.map(({ row, cells }, rowIndex) => (
+            <TableRow key={row.id || `row-${rowIndex}`}>
+              {Array.from({ length: maxColumnCount }, (_, index) => (
+                <TableCell
+                  key={`${row.id}-${index}`}
+                  className="px-3 py-2 align-top"
                 >
-                  <span className="min-w-0 flex-1 truncate text-foreground">
-                    {entry.title ?? "Untitled section"}
-                  </span>
-                  <SourceEvidenceButton
-                    sourceSpanIds={entry.sourceSpanIds}
-                    sourceSpans={sourceSpans}
-                    fallbackPage={entry.pageStart}
-                    fileUrl={fileUrl}
-                  />
-                </div>
+                  {cells[index] ? tableCellValue(cells[index]) : ""}
+                </TableCell>
               ))}
-            </div>
-          </div>
-        )}
-        {pageMap.length > 0 && (
-          <div className="px-5 py-3">
-            <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
-              Page map
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {pageMap.slice(0, 24).map((entry, index) => (
+              <TableCell className="w-px px-3 py-2 align-top">
                 <SourceEvidenceButton
-                  key={`${entry.page ?? index}:${entry.formNumber ?? ""}`}
-                  sourceSpanIds={entry.sourceSpanIds}
+                  sourceSpanIds={sourceSpanIdsForTableRow(row, cells)}
                   sourceSpans={sourceSpans}
-                  fallbackPage={entry.page}
+                  fallbackPage={row.pageStart}
                   fileUrl={fileUrl}
                 />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </UiTable>
     </div>
   );
 }
@@ -1304,65 +1373,102 @@ function OutlineNodeRow({
   fileUrl?: string;
   depth?: number;
 }) {
+  const [open, setOpen] = useState(false);
   const factRows = extractedFactRowsForNode(policyDocument, node.id);
   const children = node.children ?? [];
   const sourceSpanIds = sourceSpanIdsFrom(node);
+  const kind = nodeKind(node);
+  const bodyText = nodeBodyText(node);
+  const isTable = kind === "table";
+  const visibleChildren = isTable
+    ? []
+    : children.filter((child) => !isNodeKind(child, "table_cell"));
+  const hasBody =
+    Boolean(bodyText) ||
+    factRows.length > 0 ||
+    (isTable && tableRowsForNode(node).length > 0) ||
+    visibleChildren.length > 0;
 
   return (
     <div className="border-t border-foreground/6 first:border-t-0">
-      <div className="px-5 py-3" style={{ paddingLeft: `${20 + depth * 18}px` }}>
-        <div className="flex min-w-0 items-start gap-3">
+      <div
+        className="flex min-w-0 items-center gap-2 px-5 py-2.5 transition-colors hover:bg-foreground/[0.015]"
+        style={{ paddingLeft: `${20 + depth * 18}px` }}
+      >
+        <button
+          type="button"
+          onClick={() => hasBody && setOpen((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          {hasBody ? (
+            open ? (
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            )
+          ) : (
+            <span className="size-3.5 shrink-0" />
+          )}
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="min-w-0 truncate text-sm font-medium text-foreground">
-                {node.title ?? node.originalTitle ?? "Untitled section"}
-              </p>
-            </div>
+            <p className="min-w-0 truncate text-sm font-medium text-foreground">
+              {nodeDisplayTitle(node)}
+            </p>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+              <span>{nodeKindLabel(node)}</span>
               {node.formNumber ? <span>{node.formNumber}</span> : null}
-              {node.pageStart ? (
-                <span>
-                  p.{node.pageStart}
-                  {node.pageEnd && node.pageEnd !== node.pageStart
-                    ? `-${node.pageEnd}`
-                    : ""}
-                </span>
-              ) : null}
             </div>
           </div>
-          <SourceEvidenceButton
-            sourceSpanIds={sourceSpanIds}
-            sourceSpans={sourceSpans}
-            fallbackPage={node.pageStart}
-            fileUrl={fileUrl}
-          />
-        </div>
-        {node.excerpt || node.content ? (
-          <div className="mt-2 text-label-sm leading-5 text-muted-foreground">
-            <DocContent>{node.excerpt ?? node.content ?? ""}</DocContent>
-          </div>
-        ) : null}
-        {factRows.length > 0 ? (
-          <div className="mt-3 overflow-hidden rounded-md border border-foreground/6">
-            <KeyValueTable
-              rows={factRows}
+        </button>
+        <SourceEvidenceButton
+          sourceSpanIds={sourceSpanIds}
+          sourceSpans={sourceSpans}
+          fallbackPage={node.pageStart}
+          fileUrl={fileUrl}
+        />
+      </div>
+      {open && hasBody ? (
+        <div
+          className="space-y-3 px-5 pb-4"
+          style={{ paddingLeft: `${38 + depth * 18}px` }}
+        >
+          {bodyText ? (
+            <div className="text-label-sm leading-5 text-muted-foreground">
+              <DocContent>{bodyText}</DocContent>
+            </div>
+          ) : null}
+          {isTable ? (
+            <SourceNodeTable
+              node={node}
               sourceSpans={sourceSpans}
               fileUrl={fileUrl}
-              className="border-0"
             />
-          </div>
-        ) : null}
-      </div>
-      {children.map((child) => (
-        <OutlineNodeRow
-          key={child.id}
-          node={child}
-          policyDocument={policyDocument}
-          sourceSpans={sourceSpans}
-          fileUrl={fileUrl}
-          depth={depth + 1}
-        />
-      ))}
+          ) : null}
+          {factRows.length > 0 ? (
+            <div className="overflow-hidden rounded-md border border-foreground/6">
+              <KeyValueTable
+                rows={factRows}
+                sourceSpans={sourceSpans}
+                fileUrl={fileUrl}
+                className="border-0"
+              />
+            </div>
+          ) : null}
+          {visibleChildren.length > 0 ? (
+            <div className="-mx-5 overflow-hidden rounded-md border border-foreground/6 bg-background">
+              {visibleChildren.map((child) => (
+                <OutlineNodeRow
+                  key={child.id}
+                  node={child}
+                  policyDocument={policyDocument}
+                  sourceSpans={sourceSpans}
+                  fileUrl={fileUrl}
+                  depth={depth + 1}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1370,37 +1476,20 @@ function OutlineNodeRow({
 function SourceBackedBreakdown({
   policyDocument,
   sourceSpans,
-  topLevelRows,
   fileUrl,
 }: {
   policyDocument: PolicyDocument;
   sourceSpans?: SourceSpanDoc[];
-  topLevelRows: DataRow[];
   fileUrl?: string;
 }) {
   const outline = policyDocument.documentOutline ?? [];
-  const outlineNodeIds = nodeIdsFromOutline(outline);
-  const unlinkedRows = unlinkedExtractedFactRows(policyDocument, outlineNodeIds);
 
   return (
     <div className="space-y-4">
-      <DocumentMetadataPanel
-        metadata={policyDocument.documentMetadata}
-        sourceSpans={sourceSpans}
-        fileUrl={fileUrl}
-      />
-      {topLevelRows.length > 0 && (
-        <DataCard
-          title="Policy facts"
-          rows={topLevelRows}
-          sourceSpans={sourceSpans}
-          fileUrl={fileUrl}
-        />
-      )}
-      <div className="rounded-lg border border-foreground/6 bg-card">
+      <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
         <div className="border-b border-foreground/4 px-5 py-3">
           <p className="text-sm font-medium text-foreground">
-            Source document outline
+            Source hierarchy
           </p>
         </div>
         <div>
@@ -1415,14 +1504,6 @@ function SourceBackedBreakdown({
           ))}
         </div>
       </div>
-      {unlinkedRows.length > 0 && (
-        <DataCard
-          title="Unlinked extracted facts"
-          rows={unlinkedRows}
-          sourceSpans={sourceSpans}
-          fileUrl={fileUrl}
-        />
-      )}
     </div>
   );
 }
@@ -1619,18 +1700,21 @@ export function ExtractionCards({
   if (!hasAnyData) return null;
   if (!policyDocument) return null;
 
-  return (
-    <div className="space-y-4">
-      {documentOutline.length > 0 ? (
+  if (documentOutline.length > 0) {
+    return (
+      <div className="space-y-4">
         <SourceBackedBreakdown
           policyDocument={policyDocument}
           sourceSpans={sourceSpans}
-          topLevelRows={topLevelRows}
           fileUrl={fileUrl}
         />
-      ) : (
-        <SourceNativeBreakdownUnavailable />
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <SourceNativeBreakdownUnavailable />
 
       {documentOutline.length === 0 && topLevelRows.length > 0 && (
         <DataCard

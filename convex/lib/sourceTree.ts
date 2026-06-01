@@ -420,6 +420,7 @@ export function sourceTreeToDocumentOutline(sourceTree: DocumentSourceNode[]): A
     sourceSpanIds: node.sourceSpanIds,
     sourceTextHash: node.sourceSpanIds.join(":") || undefined,
     interpretationLabels: [node.kind],
+    metadata: node.metadata,
     children: (byParent.get(node.id) ?? []).map(visit),
   });
   return (byParent.get(root?.id) ?? byParent.get(undefined) ?? []).map(visit);

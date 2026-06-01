@@ -36,7 +36,7 @@ Convex:
 
 - Dev deployment: `acoustic-caiman-755` (`https://acoustic-caiman-755.convex.cloud`, site `https://acoustic-caiman-755.convex.site`).
 - Production deployment: `merry-platypus-82` (`https://merry-platypus-82.convex.cloud`, site `https://merry-platypus-82.convex.site`).
-- Both dev and production use `EXTRACTION_WORKER_MODE=external`, `EXTRACTION_WORKER_SECRET`, `EXTRACTION_WORKER_URL`, `EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION=source-tree-v1`, and `EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION=^3.0.1`.
+- Both dev and production use `EXTRACTION_WORKER_MODE=external`, `EXTRACTION_WORKER_SECRET`, `EXTRACTION_WORKER_URL`, `EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION=source-tree-v1`, and `EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION=^3.0.2`.
 - Dev keeps `ALLOW_DEV_CLEAR=true` and iMessage terminal testing flags in Convex. Production must not set dev-clear or terminal-iMessage flags.
 
 Railway project `Glass` (`21798fb8-c164-4eed-800c-c964978a9639`):

@@ -171,6 +171,206 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+}
+
+function sourceBackedDisplay(value: unknown) {
+  const record = recordValue(value);
+  if (!record || typeof record.value !== "string" || !record.value.trim()) {
+    return null;
+  }
+  const sourceNodeCount = stringArray(record.sourceNodeIds).length;
+  const sourceSpanCount = stringArray(record.sourceSpanIds).length;
+  return {
+    value: record.value,
+    confidence: typeof record.confidence === "string" ? record.confidence : undefined,
+    sourceLabel:
+      sourceNodeCount || sourceSpanCount
+        ? `${sourceNodeCount} node${sourceNodeCount === 1 ? "" : "s"} / ${sourceSpanCount} span${sourceSpanCount === 1 ? "" : "s"}`
+        : undefined,
+  };
+}
+
+function evidenceLabel(record: Record<string, unknown>) {
+  const sourceNodeCount = stringArray(record.sourceNodeIds).length;
+  const sourceSpanCount = stringArray(record.sourceSpanIds).length;
+  return sourceNodeCount || sourceSpanCount
+    ? `${sourceNodeCount} node${sourceNodeCount === 1 ? "" : "s"} / ${sourceSpanCount} span${sourceSpanCount === 1 ? "" : "s"}`
+    : "—";
+}
+
+function profileScalarRows(profile: Record<string, unknown>) {
+  const rows: Array<{ label: string; value: React.ReactNode }> = [];
+  const pushValue = (label: string, key: string) => {
+    const display = sourceBackedDisplay(profile[key]);
+    if (!display) return;
+    rows.push({
+      label,
+      value: (
+        <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 break-words">{display.value}</span>
+          {display.confidence ? (
+            <span className="text-label-sm text-muted-foreground">{display.confidence}</span>
+          ) : null}
+          {display.sourceLabel ? (
+            <span className="text-label-sm text-muted-foreground">{display.sourceLabel}</span>
+          ) : null}
+        </span>
+      ),
+    });
+  };
+
+  if (typeof profile.documentType === "string") {
+    rows.push({ label: "Document type", value: profile.documentType });
+  }
+  const policyTypes = stringArray(profile.policyTypes);
+  if (policyTypes.length) rows.push({ label: "Policy types", value: policyTypes.join(", ") });
+  pushValue("Policy number", "policyNumber");
+  pushValue("Named insured", "namedInsured");
+  pushValue("Insurer", "insurer");
+  pushValue("Broker", "broker");
+  pushValue("Effective", "effectiveDate");
+  pushValue("Expiration", "expirationDate");
+  pushValue("Retroactive", "retroactiveDate");
+  pushValue("Premium", "premium");
+  const coverageTypes = stringArray(profile.coverageTypes);
+  if (coverageTypes.length) rows.push({ label: "Coverage types", value: coverageTypes.join(", ") });
+  rows.push({ label: "Evidence", value: evidenceLabel(profile) });
+  const warnings = stringArray(profile.warnings);
+  if (warnings.length) rows.push({ label: "Warnings", value: warnings.join(" | ") });
+  return rows;
+}
+
+function profileTableRow(row: Record<string, unknown>) {
+  return {
+    ...row,
+    evidence: evidenceLabel(row),
+  };
+}
+
+function formatProfileLabel(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function profileColumnLabel(column: string) {
+  const labels: Record<string, string> = {
+    formNumber: "Form",
+    sectionRef: "Section",
+    evidence: "Evidence",
+  };
+  return labels[column] ?? formatProfileLabel(column);
+}
+
+function profileCellDisplay(value: unknown): string {
+  const sourceBacked = sourceBackedDisplay(value);
+  if (sourceBacked) return sourceBacked.value;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map(profileCellDisplay)
+      .filter((item) => item !== "—")
+      .join(", ") || "—";
+  }
+  return "—";
+}
+
+function ProfileTable({
+  columns,
+  rows,
+}: {
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="overflow-hidden rounded-lg border border-foreground/6">
+      <Table className="table-fixed">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            {columns.map((column) => (
+              <TableHead key={column} className="h-8 px-3 text-label-sm">
+                {profileColumnLabel(column)}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, rowIndex) => (
+            <TableRow key={rowIndex}>
+              {columns.map((column) => (
+                <TableCell key={column} className="px-3 py-2 align-top whitespace-normal">
+                  {profileCellDisplay(row[column])}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown> | null }) {
+  const profile = recordValue(policy?.operationalProfile);
+  if (!profile) return null;
+  const scalarRows = profileScalarRows(profile);
+  const coverages = Array.isArray(profile.coverages)
+    ? profile.coverages
+        .map(recordValue)
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map(profileTableRow)
+    : [];
+  const parties = Array.isArray(profile.parties)
+    ? profile.parties
+        .map(recordValue)
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map(profileTableRow)
+    : [];
+  const endorsementSupport = Array.isArray(profile.endorsementSupport)
+    ? profile.endorsementSupport
+        .map(recordValue)
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map(profileTableRow)
+    : [];
+
+  return (
+    <div className="space-y-3">
+      {scalarRows.length > 0 ? (
+        <dl className="rounded-lg border border-foreground/6">
+          {scalarRows.map((row) => (
+            <DetailRow key={row.label} label={row.label} value={row.value} />
+          ))}
+        </dl>
+      ) : null}
+      <ProfileTable
+        columns={["name", "limit", "deductible", "premium", "formNumber", "sectionRef", "evidence"]}
+        rows={coverages}
+      />
+      <ProfileTable columns={["role", "name", "evidence"]} rows={parties} />
+      <ProfileTable
+        columns={["kind", "status", "summary", "evidence"]}
+        rows={endorsementSupport}
+      />
+    </div>
+  );
+}
+
 function humanizeTaskKind(value?: string) {
   if (!value) return undefined;
   const labels: Record<string, string> = {
@@ -959,7 +1159,7 @@ export default function OperatorExtractionsPage() {
             onValueChange={(value) => selectTraceTab(parseTracePanelTab(value))}
             className="min-h-0 flex-1 overflow-hidden"
           >
-            <TabsList variant="pill" className="sticky top-0 z-10 max-w-full shrink-0 overflow-x-auto bg-background py-1">
+            <TabsList variant="pill" className="scrollbar-hide sticky top-0 z-10 max-w-full shrink-0 overflow-x-auto bg-background py-1">
               <TabsTrigger value="summary">Summary</TabsTrigger>
               <TabsTrigger value="extracted">Extracted data</TabsTrigger>
               <TabsTrigger value="timeline">Timeline</TabsTrigger>
@@ -968,40 +1168,43 @@ export default function OperatorExtractionsPage() {
               <TabsTrigger value="log">Log</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="summary" className="min-h-0 overflow-y-auto pt-3">
-              <dl className="rounded-lg border border-foreground/6">
-                <DetailRow
-                  label="Extraction ID"
-                  value={(
-                    <div className="flex min-w-0 items-center gap-2">
-                      <code className="min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-label-sm">
-                        {selected.traceId}
-                      </code>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label="Copy extraction ID"
-                        onClick={() => copyExtractionId(selected.traceId)}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )}
-                />
-                <DetailRow label="Org" value={selected.orgName} />
-                <DetailRow label="File" value={traceDisplayFile(selected)} />
-                <DetailRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
-                <DetailRow label="Started" value={dayjs(selected.startedAt).format("MMM D, h:mm:ss A")} />
-                <DetailRow label="Duration" value={formatDuration(selected.totalDurationMs ?? (selected.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined))} />
-                <DetailRow label="Model time" value={formatDuration(selected.modelDurationMs)} />
-                <DetailRow label="Tokens" value={formatTokens(selected.inputTokens, selected.outputTokens)} />
-                <DetailRow label="Slowest" value={selected.slowestLabel ? `${selected.slowestLabel} · ${formatDuration(selected.slowestDurationMs)}` : "—"} />
-                {selected.error ? <DetailRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
-              </dl>
+            <TabsContent value="summary" className="scrollbar-hide min-h-0 overflow-y-auto pt-3">
+              <div className="space-y-3">
+                <dl className="rounded-lg border border-foreground/6">
+                  <DetailRow
+                    label="Extraction ID"
+                    value={(
+                      <div className="flex min-w-0 items-center gap-2">
+                        <code className="min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-label-sm">
+                          {selected.traceId}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label="Copy extraction ID"
+                          onClick={() => copyExtractionId(selected.traceId)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  />
+                  <DetailRow label="Org" value={selected.orgName} />
+                  <DetailRow label="File" value={traceDisplayFile(selected)} />
+                  <DetailRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
+                  <DetailRow label="Started" value={dayjs(selected.startedAt).format("MMM D, h:mm:ss A")} />
+                  <DetailRow label="Duration" value={formatDuration(selected.totalDurationMs ?? (selected.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined))} />
+                  <DetailRow label="Model time" value={formatDuration(selected.modelDurationMs)} />
+                  <DetailRow label="Tokens" value={formatTokens(selected.inputTokens, selected.outputTokens)} />
+                  <DetailRow label="Slowest" value={selected.slowestLabel ? `${selected.slowestLabel} · ${formatDuration(selected.slowestDurationMs)}` : "—"} />
+                  {selected.error ? <DetailRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
+                </dl>
+                <OperationalProfileSummary policy={detail?.policy} />
+              </div>
             </TabsContent>
 
-            <TabsContent value="extracted" className="min-h-0 overflow-y-auto pt-3">
+            <TabsContent value="extracted" className="scrollbar-hide min-h-0 overflow-y-auto pt-3">
               {detail?.policy ? (
                 <ExtractionCards
                   policyId={selected.policyId as Id<"policies">}
@@ -1027,12 +1230,12 @@ export default function OperatorExtractionsPage() {
                 selectedRowId={selectedTimelineRowId}
                 onSelectRow={setSelectedTimelineRowId}
               />
-              <div className="min-h-0 max-h-44 overflow-y-auto">
+              <div className="scrollbar-hide min-h-0 max-h-44 overflow-y-auto">
                 <TimelineEventDetail row={selectedTimelineRow ?? timelineRows[0]} />
               </div>
             </TabsContent>
 
-            <TabsContent value="timing" className="min-h-0 space-y-3 overflow-y-auto pt-3">
+            <TabsContent value="timing" className="scrollbar-hide min-h-0 space-y-3 overflow-y-auto pt-3">
               <div className="space-y-2">
                 <div>
                   <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Phases</h4>
@@ -1072,7 +1275,7 @@ export default function OperatorExtractionsPage() {
               ) : null}
             </TabsContent>
 
-            <TabsContent value="models" className="min-h-0 min-w-0 space-y-2 overflow-y-auto pt-3">
+            <TabsContent value="models" className="scrollbar-hide min-h-0 min-w-0 space-y-2 overflow-y-auto pt-3">
               <div className="w-full min-w-0 overflow-hidden rounded-lg border border-foreground/6">
                 <Table className="min-w-0 table-fixed">
                   <TableHeader>
@@ -1123,7 +1326,7 @@ export default function OperatorExtractionsPage() {
               <ModelCallDebugPanel event={selectedModelEvent} />
             </TabsContent>
 
-            <TabsContent value="log" className="min-h-0 space-y-2 overflow-y-auto pt-3">
+            <TabsContent value="log" className="scrollbar-hide min-h-0 space-y-2 overflow-y-auto pt-3">
               <div className="rounded-lg border border-foreground/6">
                 {logEvents.length ? logEvents.map((event) => (
                   <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
