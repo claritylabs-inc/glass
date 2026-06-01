@@ -14,6 +14,7 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - `npm install` — install dependencies
 - `npm run dev` — start the Next.js app
 - `npx convex dev` — start the Convex backend (also pushes schema + functions to dev)
+- `npx convex dev --once` — push Convex schema/functions to dev once without keeping a watcher open
 - `npx convex deploy --yes` — push Convex functions to production
 - `npm run build` — production build
 - `npm run lint` — repo-wide ESLint
@@ -22,6 +23,44 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - `npm run operator:provision-broker -- --name "Broker Name" --admin-email "admin@example.com"` — repo wrapper around the private installable operator CLI for provisioning broker orgs/accounts without using the web app
 - `npx convex run seed:seed` — seed demo data
 - `npx convex run actions/backfillChunks:backfill --args '{"orgId":"..."}'` — embed existing documents for vector search
+
+## DevOps Environment Map
+
+Source control:
+
+- GitHub repo: `claritylabs-inc/glass`, default branch `main`.
+- `.github/workflows/deploy-convex.yml` deploys Convex on `main` pushes that touch `convex/**`, `cli/**`, `operator-cli/**`, root package files, or the workflow itself. The workflow also publishes CLI packages after a successful Convex deploy.
+- Vercel owns the Next.js frontend. Local Vercel project metadata is `.vercel/project.json` with project `glass` (`prj_ZegCP8JSt7ePV0qpG7I43l5XydCZ`). Vercel envs must include `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`, and `CONVEX_DEPLOYMENT` for Development/Preview/Production.
+
+Convex:
+
+- Dev deployment: `acoustic-caiman-755` (`https://acoustic-caiman-755.convex.cloud`, site `https://acoustic-caiman-755.convex.site`).
+- Production deployment: `merry-platypus-82` (`https://merry-platypus-82.convex.cloud`, site `https://merry-platypus-82.convex.site`).
+- Both dev and production use `EXTRACTION_WORKER_MODE=external`, `EXTRACTION_WORKER_SECRET`, `EXTRACTION_WORKER_URL`, `EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION=source-tree-v1`, and `EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION=^3.0.1`.
+- Dev keeps `ALLOW_DEV_CLEAR=true` and iMessage terminal testing flags in Convex. Production must not set dev-clear or terminal-iMessage flags.
+
+Railway project `Glass` (`21798fb8-c164-4eed-800c-c964978a9639`):
+
+- Environment `dev` (`e71ed18f-c387-4b34-a9ca-4f900a4ed25f`) is wired to Convex dev.
+- Environment `production` (`b661c376-3de6-4b4e-a7ec-62ca7a9ffacf`) is wired to Convex production.
+- `glass-extraction-worker` (`e8a4f55a-ae25-4d5e-ba0d-e18ea11271ac`) is rooted at `/extraction-worker`, uses `extraction-worker/railway.json`, serves HTTP on port `8080`, and should deploy with Dockerfile builder. Public worker health URLs are `https://glass-extraction-worker-dev.up.railway.app/health` and `https://glass-extraction-worker-production.up.railway.app/health`.
+- `glass-mailbox-scan-worker` (`b368a536-816b-43f8-8aed-89d2e5163ace`) is rooted at `/mailbox-scan-worker`, uses `mailbox-scan-worker/railway.json`, and runs the `0 15 * * *` UTC cron against the matching Convex site URL.
+- `imessage-worker` (`e2f0798e-f97e-48a7-9f35-145b75e93e09`) is rooted at `imessage-worker`, serves port `3001`, runs terminal mode in dev, and real Photon/iMessage mode only in production.
+
+Railway worker env wiring:
+
+- Extraction worker requires `CONVEX_URL`, `EXTRACTION_WORKER_SECRET`, provider keys, and `EXTRACTION_WORKER_ID` (`railway-dev-extraction-worker` or `railway-production-extraction-worker`).
+- Mailbox scan worker requires `CONVEX_SITE_URL` and `EMAIL_SCAN_CRON_SECRET`.
+- iMessage worker requires `CONVEX_SITE_URL` and `IMESSAGE_WORKER_SECRET`; production also requires Photon credentials and `IMESSAGE_ENABLED=true`, while dev should use `SPECTRUM_PROVIDER=terminal` and `IMESSAGE_ENABLED=false`.
+
+Audit commands:
+
+- `gh run list --branch main --limit 5` — latest GitHub deploy workflow status.
+- `npx convex env list --deployment dev | sed -E 's/=.*$//' | sort` — dev Convex env keys only.
+- `npx convex env list --prod | sed -E 's/=.*$//' | sort` — production Convex env keys only.
+- `railway status --json | jq '{project:{id,name}, environments:[.environments.edges[].node | {name, services:[.serviceInstances.edges[].node | {serviceName, source, latestDeployment:(.latestDeployment | {status, meta:{repo:.meta.repo, rootDirectory:.meta.rootDirectory, branch:.meta.branch, commitHash:.meta.commitHash, configFile:.meta.configFile}})}]}]}'` — Railway source/root/deployment audit.
+- `curl -fsS https://glass-extraction-worker-dev.up.railway.app/health | jq .` and `curl -fsS https://glass-extraction-worker-production.up.railway.app/health | jq .` — extraction worker health, protocol, SDK spec, and Convex target.
+- `railway variable list --json -e dev -s glass-extraction-worker | jq -r 'keys[]' | sort` — Railway env key audit without printing values; change environment/service as needed.
 
 ## High-Level Architecture (v0.2.0)
 
@@ -324,7 +363,7 @@ Storage and retrieval pattern:
 - `sourceNodes` stores canonical policy hierarchy plus embeddings; `documentChunks` is legacy/secondary.
 - `orgMemory` stores all per-org knowledge.
 
-Important: `git push` only deploys the Next.js frontend via Vercel. Convex functions require a separate `npx convex dev --once` (dev) or `npx convex deploy --yes` (prod) to go live.
+Important: local Convex changes still require `npx convex dev --once` to reach the dev deployment. Production Convex deploys through `.github/workflows/deploy-convex.yml` on relevant `main` pushes, or manually with `npx convex deploy --yes` when needed.
 
 ## Main Product Flows
 
