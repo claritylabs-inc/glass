@@ -1581,34 +1581,16 @@ export const restartExtraction = mutation({
 export const softDelete = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    // Capability check: broker_of_client users can only delete their own uploads
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
-      .first();
-    if (!membership && policy.orgId) {
-      // Broker-of-client path: check ownership
-      assertCanDeletePolicy(
-        {
-          accessType: "broker_of_client",
-          userId,
-          org: { _id: orgId } as any,
-          orgType: "client",
-          role: undefined,
-          brokerOrgId: policy.uploadedByBrokerOrgId,
-        },
-        policy,
-      );
-    }
+    if (!policy?.orgId) throw new Error("Not found");
+    const access = await getOrgAccessFor(ctx, policy.orgId);
+    assertCanDeletePolicy(access, policy);
     await ctx.db.patch(args.id, { deletedAt: dayjs().valueOf() });
-    await deactivatePolicyDeclarationFacts(ctx, args.id, orgId);
+    await deactivatePolicyDeclarationFacts(ctx, args.id, policy.orgId);
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
-      userId,
-      orgId,
+      userId: access.userId,
+      orgId: policy.orgId,
       action: "deleted",
     });
   },
