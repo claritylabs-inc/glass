@@ -8,6 +8,7 @@ import {
   stableHash,
   type DocumentSourceNode,
   type OperationalCoverageLine,
+  type OperationalParty,
   type PolicyOperationalProfile,
   type SourceBackedValue,
   type SourceSpan,
@@ -314,6 +315,150 @@ function sourceBackedValueFromDocument(
   };
 }
 
+function sourceBackedValueFromNode(
+  node: DocumentSourceNode,
+  value: string | undefined,
+  confidence: SourceBackedValue["confidence"] = "high",
+): SourceBackedValue | undefined {
+  const normalized = normalizeWhitespace(value ?? "").replace(/^[\s:;#-]+|[\s;,.]+$/g, "");
+  if (!normalized) return undefined;
+  return {
+    value: normalized,
+    confidence,
+    sourceNodeIds: [node.id],
+    sourceSpanIds: node.sourceSpanIds,
+  };
+}
+
+function columnValues(text: string): Map<number, string> {
+  const values = new Map<number, string>();
+  const pattern = /\bColumn\s+(\d+):\s*([\s\S]*?)(?=\s+\|\s+Column\s+\d+:|$)/gi;
+  for (const match of text.matchAll(pattern)) {
+    const index = Number(match[1]);
+    const value = normalizeWhitespace(match[2] ?? "");
+    if (Number.isFinite(index) && value) values.set(index, value);
+  }
+  return values;
+}
+
+function isBadOperationalIdentityValue(value: string | undefined): boolean {
+  const text = normalizeWhitespace(value ?? "");
+  if (!text) return true;
+  if (text.length > 180) return true;
+  return /(__{3,}|claims-made|please read|all monetary amounts|page\s+\d+\s+of\s+\d+|in consideration of the payment|subject to the declarations|policy title|signature blocks?|errors?\s+and\s+omissions\s+liability\s+policy)/i.test(text);
+}
+
+function valueOfSourceBackedValue(value: unknown): string | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) && "value" in value && typeof value.value === "string"
+    ? value.value
+    : undefined;
+}
+
+function sanitizeOperationalProfileCandidate(
+  candidate: Partial<PolicyOperationalProfile>,
+): Partial<PolicyOperationalProfile> {
+  const clean = { ...candidate };
+  for (const key of ["namedInsured", "insurer", "broker"] as const) {
+    if (isBadOperationalIdentityValue(valueOfSourceBackedValue(clean[key]))) {
+      delete clean[key];
+    }
+  }
+  return clean;
+}
+
+function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<PolicyOperationalProfile> {
+  const nodes = sourceTree
+    .filter((node) => node.kind !== "document")
+    .sort((left, right) => left.order - right.order);
+  const candidate: Partial<PolicyOperationalProfile> = {};
+
+  for (const node of nodes) {
+    const columns = columnValues(node.textExcerpt ?? "");
+    const label = normalizeWhitespace(columns.get(1) ?? "");
+    const value = normalizeWhitespace(columns.get(2) ?? "");
+    if (!label || !value) continue;
+    const normalizedLabel = label.toLowerCase();
+
+    if (/item\s*1\b.*named insured/.test(normalizedLabel)) {
+      candidate.namedInsured = sourceBackedValueFromNode(node, value);
+    } else if (/item\s*2\b.*policy number/.test(normalizedLabel)) {
+      candidate.policyNumber = sourceBackedValueFromNode(node, value);
+    } else if (/item\s*3\b.*policy period/.test(normalizedLabel)) {
+      const period = value.match(/from:\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})\s+to:\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})/i);
+      if (period) {
+        candidate.effectiveDate = sourceBackedValueFromNode(node, period[1]);
+        candidate.expirationDate = sourceBackedValueFromNode(node, period[2]);
+      }
+    } else if (/annual premium/.test(normalizedLabel)) {
+      candidate.premium = sourceBackedValueFromNode(node, value);
+    }
+  }
+
+  const jacketInsurerNode = nodes.find((node) =>
+    (node.pageStart ?? Number.MAX_SAFE_INTEGER) <= 2
+    && /\b[A-Z][A-Z &'’.-]+INSURANCE COMPANY\b/.test(node.textExcerpt ?? "")
+  );
+  const insurer = jacketInsurerNode?.textExcerpt?.match(/\b([A-Z][A-Z &'’.-]+INSURANCE COMPANY)\b/)?.[1];
+  if (jacketInsurerNode && insurer) {
+    const cleanInsurer = insurer.replace(/^(?:SPECIMEN POLICY\s+—\s+)?FOR TESTING ONLY\s+/i, "");
+    candidate.insurer = sourceBackedValueFromNode(jacketInsurerNode, titleCase(cleanInsurer.toLowerCase()));
+  }
+
+  const brokerNode = nodes.find((node) => /\bItem\s*12\.\s*Broker of Record\b/i.test(node.textExcerpt ?? ""));
+  const broker = brokerNode?.textExcerpt?.match(/\bItem\s*12\.\s*Broker of Record\s+(.+?)(?=\s+Item\s*13\.|\s+SLS-[A-Z]|\s+This Policy\b|\s+Countersigned\b|$)/i)?.[1];
+  if (brokerNode && broker) {
+    candidate.broker = sourceBackedValueFromNode(brokerNode, broker.replace(/\s+RIBO Registration\b.*$/i, ""));
+  }
+
+  return candidate;
+}
+
+function partiesFromProfile(profile: PolicyOperationalProfile): OperationalParty[] {
+  const parties: OperationalParty[] = [];
+  const push = (role: OperationalParty["role"], value: SourceBackedValue | undefined) => {
+    if (!value || isBadOperationalIdentityValue(value.value)) return;
+    parties.push({
+      role,
+      name: value.value,
+      sourceNodeIds: value.sourceNodeIds,
+      sourceSpanIds: value.sourceSpanIds,
+    });
+  };
+  push("named_insured", profile.namedInsured);
+  push("insurer", profile.insurer);
+  push("broker", profile.broker);
+  return parties;
+}
+
+function restoreLegalSuffixPunctuation(value: string): string {
+  return value.replace(/\b(Inc|Ltd|Corp|Co)$/i, "$1.");
+}
+
+function finalizeSourceBackedIdentity(value: SourceBackedValue | undefined): SourceBackedValue | undefined {
+  if (!value || isBadOperationalIdentityValue(value.value)) return undefined;
+  return { ...value, value: restoreLegalSuffixPunctuation(value.value) };
+}
+
+function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
+  const finalized: PolicyOperationalProfile = {
+    ...profile,
+    namedInsured: finalizeSourceBackedIdentity(profile.namedInsured),
+    insurer: finalizeSourceBackedIdentity(profile.insurer),
+    broker: finalizeSourceBackedIdentity(profile.broker),
+    parties: [],
+  };
+  finalized.parties = partiesFromProfile(finalized);
+  finalized.sourceNodeIds = [...new Set([
+    ...finalized.sourceNodeIds,
+    ...finalized.parties.flatMap((party: OperationalParty) => party.sourceNodeIds),
+  ])];
+  finalized.sourceSpanIds = [...new Set([
+    ...finalized.sourceSpanIds,
+    ...finalized.parties.flatMap((party: OperationalParty) => party.sourceSpanIds),
+  ])];
+  return finalized;
+}
+
 function documentProfileCandidate(
   document: Record<string, unknown> | undefined,
   sourceTree: DocumentSourceNode[],
@@ -369,12 +514,19 @@ export function buildDeterministicOperationalProfile(
   const sdkSpans = sourceSpansForSdk([], documentId);
   const fallback = buildSdkOperationalProfile({ sourceTree, sourceSpans: sdkSpans });
   const candidate = documentProfileCandidate(document, sourceTree);
-  return mergeOperationalProfile(
+  const withDocument = mergeOperationalProfile(
     fallback,
-    candidate,
+    sanitizeOperationalProfileCandidate(candidate),
     new Set(sourceTree.map((node) => node.id)),
     new Set(sourceTree.flatMap((node) => node.sourceSpanIds)),
   );
+  const withDeclarations = mergeOperationalProfile(
+    withDocument,
+    declarationProfileCandidate(sourceTree),
+    new Set(sourceTree.map((node) => node.id)),
+    new Set(sourceTree.flatMap((node) => node.sourceSpanIds)),
+  );
+  return finalizeOperationalProfile(withDeclarations);
 }
 
 export function normalizeOperationalProfile(
@@ -387,9 +539,27 @@ export function normalizeOperationalProfile(
   const validNodeIds = new Set(sourceTree.map((node) => node.id));
   const validSpanIds = new Set(sdkSpans.map((span) => span.id));
   const fallback = buildSdkOperationalProfile({ sourceTree, sourceSpans: sdkSpans });
-  const withDocument = mergeOperationalProfile(fallback, documentProfileCandidate(document, sourceTree), validNodeIds, validSpanIds);
-  if (!rawProfile || typeof rawProfile !== "object" || Array.isArray(rawProfile)) return withDocument;
-  return mergeOperationalProfile(withDocument, rawProfile as Partial<PolicyOperationalProfile>, validNodeIds, validSpanIds);
+  const withDocument = mergeOperationalProfile(
+    fallback,
+    sanitizeOperationalProfileCandidate(documentProfileCandidate(document, sourceTree)),
+    validNodeIds,
+    validSpanIds,
+  );
+  const withRaw = rawProfile && typeof rawProfile === "object" && !Array.isArray(rawProfile)
+    ? mergeOperationalProfile(
+      withDocument,
+      sanitizeOperationalProfileCandidate(rawProfile as Partial<PolicyOperationalProfile>),
+      validNodeIds,
+      validSpanIds,
+    )
+    : withDocument;
+  const withDeclarations = mergeOperationalProfile(
+    withRaw,
+    declarationProfileCandidate(sourceTree),
+    validNodeIds,
+    validSpanIds,
+  );
+  return finalizeOperationalProfile(withDeclarations);
 }
 
 function profileValue(profile: PolicyOperationalProfile, key: keyof PolicyOperationalProfile): string | undefined {

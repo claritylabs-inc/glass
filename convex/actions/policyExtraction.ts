@@ -31,6 +31,7 @@ import {
   sourceTreePolicyFields,
   type DocumentSourceNode,
   type PolicyOperationalProfile,
+  type SourceSpanLike,
 } from "../lib/sourceTree";
 import { z } from "zod";
 
@@ -2110,6 +2111,98 @@ export const ensurePolicyV3SourceTree = internalAction({
       mode: "full",
     });
     return { status: "queued" as const, reason: args.reason };
+  },
+});
+
+export const rematerializeSourceTreeProfile = internalAction({
+  args: {
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.runQuery(internal.policies.getInternal, {
+      id: args.policyId,
+    }) as {
+      document?: Record<string, unknown>;
+      documentMetadata?: unknown;
+      operationalProfile?: unknown;
+    } | null;
+    if (!policy) throw new Error("Policy not found");
+
+    const sourceNodeDocs = await ctx.runQuery(
+      (internal as any).sourceNodes.listByPolicyInternal,
+      { policyId: args.policyId },
+    ) as Array<Record<string, any>>;
+    const sourceSpanDocs = await ctx.runQuery(
+      (internal as any).sourceSpans.listSpansByPolicyInternal,
+      { policyId: args.policyId },
+    ) as Array<Record<string, any>>;
+    if (sourceNodeDocs.length === 0 || sourceSpanDocs.length === 0) {
+      throw new Error("Policy is missing stored source nodes or source spans");
+    }
+
+    const sourceSpans: SourceSpanLike[] = sourceSpanDocs.map((span) => ({
+      id: String(span.spanId),
+      spanId: String(span.spanId),
+      documentId: typeof span.documentId === "string" ? span.documentId : args.policyId,
+      sourceKind: typeof span.sourceKind === "string" ? span.sourceKind : "policy_pdf",
+      kind: "pdf_text",
+      pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
+      pageEnd: typeof span.pageEnd === "number" ? span.pageEnd : undefined,
+      sectionId: typeof span.sectionId === "string" ? span.sectionId : undefined,
+      formNumber: typeof span.formNumber === "string" ? span.formNumber : undefined,
+      sourceUnit: typeof span.sourceUnit === "string" ? span.sourceUnit : undefined,
+      parentSpanId: typeof span.parentSpanId === "string" ? span.parentSpanId : undefined,
+      table: span.table,
+      location: span.location,
+      text: typeof span.text === "string" ? span.text : "",
+      textHash: typeof span.textHash === "string" ? span.textHash : undefined,
+      bbox: span.bbox,
+      metadata: span.metadata,
+    }));
+    const sourceNodes = normalizeSourceTree(
+      sourceNodeDocs.map((node) => ({
+        id: String(node.nodeId),
+        documentId: typeof node.documentId === "string" ? node.documentId : args.policyId,
+        parentId: typeof node.parentNodeId === "string" ? node.parentNodeId : undefined,
+        kind: node.kind,
+        title: node.title,
+        description: node.description,
+        textExcerpt: node.textExcerpt,
+        sourceSpanIds: node.sourceSpanIds,
+        pageStart: node.pageStart,
+        pageEnd: node.pageEnd,
+        bbox: node.bbox,
+        order: node.order,
+        path: node.path,
+        metadata: node.metadata,
+      })),
+      sourceSpans,
+      args.policyId,
+    );
+    const operationalProfile = normalizeOperationalProfile(
+      policy.operationalProfile,
+      sourceNodes,
+      sourceSpans,
+      policy.document,
+    );
+    await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
+      id: args.policyId,
+      fields: sourceTreePolicyFields({
+        sourceTree: sourceNodes,
+        operationalProfile,
+        existingDocumentMetadata: policy.documentMetadata,
+      }),
+    });
+    return {
+      ok: true,
+      namedInsured: operationalProfile.namedInsured?.value,
+      policyNumber: operationalProfile.policyNumber?.value,
+      insurer: operationalProfile.insurer?.value,
+      broker: operationalProfile.broker?.value,
+      effectiveDate: operationalProfile.effectiveDate?.value,
+      expirationDate: operationalProfile.expirationDate?.value,
+      premium: operationalProfile.premium?.value,
+    };
   },
 });
 
