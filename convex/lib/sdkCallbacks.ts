@@ -8,7 +8,7 @@
  */
 
 import dayjs from "dayjs";
-import { Output, embed, gateway } from "ai";
+import { Output, embed, embedMany, gateway } from "ai";
 import type { LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -667,27 +667,70 @@ function openai() {
   return _openai;
 }
 
+async function resolveEmbeddingConfig(ctx?: ActionCtx, orgId?: Id<"organizations">) {
+  let model = "text-embedding-3-small";
+  let apiKey: string | undefined;
+  if (ctx && orgId) {
+    const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
+    const route = settings?.routes?.embeddings;
+    if (route?.provider === "openai") {
+      apiKey = settings?.routeSources?.embeddings === "broker"
+        ? settings?.providerKeys?.openai
+        : undefined;
+      model = route.model;
+    }
+  }
+  const embeddingModel = apiKey || process.env.OPENAI_API_KEY
+    ? (apiKey ? createOpenAI({ apiKey }) : openai()).embedding(model)
+    : gateway.textEmbeddingModel(`openai/${model}`);
+  return { embeddingModel };
+}
+
+export type EmbedTexts = (texts: string[]) => Promise<number[][]>;
+
+/**
+ * Create an embedding callback. Broker overrides are resolved once per callback
+ * instance, then reused across all single or batched embedding requests.
+ */
+export function makeEmbedTexts(
+  ctx?: ActionCtx,
+  orgId?: Id<"organizations">,
+  options?: { maxParallelCalls?: number },
+): EmbedTexts {
+  let configPromise: ReturnType<typeof resolveEmbeddingConfig> | null = null;
+  const getConfig = () => {
+    configPromise ??= resolveEmbeddingConfig(ctx, orgId);
+    return configPromise;
+  };
+
+  return async (texts: string[]) => {
+    if (!texts.length) return [];
+    const { embeddingModel } = await getConfig();
+    const { embeddings } = await embedMany({
+      model: embeddingModel,
+      values: texts,
+      maxParallelCalls: options?.maxParallelCalls,
+      providerOptions: {
+        openai: { dimensions: EMBEDDING_DIMENSIONS },
+      },
+    });
+    return embeddings;
+  };
+}
+
 /**
  * Create an EmbedText callback. Broker overrides are only used when the broker
  * has supplied a matching provider key; otherwise Glass uses its default config.
  */
 export function makeEmbedText(ctx?: ActionCtx, orgId?: Id<"organizations">): EmbedText {
+  let configPromise: ReturnType<typeof resolveEmbeddingConfig> | null = null;
+  const getConfig = () => {
+    configPromise ??= resolveEmbeddingConfig(ctx, orgId);
+    return configPromise;
+  };
+
   return async (text: string) => {
-    let model = "text-embedding-3-small";
-    let apiKey: string | undefined;
-    if (ctx && orgId) {
-      const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
-      const route = settings?.routes?.embeddings;
-      if (route?.provider === "openai") {
-        apiKey = settings?.routeSources?.embeddings === "broker"
-          ? settings?.providerKeys?.openai
-          : undefined;
-        model = route.model;
-      }
-    }
-    const embeddingModel = apiKey || process.env.OPENAI_API_KEY
-      ? (apiKey ? createOpenAI({ apiKey }) : openai()).embedding(model)
-      : gateway.textEmbeddingModel(`openai/${model}`);
+    const { embeddingModel } = await getConfig();
     const { embedding } = await embed({
       model: embeddingModel,
       providerOptions: {

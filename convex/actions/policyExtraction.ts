@@ -18,7 +18,7 @@ import {
 import { preparePdfTextWithParserFallback } from "../lib/doclingPreprocessor";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
-import { makeEmbedText, makeGenerateObject } from "../lib/sdkCallbacks";
+import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
@@ -51,6 +51,12 @@ const EXTERNAL_WORKER_LEASE_MS = readBoundedIntEnv(
   5 * 60 * 1000,
   60 * 1000,
   30 * 60 * 1000,
+);
+const EMBEDDING_BATCH_SIZE = readBoundedIntEnv(
+  "EXTRACTION_EMBEDDING_BATCH_SIZE",
+  128,
+  1,
+  512,
 );
 
 type StoredArtifact = {
@@ -321,6 +327,96 @@ async function runBounded<T>(
     }
   });
   await Promise.all(workers);
+}
+
+function chunkItems<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function embedAndStoreBatch<T>({
+  items,
+  embedTexts,
+  textForItem,
+  storeItem,
+  describeItem,
+  logWarning,
+  isCancelled,
+}: {
+  items: T[];
+  embedTexts: EmbedTexts;
+  textForItem: (item: T) => string;
+  storeItem: (item: T, embedding: number[]) => Promise<void>;
+  describeItem: (item: T) => string;
+  logWarning: (message: string) => Promise<void>;
+  isCancelled: () => Promise<boolean>;
+}) {
+  let embedded = 0;
+  let failures = 0;
+
+  const storeWithFailureTracking = async (item: T, embedding: number[]) => {
+    try {
+      await storeItem(item, embedding);
+      embedded++;
+    } catch (err) {
+      if (isCancelledError(err)) throw err;
+      failures++;
+      await logWarning(
+        `Warning: failed to store embedding for ${describeItem(item)}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  for (const batch of chunkItems(items, EMBEDDING_BATCH_SIZE)) {
+    if (await isCancelled()) {
+      throw new Error(CANCELLED_BY_USER);
+    }
+    try {
+      const embeddings = await embedTexts(batch.map(textForItem));
+      await runBounded(batch, EMBEDDING_CONCURRENCY, async (item, index) => {
+        if (await isCancelled()) {
+          throw new Error(CANCELLED_BY_USER);
+        }
+        const embedding = embeddings[index];
+        if (!embedding) {
+          failures++;
+          await logWarning(
+            `Warning: embedding provider returned no vector for ${describeItem(item)}`,
+          );
+          return;
+        }
+        await storeWithFailureTracking(item, embedding);
+      });
+    } catch (err) {
+      if (isCancelledError(err)) throw err;
+      await logWarning(
+        `Warning: failed to embed batch of ${batch.length}; retrying individually: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      await runBounded(batch, EMBEDDING_CONCURRENCY, async (item) => {
+        if (await isCancelled()) {
+          throw new Error(CANCELLED_BY_USER);
+        }
+        try {
+          const [embedding] = await embedTexts([textForItem(item)]);
+          if (!embedding) {
+            throw new Error("Embedding provider returned no vector");
+          }
+          await storeWithFailureTracking(item, embedding);
+        } catch (retryErr) {
+          if (isCancelledError(retryErr)) throw retryErr;
+          failures++;
+          await logWarning(
+            `Warning: failed to embed ${describeItem(item)}: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+          );
+        }
+      });
+    }
+  }
+
+  return { embedded, failures };
 }
 
 async function isExtractionCancelled(
@@ -1111,6 +1207,11 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const sourceSpans = embeddingPayload.sourceSpansForStorage;
       const sourceChunks = embeddingPayload.sourceChunksForEmbedding;
       const sourceNodes = embeddingPayload.sourceNodesForStorage;
+      const embedTexts = makeEmbedTexts(convexCtx, state.orgId as Id<"organizations">, {
+        maxParallelCalls: EMBEDDING_CONCURRENCY,
+      });
+      const isCancelled = () => isExtractionCancelled(convexCtx, policyId);
+      const logEmbedWarning = (message: string) => pCtx.log(message, "warn");
 
       if (!chunks || chunks.length === 0) {
         await pCtx.log("No chunks to embed (phase resumed or no chunks extracted)");
@@ -1120,16 +1221,15 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           (internal as any).documentChunks.deleteByPolicy,
           { policyId },
         );
-        const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
-        let embedded = 0;
-        let embedFailures = 0;
         const embedStartedAt = nowMs();
-        await runBounded(chunks, EMBEDDING_CONCURRENCY, async (chunk) => {
-          if (await isExtractionCancelled(convexCtx, policyId)) {
-            throw new Error(CANCELLED_BY_USER);
-          }
-          try {
-            const embedding = await embed(chunk.text);
+        const { embedded, failures: embedFailures } = await embedAndStoreBatch({
+          items: chunks,
+          embedTexts,
+          textForItem: (chunk) => chunk.text,
+          describeItem: (chunk) => `chunk ${chunk.id}`,
+          isCancelled,
+          logWarning: logEmbedWarning,
+          storeItem: async (chunk, embedding) => {
             await convexCtx.runMutation(
               (internal as any).documentChunks.insert,
               {
@@ -1143,15 +1243,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
                 createdAt: nowMs(),
               },
             );
-            embedded++;
-          } catch (err) {
-            if (isCancelledError(err)) throw err;
-            embedFailures++;
-            await pCtx.log(
-              `Warning: failed to embed chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`,
-              "warn",
-            );
-          }
+          },
         });
         await traceEvent(convexCtx, state.traceId, {
           kind: "embedding_batch",
@@ -1165,6 +1257,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             requested: chunks.length,
             embedded,
             failures: embedFailures,
+            batchSize: EMBEDDING_BATCH_SIZE,
           },
         });
         await pCtx.log(`Stored ${embedded}/${chunks.length} chunks`);
@@ -1215,56 +1308,47 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         }
 
         if (sourceNodes?.length) {
-          const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
-          let embeddedSourceNodes = 0;
-          let sourceNodeFailures = 0;
           const sourceNodeEmbedStartedAt = nowMs();
-          await runBounded(sourceNodes, EMBEDDING_CONCURRENCY, async (node) => {
-            if (await isExtractionCancelled(convexCtx, policyId)) {
-              throw new Error(CANCELLED_BY_USER);
-            }
-            try {
-              const embeddingText = [
+          const { embedded: embeddedSourceNodes, failures: sourceNodeFailures } =
+            await embedAndStoreBatch({
+              items: sourceNodes,
+              embedTexts,
+              textForItem: (node) => [
                 node.title,
                 node.kind,
                 node.path ? `path ${node.path}` : undefined,
                 node.description,
                 node.textExcerpt,
-              ].filter(Boolean).join("\n");
-              const embedding = await embed(embeddingText);
-              await convexCtx.runMutation(
-                (internal as any).sourceNodes.insertNode,
-                {
-                  orgId: state.orgId,
-                  policyId,
-                  nodeId: node.id,
-                  documentId: node.documentId || policyId,
-                  parentNodeId: node.parentId,
-                  kind: node.kind,
-                  title: node.title,
-                  description: node.description,
-                  textExcerpt: node.textExcerpt,
-                  sourceSpanIds: node.sourceSpanIds,
-                  pageStart: node.pageStart,
-                  pageEnd: node.pageEnd,
-                  bbox: node.bbox,
-                  order: node.order,
-                  path: node.path,
-                  metadata: node.metadata,
-                  embedding,
-                  createdAt: nowMs(),
-                },
-              );
-              embeddedSourceNodes++;
-            } catch (err) {
-              if (isCancelledError(err)) throw err;
-              sourceNodeFailures++;
-              await pCtx.log(
-                `Warning: failed to embed source node ${node.id}: ${err instanceof Error ? err.message : String(err)}`,
-                "warn",
-              );
-            }
-          });
+              ].filter(Boolean).join("\n"),
+              describeItem: (node) => `source node ${node.id}`,
+              isCancelled,
+              logWarning: logEmbedWarning,
+              storeItem: async (node, embedding) => {
+                await convexCtx.runMutation(
+                  (internal as any).sourceNodes.insertNode,
+                  {
+                    orgId: state.orgId,
+                    policyId,
+                    nodeId: node.id,
+                    documentId: node.documentId || policyId,
+                    parentNodeId: node.parentId,
+                    kind: node.kind,
+                    title: node.title,
+                    description: node.description,
+                    textExcerpt: node.textExcerpt,
+                    sourceSpanIds: node.sourceSpanIds,
+                    pageStart: node.pageStart,
+                    pageEnd: node.pageEnd,
+                    bbox: node.bbox,
+                    order: node.order,
+                    path: node.path,
+                    metadata: node.metadata,
+                    embedding,
+                    createdAt: nowMs(),
+                  },
+                );
+              },
+            });
           await traceEvent(convexCtx, state.traceId, {
             kind: "embedding_batch",
             label: "source nodes",
@@ -1277,45 +1361,38 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               requested: sourceNodes.length,
               embedded: embeddedSourceNodes,
               failures: sourceNodeFailures,
+              batchSize: EMBEDDING_BATCH_SIZE,
             },
           });
           await pCtx.log(`Stored ${embeddedSourceNodes}/${sourceNodes.length} source nodes`);
         }
 
         if (sourceChunks?.length) {
-          const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
-          let embeddedSourceChunks = 0;
-          let sourceChunkFailures = 0;
           const sourceEmbedStartedAt = nowMs();
-          await runBounded(sourceChunks, EMBEDDING_CONCURRENCY, async (chunk) => {
-            if (await isExtractionCancelled(convexCtx, policyId)) {
-              throw new Error(CANCELLED_BY_USER);
-            }
-            try {
-              const embedding = await embed(chunk.text);
-              await convexCtx.runMutation(
-                (internal as any).sourceSpans.insertChunk,
-                {
-                  orgId: state.orgId,
-                  policyId,
-                  chunkId: chunk.id,
-                  documentId: chunk.documentId ?? policyId,
-                  sourceSpanIds: chunk.sourceSpanIds ?? [],
-                  text: chunk.text,
-                  metadata: chunk.metadata,
-                  embedding,
-                  createdAt: nowMs(),
-                },
-              );
-              embeddedSourceChunks++;
-            } catch (err) {
-              if (isCancelledError(err)) throw err;
-              sourceChunkFailures++;
-              await pCtx.log(
-                `Warning: failed to embed source chunk ${chunk.id}: ${err instanceof Error ? err.message : String(err)}`,
-                "warn",
-              );
-            }
+          const { embedded: embeddedSourceChunks, failures: sourceChunkFailures } =
+            await embedAndStoreBatch({
+              items: sourceChunks,
+              embedTexts,
+              textForItem: (chunk) => chunk.text,
+              describeItem: (chunk) => `source chunk ${chunk.id}`,
+              isCancelled,
+              logWarning: logEmbedWarning,
+              storeItem: async (chunk, embedding) => {
+                await convexCtx.runMutation(
+                  (internal as any).sourceSpans.insertChunk,
+                  {
+                    orgId: state.orgId,
+                    policyId,
+                    chunkId: chunk.id,
+                    documentId: chunk.documentId ?? policyId,
+                    sourceSpanIds: chunk.sourceSpanIds ?? [],
+                    text: chunk.text,
+                    metadata: chunk.metadata,
+                    embedding,
+                    createdAt: nowMs(),
+                  },
+                );
+              },
           });
           await traceEvent(convexCtx, state.traceId, {
             kind: "embedding_batch",
@@ -1329,6 +1406,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               requested: sourceChunks.length,
               embedded: embeddedSourceChunks,
               failures: sourceChunkFailures,
+              batchSize: EMBEDDING_BATCH_SIZE,
             },
           });
           await pCtx.log(`Stored ${embeddedSourceChunks}/${sourceChunks.length} source chunks`);
