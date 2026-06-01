@@ -637,9 +637,11 @@ function EndorsementBody({ e }: { e: PolicyEndorsement }) {
 function CoverageBody({
   coverage,
   sourceSpans,
+  fileUrl,
 }: {
   coverage: CoverageEntry;
   sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
 }) {
   const metaItems = [
     coverage.coverageCode && { label: "Code", value: coverage.coverageCode },
@@ -666,6 +668,7 @@ function CoverageBody({
         sourceSpanIds={coverage.sourceSpanIds}
         sourceSpans={sourceSpans}
         fallbackPage={coverage.pageNumber}
+        fileUrl={fileUrl}
         className="ml-[2.625rem]"
       />
       {coverage.originalContent && (
@@ -797,6 +800,7 @@ function StructuredItemsCard<T>({
   renderBody,
   getSourceSpanIds,
   sourceSpans,
+  fileUrl,
 }: {
   id: string;
   title: string;
@@ -807,6 +811,7 @@ function StructuredItemsCard<T>({
   renderBody: (item: T) => React.ReactNode;
   getSourceSpanIds?: (item: T) => string[] | undefined;
   sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
 }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   if (!items?.length) return null;
@@ -869,6 +874,7 @@ function StructuredItemsCard<T>({
                 sourceSpanIds={sourceSpanIds}
                 sourceSpans={sourceSpans}
                 fallbackPage={page}
+                fileUrl={fileUrl}
               />
               {page != null && sourceSpanIds.length === 0 && (
                 <PageRef page={page} />
@@ -1100,12 +1106,14 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
 function KeyValueTable({
   rows,
   sourceSpans,
+  fileUrl,
   className = "",
   labelCellClassName = "",
   valueCellClassName = "",
 }: {
   rows: DataRow[];
   sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
   className?: string;
   labelCellClassName?: string;
   valueCellClassName?: string;
@@ -1138,6 +1146,7 @@ function KeyValueTable({
                   sourceSpanIds={row.sourceSpanIds}
                   sourceSpans={sourceSpans}
                   fallbackPage={row.pageNumber}
+                  fileUrl={fileUrl}
                 />
                 {row.pageNumber != null && !row.sourceSpanIds?.length && (
                   <PageRef page={row.pageNumber} />
@@ -1155,10 +1164,12 @@ function DataCard({
   title,
   rows,
   sourceSpans,
+  fileUrl,
 }: {
   title: string;
   rows: DataRow[];
   sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
 }) {
   if (!rows.length) return null;
   return (
@@ -1166,7 +1177,7 @@ function DataCard({
       <div className="px-5 py-3 border-b border-foreground/4">
         <p className="text-sm font-medium text-foreground">{title}</p>
       </div>
-      <KeyValueTable rows={rows} sourceSpans={sourceSpans} />
+      <KeyValueTable rows={rows} sourceSpans={sourceSpans} fileUrl={fileUrl} />
     </div>
   );
 }
@@ -1175,10 +1186,12 @@ function SectionedDataCard({
   title,
   sections,
   sourceSpans,
+  fileUrl,
 }: {
   title: string;
   sections: DataSection[];
   sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
 }) {
   const nonEmptySections = sections.filter(
     (section) => section.rows.length > 0,
@@ -1199,6 +1212,7 @@ function SectionedDataCard({
           <KeyValueTable
             rows={section.rows}
             sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
             labelCellClassName="sm:pl-11"
           />
         </GroupSection>
@@ -1210,9 +1224,11 @@ function SectionedDataCard({
 function DocumentMetadataPanel({
   metadata,
   sourceSpans,
+  fileUrl,
 }: {
   metadata?: DocumentMetadata;
   sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
 }) {
   const toc = metadata?.tableOfContents ?? [];
   const pageMap = metadata?.pageMap ?? [];
@@ -1245,6 +1261,7 @@ function DocumentMetadataPanel({
                     sourceSpanIds={entry.sourceSpanIds}
                     sourceSpans={sourceSpans}
                     fallbackPage={entry.pageStart}
+                    fileUrl={fileUrl}
                   />
                 </div>
               ))}
@@ -1263,6 +1280,7 @@ function DocumentMetadataPanel({
                   sourceSpanIds={entry.sourceSpanIds}
                   sourceSpans={sourceSpans}
                   fallbackPage={entry.page}
+                  fileUrl={fileUrl}
                 />
               ))}
             </div>
@@ -1277,11 +1295,13 @@ function OutlineNodeRow({
   node,
   policyDocument,
   sourceSpans,
+  fileUrl,
   depth = 0,
 }: {
   node: DocumentOutlineNode;
   policyDocument: PolicyDocument;
   sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
   depth?: number;
 }) {
   const factRows = extractedFactRowsForNode(policyDocument, node.id);
@@ -1314,6 +1334,7 @@ function OutlineNodeRow({
             sourceSpanIds={sourceSpanIds}
             sourceSpans={sourceSpans}
             fallbackPage={node.pageStart}
+            fileUrl={fileUrl}
           />
         </div>
         {node.excerpt || node.content ? (
@@ -1326,6 +1347,7 @@ function OutlineNodeRow({
             <KeyValueTable
               rows={factRows}
               sourceSpans={sourceSpans}
+              fileUrl={fileUrl}
               className="border-0"
             />
           </div>
@@ -1337,6 +1359,7 @@ function OutlineNodeRow({
           node={child}
           policyDocument={policyDocument}
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
           depth={depth + 1}
         />
       ))}
@@ -1348,10 +1371,12 @@ function SourceBackedBreakdown({
   policyDocument,
   sourceSpans,
   topLevelRows,
+  fileUrl,
 }: {
   policyDocument: PolicyDocument;
   sourceSpans?: SourceSpanDoc[];
   topLevelRows: DataRow[];
+  fileUrl?: string;
 }) {
   const outline = policyDocument.documentOutline ?? [];
   const outlineNodeIds = nodeIdsFromOutline(outline);
@@ -1362,12 +1387,14 @@ function SourceBackedBreakdown({
       <DocumentMetadataPanel
         metadata={policyDocument.documentMetadata}
         sourceSpans={sourceSpans}
+        fileUrl={fileUrl}
       />
       {topLevelRows.length > 0 && (
         <DataCard
           title="Policy facts"
           rows={topLevelRows}
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
         />
       )}
       <div className="rounded-lg border border-foreground/6 bg-card">
@@ -1383,6 +1410,7 @@ function SourceBackedBreakdown({
               node={node}
               policyDocument={policyDocument}
               sourceSpans={sourceSpans}
+              fileUrl={fileUrl}
             />
           ))}
         </div>
@@ -1392,6 +1420,7 @@ function SourceBackedBreakdown({
           title="Unlinked extracted facts"
           rows={unlinkedRows}
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
         />
       )}
     </div>
@@ -1458,6 +1487,8 @@ export interface ExtractionPanelProps {
   policyDocument: PolicyDocument | null | undefined;
   /** page number that triggered the URL (for section highlighting) */
   initialPage?: number;
+  sourceSpansOverride?: SourceSpanDoc[];
+  fileUrl?: string;
 }
 
 /** Renders extraction details as separate, flat cards — one per data type */
@@ -1465,12 +1496,18 @@ export function ExtractionCards({
   policyId,
   policyDocument,
   initialPage: _initialPage,
+  sourceSpansOverride,
+  fileUrl,
 }: ExtractionPanelProps) {
   const allSourceSpanIds = useMemo(
     () => collectSourceSpanIds(policyDocument),
     [policyDocument],
   );
-  const sourceSpans = usePolicySourceSpans(policyId, allSourceSpanIds);
+  const queriedSourceSpans = usePolicySourceSpans(
+    policyId,
+    sourceSpansOverride ? [] : allSourceSpanIds,
+  );
+  const sourceSpans = sourceSpansOverride ?? queriedSourceSpans;
   const coverages = policyDocument?.coverages ?? [];
   const declarations = Array.isArray(
     (
@@ -1588,6 +1625,7 @@ export function ExtractionCards({
         policyDocument={policyDocument}
         sourceSpans={sourceSpans}
         topLevelRows={topLevelRows}
+        fileUrl={fileUrl}
       />
     );
   }
@@ -1601,6 +1639,7 @@ export function ExtractionCards({
           title="Policy details"
           rows={topLevelRows}
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
         />
       )}
 
@@ -1614,6 +1653,7 @@ export function ExtractionCards({
             getPage={(coverage) => coverage.pageNumber}
             getSourceSpanIds={(coverage) => coverage.sourceSpanIds}
             sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
             getBadges={(coverage) =>
               [
                 coverage.coverageCode
@@ -1631,20 +1671,21 @@ export function ExtractionCards({
               ].filter(Boolean) as { label: string; className: string }[]
             }
             renderBody={(coverage) => (
-              <CoverageBody coverage={coverage} sourceSpans={sourceSpans} />
+              <CoverageBody coverage={coverage} sourceSpans={sourceSpans} fileUrl={fileUrl} />
             )}
           />
         </div>
       )}
 
       {limits.length > 0 && (
-        <DataCard title="Limits" rows={limits} sourceSpans={sourceSpans} />
+        <DataCard title="Limits" rows={limits} sourceSpans={sourceSpans} fileUrl={fileUrl} />
       )}
       {deductibles.length > 0 && (
         <DataCard
           title="Deductibles"
           rows={deductibles}
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
         />
       )}
 
@@ -1654,6 +1695,7 @@ export function ExtractionCards({
         <SectionedDataCard
           title="Premium"
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
           sections={[
             {
               label: "Summary",
@@ -1690,6 +1732,7 @@ export function ExtractionCards({
         <SectionedDataCard
           title="Declarations"
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
           sections={groupRowsBySection(declarationRows)}
         />
       )}
@@ -1704,6 +1747,7 @@ export function ExtractionCards({
             getPage={(definition) => definition.pageNumber}
             getSourceSpanIds={(definition) => definition.sourceSpanIds}
             sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
             getBadges={(definition) =>
               definition.sectionRef
                 ? [
@@ -1739,6 +1783,7 @@ export function ExtractionCards({
             getPage={(reason) => reason.pageNumber}
             getSourceSpanIds={(reason) => reason.sourceSpanIds}
             sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
             getBadges={(reason) =>
               [
                 reason.coverageName
@@ -1765,6 +1810,7 @@ export function ExtractionCards({
       {formInventory.length > 0 && (
         <DataCard
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
           title="Form inventory"
           rows={formInventory
             .map((form) => ({
@@ -1790,6 +1836,7 @@ export function ExtractionCards({
       {supplementaryFacts.length > 0 && (
         <DataCard
           sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
           title="Supplementary facts"
           rows={supplementaryFacts
             .map((fact) => ({
@@ -1815,6 +1862,8 @@ export function ExtractionCards({
               e.title ?? e.name ?? e.formNumber ?? "Unnamed endorsement"
             }
             getPage={(e) => e.pageStart}
+            sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
             getBadges={(e) =>
               [
                 e?.endorsementType
@@ -1911,6 +1960,8 @@ export function ExtractionCards({
                 ? undefined
                 : (ex.pageNumber ?? ex.pageStart)
             }
+            sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
             getBadges={(ex) => {
               if (typeof ex === "string") return [];
               return [
@@ -1942,6 +1993,8 @@ export function ExtractionCards({
             items={conditions}
             getTitle={(c) => c.name ?? c.title ?? "Unnamed condition"}
             getPage={(c) => c.pageNumber}
+            sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
             getBadges={(c) =>
               c?.conditionType
                 ? [

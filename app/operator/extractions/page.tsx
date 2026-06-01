@@ -26,6 +26,9 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
+import type { Id } from "@/convex/_generated/dataModel";
+import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
+import type { SourceSpanDoc } from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
@@ -103,10 +106,13 @@ type ModelCallDebugDetails = {
 };
 type TraceDetail = {
   session: TraceRow;
+  policy?: Record<string, unknown> | null;
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string | null;
   events: TraceEvent[];
 };
-type TracePanelTab = "summary" | "timeline" | "timing" | "models" | "log";
-const TRACE_PANEL_TABS = ["summary", "timeline", "timing", "models", "log"] as const;
+type TracePanelTab = "summary" | "extracted" | "timeline" | "timing" | "models" | "log";
+const TRACE_PANEL_TABS = ["summary", "extracted", "timeline", "timing", "models", "log"] as const;
 
 const ALL = "__all__";
 const STATUS_LABELS: Record<string, string> = {
@@ -955,6 +961,7 @@ export default function OperatorExtractionsPage() {
           >
             <TabsList variant="pill" className="sticky top-0 z-10 max-w-full shrink-0 overflow-x-auto bg-background py-1">
               <TabsTrigger value="summary">Summary</TabsTrigger>
+              <TabsTrigger value="extracted">Extracted data</TabsTrigger>
               <TabsTrigger value="timeline">Timeline</TabsTrigger>
               <TabsTrigger value="timing">Timing</TabsTrigger>
               <TabsTrigger value="models">Model calls</TabsTrigger>
@@ -992,6 +999,21 @@ export default function OperatorExtractionsPage() {
                 <DetailRow label="Slowest" value={selected.slowestLabel ? `${selected.slowestLabel} · ${formatDuration(selected.slowestDurationMs)}` : "—"} />
                 {selected.error ? <DetailRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
               </dl>
+            </TabsContent>
+
+            <TabsContent value="extracted" className="min-h-0 overflow-y-auto pt-3">
+              {detail?.policy ? (
+                <ExtractionCards
+                  policyId={selected.policyId as Id<"policies">}
+                  policyDocument={detail.policy}
+                  sourceSpansOverride={detail.sourceSpans}
+                  fileUrl={detail.fileUrl ?? undefined}
+                />
+              ) : (
+                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+                  Extracted policy data is unavailable for this trace.
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="timeline" className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden pt-3">
