@@ -854,9 +854,13 @@ function PolicyExtractionReview({
 function PolicyBreakdownEditor({
   policy,
   readOnly,
+  open,
+  onOpenChange,
 }: {
   policy: Record<string, unknown> & { _id: Id<"policies"> };
   readOnly: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const updateExtractedFields = useMutation(api.policies.updateExtractedFields);
   const [pendingFields, setPendingFields] = useState<Record<string, unknown>>(
@@ -963,6 +967,7 @@ function PolicyBreakdownEditor({
       premiumBreakdown: rows.map((row) => ({
         line: row.line.trim() || "Premium line",
         amount: row.amount.trim(),
+        ...(row.sourceSpanIds?.length ? { sourceSpanIds: row.sourceSpanIds } : {}),
         ...(parseMoneyInput(row.amount) !== undefined
           ? { amountValue: parseMoneyInput(row.amount) }
           : {}),
@@ -981,6 +986,7 @@ function PolicyBreakdownEditor({
           ? { amountValue: parseMoneyInput(row.amount) }
           : {}),
         ...(row.type?.trim() ? { type: row.type.trim() } : {}),
+        ...(row.sourceSpanIds?.length ? { sourceSpanIds: row.sourceSpanIds } : {}),
         ...(row.description?.trim()
           ? { description: row.description.trim() }
           : {}),
@@ -1027,17 +1033,18 @@ function PolicyBreakdownEditor({
   ] as const;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-      <div className="px-5 py-3 border-b border-foreground/4 flex items-center gap-3">
-        <p className="text-sm font-medium text-foreground flex-1">
-          Editable extracted fields
-        </p>
+    <SettingsDrawer
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Edit extracted fields"
+      footer={
         <span className="text-xs text-muted-foreground">
           {saving ? "Saving..." : "Saved on change"}
         </span>
-      </div>
-      <div className="p-5 space-y-5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      }
+    >
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-3">
           {fields.map(({ key, label, kind }) => (
             <div key={key} className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{label}</Label>
@@ -1283,7 +1290,6 @@ function PolicyBreakdownEditor({
                   <SourceEvidenceButton
                     sourceSpanIds={row.sourceSpanIds}
                     sourceSpans={sourceSpans}
-                    label="Proof"
                   />
                 </div>
                 <PillButton
@@ -1303,7 +1309,7 @@ function PolicyBreakdownEditor({
           </div>
         </div>
       </div>
-    </div>
+    </SettingsDrawer>
   );
 }
 
@@ -2688,11 +2694,12 @@ export function PolicyDetailBody({
   const viewerOrg = useCachedViewerOrg();
   const searchParams = useSearchParams();
   const [showCertificateSheet, setShowCertificateSheet] = useState(false);
+  const [showEditExtractedFields, setShowEditExtractedFields] = useState(false);
   const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
     parsePolicyDetailTab(searchParams.get("tab")),
   );
   const shouldLoadFullPolicy =
-    activeTab === "extraction" || showCertificateSheet;
+    activeTab === "extraction" || showCertificateSheet || showEditExtractedFields;
   const policySummary = useCachedPolicySummary(id as Id<"policies">);
   const fullPolicy = useCachedPolicyDetail(
     id as Id<"policies">,
@@ -2801,6 +2808,8 @@ export function PolicyDetailBody({
     | undefined;
   const extractionData: Record<string, unknown> = {
     ...(policyDocument ?? {}),
+    documentMetadata: p.documentMetadata,
+    documentOutline: p.documentOutline,
     carrier: p.carrier,
     carrierLegalName: p.carrierLegalName,
     security: p.security,
@@ -2990,6 +2999,19 @@ export function PolicyDetailBody({
           </PillButton>
         )}
         <ViewPdfButton url={fileUrl} disabled={isProcessingPolicy} />
+        {visibleActiveTab === "extraction" &&
+          canEditExtractedFields &&
+          !readOnly &&
+          !isDeleted && (
+            <PillButton
+              size="compact"
+              disabled={isProcessingPolicy}
+              onClick={() => setShowEditExtractedFields(true)}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Edit fields
+            </PillButton>
+          )}
         {!readOnly && !isDeleted && (
           <PillButton
             size="compact"
@@ -3014,28 +3036,64 @@ export function PolicyDetailBody({
     isProcessingPolicy,
     handleCancelExtraction,
     fileUrl,
+    visibleActiveTab,
+    canEditExtractedFields,
     setShowCertificateSheet,
   ]);
 
   useEffect(() => {
     if (!onRightPanel) return;
-    if (!policy || readOnly || !showCertificateSheet) {
+    if (!policy || readOnly) {
       onRightPanel(null);
       return;
     }
-    onRightPanel(
-      <CertificateCreatePanel
-        open={showCertificateSheet}
-        onOpenChange={setShowCertificateSheet}
-        policyId={policy._id}
-        initialProgram={
-          (policy as { partnerProgram?: ProgramMatchCandidate | null })
-            .partnerProgram ?? null
-        }
-      />,
-    );
+    if (showCertificateSheet) {
+      onRightPanel(
+        <CertificateCreatePanel
+          open={showCertificateSheet}
+          onOpenChange={setShowCertificateSheet}
+          policyId={policy._id}
+          initialProgram={
+            (policy as { partnerProgram?: ProgramMatchCandidate | null })
+              .partnerProgram ?? null
+          }
+        />,
+      );
+      return () => onRightPanel(null);
+    }
+    if (
+      showEditExtractedFields &&
+      fullPolicy &&
+      canEditExtractedFields &&
+      !isDeleted
+    ) {
+      onRightPanel(
+        <PolicyBreakdownEditor
+          key={fullPolicy._id}
+          policy={
+            fullPolicy as unknown as Record<string, unknown> & {
+              _id: Id<"policies">;
+            }
+          }
+          readOnly={false}
+          open={showEditExtractedFields}
+          onOpenChange={setShowEditExtractedFields}
+        />,
+      );
+      return () => onRightPanel(null);
+    }
+    onRightPanel(null);
     return () => onRightPanel(null);
-  }, [onRightPanel, policy, readOnly, showCertificateSheet]);
+  }, [
+    onRightPanel,
+    policy,
+    fullPolicy,
+    readOnly,
+    showCertificateSheet,
+    showEditExtractedFields,
+    canEditExtractedFields,
+    isDeleted,
+  ]);
 
   if (policy === undefined) {
     return <PolicyDetailSkeleton />;
@@ -3257,15 +3315,6 @@ export function PolicyDetailBody({
             <PolicyDetailSkeleton />
           ) : (
             <>
-              <PolicyBreakdownEditor
-                key={fullPolicy._id}
-                policy={
-                  fullPolicy as unknown as Record<string, unknown> & {
-                    _id: Id<"policies">;
-                  }
-                }
-                readOnly={readOnly || isDeleted || !canEditExtractedFields}
-              />
               <ExtractionCards
                 policyId={policy._id}
                 policyDocument={extractionData}

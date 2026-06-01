@@ -11,6 +11,12 @@ export type SourceSpanDoc = {
   spanId: string;
   pageStart?: number;
   pageEnd?: number;
+  sectionId?: string;
+  formNumber?: string;
+  sourceUnit?: string;
+  parentSpanId?: string;
+  table?: Record<string, unknown>;
+  location?: Record<string, unknown>;
   text?: string;
   bbox?: Array<{
     page: number;
@@ -56,12 +62,18 @@ function readNumber(value: unknown): number | undefined {
 
 function relatedParentId(span: SourceSpanDoc): string | undefined {
   const metadata = span.metadata ?? {};
-  const parent = metadata.parentSpanId ?? metadata.rowSpanId;
+  const parent =
+    span.parentSpanId ??
+    span.table?.rowSpanId ??
+    span.table?.tableSpanId ??
+    metadata.parentSpanId ??
+    metadata.rowSpanId ??
+    metadata.tableSpanId;
   return typeof parent === "string" && parent.length > 0 ? parent : undefined;
 }
 
 function sourceUnit(span: SourceSpanDoc): string | undefined {
-  const value = span.metadata?.sourceUnit ?? span.metadata?.elementType;
+  const value = span.sourceUnit ?? span.metadata?.sourceUnit ?? span.metadata?.elementType;
   return typeof value === "string" ? value : undefined;
 }
 
@@ -132,22 +144,26 @@ export function SourceEvidenceButton({
   sourceSpanIds,
   sourceSpans,
   fallbackPage,
+  fileUrl,
   label = "Source",
   className = "",
 }: {
   sourceSpanIds?: string[];
   sourceSpans?: SourceSpanDoc[];
   fallbackPage?: number;
+  fileUrl?: string;
   label?: string;
   className?: string;
 }) {
   const pdf = usePdf();
+  const activeFileUrl = fileUrl ?? pdf.fileUrl;
   const evidenceSpans = evidenceSpansForIds(sourceSpans, sourceSpanIds ?? []);
   const page = firstEvidencePage(evidenceSpans, fallbackPage);
   const highlightBoxes = highlightBoxesForSpans(evidenceSpans);
+  const hasExactHighlight = highlightBoxes.length > 0;
 
   if (
-    !pdf.fileUrl ||
+    !activeFileUrl ||
     page == null ||
     (!sourceSpanIds?.length && highlightBoxes.length === 0)
   )
@@ -158,21 +174,25 @@ export function SourceEvidenceButton({
       type="button"
       onClick={(event) => {
         event.stopPropagation();
-        if (highlightBoxes.length > 0) {
-          pdf.openWithUrl(pdf.fileUrl!, page, highlightBoxes);
+        if (fileUrl || hasExactHighlight) {
+          pdf.openWithUrl(activeFileUrl, page, highlightBoxes);
         } else {
           pdf.navigateToPage(page);
         }
       }}
-      className={`inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300 ${className}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+        hasExactHighlight
+          ? "border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300"
+          : "border-foreground/10 bg-background text-muted-foreground hover:border-foreground/20 hover:bg-foreground/4"
+      } ${className}`}
       title={
-        highlightBoxes.length > 0
-          ? `Highlight source on page ${page}`
-          : `Open page ${page}`
+        hasExactHighlight
+          ? `Highlight exact source on page ${page}`
+          : `Open source page ${page}; exact highlight unavailable`
       }
     >
       <LocateFixed className="size-3" />
-      {label} p.{page}
+      {hasExactHighlight ? `${label} p.${page}` : `${label} page ${page}`}
     </button>
   );
 }

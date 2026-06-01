@@ -1891,7 +1891,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           commands: "chat",
         })}\n\nFor email replies about multiple drafts, show a short sample first and ask whether the user wants more detail instead of dumping every draft.`;
       }
-      systemContext += `\n\nYou have tools to look up policies, look up policy sections, compare coverages, check compliance requirements, look up connected vendors, inspect vendor policies, inspect requirement-by-requirement vendor compliance, save notes, generate COIs, and extract uploaded policy attachments. Use them as needed before answering. Decide yourself whether the email requires answering a question, generating a COI, and/or extracting an attached policy — you may do more than one.`;
+      systemContext += `\n\nYou have tools to look up policies, search policy source evidence and document outlines, compare coverages, check compliance requirements, look up connected vendors, inspect vendor policies, inspect requirement-by-requirement vendor compliance, save notes, generate COIs, and extract uploaded policy attachments. Use them as needed before answering. Decide yourself whether the email requires answering a question, generating a COI, and/or extracting an attached policy — you may do more than one.`;
 
       let responseBody: string;
       const emailCommandText = stripQuotedText(body).trim();

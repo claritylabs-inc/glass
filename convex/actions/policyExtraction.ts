@@ -97,6 +97,10 @@ export type PolicyExtractionState = {
     pageEnd?: number;
     sectionId?: string;
     formNumber?: string;
+    sourceUnit?: string;
+    parentSpanId?: string;
+    table?: Record<string, unknown>;
+    location?: unknown;
     text: string;
     textHash?: string;
     bbox?: unknown;
@@ -1097,6 +1101,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
 
         for (const span of sourceSpans ?? []) {
+          const table = span.table;
           await convexCtx.runMutation(
             (internal as any).sourceSpans.insertSpan,
             {
@@ -1109,6 +1114,16 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               pageEnd: span.pageEnd,
               sectionId: span.sectionId,
               formNumber: span.formNumber,
+              sourceUnit: span.sourceUnit ?? span.metadata?.sourceUnit,
+              parentSpanId:
+                span.parentSpanId ??
+                table?.rowSpanId ??
+                table?.tableSpanId ??
+                span.metadata?.parentSpanId ??
+                span.metadata?.rowSpanId ??
+                span.metadata?.tableSpanId,
+              table,
+              location: span.location,
               text: span.text,
               textHash: span.textHash ?? span.id,
               bbox: span.bbox,

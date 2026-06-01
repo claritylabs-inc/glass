@@ -31,6 +31,7 @@ import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { makeEmbedText } from "./sdkCallbacks";
 import { formatComplianceRequirementsContext } from "./complianceAgent";
+import { formatDocumentStructureForPrompt } from "./policyDocumentStructure";
 
 /**
  * Build document context using vector search over pre-embedded chunks.
@@ -248,6 +249,12 @@ async function buildVectorContext(
       : policy.policyNumber;
 
     let section = `\n--- ${docLabel} SOURCE EVIDENCE: ${carrier} #${number} (ID:${policyId}) ---`;
+    const structure = formatDocumentStructureForPrompt(policy as Record<string, unknown>, {
+      maxNodes: 10,
+      maxChars: 3500,
+      includeSourceSpanIds: true,
+    });
+    if (structure) section += `\n\n${structure}`;
     for (const chunk of policyChunks) {
       const truncated =
         chunk.text.length > 2500
@@ -294,6 +301,12 @@ async function buildVectorContext(
 
     let section = `\n--- ${docLabel}: ${carrier} #${number} (ID:${policyId}) ---`;
     if (policy.summary) section += `\nSummary: ${policy.summary}`;
+    const structure = formatDocumentStructureForPrompt(policy as Record<string, unknown>, {
+      maxNodes: 10,
+      maxChars: 3500,
+      includeSourceSpanIds: true,
+    });
+    if (structure) section += `\n${structure}`;
 
     for (const chunk of policyChunks) {
       const truncated =
@@ -372,6 +385,11 @@ function buildFallbackContext(
       ...(p.policyTypes ?? []),
       ...(p.coverages?.map((c: { name?: string }) => c.name) ?? []),
       p.summary,
+      formatDocumentStructureForPrompt(p as Record<string, unknown>, {
+        maxNodes: 16,
+        maxChars: 4000,
+        includeSourceSpanIds: false,
+      }),
     ]
       .filter(Boolean)
       .join(" ")
@@ -456,6 +474,12 @@ function buildFallbackContext(
         section += `\n  - ${c.name}: Limit ${c.limit}${c.deductible ? `, Deductible ${c.deductible}` : ""}`;
       }
     }
+    const structure = formatDocumentStructureForPrompt(p as Record<string, unknown>, {
+      maxNodes: 14,
+      maxChars: 4500,
+      includeSourceSpanIds: true,
+    });
+    if (structure) section += `\n${structure}`;
     return section;
   });
   if (expanded.length > 0) {

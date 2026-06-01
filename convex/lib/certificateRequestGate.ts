@@ -1,3 +1,8 @@
+import {
+  formatDocumentStructureForPrompt,
+  formatSourceSpanLabel,
+} from "./policyDocumentStructure";
+
 export type CertificateEndorsementKind =
   | "additional_insured"
   | "named_insured"
@@ -41,6 +46,19 @@ type SourceSpanLike = {
   text?: string;
   sectionId?: string;
   formNumber?: string;
+  sourceUnit?: string;
+  parentSpanId?: string;
+  table?: Record<string, unknown>;
+  location?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+type EvidenceCorpusItem = {
+  label: string;
+  text: string;
+  sourceSpanIds?: string[];
+  pageStart?: number;
+  pageEnd?: number;
 };
 
 const ENDORSEMENT_PATTERNS: Array<{
@@ -219,12 +237,12 @@ function buildEvidenceCorpus(
   policy?: Record<string, unknown> | null,
   sourceSpans?: SourceSpanLike[],
 ) {
-  const items = [];
+  const items: EvidenceCorpusItem[] = [];
   for (const span of sourceSpans ?? []) {
     const text = span.text?.trim();
     if (!text) continue;
     items.push({
-      label: span.sectionId ?? span.formNumber ?? "Policy source",
+      label: formatSourceSpanLabel(span),
       text,
       sourceSpanIds: span.spanId ? [span.spanId] : undefined,
       pageStart: span.pageStart,
@@ -232,18 +250,33 @@ function buildEvidenceCorpus(
     });
   }
 
-  const structured = [
-    policy?.summary,
-    policy?.coverages,
-    policy?.endorsements,
-    policy?.supplementaryFacts,
-    policy?.document,
-  ];
-  for (const item of structured) {
-    const text = stringifyEvidence(item);
-    if (!text) continue;
-    items.push({ label: "Extracted policy data", text });
-  }
+  if (!policy) return items;
+  const document = policy.document && typeof policy.document === "object" && !Array.isArray(policy.document)
+    ? policy.document as Record<string, unknown>
+    : {};
+  const addStructured = (label: string, value: unknown) => {
+    const text = stringifyEvidence(value);
+    if (!text) return;
+    items.push({ label, text });
+  };
+
+  addStructured("Policy summary", policy.summary);
+  addStructured("Coverage schedule", policy.coverages);
+  addStructured("Declarations", policy.declarations);
+  addStructured("Limits", policy.limits);
+  addStructured("Deductibles", policy.deductibles);
+  addStructured("Supplementary facts", policy.supplementaryFacts);
+  addStructured("Form inventory", policy.formInventory);
+  addStructured("Document metadata and outline", formatDocumentStructureForPrompt(policy, {
+    maxNodes: 36,
+    maxChars: 12000,
+    includeSourceSpanIds: true,
+  }));
+  addStructured("Definitions", document.definitions);
+  addStructured("Endorsements", document.endorsements);
+  addStructured("Exclusions", document.exclusions);
+  addStructured("Conditions", document.conditions);
+  addStructured("Document details", document);
   return items;
 }
 

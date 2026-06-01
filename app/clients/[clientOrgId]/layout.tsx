@@ -75,6 +75,7 @@ export default function ClientDetailLayout({
         }
         actions={actions}
         rightPanel={rightPanel}
+        disablePersistentChat
       >
         {children}
       </AppShell>

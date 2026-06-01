@@ -1,6 +1,16 @@
 "use node";
 import type { ModelMessage } from "ai";
 import { getClientPortalUrl } from "./domains";
+import {
+  documentOutlineNodeKind,
+  documentOutlineNodePages,
+  documentOutlineNodeText,
+  documentOutlineNodeTitle,
+  flattenDocumentOutline,
+  formatDocumentMetadataForPrompt,
+  getPolicyDocumentOutline,
+  sourceSpanIdsFromValue,
+} from "./policyDocumentStructure";
 
 export { buildConversationMemoryContext, buildConversationMemoryFromList, buildDocumentContext } from "./agentPrompts";
 
@@ -208,12 +218,12 @@ export function buildPolicyToolInstructions(maxToolCalls: number): string {
   return `
 
 TOOLS AND ANALYSIS:
-  You have tools to search policies, retrieve detailed policy sections, compare coverages, save notes, generate COIs, attach original policy PDFs, search public web sources, and, when available, extract policy attachments or send validated emails.
+  You have tools to search policies, retrieve source-native policy outline entries and original PDF evidence, compare coverages, save notes, generate COIs, attach original policy PDFs, search public web sources, and, when available, extract policy attachments or send validated emails.
 - Use tools before answering when the request depends on policy numbers, coverage details, exclusions, endorsements, limits, deductibles, premiums, or COI generation.
 - For simple policy-number requests, look up the relevant policy and answer with the carrier/type/context needed to disambiguate.
 - Before answering coverage questions, look up actual policy or endorsement wording. Do not say you need the wording when the tools/context can retrieve it.
 - For requests for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document, identify the correct policy and use the attachment/delivery tool rather than only summarizing policy data. If the user asks to email it, use the email expert and attach kind original_policy.
-- If extracted policy summaries or structured fields do not answer the question, conflict, or are low-confidence, use lookup_policy_section to search the original PDF source evidence before saying the information is unavailable.
+- If extracted policy summaries or structured fields do not answer the question, conflict, or are low-confidence, use lookup_policy_section to search the document's source-native outline and original PDF source evidence before saying the information is unavailable.
 - Treat lookup_policy_section results with evidenceSource "original_pdf" or sourceSpanIds as stronger evidence than extracted summaries for exact numeric, date, named-insured, endorsement, exclusion, condition, and definition facts.
 - If original-PDF evidence reveals a missing or corrected policy fact, use confirm_policy_fact with the supporting sourceSpanIds before relying on the corrected fact in later reasoning. Only update fields that are directly supported by the cited PDF text.
 - For COI/certificate requests, describe the action as generating a new COI or certificate from policy data and holder details. Do not offer to "pull COI wording" or "pull the right COI wording"; COIs are generated artifacts, not wording excerpts.
@@ -231,7 +241,7 @@ TOOLS AND ANALYSIS:
   - Use web_research only for public/current web facts such as company websites, public news, or source-backed public research. Never put private policy text, mailbox bodies, policy numbers, source spans, personal data, customer names, or confidential business details into public web queries. Cite the returned source URLs when relying on web_research.
 - If the user mentions a certificate holder and "insured" ambiguously, ask whether they mean ordinary COI certificate holder or a policy named-insured/additional-insured endorsement before opening a PCE case.
 - Keep the user-facing response focused on the action or clarification. Do not explain internal routing, tool choices, PCE classification, or "this is not a policy change" unless the user asks what happened.
-- For covered-reason questions, use this chain before answering: identify the relevant policy, search covered reasons and matching policy wording, then check exclusions, endorsements, conditions, and relevant definitions for limits or changes.
+- For covered-reason questions, use this chain before answering: identify the relevant policy, search the source-native outline and original PDF evidence for matching policy wording, then check exclusions, endorsements, conditions, and relevant definitions for limits or changes.
 - If a user's wording is plain language, search related insurance terms too, for example job/start work/employment, cancellation/cancel, illness/sickness, travelling companion/companion, or work requirement/presence at work.
 - When asked about a specific endorsement, search by form number, title, and related keywords. Try more than one query when the first result is weak.
 - When asked about exclusions or conditions, search for the clause label and related plain-language terms.
@@ -255,6 +265,14 @@ export function policySearchScore(
   const words = q.split(/\s+/).filter((w) => w.length > 2);
   const policyTypes = (policy.policyTypes as string[] | undefined) ?? [];
   const coverages = (policy.coverages as Array<{ name?: string; limit?: string }> | undefined) ?? [];
+  const outlineText = flattenDocumentOutline(getPolicyDocumentOutline(policy))
+    .slice(0, 20)
+    .map(({ node }) => [
+      documentOutlineNodeTitle(node),
+      documentOutlineNodeKind(node),
+      documentOutlineNodeText(node, 500),
+    ].filter(Boolean).join(" "))
+    .join(" ");
   const searchText = [
     policy.insuredName,
     policy.security,
@@ -265,6 +283,7 @@ export function policySearchScore(
     policy.summary,
     ...policyTypes,
     ...coverages.flatMap((c) => [c.name, c.limit]),
+    outlineText,
   ].filter(Boolean).join(" ").toLowerCase();
 
   if (policyType && !policyTypes.includes(policyType)) return 0;
@@ -332,7 +351,19 @@ export function searchPolicyDocument(
   maxResults = 8,
 ): Array<Record<string, unknown>> | string {
   const doc = policy.document as Record<string, unknown> | undefined;
-  if (!doc) return "No document data available for this policy.";
+  const outline = flattenDocumentOutline(getPolicyDocumentOutline(policy));
+  const metadataContext = formatDocumentMetadataForPrompt(policy, {
+    maxChars: 4000,
+    includeSourceSpanIds: true,
+  });
+  const hasStructuredPolicyData = Boolean(
+    (doc && Object.keys(doc).length > 0)
+    || outline.length > 0
+    || metadataContext
+    || (Array.isArray(policy.coverages) && policy.coverages.length > 0)
+    || policy.declarations,
+  );
+  if (!hasStructuredPolicyData) return "No document data available for this policy.";
 
   const q = query.toLowerCase().trim();
   const terms = queryTerms(query);
@@ -371,7 +402,28 @@ export function searchPolicyDocument(
     });
   };
 
-  for (const s of (doc.sections as Record<string, unknown>[] | undefined) ?? []) {
+  for (const { node, depth, path } of outline) {
+    const sourceSpanIds = sourceSpanIdsFromValue(node);
+    addResult("document_outline", documentOutlineNodeTitle(node), documentOutlineNodeText(node, 6000), {
+      nodePath: path,
+      depth,
+      documentNodeId: node.nodeId ?? node.id,
+      sectionType: documentOutlineNodeKind(node),
+      formNumber: node.formNumber,
+      formTitle: node.formTitle,
+      pages: documentOutlineNodePages(node),
+      sourceSpanIds,
+      evidenceKind: sourceSpanIds.length > 0 ? "source_linked_outline" : "document_outline",
+    }, 2);
+  }
+
+  if (metadataContext) {
+    addResult("document_metadata", "Document metadata and form inventory", metadataContext, {
+      evidenceKind: "navigation",
+    });
+  }
+
+  for (const s of (doc?.sections as Record<string, unknown>[] | undefined) ?? []) {
     const subsections = (s.subsections as Record<string, unknown>[] | undefined) ?? [];
     const subsectionText = subsections
       .map((sub) => `${textValue(sub.title)}\n${textValue(sub.content)}`)
@@ -384,13 +436,13 @@ export function searchPolicyDocument(
     });
   }
 
-  for (const reason of (doc.coveredReasons as Record<string, unknown>[] | undefined) ?? []) {
+  for (const reason of (doc?.coveredReasons as Record<string, unknown>[] | undefined) ?? []) {
     addResult("covered_reason", reason.title ?? reason.reason ?? reason.name, reason.content ?? reason.description ?? reason, {
       pages: reason.pageStart ? `${reason.pageStart}${reason.pageEnd ? `-${reason.pageEnd}` : ""}` : reason.pageNumber,
     }, 2);
   }
 
-  for (const e of (doc.endorsements as Record<string, unknown>[] | undefined) ?? []) {
+  for (const e of (doc?.endorsements as Record<string, unknown>[] | undefined) ?? []) {
     addResult("endorsement", e.title ?? e.name ?? e.formNumber, e.content ?? e.description ?? e, {
       formNumber: e.formNumber,
       effectType: e.effectType,
@@ -398,18 +450,18 @@ export function searchPolicyDocument(
     }, 1);
   }
 
-  for (const ex of (doc.exclusions as Array<Record<string, unknown> | string> | undefined) ?? []) {
+  for (const ex of (doc?.exclusions as Array<Record<string, unknown> | string> | undefined) ?? []) {
     const exclusion = typeof ex === "string" ? { title: "Exclusion", content: ex } : ex;
     addResult("exclusion", exclusion.title ?? exclusion.name, exclusion.content ?? exclusion.description ?? exclusion, {}, 1);
   }
 
-  for (const c of (doc.conditions as Record<string, unknown>[] | undefined) ?? []) {
+  for (const c of (doc?.conditions as Record<string, unknown>[] | undefined) ?? []) {
     addResult("condition", c.title ?? c.name, c.content ?? c.description ?? c, {
       pages: c.pageNumber,
     });
   }
 
-  for (const d of (doc.definitions as Record<string, unknown>[] | undefined) ?? []) {
+  for (const d of (doc?.definitions as Record<string, unknown>[] | undefined) ?? []) {
     addResult("definition", d.term ?? d.title ?? d.name, d.definition ?? d.content ?? d.description ?? d, {}, 1);
   }
 
@@ -451,7 +503,12 @@ export function searchPolicyDocument(
   if (top.length === 0) {
     const listTitles = (items: unknown[] | undefined, key: string) =>
       (items ?? []).map((item) => typeof item === "string" ? item : textValue((item as Record<string, unknown>)[key])).filter(Boolean).join(", ");
-    return `No matches for "${query}". Available covered reasons: ${listTitles(doc.coveredReasons as unknown[] | undefined, "title") || "none"}. Exclusions: ${listTitles(doc.exclusions as unknown[] | undefined, "title") || "none"}. Endorsements: ${listTitles(doc.endorsements as unknown[] | undefined, "title") || "none"}. Definitions: ${listTitles(doc.definitions as unknown[] | undefined, "term") || "none"}.`;
+    const outlineTitles = outline
+      .slice(0, 18)
+      .map(({ node }) => documentOutlineNodeTitle(node))
+      .filter(Boolean)
+      .join(", ");
+    return `No matches for "${query}". Available document outline: ${outlineTitles || "none"}. Legacy covered reasons: ${listTitles(doc?.coveredReasons as unknown[] | undefined, "title") || "none"}. Exclusions: ${listTitles(doc?.exclusions as unknown[] | undefined, "title") || "none"}. Endorsements: ${listTitles(doc?.endorsements as unknown[] | undefined, "title") || "none"}. Definitions: ${listTitles(doc?.definitions as unknown[] | undefined, "term") || "none"}.`;
   }
 
   return top.map((result) => result.data);

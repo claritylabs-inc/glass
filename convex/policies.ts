@@ -639,6 +639,7 @@ const coverageValidator = v.object({
   originalContent: v.optional(v.string()),
   resolvedOriginalContent: v.optional(v.string()),
   recordId: v.optional(v.string()),
+  documentNodeId: v.optional(v.string()),
   sourceSpanIds: v.optional(v.array(v.string())),
   sourceTextHash: v.optional(v.string()),
   extractionReviewStatus: v.optional(v.string()),
@@ -650,6 +651,9 @@ const premiumLineValidator = v.object({
   line: v.string(),
   amount: v.string(),
   amountValue: v.optional(v.number()),
+  documentNodeId: v.optional(v.string()),
+  sourceSpanIds: v.optional(v.array(v.string())),
+  sourceTextHash: v.optional(v.string()),
 });
 
 const addressValidator = v.object({
@@ -758,6 +762,9 @@ const formReferenceValidator = v.object({
   formType: v.string(),
   pageStart: v.optional(v.number()),
   pageEnd: v.optional(v.number()),
+  documentNodeId: v.optional(v.string()),
+  sourceSpanIds: v.optional(v.array(v.string())),
+  sourceTextHash: v.optional(v.string()),
 });
 
 const taxFeeValidator = v.object({
@@ -766,6 +773,9 @@ const taxFeeValidator = v.object({
   amountValue: v.optional(v.number()),
   type: v.optional(v.string()),
   description: v.optional(v.string()),
+  documentNodeId: v.optional(v.string()),
+  sourceSpanIds: v.optional(v.array(v.string())),
+  sourceTextHash: v.optional(v.string()),
 });
 
 // Document structure from cl-sdk — uses v.any() because the schema evolves with cl-sdk versions.
@@ -802,6 +812,8 @@ export const insert = mutation({
     insuredName: v.string(),
     summary: v.optional(v.string()),
     metadataSource: v.optional(metadataSourceValidator),
+    documentMetadata: v.optional(v.any()),
+    documentOutline: v.optional(v.any()),
     document: v.optional(documentValidator),
   },
   handler: async (ctx, args) => {
@@ -898,6 +910,8 @@ export const updateExtraction = mutation({
     insuredName: v.optional(v.string()),
     summary: v.optional(v.string()),
     metadataSource: v.optional(metadataSourceValidator),
+    documentMetadata: v.optional(v.any()),
+    documentOutline: v.optional(v.any()),
     document: v.optional(documentValidator),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
@@ -934,6 +948,9 @@ export const updateExtraction = mutation({
       value: v.string(),
       subject: v.optional(v.string()),
       context: v.optional(v.string()),
+      documentNodeId: v.optional(v.string()),
+      sourceSpanIds: v.optional(v.array(v.string())),
+      sourceTextHash: v.optional(v.string()),
     }))),
   },
   handler: async (ctx, args) => {
@@ -1564,34 +1581,16 @@ export const restartExtraction = mutation({
 export const softDelete = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    // Capability check: broker_of_client users can only delete their own uploads
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
-      .first();
-    if (!membership && policy.orgId) {
-      // Broker-of-client path: check ownership
-      assertCanDeletePolicy(
-        {
-          accessType: "broker_of_client",
-          userId,
-          org: { _id: orgId } as any,
-          orgType: "client",
-          role: undefined,
-          brokerOrgId: policy.uploadedByBrokerOrgId,
-        },
-        policy,
-      );
-    }
+    if (!policy?.orgId) throw new Error("Not found");
+    const access = await getOrgAccessFor(ctx, policy.orgId);
+    assertCanDeletePolicy(access, policy);
     await ctx.db.patch(args.id, { deletedAt: dayjs().valueOf() });
-    await deactivatePolicyDeclarationFacts(ctx, args.id, orgId);
+    await deactivatePolicyDeclarationFacts(ctx, args.id, policy.orgId);
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
-      userId,
-      orgId,
+      userId: access.userId,
+      orgId: policy.orgId,
       action: "deleted",
     });
   },

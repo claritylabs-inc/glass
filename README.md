@@ -18,7 +18,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 - Next.js 16 + React 19 + Tailwind 4
 - Convex (DB, actions, scheduler, storage, vector search, HTTP)
 - Vercel AI SDK (`ai`) for model execution + tool-enabled chat
-- `@claritylabs/cl-sdk@0.17.x` for extraction and insurance-focused primitives
+- `@claritylabs/cl-sdk@2.x` for extraction and insurance-focused primitives
 - Resend for email ingest and messaging workflows
 
 ## Getting Started
