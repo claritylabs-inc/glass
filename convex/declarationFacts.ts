@@ -7,7 +7,7 @@ import {
   findDeclarationDiscrepancies,
   shouldNotifyForDeclarationDiscrepancy,
 } from "./lib/declarationFacts";
-import { getOrgAccess } from "./lib/access";
+import { getPolicyAccessForQuery } from "./lib/access";
 import { notify } from "./lib/notify";
 
 function formatDiscrepancyFieldGroup(fieldGroup: string) {
@@ -47,11 +47,9 @@ function fallbackDiscrepancySummary(discrepancy: {
 export const listForPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
-    const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId || policy.deletedAt) return [];
-    const orgId = policy.orgId;
-
-    await getOrgAccess(ctx, orgId);
+    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
+    if (!policyAccess || policyAccess.policy.deletedAt) return [];
+    const orgId = policyAccess.policy.orgId;
 
     const discrepancies = await ctx.db
       .query("declarationDiscrepancies")

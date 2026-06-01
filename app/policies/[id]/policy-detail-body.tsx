@@ -106,18 +106,6 @@ const ExtractionCards = dynamic(
 
 dayjs.extend(customParseFormat);
 
-type PolicyAuditLogEntry = {
-  _id: string;
-  _creationTime: number;
-  policyId?: string;
-  quoteId?: string;
-  userId?: string;
-  orgId?: string;
-  action: string;
-  detail?: string;
-  metadata?: unknown;
-};
-
 type PolicyPipelineLogEntry = LogEntry & {
   timestamp: number;
   message: string;
@@ -2706,17 +2694,10 @@ export function PolicyDetailBody({
     shouldLoadFullPolicy,
   );
   const policy = fullPolicy ?? policySummary;
-  const auditEntries = useCachedQuery(
-    "policyAuditLog.listByPolicy",
-    api.policyAuditLog.listByPolicy,
-    LOG_POLICY_ACTIVITY_IN_BROWSER
-      ? { policyId: id as Id<"policies"> }
-      : "skip",
-  );
   const fileUrl = useCachedQuery(
-    "policies.getFileUrl.detail",
-    api.policies.getFileUrl,
-    policy?.fileId ? { fileId: policy.fileId as Id<"_storage"> } : "skip",
+    "policies.getPolicyFileUrl.detail",
+    api.policies.getPolicyFileUrl,
+    policy ? { policyId: id as Id<"policies"> } : "skip",
   );
 
   const softDelete = useMutation(api.policies.softDelete);
@@ -2734,7 +2715,6 @@ export function PolicyDetailBody({
   const [showRefreshDialog, setShowRefreshDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
-  const loggedAuditIds = useRef<Set<string>>(new Set());
   const loggedPipelineEntries = useRef<Set<string>>(new Set());
   const loggedStatus = useRef<string | null>(null);
 
@@ -2838,7 +2818,6 @@ export function PolicyDetailBody({
     activeTab === "review" && !hasExtractionReviews ? "details" : activeTab;
 
   useEffect(() => {
-    loggedAuditIds.current.clear();
     loggedPipelineEntries.current.clear();
     loggedStatus.current = null;
   }, [id]);
@@ -2859,29 +2838,6 @@ export function PolicyDetailBody({
       error: p.pipelineError,
     });
   }, [policy, pipelineStatus, p.pipelineError, policyNumber]);
-
-  useEffect(() => {
-    if (!LOG_POLICY_ACTIVITY_IN_BROWSER || !auditEntries) return;
-    const orderedEntries = [...(auditEntries as PolicyAuditLogEntry[])].sort(
-      (a, b) => a._creationTime - b._creationTime,
-    );
-    for (const entry of orderedEntries) {
-      if (loggedAuditIds.current.has(entry._id)) continue;
-      loggedAuditIds.current.add(entry._id);
-      logPolicyActivityToBrowser("audit", {
-        id: entry._id,
-        policyId: entry.policyId,
-        quoteId: entry.quoteId,
-        policyNumber,
-        action: entry.action,
-        detail: entry.detail,
-        metadata: entry.metadata,
-        userId: entry.userId,
-        orgId: entry.orgId,
-        timestamp: dayjs(entry._creationTime).toISOString(),
-      });
-    }
-  }, [auditEntries, policyNumber]);
 
   useEffect(() => {
     if (!LOG_POLICY_ACTIVITY_IN_BROWSER || pipelineLog.length === 0) return;

@@ -1,17 +1,19 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { api, internal } from "./_generated/api";
-import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
+import { internal } from "./_generated/api";
 import {
   requireBrokerAccessToClient,
+  getCurrentOrgAccess,
   getOrgAccessForQuery,
+  getPolicyAccessForQuery,
+  requireCurrentOrgAccess,
   assertCanEditPolicyExtractedFields,
   assertCanUploadPolicy,
   assertCanDeletePolicy,
   assertCanReadPolicies,
   assertCanReadPolicy,
-  getOrgAccess as getOrgAccessFor,
+  getOrgAccess,
 } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
@@ -302,144 +304,13 @@ async function appendPolicyPipelineLog(
   });
 }
 
-export const list = query({
-  args: {
-    carrier: v.optional(v.string()),
-    policyYear: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
-    const { orgId } = access;
-    const all = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-    return all.filter(
-      (p) =>
-        p.pipelineStatus === "complete" &&
-        !p.deletedAt &&
-        (!args.carrier || p.carrier === args.carrier) &&
-        (!args.policyYear || p.policyYear === args.policyYear)
-    );
-  },
-});
-
-export const listQuotes = query({
-  args: {
-    carrier: v.optional(v.string()),
-    quoteYear: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
-    const { orgId } = access;
-    const all = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-    return all.filter(
-      (p) =>
-        p.documentType === "quote" &&
-        p.pipelineStatus === "complete" &&
-        !p.deletedAt &&
-        (!args.carrier || p.carrier === args.carrier) &&
-        (!args.quoteYear || p.policyYear === args.quoteYear)
-    );
-  },
-});
-
-export const quoteStats = query({
-  args: {},
-  handler: async (ctx) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return { totalQuotes: 0, pendingExtractions: 0, byType: {}, byCarrier: {}, byYear: {} };
-    const { orgId } = access;
-    const allPolicies = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-
-    const quotes = allPolicies.filter((p) => p.documentType === "quote" && p.pipelineStatus === "complete" && !p.deletedAt);
-    const pendingExtractions = allPolicies.filter(
-      (p) =>
-        p.documentType === "quote" &&
-        !p.deletedAt &&
-        (p.pipelineStatus === "running" || p.pipelineStatus === "error" || !p.pipelineStatus)
-    ).length;
-
-    const byType: Record<string, number> = {};
-    const byCarrier: Record<string, number> = {};
-    const byYear: Record<string, number> = {};
-
-    for (const q of quotes) {
-      for (const t of q.policyTypes) {
-        byType[t] = (byType[t] || 0) + 1;
-      }
-      byCarrier[q.carrier] = (byCarrier[q.carrier] || 0) + 1;
-      byYear[q.policyYear] = (byYear[q.policyYear] || 0) + 1;
-    }
-
-    return {
-      totalQuotes: quotes.length,
-      pendingExtractions,
-      byType,
-      byCarrier,
-      byYear,
-    };
-  },
-});
-
-export const listPending = query({
-  args: {},
-  handler: async (ctx) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
-    const { orgId } = access;
-    const all = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-    const pending = all.filter(
-      (p) =>
-        !p.deletedAt &&
-        (p.pipelineStatus === "running" ||
-        p.pipelineStatus === "paused" ||
-        p.pipelineStatus === "error" ||
-        !p.pipelineStatus)
-    );
-
-    return pending;
-  },
-});
-
-export const listExtractionLog = query({
-  args: {},
-  handler: async (ctx) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
-    const { orgId } = access;
-    const all = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-    const completed = all.filter(
-      (p) =>
-        !p.deletedAt &&
-        (p.pipelineStatus === "complete" || p.dismissed === true)
-    );
-
-    return completed;
-  },
-});
-
 export const get = query({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy || !policy.orgId) return null;
     try {
-      await getOrgAccessFor(ctx, policy.orgId);
+      await getOrgAccess(ctx, policy.orgId);
     } catch {
       return null;
     }
@@ -467,7 +338,7 @@ export const getSummary = query({
     const policy = await ctx.db.get(args.id);
     if (!policy || !policy.orgId) return null;
     try {
-      await getOrgAccessFor(ctx, policy.orgId);
+      await getOrgAccess(ctx, policy.orgId);
     } catch {
       return null;
     }
@@ -518,11 +389,12 @@ export const getSummary = query({
   },
 });
 
-export const getFileUrl = query({
-  args: { fileId: v.id("_storage") },
+export const getPolicyFileUrl = query({
+  args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
-    await requireOrgAccess(ctx);
-    return await ctx.storage.getUrl(args.fileId);
+    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
+    if (!policyAccess?.policy.fileId) return null;
+    return await ctx.storage.getUrl(policyAccess.policy.fileId);
   },
 });
 
@@ -565,47 +437,6 @@ export const listAllInternalByUser = internalQuery({
     return all.filter(
       (p) => p.pipelineStatus === "complete" && !p.deletedAt
     );
-  },
-});
-
-export const stats = query({
-  args: {},
-  handler: async (ctx) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return { totalPolicies: 0, activeConnections: 0, lastScanAt: null, pendingExtractions: 0, byType: {}, byCarrier: {}, byYear: {} };
-    const { orgId } = access;
-    const allPolicies = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
-      .collect();
-    const policies = allPolicies.filter((p) => p.pipelineStatus === "complete" && !p.deletedAt);
-    const pendingExtractions = allPolicies.filter(
-      (p) =>
-        !p.deletedAt &&
-        (p.pipelineStatus === "running" || p.pipelineStatus === "error" || !p.pipelineStatus)
-    ).length;
-
-    const byType: Record<string, number> = {};
-    const byCarrier: Record<string, number> = {};
-    const byYear: Record<string, number> = {};
-
-    for (const p of policies) {
-      for (const t of p.policyTypes) {
-        byType[t] = (byType[t] || 0) + 1;
-      }
-      byCarrier[p.carrier] = (byCarrier[p.carrier] || 0) + 1;
-      byYear[p.policyYear] = (byYear[p.policyYear] || 0) + 1;
-    }
-
-    return {
-      totalPolicies: policies.length,
-      activeConnections: 0,
-      lastScanAt: null,
-      pendingExtractions,
-      byType,
-      byCarrier,
-      byYear,
-    };
   },
 });
 
@@ -1011,7 +842,7 @@ export const updateExtractedFields = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccessFor(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId);
     assertCanEditPolicyExtractedFields(access);
 
     const patch: Record<string, unknown> = {};
@@ -1078,7 +909,7 @@ export const answerCoverageReviewQuestion = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccessFor(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId);
     assertCanUploadPolicy(access);
 
     const review = policy.extractionReview as
@@ -1167,7 +998,7 @@ export const requestCoverageReviewBrokerHelp = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccessFor(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId);
     assertCanUploadPolicy(access);
     const org = await ctx.db.get(policy.orgId);
     if (!org || org.type !== "client" || !org.brokerOrgId) {
@@ -1317,7 +1148,7 @@ export const confirmPolicyFactFromSource = internalMutation({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireOrgAccess(ctx);
+    await requireCurrentOrgAccess(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -1403,7 +1234,7 @@ export const listForClient = query({
     documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
   },
   handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
+    const access = await getCurrentOrgAccess(ctx);
     if (!access) return [];
     const { orgId } = access;
     const all = await ctx.db
@@ -1420,83 +1251,10 @@ export const listForClient = query({
   },
 });
 
-export const dismiss = mutation({
-  args: {
-    id: v.id("policies"),
-  },
-  handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
-    const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    await ctx.db.patch(args.id, { dismissed: true });
-    await ctx.db.insert("policyAuditLog", {
-      policyId: args.id,
-      userId,
-      orgId,
-      action: "dismissed",
-    });
-  },
-});
-
-export const setExcludeFromSearch = mutation({
-  args: {
-    id: v.id("policies"),
-    exclude: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
-    const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    await ctx.db.patch(args.id, { excludeFromSearch: args.exclude });
-    await ctx.db.insert("policyAuditLog", {
-      policyId: args.id,
-      userId,
-      orgId,
-      action: args.exclude ? "excluded_from_search" : "included_in_search",
-    });
-  },
-});
-
-export const pauseExtraction = mutation({
-  args: { id: v.id("policies") },
-  handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
-    const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    const state = await readPolicyPipelineState(ctx, args.id);
-    if (state?.pipelineStatus !== "running") throw new Error("Can only pause extracting policies");
-    await setPolicyPipelineStatus(ctx, args.id, "paused", null);
-    await ctx.db.insert("policyAuditLog", {
-      policyId: args.id,
-      userId,
-      orgId,
-      action: "paused",
-    });
-  },
-});
-
-export const resumeExtraction = mutation({
-  args: { id: v.id("policies") },
-  handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
-    const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-    const state = await readPolicyPipelineState(ctx, args.id);
-    if (state?.pipelineStatus !== "paused") throw new Error("Can only resume paused policies");
-    await setPolicyPipelineStatus(ctx, args.id, "running", null);
-    await ctx.db.insert("policyAuditLog", {
-      policyId: args.id,
-      userId,
-      orgId,
-      action: "resumed",
-    });
-  },
-});
-
 export const cancelExtraction = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const { userId, orgId } = await requireCurrentOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
     const state = await readPolicyPipelineState(ctx, args.id);
@@ -1531,59 +1289,12 @@ export const cancelExtraction = mutation({
   },
 });
 
-export const restartExtraction = mutation({
-  args: { id: v.id("policies") },
-  handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
-    const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-
-    // Clear all extracted data for a fresh start
-    await patchPolicyExtractionRun(ctx, args.id, {
-      pipelineStatus: "idle",
-      pipelineError: undefined,
-      pipelineCheckpoint: undefined,
-      pipelineLog: [],
-    });
-    await clearPolicyExtractionArtifacts(ctx, args.id);
-    await ctx.db.patch(args.id, {
-      pipelineStatus: "idle",
-      pipelineError: undefined,
-      pipelineLog: undefined,
-      pipelineCheckpoint: undefined,
-      dismissed: undefined,
-      carrier: "Extracting...",
-      policyNumber: "Extracting...",
-      insuredName: "Extracting...",
-      summary: undefined,
-      coverages: [],
-      document: undefined,
-      metadataSource: undefined,
-    });
-
-    // Schedule fresh extraction from stored file
-    if (policy.fileId) {
-      await ctx.scheduler.runAfter(0, api.actions.retryExtraction.retryExtraction, {
-        policyId: args.id,
-        mode: "full" as const,
-      });
-    }
-
-    await ctx.db.insert("policyAuditLog", {
-      policyId: args.id,
-      userId,
-      orgId,
-      action: "restarted",
-    });
-  },
-});
-
 export const softDelete = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccessFor(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId);
     assertCanDeletePolicy(access, policy);
     await ctx.db.patch(args.id, { deletedAt: dayjs().valueOf() });
     await deactivatePolicyDeclarationFacts(ctx, args.id, policy.orgId);
@@ -1739,7 +1450,7 @@ export const updateReconciliation = internalMutation({
 export const restore = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const { userId, orgId } = await requireCurrentOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
     if (!policy || policy.orgId !== orgId) throw new Error("Not found");
     await ctx.db.patch(args.id, { deletedAt: undefined });
@@ -1752,33 +1463,13 @@ export const restore = mutation({
   },
 });
 
-export const remove = mutation({
-  args: { id: v.id("policies") },
-  handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
-
-    // Delete associated document chunks
-    const chunks = await ctx.db
-      .query("documentChunks")
-      .withIndex("by_policyId", (idx) => idx.eq("policyId", args.id))
-      .collect();
-    for (const chunk of chunks) {
-      await ctx.db.delete(chunk._id);
-    }
-
-    await ctx.db.delete(args.id);
-  },
-});
-
 export const listForOrg = query({
   args: {
     orgId: v.id("organizations"),
     documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
   },
   handler: async (ctx, args) => {
-    const access = await getOrgAccessFor(ctx, args.orgId);
+    const access = await getOrgAccess(ctx, args.orgId);
     assertCanReadPolicies(access);
     const all = await ctx.db
       .query("policies")
