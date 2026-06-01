@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { LocateFixed } from "lucide-react";
+import { FileSearch } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf, type PdfHighlightBox } from "@/components/pdf-context";
@@ -145,14 +145,12 @@ export function SourceEvidenceButton({
   sourceSpans,
   fallbackPage,
   fileUrl,
-  label = "Source",
   className = "",
 }: {
   sourceSpanIds?: string[];
   sourceSpans?: SourceSpanDoc[];
   fallbackPage?: number;
   fileUrl?: string;
-  label?: string;
   className?: string;
 }) {
   const pdf = usePdf();
@@ -190,9 +188,14 @@ export function SourceEvidenceButton({
           ? `Highlight exact source on page ${page}`
           : `Open source page ${page}; exact highlight unavailable`
       }
+      aria-label={
+        hasExactHighlight
+          ? `Highlight exact source on page ${page}`
+          : `Open source page ${page}; exact highlight unavailable`
+      }
     >
-      <LocateFixed className="size-3" />
-      {hasExactHighlight ? `${label} p.${page}` : `${label} page ${page}`}
+      <FileSearch className="size-3" />
+      p.{page}
     </button>
   );
 }
