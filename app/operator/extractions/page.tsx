@@ -1012,6 +1012,93 @@ function TimelineWaterfall({
   );
 }
 
+function ModelCallsGrid({
+  events,
+  selectedEventId,
+  onSelectEvent,
+}: {
+  events: TraceEvent[];
+  selectedEventId?: string;
+  onSelectEvent: (id: string) => void;
+}) {
+  const gridTemplateColumns = "minmax(10rem,1.25fr) minmax(8rem,0.9fr) minmax(4.5rem,0.35fr) minmax(6rem,0.5fr)";
+  const columns = ["Call", "Model", "Time", "Tokens"];
+
+  return (
+    <div className="w-full min-w-0 overflow-hidden rounded-lg border border-foreground/6">
+      <div className="grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
+        {columns.map((column, index) => (
+          <div
+            key={column}
+            className={`px-3 py-2 text-label-sm font-medium text-muted-foreground ${
+              index < columns.length - 1 ? "border-r border-foreground/6" : ""
+            }`}
+          >
+            {column}
+          </div>
+        ))}
+      </div>
+      <div className="relative min-h-48 overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 grid min-h-full"
+          style={{ gridTemplateColumns }}
+        >
+          {columns.map((column, index) => (
+            <div
+              key={column}
+              className={index < columns.length - 1 ? "border-r border-foreground/6" : ""}
+            />
+          ))}
+        </div>
+        <div className="relative z-10 min-h-full">
+          {events.length ? events.map((event) => {
+            const debugDetails = modelCallDebugDetails(event);
+            const selected = selectedEventId === event._id;
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                key={event._id}
+                className={`grid min-h-12 border-b border-foreground/6 text-left last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                  selected ? "bg-muted/50" : ""
+                }`}
+                style={{ gridTemplateColumns }}
+                onClick={() => onSelectEvent(event._id)}
+                onKeyDown={(keyboardEvent) => {
+                  if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+                  keyboardEvent.preventDefault();
+                  onSelectEvent(event._id);
+                }}
+              >
+                <div className="min-w-0 px-3 py-2">
+                  <p className="truncate text-body-sm text-foreground">{eventTitle(event)}</p>
+                  <p className="truncate text-label-sm text-muted-foreground">
+                    {[event.status, event.routeSource, debugDetails ? "debug details" : undefined]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
+                  <p className="truncate">{[event.provider, event.model].filter(Boolean).join(" / ") || "—"}</p>
+                </div>
+                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
+                  <p className="truncate">{formatDuration(event.durationMs)}</p>
+                </div>
+                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
+                  <p className="truncate">{formatTokens(event.inputTokens, event.outputTokens)}</p>
+                </div>
+              </div>
+            );
+          }) : (
+            <p className="px-3 py-3 text-body-sm text-muted-foreground">No model calls recorded.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OperatorExtractionsPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -1286,53 +1373,11 @@ export default function OperatorExtractionsPage() {
             </TabsContent>
 
             <TabsContent value="models" className="scrollbar-hide min-h-0 min-w-0 space-y-2 overflow-y-auto pt-3">
-              <div className="w-full min-w-0 overflow-hidden rounded-lg border border-foreground/6">
-                <Table className="min-w-0 table-fixed">
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="w-[38%] px-3 text-label-sm text-muted-foreground">Call</TableHead>
-                      <TableHead className="w-[28%] text-label-sm text-muted-foreground">Model</TableHead>
-                      <TableHead className="w-[12%] text-label-sm text-muted-foreground">Time</TableHead>
-                      <TableHead className="w-[22%] px-3 text-label-sm text-muted-foreground">Tokens</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {modelEvents.length ? modelEvents.map((event) => (
-                      <TableRow
-                        key={event._id}
-                        tabIndex={0}
-                        onClick={() => setSelectedModelEventId(event._id)}
-                        onKeyDown={(keyboardEvent) => {
-                          if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
-                          keyboardEvent.preventDefault();
-                          setSelectedModelEventId(event._id);
-                        }}
-                        className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                          selectedModelEvent?._id === event._id ? "bg-muted/50" : ""
-                        }`}
-                      >
-                        <TableCell className="min-w-0 px-3">
-                          <p className="truncate text-body-sm text-foreground">{eventTitle(event)}</p>
-                          <p className="truncate text-label-sm text-muted-foreground">
-                            {[event.status, event.routeSource, modelCallDebugDetails(event) ? "debug details" : undefined].filter(Boolean).join(" · ")}
-                          </p>
-                        </TableCell>
-                        <TableCell className="min-w-0 truncate text-muted-foreground">
-                          {[event.provider, event.model].filter(Boolean).join(" / ") || "—"}
-                        </TableCell>
-                        <TableCell className="min-w-0 truncate text-muted-foreground">{formatDuration(event.durationMs)}</TableCell>
-                        <TableCell className="min-w-0 truncate px-3 text-muted-foreground">{formatTokens(event.inputTokens, event.outputTokens)}</TableCell>
-                      </TableRow>
-                    )) : (
-                      <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={4} className="h-20 px-3 text-body-sm text-muted-foreground">
-                          No model calls recorded.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+              <ModelCallsGrid
+                events={modelEvents}
+                selectedEventId={selectedModelEvent?._id}
+                onSelectEvent={setSelectedModelEventId}
+              />
               <ModelCallDebugPanel event={selectedModelEvent} />
             </TabsContent>
 
