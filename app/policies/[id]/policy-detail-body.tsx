@@ -88,23 +88,6 @@ const AddressAutofill = dynamic(
   { ssr: false },
 );
 
-const ExtractionCards = dynamic(
-  () =>
-    import("./extraction-panel").then((module) => ({
-      default: module.ExtractionCards,
-    })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="space-y-2">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <Skeleton key={index} className="h-20 w-full rounded-lg" />
-        ))}
-      </div>
-    ),
-  },
-);
-
 dayjs.extend(customParseFormat);
 
 type PolicyPipelineLogEntry = LogEntry & {
@@ -168,14 +151,12 @@ type CoverageReviewQuestion = {
 type PolicyDetailTab =
   | "details"
   | "review"
-  | "extraction"
   | "certificates"
   | "changes";
 
 function parsePolicyDetailTab(value: string | null): PolicyDetailTab {
   if (
     value === "review" ||
-    value === "extraction" ||
     value === "certificates" ||
     value === "changes"
   ) {
@@ -2950,7 +2931,6 @@ export function PolicyDetailBody({
   );
   const shouldLoadFullPolicy =
     activeTab === "details" ||
-    activeTab === "extraction" ||
     showCertificateSheet ||
     showEditExtractedFields;
   const policySummary = useCachedPolicySummary(id as Id<"policies">);
@@ -3220,19 +3200,6 @@ export function PolicyDetailBody({
           </PillButton>
         )}
         <ViewPdfButton url={fileUrl} disabled={isProcessingPolicy} />
-        {visibleActiveTab === "extraction" &&
-          canEditExtractedFields &&
-          !readOnly &&
-          !isDeleted && (
-            <PillButton
-              size="compact"
-              disabled={isProcessingPolicy}
-              onClick={() => setShowEditExtractedFields(true)}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              Edit fields
-            </PillButton>
-          )}
         {!readOnly && !isDeleted && (
           <PillButton
             size="compact"
@@ -3449,11 +3416,10 @@ export function PolicyDetailBody({
         <TabsList variant="pill">
           {(
             [
-              { id: "details" as const, label: "Summary" },
+              { id: "details" as const, label: "Details" },
               ...(hasExtractionReviews
                 ? [{ id: "review" as const, label: "Review" }]
                 : []),
-              { id: "extraction" as const, label: "Breakdown" },
               { id: "certificates" as const, label: "Certificates" },
               { id: "changes" as const, label: "Changes" },
             ] as const
@@ -3531,21 +3497,6 @@ export function PolicyDetailBody({
         <CertificatesTab policyId={policy._id} />
       )}
 
-      {visibleActiveTab === "extraction" && (
-        <div className="space-y-4">
-          {fullPolicy === undefined || fullPolicy === null ? (
-            <PolicyDetailSkeleton />
-          ) : (
-            <>
-              <ExtractionCards
-                policyId={policy._id}
-                policyDocument={extractionData}
-                initialPage={initialPage}
-              />
-            </>
-          )}
-        </div>
-      )}
     </>
   );
 }
