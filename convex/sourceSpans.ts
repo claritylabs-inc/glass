@@ -160,12 +160,13 @@ export const deleteByPolicy = internalMutation({
     const spans = await ctx.db
       .query("sourceSpans")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
-      .collect();
+      .take(100);
     const chunks = await ctx.db
       .query("sourceChunks")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
-      .collect();
+      .take(50);
     for (const span of spans) await ctx.db.delete(span._id);
     for (const chunk of chunks) await ctx.db.delete(chunk._id);
+    return { deleted: spans.length + chunks.length };
   },
 });

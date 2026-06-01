@@ -112,7 +112,8 @@ export const deleteByPolicy = internalMutation({
     const nodes = await ctx.db
       .query("sourceNodes")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
-      .collect();
+      .take(50);
     for (const node of nodes) await ctx.db.delete(node._id);
+    return { deleted: nodes.length };
   },
 });

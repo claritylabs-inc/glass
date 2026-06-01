@@ -75,10 +75,11 @@ export const deleteByPolicy = internalMutation({
     const chunks = await ctx.db
       .query("documentChunks")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
-      .collect();
+      .take(50);
     for (const chunk of chunks) {
       await ctx.db.delete(chunk._id);
     }
+    return { deleted: chunks.length };
   },
 });
 

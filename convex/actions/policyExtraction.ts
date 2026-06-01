@@ -419,6 +419,20 @@ async function embedAndStoreBatch<T>({
   return { embedded, failures };
 }
 
+async function deletePolicyRowsInBatches(
+  ctx: ActionCtx,
+  mutationRef: any,
+  policyId: Id<"policies">,
+): Promise<number> {
+  let totalDeleted = 0;
+  for (;;) {
+    const result = await ctx.runMutation(mutationRef, { policyId });
+    const deleted = typeof result?.deleted === "number" ? result.deleted : 0;
+    totalDeleted += deleted;
+    if (deleted === 0) return totalDeleted;
+  }
+}
+
 async function isExtractionCancelled(
   ctx: ActionCtx,
   policyId: string,
@@ -1217,9 +1231,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         await pCtx.log("No chunks to embed (phase resumed or no chunks extracted)");
       } else {
         await pCtx.log(`Embedding ${chunks.length} chunks for vector search…`);
-        await convexCtx.runMutation(
+        await deletePolicyRowsInBatches(
+          convexCtx,
           (internal as any).documentChunks.deleteByPolicy,
-          { policyId },
+          policyId as Id<"policies">,
         );
         const embedStartedAt = nowMs();
         const { embedded, failures: embedFailures } = await embedAndStoreBatch({
@@ -1265,13 +1280,15 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       if (sourceSpans?.length || sourceChunks?.length || sourceNodes?.length) {
         await pCtx.log(`Storing ${sourceSpans?.length ?? 0} source spans, ${sourceNodes?.length ?? 0} source nodes, and ${sourceChunks?.length ?? 0} compatibility source chunks…`);
-        await convexCtx.runMutation(
+        await deletePolicyRowsInBatches(
+          convexCtx,
           (internal as any).sourceSpans.deleteByPolicy,
-          { policyId },
+          policyId as Id<"policies">,
         );
-        await convexCtx.runMutation(
+        await deletePolicyRowsInBatches(
+          convexCtx,
           (internal as any).sourceNodes.deleteByPolicy,
-          { policyId },
+          policyId as Id<"policies">,
         );
 
         for (const span of sourceSpans ?? []) {
