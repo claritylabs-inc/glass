@@ -2,18 +2,20 @@ import { v } from "convex/values";
 import dayjs from "dayjs";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { requireOrgAccess } from "./lib/orgAuth";
 import {
   assertCanCreatePolicyChange,
   assertCanDraftPolicyChangeSubmission,
   assertCanManagePolicyChange,
   assertCanReadPolicyChange,
+  getPolicyChangeAccessForQuery,
+  getPolicyChangeCaseAccessForQuery,
   getOrgAccess,
+  requireCurrentOrgAccess,
 } from "./lib/access";
 import { notify } from "./lib/notify";
 import { declarationFactHash, extractDeclarationFactsFromPolicy } from "./lib/declarationFacts";
 import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 
 const caseSourceKindValidator = v.union(
   v.literal("chat"),
@@ -204,7 +206,7 @@ async function insertCaseMessage(ctx: any, args: {
   channel?: "chat" | "email" | "imessage" | "mcp" | "cli" | "uploaded_document" | "manual";
   content: string;
   sourceSpanIds?: string[];
-  createdByUserId?: any;
+  createdByUserId?: Id<"users">;
   createdAt: number;
 }) {
   await ctx.db.insert("caseMessages", args);
@@ -217,8 +219,8 @@ export const createFromChat = mutation({
     evidenceSourceIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAccess(ctx);
-    const access = await getOrgAccess(ctx, orgId);
+    const access = await requireCurrentOrgAccess(ctx);
+    const { orgId, userId } = access;
     assertCanCreatePolicyChange(access);
     if (args.policyId) {
       const policy = await ctx.db.get(args.policyId);
@@ -499,8 +501,8 @@ export const createFromEmail = mutation({
     evidenceSourceIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAccess(ctx);
-    const access = await getOrgAccess(ctx, orgId);
+    const access = await requireCurrentOrgAccess(ctx);
+    const { orgId, userId } = access;
     assertCanCreatePolicyChange(access);
     if (args.policyId) {
       const policy = await ctx.db.get(args.policyId);
@@ -555,8 +557,8 @@ export const createFromUploadedDocument = mutation({
     evidenceSourceIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAccess(ctx);
-    const access = await getOrgAccess(ctx, orgId);
+    const access = await requireCurrentOrgAccess(ctx);
+    const { orgId, userId } = access;
     assertCanCreatePolicyChange(access);
     if (args.policyId) {
       const policy = await ctx.db.get(args.policyId);
@@ -1102,11 +1104,8 @@ export const completeFromEndorsement = internalMutation({
 export const listByPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
-    const policy = await ctx.db.get(args.policyId);
-    if (!policy) return [];
-    if (!policy.orgId) return [];
-    const access = await getOrgAccess(ctx, policy.orgId);
-    assertCanReadPolicyChange(access);
+    const policyAccess = await getPolicyChangeAccessForQuery(ctx, args.policyId);
+    if (!policyAccess) return [];
     return ctx.db
       .query("policyChangeCases")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
@@ -1118,10 +1117,9 @@ export const listByPolicy = query({
 export const getCaseDetail = query({
   args: { caseId: v.id("policyChangeCases") },
   handler: async (ctx, args) => {
-    const changeCase = await ctx.db.get(args.caseId);
-    if (!changeCase) throw new Error("Policy change case not found");
-    const access = await getOrgAccess(ctx, changeCase.orgId);
-    assertCanReadPolicyChange(access);
+    const caseAccess = await getPolicyChangeCaseAccessForQuery(ctx, args.caseId);
+    if (!caseAccess) return null;
+    const { changeCase } = caseAccess;
 
     const [packets, messages, evidenceLinks, validationReports] = await Promise.all([
       ctx.db
@@ -1153,22 +1151,5 @@ export const getCaseDetail = query({
       evidenceLinks,
       validationReports,
     };
-  },
-});
-
-export const listByOrg = query({
-  args: { status: v.optional(caseStatusValidator) },
-  handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const rows = await ctx.db
-      .query("policyChangeCases")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
-      .order("desc")
-      .collect();
-    if (!args.status) return rows;
-    const normalizedFilter = normalizeCaseStatus(args.status as PolicyChangeStatus);
-    return rows.filter((row) =>
-      normalizeCaseStatus(row.status as PolicyChangeStatus) === normalizedFilter
-    );
   },
 });

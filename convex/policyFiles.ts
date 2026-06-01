@@ -1,23 +1,7 @@
 import dayjs from "dayjs";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { query, internalQuery, internalMutation } from "./_generated/server";
-import { getOrgAccess } from "./lib/orgAuth";
 import { makePipelineMutations } from "./lib/pipelineMutations";
-
-export const listByPolicy = query({
-  args: { policyId: v.id("policies") },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
-    const { orgId } = access;
-    const files = await ctx.db
-      .query("policyFiles")
-      .withIndex("by_policyId", (idx) => idx.eq("policyId", args.policyId))
-      .collect();
-    // Filter to org's files only
-    return files.filter((f) => f.orgId === orgId);
-  },
-});
 
 export const listByPolicyInternal = internalQuery({
   args: { policyId: v.id("policies") },

@@ -122,9 +122,9 @@ export function PolicyPreview({
     [citedSourceSpanIds, documentOutline],
   );
   const fileUrl = useCachedQuery(
-    "policies.getFileUrl.preview",
-    api.policies.getFileUrl,
-    policy?.fileId ? { fileId: policy.fileId } : "skip",
+    "policies.getPolicyFileUrl.preview",
+    api.policies.getPolicyFileUrl,
+    policy ? { policyId: policy._id } : "skip",
   );
   const [showAllTypes, setShowAllTypes] = useState(false);
   const sourceSpans = useCachedQuery(

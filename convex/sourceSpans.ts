@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { getPolicyAccessForQuery } from "./lib/access";
 
 const sourceKindValidator = v.union(
   v.literal("policy_pdf"),
@@ -43,24 +43,15 @@ const sourceChunkInsertFields = {
   createdAt: v.number(),
 };
 
-export const listSpansByPolicy = query({
-  args: { policyId: v.id("policies") },
-  handler: async (ctx, args) => {
-    await requireOrgAccess(ctx);
-    return ctx.db
-      .query("sourceSpans")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
-      .collect();
-  },
-});
-
 export const listSpansByPolicyAndSpanIds = query({
   args: {
     policyId: v.id("policies"),
     spanIds: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireOrgAccess(ctx);
+    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
+    if (!policyAccess) return [];
+
     const wanted = new Set(args.spanIds);
     if (wanted.size === 0) return [];
     const spans = await ctx.db

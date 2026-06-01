@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action, internalAction, internalMutation, internalQuery, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { assertCanReadPolicy, getOrgAccess } from "./lib/access";
+import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
 import { evaluateCertificateRequestGate } from "./lib/certificateRequestGate";
 
 const certificateSourceValidator = v.union(
@@ -98,30 +98,6 @@ function formatGateMessage(args: {
   return `${args.reasonMessage} I put the certificate for ${args.holderName} on hold. ${nextStep}`;
 }
 
-export const listByPolicy = query({
-  args: { policyId: v.id("policies") },
-  handler: async (ctx, args) => {
-    const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId) return [];
-
-    const access = await getOrgAccess(ctx, policy.orgId);
-    assertCanReadPolicy(access);
-
-    const rows = await ctx.db
-      .query("certificates")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
-      .order("desc")
-      .collect();
-
-    return await Promise.all(
-      rows.map(async (row) => ({
-        ...row,
-        url: await ctx.storage.getUrl(row.fileId),
-      })),
-    );
-  },
-});
-
 export const listByPolicyInternal = internalQuery({
   args: {
     orgId: v.id("organizations"),
@@ -146,28 +122,11 @@ export const listByPolicyInternal = internalQuery({
   },
 });
 
-export const listHoldsByPolicy = query({
-  args: { policyId: v.id("policies") },
-  handler: async (ctx, args) => {
-    const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId) return [];
-    const access = await getOrgAccess(ctx, policy.orgId);
-    assertCanReadPolicy(access);
-    return await ctx.db
-      .query("certificateRequestHolds")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
-      .order("desc")
-      .collect();
-  },
-});
-
 export const listActivityByPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
-    const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId) return { certificates: [], holds: [] };
-    const access = await getOrgAccess(ctx, policy.orgId);
-    assertCanReadPolicy(access);
+    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
+    if (!policyAccess) return { certificates: [], holds: [] };
     const [certificates, holds] = await Promise.all([
       ctx.db
         .query("certificates")

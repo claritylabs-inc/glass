@@ -8,7 +8,6 @@ import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import {
   getCurrentOrgAccess,
-  getCurrentOrgForUser,
   requireCurrentOrgAccess,
   requireCurrentOrgAdmin,
   type CurrentOrgAccess,
@@ -46,13 +45,4 @@ export async function getOrgAccess(ctx: Ctx): Promise<OrgAccess | null> {
 /** @deprecated Use requireCurrentOrgAdmin from convex/lib/access.ts */
 export async function requireOrgAdmin(ctx: Ctx): Promise<OrgAccess> {
   return toLegacyOrgAccess(await requireCurrentOrgAdmin(ctx));
-}
-
-/** @deprecated */
-export async function getOrgForUser(
-  ctx: Ctx,
-  userId: Id<"users">,
-): Promise<{ orgId: Id<"organizations">; org: Doc<"organizations"> } | null> {
-  const access = await getCurrentOrgForUser(ctx, userId);
-  return access ? { orgId: access.orgId, org: access.org } : null;
 }

@@ -247,9 +247,9 @@ function DeliveryDrawer({
 function PolicyPreviewCard({ job }: { job: DeliveryJob }) {
   const { openWithUrl } = usePdf();
   const fileUrl = useCachedQuery(
-    "policies.getFileUrl",
-    api.policies.getFileUrl,
-    job.policy?.fileId ? { fileId: job.policy.fileId } : "skip",
+    "policies.getPolicyFileUrl",
+    api.policies.getPolicyFileUrl,
+    job.policy ? { policyId: job.policy._id } : "skip",
   );
   const label = job.policy?.fileName ?? job.policy?.policyNumber ?? "Policy document";
   const detail = [

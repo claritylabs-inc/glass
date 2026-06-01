@@ -28,6 +28,13 @@ export type CurrentOrgAccess = OrgAccess & {
   brokerOrgId: undefined;
 };
 
+type PolicyWithOrg = Doc<"policies"> & { orgId: Id<"organizations"> };
+type PolicyAccessForQuery = { policy: PolicyWithOrg; access: OrgAccess };
+
+function policyHasOrg(policy: Doc<"policies"> | null): policy is PolicyWithOrg {
+  return !!policy?.orgId;
+}
+
 // ── Auth primitive ──────────────────────────────────────────────────────────
 
 /** Require an authenticated session. Throws if not logged in. */
@@ -260,21 +267,6 @@ export async function requireCurrentOrgAdmin(ctx: Ctx): Promise<CurrentOrgAccess
   return access;
 }
 
-export async function getCurrentOrgForUser(
-  ctx: Ctx,
-  userId: Id<"users">,
-): Promise<{
-  orgId: Id<"organizations">;
-  role: "admin" | "member";
-  org: Doc<"organizations">;
-} | null> {
-  const membership = await getFirstOrgMembershipForUser(ctx, userId);
-  if (!membership) return null;
-  const org = await ctx.db.get(membership.orgId);
-  if (!org) return null;
-  return { orgId: membership.orgId, role: membership.role, org };
-}
-
 // ── Capability helpers ──────────────────────────────────────────────────────
 
 export function assertBrokerOrg(access: OrgAccess): void {
@@ -354,6 +346,49 @@ export function assertCanReadPolicyChange(access: OrgAccess): void {
     throw new Error("Connected clients have read-only vendor access");
   }
   // member OR broker_of_client
+}
+
+export async function getPolicyAccessForQuery(
+  ctx: Ctx,
+  policyId: Id<"policies">,
+): Promise<PolicyAccessForQuery | null> {
+  const result = await resolvePolicyAccessForQuery(ctx, policyId);
+  if (!result) return null;
+  assertCanReadPolicy(result.access);
+  return result;
+}
+
+async function resolvePolicyAccessForQuery(
+  ctx: Ctx,
+  policyId: Id<"policies">,
+): Promise<PolicyAccessForQuery | null> {
+  const policy = await ctx.db.get(policyId);
+  if (!policyHasOrg(policy)) return null;
+  const access = await getOrgAccessForQuery(ctx, policy.orgId);
+  if (!access) return null;
+  return { policy, access };
+}
+
+export async function getPolicyChangeAccessForQuery(
+  ctx: Ctx,
+  policyId: Id<"policies">,
+): Promise<PolicyAccessForQuery | null> {
+  const result = await resolvePolicyAccessForQuery(ctx, policyId);
+  if (!result) return null;
+  assertCanReadPolicyChange(result.access);
+  return result;
+}
+
+export async function getPolicyChangeCaseAccessForQuery(
+  ctx: Ctx,
+  caseId: Id<"policyChangeCases">,
+): Promise<{ changeCase: Doc<"policyChangeCases">; access: OrgAccess } | null> {
+  const changeCase = await ctx.db.get(caseId);
+  if (!changeCase) return null;
+  const access = await getOrgAccessForQuery(ctx, changeCase.orgId);
+  if (!access) return null;
+  assertCanReadPolicyChange(access);
+  return { changeCase, access };
 }
 
 export function assertCanCreatePolicyChange(access: OrgAccess): void {
