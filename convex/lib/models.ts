@@ -121,6 +121,15 @@ type ModelFallbackContext = {
   primaryRoute?: ModelRoute;
 };
 
+const MODEL_CALL_TIMEOUT_MS = Math.max(
+  30_000,
+  Number.parseInt(process.env.MODEL_CALL_TIMEOUT_MS ?? "180000", 10) || 180_000,
+);
+
+function withModelTimeout<T extends { abortSignal?: AbortSignal }>(options: T): T {
+  return options.abortSignal ? options : { ...options, abortSignal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS) };
+}
+
 const GPT_55 = "gpt-5.5";
 const CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
 
@@ -371,7 +380,7 @@ export async function generateTextWithFallback(
 ): Promise<Awaited<ReturnType<typeof import("ai").generateText>>> {
   const { generateText } = await import("ai");
   try {
-    return await generateText(options);
+    return await generateText(withModelTimeout(options));
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
@@ -380,14 +389,14 @@ export async function generateTextWithFallback(
     console.warn(
       `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with ${fallbackRoute.model}.`,
     );
-    return await generateText({
+    return await generateText(withModelTimeout({
       ...options,
       model: modelFromRoute(fallbackRoute),
       providerOptions: mergeProviderOptions(
         getProviderOptionsForRoute(fallbackRoute),
         options.providerOptions,
       ),
-    });
+    }));
   }
 }
 
@@ -397,7 +406,7 @@ export async function generateStructuredWithFallback(
 ): Promise<Awaited<ReturnType<typeof import("ai").generateText>>> {
   const { generateText } = await import("ai");
   try {
-    return await generateText(options);
+    return await generateText(withModelTimeout(options));
   } catch (err: unknown) {
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
@@ -406,14 +415,14 @@ export async function generateStructuredWithFallback(
     console.warn(
       `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with ${fallbackRoute.model}.`,
     );
-    return await generateText({
+    return await generateText(withModelTimeout({
       ...options,
       model: modelFromRoute(fallbackRoute),
       providerOptions: mergeProviderOptions(
         getProviderOptionsForRoute(fallbackRoute),
         options.providerOptions,
       ),
-    });
+    }));
   }
 }
 

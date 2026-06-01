@@ -157,7 +157,7 @@ async function startTraceSession(
     traceId: string;
     policyId: Id<"policies">;
     orgId: Id<"organizations">;
-    userId: Id<"users">;
+    userId?: Id<"users">;
     sourceKind: PolicyExtractionState["sourceKind"];
     trigger: string;
     fileName?: string;
@@ -366,6 +366,10 @@ async function storeEmbeddingPayload(
   payload: EmbeddingPayload,
 ): Promise<string> {
   return (await storeJsonArtifact(ctx, jobId, "embedding_payload", payload)).storageId;
+}
+
+function asOptionalId<T extends string>(value: unknown): T | undefined {
+  return typeof value === "string" && value.length > 0 ? value as T : undefined;
 }
 
 async function storeClSdkCheckpoint(
@@ -998,6 +1002,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           },
         );
       }
+      await convexCtx.runMutation((internal as any).policies.updateFiles, {
+        id: policyId,
+        files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+      });
 
       const embeddingPayloadFileId = await storeEmbeddingPayload(convexCtx, policyId, {
         documentChunksForEmbedding: chunks,
@@ -1635,12 +1643,13 @@ export const completeExternalExtract = action({
       phase: "extract",
       level: "info",
     });
-    if (args.performanceReport?.modelCalls?.length) {
+    const modelCallCount = args.performanceReport?.modelCallCount ?? args.performanceReport?.modelCalls?.length;
+    if (modelCallCount) {
       const totalSeconds = Math.round((args.performanceReport.totalModelCallDurationMs ?? 0) / 1000);
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
         timestamp: nowMs(),
-        message: `External extraction model calls: ${args.performanceReport.modelCalls.length}; total model time: ${totalSeconds}s`,
+        message: `External extraction model calls: ${modelCallCount}; total model time: ${totalSeconds}s`,
         phase: "extract",
         level: "info",
       });
@@ -1700,6 +1709,12 @@ export const completeExternalExtract = action({
       await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
         id: state.policyFileId,
         extractedData: doc,
+      });
+    }
+    if (state.fileId) {
+      await ctx.runMutation((internal as any).policies.updateFiles, {
+        id: policyId,
+        files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
       });
     }
 
@@ -1883,6 +1898,7 @@ export const retryPolicyExtraction = internalAction({
     ) as {
       orgId?: string;
       userId?: string;
+      uploadedByUserId?: string;
       fileId?: string;
       pipelineCheckpoint?: { state?: PolicyExtractionState };
     } | null;
@@ -1897,7 +1913,7 @@ export const retryPolicyExtraction = internalAction({
         traceId,
         policyId,
         orgId: String(policy.orgId ?? "") as Id<"organizations">,
-        userId: String(policy.userId ?? "") as Id<"users">,
+        userId: asOptionalId<Id<"users">>(existingState?.userId ?? policy.userId ?? policy.uploadedByUserId),
         sourceKind: existingState?.sourceKind ?? "upload",
         trigger: `retry_${mode}`,
         fileName: existingState?.fileName,
@@ -1915,7 +1931,7 @@ export const retryPolicyExtraction = internalAction({
         fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
         fileName: existingState?.fileName,
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
-        userId: existingState?.userId ?? String(policy.userId ?? ""),
+        userId: existingState?.userId ?? String(policy.userId ?? policy.uploadedByUserId ?? ""),
         policyFileId: existingState?.policyFileId,
         traceId,
         clSdkCheckpointFileId: mode === "resume" ? existingState?.clSdkCheckpointFileId : undefined,

@@ -194,6 +194,7 @@ const HTTP_MAX_BODY_BYTES = readBoundedIntEnv(
 );
 const LITEPARSE_MAX_PAGES = readOptionalIntEnv("LITEPARSE_MAX_PAGES") ?? readOptionalIntEnv("DOCLING_MAX_PAGES");
 const LITEPARSE_MAX_FILE_SIZE = readOptionalIntEnv("LITEPARSE_MAX_FILE_SIZE_BYTES") ?? readOptionalIntEnv("DOCLING_MAX_FILE_SIZE_BYTES");
+const MODEL_CALL_TIMEOUT_MS = readBoundedIntEnv("MODEL_CALL_TIMEOUT_MS", 180_000, 30_000, 15 * 60_000);
 
 const convex = new ConvexHttpClient(CONVEX_URL);
 
@@ -232,6 +233,10 @@ function sleep(ms: number): Promise<void> {
 
 function nowMs(): number {
   return dayjs().valueOf();
+}
+
+function modelAbortSignal() {
+  return AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS);
 }
 
 function errorMessage(error: unknown): string {
@@ -933,6 +938,7 @@ function buildWorkerExtractor(opts: {
         ...buildPromptInput(guidedPrompt, providerOptions),
         maxOutputTokens,
         providerOptions: callProviderOptions,
+        abortSignal: modelAbortSignal(),
       });
       const usage = mapUsage(result.usage);
       await recordModelCallComplete({
@@ -1002,6 +1008,7 @@ function buildWorkerExtractor(opts: {
           ...buildPromptInput(guidedPrompt, providerOptions),
           maxOutputTokens: fallbackMaxOutputTokens,
           providerOptions: fallbackProviderOptions,
+          abortSignal: modelAbortSignal(),
         });
         const usage = mapUsage(fallbackResult.usage);
         await recordModelCallComplete({
@@ -1077,6 +1084,7 @@ function buildWorkerExtractor(opts: {
         output: Output.object({ schema: params.schema }),
         maxOutputTokens,
         providerOptions: callProviderOptions,
+        abortSignal: modelAbortSignal(),
       });
       const usage = mapUsage(result.usage);
       await recordModelCallComplete({
@@ -1173,6 +1181,7 @@ function buildWorkerExtractor(opts: {
           output: Output.object({ schema: params.schema }),
           maxOutputTokens: fallbackMaxOutputTokens,
           providerOptions: fallbackProviderOptions,
+          abortSignal: modelAbortSignal(),
         });
         const usage = mapUsage(fallbackResult.usage);
         await recordModelCallComplete({
@@ -1429,8 +1438,12 @@ async function completeJob(
     sourceSpans,
     sourceChunks,
     tokenUsage: result.tokenUsage,
-    performanceReport: result.performanceReport,
-    checkpoint: result.checkpoint,
+    performanceReport: result.performanceReport
+      ? {
+          modelCallCount: result.performanceReport.modelCalls?.length ?? 0,
+          totalModelCallDurationMs: result.performanceReport.totalModelCallDurationMs,
+        }
+      : undefined,
   });
   if (!completed.ok) {
     throw new Error(`Convex rejected completion for ${job.policyId}`);

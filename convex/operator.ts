@@ -327,18 +327,42 @@ export const listExtractionTraces = query({
   handler: async (ctx, args) => {
     await requireOperator(ctx);
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 200), 500));
-    const base = args.status
-      ? ctx.db
+    const sessions = args.orgId
+      ? await ctx.db
         .query("policyExtractionTraceSessions")
-        .withIndex("by_status_startedAt", (q) => q.eq("status", args.status!))
+        .withIndex("by_orgId_startedAt", (q) => {
+          const byOrg = q.eq("orgId", args.orgId!);
+          if (args.dateFrom !== undefined && args.dateTo !== undefined) return byOrg.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
+          if (args.dateFrom !== undefined) return byOrg.gte("startedAt", args.dateFrom);
+          if (args.dateTo !== undefined) return byOrg.lte("startedAt", args.dateTo);
+          return byOrg;
+        })
         .order("desc")
-      : ctx.db
-        .query("policyExtractionTraceSessions")
-        .withIndex("by_startedAt")
-        .order("desc");
-    const sessions = await base.take(limit * 3);
+        .take(limit)
+      : args.status
+        ? await ctx.db
+          .query("policyExtractionTraceSessions")
+          .withIndex("by_status_startedAt", (q) => {
+            const byStatus = q.eq("status", args.status!);
+            if (args.dateFrom !== undefined && args.dateTo !== undefined) return byStatus.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
+            if (args.dateFrom !== undefined) return byStatus.gte("startedAt", args.dateFrom);
+            if (args.dateTo !== undefined) return byStatus.lte("startedAt", args.dateTo);
+            return byStatus;
+          })
+          .order("desc")
+          .take(limit)
+        : await ctx.db
+          .query("policyExtractionTraceSessions")
+          .withIndex("by_startedAt", (q) => {
+            if (args.dateFrom !== undefined && args.dateTo !== undefined) return q.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
+            if (args.dateFrom !== undefined) return q.gte("startedAt", args.dateFrom);
+            if (args.dateTo !== undefined) return q.lte("startedAt", args.dateTo);
+            return q;
+          })
+          .order("desc")
+          .take(limit);
     const filtered = sessions
-      .filter((session) => !args.orgId || session.orgId === args.orgId)
+      .filter((session) => !args.status || session.status === args.status)
       .filter((session) => args.dateFrom === undefined || session.startedAt >= args.dateFrom!)
       .filter((session) => args.dateTo === undefined || session.startedAt <= args.dateTo!)
       .slice(0, limit);
