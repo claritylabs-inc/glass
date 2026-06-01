@@ -102,12 +102,15 @@ async function resolveCustomSmartFields(
   );
   if (customFields.length === 0) return fieldMapping as CoiOverlayMapping;
 
-  const document = policy.document && typeof policy.document === "object" && !Array.isArray(policy.document)
-    ? policy.document as Record<string, unknown>
-    : {};
   const documentMetadata = getPolicyDocumentMetadata(policy);
   const documentOutline = getPolicyDocumentOutline(policy);
+  const sourceNodes = policy._id
+    ? await ctx.runQuery((internal as any).sourceNodes.listByPolicyInternal, {
+        policyId: policy._id,
+      }).catch(() => [])
+    : [];
   const policyContext = trimForPrompt({
+    operationalProfile: policy.operationalProfile,
     policyNumber: policy.policyNumber,
     policyTypes: policy.policyTypes,
     carrier: policy.carrier ?? policy.security ?? policy.carrierLegalName,
@@ -133,13 +136,17 @@ async function resolveCustomSmartFields(
       maxChars: 7000,
       includeSourceSpanIds: true,
     }),
-    sections: document.sections,
-    definitions: document.definitions,
-    coveredReasons: document.coveredReasons,
-    endorsements: document.endorsements,
-    exclusions: document.exclusions,
-    conditions: document.conditions,
-    document: policy.document,
+    sourceTreeEvidence: Array.isArray(sourceNodes)
+      ? sourceNodes.slice(0, 80).map((node: any) => ({
+          nodeId: node.nodeId,
+          kind: node.kind,
+          path: node.path,
+          title: node.title,
+          pages: node.pageStart ? `${node.pageStart}${node.pageEnd && node.pageEnd !== node.pageStart ? `-${node.pageEnd}` : ""}` : undefined,
+          sourceSpanIds: node.sourceSpanIds,
+          text: [node.description, node.textExcerpt].filter(Boolean).join("\n").slice(0, 1600),
+        }))
+      : [],
     partnerProgram: program
       ? {
           name: program.name,

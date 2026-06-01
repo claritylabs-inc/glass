@@ -1195,6 +1195,19 @@ export default defineSchema({
     // Full document structure with provenance
     documentMetadata: v.optional(v.any()),
     documentOutline: v.optional(v.any()),
+    sourceTreeVersion: v.optional(v.string()),
+    sourceTreeStatus: v.optional(
+      v.union(
+        v.literal("missing"),
+        v.literal("queued"),
+        v.literal("running"),
+        v.literal("ready"),
+        v.literal("failed"),
+      ),
+    ),
+    sourceTreeUpdatedAt: v.optional(v.number()),
+    sourceTreeError: v.optional(v.string()),
+    operationalProfile: v.optional(v.any()),
     // Extracted document structure (sections, endorsements, conditions, etc.)
     // Uses v.any() because the cl-sdk document schema evolves frequently
     document: v.optional(v.any()),
@@ -1792,6 +1805,39 @@ export default defineSchema({
     .index("by_spanId", ["spanId"])
     .index("by_policyId_spanId", ["policyId", "spanId"])
     .index("by_policyId_parentSpanId", ["policyId", "parentSpanId"]),
+
+  // Source-tree hierarchy over raw source spans. This is the canonical
+  // retrieval/index layer for policy wording and source-backed facts.
+  sourceNodes: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.optional(v.id("policies")),
+    nodeId: v.string(),
+    documentId: v.string(),
+    parentNodeId: v.optional(v.string()),
+    kind: v.string(),
+    title: v.string(),
+    description: v.string(),
+    textExcerpt: v.optional(v.string()),
+    sourceSpanIds: v.array(v.string()),
+    pageStart: v.optional(v.number()),
+    pageEnd: v.optional(v.number()),
+    bbox: v.optional(v.any()),
+    order: v.number(),
+    path: v.string(),
+    metadata: v.optional(v.any()),
+    embedding: v.array(v.float64()),
+    createdAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_nodeId", ["nodeId"])
+    .index("by_policyId_nodeId", ["policyId", "nodeId"])
+    .index("by_policyId_parentNodeId", ["policyId", "parentNodeId"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["orgId"],
+    }),
 
   // Embedded chunks over source spans. Unlike documentChunks, these preserve
   // sourceSpanIds so exact policy facts can cite the raw evidence unit.

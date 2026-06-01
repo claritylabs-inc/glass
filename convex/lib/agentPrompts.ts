@@ -59,8 +59,8 @@ export async function buildDocumentContext(
     };
   }
 
-  // Prefer source-backed retrieval whenever the org has raw source chunks.
-  const [hasDocumentChunks, hasSourceChunks] = await Promise.all([
+  // Prefer source-tree retrieval whenever the org has source nodes.
+  const [hasDocumentChunks, hasSourceChunks, hasSourceNodes] = await Promise.all([
     ctx.runQuery(
       internal.documentChunks.hasChunksForOrg,
       { orgId },
@@ -69,9 +69,28 @@ export async function buildDocumentContext(
       (internal as any).sourceSpans.hasChunksForOrg,
       { orgId },
     ) as Promise<boolean>,
+    ctx.runQuery(
+      (internal as any).sourceNodes.hasNodesForOrg,
+      { orgId },
+    ) as Promise<boolean>,
   ]);
 
-  if (hasSourceChunks || hasDocumentChunks) {
+  if (!hasSourceNodes && (hasSourceChunks || hasDocumentChunks)) {
+    for (const policy of [...policies, ...quotes].slice(0, 6)) {
+      if (!policy.fileId || policy.sourceTreeStatus === "queued" || policy.sourceTreeStatus === "running") continue;
+      await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.ensurePolicyV3SourceTree, {
+        policyId: policy._id,
+        reason: "agent_document_context",
+      }).catch(() => undefined);
+    }
+    const fallback = buildFallbackContext(policies, quotes, queryText);
+    return {
+      ...fallback,
+      context: `${fallback.context}\n\nSOURCE TREE REBUILD REQUIRED: This workspace has legacy policy evidence but no v3 source-node index yet. Glass has queued source-tree rebuilds for policies with stored PDFs. For exact policy-wording answers, wait for sourceTreeStatus=ready and use source nodes/spans.`,
+    };
+  }
+
+  if (hasSourceNodes) {
     return buildVectorContext(ctx, orgId, policies, quotes, queryText);
   }
 
@@ -138,8 +157,8 @@ export async function buildComplianceRequirementsContext(
 
 /**
  * Vector-search-based document context.
- * Embeds the query, searches sourceChunks for policy wording, then adds
- * structured document facts as secondary context.
+ * Embeds the query, searches sourceNodes for policy wording, then adds
+ * compatibility source/document chunks as secondary context.
  */
 async function buildVectorContext(
   ctx: ActionCtx,
@@ -155,6 +174,11 @@ async function buildVectorContext(
   const embed = makeEmbedText(ctx, orgId);
   const queryEmbedding = await embed(queryText);
 
+  const sourceNodeResults = await ctx.vectorSearch("sourceNodes", "by_embedding", {
+    vector: queryEmbedding,
+    limit: 18,
+    filter: (q) => q.eq("orgId", orgId),
+  });
   const sourceResults = await ctx.vectorSearch("sourceChunks", "by_embedding", {
     vector: queryEmbedding,
     limit: 15,
@@ -167,6 +191,13 @@ async function buildVectorContext(
   });
 
   // Hydrate chunks
+  const sourceNodeDocs = [];
+  for (const result of sourceNodeResults) {
+    const doc = await ctx.runQuery((internal as any).sourceNodes.get, {
+      id: result._id,
+    });
+    if (doc) sourceNodeDocs.push({ ...doc, _score: result._score });
+  }
   const chunkDocs = [];
   for (const result of results) {
     const doc = await ctx.runQuery(internal.documentChunks.get, {
@@ -220,8 +251,55 @@ async function buildVectorContext(
     );
   }
 
-  // Add retrieved raw source chunks first. These are preferred for exact
-  // policy facts because they preserve stable sourceSpanIds.
+  const sourceNodesByPolicy = new Map<string, typeof sourceNodeDocs>();
+  for (const node of sourceNodeDocs) {
+    if (!node.policyId) continue;
+    const key = node.policyId as string;
+    if (!sourceNodesByPolicy.has(key)) sourceNodesByPolicy.set(key, []);
+    sourceNodesByPolicy.get(key)!.push(node);
+  }
+
+  const sourceTreeSections: string[] = [];
+  for (const [policyId, matchedNodes] of sourceNodesByPolicy) {
+    const policy = policyMap.get(policyId as Id<"policies">);
+    if (!policy) continue;
+
+    const isQuote = policy.documentType === "quote";
+    if (isQuote) {
+      relevantQuoteIdSet.add(policyId as Id<"policies">);
+    } else {
+      relevantPolicyIdSet.add(policyId as Id<"policies">);
+    }
+
+    const allNodes = await ctx.runQuery((internal as any).sourceNodes.listByPolicyInternal, {
+      policyId: policyId as Id<"policies">,
+    }) as Array<Record<string, any>>;
+    const carrier = policy.mga || policy.carrier || policy.security;
+    const docLabel = isQuote ? "QUOTE" : "POLICY";
+    const number = isQuote
+      ? (policy.quoteNumber ?? policy.policyNumber)
+      : policy.policyNumber;
+    let section = `\n--- ${docLabel} SOURCE TREE: ${carrier} #${number} (ID:${policyId}) ---`;
+    const profile = policy.operationalProfile
+      ? JSON.stringify(policy.operationalProfile, null, 2).slice(0, 5000)
+      : "";
+    if (profile) section += `\nOperational profile:\n${profile}`;
+    for (const node of matchedNodes.slice(0, 8)) {
+      const hierarchy = expandSourceNodeContext(allNodes, node as Record<string, any>);
+      section += `\n\n[sourceNode:${node.nodeId} kind:${node.kind} path:${node.path} sourceSpanIds:${(node.sourceSpanIds ?? []).join(",")} score:${Number(node._score ?? 0).toFixed(3)}]`;
+      section += `\n${hierarchy.map(formatSourceNodePromptLine).join("\n")}`;
+    }
+    sourceTreeSections.push(section);
+  }
+
+  if (sourceTreeSections.length > 0) {
+    parts.push(
+      `SOURCE-TREE EVIDENCE (canonical for exact policy wording and provenance):\n${sourceTreeSections.join("\n")}`,
+    );
+  }
+
+  // Add retrieved raw source chunks only as compatibility evidence for policies
+  // not yet rebuilt into source nodes.
   const sourceChunksByPolicy = new Map<string, typeof sourceChunkDocs>();
   for (const chunk of sourceChunkDocs) {
     if (!chunk.policyId) continue;
@@ -267,7 +345,7 @@ async function buildVectorContext(
 
   if (sourceSections.length > 0) {
     parts.push(
-      `SOURCE-SPAN EVIDENCE (prefer for exact numeric/date/contractual values):\n${sourceSections.join("\n")}`,
+      `SOURCE-SPAN COMPATIBILITY EVIDENCE (use when source-tree evidence is absent):\n${sourceSections.join("\n")}`,
     );
   }
 
@@ -330,6 +408,47 @@ async function buildVectorContext(
     relevantPolicyIds: [...relevantPolicyIdSet],
     relevantQuoteIds: [...relevantQuoteIdSet],
   };
+}
+
+function expandSourceNodeContext(
+  allNodes: Array<Record<string, any>>,
+  target: Record<string, any>,
+): Array<Record<string, any>> {
+  const byNodeId = new Map(allNodes.map((node) => [String(node.nodeId), node]));
+  const ancestors: Array<Record<string, any>> = [];
+  let parent = target.parentNodeId ? byNodeId.get(String(target.parentNodeId)) : undefined;
+  while (parent) {
+    ancestors.unshift(parent);
+    parent = parent.parentNodeId ? byNodeId.get(String(parent.parentNodeId)) : undefined;
+  }
+  const children = allNodes
+    .filter((node) => node.parentNodeId === target.nodeId)
+    .sort((left, right) => Number(left.order ?? 0) - Number(right.order ?? 0))
+    .slice(0, 8);
+  const siblings = target.parentNodeId
+    ? allNodes
+        .filter((node) => node.parentNodeId === target.parentNodeId && node.nodeId !== target.nodeId)
+        .sort((left, right) =>
+          Math.abs(Number(left.order ?? 0) - Number(target.order ?? 0))
+          - Math.abs(Number(right.order ?? 0) - Number(target.order ?? 0)))
+        .slice(0, 4)
+    : [];
+  const seen = new Set<string>();
+  return [...ancestors, target, ...children, ...siblings].filter((node) => {
+    const id = String(node.nodeId);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function formatSourceNodePromptLine(node: Record<string, any>): string {
+  const excerpt = String(node.textExcerpt ?? node.description ?? "").slice(0, 1600);
+  const page = node.pageStart ? ` p.${node.pageStart}${node.pageEnd && node.pageEnd !== node.pageStart ? `-${node.pageEnd}` : ""}` : "";
+  const spans = Array.isArray(node.sourceSpanIds) && node.sourceSpanIds.length
+    ? ` spans:${node.sourceSpanIds.slice(0, 8).join(",")}`
+    : "";
+  return `${node.path ?? ""} ${node.kind ?? "node"} "${node.title ?? "Untitled"}"${page}${spans}: ${excerpt}`;
 }
 
 const STRUCTURED_FACT_CHUNK_TYPES = new Set([

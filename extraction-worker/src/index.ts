@@ -142,6 +142,9 @@ const actions = {
       chunks: unknown[];
       sourceSpans: Array<Record<string, unknown>>;
       sourceChunks: Array<Record<string, unknown>>;
+      sourceTree?: Array<Record<string, unknown>>;
+      operationalProfile?: unknown;
+      warnings?: string[];
       tokenUsage?: unknown;
       performanceReport?: unknown;
       checkpoint?: PipelineCheckpoint<ExtractionState>;
@@ -1418,6 +1421,13 @@ async function completeJob(
   const resultSourceChunks = Array.isArray((result as unknown as { sourceChunks?: unknown[] }).sourceChunks)
     ? (result as unknown as { sourceChunks: Array<Record<string, unknown>> }).sourceChunks
     : [];
+  const resultSourceTree = Array.isArray((result as unknown as { sourceTree?: unknown[] }).sourceTree)
+    ? (result as unknown as { sourceTree: Array<Record<string, unknown>> }).sourceTree
+    : [];
+  const operationalProfile = (result as unknown as { operationalProfile?: unknown }).operationalProfile;
+  const warnings = Array.isArray((result as unknown as { warnings?: unknown[] }).warnings)
+    ? (result as unknown as { warnings: unknown[] }).warnings.filter((item): item is string => typeof item === "string")
+    : [];
 
   const rawSourceSpans = fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>>;
   const rawSourceChunks = fallbackSource.sourceChunks as unknown as Array<Record<string, unknown>>;
@@ -1437,6 +1447,9 @@ async function completeJob(
     chunks: result.chunks,
     sourceSpans,
     sourceChunks,
+    sourceTree: resultSourceTree,
+    operationalProfile,
+    warnings,
     tokenUsage: result.tokenUsage,
     performanceReport: result.performanceReport
       ? {

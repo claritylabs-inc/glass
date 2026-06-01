@@ -77,15 +77,17 @@ describe("source spans and PCE backend surfaces", () => {
     expect(read("convex/lib/aiUtils.ts")).toContain("Create the case and ask for the broker contact");
   });
 
-  it("prefers source chunks in agent retrieval context", () => {
+  it("prefers source nodes in agent retrieval context", () => {
     const prompts = read("convex/lib/agentPrompts.ts");
     const queryAgent = read("convex/lib/queryAgent.ts");
     const sourceRetriever = read("convex/lib/convexSourceRetriever.ts");
 
-    expect(prompts).toContain("ctx.vectorSearch(\"sourceChunks\"");
-    expect(prompts).toContain("SOURCE-SPAN EVIDENCE");
+    expect(prompts).toContain("ctx.vectorSearch(\"sourceNodes\"");
+    expect(prompts).toContain("SOURCE-TREE EVIDENCE");
     expect(prompts).toContain("sourceSpanIds");
     expect(sourceRetriever).toContain("createConvexSourceRetriever");
+    expect(sourceRetriever).toContain("searchSourceNodes");
+    expect(sourceRetriever).toContain("ctx.vectorSearch(\"sourceNodes\"");
     expect(sourceRetriever).toContain("ctx.vectorSearch(\"sourceChunks\"");
     expect(queryAgent).toContain("sourceRetriever: createConvexSourceRetriever");
     expect(queryAgent).toContain("retrievalMode: \"hybrid\"");

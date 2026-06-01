@@ -53,6 +53,18 @@ type SourceSpanLike = {
   metadata?: Record<string, unknown>;
 };
 
+type SourceNodeLike = {
+  nodeId?: string;
+  kind?: string;
+  title?: string;
+  description?: string;
+  textExcerpt?: string;
+  sourceSpanIds?: string[];
+  pageStart?: number;
+  pageEnd?: number;
+  path?: string;
+};
+
 type EvidenceCorpusItem = {
   label: string;
   text: string;
@@ -156,13 +168,14 @@ export function evaluateCertificateRequestGate(params: {
   requestedEndorsements?: string[];
   policy?: Record<string, unknown> | null;
   sourceSpans?: SourceSpanLike[];
+  sourceNodes?: SourceNodeLike[];
 }): CertificateGateVerdict {
   const requiredChanges = inferCertificateEndorsements(params);
   if (requiredChanges.length === 0) {
     return { status: "allowed", requiredChanges, evidence: [] };
   }
 
-  const evidenceCorpus = buildEvidenceCorpus(params.policy, params.sourceSpans);
+  const evidenceCorpus = buildEvidenceCorpus(params.policy, params.sourceSpans, params.sourceNodes);
   if (evidenceCorpus.length === 0) {
     return held({
       reasonCode: "missing_policy_evidence",
@@ -236,8 +249,26 @@ function normalizeKind(value: string): CertificateEndorsementKind | undefined {
 function buildEvidenceCorpus(
   policy?: Record<string, unknown> | null,
   sourceSpans?: SourceSpanLike[],
+  sourceNodes?: SourceNodeLike[],
 ) {
   const items: EvidenceCorpusItem[] = [];
+  for (const node of sourceNodes ?? []) {
+    const text = [node.description, node.textExcerpt].filter(Boolean).join("\n").trim();
+    if (!text) continue;
+    items.push({
+      label: [
+        node.path,
+        node.kind,
+        node.title,
+        node.pageStart ? `p.${node.pageStart}${node.pageEnd && node.pageEnd !== node.pageStart ? `-${node.pageEnd}` : ""}` : undefined,
+      ].filter(Boolean).join(" "),
+      text,
+      sourceSpanIds: node.sourceSpanIds,
+      pageStart: node.pageStart,
+      pageEnd: node.pageEnd,
+    });
+  }
+
   for (const span of sourceSpans ?? []) {
     const text = span.text?.trim();
     if (!text) continue;
@@ -251,32 +282,21 @@ function buildEvidenceCorpus(
   }
 
   if (!policy) return items;
-  const document = policy.document && typeof policy.document === "object" && !Array.isArray(policy.document)
-    ? policy.document as Record<string, unknown>
-    : {};
   const addStructured = (label: string, value: unknown) => {
     const text = stringifyEvidence(value);
     if (!text) return;
     items.push({ label, text });
   };
 
-  addStructured("Policy summary", policy.summary);
-  addStructured("Coverage schedule", policy.coverages);
-  addStructured("Declarations", policy.declarations);
-  addStructured("Limits", policy.limits);
-  addStructured("Deductibles", policy.deductibles);
-  addStructured("Supplementary facts", policy.supplementaryFacts);
-  addStructured("Form inventory", policy.formInventory);
+  addStructured("Operational profile", policy.operationalProfile);
+  addStructured("Coverage projection", policy.coverages);
+  addStructured("Declarations projection", policy.declarations);
+  addStructured("Supplementary source-backed facts", policy.supplementaryFacts);
   addStructured("Document metadata and outline", formatDocumentStructureForPrompt(policy, {
     maxNodes: 36,
     maxChars: 12000,
     includeSourceSpanIds: true,
   }));
-  addStructured("Definitions", document.definitions);
-  addStructured("Endorsements", document.endorsements);
-  addStructured("Exclusions", document.exclusions);
-  addStructured("Conditions", document.conditions);
-  addStructured("Document details", document);
   return items;
 }
 

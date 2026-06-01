@@ -29,6 +29,22 @@ type SourceSpanDoc = {
   metadata?: Record<string, unknown>;
 };
 
+type SourceNodeDoc = {
+  nodeId: string;
+  documentId?: string;
+  parentNodeId?: string;
+  kind: string;
+  title: string;
+  description: string;
+  textExcerpt?: string;
+  sourceSpanIds: string[];
+  pageStart?: number;
+  pageEnd?: number;
+  path: string;
+  metadata?: Record<string, unknown>;
+  semanticScore?: number;
+};
+
 function textValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
@@ -57,6 +73,17 @@ function scoreSpan(query: string, terms: string[], span: SourceSpanDoc): number 
     if (text.includes(term)) score += 1;
   }
   if (typeof span.semanticScore === "number") score += Math.max(0, span.semanticScore * 4);
+  return score;
+}
+
+function scoreNode(query: string, terms: string[], node: SourceNodeDoc): number {
+  const text = `${node.title} ${node.description} ${node.textExcerpt ?? ""}`.toLowerCase();
+  let score = query && text.includes(query.toLowerCase()) ? 8 : 0;
+  for (const term of terms) {
+    if (text.includes(term)) score += 1;
+  }
+  if (node.kind === "table_row" || node.kind === "schedule") score += 1.5;
+  if (typeof node.semanticScore === "number") score += Math.max(0, node.semanticScore * 5);
   return score;
 }
 
@@ -144,6 +171,35 @@ function sourceOnlyResults(spans: Array<SourceSpanDoc & { score: number }>, maxR
     }));
 }
 
+function sourceNodeOnlyResults(nodes: Array<SourceNodeDoc & { score: number }>, maxResults: number): LookupResult[] {
+  return nodes
+    .filter((node) => node.score > 0)
+    .slice(0, maxResults)
+    .map((node) => ({
+      title: node.title,
+      type: "policy_source_node",
+      evidenceSource: "source_tree",
+      originalPdfChecked: true,
+      confidence: node.score >= 8 ? "high" : node.score >= 3 ? "medium" : "low",
+      pages: node.pageStart ? `${node.pageStart}${node.pageEnd && node.pageEnd !== node.pageStart ? `-${node.pageEnd}` : ""}` : undefined,
+      content: [node.description, node.textExcerpt].filter(Boolean).join("\n").slice(0, 6000),
+      sourceNodeIds: [node.nodeId],
+      sourceSpanIds: node.sourceSpanIds,
+      sourceNodes: [{
+        id: node.nodeId,
+        kind: node.kind,
+        path: node.path,
+        title: node.title,
+        description: node.description,
+        textExcerpt: node.textExcerpt,
+        sourceSpanIds: node.sourceSpanIds,
+        pageStart: node.pageStart,
+        pageEnd: node.pageEnd,
+        metadata: node.metadata,
+      }],
+    }));
+}
+
 function toSourceSpanDoc(span: GlassSourceSpan): SourceSpanDoc {
   const metadataSourceUnit = typeof span.metadata?.sourceUnit === "string"
     ? span.metadata.sourceUnit
@@ -187,6 +243,28 @@ async function loadStoredSourceSpans(
       text: doc.text,
       textHash: doc.textHash,
       bbox: doc.bbox,
+      metadata: doc.metadata,
+    })))
+    .catch(() => []);
+}
+
+async function loadStoredSourceNodes(
+  ctx: ActionCtx,
+  policyId: Id<"policies">,
+): Promise<SourceNodeDoc[]> {
+  return ctx.runQuery((internal as any).sourceNodes.listByPolicyInternal, { policyId })
+    .then((docs: Array<Record<string, any>>) => docs.map((doc) => ({
+      nodeId: doc.nodeId,
+      documentId: doc.documentId,
+      parentNodeId: doc.parentNodeId,
+      kind: doc.kind,
+      title: doc.title,
+      description: doc.description,
+      textExcerpt: doc.textExcerpt,
+      sourceSpanIds: Array.isArray(doc.sourceSpanIds) ? doc.sourceSpanIds : [],
+      pageStart: doc.pageStart,
+      pageEnd: doc.pageEnd,
+      path: doc.path,
       metadata: doc.metadata,
     })))
     .catch(() => []);
@@ -264,6 +342,50 @@ async function searchSemanticSourceChunks(
   }
 }
 
+async function searchSemanticSourceNodes(
+  ctx: ActionCtx,
+  policy: Record<string, unknown>,
+  query: string,
+): Promise<SourceNodeDoc[]> {
+  const policyId = policy._id as Id<"policies"> | undefined;
+  const orgId = policy.orgId as Id<"organizations"> | undefined;
+  if (!policyId || !orgId) return [];
+
+  try {
+    const vector = await makeEmbedText(ctx, orgId)(query);
+    const results = await ctx.vectorSearch("sourceNodes", "by_embedding", {
+      vector,
+      limit: 12,
+      filter: (q) => q.eq("orgId", orgId),
+    });
+    const semantic: SourceNodeDoc[] = [];
+    for (const result of results) {
+      const node = await ctx.runQuery((internal as any).sourceNodes.get, {
+        id: result._id,
+      });
+      if (!node || String(node.policyId) !== String(policyId)) continue;
+      semantic.push({
+        nodeId: node.nodeId,
+        documentId: node.documentId,
+        parentNodeId: node.parentNodeId,
+        kind: node.kind,
+        title: node.title,
+        description: node.description,
+        textExcerpt: node.textExcerpt,
+        sourceSpanIds: Array.isArray(node.sourceSpanIds) ? node.sourceSpanIds : [],
+        pageStart: node.pageStart,
+        pageEnd: node.pageEnd,
+        path: node.path,
+        metadata: node.metadata,
+        semanticScore: result._score,
+      });
+    }
+    return semantic;
+  } catch {
+    return [];
+  }
+}
+
 function dedupeSpans(spans: SourceSpanDoc[]): SourceSpanDoc[] {
   const byKey = new Map<string, SourceSpanDoc>();
   for (const span of spans) {
@@ -271,6 +393,18 @@ function dedupeSpans(spans: SourceSpanDoc[]): SourceSpanDoc[] {
     const existing = byKey.get(key);
     if (!existing || (span.semanticScore ?? 0) > (existing.semanticScore ?? 0)) {
       byKey.set(key, span);
+    }
+  }
+  return [...byKey.values()];
+}
+
+function dedupeNodes(nodes: SourceNodeDoc[]): SourceNodeDoc[] {
+  const byKey = new Map<string, SourceNodeDoc>();
+  for (const node of nodes) {
+    const key = node.nodeId;
+    const existing = byKey.get(key);
+    if (!existing || (node.semanticScore ?? 0) > (existing.semanticScore ?? 0)) {
+      byKey.set(key, node);
     }
   }
   return [...byKey.values()];
@@ -287,6 +421,13 @@ export async function searchPolicyDocumentWithSourceSpans(
   if (!policyId) return base;
 
   const terms = queryTerms(query);
+  const storedNodes = await loadStoredSourceNodes(ctx, policyId);
+  const semanticNodes = await searchSemanticSourceNodes(ctx, policy, query);
+  const rankedNodes = dedupeNodes([...storedNodes, ...semanticNodes])
+    .map((node) => ({ ...node, score: scoreNode(query, terms, node) }))
+    .filter((node) => node.score > 0)
+    .sort((left, right) => right.score - left.score);
+
   let spans = await loadStoredSourceSpans(ctx, policyId);
   if (spans.length === 0) {
     spans = await loadOriginalPdfSpans(ctx, policy);
@@ -299,12 +440,13 @@ export async function searchPolicyDocumentWithSourceSpans(
 
   if (Array.isArray(base)) {
     const augmented = base.map((result) => attachSourceSpans(result, rankedSpans));
+    const sourceNodeEvidence = sourceNodeOnlyResults(rankedNodes, 4);
     const hasSourceBackedResult = augmented.some((result) =>
       Array.isArray(result.sourceSpanIds) && result.sourceSpanIds.length > 0,
-    );
+    ) || sourceNodeEvidence.length > 0;
     const sourceEvidence = sourceOnlyResults(rankedSpans, hasSourceBackedResult ? 2 : 3);
     const seen = new Set(
-      augmented.flatMap((result) =>
+      [...augmented, ...sourceNodeEvidence].flatMap((result) =>
         Array.isArray(result.sourceSpanIds) ? result.sourceSpanIds.map(String) : [],
       ),
     );
@@ -312,9 +454,11 @@ export async function searchPolicyDocumentWithSourceSpans(
       const ids = Array.isArray(result.sourceSpanIds) ? result.sourceSpanIds.map(String) : [];
       return ids.length === 0 || ids.some((id) => !seen.has(id));
     });
-    return [...augmented, ...additionalEvidence].slice(0, maxResults);
+    return [...augmented, ...sourceNodeEvidence, ...additionalEvidence].slice(0, maxResults);
   }
 
+  const nodeResults = sourceNodeOnlyResults(rankedNodes, maxResults);
+  if (nodeResults.length > 0) return nodeResults;
   const sourceResults = sourceOnlyResults(rankedSpans, maxResults);
   return sourceResults.length > 0 ? sourceResults : base;
 }

@@ -344,12 +344,36 @@ export const generateForOrg = internalAction({
       internal.sourceSpans.listSpansByPolicyInternal,
       { policyId: args.policyId },
     ).catch(() => []);
+    const sourceNodes = await ctx.runQuery(
+      (internal as any).sourceNodes.listByPolicyInternal,
+      { policyId: args.policyId },
+    ).catch(() => []);
+    if (sourceNodes.length === 0) {
+      const rebuild = await ctx.runAction((internal as any).actions.policyExtraction.ensurePolicyV3SourceTree, {
+        policyId: args.policyId,
+        reason: "certificate_generation",
+      }).catch((error) => ({
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      return {
+        status: "source_tree_rebuild_required",
+        holderName,
+        certificateHolder,
+        rebuildStatus: rebuild.status,
+        message:
+          rebuild.status === "failed"
+            ? `Certificate generation needs source-tree evidence, but rebuilding failed: ${rebuild.error ?? "unknown error"}`
+            : "Certificate generation is queued until Glass rebuilds source-tree evidence for this policy.",
+      };
+    }
     const gate = evaluateCertificateRequestGate({
       certificateHolder,
       requestText: args.requestText,
       requestedEndorsements: args.requestedEndorsements,
       policy: policy as Record<string, unknown> | null,
       sourceSpans,
+      sourceNodes,
     });
 
     if (gate.status === "held") {

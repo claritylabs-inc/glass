@@ -88,16 +88,17 @@ export interface CoverageLine {
  */
 
 export function policyToCoiData(policy: any): CoiData {
+  const profile = operationalProfile(policy);
   const limits: any = policy.limits ?? {};
-  const policyTypes: string[] = policy.policyTypes ?? [];
+  const policyTypes: string[] = profile?.policyTypes?.length ? profile.policyTypes : policy.policyTypes ?? [];
   const declarations = declarationFieldMap(policy);
-  const policyNumber = pickField(declarations, "policyNumber") ?? policy.policyNumber ?? "";
-  const effDate = pickField(declarations, "policyPeriodStart") ?? policy.effectiveDate ?? "";
-  const expDate = pickField(declarations, "policyPeriodEnd") ?? policy.expirationDate ?? "";
+  const policyNumber = profileValue(profile?.policyNumber) ?? pickField(declarations, "policyNumber") ?? policy.policyNumber ?? "";
+  const effDate = profileValue(profile?.effectiveDate) ?? pickField(declarations, "policyPeriodStart") ?? policy.effectiveDate ?? "";
+  const expDate = profileValue(profile?.expirationDate) ?? pickField(declarations, "policyPeriodEnd") ?? policy.expirationDate ?? "";
   const coverageForm = policy.coverageForm ?? "occurrence";
   const producer = policy.producer ?? {};
   const producerName = joinLines(
-    pickField(declarations, "producerName") ?? producer.agencyName ?? policy.brokerAgency ?? policy.broker,
+    profileValue(profile?.broker) ?? pickField(declarations, "producerName") ?? producer.agencyName ?? policy.brokerAgency ?? policy.broker,
     pickField(declarations, "producerDBA"),
   );
   const producerAddress = joinLines(
@@ -117,13 +118,13 @@ export function policyToCoiData(policy: any): CoiData {
   // Build insurer row for Insurer A
   const insurers = [{
     letter: "A",
-    name: pickField(declarations, "insurerName") ?? policy.carrierLegalName ?? policy.insurer?.legalName ?? policy.security ?? policy.carrier ?? "N/A",
+    name: profileValue(profile?.insurer) ?? pickField(declarations, "insurerName") ?? policy.carrierLegalName ?? policy.insurer?.legalName ?? policy.security ?? policy.carrier ?? "N/A",
     naic: policy.carrierNaicNumber ?? policy.insurer?.naicNumber,
     amBest: policy.carrierAmBestRating,
     admitted: policy.carrierAdmittedStatus,
   }];
 
-  const coverageLines: CoverageLine[] = buildCoverageLines(policy, {
+  const coverageLines: CoverageLine[] = buildCoverageLines(policyWithOperationalCoverages(policy, profile), {
     policyNumber,
     effectiveDate: effDate,
     expirationDate: expDate,
@@ -141,7 +142,7 @@ export function policyToCoiData(policy: any): CoiData {
     producerEmail: producer.email,
     insuranceCompanyAddress,
     insuranceCompanyPhone: pickField(declarations, "insurerPhone"),
-    insuredName: pickField(declarations, "masterPolicyHolderAndMailingAddressName")?.replace(/;$/, "") ?? policy.insuredName ?? "N/A",
+    insuredName: profileValue(profile?.namedInsured) ?? pickField(declarations, "masterPolicyHolderAndMailingAddressName")?.replace(/;$/, "") ?? policy.insuredName ?? "N/A",
     insuredDba: policy.insuredDba,
     insuredAddress,
     insuredFein: policy.insuredFein,
@@ -152,7 +153,49 @@ export function policyToCoiData(policy: any): CoiData {
       expirationDate: expDate,
       coverageForm,
     }),
-    description: buildDescription(policy),
+    description: buildDescription(policyWithOperationalCoverages(policy, profile)),
+  };
+}
+
+function operationalProfile(policy: any): any | undefined {
+  return policy?.operationalProfile && typeof policy.operationalProfile === "object" && !Array.isArray(policy.operationalProfile)
+    ? policy.operationalProfile
+    : undefined;
+}
+
+function profileValue(value: any): string | undefined {
+  return value && typeof value === "object" && typeof value.value === "string" && value.value.trim()
+    ? value.value.trim()
+    : undefined;
+}
+
+function policyWithOperationalCoverages(policy: any, profile: any | undefined): any {
+  if (!Array.isArray(profile?.coverages) || profile.coverages.length === 0) return policy;
+  return {
+    ...policy,
+    coverages: profile.coverages.map((coverage: any) => ({
+      name: coverage.name,
+      coverageCode: coverage.coverageCode,
+      limit: coverage.limit,
+      deductible: coverage.deductible,
+      premium: coverage.premium,
+      formNumber: coverage.formNumber,
+      sectionRef: coverage.sectionRef,
+      documentNodeId: coverage.sourceNodeIds?.[0],
+      sourceSpanIds: coverage.sourceSpanIds,
+      originalContent: [coverage.name, coverage.limit, coverage.deductible, coverage.premium].filter(Boolean).join(" | "),
+    })),
+    supplementaryFacts: [
+      ...(Array.isArray(policy.supplementaryFacts) ? policy.supplementaryFacts : []),
+      ...(Array.isArray(profile.endorsementSupport)
+        ? profile.endorsementSupport.map((item: any) => ({
+            key: item.kind,
+            value: item.summary,
+            documentNodeId: item.sourceNodeIds?.[0],
+            sourceSpanIds: item.sourceSpanIds,
+          }))
+        : []),
+    ],
   };
 }
 

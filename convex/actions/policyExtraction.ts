@@ -25,6 +25,13 @@ import {
   openExtractionReviewQuestions,
   postProcessExtractionDocument,
 } from "../lib/extractionPostProcess";
+import {
+  normalizeOperationalProfile,
+  normalizeSourceTree,
+  sourceTreePolicyFields,
+  type DocumentSourceNode,
+  type PolicyOperationalProfile,
+} from "../lib/sourceTree";
 import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
@@ -113,11 +120,13 @@ export type PolicyExtractionState = {
     text: string;
     metadata?: Record<string, unknown>;
   }>;
+  sourceNodesForStorage?: Array<DocumentSourceNode>;
+  operationalProfile?: PolicyOperationalProfile;
 };
 
 type EmbeddingPayload = Pick<
   PolicyExtractionState,
-  "documentChunksForEmbedding" | "sourceSpansForStorage" | "sourceChunksForEmbedding"
+  "documentChunksForEmbedding" | "sourceSpansForStorage" | "sourceChunksForEmbedding" | "sourceNodesForStorage"
 >;
 
 type ExternalClaimResult = {
@@ -409,12 +418,14 @@ async function loadEmbeddingPayload(
   if (
     state.documentChunksForEmbedding ||
     state.sourceSpansForStorage ||
-    state.sourceChunksForEmbedding
+    state.sourceChunksForEmbedding ||
+    state.sourceNodesForStorage
   ) {
     return {
       documentChunksForEmbedding: state.documentChunksForEmbedding,
       sourceSpansForStorage: state.sourceSpansForStorage,
       sourceChunksForEmbedding: state.sourceChunksForEmbedding,
+      sourceNodesForStorage: state.sourceNodesForStorage,
     };
   }
   const storageId = state.embeddingPayloadFileId
@@ -944,6 +955,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const resultSourceChunks = Array.isArray((result as any).sourceChunks)
         ? (result as any).sourceChunks as Array<Record<string, any>>
         : [];
+      const resultSourceTree = Array.isArray((result as any).sourceTree)
+        ? (result as any).sourceTree as Array<Record<string, any>>
+        : [];
       const sourceSpans = resultSourceSpans.length > 0
         ? resultSourceSpans
         : pdfSource.sourceSpans as Array<Record<string, any>>;
@@ -975,6 +989,17 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       });
       result.document = processed.document as typeof result.document;
       const doc = processed.document;
+      const sourceNodes = normalizeSourceTree(
+        resultSourceTree,
+        sourceSpans,
+        policyId,
+      );
+      const operationalProfile = normalizeOperationalProfile(
+        (result as any).operationalProfile,
+        sourceNodes,
+        sourceSpans,
+        doc as Record<string, unknown>,
+      );
       const fields = processed.fields;
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")
@@ -988,6 +1013,11 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           fields: {
             fileName: resolvedFileName,
             ...fields,
+            ...sourceTreePolicyFields({
+              sourceTree: sourceNodes,
+              operationalProfile,
+              existingDocumentMetadata: doc.documentMetadata,
+            }),
           },
         },
       );
@@ -1011,6 +1041,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         documentChunksForEmbedding: chunks,
         sourceSpansForStorage: sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
         sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
+        sourceNodesForStorage: sourceNodes,
       });
       const chunkIds = chunks.map((c: { id: string }) => c.id);
       const nextState: PolicyExtractionState = {
@@ -1021,6 +1052,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         chunkIds,
         sourceSpanIds: sourceSpans.map((span) => String(span.id)),
         sourceChunkIds: sourceChunks.map((chunk) => String(chunk.id)),
+        operationalProfile,
         fileName: resolvedFileName,
       };
 
@@ -1042,6 +1074,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const chunks = embeddingPayload.documentChunksForEmbedding;
       const sourceSpans = embeddingPayload.sourceSpansForStorage;
       const sourceChunks = embeddingPayload.sourceChunksForEmbedding;
+      const sourceNodes = embeddingPayload.sourceNodesForStorage;
 
       if (!chunks || chunks.length === 0) {
         await pCtx.log("No chunks to embed (phase resumed or no chunks extracted)");
@@ -1071,7 +1104,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
                 text: chunk.text,
                 metadata: chunk.metadata,
                 embedding,
-                createdAt: Date.now(),
+                createdAt: nowMs(),
               },
             );
             embedded++;
@@ -1101,10 +1134,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         await pCtx.log(`Stored ${embedded}/${chunks.length} chunks`);
       }
 
-      if (sourceSpans?.length || sourceChunks?.length) {
-        await pCtx.log(`Storing ${sourceSpans?.length ?? 0} source spans and ${sourceChunks?.length ?? 0} source chunks…`);
+      if (sourceSpans?.length || sourceChunks?.length || sourceNodes?.length) {
+        await pCtx.log(`Storing ${sourceSpans?.length ?? 0} source spans, ${sourceNodes?.length ?? 0} source nodes, and ${sourceChunks?.length ?? 0} compatibility source chunks…`);
         await convexCtx.runMutation(
           (internal as any).sourceSpans.deleteByPolicy,
+          { policyId },
+        );
+        await convexCtx.runMutation(
+          (internal as any).sourceNodes.deleteByPolicy,
           { policyId },
         );
 
@@ -1136,9 +1173,77 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               textHash: span.textHash ?? span.id,
               bbox: span.bbox,
               metadata: span.metadata,
-              createdAt: Date.now(),
+              createdAt: nowMs(),
             },
           );
+        }
+
+        if (sourceNodes?.length) {
+          const embed = makeEmbedText(convexCtx, state.orgId as Id<"organizations">);
+          let embeddedSourceNodes = 0;
+          let sourceNodeFailures = 0;
+          const sourceNodeEmbedStartedAt = nowMs();
+          await runBounded(sourceNodes, EMBEDDING_CONCURRENCY, async (node) => {
+            if (await isExtractionCancelled(convexCtx, policyId)) {
+              throw new Error(CANCELLED_BY_USER);
+            }
+            try {
+              const embeddingText = [
+                node.title,
+                node.kind,
+                node.path ? `path ${node.path}` : undefined,
+                node.description,
+                node.textExcerpt,
+              ].filter(Boolean).join("\n");
+              const embedding = await embed(embeddingText);
+              await convexCtx.runMutation(
+                (internal as any).sourceNodes.insertNode,
+                {
+                  orgId: state.orgId,
+                  policyId,
+                  nodeId: node.id,
+                  documentId: node.documentId || policyId,
+                  parentNodeId: node.parentId,
+                  kind: node.kind,
+                  title: node.title,
+                  description: node.description,
+                  textExcerpt: node.textExcerpt,
+                  sourceSpanIds: node.sourceSpanIds,
+                  pageStart: node.pageStart,
+                  pageEnd: node.pageEnd,
+                  bbox: node.bbox,
+                  order: node.order,
+                  path: node.path,
+                  metadata: node.metadata,
+                  embedding,
+                  createdAt: nowMs(),
+                },
+              );
+              embeddedSourceNodes++;
+            } catch (err) {
+              if (isCancelledError(err)) throw err;
+              sourceNodeFailures++;
+              await pCtx.log(
+                `Warning: failed to embed source node ${node.id}: ${err instanceof Error ? err.message : String(err)}`,
+                "warn",
+              );
+            }
+          });
+          await traceEvent(convexCtx, state.traceId, {
+            kind: "embedding_batch",
+            label: "source nodes",
+            task: "embeddings",
+            provider: "openai",
+            model: "text-embedding-3-small",
+            status: sourceNodeFailures > 0 ? "partial" : "complete",
+            durationMs: nowMs() - sourceNodeEmbedStartedAt,
+            details: {
+              requested: sourceNodes.length,
+              embedded: embeddedSourceNodes,
+              failures: sourceNodeFailures,
+            },
+          });
+          await pCtx.log(`Stored ${embeddedSourceNodes}/${sourceNodes.length} source nodes`);
         }
 
         if (sourceChunks?.length) {
@@ -1163,7 +1268,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
                   text: chunk.text,
                   metadata: chunk.metadata,
                   embedding,
-                  createdAt: Date.now(),
+                  createdAt: nowMs(),
                 },
               );
               embeddedSourceChunks++;
@@ -1202,6 +1307,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         documentChunksForEmbedding: _dropped,
         sourceSpansForStorage: _droppedSpans,
         sourceChunksForEmbedding: _droppedSourceChunks,
+        sourceNodesForStorage: _droppedSourceNodes,
         embeddingPayloadFileId: _droppedEmbeddingPayload,
         ...cleanState
       } = state;
@@ -1623,6 +1729,9 @@ export const completeExternalExtract = action({
     chunks: v.array(v.any()),
     sourceSpans: v.array(v.any()),
     sourceChunks: v.array(v.any()),
+    sourceTree: v.optional(v.array(v.any())),
+    operationalProfile: v.optional(v.any()),
+    warnings: v.optional(v.array(v.string())),
     tokenUsage: v.optional(v.any()),
     performanceReport: v.optional(v.any()),
     checkpoint: v.optional(v.any()),
@@ -1682,6 +1791,17 @@ export const completeExternalExtract = action({
       },
     });
     doc = processed.document;
+    const sourceNodes = normalizeSourceTree(
+      args.sourceTree ?? [],
+      args.sourceSpans,
+      policyId,
+    );
+    const operationalProfile = normalizeOperationalProfile(
+      args.operationalProfile,
+      sourceNodes,
+      args.sourceSpans,
+      doc,
+    );
     const fields = processed.fields;
     if (processed.coverageReviewQuestionCount > 0) {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
@@ -1702,6 +1822,11 @@ export const completeExternalExtract = action({
       fields: {
         fileName: resolvedFileName,
         ...fields,
+        ...sourceTreePolicyFields({
+          sourceTree: sourceNodes,
+          operationalProfile,
+          existingDocumentMetadata: doc.documentMetadata,
+        }),
       },
     });
 
@@ -1722,6 +1847,7 @@ export const completeExternalExtract = action({
       documentChunksForEmbedding: args.chunks as PolicyExtractionState["documentChunksForEmbedding"],
       sourceSpansForStorage: args.sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
       sourceChunksForEmbedding: args.sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
+      sourceNodesForStorage: sourceNodes,
     });
     const nextState: PolicyExtractionState = {
       ...state,
@@ -1731,6 +1857,7 @@ export const completeExternalExtract = action({
       chunkIds: args.chunks.map((chunk: { id: string }) => chunk.id),
       sourceSpanIds: args.sourceSpans.map((span: { id: unknown }) => String(span.id)),
       sourceChunkIds: args.sourceChunks.map((chunk: { id: unknown }) => String(chunk.id)),
+      operationalProfile,
       fileName: resolvedFileName,
       externalWorker: undefined,
     };
@@ -1789,6 +1916,61 @@ export const failExternalJob = action({
       args.error,
     );
     return { ok: true };
+  },
+});
+
+export const ensurePolicyV3SourceTree = internalAction({
+  args: {
+    policyId: v.id("policies"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.runQuery(internal.policies.getInternal, {
+      id: args.policyId,
+    }) as {
+      fileId?: Id<"_storage">;
+      sourceTreeVersion?: string;
+      sourceTreeStatus?: string;
+      pipelineStatus?: string;
+    } | null;
+    if (!policy) throw new Error("Policy not found");
+
+    const sourceNodes = await ctx.runQuery(
+      (internal as any).sourceNodes.listByPolicyInternal,
+      { policyId: args.policyId },
+    ).catch(() => []) as unknown[];
+    if (policy.sourceTreeVersion === "v3" && policy.sourceTreeStatus === "ready" && sourceNodes.length > 0) {
+      return { status: "ready" as const };
+    }
+    if (policy.pipelineStatus === "running" || policy.sourceTreeStatus === "running" || policy.sourceTreeStatus === "queued") {
+      return { status: "running" as const };
+    }
+    if (!policy.fileId) {
+      await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
+        id: args.policyId,
+        fields: {
+          sourceTreeStatus: "failed",
+          sourceTreeError: "Policy source file is missing; cannot rebuild source tree.",
+          sourceTreeUpdatedAt: nowMs(),
+        },
+      });
+      return { status: "failed" as const, error: "Policy source file is missing" };
+    }
+
+    await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
+      id: args.policyId,
+      fields: {
+        sourceTreeVersion: "v3",
+        sourceTreeStatus: "queued",
+        sourceTreeError: undefined,
+        sourceTreeUpdatedAt: nowMs(),
+      },
+    });
+    await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.retryPolicyExtraction, {
+      policyId: args.policyId,
+      mode: "full",
+    });
+    return { status: "queued" as const, reason: args.reason };
   },
 });
 
