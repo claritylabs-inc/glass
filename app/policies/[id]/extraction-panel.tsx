@@ -1619,22 +1619,20 @@ export function ExtractionCards({
   if (!hasAnyData) return null;
   if (!policyDocument) return null;
 
-  if (documentOutline.length > 0) {
-    return (
-      <SourceBackedBreakdown
-        policyDocument={policyDocument}
-        sourceSpans={sourceSpans}
-        topLevelRows={topLevelRows}
-        fileUrl={fileUrl}
-      />
-    );
-  }
-
   return (
     <div className="space-y-4">
-      <SourceNativeBreakdownUnavailable />
+      {documentOutline.length > 0 ? (
+        <SourceBackedBreakdown
+          policyDocument={policyDocument}
+          sourceSpans={sourceSpans}
+          topLevelRows={topLevelRows}
+          fileUrl={fileUrl}
+        />
+      ) : (
+        <SourceNativeBreakdownUnavailable />
+      )}
 
-      {topLevelRows.length > 0 && (
+      {documentOutline.length === 0 && topLevelRows.length > 0 && (
         <DataCard
           title="Policy details"
           rows={topLevelRows}
