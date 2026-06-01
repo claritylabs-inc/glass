@@ -22,6 +22,8 @@ Required env:
 
 Set `EXTRACTION_WORKER_MODE=external` on the Convex deployment to queue new and retried extraction jobs for this worker.
 
+Convex rejects stale external workers before they can claim jobs when expected-version env vars are set. Workers send `workerProtocolVersion`, `workerVersion`, and `clSdkVersion` on every claim and expose the same values at `GET /health`. Dev Convex should set `EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION` to the current worker protocol and `EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION` to the package spec in `extraction-worker/package.json`.
+
 Set `EXTRACTION_WORKER_URL` and the same `EXTRACTION_WORKER_SECRET` on Convex to let requirement imports, mailbox attachment reads, on-demand source lookup, and agent PDF attachment context call the worker's LiteParse endpoint. The endpoint accepts `{ "pdfBase64": "..." }` with `Authorization: Bearer <secret>` and returns `{ text, sourceSpans, sourceChunks, pageScreenshots, metadata }`.
 
 ## Railway

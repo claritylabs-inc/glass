@@ -1,4 +1,5 @@
 import dayjs from "dayjs";
+import { createRequire } from "module";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { Output, generateText as aiGenerateText, gateway } from "ai";
 import type { LanguageModel } from "ai";
@@ -98,10 +99,23 @@ type AckResult = {
   checkpointFileId?: string;
 };
 
+const require = createRequire(import.meta.url);
+const workerPackage = require("../package.json") as {
+  version?: string;
+  dependencies?: Record<string, string>;
+};
+const WORKER_PROTOCOL_VERSION = "source-tree-v1";
+
 const actions = {
   claimExternalJob: makeFunctionReference<
     "action",
-    { secret: string; workerId?: string },
+    {
+      secret: string;
+      workerId?: string;
+      workerVersion?: string;
+      workerProtocolVersion?: string;
+      clSdkVersion?: string;
+    },
     ClaimedJob | null
   >("actions/policyExtraction.js:claimExternalJob"),
   heartbeatExternalJob: makeFunctionReference<
@@ -185,6 +199,11 @@ const actions = {
 const CONVEX_URL = requiredEnv("CONVEX_URL");
 const SECRET = requiredEnv("EXTRACTION_WORKER_SECRET");
 const WORKER_ID = process.env.EXTRACTION_WORKER_ID ?? `extraction-worker-${process.pid}`;
+const WORKER_VERSION = process.env.EXTRACTION_WORKER_VERSION ?? workerPackage.version ?? "unknown";
+const WORKER_CL_SDK_VERSION =
+  process.env.EXTRACTION_WORKER_CL_SDK_VERSION
+  ?? workerPackage.dependencies?.["@claritylabs/cl-sdk"]
+  ?? "unknown";
 const POLL_MS = readBoundedIntEnv("EXTRACTION_WORKER_POLL_MS", 5000, 500, 60_000);
 const IDLE_LOG_MS = readBoundedIntEnv("EXTRACTION_WORKER_IDLE_LOG_MS", 60_000, 5_000, 10 * 60_000);
 const HEARTBEAT_MS = readBoundedIntEnv("EXTRACTION_WORKER_HEARTBEAT_MS", 30_000, 5_000, 5 * 60_000);
@@ -1358,7 +1377,14 @@ function startHttpServer(): { close: () => void } | null {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     if (req.method === "GET" && url.pathname === "/health") {
-      jsonResponse(res, 200, { ok: true, workerId: WORKER_ID });
+      jsonResponse(res, 200, {
+        ok: true,
+        workerId: WORKER_ID,
+        workerVersion: WORKER_VERSION,
+        workerProtocolVersion: WORKER_PROTOCOL_VERSION,
+        clSdkVersion: WORKER_CL_SDK_VERSION,
+        convexUrl: CONVEX_URL,
+      });
       return;
     }
     if (req.method === "POST" && (url.pathname === "/liteparse/convert" || url.pathname === "/docling/convert")) {
@@ -1601,11 +1627,16 @@ async function claimJob(): Promise<ClaimedJob | null> {
   return await convex.action(actions.claimExternalJob, {
     secret: SECRET,
     workerId: WORKER_ID,
+    workerVersion: WORKER_VERSION,
+    workerProtocolVersion: WORKER_PROTOCOL_VERSION,
+    clSdkVersion: WORKER_CL_SDK_VERSION,
   });
 }
 
 async function main(): Promise<void> {
-  console.log(`Glass extraction worker ${WORKER_ID} connected to ${CONVEX_URL}`);
+  console.log(
+    `Glass extraction worker ${WORKER_ID} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} connected to ${CONVEX_URL}`,
+  );
   const httpServer = startHttpServer();
   let lastIdleLogAt = 0;
   try {

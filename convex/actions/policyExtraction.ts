@@ -42,6 +42,10 @@ const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
 const EMBEDDING_CONCURRENCY = readBoundedIntEnv("EXTRACTION_EMBEDDING_CONCURRENCY", 8, 1, 16);
 const CHECKPOINT_LOG_THRESHOLD_BYTES = 256 * 1024;
 const EXTERNAL_WORKER_MODE = process.env.EXTRACTION_WORKER_MODE === "external";
+const EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION =
+  process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION;
+const EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION =
+  process.env.EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION;
 const EXTERNAL_WORKER_LEASE_MS = readBoundedIntEnv(
   "EXTRACTION_WORKER_LEASE_MS",
   5 * 60 * 1000,
@@ -243,6 +247,38 @@ function requireExtractionWorkerSecret(secret: string): void {
   if (!expected || secret !== expected) {
     throw new Error("Unauthorized extraction worker");
   }
+}
+
+function normalizeVersionSpec(value: string | undefined): string | undefined {
+  return value?.trim().replace(/^[~^=v]+/, "");
+}
+
+function validateExternalWorkerCompatibility(args: {
+  workerId?: string;
+  workerVersion?: string;
+  workerProtocolVersion?: string;
+  clSdkVersion?: string;
+}): string | undefined {
+  if (
+    EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION &&
+    args.workerProtocolVersion !== EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION
+  ) {
+    return [
+      `External worker ${args.workerId ?? "unknown"} is incompatible`,
+      `(protocol ${args.workerProtocolVersion ?? "missing"}; expected ${EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION})`,
+    ].join(" ");
+  }
+  if (EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION) {
+    const expected = normalizeVersionSpec(EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION);
+    const actual = normalizeVersionSpec(args.clSdkVersion);
+    if (actual !== expected) {
+      return [
+        `External worker ${args.workerId ?? "unknown"} has cl-sdk ${args.clSdkVersion ?? "missing"}`,
+        `(expected ${EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION})`,
+      ].join(" ");
+    }
+  }
+  return undefined;
 }
 
 function compactClSdkCheckpoint(
@@ -1506,9 +1542,17 @@ export const claimExternalJob = action({
   args: {
     secret: v.string(),
     workerId: v.optional(v.string()),
+    workerVersion: v.optional(v.string()),
+    workerProtocolVersion: v.optional(v.string()),
+    clSdkVersion: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<ExternalClaimResult> => {
     requireExtractionWorkerSecret(args.secret);
+    const incompatibility = validateExternalWorkerCompatibility(args);
+    if (incompatibility) {
+      console.warn(incompatibility);
+      return null;
+    }
     const leaseId = `${args.workerId ?? "worker"}:${randomUUID()}`;
     const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
     const claimed = await ctx.runMutation(
