@@ -262,15 +262,6 @@ function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-function readableLabel(value?: string | null) {
-  if (!value) return "";
-  return value
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-    .trim();
-}
-
 function normalizeUsState(value?: string) {
   const trimmed = value?.trim();
   if (!trimmed) return "";
@@ -406,193 +397,6 @@ function extractionReviewQuestions(
       question.id &&
       question.status !== "confirmed" &&
       question.status !== "dismissed",
-  );
-}
-
-function arrayRecords(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.filter(
-        (item): item is Record<string, unknown> =>
-          !!item && typeof item === "object",
-      )
-    : [];
-}
-
-function matchingDeclarationRows(
-  policy: Record<string, unknown>,
-  patterns: RegExp[],
-) {
-  const declarations = policy.declarations as
-    | { fields?: Array<Record<string, unknown>> }
-    | undefined;
-  return (declarations?.fields ?? [])
-    .filter((field) =>
-      patterns.some((pattern) => pattern.test(stringValue(field.field))),
-    )
-    .map((field) => ({
-      label: readableLabel(stringValue(field.field)),
-      value: stringValue(field.value),
-    }))
-    .filter((row) => row.label && row.value);
-}
-
-function uniqueDetailRows<T extends { label: string; value?: string }>(
-  rows: T[],
-) {
-  const seen = new Set<string>();
-  return rows.filter((row) => {
-    if (!row.value) return false;
-    const key = row.value
-      .toLowerCase()
-      .replace(/^\(\d+\)\s*/, "")
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim()
-      .slice(0, 160);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function clientDetailRows(
-  policy: Record<string, unknown>,
-  patterns: RegExp[],
-  {
-    limit = 6,
-    excludePattern,
-    valuePattern,
-  }: { excludePattern?: RegExp; limit?: number; valuePattern?: RegExp } = {},
-) {
-  const lowSignal =
-    /notice item|header|relationship|standalone aggregate|not a "?deductible"?|claims-made and reported policy notice/i;
-  return uniqueDetailRows(
-    matchingDeclarationRows(policy, patterns).filter(
-      (row) =>
-        row.value.length <= 240 &&
-        !lowSignal.test(row.label) &&
-        !lowSignal.test(row.value) &&
-        (!excludePattern ||
-          (!excludePattern.test(row.label) &&
-            !excludePattern.test(row.value))) &&
-        (!valuePattern || valuePattern.test(row.value)),
-    ),
-  ).slice(0, limit);
-}
-
-function ClientPolicyDetailBrief({
-  policy,
-}: {
-  policy: Record<string, unknown>;
-}) {
-  const coverageRows = uniqueDetailRows([
-    ...arrayRecords(policy.coverages).map((coverage) => ({
-      label: stringValue(coverage.name) || "Coverage",
-      value: [
-        stringValue(coverage.limit),
-        stringValue(coverage.deductible) &&
-          `Deductible ${stringValue(coverage.deductible)}`,
-        stringValue(coverage.originalContent),
-      ]
-        .filter(Boolean)
-        .join(" | "),
-    })),
-    ...clientDetailRows(policy, [/limit/i, /aggregate/i, /subLimits/i], {
-      valuePattern: /\$/,
-    }),
-  ]).slice(0, 6);
-  const deductibleRows = clientDetailRows(
-    policy,
-    [/deductible/i, /retention/i, /defenceCosts/i, /defenseCosts/i],
-    { limit: 4, valuePattern: /\$|none|outside|inside|combined/i },
-  );
-  const premiumRows = uniqueDetailRows([
-    ...arrayRecords(policy.premiumBreakdown).map((row) => ({
-      label: stringValue(row.line) || "Premium",
-      value: stringValue(row.amount),
-    })),
-    ...arrayRecords(policy.taxesAndFees).map((row) => ({
-      label: stringValue(row.name) || "Tax or fee",
-      value: stringValue(row.amount),
-    })),
-    ...clientDetailRows(
-      policy,
-      [/premium/i, /tax/i, /fee/i, /totalPayable/i, /payment/i],
-      { excludePattern: /extended reporting|erp/i, limit: 5 },
-    ),
-  ]).slice(0, 6);
-  const claimsRows = clientDetailRows(
-    policy,
-    [/reporting/i, /extendedReporting/i, /retroactive/i],
-    { limit: 4 },
-  );
-  const endorsementRows = uniqueDetailRows(
-    arrayRecords(policy.endorsements).map((row) => ({
-      label:
-        stringValue(row.title ?? row.name ?? row.formNumber) || "Endorsement",
-      value: stringValue(
-        row.summary ?? row.content ?? row.effect ?? row.originalContent,
-      ),
-    })),
-  ).slice(0, 4);
-  const exclusionRows = uniqueDetailRows(
-    arrayRecords(policy.exclusions)
-      .map((row) => {
-        const label = stringValue(row.name ?? row.title);
-        const content = stringValue(row.content ?? row.originalContent);
-        return {
-          label:
-            label && label !== content && label.length <= 80
-              ? label
-              : "Exclusion",
-          value: content || label,
-        };
-      })
-      .filter(
-        (row) => row.value.length <= 240 && !/^\(\d+\)/.test(row.value.trim()),
-      ),
-  ).slice(0, 3);
-
-  const sections = [
-    { title: "Coverage and limits", rows: coverageRows },
-    { title: "Deductibles and defence costs", rows: deductibleRows },
-    { title: "Premium and fees", rows: premiumRows },
-    { title: "Claims and reporting", rows: claimsRows },
-    { title: "Important endorsements", rows: endorsementRows },
-    { title: "Important exclusions", rows: exclusionRows },
-  ].filter((section) => section.rows.length > 0);
-
-  if (sections.length === 0) return null;
-
-  return (
-    <div className="mb-6 space-y-4">
-      {sections.map((section) => (
-        <section
-          key={section.title}
-          className="rounded-lg border border-foreground/6 bg-card"
-        >
-          <div className="border-b border-foreground/4 px-5 py-3">
-            <h3 className="text-sm font-medium text-foreground">
-              {section.title}
-            </h3>
-          </div>
-          <div className="divide-y divide-foreground/4">
-            {section.rows.map((row, index) => (
-              <div
-                key={`${section.title}-${row.label}-${index}`}
-                className="grid gap-1 px-5 py-3 sm:grid-cols-[minmax(160px,0.36fr)_1fr] sm:gap-4"
-              >
-                <p className="text-label-sm font-medium text-muted-foreground">
-                  {row.label}
-                </p>
-                <p className="min-w-0 text-body-sm leading-5 text-foreground">
-                  {row.value}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
   );
 }
 
@@ -2949,41 +2753,12 @@ export function PolicyDetailBody({
         : [],
     [rawPipelineLog],
   );
-  const policyDocument: Record<string, unknown> | undefined = p.document as
-    | Record<string, unknown>
-    | undefined;
   const limits: Record<string, unknown> | undefined = p.limits as
     | Record<string, unknown>
     | undefined;
   const deductibles: Record<string, unknown> | undefined = p.deductibles as
     | Record<string, unknown>
     | undefined;
-  const extractionData: Record<string, unknown> = {
-    ...(policyDocument ?? {}),
-    documentMetadata: p.documentMetadata,
-    documentOutline: p.documentOutline,
-    carrier: p.carrier,
-    carrierLegalName: p.carrierLegalName,
-    security: p.security,
-    mga: p.mga,
-    policyNumber: p.policyNumber,
-    insuredName: p.insuredName,
-    effectiveDate: p.effectiveDate,
-    expirationDate: p.expirationDate,
-    policyTypes: p.policyTypes,
-    coverages: p.coverages,
-    premium: p.premium,
-    totalCost: p.totalCost,
-    minPremium: p.minPremium,
-    depositPremium: p.depositPremium,
-    taxesAndFees: p.taxesAndFees,
-    premiumBreakdown: p.premiumBreakdown,
-    limits,
-    deductibles,
-    declarations: p.declarations,
-    formInventory: p.formInventory,
-    supplementaryFacts: p.supplementaryFacts,
-  };
   const reviewQuestions = extractionReviewQuestions(p);
   const hasExtractionReviews = reviewQuestions.length > 0;
   const visibleActiveTab =
@@ -3398,7 +3173,6 @@ export function PolicyDetailBody({
             documentType={documentType}
             pdfUrl={fileUrl}
           />
-          <ClientPolicyDetailBrief policy={extractionData} />
         </FadeIn>
       )}
 
