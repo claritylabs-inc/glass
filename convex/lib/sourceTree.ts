@@ -426,13 +426,51 @@ export function sourceTreeToDocumentOutline(sourceTree: DocumentSourceNode[]): A
   return (byParent.get(root?.id) ?? byParent.get(undefined) ?? []).map(visit);
 }
 
+function sourceTreeToCompactDocumentOutline(
+  sourceTree: DocumentSourceNode[],
+): Array<Record<string, unknown>> {
+  const byParent = new Map<string | undefined, DocumentSourceNode[]>();
+  for (const node of sourceTree.filter((item) => item.kind !== "document")) {
+    const group = byParent.get(node.parentId) ?? [];
+    group.push(node);
+    byParent.set(node.parentId, group);
+  }
+  for (const group of byParent.values()) group.sort((left, right) => left.order - right.order);
+  const root = sourceTree.find((node) => node.kind === "document");
+  let emitted = 0;
+  const maxNodes = 120;
+  const visit = (node: DocumentSourceNode, depth: number): Record<string, unknown> | null => {
+    if (emitted >= maxNodes) return null;
+    emitted += 1;
+    const children = depth < 2
+      ? (byParent.get(node.id) ?? [])
+        .map((child) => visit(child, depth + 1))
+        .filter((child): child is Record<string, unknown> => Boolean(child))
+      : [];
+    return {
+      id: node.id,
+      title: truncate(node.title, 120) ?? titleCase(node.kind),
+      type: node.kind,
+      label: node.kind,
+      pageStart: node.pageStart,
+      pageEnd: node.pageEnd,
+      excerpt: truncate(node.textExcerpt, 180),
+      sourceSpanIds: node.sourceSpanIds.slice(0, 12),
+      children,
+    };
+  };
+  return (byParent.get(root?.id) ?? byParent.get(undefined) ?? [])
+    .map((node) => visit(node, 0))
+    .filter((node): node is Record<string, unknown> => Boolean(node));
+}
+
 export function sourceTreePolicyFields(params: {
   sourceTree: DocumentSourceNode[];
   operationalProfile: PolicyOperationalProfile;
   existingDocumentMetadata?: unknown;
 }): Record<string, unknown> {
   const { sourceTree, operationalProfile } = params;
-  const documentOutline = sourceTreeToDocumentOutline(sourceTree);
+  const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);
   const hasEvidenceNodes = sourceTree.some((node) => node.kind !== "document");
   const existingMetadata = params.existingDocumentMetadata && typeof params.existingDocumentMetadata === "object" && !Array.isArray(params.existingDocumentMetadata)
     ? params.existingDocumentMetadata as Record<string, unknown>
