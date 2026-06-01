@@ -45,7 +45,8 @@ Railway project `Glass` (`21798fb8-c164-4eed-800c-c964978a9639`):
 - Environment `production` (`b661c376-3de6-4b4e-a7ec-62ca7a9ffacf`) is wired to Convex production.
 - `glass-extraction-worker` (`e8a4f55a-ae25-4d5e-ba0d-e18ea11271ac`) is rooted at `/extraction-worker`, uses `extraction-worker/railway.json`, serves HTTP on port `8080`, and should deploy with Dockerfile builder. Public worker health URLs are `https://glass-extraction-worker-dev.up.railway.app/health` and `https://glass-extraction-worker-production.up.railway.app/health`.
 - `glass-mailbox-scan-worker` (`b368a536-816b-43f8-8aed-89d2e5163ace`) is rooted at `/mailbox-scan-worker`, uses `mailbox-scan-worker/railway.json`, and runs the `0 15 * * *` UTC cron against the matching Convex site URL.
-- `imessage-worker` (`e2f0798e-f97e-48a7-9f35-145b75e93e09`) is rooted at `imessage-worker`, serves port `3001`, runs terminal mode in dev, and real Photon/iMessage mode only in production.
+- `imessage-worker` (`e2f0798e-f97e-48a7-9f35-145b75e93e09`) is rooted at `imessage-worker`, uses `imessage-worker/railway.json`, serves port `3001`, runs terminal mode in dev, and real Photon/iMessage mode only in production.
+- Every Railway worker service should have a service-local `railway.json` with `build.watchPatterns` scoped to its repo-root path (for example `/extraction-worker/**`). Without watch paths, docs-only and unrelated app pushes trigger unnecessary worker rebuilds.
 
 Railway worker env wiring:
 
