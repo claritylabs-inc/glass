@@ -396,7 +396,7 @@ export function AppSidebar({
   const activeContent = isOperatorImpersonating ? (
     <div className="flex h-full min-h-0 flex-col">
       <div
-        className={`shrink-0 border-b border-amber-300/70 bg-amber-100 px-2 py-2 text-amber-950 ${
+        className={`shrink-0 border-b border-amber-300/70 bg-amber-100 px-2 py-2 text-amber-950 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-100 ${
           collapsed ? "text-center" : ""
         }`}
       >
@@ -407,7 +407,7 @@ export function AppSidebar({
               await stopImpersonation({});
               router.replace("/operator");
             }}
-            className="mx-auto flex h-7 w-7 items-center justify-center rounded-md border border-amber-950/15 text-label-sm font-medium transition-colors hover:bg-amber-200"
+            className="mx-auto flex h-7 w-7 items-center justify-center rounded-md border border-amber-950/15 text-label-sm font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
             title={`Stop viewing ${impersonation?.targetOrgName ?? "organization"}`}
             aria-label="Stop operator mode"
           >
@@ -417,7 +417,7 @@ export function AppSidebar({
           <div className="space-y-2">
             <div className="min-w-0">
               <p className="truncate text-label-sm font-medium">Operator mode</p>
-              <p className="mt-0.5 truncate text-label-sm text-amber-950/70">
+              <p className="mt-0.5 truncate text-label-sm text-amber-950/70 dark:text-amber-100/65">
                 {operatorContext?.user?.email} viewing {impersonation?.targetOrgName} as{" "}
                 {impersonation?.targetRole}
               </p>
@@ -428,7 +428,7 @@ export function AppSidebar({
                 await stopImpersonation({});
                 router.replace("/operator");
               }}
-              className="h-7 w-full rounded-md border border-amber-950/15 bg-amber-50 px-2 text-label-sm font-medium transition-colors hover:bg-amber-200"
+              className="h-7 w-full rounded-md border border-amber-950/15 bg-amber-50 px-2 text-label-sm font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
             >
               Stop
             </button>
@@ -448,7 +448,7 @@ export function AppSidebar({
           collapsed ? "w-14" : "w-[220px]"
         } ${
           isOperatorImpersonating
-            ? "border-amber-300/70 bg-amber-50"
+            ? "border-amber-300/70 bg-amber-50 dark:border-amber-400/25 dark:bg-background"
             : "border-foreground/6 bg-background"
         }`}
       >
@@ -484,7 +484,7 @@ export function AppSidebar({
               transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
               className={`fixed left-0 top-0 bottom-0 w-[260px] z-50 border-r lg:hidden ${
                 isOperatorImpersonating
-                  ? "border-amber-300/70 bg-amber-50"
+                  ? "border-amber-300/70 bg-amber-50 dark:border-amber-400/25 dark:bg-background"
                   : "border-foreground/6 bg-background"
               }`}
             >
