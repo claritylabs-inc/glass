@@ -50,8 +50,6 @@ import {
 } from "@/components/ui/dialog";
 import { usePdf } from "@/components/pdf-context";
 import { usePageContext } from "@/hooks/use-page-context";
-import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
-
 import { PolicySummary } from "./policy-summary";
 import {
   SourceEvidenceButton,
@@ -428,16 +426,6 @@ function arrayRecords(value: unknown): Record<string, unknown>[] {
     : [];
 }
 
-function declarationValue(policy: Record<string, unknown>, fields: string[]) {
-  const declarations = policy.declarations as
-    | { fields?: Array<Record<string, unknown>> }
-    | undefined;
-  const wanted = fields.map((field) => field.toLowerCase());
-  return declarations?.fields?.find((field) =>
-    wanted.includes(stringValue(field.field).toLowerCase()),
-  )?.value as string | undefined;
-}
-
 function matchingDeclarationRows(
   policy: Record<string, unknown>,
   patterns: RegExp[],
@@ -478,9 +466,6 @@ function ClientPolicyDetailBrief({
 }: {
   policy: Record<string, unknown>;
 }) {
-  const policyTypes = Array.isArray(policy.policyTypes)
-    ? (policy.policyTypes as string[])
-    : [];
   const coverageRows = uniqueDetailRows([
     ...arrayRecords(policy.coverages).map((coverage) => ({
       label: stringValue(coverage.name) || "Coverage",
@@ -581,52 +566,7 @@ function ClientPolicyDetailBrief({
     })),
   ).slice(0, 12);
 
-  const facts = [
-    {
-      label: "Named insured",
-      value:
-        stringValue(policy.insuredName) ||
-        declarationValue(policy, ["item1NamedInsured"]),
-    },
-    {
-      label: "Policy number",
-      value:
-        stringValue(policy.policyNumber) ||
-        declarationValue(policy, ["item2PolicyNumber"]),
-    },
-    {
-      label: "Policy period",
-      value: [
-        stringValue(policy.effectiveDate),
-        stringValue(policy.expirationDate),
-      ]
-        .filter(Boolean)
-        .join(" - "),
-    },
-    {
-      label: "Coverage type",
-      value: policyTypes
-        .map((type) => POLICY_TYPE_LABELS[type] ?? readableLabel(type))
-        .join(", "),
-    },
-    {
-      label: "Retroactive date",
-      value:
-        stringValue(policy.retroactiveDate) ||
-        declarationValue(policy, [
-          "coverageAInsuranceServicesErrorsAndOmissionsRetroactiveDate",
-        ]),
-    },
-    {
-      label: "Total payable",
-      value:
-        stringValue(policy.totalCost) ||
-        declarationValue(policy, ["totalPayable"]),
-    },
-  ].filter((row) => row.value);
-
   const sections = [
-    { title: "Key facts", rows: facts },
     { title: "Coverage and limits", rows: coverageRows },
     { title: "Deductibles and defence costs", rows: deductibleRows },
     { title: "Premium and fees", rows: premiumRows },
