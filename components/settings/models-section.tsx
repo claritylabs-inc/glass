@@ -62,7 +62,10 @@ type Settings = {
   providers: ProviderConfig[];
   tasks: TaskConfig[];
   routes: Routes;
-  providerKeys: Record<ProviderId, { configured: boolean; suffix: string | null }>;
+  providerKeys: Record<
+    ProviderId,
+    { configured: boolean; suffix: string | null }
+  >;
   updatedAt: number | null;
 };
 
@@ -76,8 +79,39 @@ const VISIBLE_PROVIDERS: ProviderId[] = [
   "deepseek",
 ];
 const DEFAULT_VALUE = "__default__";
+const SELECT_WIDTH_CLASS = "w-full md:w-76";
+const TASK_GROUPS = [
+  {
+    id: "agents",
+    label: "Agent conversations",
+    tasks: ["chat", "email_reply", "email_draft", "mailbox_coordinator"],
+  },
+  {
+    id: "reasoning",
+    label: "Reasoning and authoring",
+    tasks: ["analysis", "application_authoring", "summary"],
+  },
+  {
+    id: "ingestion",
+    label: "Ingestion and extraction",
+    tasks: [
+      "classification",
+      "extraction",
+      "document_extraction",
+      "email_extraction",
+    ],
+  },
+  {
+    id: "platform",
+    label: "Platform utilities",
+    tasks: ["triage", "security", "embeddings"],
+  },
+] as const;
 
-const PROVIDER_ICONS: Record<ProviderId, React.ComponentType<{ size?: number | string }>> = {
+const PROVIDER_ICONS: Record<
+  ProviderId,
+  React.ComponentType<{ size?: number | string }>
+> = {
   openai: OpenAIIcon,
   anthropic: AnthropicIcon,
   google: GeminiIcon,
@@ -104,6 +138,10 @@ function ProviderLogo({
   );
 }
 
+function routeLabel(route: Route) {
+  return `${route.provider}:${route.model}`;
+}
+
 export function ModelsSection() {
   const settings = useCachedQuery(
     "settings.modelSettings.get",
@@ -122,8 +160,9 @@ export function ModelsSection() {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const providersById = useMemo(() => {
-    return Object.fromEntries((settings?.providers ?? []).map((p: ProviderConfig) => [p.id, p])) as
-      Record<ProviderId, ProviderConfig>;
+    return Object.fromEntries(
+      (settings?.providers ?? []).map((p: ProviderConfig) => [p.id, p]),
+    ) as Record<ProviderId, ProviderConfig>;
   }, [settings?.providers]);
 
   if (settings === undefined) {
@@ -138,7 +177,10 @@ export function ModelsSection() {
     VISIBLE_PROVIDERS.includes(p.id),
   );
 
-  async function commitProviderKey(provider: ProviderId, apiKey: string | null) {
+  async function commitProviderKey(
+    provider: ProviderId,
+    apiKey: string | null,
+  ) {
     setSavingProvider(provider);
     try {
       await updateProviderKey({ provider, apiKey });
@@ -157,7 +199,9 @@ export function ModelsSection() {
       setDrafts((current) => current.filter((id) => id !== provider));
       toast.success(apiKey ? "Provider key saved" : "Provider key removed");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update provider key");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update provider key",
+      );
     } finally {
       setSavingProvider(null);
     }
@@ -181,7 +225,9 @@ export function ModelsSection() {
         updatedAt: dayjs().valueOf(),
       }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update model routing");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update model routing",
+      );
     } finally {
       setSavingTask(null);
     }
@@ -189,7 +235,9 @@ export function ModelsSection() {
 
   function modelsForProvider(provider: ProviderId, isEmbedding: boolean) {
     const item = providersById[provider];
-    return isEmbedding ? item?.embeddingModels ?? [] : item?.languageModels ?? [];
+    return isEmbedding
+      ? (item?.embeddingModels ?? [])
+      : (item?.languageModels ?? []);
   }
 
   function configuredProviders(isEmbedding: boolean) {
@@ -205,27 +253,40 @@ export function ModelsSection() {
     <div className="space-y-4">
       <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
         <div className="px-4 py-3 border-b border-foreground/6 flex items-center justify-between gap-3">
-          <h3 className="mb-0! text-sm font-medium text-foreground">Provider keys</h3>
+          <h3 className="mb-0! text-sm font-medium text-foreground">
+            Provider keys
+          </h3>
           {(() => {
             const addable = visibleProviders.filter(
-              (p) => !loadedSettings.providerKeys[p.id].configured && !drafts.includes(p.id),
+              (p) =>
+                !loadedSettings.providerKeys[p.id].configured &&
+                !drafts.includes(p.id),
             );
             if (addable.length === 0) return null;
             return (
               <DropdownMenu>
-                <DropdownMenuTrigger render={
-                  <PillButton type="button" size="compact" variant="secondary">
-                    <Plus className="w-3.5 h-3.5" />
-                    Add provider
-                  </PillButton>
-                } />
+                <DropdownMenuTrigger
+                  render={
+                    <PillButton
+                      type="button"
+                      size="compact"
+                      variant="secondary"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add provider
+                    </PillButton>
+                  }
+                />
                 <DropdownMenuContent align="end">
                   {addable.map((provider) => (
                     <DropdownMenuItem
                       key={provider.id}
                       onClick={() => {
                         setDrafts((current) => [...current, provider.id]);
-                        setTimeout(() => inputRefs.current[provider.id]?.focus(), 0);
+                        setTimeout(
+                          () => inputRefs.current[provider.id]?.focus(),
+                          0,
+                        );
                       }}
                       className="gap-2.5"
                     >
@@ -240,12 +301,16 @@ export function ModelsSection() {
         </div>
         {(() => {
           const rows = visibleProviders.filter(
-            (p) => loadedSettings.providerKeys[p.id].configured || drafts.includes(p.id),
+            (p) =>
+              loadedSettings.providerKeys[p.id].configured ||
+              drafts.includes(p.id),
           );
           if (rows.length === 0) {
             return (
               <div className="px-4 py-10 text-center">
-                <p className="text-body font-medium text-foreground">No provider keys</p>
+                <p className="text-body font-medium text-foreground">
+                  No provider keys
+                </p>
                 <p className="text-body-sm text-muted-foreground/70 mt-1.5 max-w-sm mx-auto">
                   Add an OpenAI or Anthropic key to use your own models.
                 </p>
@@ -271,7 +336,9 @@ export function ModelsSection() {
                         className="shrink-0"
                       />
                       <div className="min-w-0 flex items-baseline gap-2">
-                        <p className="text-body-sm font-medium text-foreground">{provider.label}</p>
+                        <p className="text-body-sm font-medium text-foreground">
+                          {provider.label}
+                        </p>
                         {keyState.configured ? (
                           <p className="text-label-sm text-muted-foreground/60">
                             ···{keyState.suffix}
@@ -294,7 +361,8 @@ export function ModelsSection() {
                         }
                         onBlur={() => {
                           const trimmed = draft.trim();
-                          if (trimmed) void commitProviderKey(provider.id, trimmed);
+                          if (trimmed)
+                            void commitProviderKey(provider.id, trimmed);
                           else dismissDraft(provider.id);
                         }}
                         placeholder="API key"
@@ -334,114 +402,160 @@ export function ModelsSection() {
         })()}
       </div>
 
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        {(() => {
-          const autoMode = !visibleProviders.some(
-            (p) => loadedSettings.providerKeys[p.id].configured,
-          );
-          return (
-            <div
-              className={
-                "px-4 py-3 flex items-center justify-between gap-3" +
-                (autoMode ? "" : " border-b border-foreground/6")
-              }
+      {!visibleProviders.some(
+        (p) => loadedSettings.providerKeys[p.id].configured,
+      ) ? (
+        <div className="rounded-lg border border-foreground/6 bg-card px-4 py-3 text-label-sm text-muted-foreground/65">
+          <div className="flex items-center justify-between gap-3">
+            <span>
+              Glass managed defaults are active for every workflow. Add a
+              provider key to customize routing.
+            </span>
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5 text-label-sm text-muted-foreground"
+              title="Glass automatically picks the best model for every task. Add a provider key to override."
             >
-              <h3 className="mb-0! text-sm font-medium text-foreground">Model routing</h3>
-              {autoMode ? (
-                <span
-                  className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5 text-label-sm text-muted-foreground"
-                  title="Glass automatically picks the best model for every task. Add a provider key to override."
-                >
-                  <LogoIcon size={12} static className="text-muted-foreground" />
-                  Auto
-                </span>
-              ) : null}
-            </div>
-          );
-        })()}
-        {!visibleProviders.some((p) => loadedSettings.providerKeys[p.id].configured) ? null : (
-        <div className="px-4 divide-y divide-foreground/6">
-          {settings.tasks.map((task: TaskConfig) => {
-            const availableProviders = configuredProviders(task.isEmbedding);
-            const route = settings.routes[task.id] ?? null;
-            const saving = savingTask === task.id;
-            const locked = availableProviders.length === 0;
-            const value = route ? `${route.provider}:${route.model}` : DEFAULT_VALUE;
-
-            function onChange(next: string | null) {
-              if (!next || next === DEFAULT_VALUE) {
-                void commitRoute(task.id, null);
-                return;
-              }
-              const [provider, ...modelParts] = next.split(":");
-              const model = modelParts.join(":");
-              void commitRoute(task.id, { provider: provider as ProviderId, model });
-            }
-
+              <LogoIcon size={12} static className="text-muted-foreground" />
+              Auto
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {TASK_GROUPS.map((group) => {
+            const tasks = group.tasks
+              .map((taskId) =>
+                settings.tasks.find((task) => task.id === taskId),
+              )
+              .filter((task): task is TaskConfig => !!task);
+            if (tasks.length === 0) return null;
             return (
-              <div
-                key={task.id}
-                className="py-2.5 grid gap-3 md:grid-cols-[1fr_auto] md:items-center"
+              <section
+                key={group.id}
+                className="overflow-hidden rounded-lg border border-foreground/6 bg-card"
               >
-                <div className="min-w-0">
-                  <p className="text-body-sm font-medium text-foreground">{task.label}</p>
-                  <p className="text-label-sm text-muted-foreground/60">
-                    {task.description}
-                  </p>
+                <div className="border-b border-foreground/6 px-4 py-3">
+                  <h4 className="text-sm font-medium text-foreground">
+                    {group.label}
+                  </h4>
                 </div>
-                <div className="flex items-center gap-2 justify-self-end">
-                  {saving ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                  ) : null}
-                  {locked ? (
-                    <p className="text-label-sm text-muted-foreground/60">
-                      Add a provider key to customize
-                    </p>
-                  ) : (
-                    <Select value={value} onValueChange={onChange} disabled={saving}>
-                      <SelectTrigger className="min-w-65">
-                        <SelectValue>
-                          {route ? (
-                            <span className="flex items-center gap-2">
-                              <ProviderLogo provider={route.provider} size={14} />
-                              <span className="text-body-sm">{route.model}</span>
+                <div className="divide-y divide-foreground/6 px-4">
+                  {tasks.map((task: TaskConfig) => {
+                    const availableProviders = configuredProviders(
+                      task.isEmbedding,
+                    );
+                    const route = settings.routes[task.id] ?? null;
+                    const saving = savingTask === task.id;
+                    const locked = availableProviders.length === 0;
+                    const value = route ? routeLabel(route) : DEFAULT_VALUE;
+
+                    function onChange(next: string | null) {
+                      if (!next || next === DEFAULT_VALUE) {
+                        void commitRoute(task.id, null);
+                        return;
+                      }
+                      const [provider, ...modelParts] = next.split(":");
+                      const model = modelParts.join(":");
+                      void commitRoute(task.id, {
+                        provider: provider as ProviderId,
+                        model,
+                      });
+                    }
+
+                    return (
+                      <div
+                        key={task.id}
+                        className="grid gap-3 py-3.5 md:grid-cols-[1fr_auto] md:items-center"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-body-sm font-medium text-foreground">
+                              {task.label}
+                            </p>
+                            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label-sm text-muted-foreground">
+                              {route ? "Broker override" : "Glass default"}
                             </span>
+                          </div>
+                          <p className="mt-0.5 text-label-sm text-muted-foreground/60">
+                            {task.description}
+                          </p>
+                        </div>
+                        <div className="flex w-full items-center gap-2 justify-self-start md:w-auto md:justify-self-end">
+                          {saving ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                          ) : null}
+                          {locked ? (
+                            <p className="text-label-sm text-muted-foreground/60">
+                              Add a provider key to customize
+                            </p>
                           ) : (
-                            <span className="text-muted-foreground">Default</span>
+                            <Select
+                              value={value}
+                              onValueChange={onChange}
+                              disabled={saving}
+                            >
+                              <SelectTrigger className={SELECT_WIDTH_CLASS}>
+                                <SelectValue>
+                                  {route ? (
+                                    <span className="flex items-center gap-2">
+                                      <ProviderLogo
+                                        provider={route.provider}
+                                        size={14}
+                                      />
+                                      <span className="text-body-sm">
+                                        {route.model}
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-2 text-muted-foreground">
+                                      <LogoIcon size={14} static />
+                                      <span>Glass default</span>
+                                    </span>
+                                  )}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={DEFAULT_VALUE}>
+                                  <span className="text-muted-foreground">
+                                    Reset to Glass default
+                                  </span>
+                                </SelectItem>
+                                <SelectSeparator />
+                                {availableProviders.map((provider) => (
+                                  <SelectGroup key={provider.id}>
+                                    <SelectLabel className="flex items-center gap-1.5">
+                                      <ProviderLogo
+                                        provider={provider.id}
+                                        size={12}
+                                      />
+                                      {provider.label}
+                                    </SelectLabel>
+                                    {modelsForProvider(
+                                      provider.id,
+                                      task.isEmbedding,
+                                    ).map((model) => (
+                                      <SelectItem
+                                        key={`${provider.id}:${model}`}
+                                        value={`${provider.id}:${model}`}
+                                      >
+                                        {model}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           )}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={DEFAULT_VALUE}>
-                          <span className="text-muted-foreground">Reset to default</span>
-                        </SelectItem>
-                        <SelectSeparator />
-                        {availableProviders.map((provider) => (
-                          <SelectGroup key={provider.id}>
-                            <SelectLabel className="flex items-center gap-1.5">
-                              <ProviderLogo provider={provider.id} size={12} />
-                              {provider.label}
-                            </SelectLabel>
-                            {modelsForProvider(provider.id, task.isEmbedding).map((model) => (
-                              <SelectItem
-                                key={`${provider.id}:${model}`}
-                                value={`${provider.id}:${model}`}
-                              >
-                                {model}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
+              </section>
             );
           })}
         </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

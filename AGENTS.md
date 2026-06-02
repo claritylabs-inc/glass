@@ -87,10 +87,11 @@ Core layers:
 
 Default model routing lives in [convex/lib/models.ts](convex/lib/models.ts), with broker-visible catalogs in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
-- `chat`, `chat_with_tools`, `email_draft`, `email_reply` → `gpt-5.4-mini`
-- `application_authoring`, `analysis` → `gpt-5.4-mini`
-- `extraction`, `classification`, `email_extraction`, `document_extraction` → `gpt-5.4-nano`
-- `summary`, `triage`, `security` → `gpt-5.4-mini`
+- `chat`, `email_draft`, `email_reply`, `application_authoring`, `analysis` → OpenAI `gpt-5.4-mini`
+- `mailbox_coordinator` → OpenAI `gpt-5.5`
+- `extraction`, `classification`, `summary`, `email_extraction`, `document_extraction` → OpenAI `gpt-5.4-nano`
+- `triage` / website enrichment → Google `gemini-2.5-flash`
+- `security` → Anthropic `claude-haiku-4.5`
 - `embeddings` → `text-embedding-3-small` at 1536 dimensions
 
 Usage notes:
@@ -109,7 +110,7 @@ Fallback behavior:
 - If no broker key exists for a route, Glass uses the operator global default when present and otherwise the static `MODEL_ROUTING` default.
 - If a global/static route targets a provider without a server-side provider key, Glass uses Vercel AI Gateway instead of failing on a missing provider key.
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
-- `generateTextWithFallback()` and `generateStructuredWithFallback()` use task-aware fallback policy. Missing API key errors are not retried, because retrying another OpenAI model does not fix a missing key and only adds latency. Low-cost extraction/classification calls stay on the nano path by default; only SDK `taskKind`s that represent validation repair, ambiguous synthesis, unsupported source-evidence resolution, or high-risk packet generation may escalate to the fallback route in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
+- `generateTextWithFallback()` and `generateStructuredWithFallback()` use task-aware fallback policy. Missing API key errors are not retried, because retrying another OpenAI model does not fix a missing key and only adds latency. Low-cost extraction/classification calls stay on the nano path by default; only SDK `taskKind`s that represent validation repair, ambiguous synthesis, unsupported source-evidence resolution, or high-risk packet generation may escalate to the `gpt-5.5` fallback route in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 - Web chat streaming in [processThreadChat.ts](convex/actions/processThreadChat.ts) stays on `gpt-5.4-mini` by default and retries transient provider `server_error` / 5xx stream failures once before any visible text, tool call, or side-effectful work has started. If a broker override is active, that retry may use the configured fallback route; otherwise it retries the same `gpt-5.4-mini` route.
 
 ## Compliance Requirements

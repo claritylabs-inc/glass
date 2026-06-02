@@ -284,6 +284,7 @@ function gatewayModelId(route: ModelRoute): string {
 function nativeProviderModel(route: ModelRoute): string | null {
   switch (route.provider) {
     case "anthropic":
+      if (route.model === "claude-haiku-4.5") return CLAUDE_HAIKU;
       if (route.model === "claude-3-haiku") return "claude-3-haiku-20240307";
       return route.model.replace(/\.(\d+)/g, "-$1");
     case "deepseek":
