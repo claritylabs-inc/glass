@@ -1484,7 +1484,7 @@ export default function OperatorExtractionsPage() {
   }, []);
 
   const filters = (
-    <div className="flex flex-col gap-2 border-b border-foreground/6 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-4">
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
       <Select value={status} onValueChange={(value) => setStatus(value ?? ALL)}>
         <SelectTrigger size="sm" className="w-full sm:w-36">
           <SelectValue>{STATUS_LABELS[status] ?? status}</SelectValue>
@@ -1533,6 +1533,22 @@ export default function OperatorExtractionsPage() {
         if (!open) closeTrace();
       }}
       title={selected ? traceDisplayTitle(selected) : "Extraction trace"}
+      footer={selected ? (
+        <PillButton
+          type="button"
+          variant="secondary"
+          size="compact"
+          disabled={!selectedPolicyId || selectedIsRunning || isRerunningSelected}
+          onClick={rerunSelectedExtraction}
+        >
+          {isRerunningSelected ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          Rerun
+        </PillButton>
+      ) : undefined}
     >
       {detail === undefined && selectedTraceId ? (
         <div className="flex h-32 items-center justify-center text-muted-foreground">
@@ -1545,7 +1561,7 @@ export default function OperatorExtractionsPage() {
             onValueChange={(value) => selectTraceTab(parseTracePanelTab(value))}
             className="min-h-0 flex-1 overflow-hidden"
           >
-            <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 bg-background pb-3">
+            <div className="sticky top-0 z-10 flex shrink-0 items-center bg-background pb-3">
               <TabsList variant="pill" className="scrollbar-hide max-w-full overflow-x-auto py-1">
                 <TabsTrigger value="summary">Summary</TabsTrigger>
                 <TabsTrigger value="extracted">Extracted data</TabsTrigger>
@@ -1554,21 +1570,6 @@ export default function OperatorExtractionsPage() {
                 <TabsTrigger value="models">Model calls</TabsTrigger>
                 <TabsTrigger value="log">Log</TabsTrigger>
               </TabsList>
-              <PillButton
-                type="button"
-                variant="secondary"
-                size="compact"
-                className="shrink-0"
-                disabled={!selectedPolicyId || selectedIsRunning || isRerunningSelected}
-                onClick={rerunSelectedExtraction}
-              >
-                {isRerunningSelected ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                Rerun
-              </PillButton>
             </div>
 
             <TabsContent value="summary" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
@@ -1735,9 +1736,9 @@ export default function OperatorExtractionsPage() {
       showBrokerShare={false}
       rightPanel={rightPanel}
     >
-      <main className="flex w-full flex-col">
+      <main className="flex w-full flex-col gap-3">
+        {filters}
         <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
-          {filters}
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
