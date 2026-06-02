@@ -1187,6 +1187,7 @@ export default function OperatorExtractionsPage() {
   const selected = detail?.session ?? traces?.find((trace) => trace.traceId === selectedTraceId) ?? null;
   const selectedPolicyId = selected?.policyId as Id<"policies"> | undefined;
   const isRerunningSelected = !!selectedPolicyId && rerunningPolicyId === selectedPolicyId;
+  const selectedIsRunning = selected?.status === "running";
   const modelEvents = (detail?.events ?? []).filter((event) => event.kind === "model_call");
   const selectedModelEvent = modelEvents.find((event) => event._id === selectedModelEventId) ?? modelEvents[0];
   const logEvents = (detail?.events ?? []).filter((event) => event.kind === "log");
@@ -1239,14 +1240,17 @@ export default function OperatorExtractionsPage() {
     if (!selectedPolicyId) return;
     setRerunningPolicyId(selectedPolicyId);
     try {
-      await rerunExtraction({ policyId: selectedPolicyId });
+      const result = await rerunExtraction({ policyId: selectedPolicyId });
       toast.success("Extraction rerun started");
+      if (result?.traceId) {
+        openTrace(result.traceId, "summary");
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rerun extraction");
     } finally {
       setRerunningPolicyId(null);
     }
-  }, [rerunExtraction, selectedPolicyId]);
+  }, [openTrace, rerunExtraction, selectedPolicyId]);
   const toggleTimelineCollapsed = useCallback((id: string) => {
     setCollapsedTimelineIds((current) => {
       const next = new Set(current);
@@ -1332,7 +1336,7 @@ export default function OperatorExtractionsPage() {
                 variant="secondary"
                 size="compact"
                 className="shrink-0"
-                disabled={!selectedPolicyId || selected.status === "running" || isRerunningSelected}
+                disabled={!selectedPolicyId || selectedIsRunning || isRerunningSelected}
                 onClick={rerunSelectedExtraction}
               >
                 {isRerunningSelected ? (
@@ -1376,12 +1380,18 @@ export default function OperatorExtractionsPage() {
                   <DetailRow label="Slowest" value={selected.slowestLabel ? `${selected.slowestLabel} · ${formatDuration(selected.slowestDurationMs)}` : "—"} />
                   {selected.error ? <DetailRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
                 </dl>
-                <OperationalProfileSummary policy={detail?.policy} />
+                {!selectedIsRunning ? (
+                  <OperationalProfileSummary policy={detail?.policy} />
+                ) : null}
               </div>
             </TabsContent>
 
             <TabsContent value="extracted" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
-              {detail?.policy ? (
+              {selectedIsRunning ? (
+                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+                  Extraction is running. Extracted policy data will appear after this run completes.
+                </div>
+              ) : detail?.policy ? (
                 <ExtractionCards
                   policyId={selected.policyId as Id<"policies">}
                   policyDocument={detail.policy}

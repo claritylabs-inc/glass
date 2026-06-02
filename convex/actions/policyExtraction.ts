@@ -2482,7 +2482,7 @@ export const retryPolicyExtraction = internalAction({
         jobId: String(policyId),
         state: nextState,
       });
-      return;
+      return { success: true, traceId };
     }
 
     const phases = makePhases(ctx);
@@ -2500,5 +2500,6 @@ export const retryPolicyExtraction = internalAction({
         traceId,
       },
     });
+    return { success: true, traceId };
   },
 });
