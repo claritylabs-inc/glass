@@ -39,10 +39,12 @@ type PositionedCell = {
   item: TextItem;
 };
 
+type PositionedBbox = { page: number; x: number; y: number; width: number; height: number };
+
 type PositionedRow = {
   cells: PositionedCell[];
   pageNum: number;
-  bbox: { page: number; x: number; y: number; width: number; height: number };
+  bbox: PositionedBbox;
   text: string;
 };
 
@@ -156,6 +158,128 @@ function isHeaderRow(row: PositionedRow): boolean {
   return row.cells.length >= 2 && TABLE_HEADER_PATTERN.test(row.text) && !/\$|\bCAD\b|\bUSD\b|\d{2,}/i.test(row.text);
 }
 
+function unionBbox(left: PositionedBbox, right: PositionedBbox): PositionedBbox {
+  const minX = Math.min(left.x, right.x);
+  const minY = Math.min(left.y, right.y);
+  const maxX = Math.max(left.x + left.width, right.x + right.width);
+  const maxY = Math.max(left.y + left.height, right.y + right.height);
+  return {
+    page: left.page,
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function cellBbox(cell: PositionedCell): PositionedBbox {
+  return {
+    page: 0,
+    x: cell.item.x,
+    y: cell.item.y,
+    width: cell.item.width,
+    height: cell.item.height,
+  };
+}
+
+function mergeCell(left: PositionedCell, right: PositionedCell): PositionedCell {
+  const bbox = unionBbox(cellBbox(left), cellBbox(right));
+  const text = normalizeWhitespace(`${left.text} ${right.text}`);
+  return {
+    text,
+    item: {
+      ...left.item,
+      text,
+      x: bbox.x,
+      y: bbox.y,
+      width: bbox.width,
+      height: bbox.height,
+    },
+  };
+}
+
+function mergeRows(left: PositionedRow, right: PositionedRow): PositionedRow {
+  const cells = [...left.cells];
+  for (const incoming of right.cells) {
+    const targetIndex = nearestCellIndex(cells, incoming);
+    if (targetIndex === undefined) {
+      cells.push(incoming);
+    } else {
+      cells[targetIndex] = mergeCell(cells[targetIndex], incoming);
+    }
+  }
+  cells.sort((a, b) => a.item.x - b.item.x);
+  return {
+    cells,
+    pageNum: left.pageNum,
+    bbox: unionBbox(left.bbox, right.bbox),
+    text: cells.map((cell) => cell.text).join(" "),
+  };
+}
+
+function nearestCellIndex(cells: PositionedCell[], incoming: PositionedCell): number | undefined {
+  let bestIndex: number | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const [index, cell] of cells.entries()) {
+    const distance = Math.abs(cell.item.x - incoming.item.x);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  }
+  return bestDistance <= 48 ? bestIndex : undefined;
+}
+
+function startsNewLogicalTableRow(row: PositionedRow): boolean {
+  const first = row.cells[0]?.text ?? row.text;
+  if (row.cells.some((cell) => /^item\s+\d+\./i.test(cell.text))) return true;
+  return /^(item\s+\d+\.|[A-Z]\.\s+|coverage\b|limit\b|basis\b|retroactive\b|deductible\b|premium\b|tax\b|fee\b)/i.test(first);
+}
+
+function endsWithContinuationMarker(value: string): boolean {
+  return /(?:\b(and|of|the|for|under|within|with|from|to|or|plus)|[&,:;(-])$/i.test(value.trim());
+}
+
+function isPageFooterRow(row: PositionedRow, pageHeight: number): boolean {
+  const text = normalizeWhitespace(row.text);
+  const nearBottom = row.bbox.y >= pageHeight - Math.max(72, pageHeight * 0.08);
+  if (!nearBottom) return false;
+  if (/\bpage\s+\d+\s+of\s+\d+\b/i.test(text)) return true;
+  return /^[A-Z]{2,}(?:-[A-Z0-9]+)+\s+\d{2}\s+\d{2}$/i.test(text);
+}
+
+function isContinuationTableRow(previous: PositionedRow, row: PositionedRow): boolean {
+  if (!isTableLikeRow(previous)) return false;
+  const previousHasContinuationMarker =
+    endsWithContinuationMarker(previous.cells[0]?.text ?? "") ||
+    previous.cells.some((cell) => endsWithContinuationMarker(cell.text));
+  if (!previousHasContinuationMarker && isHeaderRow(row)) return false;
+  if (startsNewLogicalTableRow(row)) return false;
+
+  const previousFirst = previous.cells[0]?.text ?? "";
+  const rowFirst = row.cells[0]?.text ?? "";
+  if (previous.cells.length >= 2 && row.cells.length === 1) {
+    const nearestIndex = nearestCellIndex(previous.cells, row.cells[0]);
+    return nearestIndex !== undefined && (nearestIndex > 0 || previousHasContinuationMarker);
+  }
+  if (/^item\s+\d+\./i.test(previousFirst) && !/^item\s+\d+\./i.test(rowFirst)) return true;
+  return previousHasContinuationMarker;
+}
+
+function normalizeLiteParseRows(rows: PositionedRow[], pageHeight: number): PositionedRow[] {
+  const normalized: PositionedRow[] = [];
+  for (const row of rows) {
+    if (isPageFooterRow(row, pageHeight)) continue;
+    const previous = normalized[normalized.length - 1];
+    if (previous && isContinuationTableRow(previous, row)) {
+      normalized[normalized.length - 1] = mergeRows(previous, row);
+      continue;
+    }
+    normalized.push(row);
+  }
+  return normalized;
+}
+
 function classifyTextElement(row: PositionedRow, pageRows: PositionedRow[]): "title" | "paragraph" {
   const text = row.text.trim();
   const heights = pageRows
@@ -227,7 +351,7 @@ function buildLiteParseSourceSpans(params: {
       sourceSpans.push(pageSpan);
     }
 
-    const rows = groupRows(page);
+    const rows = normalizeLiteParseRows(groupRows(page), page.height);
     let currentHeaders: string[] = [];
     let tableIndex = 0;
     let rowIndex = 0;

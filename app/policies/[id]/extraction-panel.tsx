@@ -1245,9 +1245,12 @@ function metadataNumber(
   key: string,
 ) {
   const value = metadata?.[key];
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function metadataBoolean(
@@ -1255,7 +1258,13 @@ function metadataBoolean(
   key: string,
 ) {
   const value = metadata?.[key];
-  return typeof value === "boolean" ? value : undefined;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return undefined;
 }
 
 function truncateInline(value: string, maxLength = 96) {
@@ -1419,7 +1428,7 @@ function SourceNodeTable({
   const bodyRows = firstRowIsHeader ? rows.slice(1) : rows;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+    <div className="overflow-x-auto rounded-lg border border-foreground/6 bg-card">
       <UiTable
         className="w-max min-w-full text-sm [&_td]:whitespace-normal [&_th]:whitespace-normal"
         style={{ minWidth: `${Math.max(34, maxColumnCount * 12 + 7)}rem` }}

@@ -1483,10 +1483,10 @@ export default function OperatorExtractionsPage() {
     });
   }, []);
 
-  const actions = (
-    <div className="flex items-center gap-2">
+  const filters = (
+    <div className="flex flex-col gap-2 border-b border-foreground/6 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-4">
       <Select value={status} onValueChange={(value) => setStatus(value ?? ALL)}>
-        <SelectTrigger size="sm" className="w-32">
+        <SelectTrigger size="sm" className="w-full sm:w-36">
           <SelectValue>{STATUS_LABELS[status] ?? status}</SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -1500,7 +1500,7 @@ export default function OperatorExtractionsPage() {
       <Select value={range} onValueChange={(value) => {
         if (value && value in RANGE_LABELS) setRange(value as keyof typeof RANGE_LABELS);
       }}>
-        <SelectTrigger size="sm" className="w-28">
+        <SelectTrigger size="sm" className="w-full sm:w-32">
           <SelectValue>{RANGE_LABELS[range]}</SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -1511,7 +1511,7 @@ export default function OperatorExtractionsPage() {
         </SelectContent>
       </Select>
       <Select value={orgId} onValueChange={(value) => setOrgId(value ?? ALL)}>
-        <SelectTrigger size="sm" className="w-48">
+        <SelectTrigger size="sm" className="w-full sm:w-56">
           <SelectValue>{selectedOrgLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -1720,7 +1720,6 @@ export default function OperatorExtractionsPage() {
 
   return (
     <AppShell
-      actions={actions}
       breadcrumbDetail="Extractions"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
@@ -1738,6 +1737,7 @@ export default function OperatorExtractionsPage() {
     >
       <main className="flex w-full flex-col">
         <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          {filters}
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
