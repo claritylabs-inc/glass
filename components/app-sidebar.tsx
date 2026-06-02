@@ -11,6 +11,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { usePageContext } from "@/hooks/use-page-context";
+import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { ClientDetailSidebarContent } from "@/components/app-sidebar/client-detail-sidebar-content";
@@ -95,8 +96,7 @@ export function AppSidebar({
   const createThread = useMutation(api.threads.create);
   const archiveThread = useMutation(api.threads.archive);
   const { archiveThreadLocally } = useArchivedThreadCacheActions();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stopImpersonation = useMutation((api as any).operator.stopImpersonation);
+  const stopOperatorImpersonation = useStopOperatorImpersonation();
   const { signOut } = useAuthActions();
   const { clearCache: clearOnboardingCache } = useOnboardingCache();
   const { context: pageContext } = usePageContext();
@@ -404,8 +404,7 @@ export function AppSidebar({
           <button
             type="button"
             onClick={async () => {
-              await stopImpersonation({});
-              router.replace("/operator");
+              await stopOperatorImpersonation();
             }}
             className="mx-auto flex h-7 w-7 items-center justify-center rounded-md border border-amber-950/15 text-label-sm font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
             title={`Stop viewing ${impersonation?.targetOrgName ?? "organization"}`}
@@ -425,8 +424,7 @@ export function AppSidebar({
             <button
               type="button"
               onClick={async () => {
-                await stopImpersonation({});
-                router.replace("/operator");
+                await stopOperatorImpersonation();
               }}
               className="h-7 w-full rounded-md border border-amber-950/15 bg-amber-50 px-2 text-label-sm font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
             >

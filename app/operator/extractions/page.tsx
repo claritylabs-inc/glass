@@ -883,34 +883,10 @@ function TimelineWaterfall({
   return (
     <div className="flex h-full min-h-0 overflow-hidden rounded-lg border border-foreground/6">
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
-          <div className="relative border-r border-foreground/6 px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
-            Event
-            <button
-              type="button"
-              aria-label="Resize event column"
-              className="absolute -right-1 top-0 h-full w-2 cursor-col-resize rounded-sm hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              onPointerDown={startResize}
-            />
-          </div>
-          <div className="relative h-8 min-w-0 overflow-hidden">
-            {ticks.map((tick) => (
-              <div
-                key={tick}
-                className="absolute top-0 h-full border-l border-foreground/10"
-                style={{ left: `${tick * 100}%` }}
-              >
-                <span className="ml-1 text-[10px] leading-8 text-muted-foreground">
-                  {formatDuration(durationMs * tick)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="relative min-h-0 flex-1 overflow-y-auto">
+        <div className="relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)]">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 grid min-h-full"
+            className="pointer-events-none absolute inset-0 grid"
             style={{ gridTemplateColumns }}
           >
             <div className="border-r border-foreground/6" />
@@ -924,84 +900,108 @@ function TimelineWaterfall({
               ))}
             </div>
           </div>
-          <div className="relative z-10 min-h-full">
-            {visibleRows.length ? visibleRows.map((row) => {
-              const left = ((row.startMs - startAt) / durationMs) * 100;
-              const width = Math.max(1.5, (row.durationMs / durationMs) * 100);
-              const constrainedLeft = Math.max(0, Math.min(100, left));
-              const constrainedWidth = Math.min(100 - constrainedLeft, width);
-              const durationLabel = formatDuration(row.durationMs);
-              const showDurationInside = constrainedWidth >= 8;
-              const showOutsideAfter = constrainedLeft + constrainedWidth <= 88;
-              const isCollapsed = collapsedIds.has(row.id);
-              const hasChildren = (row.childCount ?? 0) > 0;
-              return (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  key={row.id}
-                  className={`grid min-h-7 border-b border-foreground/6 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                    selectedRowId === row.id ? "bg-muted/50" : ""
-                  }`}
-                  style={{ gridTemplateColumns }}
-                  onClick={() => onSelectRow(row.id)}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    onSelectRow(row.id);
-                  }}
+          <div className="relative z-10 grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
+            <div className="relative px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
+              Event
+              <button
+                type="button"
+                aria-label="Resize event column"
+                className="absolute -right-1 top-0 h-full w-2 cursor-col-resize rounded-sm hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                onPointerDown={startResize}
+              />
+            </div>
+            <div className="relative h-8 min-w-0 overflow-hidden">
+              {ticks.map((tick) => (
+                <span
+                  key={tick}
+                  className="absolute top-0 ml-1 text-[10px] leading-8 text-muted-foreground"
+                  style={{ left: `${tick * 100}%` }}
                 >
-                  <div className={`min-w-0 py-1.5 pr-2.5 ${row.level > 0 ? "pl-5" : "pl-2.5"}`}>
-                    <div className="flex min-w-0 items-center gap-1">
-                      {hasChildren ? (
-                        <button
-                          type="button"
-                          aria-label={isCollapsed ? "Expand timeline row" : "Collapse timeline row"}
-                          className="-ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-foreground/6 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onToggleCollapsed(row.id);
-                          }}
-                        >
-                          {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                        </button>
-                      ) : (
-                        <span className="h-4 w-4 shrink-0" />
-                      )}
-                      <p className="min-w-0 truncate text-label-sm font-medium text-foreground">{row.label}</p>
+                  {formatDuration(durationMs * tick)}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="relative z-10 min-h-0 overflow-y-auto">
+            <div className="min-h-full">
+              {visibleRows.length ? visibleRows.map((row) => {
+                const left = ((row.startMs - startAt) / durationMs) * 100;
+                const width = Math.max(1.5, (row.durationMs / durationMs) * 100);
+                const constrainedLeft = Math.max(0, Math.min(100, left));
+                const constrainedWidth = Math.min(100 - constrainedLeft, width);
+                const durationLabel = formatDuration(row.durationMs);
+                const showDurationInside = constrainedWidth >= 8;
+                const showOutsideAfter = constrainedLeft + constrainedWidth <= 88;
+                const isCollapsed = collapsedIds.has(row.id);
+                const hasChildren = (row.childCount ?? 0) > 0;
+                return (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    key={row.id}
+                    className={`grid min-h-7 border-b border-foreground/6 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                      selectedRowId === row.id ? "bg-muted/50" : ""
+                    }`}
+                    style={{ gridTemplateColumns }}
+                    onClick={() => onSelectRow(row.id)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      onSelectRow(row.id);
+                    }}
+                  >
+                    <div className={`min-w-0 py-1.5 pr-2.5 ${row.level > 0 ? "pl-5" : "pl-2.5"}`}>
+                      <div className="flex min-w-0 items-center gap-1">
+                        {hasChildren ? (
+                          <button
+                            type="button"
+                            aria-label={isCollapsed ? "Expand timeline row" : "Collapse timeline row"}
+                            className="-ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-foreground/6 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onToggleCollapsed(row.id);
+                            }}
+                          >
+                            {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </button>
+                        ) : (
+                          <span className="h-4 w-4 shrink-0" />
+                        )}
+                        <p className="min-w-0 truncate text-label-sm font-medium text-foreground">{row.label}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
-                    <div
-                      className={`absolute top-1.5 flex h-4 items-center justify-center rounded-sm px-1 ${timelineColor(row.kind)}`}
-                      style={{
-                        left: `${constrainedLeft}%`,
-                        width: `${constrainedWidth}%`,
-                      }}
-                      title={`${row.label} · ${durationLabel} · ${row.caption}`}
-                    >
-                      {showDurationInside ? (
-                        <span className={`truncate text-[10px] font-medium ${timelineInsideTextColor(row.kind)}`}>
+                    <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
+                      <div
+                        className={`absolute top-1.5 flex h-4 items-center justify-center rounded-sm px-1 ${timelineColor(row.kind)}`}
+                        style={{
+                          left: `${constrainedLeft}%`,
+                          width: `${constrainedWidth}%`,
+                        }}
+                        title={`${row.label} · ${durationLabel} · ${row.caption}`}
+                      >
+                        {showDurationInside ? (
+                          <span className={`truncate text-[10px] font-medium ${timelineInsideTextColor(row.kind)}`}>
+                            {durationLabel}
+                          </span>
+                        ) : null}
+                      </div>
+                      {!showDurationInside ? (
+                        <span
+                          className="pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-[10px] font-medium text-foreground"
+                          style={showOutsideAfter
+                            ? { left: `${constrainedLeft + constrainedWidth}%` }
+                            : { right: `${100 - constrainedLeft}%` }}
+                        >
                           {durationLabel}
                         </span>
                       ) : null}
                     </div>
-                    {!showDurationInside ? (
-                      <span
-                        className="pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-[10px] font-medium text-foreground"
-                        style={showOutsideAfter
-                          ? { left: `${constrainedLeft + constrainedWidth}%` }
-                          : { right: `${100 - constrainedLeft}%` }}
-                      >
-                        {durationLabel}
-                      </span>
-                    ) : null}
                   </div>
-                </div>
-              );
-            }) : (
-              <p className="px-3 py-3 text-body-sm text-muted-foreground">No timed events recorded yet.</p>
-            )}
+                );
+              }) : (
+                <p className="px-3 py-3 text-body-sm text-muted-foreground">No timed events recorded yet.</p>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-[10px] text-muted-foreground">

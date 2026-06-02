@@ -38,6 +38,7 @@ import {
   useCachedOperatorCurrent,
   useOperatorClientCacheActions,
 } from "@/lib/sync/operator-cached-queries";
+import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
 
 type ClientRow = {
   _id: Id<"organizations">;
@@ -204,8 +205,7 @@ export default function OperatorClientsPage() {
   const updateClientSettings = useMutation(api.operator.updateClientSettings);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const startImpersonation = useMutation((api as any).operator.startImpersonation);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stopImpersonation = useMutation((api as any).operator.stopImpersonation);
+  const stopOperatorImpersonation = useStopOperatorImpersonation();
 
   const selected = useMemo(
     () => clients?.find((client) => client._id === selectedId) ?? null,
@@ -409,7 +409,7 @@ export default function OperatorClientsPage() {
           variant="secondary"
           size="compact"
           onClick={async () => {
-            await stopImpersonation({});
+            await stopOperatorImpersonation();
             toast.success("Impersonation stopped");
           }}
         >

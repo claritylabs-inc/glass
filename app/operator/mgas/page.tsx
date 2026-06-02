@@ -26,6 +26,7 @@ import {
   useCachedOperatorMGAs,
   useOperatorMGACacheActions,
 } from "@/lib/sync/operator-cached-queries";
+import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
 
 type MGARow = {
   _id: Id<"organizations">;
@@ -109,8 +110,7 @@ export default function OperatorMGAsPage() {
   const setMGAStatus = useMutation((api as any).operator.setMGAStatus);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const startImpersonation = useMutation((api as any).operator.startImpersonation);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stopImpersonation = useMutation((api as any).operator.stopImpersonation);
+  const stopOperatorImpersonation = useStopOperatorImpersonation();
 
   const selected = useMemo(
     () => mgas?.find((mga) => mga._id === selectedId) ?? null,
@@ -191,7 +191,7 @@ export default function OperatorMGAsPage() {
           variant="secondary"
           size="compact"
           onClick={async () => {
-            await stopImpersonation({});
+            await stopOperatorImpersonation();
             toast.success("Impersonation stopped");
           }}
         >

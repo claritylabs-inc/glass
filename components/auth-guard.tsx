@@ -2,7 +2,7 @@
 
 import { useConvexAuth, useMutation } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,6 +30,18 @@ declare global {
   interface Window {
     __GLASS_BOOT__?: BootState;
   }
+}
+
+function subscribeToBootStateSnapshot() {
+  return () => {};
+}
+
+function getBootStateSnapshot() {
+  return window.__GLASS_BOOT__ ?? null;
+}
+
+function getServerBootStateSnapshot() {
+  return null;
 }
 
 const PUBLIC_PATHS = [
@@ -181,11 +193,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const acceptInvitation = useMutation(api.orgs.acceptInvitation);
   const handledInvitationIdRef = useRef<string | null>(null);
   const [inviteAcceptError, setInviteAcceptError] = useState(false);
-  const [initialBootState] = useState<BootState | null>(() => {
-    const boot =
-      typeof window !== "undefined" ? window.__GLASS_BOOT__ : undefined;
-    return boot ?? null;
-  });
+  const initialBootState = useSyncExternalStore(
+    subscribeToBootStateSnapshot,
+    getBootStateSnapshot,
+    getServerBootStateSnapshot,
+  );
 
   const isPublic = PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),

@@ -16,6 +16,10 @@ import {
 } from "./nav-config";
 import type { NavShortcut } from "./types";
 
+export function stableSidebarTooltipId(value: string) {
+  return `sidebar-tooltip-${value.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 export function SectionHeader({
   label,
   collapsed,
@@ -49,6 +53,7 @@ export function NavItem({
   const link = (
     <Link
       href={href}
+      id={shortcut ? stableSidebarTooltipId(href) : undefined}
       className={`flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
         collapsed ? "justify-center" : ""
       } ${active ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE}`}

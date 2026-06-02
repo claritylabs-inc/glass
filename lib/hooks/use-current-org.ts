@@ -9,6 +9,7 @@ import { api } from "@/convex/_generated/api";
 import { useSearchParams } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { useIsStoppingOperatorImpersonation } from "@/lib/operator-impersonation-stop-state";
 
 export type CurrentOrgContext = {
   orgId: Id<"organizations">;
@@ -33,13 +34,28 @@ export type CurrentOrgContext = {
  */
 export function useCurrentOrg(): CurrentOrgContext | null | undefined {
   const searchParams = useSearchParams();
+  const isStoppingOperatorImpersonation = useIsStoppingOperatorImpersonation();
   const orgIdFromUrl = searchParams.get("org") as Id<"organizations"> | null;
+  const viewer = useCachedQuery("hooks.currentOrg.viewer", api.users.viewer, {});
+  const operatorContext = useCachedQuery(
+    "hooks.currentOrg.operator.current",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).operator.current,
+    viewer?.accountKind === "operator" ? {} : "skip",
+  );
 
   const orgData = useCachedQuery(
     orgIdFromUrl ? "orgs.viewerOrg.byUrl" : "orgs.viewerOrg",
     api.orgs.viewerOrg,
     orgIdFromUrl ? { orgId: orgIdFromUrl } : {},
   );
+
+  if (viewer === undefined) return null;
+  if (viewer?.accountKind === "operator") {
+    if (isStoppingOperatorImpersonation) return undefined;
+    if (operatorContext === undefined) return null;
+    if (!operatorContext?.activeImpersonation) return undefined;
+  }
 
   if (orgData === undefined) return null; // loading
 

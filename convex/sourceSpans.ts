@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { getPolicyAccessForQuery } from "./lib/access";
 
 const sourceKindValidator = v.union(
@@ -43,6 +44,25 @@ const sourceChunkInsertFields = {
   createdAt: v.number(),
 };
 
+type SourceSpanDoc = Doc<"sourceSpans">;
+
+function parentFor(span: SourceSpanDoc) {
+  const metadata = span.metadata && typeof span.metadata === "object"
+    ? span.metadata as Record<string, unknown>
+    : {};
+  const table = span.table && typeof span.table === "object"
+    ? span.table as Record<string, unknown>
+    : {};
+  const parent =
+    span.parentSpanId ??
+    table.rowSpanId ??
+    table.tableSpanId ??
+    metadata.parentSpanId ??
+    metadata.rowSpanId ??
+    metadata.tableSpanId;
+  return typeof parent === "string" && parent.length > 0 ? parent : undefined;
+}
+
 export const listSpansByPolicyAndSpanIds = query({
   args: {
     policyId: v.id("policies"),
@@ -54,38 +74,46 @@ export const listSpansByPolicyAndSpanIds = query({
 
     const wanted = new Set(args.spanIds);
     if (wanted.size === 0) return [];
-    const spans = await ctx.db
-      .query("sourceSpans")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
-      .collect();
-    const byId = new Map(spans.map((span) => [span.spanId, span]));
     const relatedIds = new Set(wanted);
-    const parentFor = (span: (typeof spans)[number]) => {
-      const metadata = (span.metadata ?? {}) as Record<string, unknown>;
-      const table = (span.table ?? {}) as Record<string, unknown>;
-      const parent =
-        span.parentSpanId ??
-        table.rowSpanId ??
-        table.tableSpanId ??
-        metadata.parentSpanId ??
-        metadata.rowSpanId ??
-        metadata.tableSpanId;
-      return typeof parent === "string" && parent.length > 0 ? parent : undefined;
+    const byId = new Map<string, SourceSpanDoc>();
+    const loadSpan = async (spanId: string) => {
+      if (byId.has(spanId)) return byId.get(spanId);
+      const span = await ctx.db
+        .query("sourceSpans")
+        .withIndex("by_policyId_spanId", (q) =>
+          q.eq("policyId", args.policyId).eq("spanId", spanId),
+        )
+        .first();
+      if (span) byId.set(spanId, span);
+      return span;
     };
 
     let changed = true;
     while (changed) {
       changed = false;
-      for (const span of spans) {
+      for (const spanId of [...relatedIds]) {
+        const span = await loadSpan(spanId);
+        if (!span) continue;
         const parentId = parentFor(span);
-        if (relatedIds.has(span.spanId) && parentId && !relatedIds.has(parentId)) {
+        if (parentId && !relatedIds.has(parentId)) {
           relatedIds.add(parentId);
           changed = true;
         }
-        if (parentId && relatedIds.has(parentId) && !relatedIds.has(span.spanId)) {
-          relatedIds.add(span.spanId);
-          changed = true;
+      }
+    }
+
+    for (const spanId of [...relatedIds]) {
+      const children = await ctx.db
+        .query("sourceSpans")
+        .withIndex("by_policyId_parentSpanId", (q) =>
+          q.eq("policyId", args.policyId).eq("parentSpanId", spanId),
+        )
+        .collect();
+      for (const child of children) {
+        if (!relatedIds.has(child.spanId)) {
+          relatedIds.add(child.spanId);
         }
+        byId.set(child.spanId, child);
       }
     }
 

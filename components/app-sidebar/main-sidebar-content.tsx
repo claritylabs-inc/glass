@@ -31,7 +31,12 @@ import {
   SHORTCUT_TOOLTIP_DELAY_MS,
   SHORTCUT_TOOLTIP_SIDE_OFFSET,
 } from "./nav-config";
-import { NavItem, SectionHeader, ShortcutTooltipContent } from "./nav-item";
+import {
+  NavItem,
+  SectionHeader,
+  ShortcutTooltipContent,
+  stableSidebarTooltipId,
+} from "./nav-item";
 import { SidebarBrokerContact } from "./broker-contact-card";
 import { SidebarHeader } from "./sidebar-header";
 import type {
@@ -291,6 +296,7 @@ function ExpandedThreadList({
         const threadLink = (
           <Link
             href={`/agent/thread/${item.id}`}
+            id={shortcut ? stableSidebarTooltipId(`${item.kind}-${item.id}`) : undefined}
             className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
               isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
             }`}
