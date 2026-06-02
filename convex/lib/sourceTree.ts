@@ -60,6 +60,13 @@ export type SourceSpanLike = {
   metadata?: Record<string, unknown>;
 };
 
+type DeclarationProfileField = {
+  field: string;
+  value: string;
+  sourceNodeIds: string[];
+  sourceSpanIds: string[];
+};
+
 const SOURCE_SPAN_KINDS = new Set<SourceSpanKind>([
   "pdf_text",
   "pdf_image",
@@ -217,8 +224,18 @@ function normalizedKind(value: unknown): SourceSpanKind {
 function sourceSpansForSdk(sourceSpans: SourceSpanLike[], documentId: string): SourceSpan[] {
   return sourceSpans
     .filter((span) => typeof span.text === "string")
-    .map((span) => {
-      const id = spanId(span);
+    .map((span, index) => {
+      const rawId = spanId(span);
+      const id = span.id || span.spanId
+        ? rawId
+        : [
+          rawId,
+          pageStart(span) ?? "na",
+          span.sourceUnit ?? span.metadata?.sourceUnit ?? span.metadata?.elementType ?? "unit",
+          typeof span.table?.rowIndex === "number" ? span.table.rowIndex : "row",
+          typeof span.table?.columnIndex === "number" ? span.table.columnIndex : "col",
+          index,
+        ].join(":");
       const text = span.text ?? "";
       return {
         id,
@@ -1095,6 +1112,104 @@ function profileValue(profile: PolicyOperationalProfile, key: keyof PolicyOperat
     : undefined;
 }
 
+function profileField(profile: PolicyOperationalProfile, key: keyof PolicyOperationalProfile): SourceBackedValue | undefined {
+  const value = profile[key];
+  return value && typeof value === "object" && !Array.isArray(value) && "value" in value
+    ? value as SourceBackedValue
+    : undefined;
+}
+
+const DECLARATION_PROFILE_FIELD_KEYS: Record<string, keyof PolicyOperationalProfile> = {
+  policyNumber: "policyNumber",
+  namedInsured: "namedInsured",
+  insurer: "insurer",
+  policyPeriodStart: "effectiveDate",
+  policyPeriodEnd: "expirationDate",
+  effectiveDate: "effectiveDate",
+  expirationDate: "expirationDate",
+  broker: "broker",
+  premium: "premium",
+};
+
+function operationalProfileDeclarationFields(
+  operationalProfile: PolicyOperationalProfile,
+): DeclarationProfileField[] {
+  return Object.entries(DECLARATION_PROFILE_FIELD_KEYS)
+    .flatMap(([field, key]) => {
+      const value = profileField(operationalProfile, key);
+      if (!value?.value) return [];
+      return [{
+        field,
+        value: value.value,
+        sourceNodeIds: value.sourceNodeIds,
+        sourceSpanIds: value.sourceSpanIds,
+      }];
+    });
+}
+
+function declarationFieldValue(value: unknown): string | undefined {
+  return typeof value === "string" ? normalizeWhitespace(value) : undefined;
+}
+
+function shouldReplaceDeclarationField(
+  field: string,
+  existingValue: string | undefined,
+  profileValue: string,
+) {
+  if (!existingValue) return true;
+  if (existingValue === profileValue) return true;
+  if (["namedInsured", "insurer"].includes(field)) {
+    return isBadOperationalIdentityValue(existingValue) || existingValue.length > profileValue.length * 1.8;
+  }
+  if (field === "broker") {
+    return isBadBrokerValue(existingValue) || existingValue.length > profileValue.length * 1.8;
+  }
+  return false;
+}
+
+function repairDeclarationsFromOperationalProfile(
+  declarations: unknown,
+  operationalProfile: PolicyOperationalProfile,
+): Record<string, unknown> | undefined {
+  const profileFields = operationalProfileDeclarationFields(operationalProfile);
+  if (profileFields.length === 0) return declarations && typeof declarations === "object" && !Array.isArray(declarations)
+    ? declarations as Record<string, unknown>
+    : undefined;
+
+  const existing = declarations && typeof declarations === "object" && !Array.isArray(declarations)
+    ? declarations as Record<string, unknown>
+    : {};
+  const fields = Array.isArray(existing.fields)
+    ? existing.fields.filter((field): field is Record<string, unknown> =>
+      Boolean(field) && typeof field === "object" && !Array.isArray(field),
+    )
+    : [];
+  const byField = new Map<string, Record<string, unknown>>();
+  for (const field of fields) {
+    const name = typeof field.field === "string" ? field.field : undefined;
+    if (name && !byField.has(name)) byField.set(name, field);
+  }
+
+  for (const profileField of profileFields) {
+    const name = profileField.field as string;
+    const existingField = byField.get(name);
+    const existingValue = declarationFieldValue(existingField?.value);
+    const nextValue = declarationFieldValue(profileField.value);
+    if (!nextValue) continue;
+    if (shouldReplaceDeclarationField(name, existingValue, nextValue)) {
+      byField.set(name, {
+        ...(existingField ?? {}),
+        ...profileField,
+      });
+    }
+  }
+
+  return {
+    ...existing,
+    fields: [...byField.values()],
+  };
+}
+
 export function sourceTreeToDocumentOutline(sourceTree: DocumentSourceNode[]): Array<Record<string, unknown>> {
   const byParent = new Map<string | undefined, DocumentSourceNode[]>();
   for (const node of sourceTree.filter((item) => item.kind !== "document")) {
@@ -1164,6 +1279,7 @@ export function sourceTreePolicyFields(params: {
   sourceTree: DocumentSourceNode[];
   operationalProfile: PolicyOperationalProfile;
   existingDocumentMetadata?: unknown;
+  existingDeclarations?: unknown;
 }): Record<string, unknown> {
   const { sourceTree, operationalProfile } = params;
   const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);
@@ -1198,6 +1314,8 @@ export function sourceTreePolicyFields(params: {
       ],
     },
   };
+  const declarations = repairDeclarationsFromOperationalProfile(params.existingDeclarations, operationalProfile);
+  if (declarations) fields.declarations = declarations;
   return {
     ...fields,
     ...operationalProfilePolicyFields(operationalProfile),

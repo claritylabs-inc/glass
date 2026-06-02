@@ -1753,6 +1753,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               sourceTree: sourceNodes,
               operationalProfile,
               existingDocumentMetadata: doc.documentMetadata,
+              existingDeclarations: doc.declarations,
             }),
           },
         },
@@ -2548,6 +2549,7 @@ export const completeExternalExtract = action({
           sourceTree: sourceNodes,
           operationalProfile,
           existingDocumentMetadata: doc.documentMetadata,
+          existingDeclarations: doc.declarations,
         }),
       },
     });
@@ -2761,6 +2763,7 @@ export const rebuildStoredSourceNodes = internalAction({
     }) as {
       orgId?: Id<"organizations">;
       document?: Record<string, unknown>;
+      declarations?: unknown;
       documentMetadata?: unknown;
       operationalProfile?: unknown;
     } | null;
@@ -2790,6 +2793,7 @@ export const rebuildStoredSourceNodes = internalAction({
         sourceTree: sourceNodes,
         operationalProfile,
         existingDocumentMetadata: policy.documentMetadata,
+        existingDeclarations: policy.declarations,
       }),
     });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeOperationalProfile, normalizeSourceTree, withControlledPolicyTypes, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
+import { normalizeOperationalProfile, normalizeSourceTree, sourceTreePolicyFields, withControlledPolicyTypes, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
 
 const sourceSpans: SourceSpanLike[] = [
   { id: "span-jacket", text: "THIS IS A CLAIMS-MADE AND REPORTED POLICY. PLEASE READ IT CAREFULLY.", pageStart: 1 },
@@ -301,6 +301,28 @@ describe("normalizeOperationalProfile", () => {
 });
 
 describe("normalizeSourceTree", () => {
+  it("keeps generated fallback source span IDs distinct for repeated table-cell text", () => {
+    const tree = normalizeSourceTree([], [
+      {
+        text: "",
+        sourceUnit: "table_cell",
+        pageStart: 5,
+        table: { tableId: "table-1", rowIndex: 0, columnIndex: 2 },
+      },
+      {
+        text: "",
+        sourceUnit: "table_cell",
+        pageStart: 5,
+        table: { tableId: "table-1", rowIndex: 1, columnIndex: 2 },
+      },
+    ], "policy");
+
+    const spanIds = tree
+      .filter((node) => node.kind === "table_cell")
+      .flatMap((node) => node.sourceSpanIds);
+    expect(new Set(spanIds).size).toBe(spanIds.length);
+  });
+
   it("groups adjacent form and endorsement pages with semantic titles", () => {
     const tree = normalizeSourceTree([], [
       {
@@ -356,5 +378,62 @@ describe("normalizeSourceTree", () => {
         formNumber: "NWC-END 001 04 25",
       },
     ]);
+  });
+});
+
+describe("sourceTreePolicyFields", () => {
+  it("repairs polluted declaration fields from source-backed operational profile values", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        namedInsured: {
+          value: ". THIS IS A CLAIMS-MADE AND REPORTED POLICY. PLEASE READ IT CAREFULLY. _________________________ Page 1 of 27",
+          confidence: "high",
+          sourceNodeIds: ["jacket"],
+          sourceSpanIds: ["span-jacket"],
+        },
+        insurer: {
+          value: "policy jacket and claims-made notice. SAINT LAWRENCE SPECIALTY INSURANCE COMPANY Compagnie d'assurance spécialisée Saint",
+          confidence: "high",
+          sourceNodeIds: ["jacket"],
+          sourceSpanIds: ["span-jacket"],
+        },
+        policyTypes: ["professional_liability"],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+      existingDeclarations: {
+        fields: [
+          {
+            field: "namedInsured",
+            value: ". THIS IS A CLAIMS-MADE AND REPORTED POLICY. PLEASE READ IT CAREFULLY. _________________________ Page 1 of 27",
+            sourceSpanIds: ["span-jacket"],
+          },
+          {
+            field: "insurer",
+            value: "policy jacket and claims-made notice. SAINT LAWRENCE SPECIALTY INSURANCE COMPANY Compagnie d'assurance spécialisée Saint",
+            sourceSpanIds: ["span-jacket"],
+          },
+          {
+            field: "policyNumber",
+            value: "SLS-EO-26-110482",
+            sourceSpanIds: ["span-policy-number"],
+          },
+        ],
+      },
+    });
+
+    const declarations = fields.declarations as { fields: Array<{ field: string; value: string; sourceSpanIds: string[] }> };
+    const byField = new Map(declarations.fields.map((field) => [field.field, field]));
+    expect(byField.get("namedInsured")?.value).toBe("Cios Technologies Inc.");
+    expect(byField.get("namedInsured")?.sourceSpanIds).toEqual(["span-named-insured"]);
+    expect(byField.get("insurer")?.value).toBe("Saint Lawrence Specialty Insurance Company");
+    expect(byField.get("policyPeriodStart")?.value).toBe("02/01/2026");
+    expect(byField.get("policyPeriodEnd")?.value).toBe("02/01/2027");
+    expect(byField.get("premium")?.value).toBe("CAD $42,000");
   });
 });
