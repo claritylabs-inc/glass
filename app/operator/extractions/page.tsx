@@ -32,6 +32,7 @@ import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw } from "lucide-reac
 import type { Id } from "@/convex/_generated/dataModel";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
+import { SourceEvidenceButton, type SourceSpanDoc } from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
@@ -107,14 +108,26 @@ type ModelCallDebugDetails = {
     images?: Array<{ mimeType?: string; base64Chars?: number }>;
   };
 };
+type SourceSpanDiagnostics = {
+  total: number;
+  unitCounts: Record<string, number>;
+  pageCounts: Record<string, number>;
+  tableCount: number;
+  declarationPages: number[];
+  tableSpans: SourceSpanDoc[];
+  declarationTextSpans: SourceSpanDoc[];
+  truncated?: boolean;
+};
+
 type TraceDetail = {
   session: TraceRow;
   policy?: Record<string, unknown> | null;
   fileUrl?: string | null;
   events: TraceEvent[];
+  sourceSpanDiagnostics?: SourceSpanDiagnostics;
 };
-type TracePanelTab = "summary" | "extracted" | "timeline" | "timing" | "models" | "log";
-const TRACE_PANEL_TABS = ["summary", "extracted", "timeline", "timing", "models", "log"] as const;
+type TracePanelTab = "summary" | "extracted" | "source" | "timeline" | "timing" | "models" | "log";
+const TRACE_PANEL_TABS = ["summary", "extracted", "source", "timeline", "timing", "models", "log"] as const;
 
 const ALL = "__all__";
 const STATUS_LABELS: Record<string, string> = {
@@ -636,6 +649,272 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
       <NamedAdditionalInsuredList rows={additionalInsureds} />
       <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />
       <EndorsementSupportList rows={endorsementSupport} />
+    </div>
+  );
+}
+
+
+function sourceSpanDiagnosticUnit(span: SourceSpanDoc) {
+  const value = span.sourceUnit ?? span.metadata?.sourceUnit ?? span.metadata?.elementType;
+  return typeof value === "string" && value.length > 0 ? value : "unknown";
+}
+
+function tableRecord(span: SourceSpanDoc) {
+  return span.table && typeof span.table === "object" ? span.table : {};
+}
+
+function spanPageNumber(span: SourceSpanDoc) {
+  if (typeof span.pageStart === "number") return span.pageStart;
+  const box = span.bbox?.[0];
+  return typeof box?.page === "number" ? box.page : undefined;
+}
+
+function tableNumber(span: SourceSpanDoc, key: "rowIndex" | "columnIndex") {
+  const value = tableRecord(span)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function tableString(span: SourceSpanDoc, key: "tableId" | "columnName" | "rowSpanId") {
+  const value = tableRecord(span)[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function tableBoolean(span: SourceSpanDoc, key: "isHeader") {
+  const value = tableRecord(span)[key];
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value.toLowerCase() === "true";
+  return false;
+}
+
+type RawSourceTableRow = {
+  rowIndex: number;
+  rowSpan?: SourceSpanDoc;
+  cells: SourceSpanDoc[];
+};
+
+type RawSourceTable = {
+  id: string;
+  page?: number;
+  rows: RawSourceTableRow[];
+};
+
+function buildRawSourceTables(spans: SourceSpanDoc[]): RawSourceTable[] {
+  const groups = new Map<string, Map<number, RawSourceTableRow>>();
+  const rowSpanById = new Map<string, SourceSpanDoc>();
+  for (const span of spans) {
+    if (sourceSpanDiagnosticUnit(span) === "table_row") rowSpanById.set(span.spanId, span);
+  }
+  for (const span of spans) {
+    const unit = sourceSpanDiagnosticUnit(span);
+    if (unit !== "table_row" && unit !== "table_cell") continue;
+    const tableId = tableString(span, "tableId") ?? `${spanPageNumber(span) ?? "unknown"}:table`;
+    const rowIndex = tableNumber(span, "rowIndex") ?? 0;
+    let rows = groups.get(tableId);
+    if (!rows) {
+      rows = new Map();
+      groups.set(tableId, rows);
+    }
+    let row = rows.get(rowIndex);
+    if (!row) {
+      row = { rowIndex, cells: [] };
+      rows.set(rowIndex, row);
+    }
+    if (unit === "table_row") row.rowSpan = span;
+    if (unit === "table_cell") row.cells.push(span);
+  }
+
+  return [...groups.entries()].map(([id, rows]) => {
+    const sortedRows = [...rows.values()].map((row) => {
+      const cells = row.cells
+        .map((cell) => ({
+          ...cell,
+          parentSpanId: cell.parentSpanId ?? tableString(cell, "rowSpanId"),
+        }))
+        .sort((left, right) => (tableNumber(left, "columnIndex") ?? 0) - (tableNumber(right, "columnIndex") ?? 0));
+      return {
+        ...row,
+        rowSpan: row.rowSpan ?? cells.map((cell) => rowSpanById.get(cell.parentSpanId ?? "")).find(Boolean),
+        cells,
+      };
+    }).sort((left, right) => left.rowIndex - right.rowIndex);
+    return {
+      id,
+      page: sortedRows.map((row) => spanPageNumber(row.rowSpan ?? row.cells[0])).find((page) => page !== undefined),
+      rows: sortedRows,
+    };
+  }).sort((left, right) => (left.page ?? 0) - (right.page ?? 0) || left.id.localeCompare(right.id));
+}
+
+function SourceSpanStats({ diagnostics }: { diagnostics: SourceSpanDiagnostics }) {
+  const units = Object.entries(diagnostics.unitCounts).sort((a, b) => b[1] - a[1]);
+  const tableRows = diagnostics.unitCounts.table_row ?? 0;
+  const tableCells = diagnostics.unitCounts.table_cell ?? 0;
+  const pages = Object.keys(diagnostics.pageCounts).length;
+  return (
+    <div className="rounded-lg border border-foreground/6 bg-card p-3">
+      <div className="grid gap-2 sm:grid-cols-4">
+        <DetailRow label="Spans" value={diagnostics.total.toLocaleString()} />
+        <DetailRow label="Pages" value={pages.toLocaleString()} />
+        <DetailRow label="Tables" value={diagnostics.tableCount.toLocaleString()} />
+        <DetailRow label="Rows / cells" value={`${tableRows.toLocaleString()} / ${tableCells.toLocaleString()}`} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {units.map(([unit, count]) => (
+          <Badge key={unit} variant="secondary" className="font-normal">
+            {formatProfileLabel(unit)}: {count.toLocaleString()}
+          </Badge>
+        ))}
+      </div>
+      {diagnostics.truncated ? (
+        <p className="mt-2 text-label-sm text-amber-600 dark:text-amber-400">
+          Diagnostics are capped at the first 5,000 stored spans for this policy.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function RawSourceTablePreview({
+  table,
+  sourceSpans,
+  fileUrl,
+}: {
+  table: RawSourceTable;
+  sourceSpans: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
+  const maxColumnCount = Math.max(...table.rows.map((row) => row.cells.length), 1);
+  const firstRow = table.rows[0];
+  const firstRowIsHeader = Boolean(firstRow?.rowSpan && tableBoolean(firstRow.rowSpan, "isHeader")) ||
+    Boolean(firstRow?.cells.some((cell) => tableBoolean(cell, "isHeader")));
+  const headerCells = firstRowIsHeader ? firstRow?.cells ?? [] : [];
+  const bodyRows = firstRowIsHeader ? table.rows.slice(1) : table.rows;
+  return (
+    <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+      <div className="flex flex-wrap items-center gap-2 border-b border-foreground/6 px-3 py-2">
+        <p className="min-w-0 flex-1 truncate text-label-sm font-medium text-foreground">
+          {table.id}
+        </p>
+        {table.page !== undefined ? <Badge variant="outline" className="font-normal">Page {table.page}</Badge> : null}
+        <Badge variant="secondary" className="font-normal">{table.rows.length} rows</Badge>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-max min-w-full text-left text-sm" style={{ minWidth: `${Math.max(36, maxColumnCount * 13 + 7)}rem` }}>
+          {firstRowIsHeader ? (
+            <thead>
+              <tr className="border-b border-foreground/6 bg-muted/30">
+                {Array.from({ length: maxColumnCount }, (_, index) => (
+                  <th key={index} className="px-3 py-2 text-label-sm font-medium text-muted-foreground">
+                    {headerCells[index]?.text ?? tableString(headerCells[index] ?? {}, "columnName") ?? `Column ${index + 1}`}
+                  </th>
+                ))}
+                <th className="w-px px-3 py-2 text-label-sm font-medium text-muted-foreground">Source</th>
+              </tr>
+            </thead>
+          ) : null}
+          <tbody>
+            {bodyRows.map((row) => {
+              const ids = [row.rowSpan?.spanId, ...row.cells.map((cell) => cell.spanId)].filter((id): id is string => Boolean(id));
+              return (
+                <tr key={row.rowIndex} className="border-b border-foreground/6 last:border-b-0 hover:bg-foreground/[0.015]">
+                  {row.cells.length > 0 ? Array.from({ length: maxColumnCount }, (_, index) => (
+                    <td key={index} className="px-3 py-2.5 align-top text-foreground [overflow-wrap:anywhere]">
+                      {row.cells[index]?.text ?? ""}
+                      {!firstRowIsHeader && row.cells[index] ? (
+                        <span className="mt-1 block text-[10px] text-muted-foreground">
+                          {tableString(row.cells[index], "columnName")}
+                        </span>
+                      ) : null}
+                    </td>
+                  )) : (
+                    <td className="px-3 py-2.5 align-top text-foreground [overflow-wrap:anywhere]" colSpan={maxColumnCount}>
+                      {row.rowSpan?.text ?? "—"}
+                    </td>
+                  )}
+                  <td className="w-px px-3 py-2.5 align-top">
+                    <SourceEvidenceButton
+                      sourceSpanIds={ids}
+                      sourceSpans={sourceSpans}
+                      fallbackPage={table.page}
+                      fileUrl={fileUrl}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SourceSpanDiagnosticsPanel({ detail }: { detail?: TraceDetail | null }) {
+  const diagnostics = detail?.sourceSpanDiagnostics;
+  if (!diagnostics) {
+    return (
+      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+        Source span diagnostics are unavailable for this trace.
+      </div>
+    );
+  }
+  const sourceSpans = [...diagnostics.tableSpans, ...diagnostics.declarationTextSpans];
+  const tables = buildRawSourceTables(diagnostics.tableSpans);
+  return (
+    <div className="space-y-3">
+      <SourceSpanStats diagnostics={diagnostics} />
+      <div className="rounded-lg border border-foreground/6 bg-card p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-label-sm font-medium text-muted-foreground">Declaration-like pages</p>
+          {diagnostics.declarationPages.length > 0 ? diagnostics.declarationPages.map((page) => (
+            <Badge key={page} variant="outline" className="font-normal">Page {page}</Badge>
+          )) : <span className="text-body-sm text-muted-foreground">No declaration pages detected from raw span text.</span>}
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div>
+          <h4 className="text-label-sm font-medium text-muted-foreground">Raw table reconstruction</h4>
+          <p className="mt-0.5 text-label-sm text-muted-foreground">
+            Rebuilt directly from stored table_row/table_cell source spans so operator review can separate parser quality from extracted-data rendering.
+          </p>
+        </div>
+        {tables.length ? tables.map((table) => (
+          <RawSourceTablePreview
+            key={table.id}
+            table={table}
+            sourceSpans={sourceSpans}
+            fileUrl={detail?.fileUrl ?? undefined}
+          />
+        )) : (
+          <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+            No table source spans were found in the declaration diagnostic window.
+          </div>
+        )}
+      </div>
+      {diagnostics.declarationTextSpans.length ? (
+        <div className="rounded-lg border border-foreground/6 bg-card">
+          <div className="border-b border-foreground/6 px-3 py-2">
+            <h4 className="text-label-sm font-medium text-muted-foreground">Declaration text/page spans</h4>
+          </div>
+          {diagnostics.declarationTextSpans.map((span) => (
+            <div key={span.spanId} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="font-normal">{formatProfileLabel(sourceSpanDiagnosticUnit(span))}</Badge>
+                {spanPageNumber(span) !== undefined ? <Badge variant="outline" className="font-normal">Page {spanPageNumber(span)}</Badge> : null}
+                <SourceEvidenceButton
+                  sourceSpanIds={[span.spanId]}
+                  sourceSpans={sourceSpans}
+                  fallbackPage={spanPageNumber(span)}
+                  fileUrl={detail?.fileUrl ?? undefined}
+                />
+              </div>
+              <p className="text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+                {span.text}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1565,6 +1844,7 @@ export default function OperatorExtractionsPage() {
               <TabsList variant="pill" className="scrollbar-hide max-w-full overflow-x-auto py-1">
                 <TabsTrigger value="summary">Summary</TabsTrigger>
                 <TabsTrigger value="extracted">Extracted data</TabsTrigger>
+                <TabsTrigger value="source">Source spans</TabsTrigger>
                 <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 <TabsTrigger value="timing">Timing</TabsTrigger>
                 <TabsTrigger value="models">Model calls</TabsTrigger>
@@ -1627,6 +1907,10 @@ export default function OperatorExtractionsPage() {
                   Extracted policy data is unavailable for this trace.
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="source" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
+              <SourceSpanDiagnosticsPanel detail={detail} />
             </TabsContent>
 
             <TabsContent value="timeline" className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden pt-1">
