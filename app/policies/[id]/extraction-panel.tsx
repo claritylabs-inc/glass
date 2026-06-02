@@ -1525,6 +1525,44 @@ function SourceTextParagraphs({
   );
 }
 
+function visibleRenderableSourceChildren(
+  node: DocumentOutlineNode,
+  children: DocumentOutlineNode[],
+  policyDocument: PolicyDocument,
+) {
+  const directChildren = isNodeKind(node, "table_row")
+    ? children
+    : children.filter((child) => !isNodeKind(child, "table_cell"));
+  const tableRows = isNodeKind(node, "table")
+    ? tableRowsForNode({ ...node, children })
+    : [];
+  const rendersTable = tableRows.some((row) => row.cells.length > 0);
+  const standaloneChildren = isNodeKind(node, "table") && rendersTable
+    ? directChildren.filter((child) => !isNodeKind(child, "table_row"))
+    : directChildren;
+
+  return standaloneChildren.filter((child) => {
+    if (isTextLeafNode(child)) return !isDecorativeTextNode(child);
+    return sourceNodeHasRenderableContent(child, policyDocument);
+  });
+}
+
+function sourceNodeHasRenderableContent(
+  node: DocumentOutlineNode,
+  policyDocument: PolicyDocument,
+): boolean {
+  if (isTextLeafNode(node)) return !isDecorativeTextNode(node);
+  if (extractedFactRowsForNode(policyDocument, node.id).length > 0) return true;
+  if (isNodeKind(node, "table")) {
+    return tableRowsForNode(node).some((row) => row.cells.length > 0);
+  }
+  return visibleRenderableSourceChildren(
+    node,
+    node.children ?? [],
+    policyDocument,
+  ).length > 0;
+}
+
 function SourceNodeChildrenSkeleton() {
   return (
     <div className="space-y-2 py-1">
@@ -1594,13 +1632,17 @@ function OutlineNodeRow({
   const visibleChildren = isTable && rendersTable
     ? allVisibleChildren.filter((child) => !isNodeKind(child, "table_row"))
     : allVisibleChildren;
-  const textChildren = visibleChildren.filter(isTextLeafNode);
-  const structuredChildren = visibleChildren.filter((child) => !isTextLeafNode(child));
+  const renderableChildren = visibleChildren.filter((child) => {
+    if (isTextLeafNode(child)) return !isDecorativeTextNode(child);
+    return sourceNodeHasRenderableContent(child, policyDocument);
+  });
+  const textChildren = renderableChildren.filter(isTextLeafNode);
+  const structuredChildren = renderableChildren.filter((child) => !isTextLeafNode(child));
   const canExpand =
     factRows.length > 0 ||
     waitingForLazyChildren ||
     rendersTable ||
-    visibleChildren.length > 0;
+    renderableChildren.length > 0;
 
   return (
     <div className="border-t border-foreground/6 first:border-t-0">
@@ -1704,14 +1746,19 @@ function SourceBackedBreakdown({
   allowOperatorSourceAccess?: boolean;
 }) {
   const topLevelSourceNodes = useTopLevelSourceNodes(policyId);
-  const fallbackOutline = policyDocument.documentOutline ?? [];
   const loadingSourceNodes = policyId !== undefined && topLevelSourceNodes === undefined;
-  const outline = topLevelSourceNodes && topLevelSourceNodes.length > 0
-    ? topLevelSourceNodes
-    : policyId && loadingSourceNodes
-      ? []
-      : fallbackOutline;
   const usingSourceNodes = Boolean(topLevelSourceNodes?.length);
+  const renderableOutline = useMemo(
+    () => {
+      const outline = topLevelSourceNodes && topLevelSourceNodes.length > 0
+        ? topLevelSourceNodes
+        : policyId && loadingSourceNodes
+          ? []
+          : policyDocument.documentOutline ?? [];
+      return outline.filter((node) => sourceNodeHasRenderableContent(node, policyDocument));
+    },
+    [loadingSourceNodes, policyDocument, policyId, topLevelSourceNodes],
+  );
 
   return (
     <div className="space-y-4">
@@ -1727,12 +1774,12 @@ function SourceBackedBreakdown({
               Loading source hierarchy...
             </p>
           ) : null}
-          {!loadingSourceNodes && outline.length === 0 ? (
+          {!loadingSourceNodes && renderableOutline.length === 0 ? (
             <p className="px-5 py-4 text-label-sm text-muted-foreground">
               Source hierarchy is unavailable for this policy.
             </p>
           ) : null}
-          {outline.map((node) => (
+          {renderableOutline.map((node) => (
             <OutlineNodeRow
               key={node.id}
               policyId={usingSourceNodes ? policyId : undefined}
