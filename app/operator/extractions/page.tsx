@@ -10,6 +10,7 @@ import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
   Select,
@@ -1326,10 +1327,10 @@ export default function OperatorExtractionsPage() {
                 <TabsTrigger value="models">Model calls</TabsTrigger>
                 <TabsTrigger value="log">Log</TabsTrigger>
               </TabsList>
-              <Button
+              <PillButton
                 type="button"
                 variant="secondary"
-                size="sm"
+                size="compact"
                 className="shrink-0"
                 disabled={!selectedPolicyId || selected.status === "running" || isRerunningSelected}
                 onClick={rerunSelectedExtraction}
@@ -1340,7 +1341,7 @@ export default function OperatorExtractionsPage() {
                   <RefreshCw className="h-3.5 w-3.5" />
                 )}
                 Rerun
-              </Button>
+              </PillButton>
             </div>
 
             <TabsContent value="summary" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
