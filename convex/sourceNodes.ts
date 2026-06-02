@@ -3,6 +3,7 @@ import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getPolicyAccessForQuery } from "./lib/access";
+import { getActiveOperatorProfile } from "./lib/operatorIdentity";
 
 const sourceNodeInsertFields = {
   orgId: v.id("organizations"),
@@ -42,6 +43,7 @@ type PublicSourceNode = {
   sourceSpanIds: string[];
   pageStart?: number;
   pageEnd?: number;
+  formNumber?: string;
   bbox?: unknown;
   order: number;
   path: string;
@@ -50,18 +52,20 @@ type PublicSourceNode = {
   children?: PublicSourceNode[];
 };
 
-async function hasChildNode(
-  ctx: Pick<QueryCtx, "db">,
+async function canReadPolicySourceNodes(
+  ctx: Pick<QueryCtx, "auth" | "db">,
   policyId: Id<"policies">,
-  parentNodeId: string,
 ) {
-  const child = await ctx.db
-    .query("sourceNodes")
-    .withIndex("by_policyId_parentNodeId", (q) =>
-      q.eq("policyId", policyId).eq("parentNodeId", parentNodeId),
-    )
-    .first();
-  return child !== null;
+  try {
+    if (await getPolicyAccessForQuery(ctx as QueryCtx, policyId)) return true;
+  } catch {
+    // Fall through to the operator check. Unauthenticated callers still fail.
+  }
+  return Boolean(await getActiveOperatorProfile(ctx as QueryCtx));
+}
+
+function likelyHasChildNodes(node: SourceNodeDoc) {
+  return !["text", "table_cell"].includes(node.kind);
 }
 
 function publicSourceNode(
@@ -69,6 +73,9 @@ function publicSourceNode(
   hasChildren: boolean,
   children?: PublicSourceNode[],
 ) {
+  const metadata = node.metadata && typeof node.metadata === "object" && !Array.isArray(node.metadata)
+    ? node.metadata as Record<string, unknown>
+    : undefined;
   return {
     _id: node._id,
     _creationTime: node._creationTime,
@@ -85,6 +92,7 @@ function publicSourceNode(
     sourceSpanIds: node.sourceSpanIds,
     pageStart: node.pageStart,
     pageEnd: node.pageEnd,
+    formNumber: typeof metadata?.formNumber === "string" ? metadata.formNumber : undefined,
     bbox: node.bbox,
     order: node.order,
     path: node.path,
@@ -114,18 +122,15 @@ async function publicChildNodes(
   parentNodeId: string,
 ) {
   const children = await childNodes(ctx, policyId, parentNodeId);
-  return Promise.all(
-    children.map(async (node: SourceNodeDoc) =>
-      publicSourceNode(node, await hasChildNode(ctx, policyId, node.nodeId)),
-    ),
+  return children.map((node: SourceNodeDoc) =>
+    publicSourceNode(node, likelyHasChildNodes(node)),
   );
 }
 
 export const listTopLevelByPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
-    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
-    if (!policyAccess) return [];
+    if (!await canReadPolicySourceNodes(ctx, args.policyId)) return [];
 
     const rootCandidates = await ctx.db
       .query("sourceNodes")
@@ -140,10 +145,8 @@ export const listTopLevelByPolicy = query({
         .filter((node) => node.kind !== "document")
         .sort((left, right) => left.order - right.order);
 
-    return Promise.all(
-      topLevel.map(async (node) =>
-        publicSourceNode(node, await hasChildNode(ctx, args.policyId, node.nodeId)),
-      ),
+    return topLevel.map((node) =>
+      publicSourceNode(node, likelyHasChildNodes(node)),
     );
   },
 });
@@ -154,8 +157,7 @@ export const listChildrenByPolicyAndParentNodeId = query({
     parentNodeId: v.string(),
   },
   handler: async (ctx, args) => {
-    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
-    if (!policyAccess) return [];
+    if (!await canReadPolicySourceNodes(ctx, args.policyId)) return [];
 
     const parent = await ctx.db
       .query("sourceNodes")
@@ -165,26 +167,14 @@ export const listChildrenByPolicyAndParentNodeId = query({
       .first();
     if (!parent) return [];
 
-    const children = await publicChildNodes(ctx, args.policyId, args.parentNodeId);
-    if (parent.kind !== "table") return children;
-
-    return Promise.all(
-      children.map(async (child) => {
-        if (child.type !== "table_row") return child;
-        return {
-          ...child,
-          children: await publicChildNodes(ctx, args.policyId, child.nodeId),
-        };
-      }),
-    );
+    return await publicChildNodes(ctx, args.policyId, args.parentNodeId);
   },
 });
 
 export const listByPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
-    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
-    if (!policyAccess) return [];
+    if (!await canReadPolicySourceNodes(ctx, args.policyId)) return [];
     const nodes = await ctx.db
       .query("sourceNodes")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
@@ -206,8 +196,7 @@ export const listByPolicyAndNodeIds = query({
     nodeIds: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
-    if (!policyAccess) return [];
+    if (!await canReadPolicySourceNodes(ctx, args.policyId)) return [];
     const wanted = new Set(args.nodeIds);
     if (wanted.size === 0) return [];
 
@@ -240,7 +229,7 @@ export const listByPolicyAndNodeIds = query({
       [...byId.values()]
         .sort((left, right) => left.order - right.order)
         .map(async (node) =>
-          publicSourceNode(node, await hasChildNode(ctx, args.policyId, node.nodeId)),
+          publicSourceNode(node, likelyHasChildNodes(node)),
         ),
     );
   },

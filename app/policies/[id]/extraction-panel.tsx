@@ -378,7 +378,7 @@ function compactRows(rows: unknown[]) {
 
 function useTopLevelSourceNodes(policyId: Id<"policies"> | undefined) {
   return useCachedQuery(
-    "sourceNodes.listTopLevelByPolicy.policy-detail",
+    "sourceNodes.listTopLevelByPolicy.policy-detail.v2",
     api.sourceNodes.listTopLevelByPolicy,
     policyId ? { policyId } : "skip",
   ) as DocumentOutlineNode[] | undefined;
@@ -390,7 +390,7 @@ function useSourceNodeChildren(
   enabled: boolean,
 ) {
   return useCachedQuery(
-    "sourceNodes.listChildrenByPolicyAndParentNodeId.policy-detail",
+    "sourceNodes.listChildrenByPolicyAndParentNodeId.policy-detail.v2",
     api.sourceNodes.listChildrenByPolicyAndParentNodeId,
     policyId && parentNodeId && enabled
       ? { policyId, parentNodeId }
@@ -1322,6 +1322,10 @@ function tableCellValue(cell: DocumentOutlineNode) {
   return cell.excerpt ?? cell.content ?? nodeDisplayTitle(cell);
 }
 
+function isTextLeafNode(node: DocumentOutlineNode) {
+  return (isNodeKind(node, "text") || isNodeKind(node, "table_cell")) && !hasSourceNodeChildren(node);
+}
+
 function sourceSpanIdsForTableRow(
   row: DocumentOutlineNode,
   cells: DocumentOutlineNode[],
@@ -1415,20 +1419,58 @@ function SourceNodeTable({
   );
 }
 
+function SourceTextParagraphs({
+  policyId,
+  nodes,
+  sourceSpans,
+  fileUrl,
+}: {
+  policyId?: Id<"policies">;
+  nodes: DocumentOutlineNode[];
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
+  const paragraphSpanIds = useMemo(
+    () => [...new Set(nodes.flatMap((node) => sourceSpanIdsFrom(node)))],
+    [nodes],
+  );
+  const queriedParagraphSpans = usePolicySourceSpans(policyId, paragraphSpanIds);
+  const paragraphSourceSpans = mergeSourceSpans(sourceSpans, queriedParagraphSpans);
+  if (!nodes.length) return null;
+  return (
+    <div className="space-y-2 py-2">
+      {nodes.map((node) => {
+        const text = nodeBodyText(node) ?? nodeDisplayTitle(node);
+        return (
+          <div key={node.id} className="flex min-w-0 items-start gap-3">
+            <p className="min-w-0 flex-1 text-sm leading-6 text-foreground">
+              {text}
+            </p>
+            <SourceEvidenceButton
+              sourceSpanIds={sourceSpanIdsFrom(node)}
+              sourceSpans={paragraphSourceSpans}
+              fallbackPage={node.pageStart}
+              fileUrl={fileUrl}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function OutlineNodeRow({
   policyId,
   node,
   policyDocument,
   sourceSpans,
   fileUrl,
-  depth = 0,
 }: {
   policyId?: Id<"policies">;
   node: DocumentOutlineNode;
   policyDocument: PolicyDocument;
   sourceSpans?: SourceSpanDoc[];
   fileUrl?: string;
-  depth?: number;
 }) {
   const [open, setOpen] = useState(false);
   const parentNodeId = sourceNodeId(node);
@@ -1440,9 +1482,11 @@ function OutlineNodeRow({
   const factRows = extractedFactRowsForNode(policyDocument, node.id);
   const sourceSpanIds = sourceSpanIdsFrom(node);
   const queriedSourceSpans = usePolicySourceSpans(policyId, sourceSpanIds);
-  const rowSourceSpans = mergeSourceSpans(sourceSpans, queriedSourceSpans);
+  const rowSourceSpans = mergeSourceSpans(
+    policyId ? undefined : sourceSpans,
+    queriedSourceSpans,
+  );
   const kind = nodeKind(node);
-  const bodyText = nodeBodyText(node);
   const isTable = kind === "table";
   const loadingChildren =
     open &&
@@ -1451,22 +1495,20 @@ function OutlineNodeRow({
     policyId !== undefined;
   const children = lazyChildren ?? node.children ?? [];
   const hydratedNode = children === node.children ? node : { ...node, children };
-  const visibleChildren = isTable
-    ? []
+  const visibleChildren = isNodeKind(node, "table_row")
+    ? children
     : children.filter((child) => !isNodeKind(child, "table_cell"));
+  const textChildren = visibleChildren.filter(isTextLeafNode);
+  const structuredChildren = visibleChildren.filter((child) => !isTextLeafNode(child));
   const canExpand =
-    Boolean(bodyText) ||
     factRows.length > 0 ||
     hasSourceNodeChildren(node) ||
-    (isTable && tableRowsForNode(hydratedNode).length > 0) ||
+    (isTable && tableRowsForNode(hydratedNode).some((row) => row.cells.length > 0)) ||
     visibleChildren.length > 0;
 
   return (
     <div className="border-t border-foreground/6 first:border-t-0">
-      <div
-        className="flex min-w-0 items-center gap-2 px-5 py-2.5 transition-colors hover:bg-foreground/[0.015]"
-        style={{ paddingLeft: `${20 + depth * 18}px` }}
-      >
+      <div className="flex min-w-0 items-center gap-2 px-5 py-2.5 transition-colors hover:bg-foreground/[0.015]">
         <button
           type="button"
           onClick={() => canExpand && setOpen((value) => !value)}
@@ -1499,21 +1541,13 @@ function OutlineNodeRow({
         />
       </div>
       {open && canExpand ? (
-        <div
-          className="space-y-3 px-5 pb-4"
-          style={{ paddingLeft: `${38 + depth * 18}px` }}
-        >
+        <div className="space-y-3 px-5 pb-4">
           {loadingChildren ? (
             <p className="text-label-sm text-muted-foreground">
               Loading source nodes...
             </p>
           ) : null}
-          {bodyText ? (
-            <div className="text-label-sm leading-5 text-muted-foreground">
-              <DocContent>{bodyText}</DocContent>
-            </div>
-          ) : null}
-          {isTable ? (
+          {isTable && tableRowsForNode(hydratedNode).some((row) => row.cells.length > 0) ? (
             <SourceNodeTable
               policyId={policyId}
               node={hydratedNode}
@@ -1531,9 +1565,17 @@ function OutlineNodeRow({
               />
             </div>
           ) : null}
-          {visibleChildren.length > 0 ? (
-            <div className="-mx-5 overflow-hidden rounded-md border border-foreground/6 bg-background">
-              {visibleChildren.map((child) => (
+          {textChildren.length > 0 ? (
+            <SourceTextParagraphs
+              policyId={policyId}
+              nodes={textChildren}
+              sourceSpans={rowSourceSpans}
+              fileUrl={fileUrl}
+            />
+          ) : null}
+          {structuredChildren.length > 0 ? (
+            <div className="overflow-hidden rounded-md border border-foreground/6 bg-background">
+              {structuredChildren.map((child) => (
                 <OutlineNodeRow
                   key={child.id}
                   policyId={policyId}
@@ -1541,7 +1583,6 @@ function OutlineNodeRow({
                   policyDocument={policyDocument}
                   sourceSpans={rowSourceSpans}
                   fileUrl={fileUrl}
-                  depth={depth + 1}
                 />
               ))}
             </div>

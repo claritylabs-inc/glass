@@ -293,17 +293,55 @@ function profileCellDisplay(value: unknown): string {
   return "—";
 }
 
+function profileHasValue(value: unknown) {
+  return profileCellDisplay(value) !== "—";
+}
+
+function coverageColumns(rows: Array<Record<string, unknown>>) {
+  const optionalColumns = ["deductible", "premium", "formNumber", "sectionRef"]
+    .filter((column) => rows.some((row) => profileHasValue(row[column])));
+  return ["name", "limit", ...optionalColumns, "evidence"];
+}
+
+function coverageColumnWidths(columns: string[]) {
+  const optionalCount = columns.length - 3;
+  if (optionalCount <= 0) {
+    return { name: "48%", limit: "24%", evidence: "28%" };
+  }
+  if (optionalCount === 1) {
+    return { name: "40%", limit: "20%", [columns[2]]: "18%", evidence: "22%" };
+  }
+  return {
+    name: "30%",
+    limit: "14%",
+    deductible: "12%",
+    premium: "11%",
+    formNumber: "10%",
+    sectionRef: "10%",
+    evidence: "13%",
+  };
+}
+
 function ProfileTable({
   columns,
   rows,
+  columnWidths,
 }: {
   columns: string[];
   rows: Array<Record<string, unknown>>;
+  columnWidths?: Partial<Record<string, string>>;
 }) {
   if (!rows.length) return null;
   return (
     <div className="rounded-lg border border-foreground/6">
       <Table className="min-w-[860px] table-fixed">
+        {columnWidths ? (
+          <colgroup>
+            {columns.map((column) => (
+              <col key={column} style={{ width: columnWidths[column] }} />
+            ))}
+          </colgroup>
+        ) : null}
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             {columns.map((column) => (
@@ -351,6 +389,7 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         .filter((item): item is Record<string, unknown> => Boolean(item))
         .map(profileTableRow)
     : [];
+  const coveragesColumns = coverageColumns(coverages);
 
   return (
     <div className="space-y-3">
@@ -362,7 +401,8 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         </dl>
       ) : null}
       <ProfileTable
-        columns={["name", "limit", "deductible", "premium", "formNumber", "sectionRef", "evidence"]}
+        columns={coveragesColumns}
+        columnWidths={coverageColumnWidths(coveragesColumns)}
         rows={coverages}
       />
       <ProfileTable columns={["role", "name", "evidence"]} rows={parties} />
@@ -1259,7 +1299,7 @@ export default function OperatorExtractionsPage() {
             onValueChange={(value) => selectTraceTab(parseTracePanelTab(value))}
             className="min-h-0 flex-1 overflow-hidden"
           >
-            <div className="sticky top-0 z-10 shrink-0 bg-background pb-3 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-[-18px] after:h-7 after:bg-gradient-to-b after:from-background after:to-transparent after:content-['']">
+            <div className="sticky top-0 z-10 shrink-0 bg-background pb-3">
               <TabsList variant="pill" className="scrollbar-hide max-w-full overflow-x-auto py-1">
                 <TabsTrigger value="summary">Summary</TabsTrigger>
                 <TabsTrigger value="extracted">Extracted data</TabsTrigger>

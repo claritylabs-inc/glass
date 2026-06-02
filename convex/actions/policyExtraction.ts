@@ -27,7 +27,9 @@ import {
 } from "../lib/extractionPostProcess";
 import {
   normalizeOperationalProfile,
+  normalizeStoredOperationalProfile,
   normalizeSourceTree,
+  operationalProfilePolicyFields,
   sourceTreePolicyFields,
   withControlledPolicyTypes,
   type DocumentSourceNode,
@@ -2249,88 +2251,15 @@ export const rematerializeSourceTreeProfile = internalAction({
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
     }) as {
-      orgId?: Id<"organizations">;
       document?: Record<string, unknown>;
-      documentMetadata?: unknown;
       operationalProfile?: unknown;
     } | null;
     if (!policy) throw new Error("Policy not found");
-    if (!policy.orgId) throw new Error("Policy is missing orgId");
 
-    const sourceNodeDocs = await ctx.runQuery(
-      (internal as any).sourceNodes.listByPolicyInternal,
-      { policyId: args.policyId },
-    ) as Array<Record<string, any>>;
-    const sourceSpanDocs = await ctx.runQuery(
-      (internal as any).sourceSpans.listSpansByPolicyInternal,
-      { policyId: args.policyId },
-    ) as Array<Record<string, any>>;
-    if (sourceNodeDocs.length === 0 || sourceSpanDocs.length === 0) {
-      throw new Error("Policy is missing stored source nodes or source spans");
-    }
-
-    const sourceSpans: SourceSpanLike[] = sourceSpanDocs.map((span) => ({
-      id: String(span.spanId),
-      spanId: String(span.spanId),
-      documentId: typeof span.documentId === "string" ? span.documentId : args.policyId,
-      sourceKind: typeof span.sourceKind === "string" ? span.sourceKind : "policy_pdf",
-      kind: "pdf_text",
-      pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
-      pageEnd: typeof span.pageEnd === "number" ? span.pageEnd : undefined,
-      sectionId: typeof span.sectionId === "string" ? span.sectionId : undefined,
-      formNumber: typeof span.formNumber === "string" ? span.formNumber : undefined,
-      sourceUnit: typeof span.sourceUnit === "string" ? span.sourceUnit : undefined,
-      parentSpanId: typeof span.parentSpanId === "string" ? span.parentSpanId : undefined,
-      table: span.table,
-      location: span.location,
-      text: typeof span.text === "string" ? span.text : "",
-      textHash: typeof span.textHash === "string" ? span.textHash : undefined,
-      bbox: span.bbox,
-      metadata: span.metadata,
-    }));
-    const sourceNodes = normalizeSourceTree(
-      sourceNodeDocs.map((node) => ({
-        id: String(node.nodeId),
-        documentId: typeof node.documentId === "string" ? node.documentId : args.policyId,
-        parentId: typeof node.parentNodeId === "string" ? node.parentNodeId : undefined,
-        kind: node.kind,
-        title: node.title,
-        description: node.description,
-        textExcerpt: node.textExcerpt,
-        sourceSpanIds: node.sourceSpanIds,
-        pageStart: node.pageStart,
-        pageEnd: node.pageEnd,
-        bbox: node.bbox,
-        order: node.order,
-        path: node.path,
-        metadata: node.metadata,
-      })),
-      sourceSpans,
-      args.policyId,
-    );
-    const normalizedOperationalProfile = normalizeOperationalProfile(
-      policy.operationalProfile,
-      sourceNodes,
-      sourceSpans,
-      policy.document,
-    );
-    const operationalProfile = withControlledPolicyTypes(
-      normalizedOperationalProfile,
-      await classifyControlledPolicyTypes({
-        ctx,
-        orgId: policy.orgId,
-        policyId: args.policyId,
-        sourceTree: sourceNodes,
-        profile: normalizedOperationalProfile,
-      }),
-    );
+    const operationalProfile = normalizeStoredOperationalProfile(policy.operationalProfile, policy.document);
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
-      fields: sourceTreePolicyFields({
-        sourceTree: sourceNodes,
-        operationalProfile,
-        existingDocumentMetadata: policy.documentMetadata,
-      }),
+      fields: operationalProfilePolicyFields(operationalProfile),
     });
     return {
       ok: true,
@@ -2343,6 +2272,109 @@ export const rematerializeSourceTreeProfile = internalAction({
       premium: operationalProfile.premium?.value,
       policyTypes: operationalProfile.policyTypes,
       coverageTypes: operationalProfile.coverageTypes,
+    };
+  },
+});
+
+function storedSourceSpanLike(span: Record<string, any>, policyId: Id<"policies">): SourceSpanLike {
+  return {
+    id: String(span.spanId),
+    spanId: String(span.spanId),
+    documentId: typeof span.documentId === "string" ? span.documentId : policyId,
+    sourceKind: typeof span.sourceKind === "string" ? span.sourceKind : "policy_pdf",
+    kind: "pdf_text",
+    pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
+    pageEnd: typeof span.pageEnd === "number" ? span.pageEnd : undefined,
+    sectionId: typeof span.sectionId === "string" ? span.sectionId : undefined,
+    formNumber: typeof span.formNumber === "string" ? span.formNumber : undefined,
+    sourceUnit: typeof span.sourceUnit === "string" ? span.sourceUnit : undefined,
+    parentSpanId: typeof span.parentSpanId === "string" ? span.parentSpanId : undefined,
+    table: span.table,
+    location: span.location,
+    text: typeof span.text === "string" ? span.text : "",
+    textHash: typeof span.textHash === "string" ? span.textHash : undefined,
+    bbox: span.bbox,
+    metadata: span.metadata,
+  };
+}
+
+export const rebuildStoredSourceNodes = internalAction({
+  args: {
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.runQuery(internal.policies.getInternal, {
+      id: args.policyId,
+    }) as {
+      orgId?: Id<"organizations">;
+      document?: Record<string, unknown>;
+      documentMetadata?: unknown;
+      operationalProfile?: unknown;
+    } | null;
+    if (!policy) throw new Error("Policy not found");
+    if (!policy.orgId) throw new Error("Policy is missing orgId");
+
+    const spanDocs = await ctx.runQuery(
+      (internal as any).sourceSpans.listSpansByPolicyInternal,
+      { policyId: args.policyId },
+    ) as Array<Record<string, any>>;
+    if (spanDocs.length === 0) {
+      throw new Error("Policy is missing stored source spans");
+    }
+
+    const sourceSpans = spanDocs.map((span) => storedSourceSpanLike(span, args.policyId));
+    const sourceNodes = normalizeSourceTree([], sourceSpans, args.policyId);
+    const operationalProfile = normalizeOperationalProfile(
+      policy.operationalProfile,
+      sourceNodes,
+      sourceSpans,
+      policy.document,
+    );
+
+    await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
+      id: args.policyId,
+      fields: sourceTreePolicyFields({
+        sourceTree: sourceNodes,
+        operationalProfile,
+        existingDocumentMetadata: policy.documentMetadata,
+      }),
+    });
+
+    await deletePolicyRowsInBatches(
+      ctx,
+      (internal as any).sourceNodes.deleteByPolicy,
+      args.policyId,
+    );
+    for (const node of sourceNodes) {
+      await ctx.runMutation((internal as any).sourceNodes.insertNode, {
+        orgId: policy.orgId,
+        policyId: args.policyId,
+        nodeId: node.id,
+        documentId: node.documentId || args.policyId,
+        parentNodeId: node.parentId,
+        kind: node.kind,
+        title: node.title,
+        description: node.description,
+        textExcerpt: node.textExcerpt,
+        sourceSpanIds: node.sourceSpanIds,
+        pageStart: node.pageStart,
+        pageEnd: node.pageEnd,
+        bbox: node.bbox,
+        order: node.order,
+        path: node.path,
+        metadata: node.metadata,
+        embedding: [],
+        createdAt: nowMs(),
+      });
+    }
+
+    return {
+      ok: true,
+      sourceNodeCount: sourceNodes.length,
+      topLevelCount: sourceNodes.filter((node) => {
+        const root = sourceNodes.find((candidate) => candidate.kind === "document");
+        return root && node.parentId === root.id;
+      }).length,
     };
   },
 });

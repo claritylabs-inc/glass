@@ -153,6 +153,15 @@ function nodeDescription(params: {
   ].filter(Boolean).join(" | ");
 }
 
+function sourceNodeGroupId(documentId: string, kind: string, pageStart: number | undefined, pageEnd: number | undefined, title: string) {
+  return [
+    documentId.replace(/[^a-zA-Z0-9_.:-]/g, "_"),
+    "source_node",
+    kind,
+    stableHash(`${pageStart ?? "na"}|${pageEnd ?? "na"}|${title}`).slice(0, 12),
+  ].join(":");
+}
+
 function stringRecord(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const entries = Object.entries(value)
@@ -241,13 +250,244 @@ export function buildSourceTreeFromSpans(sourceSpans: SourceSpanLike[], document
   return buildDocumentSourceTree(sourceSpansForSdk(sourceSpans, resolvedDocumentId), resolvedDocumentId);
 }
 
+type InferredSourcePage = {
+  title?: string;
+  kind?: DocumentSourceNodeKind;
+  formNumber?: string;
+  startsGroup: boolean;
+};
+
+function cleanPolicyPageText(value: string | undefined) {
+  return normalizeWhitespace(value ?? "")
+    .replace(/^SPECIMEN POLICY\s+—\s+FOR TESTING ONLY\s+/i, "")
+    .replace(/^NORTHWOODS CONTINENTAL INSURANCE COMPANY\s+/i, "");
+}
+
+function cleanSourceTitle(value: string | undefined) {
+  const text = normalizeWhitespace(value ?? "")
+    .replace(/\s+This endorsement\b.*$/i, "")
+    .replace(/\s+This Endorsement\b.*$/i, "")
+    .replace(/\s+SCHEDULE\b.*$/i, "")
+    .replace(/\s+[A-Z]\.\s+.*$/i, "")
+    .replace(/[.;:\s]+$/g, "");
+  return /[A-Z]/.test(text) && text === text.toUpperCase()
+    ? titleCase(text.toLowerCase())
+    : text;
+}
+
+function inferFormNumber(text: string) {
+  return text.match(/\b(NWC-[A-Z]{2,}(?:\s+[A-Z]{2})?(?:\s+\d{3})?\s+\d{2}\s+\d{2})\b/i)?.[1]
+    ?.replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function inferSourcePage(node: DocumentSourceNode): InferredSourcePage {
+  const text = cleanPolicyPageText(node.textExcerpt ?? node.description);
+  const headingText = text.slice(0, 900);
+  const formNumber = inferFormNumber(text);
+  const endorsement = headingText.match(/\bENDORSEMENT\s+NO\.?\s+([A-Z0-9 ]+)\s+[—-]\s+(.+?)(?=\s+This endorsement|\s+This Endorsement|\s+SCHEDULE|\s+[A-Z]\.\s+|$)/i);
+  if (endorsement) {
+    return {
+      title: `Endorsement No. ${cleanSourceTitle(endorsement[1])} - ${cleanSourceTitle(endorsement[2])}`,
+      kind: "endorsement",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+
+  const mainPolicy = headingText.match(/\b(TECHNOLOGY ERRORS\s*&\s*OMISSIONS AND CYBER LIABILITY INSURANCE POLICY)\s+Form\s+NWC-TEC\b/i);
+  if (mainPolicy) {
+    return {
+      title: titleCase(mainPolicy[1].toLowerCase()),
+      kind: "form",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+
+  if (/\bINSURANCE POLICY\b.*\bIn consideration of the payment of the premium\b/i.test(headingText)) {
+    return {
+      title: "Policy Cover / Insurance Policy Agreement",
+      kind: "form",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+  if (/\bHOW TO REPORT A CLAIM\b/i.test(headingText)) {
+    return {
+      title: "Claims-Made Reporting Instructions",
+      kind: "form",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+  if (/\bPrivacy Notice\b|\bPIPEDA\b/i.test(headingText)) {
+    return {
+      title: "Privacy and Regulatory Notices",
+      kind: "form",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+  if (/\bFederal Terrorism Coverage Disclosure\b/i.test(headingText)) {
+    return {
+      title: "Federal Terrorism Coverage Disclosure",
+      kind: "form",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+  if (/\bDECLARATIONS\b.*\bCoverage Parts and Limits\b|\bItem\s+1\.\s+Named Insured\b/i.test(headingText)) {
+    return {
+      title: "Declarations (Specimen) - Coverage Parts and Limits",
+      kind: "schedule",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+
+  const sanctions = headingText.match(/\b(Trade or Economic Sanctions Limitation)\b/i);
+  if (sanctions) {
+    return {
+      title: cleanSourceTitle(sanctions[1]),
+      kind: "form",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+
+  if (/\bBilateral Discovery Period\b|\bExtended Reporting Period\b/i.test(text)) {
+    return {
+      title: "Extended Reporting Period Options",
+      kind: "schedule",
+      formNumber,
+      startsGroup: true,
+    };
+  }
+
+  return { formNumber, startsGroup: false };
+}
+
+function relabelSourcePage(node: DocumentSourceNode, inferred: InferredSourcePage): DocumentSourceNode {
+  if (!inferred.title) return node;
+  return {
+    ...node,
+    kind: inferred.kind ?? node.kind,
+    title: inferred.title,
+    description: nodeDescription({
+      kind: inferred.kind ?? node.kind,
+      title: inferred.title,
+      text: node.textExcerpt,
+      page: node.pageStart,
+    }),
+    metadata: {
+      ...node.metadata,
+      ...(inferred.formNumber ? { formNumber: inferred.formNumber } : {}),
+      organizer: "deterministic_form_grouping",
+    },
+  };
+}
+
+function topLevelRootId(nodes: DocumentSourceNode[]) {
+  return nodes.find((node) => node.kind === "document")?.id;
+}
+
+function applyDeterministicFormGrouping(nodes: DocumentSourceNode[]): DocumentSourceNode[] {
+  const rootId = topLevelRootId(nodes);
+  if (!rootId) return nodes;
+  const topLevel = nodes
+    .filter((node) => node.parentId === rootId)
+    .sort((left, right) => left.order - right.order);
+  const pageIds = new Set(topLevel.filter((node) => node.kind === "page").map((node) => node.id));
+  if (pageIds.size === 0) return nodes;
+
+  const replacements = new Map<string, DocumentSourceNode>();
+  const groups: DocumentSourceNode[] = [];
+  const pageRuns: DocumentSourceNode[][] = [];
+  let currentRun: DocumentSourceNode[] = [];
+
+  for (const node of topLevel) {
+    if (!pageIds.has(node.id)) {
+      if (currentRun.length) pageRuns.push(currentRun);
+      currentRun = [];
+      continue;
+    }
+    const inferred = inferSourcePage(node);
+    if (inferred.startsGroup && currentRun.length) {
+      pageRuns.push(currentRun);
+      currentRun = [];
+    }
+    currentRun.push(node);
+  }
+  if (currentRun.length) pageRuns.push(currentRun);
+
+  for (const run of pageRuns) {
+    const first = run[0];
+    const firstInferred = inferSourcePage(first);
+    if (run.length === 1) {
+      replacements.set(first.id, relabelSourcePage(first, firstInferred));
+      continue;
+    }
+    if (!firstInferred.title) {
+      for (const node of run) {
+        replacements.set(node.id, relabelSourcePage(node, inferSourcePage(node)));
+      }
+      continue;
+    }
+    const title = firstInferred.title;
+    const kind = firstInferred.kind ?? "page_group";
+    const pageStarts = run.map((node) => node.pageStart).filter((page): page is number => typeof page === "number");
+    const pageEnds = run.map((node) => node.pageEnd ?? node.pageStart).filter((page): page is number => typeof page === "number");
+    const pageStart = pageStarts.length ? Math.min(...pageStarts) : undefined;
+    const pageEnd = pageEnds.length ? Math.max(...pageEnds) : undefined;
+    const id = sourceNodeGroupId(first.documentId, kind, pageStart, pageEnd, title);
+    const sourceSpanIds = [...new Set(run.flatMap((node) => node.sourceSpanIds))].slice(0, 80);
+    const group: DocumentSourceNode = {
+      id,
+      documentId: first.documentId,
+      parentId: rootId,
+      kind,
+      title,
+      description: nodeDescription({ kind, title, page: pageStart }),
+      textExcerpt: undefined,
+      sourceSpanIds,
+      pageStart,
+      pageEnd,
+      bbox: run.flatMap((node) => node.bbox ?? []).slice(0, 12),
+      order: first.order,
+      path: "",
+      metadata: {
+        sourceTreeVersion: "v3",
+        organizer: "deterministic_form_grouping",
+        ...(firstInferred.formNumber ? { formNumber: firstInferred.formNumber } : {}),
+      },
+    };
+    groups.push(group);
+    for (const node of run) {
+      const inferred = inferSourcePage(node);
+      replacements.set(node.id, {
+        ...relabelSourcePage(node, inferred),
+        parentId: id,
+        order: node.order + 0.001,
+      });
+    }
+  }
+
+  return [
+    ...nodes.map((node) => replacements.get(node.id) ?? node),
+    ...groups,
+  ];
+}
+
 export function normalizeSourceTree(
   rawNodes: unknown,
   sourceSpans: SourceSpanLike[],
   documentId: string,
 ): DocumentSourceNode[] {
   if (!Array.isArray(rawNodes) || rawNodes.length === 0) {
-    return buildSourceTreeFromSpans(sourceSpans, documentId);
+    return normalizeDocumentSourceTreePaths(
+      applyDeterministicFormGrouping(buildSourceTreeFromSpans(sourceSpans, documentId)),
+    );
   }
   const validSpanIds = new Set(sourceSpans.map(spanId));
   const nodes = rawNodes
@@ -294,7 +534,9 @@ export function normalizeSourceTree(
       };
     })
     .filter((node): node is DocumentSourceNode => Boolean(node));
-  return normalizeDocumentSourceTreePaths(nodes.length ? nodes : buildSourceTreeFromSpans(sourceSpans, documentId));
+  return normalizeDocumentSourceTreePaths(
+    nodes.length ? nodes : applyDeterministicFormGrouping(buildSourceTreeFromSpans(sourceSpans, documentId)),
+  );
 }
 
 function nodeText(node: DocumentSourceNode): string {
@@ -444,6 +686,53 @@ function controlledCoverageTypes(policyTypes: string[]): string[] {
   return policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
 }
 
+function cleanCoverageName(value: string | undefined): string | undefined {
+  const text = normalizeWhitespace(value ?? "");
+  if (!text) return undefined;
+  const columnMatch = text.match(/\bColumn\s+1:\s*([\s\S]*?)(?=\s+\|\s+Column\s+\d+:|\s+Column\s+\d+:|$)/i);
+  const candidate = normalizeWhitespace(columnMatch?.[1] ?? text)
+    .replace(/^coverage\s*:?\s*/i, "")
+    .replace(/\s*\([^)]*$/g, "")
+    .replace(/\b(?:table row|text)\s*$/i, "")
+    .replace(/^[\s:;#-]+|[\s;,.\\/]+$/g, "");
+  if (!candidate) return undefined;
+  if (/^(row\s+\d+|table\s+row|text|column\s+\d+)\b/i.test(candidate)) return undefined;
+  if (/^(?:table|row|text)\s+(?:table|row|text)$/i.test(candidate)) return undefined;
+  if (/\b(?:erodes?|settlements?|parts?\s+combined|subject\s+to|provided\s+that)\b/i.test(candidate)) return undefined;
+  if (/\b(?:under|of|and|or|for|to|with|which|that)$/i.test(candidate)) return undefined;
+  if (!/[A-Za-z]/.test(candidate)) return undefined;
+  return candidate;
+}
+
+function cleanOperationalCoverages(coverages: OperationalCoverageLine[]): OperationalCoverageLine[] {
+  const cleaned: OperationalCoverageLine[] = [];
+  const seen = new Set<string>();
+  for (const coverage of coverages) {
+    const name = cleanCoverageName(coverage.name);
+    if (!name) continue;
+    if (!coverage.limit && !coverage.deductible && !coverage.premium) continue;
+    if (coverage.sourceNodeIds.length === 0 && coverage.sourceSpanIds.length === 0) continue;
+    const normalized: OperationalCoverageLine = {
+      ...coverage,
+      name,
+      sourceNodeIds: [...new Set(coverage.sourceNodeIds)],
+      sourceSpanIds: [...new Set(coverage.sourceSpanIds)],
+    };
+    const key = [
+      normalized.name.toLowerCase(),
+      normalized.limit ?? "",
+      normalized.deductible ?? "",
+      normalized.premium ?? "",
+      normalized.formNumber ?? "",
+      normalized.sectionRef ?? "",
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(normalized);
+  }
+  return cleaned;
+}
+
 function partiesFromProfile(profile: PolicyOperationalProfile): OperationalParty[] {
   const parties: OperationalParty[] = [];
   const push = (role: OperationalParty["role"], value: SourceBackedValue | undefined) => {
@@ -472,10 +761,12 @@ function finalizeSourceBackedIdentity(value: SourceBackedValue | undefined): Sou
 
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
   const policyTypes = controlledPolicyTypes(profile.policyTypes);
+  const coverages = cleanOperationalCoverages(profile.coverages);
   const finalized: PolicyOperationalProfile = {
     ...profile,
     policyTypes,
     coverageTypes: controlledCoverageTypes(policyTypes),
+    coverages,
     namedInsured: finalizeSourceBackedIdentity(profile.namedInsured),
     insurer: finalizeSourceBackedIdentity(profile.insurer),
     broker: finalizeSourceBackedIdentity(profile.broker),
@@ -605,6 +896,78 @@ export function normalizeOperationalProfile(
   return finalizeOperationalProfile(withDeclarations);
 }
 
+export function normalizeStoredOperationalProfile(
+  rawProfile: unknown,
+  document?: Record<string, unknown>,
+): PolicyOperationalProfile {
+  const nodeIds = new Set<string>();
+  const spanIds = new Set<string>();
+  const collect = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    if (Array.isArray(record.sourceNodeIds)) {
+      for (const id of record.sourceNodeIds) {
+        if (typeof id === "string") nodeIds.add(id);
+      }
+    }
+    if (Array.isArray(record.sourceSpanIds)) {
+      for (const id of record.sourceSpanIds) {
+        if (typeof id === "string") spanIds.add(id);
+      }
+    }
+  };
+
+  if (rawProfile && typeof rawProfile === "object" && !Array.isArray(rawProfile)) {
+    const record = rawProfile as Record<string, unknown>;
+    collect(record);
+    for (const value of Object.values(record)) {
+      if (Array.isArray(value)) {
+        for (const item of value) collect(item);
+      } else {
+        collect(value);
+      }
+    }
+  }
+
+  const documentId = "stored-profile";
+  const sourceSpans: SourceSpanLike[] = [...spanIds].map((id) => ({
+    id,
+    spanId: id,
+    documentId,
+    kind: "pdf_text",
+    text: "",
+  }));
+  const allSpanIds = [...spanIds];
+  const sourceTree: DocumentSourceNode[] = [
+    {
+      id: documentId,
+      documentId,
+      kind: "document",
+      title: "Stored profile",
+      description: "Stored operational profile evidence placeholder.",
+      textExcerpt: "",
+      sourceSpanIds: allSpanIds,
+      order: 0,
+      path: "Stored profile",
+      metadata: {},
+    },
+    ...[...nodeIds].map((id, index) => ({
+      id,
+      documentId,
+      parentId: documentId,
+      kind: "text" as const,
+      title: id,
+      description: "Stored operational profile evidence node.",
+      textExcerpt: "",
+      sourceSpanIds: allSpanIds,
+      order: index + 1,
+      path: `Stored profile / ${id}`,
+      metadata: {},
+    })),
+  ];
+  return normalizeOperationalProfile(rawProfile, sourceTree, sourceSpans, document);
+}
+
 function profileValue(profile: PolicyOperationalProfile, key: keyof PolicyOperationalProfile): string | undefined {
   const value = profile[key];
   return value && typeof value === "object" && !Array.isArray(value) && "value" in value
@@ -714,6 +1077,18 @@ export function sourceTreePolicyFields(params: {
         },
       ],
     },
+  };
+  return {
+    ...fields,
+    ...operationalProfilePolicyFields(operationalProfile),
+  };
+}
+
+export function operationalProfilePolicyFields(
+  operationalProfile: PolicyOperationalProfile,
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {
+    operationalProfile,
   };
   const policyNumber = profileValue(operationalProfile, "policyNumber");
   const namedInsured = profileValue(operationalProfile, "namedInsured");

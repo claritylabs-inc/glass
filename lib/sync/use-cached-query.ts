@@ -96,7 +96,7 @@ export function useCachedQuery<TQuery extends FunctionReference<"query">>(
     ]);
   }, [argsKey, collection, isSkipped, serverValue, serverValueHash, store]);
 
-  return cached === undefined ? serverValue : cached;
+  return serverValue === undefined ? cached : serverValue;
 }
 
 export function useUpdateCachedQuery<TValue, TArgs>(

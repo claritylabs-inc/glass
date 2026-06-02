@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeOperationalProfile, withControlledPolicyTypes, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
+import { normalizeOperationalProfile, normalizeSourceTree, withControlledPolicyTypes, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
 
 const sourceSpans: SourceSpanLike[] = [
   { id: "span-jacket", text: "THIS IS A CLAIMS-MADE AND REPORTED POLICY. PLEASE READ IT CAREFULLY.", pageStart: 1 },
@@ -236,5 +236,125 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.broker?.value).toBe("Northshore Risk Advisors Inc.");
     expect(profile.policyTypes).toEqual(["general_liability"]);
     expect(profile.coverageTypes).toEqual(["General Liability"]);
+  });
+
+  it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        coverages: [
+          {
+            name: "Part: A. Technology Errors & Omissions",
+            limit: "$5,000,000",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+          {
+            name: "Row 1 Table row",
+            limit: "$1,000,000",
+            sourceNodeIds: ["policy-number-row"],
+            sourceSpanIds: ["span-policy-number"],
+          },
+          {
+            name: "Text Text",
+            limit: "$25,000",
+            sourceNodeIds: ["period-row"],
+            sourceSpanIds: ["span-period"],
+          },
+          {
+            name: "Part B Aggregate) Column 1: Regulatory Defense and Fines — Each",
+            limit: "$500,000",
+            sourceNodeIds: ["premium-row"],
+            sourceSpanIds: ["span-premium"],
+          },
+          {
+            name: "Bricking Loss — Each Loss /",
+            limit: "$500,000",
+            sourceNodeIds: ["premium-row"],
+            sourceSpanIds: ["span-premium"],
+          },
+          {
+            name: "Part A settlement, which erodes the AI/ML Output Each Claim Sub-Limit of",
+            limit: "$1,000,000",
+            sourceNodeIds: ["premium-row"],
+            sourceSpanIds: ["span-premium"],
+          },
+          {
+            name: "Part: AI/ML Output Sub-Limit (under",
+            limit: "$1,000,000",
+            sourceNodeIds: ["premium-row"],
+            sourceSpanIds: ["span-premium"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name)).toEqual([
+      "Part: A. Technology Errors & Omissions",
+      "Regulatory Defense and Fines — Each",
+      "Bricking Loss — Each Loss",
+      "Part: AI/ML Output Sub-Limit",
+    ]);
+  });
+});
+
+describe("normalizeSourceTree", () => {
+  it("groups adjacent form and endorsement pages with semantic titles", () => {
+    const tree = normalizeSourceTree([], [
+      {
+        id: "page-10",
+        text: "SPECIMEN POLICY — FOR TESTING ONLY TECHNOLOGY ERRORS & OMISSIONS AND CYBER LIABILITY INSURANCE POLICY Form NWC-TEC 04 25 PLEASE READ THIS ENTIRE POLICY CAREFULLY.",
+        sourceUnit: "page",
+        pageStart: 10,
+        pageEnd: 10,
+      },
+      {
+        id: "page-11",
+        text: "SPECIMEN POLICY — FOR TESTING ONLY independent counsel by written notice. B. Defense Outside the Limits.",
+        sourceUnit: "page",
+        pageStart: 11,
+        pageEnd: 11,
+      },
+      {
+        id: "page-21",
+        text: "SPECIMEN POLICY — FOR TESTING ONLY NWC-END 001 04 25 NORTHWOODS CONTINENTAL INSURANCE COMPANY ENDORSEMENT NO. 1 — NETWORK SECURITY AND PRIVACY LIABILITY COVERAGE This endorsement modifies insurance provided under the policy.",
+        sourceUnit: "page",
+        pageStart: 21,
+        pageEnd: 21,
+      },
+      {
+        id: "page-22",
+        text: "SPECIMEN POLICY — FOR TESTING ONLY Response Service Providers from the Company's panel. D. Additional Exclusions.",
+        sourceUnit: "page",
+        pageStart: 22,
+        pageEnd: 22,
+      },
+    ], "policy");
+
+    const topLevel = tree.filter((node) => node.parentId === tree.find((item) => item.kind === "document")?.id);
+    expect(topLevel.map((node) => ({
+      title: node.title,
+      kind: node.kind,
+      pageStart: node.pageStart,
+      pageEnd: node.pageEnd,
+      formNumber: node.metadata?.formNumber,
+    }))).toEqual([
+      {
+        title: "Technology Errors & Omissions And Cyber Liability Insurance Policy",
+        kind: "form",
+        pageStart: 10,
+        pageEnd: 11,
+        formNumber: "NWC-TEC 04 25",
+      },
+      {
+        title: "Endorsement No. 1 - Network Security And Privacy Liability Coverage",
+        kind: "endorsement",
+        pageStart: 21,
+        pageEnd: 22,
+        formNumber: "NWC-END 001 04 25",
+      },
+    ]);
   });
 });
