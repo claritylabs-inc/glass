@@ -120,11 +120,18 @@ async function publicChildNodes(
   ctx: Pick<QueryCtx, "db">,
   policyId: Id<"policies">,
   parentNodeId: string,
-) {
+): Promise<PublicSourceNode[]> {
   const children = await childNodes(ctx, policyId, parentNodeId);
-  return children.map((node: SourceNodeDoc) =>
-    publicSourceNode(node, likelyHasChildNodes(node)),
-  );
+  return Promise.all(children.map(async (node: SourceNodeDoc) => {
+    if (node.kind !== "table_row") {
+      return publicSourceNode(node, likelyHasChildNodes(node));
+    }
+    return publicSourceNode(
+      node,
+      true,
+      await publicChildNodes(ctx, policyId, node.nodeId),
+    );
+  }));
 }
 
 export const listTopLevelByPolicy = query({

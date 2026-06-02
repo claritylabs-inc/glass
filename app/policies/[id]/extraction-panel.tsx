@@ -1299,6 +1299,44 @@ function sortedTableCells(cells: DocumentOutlineNode[]) {
   });
 }
 
+function parsedTableCellsFromRow(row: DocumentOutlineNode): DocumentOutlineNode[] {
+  const text = row.excerpt ?? row.content;
+  if (!text?.includes("Column ")) return [];
+  const matches = [...text.matchAll(/Column\s+(\d+):\s*([\s\S]*?)(?=\s*\|\s*Column\s+\d+:|$)/g)];
+  if (matches.length === 0) return [];
+  return matches.map((match, index) => {
+    const columnIndex = Number.parseInt(match[1] ?? "", 10) - 1;
+    const value = match[2]?.trim() ?? "";
+    return {
+      id: `${row.id}:parsed-cell:${Number.isFinite(columnIndex) ? columnIndex : index}`,
+      title: `Column ${Number.isFinite(columnIndex) ? columnIndex + 1 : index + 1}`,
+      type: "table_cell",
+      label: "table_cell",
+      excerpt: value,
+      content: value,
+      pageStart: row.pageStart,
+      pageEnd: row.pageEnd,
+      sourceSpanIds: row.sourceSpanIds,
+      metadata: {
+        columnIndex: Number.isFinite(columnIndex) ? columnIndex : index,
+        sourceUnit: "table_cell",
+        derivedFromRowExcerpt: true,
+      },
+    };
+  }).filter((cell) => Boolean(cell.excerpt));
+}
+
+function tableCellsForRow(row: DocumentOutlineNode) {
+  const childCells = sortedTableCells(
+    (row.children ?? []).filter((child) =>
+      isNodeKind(child, "table_cell"),
+    ),
+  );
+  const parsedCells = parsedTableCellsFromRow(row);
+  if (parsedCells.length > childCells.length) return parsedCells;
+  return childCells;
+}
+
 function tableRowsForNode(node: DocumentOutlineNode) {
   const rows = (node.children ?? []).filter((child) =>
     isNodeKind(child, "table_row"),
@@ -1306,11 +1344,7 @@ function tableRowsForNode(node: DocumentOutlineNode) {
   if (rows.length > 0) {
     return rows.map((row) => ({
       row,
-      cells: sortedTableCells(
-        (row.children ?? []).filter((child) =>
-          isNodeKind(child, "table_cell"),
-        ),
-      ),
+      cells: tableCellsForRow(row),
     }));
   }
   const directCells = sortedTableCells(
