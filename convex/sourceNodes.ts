@@ -145,9 +145,17 @@ export const listTopLevelByPolicy = query({
         .filter((node) => node.kind !== "document")
         .sort((left, right) => left.order - right.order);
 
-    return topLevel.map((node) =>
-      publicSourceNode(node, likelyHasChildNodes(node)),
-    );
+    const hydratedTopLevel = await Promise.all(topLevel.map(async (node) => {
+      if (!likelyHasChildNodes(node) || node.kind === "page") {
+        return publicSourceNode(node, likelyHasChildNodes(node));
+      }
+      return publicSourceNode(
+        node,
+        true,
+        await publicChildNodes(ctx, args.policyId, node.nodeId),
+      );
+    }));
+    return hydratedTopLevel;
   },
 });
 
@@ -158,15 +166,6 @@ export const listChildrenByPolicyAndParentNodeId = query({
   },
   handler: async (ctx, args) => {
     if (!await canReadPolicySourceNodes(ctx, args.policyId)) return [];
-
-    const parent = await ctx.db
-      .query("sourceNodes")
-      .withIndex("by_policyId_nodeId", (q) =>
-        q.eq("policyId", args.policyId).eq("nodeId", args.parentNodeId),
-      )
-      .first();
-    if (!parent) return [];
-
     return await publicChildNodes(ctx, args.policyId, args.parentNodeId);
   },
 });

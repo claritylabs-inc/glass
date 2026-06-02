@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -1459,6 +1460,23 @@ function SourceTextParagraphs({
   );
 }
 
+function SourceNodeChildrenSkeleton() {
+  return (
+    <div className="space-y-2 py-1">
+      {Array.from({ length: 3 }, (_, index) => (
+        <div key={index} className="flex items-center gap-2 py-1.5">
+          <span className="size-3.5 shrink-0" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-[min(28rem,70%)]" />
+            <Skeleton className="h-2.5 w-16" />
+          </div>
+          <Skeleton className="h-6 w-14 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function OutlineNodeRow({
   policyId,
   node,
@@ -1474,10 +1492,11 @@ function OutlineNodeRow({
 }) {
   const [open, setOpen] = useState(false);
   const parentNodeId = sourceNodeId(node);
+  const hasHydratedChildren = Boolean(node.children?.length);
   const lazyChildren = useSourceNodeChildren(
     policyId,
     parentNodeId,
-    open && hasSourceNodeChildren(node),
+    open && hasSourceNodeChildren(node) && !hasHydratedChildren,
   );
   const factRows = extractedFactRowsForNode(policyDocument, node.id);
   const sourceSpanIds = sourceSpanIdsFrom(node);
@@ -1492,6 +1511,7 @@ function OutlineNodeRow({
     open &&
     hasSourceNodeChildren(node) &&
     lazyChildren === undefined &&
+    !hasHydratedChildren &&
     policyId !== undefined;
   const children = lazyChildren ?? node.children ?? [];
   const hydratedNode = children === node.children ? node : { ...node, children };
@@ -1543,9 +1563,7 @@ function OutlineNodeRow({
       {open && canExpand ? (
         <div className="space-y-3 px-5 pb-4">
           {loadingChildren ? (
-            <p className="text-label-sm text-muted-foreground">
-              Loading source nodes...
-            </p>
+            <SourceNodeChildrenSkeleton />
           ) : null}
           {isTable && tableRowsForNode(hydratedNode).some((row) => row.cells.length > 0) ? (
             <SourceNodeTable
