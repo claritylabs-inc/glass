@@ -32,7 +32,6 @@ import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw } from "lucide-reac
 import type { Id } from "@/convex/_generated/dataModel";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
-import type { SourceSpanDoc } from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
@@ -111,7 +110,6 @@ type ModelCallDebugDetails = {
 type TraceDetail = {
   session: TraceRow;
   policy?: Record<string, unknown> | null;
-  sourceSpans?: SourceSpanDoc[];
   fileUrl?: string | null;
   events: TraceEvent[];
 };
@@ -256,7 +254,7 @@ function profileScalarRows(profile: Record<string, unknown>) {
   return rows;
 }
 
-function profileTableRow(row: Record<string, unknown>) {
+function profileTableRow(row: Record<string, unknown>): Record<string, unknown> & { evidence: string } {
   return {
     ...row,
     evidence: evidenceLabel(row),
@@ -270,15 +268,6 @@ function formatProfileLabel(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function profileColumnLabel(column: string) {
-  const labels: Record<string, string> = {
-    formNumber: "Form",
-    sectionRef: "Section",
-    evidence: "Evidence",
-  };
-  return labels[column] ?? formatProfileLabel(column);
 }
 
 function profileCellDisplay(value: unknown): string {
@@ -296,77 +285,306 @@ function profileCellDisplay(value: unknown): string {
   return "—";
 }
 
-function profileHasValue(value: unknown) {
-  return profileCellDisplay(value) !== "—";
+function profileMetadataItems(
+  row: Record<string, unknown>,
+  keys: Array<{ key: string; label: string }>,
+) {
+  return keys
+    .map(({ key, label }) => {
+      const value = profileCellDisplay(row[key]);
+      return value !== "—" ? `${label}: ${value}` : null;
+    })
+    .filter((item): item is string => Boolean(item));
 }
 
-function coverageColumns(rows: Array<Record<string, unknown>>) {
-  const optionalColumns = ["deductible", "premium", "formNumber", "sectionRef"]
-    .filter((column) => rows.some((row) => profileHasValue(row[column])));
-  return ["name", "limit", ...optionalColumns, "evidence"];
+function supportStatusVariant(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized === "supported") return "secondary";
+  if (normalized === "unsupported" || normalized === "conflicting") return "destructive";
+  return "outline";
 }
 
-function coverageColumnWidths(columns: string[]) {
-  const optionalCount = columns.length - 3;
-  if (optionalCount <= 0) {
-    return { name: "48%", limit: "24%", evidence: "28%" };
-  }
-  if (optionalCount === 1) {
-    return { name: "40%", limit: "20%", [columns[2]]: "18%", evidence: "22%" };
-  }
-  return {
-    name: "30%",
-    limit: "14%",
-    deductible: "12%",
-    premium: "11%",
-    formNumber: "10%",
-    sectionRef: "10%",
-    evidence: "13%",
-  };
-}
-
-function ProfileTable({
-  columns,
-  rows,
-  columnWidths,
+function ProfileListSection({
+  title,
+  children,
 }: {
-  columns: string[];
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-foreground/6">
+      <div className="border-b border-foreground/6 bg-muted/20 px-3 py-2">
+        <p className="text-label-sm font-medium text-muted-foreground">
+          {title}
+        </p>
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function CoverageList({
+  title,
+  rows,
+}: {
+  title: string;
   rows: Array<Record<string, unknown>>;
-  columnWidths?: Partial<Record<string, string>>;
 }) {
   if (!rows.length) return null;
   return (
-    <div className="rounded-lg border border-foreground/6">
-      <Table className="min-w-[860px] table-fixed">
-        {columnWidths ? (
-          <colgroup>
-            {columns.map((column) => (
-              <col key={column} style={{ width: columnWidths[column] }} />
-            ))}
-          </colgroup>
-        ) : null}
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            {columns.map((column) => (
-              <TableHead key={column} className="h-8 px-3 text-label-sm whitespace-nowrap">
-                {profileColumnLabel(column)}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row, rowIndex) => (
-            <TableRow key={rowIndex}>
-              {columns.map((column) => (
-                <TableCell key={column} className="px-3 py-2 align-top whitespace-normal break-words [overflow-wrap:anywhere]">
-                  {profileCellDisplay(row[column])}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <ProfileListSection title={title}>
+      {rows.map((row, rowIndex) => {
+        const name = profileCellDisplay(row.name);
+        const limit = profileCellDisplay(row.limit);
+        const metadata = profileMetadataItems(row, [
+          { key: "deductible", label: "Deductible" },
+          { key: "premium", label: "Premium" },
+          { key: "formNumber", label: "Form" },
+          { key: "sectionRef", label: "Section" },
+        ]);
+        return (
+          <div
+            key={rowIndex}
+            className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
+          >
+            <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
+              <p className="min-w-[12rem] flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+                {name}
+              </p>
+              {limit !== "—" ? (
+                <span className="shrink-0 text-body-sm font-medium tabular-nums text-foreground">
+                  {limit}
+                </span>
+              ) : null}
+              <span className="shrink-0 text-label-sm text-muted-foreground">
+                {evidenceLabel(row)}
+              </span>
+            </div>
+            {metadata.length > 0 ? (
+              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-label-sm text-muted-foreground">
+                {metadata.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </ProfileListSection>
+  );
+}
+
+function PartyList({ rows }: { rows: Array<Record<string, unknown>> }) {
+  if (!rows.length) return null;
+  return (
+    <ProfileListSection title="Parties">
+      {rows.map((row, rowIndex) => {
+        const role = profileCellDisplay(row.role);
+        const name = profileCellDisplay(row.name);
+        return (
+          <div
+            key={rowIndex}
+            className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
+          >
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-x-3 gap-y-1">
+              <p className="min-w-0 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+                {name}
+              </p>
+              <Badge variant="outline" className="font-normal">
+                {formatProfileLabel(role)}
+              </Badge>
+              <span className="shrink-0 text-label-sm text-muted-foreground">
+                {evidenceLabel(row)}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </ProfileListSection>
+  );
+}
+
+function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>> }) {
+  if (!rows.length) return null;
+  return (
+    <ProfileListSection title="Endorsement support">
+      {rows.map((row, rowIndex) => {
+        const kind = profileCellDisplay(row.kind);
+        const status = profileCellDisplay(row.status);
+        const summary = profileCellDisplay(row.summary);
+        return (
+          <div
+            key={rowIndex}
+            className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-body-sm font-medium text-foreground">
+                {formatProfileLabel(kind)}
+              </p>
+              {status !== "—" ? (
+                <Badge
+                  variant={supportStatusVariant(status)}
+                  className="font-normal"
+                >
+                  {formatProfileLabel(status)}
+                </Badge>
+              ) : null}
+              <span className="shrink-0 text-label-sm text-muted-foreground">
+                {evidenceLabel(row)}
+              </span>
+            </div>
+            <p
+              className="mt-2 min-w-0 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]"
+              title={summary !== "—" ? summary : undefined}
+            >
+              {summary}
+            </p>
+          </div>
+        );
+      })}
+    </ProfileListSection>
+  );
+}
+
+function AdditionalInsuredEligibilityList({
+  eligibility,
+}: {
+  eligibility?: Record<string, unknown> | null;
+}) {
+  if (!eligibility) return null;
+  const groups = [
+    {
+      key: "scheduledAdditionalInsureds",
+      label: "Already scheduled by endorsement",
+      badge: "Scheduled",
+      rows: Array.isArray(eligibility.scheduledAdditionalInsureds)
+        ? eligibility.scheduledAdditionalInsureds.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
+        : [],
+    },
+    {
+      key: "withoutEndorsement",
+      label: "Can be added without endorsement",
+      badge: "Automatic",
+      rows: Array.isArray(eligibility.withoutEndorsement)
+        ? eligibility.withoutEndorsement.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
+        : [],
+    },
+    {
+      key: "requiresEndorsement",
+      label: "Requires endorsement",
+      badge: "Endorsement",
+      rows: Array.isArray(eligibility.requiresEndorsement)
+        ? eligibility.requiresEndorsement.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
+        : [],
+    },
+    {
+      key: "reviewRequired",
+      label: "Needs review",
+      badge: "Review",
+      rows: Array.isArray(eligibility.reviewRequired)
+        ? eligibility.reviewRequired.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
+        : [],
+    },
+  ].filter((group) => group.rows.length > 0);
+  if (groups.length === 0) return null;
+  return (
+    <ProfileListSection title="Additional insured eligibility">
+      {typeof eligibility.overallSummary === "string" && eligibility.overallSummary.trim() ? (
+        <p className="border-b border-foreground/6 px-3 py-2 text-body-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+          {eligibility.overallSummary}
+        </p>
+      ) : null}
+      {groups.map((group) => (
+        <div key={group.key} className="border-b border-foreground/6 last:border-b-0">
+          <div className="flex items-center gap-2 border-b border-foreground/6 bg-muted/10 px-3 py-2">
+            <p className="flex-1 text-label-sm font-medium text-foreground">
+              {group.label}
+            </p>
+            <Badge variant={group.key === "requiresEndorsement" ? "outline" : "secondary"} className="font-normal">
+              {group.badge}
+            </Badge>
+          </div>
+          {group.rows.map((row, rowIndex) => {
+            const category = profileCellDisplay(row.name) !== "—"
+              ? profileCellDisplay(row.name)
+              : profileCellDisplay(row.category);
+            const summary = profileCellDisplay(row.summary) !== "—"
+              ? profileCellDisplay(row.summary)
+              : profileCellDisplay(row.scope);
+            const condition = profileCellDisplay(row.condition) !== "—"
+              ? profileCellDisplay(row.condition)
+              : profileCellDisplay(row.endorsementTitle);
+            return (
+              <div
+                key={`${group.key}-${rowIndex}`}
+                className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
+              >
+                <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
+                  <p className="min-w-0 flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+                    {category}
+                  </p>
+                  <span className="shrink-0 text-label-sm text-muted-foreground">
+                    {evidenceLabel(row)}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+                  {summary}
+                </p>
+                {condition !== "—" && condition !== summary ? (
+                  <p className="mt-1 text-label-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                    {condition}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </ProfileListSection>
+  );
+}
+
+function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unknown>> }) {
+  if (!rows.length) return null;
+  return (
+    <ProfileListSection title="Named additional insureds">
+      {rows.map((row, rowIndex) => {
+        const name = profileCellDisplay(row.name);
+        const status = profileCellDisplay(row.status);
+        const scope = profileCellDisplay(row.scope);
+        const endorsementTitle = profileCellDisplay(row.endorsementTitle);
+        return (
+          <div
+            key={rowIndex}
+            className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
+          >
+            <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
+              <p className="min-w-0 flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+                {name}
+              </p>
+              {status !== "—" ? (
+                <Badge variant="outline" className="font-normal">
+                  {formatProfileLabel(status)}
+                </Badge>
+              ) : null}
+              <span className="shrink-0 text-label-sm text-muted-foreground">
+                {evidenceLabel(row)}
+              </span>
+            </div>
+            {scope !== "—" ? (
+              <p className="mt-1.5 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+                {scope}
+              </p>
+            ) : null}
+            {endorsementTitle !== "—" ? (
+              <p className="mt-1 text-label-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                {endorsementTitle}
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
+    </ProfileListSection>
   );
 }
 
@@ -380,8 +598,17 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         .filter((item): item is Record<string, unknown> => Boolean(item))
         .map(profileTableRow)
     : [];
+  const coreCoverages = coverages.filter((row) => row.coverageOrigin !== "endorsement");
+  const endorsementCoverages = coverages.filter((row) => row.coverageOrigin === "endorsement");
   const parties = Array.isArray(profile.parties)
     ? profile.parties
+        .map(recordValue)
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map(profileTableRow)
+    : [];
+  const additionalInsuredEligibility = recordValue(profile.additionalInsuredEligibility);
+  const additionalInsureds = Array.isArray(profile.additionalInsureds)
+    ? profile.additionalInsureds
         .map(recordValue)
         .filter((item): item is Record<string, unknown> => Boolean(item))
         .map(profileTableRow)
@@ -390,9 +617,9 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
     ? profile.endorsementSupport
         .map(recordValue)
         .filter((item): item is Record<string, unknown> => Boolean(item))
+        .filter((item) => !additionalInsuredEligibility || item.kind !== "additional_insured")
         .map(profileTableRow)
     : [];
-  const coveragesColumns = coverageColumns(coverages);
 
   return (
     <div className="space-y-3">
@@ -403,16 +630,12 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
           ))}
         </dl>
       ) : null}
-      <ProfileTable
-        columns={coveragesColumns}
-        columnWidths={coverageColumnWidths(coveragesColumns)}
-        rows={coverages}
-      />
-      <ProfileTable columns={["role", "name", "evidence"]} rows={parties} />
-      <ProfileTable
-        columns={["kind", "status", "summary", "evidence"]}
-        rows={endorsementSupport}
-      />
+      <CoverageList title="Core coverage limits" rows={coreCoverages} />
+      <CoverageList title="Endorsement coverage limits" rows={endorsementCoverages} />
+      <PartyList rows={parties} />
+      <NamedAdditionalInsuredList rows={additionalInsureds} />
+      <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />
+      <EndorsementSupportList rows={endorsementSupport} />
     </div>
   );
 }
@@ -1395,8 +1618,8 @@ export default function OperatorExtractionsPage() {
                 <ExtractionCards
                   policyId={selected.policyId as Id<"policies">}
                   policyDocument={detail.policy}
-                  sourceSpansOverride={detail.sourceSpans}
                   fileUrl={detail.fileUrl ?? undefined}
+                  allowOperatorSourceAccess
                 />
               ) : (
                 <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">

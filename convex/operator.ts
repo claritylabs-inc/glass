@@ -407,15 +407,7 @@ export const getExtractionTrace = query({
         .order("asc")
         .collect(),
     ]);
-    const [sourceSpans, fileUrl] = policy
-      ? await Promise.all([
-        ctx.db
-          .query("sourceSpans")
-          .withIndex("by_policyId", (q) => q.eq("policyId", policy._id))
-          .collect(),
-        policy.fileId ? ctx.storage.getUrl(policy.fileId) : null,
-      ])
-      : [[], null] as const;
+    const fileUrl = policy?.fileId ? await ctx.storage.getUrl(policy.fileId) : null;
     return {
       session: {
         ...session,
@@ -431,7 +423,6 @@ export const getExtractionTrace = query({
         documentType: policy?.documentType ?? "policy",
       },
       policy,
-      sourceSpans,
       fileUrl,
       events,
     };

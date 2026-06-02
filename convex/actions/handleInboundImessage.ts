@@ -1082,6 +1082,7 @@ export const processInbound = internalAction({
                 name: c.name,
                 limit: c.limit,
                 deductible: c.deductible,
+                origin: c.coverageOrigin,
               })),
             }));
           },
@@ -1262,6 +1263,7 @@ export const processInbound = internalAction({
               coverages: (p.coverages ?? []).map((c: any) => ({
                 name: c.name,
                 limit: c.limit,
+                origin: c.coverageOrigin,
               })),
             });
             return { policy1: mapP(p1), policy2: mapP(p2) };

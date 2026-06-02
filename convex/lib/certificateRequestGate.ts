@@ -73,6 +73,10 @@ type EvidenceCorpusItem = {
   pageEnd?: number;
 };
 
+export type CertificateGateEvidenceItem = EvidenceCorpusItem & {
+  evidenceId: string;
+};
+
 const ENDORSEMENT_PATTERNS: Array<{
   kind: CertificateEndorsementKind;
   pattern: RegExp;
@@ -232,6 +236,51 @@ export function evaluateCertificateRequestGate(params: {
   };
 }
 
+export function buildCertificateGateEvidencePacket(params: {
+  policy?: Record<string, unknown> | null;
+  sourceSpans?: SourceSpanLike[];
+  sourceNodes?: SourceNodeLike[];
+  certificateHolder?: string;
+  requestText?: string;
+  requestedEndorsements?: string[];
+  maxItems?: number;
+}): CertificateGateEvidenceItem[] {
+  const corpus = buildEvidenceCorpus(params.policy, params.sourceSpans, params.sourceNodes);
+  const queryText = [
+    params.certificateHolder,
+    params.requestText,
+    ...(params.requestedEndorsements ?? []),
+  ].filter(Boolean).join(" ");
+  const queryTokens = queryText
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 3 && !["certificate", "holder", "additional", "insured"].includes(token));
+  const score = (item: EvidenceCorpusItem) => {
+    const text = `${item.label} ${item.text}`.toLowerCase();
+    let value = 0;
+    if (/\b(endorsement|endorse|additional insured|scheduled additional insured|certificate holder|waiver of subrogation|primary non|loss payee|mortgagee)\b/i.test(text)) value += 8;
+    if (/\b(named additional insured|scheduled additional insured|additional insured automatic class|additional insured endorsement-required class)\b/i.test(item.label)) value += 6;
+    if (/\b(operational profile|coverage projection|document metadata|outline)\b/i.test(item.label)) value += 2;
+    for (const token of queryTokens) {
+      if (text.includes(token)) value += 3;
+    }
+    return value;
+  };
+  return corpus
+    .map((item, index) => ({ item, index, score: score(item) }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, params.maxItems ?? 50)
+    .map(({ item }, index) => ({
+      evidenceId: `e${index + 1}`,
+      label: item.label,
+      text: item.text.slice(0, 1800),
+      sourceSpanIds: item.sourceSpanIds,
+      pageStart: item.pageStart,
+      pageEnd: item.pageEnd,
+    }));
+}
+
 function normalizeKind(value: string): CertificateEndorsementKind | undefined {
   const text = value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   if (!text) return undefined;
@@ -282,6 +331,7 @@ function buildEvidenceCorpus(
   }
 
   if (!policy) return items;
+  addOperationalProfileEvidence(items, policy.operationalProfile);
   const addStructured = (label: string, value: unknown) => {
     const text = stringifyEvidence(value);
     if (!text) return;
@@ -298,6 +348,103 @@ function buildEvidenceCorpus(
     includeSourceSpanIds: true,
   }));
   return items;
+}
+
+function addOperationalProfileEvidence(items: EvidenceCorpusItem[], profile: unknown) {
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) return;
+  const record = profile as Record<string, unknown>;
+  const eligibility = objectValue(record.additionalInsuredEligibility);
+  addRecordArrayEvidence(items, "Named additional insured", record.additionalInsureds, (item) => [
+    fieldText(item, "name"),
+    fieldText(item, "status"),
+    fieldText(item, "endorsementTitle"),
+    fieldText(item, "scope"),
+  ]);
+  addRecordArrayEvidence(items, "Scheduled additional insured", eligibility?.scheduledAdditionalInsureds, (item) => [
+    fieldText(item, "name"),
+    fieldText(item, "endorsementTitle"),
+    fieldText(item, "scope"),
+  ]);
+  addRecordArrayEvidence(items, "Additional insured automatic class", eligibility?.withoutEndorsement, (item) => [
+    fieldText(item, "category"),
+    fieldText(item, "condition"),
+    fieldText(item, "summary"),
+  ]);
+  addRecordArrayEvidence(items, "Additional insured endorsement-required class", eligibility?.requiresEndorsement, (item) => [
+    fieldText(item, "category"),
+    fieldText(item, "condition"),
+    fieldText(item, "summary"),
+  ]);
+  addRecordArrayEvidence(items, "Additional insured review-required class", eligibility?.reviewRequired, (item) => [
+    fieldText(item, "category"),
+    fieldText(item, "condition"),
+    fieldText(item, "summary"),
+  ]);
+  addRecordArrayEvidence(items, "Endorsement support", record.endorsementSupport, (item) => [
+    fieldText(item, "kind"),
+    fieldText(item, "status"),
+    fieldText(item, "summary"),
+  ]);
+  addRecordArrayEvidence(items, "Coverage", record.coverages, (item) => [
+    fieldText(item, "coverageOrigin"),
+    fieldText(item, "name"),
+    fieldText(item, "limit"),
+    fieldText(item, "formNumber"),
+    fieldText(item, "sectionRef"),
+  ]);
+  addRecordArrayEvidence(items, "Party", record.parties, (item) => [
+    fieldText(item, "role"),
+    fieldText(item, "name"),
+  ]);
+}
+
+function addRecordArrayEvidence(
+  items: EvidenceCorpusItem[],
+  label: string,
+  value: unknown,
+  fields: (item: Record<string, unknown>) => Array<string | undefined>,
+) {
+  if (!Array.isArray(value)) return;
+  for (const item of value) {
+    const record = objectValue(item);
+    if (!record) continue;
+    const text = fields(record).filter(Boolean).join("\n").trim();
+    if (!text) continue;
+    items.push({
+      label,
+      text,
+      sourceSpanIds: stringArray(record.sourceSpanIds),
+      pageStart: numberValue(record.pageStart),
+      pageEnd: numberValue(record.pageEnd),
+    });
+  }
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function fieldText(record: Record<string, unknown>, field: string) {
+  const value = record[field];
+  if (typeof value === "string") return value.trim() || undefined;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  const sourceBacked = objectValue(value);
+  if (sourceBacked && typeof sourceBacked.value === "string") {
+    return sourceBacked.value.trim() || undefined;
+  }
+  return undefined;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : undefined;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function stringifyEvidence(value: unknown): string | undefined {

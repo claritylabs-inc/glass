@@ -269,6 +269,17 @@ export const hasNodesForOrg = internalQuery({
   },
 });
 
+export const hasNodesForPolicy = internalQuery({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    const first = await ctx.db
+      .query("sourceNodes")
+      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .first();
+    return first !== null;
+  },
+});
+
 export const get = internalQuery({
   args: { id: v.id("sourceNodes") },
   handler: async (ctx, args) => {

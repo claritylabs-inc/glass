@@ -707,6 +707,7 @@ function buildTools(
             name: c.name,
             limit: c.limit,
             deductible: c.deductible,
+            origin: c.coverageOrigin,
           })),
         }));
       },
@@ -735,6 +736,7 @@ function buildTools(
             name: c.name,
             limit: c.limit,
             deductible: c.deductible,
+            origin: c.coverageOrigin,
           })),
         });
         return { policy1: mapPolicy(p1), policy2: mapPolicy(p2) };

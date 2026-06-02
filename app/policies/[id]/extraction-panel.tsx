@@ -1344,17 +1344,20 @@ function SourceNodeTable({
   node,
   sourceSpans,
   fileUrl,
+  allowOperatorSourceAccess,
 }: {
   policyId?: Id<"policies">;
   node: DocumentOutlineNode;
   sourceSpans?: SourceSpanDoc[];
   fileUrl?: string;
+  allowOperatorSourceAccess?: boolean;
 }) {
   const rows = tableRowsForNode(node);
   const tableSourceSpanIds = useMemo(() => collectSourceSpanIds(node), [node]);
   const queriedTableSourceSpans = usePolicySourceSpans(
     policyId,
     tableSourceSpanIds,
+    { allowOperatorAccess: allowOperatorSourceAccess },
   );
   const tableSourceSpans = mergeSourceSpans(sourceSpans, queriedTableSourceSpans);
   if (!rows.length) return null;
@@ -1425,17 +1428,21 @@ function SourceTextParagraphs({
   nodes,
   sourceSpans,
   fileUrl,
+  allowOperatorSourceAccess,
 }: {
   policyId?: Id<"policies">;
   nodes: DocumentOutlineNode[];
   sourceSpans?: SourceSpanDoc[];
   fileUrl?: string;
+  allowOperatorSourceAccess?: boolean;
 }) {
   const paragraphSpanIds = useMemo(
     () => [...new Set(nodes.flatMap((node) => sourceSpanIdsFrom(node)))],
     [nodes],
   );
-  const queriedParagraphSpans = usePolicySourceSpans(policyId, paragraphSpanIds);
+  const queriedParagraphSpans = usePolicySourceSpans(policyId, paragraphSpanIds, {
+    allowOperatorAccess: allowOperatorSourceAccess,
+  });
   const paragraphSourceSpans = mergeSourceSpans(sourceSpans, queriedParagraphSpans);
   if (!nodes.length) return null;
   return (
@@ -1483,12 +1490,14 @@ function OutlineNodeRow({
   policyDocument,
   sourceSpans,
   fileUrl,
+  allowOperatorSourceAccess,
 }: {
   policyId?: Id<"policies">;
   node: DocumentOutlineNode;
   policyDocument: PolicyDocument;
   sourceSpans?: SourceSpanDoc[];
   fileUrl?: string;
+  allowOperatorSourceAccess?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const parentNodeId = sourceNodeId(node);
@@ -1500,7 +1509,9 @@ function OutlineNodeRow({
   );
   const factRows = extractedFactRowsForNode(policyDocument, node.id);
   const sourceSpanIds = sourceSpanIdsFrom(node);
-  const queriedSourceSpans = usePolicySourceSpans(policyId, sourceSpanIds);
+  const queriedSourceSpans = usePolicySourceSpans(policyId, sourceSpanIds, {
+    allowOperatorAccess: allowOperatorSourceAccess,
+  });
   const rowSourceSpans = mergeSourceSpans(
     policyId ? undefined : sourceSpans,
     queriedSourceSpans,
@@ -1571,6 +1582,7 @@ function OutlineNodeRow({
               node={hydratedNode}
               sourceSpans={rowSourceSpans}
               fileUrl={fileUrl}
+              allowOperatorSourceAccess={allowOperatorSourceAccess}
             />
           ) : null}
           {factRows.length > 0 ? (
@@ -1589,6 +1601,7 @@ function OutlineNodeRow({
               nodes={textChildren}
               sourceSpans={rowSourceSpans}
               fileUrl={fileUrl}
+              allowOperatorSourceAccess={allowOperatorSourceAccess}
             />
           ) : null}
           {structuredChildren.length > 0 ? (
@@ -1601,6 +1614,7 @@ function OutlineNodeRow({
                   policyDocument={policyDocument}
                   sourceSpans={rowSourceSpans}
                   fileUrl={fileUrl}
+                  allowOperatorSourceAccess={allowOperatorSourceAccess}
                 />
               ))}
             </div>
@@ -1616,11 +1630,13 @@ function SourceBackedBreakdown({
   policyDocument,
   sourceSpans,
   fileUrl,
+  allowOperatorSourceAccess,
 }: {
   policyId?: Id<"policies">;
   policyDocument: PolicyDocument;
   sourceSpans?: SourceSpanDoc[];
   fileUrl?: string;
+  allowOperatorSourceAccess?: boolean;
 }) {
   const topLevelSourceNodes = useTopLevelSourceNodes(policyId);
   const fallbackOutline = policyDocument.documentOutline ?? [];
@@ -1659,6 +1675,7 @@ function SourceBackedBreakdown({
               policyDocument={policyDocument}
               sourceSpans={sourceSpans}
               fileUrl={fileUrl}
+              allowOperatorSourceAccess={allowOperatorSourceAccess}
             />
           ))}
         </div>
@@ -1729,6 +1746,7 @@ export interface ExtractionPanelProps {
   initialPage?: number;
   sourceSpansOverride?: SourceSpanDoc[];
   fileUrl?: string;
+  allowOperatorSourceAccess?: boolean;
 }
 
 /** Renders extraction details as separate, flat cards — one per data type */
@@ -1738,6 +1756,7 @@ export function ExtractionCards({
   initialPage: _initialPage,
   sourceSpansOverride,
   fileUrl,
+  allowOperatorSourceAccess,
 }: ExtractionPanelProps) {
   const allSourceSpanIds = useMemo(
     () => collectSourceSpanIds(policyDocument),
@@ -1746,6 +1765,7 @@ export function ExtractionCards({
   const queriedSourceSpans = usePolicySourceSpans(
     policyId,
     sourceSpansOverride ? [] : allSourceSpanIds,
+    { allowOperatorAccess: allowOperatorSourceAccess },
   );
   const sourceSpans = sourceSpansOverride ?? queriedSourceSpans;
   const coverages = policyDocument?.coverages ?? [];
@@ -1868,6 +1888,7 @@ export function ExtractionCards({
           policyDocument={policyDocument}
           sourceSpans={sourceSpans}
           fileUrl={fileUrl}
+          allowOperatorSourceAccess={allowOperatorSourceAccess}
         />
       </div>
     );

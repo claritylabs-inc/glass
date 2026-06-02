@@ -5,7 +5,15 @@ import { action, internalAction, internalMutation, internalQuery, query } from "
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
-import { evaluateCertificateRequestGate } from "./lib/certificateRequestGate";
+import {
+  buildCertificateGateEvidencePacket,
+  inferCertificateEndorsements,
+  type CertificateEndorsementKind,
+  type CertificateGateEvidence,
+  type CertificateGateVerdict,
+} from "./lib/certificateRequestGate";
+import { makeGenerateObject } from "./lib/sdkCallbacks";
+import { z } from "zod";
 
 const certificateSourceValidator = v.union(
   v.literal("policy_page"),
@@ -96,6 +104,162 @@ function formatGateMessage(args: {
     ? "I opened a policy change request so the broker can process the endorsement before this certificate is issued."
     : "Your broker has turned off Glass policy-change requests, so I can help loop the broker in by email or iMessage instead.";
   return `${args.reasonMessage} I put the certificate for ${args.holderName} on hold. ${nextStep}`;
+}
+
+const certificateGateReviewSchema = z.object({
+  status: z.enum(["allowed", "held"]),
+  reasonCode: z.enum([
+    "policy_change_required",
+    "missing_policy_evidence",
+    "ambiguous_policy_evidence",
+    "conflicting_policy_evidence",
+  ]).nullable(),
+  reasonMessage: z.string(),
+  requiredChanges: z.array(z.enum([
+    "additional_insured",
+    "named_insured",
+    "waiver_of_subrogation",
+    "primary_non_contributory",
+    "loss_payee",
+    "mortgagee",
+    "special_wording",
+    "policy_change",
+  ])).max(8),
+  evidenceIds: z.array(z.string()).max(8),
+});
+
+async function evaluateCertificateRequestGateWithLlm(params: {
+  ctx: any;
+  orgId: Id<"organizations">;
+  policyId: Id<"policies">;
+  certificateHolder?: string;
+  requestText?: string;
+  requestedEndorsements?: string[];
+  policy?: Record<string, unknown> | null;
+  sourceSpans?: any[];
+  sourceNodes?: any[];
+}): Promise<CertificateGateVerdict> {
+  const requiredChanges = inferCertificateEndorsements(params);
+  if (requiredChanges.length === 0) {
+    return { status: "allowed", requiredChanges, evidence: [] };
+  }
+  const evidencePacket = buildCertificateGateEvidencePacket({
+    policy: params.policy,
+    sourceSpans: params.sourceSpans,
+    sourceNodes: params.sourceNodes,
+    certificateHolder: params.certificateHolder,
+    requestText: params.requestText,
+    requestedEndorsements: params.requestedEndorsements,
+  });
+  if (evidencePacket.length === 0) {
+    return {
+      status: "held",
+      reasonCode: "missing_policy_evidence",
+      reasonMessage:
+        "I need broker review before issuing this certificate because Glass could not find source-backed policy or endorsement evidence for the requested certificate wording.",
+      requiredChanges,
+      evidence: [],
+    };
+  }
+
+  const generateGateObject = makeGenerateObject("analysis", {
+    ctx: params.ctx,
+    orgId: params.orgId,
+    tracePolicyId: params.policyId,
+  });
+  try {
+    const result = await generateGateObject({
+      schema: certificateGateReviewSchema,
+      maxTokens: 1400,
+      system: `You are a conservative certificate-of-insurance gate reviewer.
+
+Decide whether Glass may issue the requested COI from existing policy and endorsement evidence.
+
+Rules:
+- Use only the provided evidence IDs. Do not invent evidence.
+- If the request asks for additional insured wording, first check all endorsement evidence to determine whether the exact person/company/certificate holder is already scheduled, named, or added as an additional insured by an existing endorsement.
+- If the holder is already scheduled/named/added by endorsement, allow the certificate and cite that endorsement evidence.
+- If policy wording automatically grants additional insured status to the holder's class without a new endorsement, allow and cite that evidence.
+- If the holder is not already scheduled/named and the policy requires scheduled/named additional insureds to be added by endorsement, hold with reasonCode policy_change_required.
+- If evidence is missing, ambiguous, or conflicting, hold. Do not guess.
+- For waiver, primary/non-contributory, loss payee, mortgagee, or special wording, apply the same rule: allow only if existing policy/endorsement evidence clearly supports the requested wording.`,
+      prompt: `Certificate holder:
+${params.certificateHolder ?? "(not provided)"}
+
+Request text:
+${params.requestText ?? "(not provided)"}
+
+Requested endorsement flags:
+${(params.requestedEndorsements ?? []).join(", ") || "(none)"}
+
+Detected required changes:
+${requiredChanges.join(", ")}
+
+Evidence packet:
+${JSON.stringify(evidencePacket, null, 2).slice(0, 60000)}
+
+Return a gate verdict. If held, write a specific reason that explains whether the problem is missing endorsement evidence, an endorsement still needed, or ambiguity.`,
+    });
+    const review = result.object as z.infer<typeof certificateGateReviewSchema>;
+    const evidenceById = new Map(evidencePacket.map((item) => [item.evidenceId, item]));
+    const evidence: CertificateGateEvidence[] = review.evidenceIds
+      .map((id) => evidenceById.get(id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .map((item) => ({
+        label: item.label,
+        excerpt: item.text.slice(0, 900),
+        sourceSpanIds: item.sourceSpanIds,
+        pageStart: item.pageStart,
+        pageEnd: item.pageEnd,
+      }));
+    const reviewedChanges = review.requiredChanges.length
+      ? review.requiredChanges as CertificateEndorsementKind[]
+      : requiredChanges;
+    if (review.status === "allowed") {
+      if (reviewedChanges.length > 0 && evidence.length === 0) {
+        return {
+          status: "held",
+          reasonCode: "ambiguous_policy_evidence",
+          reasonMessage:
+            "Broker review is needed because the certificate evidence review did not cite source-backed policy or endorsement evidence supporting the requested wording.",
+          requiredChanges: reviewedChanges,
+          evidence: evidencePacket.slice(0, 4).map((item) => ({
+            label: item.label,
+            excerpt: item.text.slice(0, 900),
+            sourceSpanIds: item.sourceSpanIds,
+            pageStart: item.pageStart,
+            pageEnd: item.pageEnd,
+          })),
+        };
+      }
+      return {
+        status: "allowed",
+        requiredChanges: reviewedChanges,
+        evidence,
+      };
+    }
+    return {
+      status: "held",
+      reasonCode: review.reasonCode ?? "ambiguous_policy_evidence",
+      reasonMessage: review.reasonMessage.trim() || "Broker review is needed before issuing this certificate.",
+      requiredChanges: reviewedChanges,
+      evidence,
+    };
+  } catch (error) {
+    return {
+      status: "held",
+      reasonCode: "ambiguous_policy_evidence",
+      reasonMessage: `I could not complete the certificate evidence review, so broker review is needed before issuing this certificate. ${error instanceof Error ? error.message : String(error)}`,
+      requiredChanges,
+      evidence: evidencePacket.slice(0, 4).map((item) => ({
+        label: item.label,
+        excerpt: item.text.slice(0, 900),
+        sourceSpanIds: item.sourceSpanIds,
+        pageStart: item.pageStart,
+        pageEnd: item.pageEnd,
+      })),
+    };
+  }
 }
 
 export const listByPolicyInternal = internalQuery({
@@ -220,6 +384,7 @@ export const generateForPolicy = action({
     selectedPartnerProgramId: v.optional(v.id("partnerPrograms")),
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
+    dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
     const userId = await getAuthUserId(ctx);
@@ -245,6 +410,7 @@ export const generateForPolicy = action({
       selectedPartnerProgramId: args.selectedPartnerProgramId,
       requestText: args.requestText,
       requestedEndorsements: args.requestedEndorsements,
+      dryRun: args.dryRun,
       source: "policy_page",
       createdByUserId: context.userId,
     });
@@ -312,6 +478,7 @@ export const generateForOrg = internalAction({
     selectedPartnerProgramId: v.optional(v.id("partnerPrograms")),
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
+    dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
     const holderName = args.holderName.trim();
@@ -340,15 +507,15 @@ export const generateForOrg = internalAction({
     const certificateChangeRequestsEnabled =
       settingsOrg?.certificateChangeRequestsEnabled !== false &&
       policyChangeRequestsEnabled;
-    const sourceSpans = await ctx.runQuery(
-      internal.sourceSpans.listSpansByPolicyInternal,
+    const hasSourceNodes = await ctx.runQuery(
+      (internal as any).sourceNodes.hasNodesForPolicy,
       { policyId: args.policyId },
-    ).catch(() => []);
-    const sourceNodes = await ctx.runQuery(
-      (internal as any).sourceNodes.listByPolicyInternal,
-      { policyId: args.policyId },
-    ).catch(() => []);
-    if (sourceNodes.length === 0) {
+    ).catch(() => false);
+    const hasReadySourceTree =
+      (policy as { sourceTreeVersion?: string; sourceTreeStatus?: string } | null)?.sourceTreeVersion === "v3" &&
+      (policy as { sourceTreeVersion?: string; sourceTreeStatus?: string } | null)?.sourceTreeStatus === "ready" &&
+      hasSourceNodes;
+    if (!hasReadySourceTree) {
       const rebuild = await ctx.runAction((internal as any).actions.policyExtraction.ensurePolicyV3SourceTree, {
         policyId: args.policyId,
         reason: "certificate_generation",
@@ -367,14 +534,24 @@ export const generateForOrg = internalAction({
             : "Certificate generation is queued until Glass rebuilds source-tree evidence for this policy.",
       };
     }
-    const gate = evaluateCertificateRequestGate({
+    const gate = await evaluateCertificateRequestGateWithLlm({
+      ctx,
+      orgId: args.orgId,
+      policyId: args.policyId,
       certificateHolder,
       requestText: args.requestText,
       requestedEndorsements: args.requestedEndorsements,
       policy: policy as Record<string, unknown> | null,
-      sourceSpans,
-      sourceNodes,
     });
+
+    if (args.dryRun) {
+      return {
+        status: gate.status === "allowed" ? "gate_allowed" : "gate_held",
+        holderName,
+        certificateHolder,
+        gate,
+      };
+    }
 
     if (gate.status === "held") {
       let policyChangeCaseId: Id<"policyChangeCases"> | undefined;

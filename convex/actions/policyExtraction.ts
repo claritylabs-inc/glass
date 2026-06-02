@@ -624,6 +624,68 @@ const policyTypeClassificationSchema = z.object({
   reason: z.string(),
 });
 
+const coverageLineValidationSchema = z.object({
+  rows: z.array(z.object({
+    index: z.number().int().min(0),
+    keep: z.boolean(),
+    correctedName: z.string().nullable(),
+    coverageOrigin: z.enum(["core", "endorsement"]),
+    coverageOriginConfidence: z.enum(["low", "medium", "high"]),
+    reason: z.string(),
+  })).max(40),
+});
+
+const additionalInsuredEligibilityTermSchema = z.object({
+  category: z.string(),
+  condition: z.string(),
+  summary: z.string(),
+  sourceNodeIds: z.array(z.string()),
+  sourceSpanIds: z.array(z.string()),
+});
+
+const scheduledAdditionalInsuredSchema = z.object({
+  name: z.string(),
+  scope: z.string(),
+  endorsementTitle: z.string().nullable(),
+  sourceNodeIds: z.array(z.string()),
+  sourceSpanIds: z.array(z.string()),
+});
+
+const namedAdditionalInsuredSchema = z.object({
+  name: z.string(),
+  status: z.enum(["scheduled_by_endorsement", "automatic_class", "review_required"]),
+  scope: z.string(),
+  endorsementTitle: z.string().nullable(),
+  sourceNodeIds: z.array(z.string()),
+  sourceSpanIds: z.array(z.string()),
+});
+
+const additionalInsuredEligibilitySchema = z.object({
+  withoutEndorsement: z.array(additionalInsuredEligibilityTermSchema).max(12),
+  requiresEndorsement: z.array(additionalInsuredEligibilityTermSchema).max(12),
+  reviewRequired: z.array(additionalInsuredEligibilityTermSchema).max(8),
+  scheduledAdditionalInsureds: z.array(scheduledAdditionalInsuredSchema).max(40),
+  additionalInsureds: z.array(namedAdditionalInsuredSchema).max(60),
+  overallSummary: z.string(),
+});
+
+type CoverageLineValidationRow = z.infer<typeof coverageLineValidationSchema>["rows"][number];
+
+type OperationalCoverageOrigin = "core" | "endorsement";
+
+type OperationalCoverageWithOrigin = PolicyOperationalProfile["coverages"][number] & {
+  coverageOrigin?: OperationalCoverageOrigin;
+  coverageOriginConfidence?: "low" | "medium" | "high";
+  coverageOriginReason?: string;
+};
+
+type AdditionalInsuredEligibility = z.infer<typeof additionalInsuredEligibilitySchema>;
+
+type OperationalProfileWithEligibility = PolicyOperationalProfile & {
+  additionalInsuredEligibility?: AdditionalInsuredEligibility;
+  additionalInsureds?: AdditionalInsuredEligibility["additionalInsureds"];
+};
+
 const POLICY_TYPE_KEYS = Object.keys(POLICY_TYPE_LABELS);
 const POLICY_TYPE_KEY_SET = new Set(POLICY_TYPE_KEYS);
 
@@ -718,6 +780,397 @@ ${policyTypeClassificationExcerpt(params.sourceTree, params.profile)}`,
     return controlled.length ? controlled : fallback;
   } catch {
     return fallback;
+  }
+}
+
+function coverageValidationExcerpt(
+  sourceTree: DocumentSourceNode[],
+  profile: PolicyOperationalProfile,
+): string {
+  const nodesById = new Map(sourceTree.map((node) => [node.id, node]));
+  const coverageRows = profile.coverages.slice(0, 40).map((
+    coverage: PolicyOperationalProfile["coverages"][number],
+    index: number,
+  ) => ({
+    index,
+    name: coverage.name,
+    limit: coverage.limit,
+    deductible: coverage.deductible,
+    premium: coverage.premium,
+    formNumber: coverage.formNumber,
+    sectionRef: coverage.sectionRef,
+    evidence: coverage.sourceNodeIds.slice(0, 4).map((nodeId: string) => {
+      const node = nodesById.get(nodeId);
+      return node
+        ? {
+          nodeId,
+          kind: node.kind,
+          page: node.pageStart,
+          path: node.path,
+          title: node.title,
+          text: [node.description, node.textExcerpt]
+            .filter(Boolean)
+            .join(" ")
+            .slice(0, 900),
+        }
+        : { nodeId, kind: "unknown" };
+    }),
+  }));
+  return JSON.stringify({ coverageRows }, null, 2).slice(0, 20000);
+}
+
+function fallbackCoverageOrigin(
+  coverage: PolicyOperationalProfile["coverages"][number],
+  nodesById: Map<string, DocumentSourceNode>,
+): { origin: OperationalCoverageOrigin; confidence: "low" | "medium"; reason: string } {
+  const evidenceText = coverage.sourceNodeIds
+    .map((nodeId: string) => {
+      const node = nodesById.get(nodeId);
+      if (!node) return "";
+      return [
+        node.kind,
+        node.title,
+        node.description,
+        node.textExcerpt,
+        Array.isArray(node.path) ? node.path.join(" ") : node.path,
+      ].filter(Boolean).join(" ");
+    })
+    .join(" ");
+  if (/\b(endorsement|endorse|amend|amendatory|rider|change endorsement|endt\.?|end\.?|nwc-end)\b/i.test(evidenceText)) {
+    return {
+      origin: "endorsement",
+      confidence: "medium",
+      reason: "Source evidence appears in an endorsement or amendatory form.",
+    };
+  }
+  return {
+    origin: "core",
+    confidence: "low",
+    reason: "No endorsement signal was found in the cited source evidence.",
+  };
+}
+
+function annotateCoverageOriginsFallback(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+): PolicyOperationalProfile {
+  const nodesById = new Map(sourceTree.map((node) => [node.id, node]));
+  return {
+    ...profile,
+    coverages: profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => {
+      const existing = coverage as OperationalCoverageWithOrigin;
+      if (existing.coverageOrigin) return coverage;
+      const fallback = fallbackCoverageOrigin(coverage, nodesById);
+      return {
+        ...coverage,
+        coverageOrigin: fallback.origin,
+        coverageOriginConfidence: fallback.confidence,
+        coverageOriginReason: fallback.reason,
+      } as OperationalCoverageWithOrigin;
+    }) as PolicyOperationalProfile["coverages"],
+  };
+}
+
+async function validateOperationalCoverageLines(params: {
+  ctx: ActionCtx;
+  orgId: Id<"organizations">;
+  traceId?: string;
+  policyId: string;
+  sourceTree: DocumentSourceNode[];
+  profile: PolicyOperationalProfile;
+  log?: (message: string, level?: PipelineLogLevel) => Promise<void>;
+}): Promise<PolicyOperationalProfile> {
+  if (params.profile.coverages.length === 0) return params.profile;
+  const nodesById = new Map(params.sourceTree.map((node) => [node.id, node]));
+  const generateValidatorObject = makeGenerateObject("extraction", {
+    ctx: params.ctx,
+    orgId: params.orgId,
+    traceId: params.traceId,
+    tracePolicyId: params.policyId,
+  });
+  try {
+    const result = await generateValidatorObject({
+      schema: coverageLineValidationSchema,
+      maxTokens: 1800,
+      system: `You validate insurance coverage-limit rows extracted from a policy source tree.
+
+Rules:
+- Keep rows that are actual coverage lines, sublimits, aggregate limits, deductibles, retentions, or premium rows.
+- Drop rows where the name is just a prose clause, endorsement paragraph, condition, exclusion, worked example, or sentence fragment that happens to mention money.
+- Classify kept rows as "core" when they come from declarations, schedules, the main policy form, base insuring agreements, or base coverage grants/limits.
+- Classify kept rows as "endorsement" when they come from an endorsement, amendatory form, rider, or a page/form that modifies, replaces, broadens, restricts, or adds coverage.
+- If source evidence path/title/kind says endorsement or amendatory, choose "endorsement" even if the coverage label is generic.
+- If the evidence supports a short clearer label, return correctedName. Otherwise return null.
+- Never invent a row or a limit. Use only the supplied row evidence.
+- Prefer table, schedule, declarations, and row evidence over generic paragraph evidence.`,
+      prompt: `Validate these extracted coverage rows. Return one decision for each index.
+
+${coverageValidationExcerpt(params.sourceTree, params.profile)}`,
+    });
+    const decisions = new Map(
+      ((result.object as z.infer<typeof coverageLineValidationSchema>).rows ?? [])
+        .map((row) => [row.index, row]),
+    );
+    const coverages = params.profile.coverages.flatMap((
+      coverage: PolicyOperationalProfile["coverages"][number],
+      index: number,
+    ) => {
+      const decision = decisions.get(index) as CoverageLineValidationRow | undefined;
+      if (decision?.keep === false) return [];
+      const correctedName = decision?.correctedName?.trim();
+      const fallback = fallbackCoverageOrigin(coverage, nodesById);
+      const withOrigin: OperationalCoverageWithOrigin = {
+        ...coverage,
+        ...(correctedName ? { name: correctedName } : {}),
+        coverageOrigin: decision?.coverageOrigin ?? fallback.origin,
+        coverageOriginConfidence: decision?.coverageOriginConfidence ?? fallback.confidence,
+        coverageOriginReason: decision?.reason?.trim() || fallback.reason,
+      };
+      return [withOrigin];
+    });
+    const dropped = params.profile.coverages.length - coverages.length;
+    if (dropped > 0) {
+      await params.log?.(
+        `Coverage validation dropped ${dropped} non-coverage row${dropped === 1 ? "" : "s"}`,
+        "warn",
+      );
+    }
+    const coreCount = coverages.filter((coverage: OperationalCoverageWithOrigin) => coverage.coverageOrigin !== "endorsement").length;
+    const endorsementCount = coverages.length - coreCount;
+    if (endorsementCount > 0) {
+      await params.log?.(
+        `Coverage validation classified ${coreCount} core and ${endorsementCount} endorsement coverage row${coverages.length === 1 ? "" : "s"}`,
+        "info",
+      );
+    }
+    return { ...params.profile, coverages: coverages as PolicyOperationalProfile["coverages"] };
+  } catch (error) {
+    await params.log?.(
+      `Coverage validation skipped: ${error instanceof Error ? error.message : String(error)}`,
+      "warn",
+    );
+    return annotateCoverageOriginsFallback(params.profile, params.sourceTree);
+  }
+}
+
+function additionalInsuredEligibilityExcerpt(sourceTree: DocumentSourceNode[]): {
+  text: string;
+  count: number;
+} {
+  const candidateNodes = sourceTree
+    .filter((node) => node.kind !== "document")
+    .filter((node) => {
+      const text = [
+        node.kind,
+        node.title,
+        node.description,
+        node.textExcerpt,
+        node.path,
+      ].filter(Boolean).join(" ");
+      return /\b(additional insured|insured or subsidiary|subsidiar(?:y|ies)|scheduled additional insured|certificate holder|written contract|endorsement|endorse)\b/i.test(text);
+    })
+    .sort((left, right) => left.order - right.order)
+    .slice(0, 80)
+    .map((node) => ({
+      nodeId: node.id,
+      kind: node.kind,
+      page: node.pageStart,
+      path: node.path,
+      title: node.title,
+      sourceSpanIds: node.sourceSpanIds,
+      text: [node.description, node.textExcerpt]
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 1200),
+    }));
+  return {
+    text: JSON.stringify({ sourceNodes: candidateNodes }, null, 2).slice(0, 22000),
+    count: candidateNodes.length,
+  };
+}
+
+function validateAdditionalInsuredEligibility(
+  value: AdditionalInsuredEligibility,
+  sourceTree: DocumentSourceNode[],
+): AdditionalInsuredEligibility {
+  const validNodeIds = new Set(sourceTree.map((node) => node.id));
+  const spanIdsByNodeId = new Map(sourceTree.map((node) => [node.id, node.sourceSpanIds]));
+  const sourceBackedScheduledRequirement = () => {
+    const node = sourceTree
+      .filter((candidate) => candidate.kind !== "document")
+      .find((candidate) => {
+        const text = [
+          candidate.title,
+          candidate.description,
+          candidate.textExcerpt,
+          candidate.path,
+        ].filter(Boolean).join(" ");
+        return /\bscheduled additional insured\b/i.test(text)
+          && /\b(endorsement|endorsed|added by endorsement|subject to such endorsement)\b/i.test(text);
+      });
+    if (!node) return null;
+    return {
+      category: "Scheduled Additional Insureds",
+      condition: "A person or company must be scheduled, named, added, or endorsed as a Scheduled Additional Insured before Glass treats them as already added.",
+      summary: "Scheduled Additional Insured status requires endorsement-backed scheduling/naming in the policy evidence.",
+      sourceNodeIds: [node.id],
+      sourceSpanIds: node.sourceSpanIds,
+    };
+  };
+  const normalizeEvidence = (sourceNodeIdsInput: string[], sourceSpanIdsInput: string[]) => {
+    const sourceNodeIds = [...new Set(sourceNodeIdsInput.filter((nodeId) => validNodeIds.has(nodeId)))];
+    const sourceSpanIds = [...new Set([
+      ...sourceSpanIdsInput,
+      ...sourceNodeIds.flatMap((nodeId) => spanIdsByNodeId.get(nodeId) ?? []),
+    ].filter((spanId): spanId is string => typeof spanId === "string" && spanId.length > 0))];
+    return { sourceNodeIds, sourceSpanIds };
+  };
+  const cleanTerms = (terms: AdditionalInsuredEligibility["withoutEndorsement"]) => terms
+    .map((term) => {
+      const evidence = normalizeEvidence(term.sourceNodeIds, term.sourceSpanIds);
+      return {
+        category: term.category.trim().slice(0, 120),
+        condition: term.condition.trim().slice(0, 500),
+        summary: term.summary.trim().slice(0, 800),
+        sourceNodeIds: evidence.sourceNodeIds,
+        sourceSpanIds: evidence.sourceSpanIds,
+      };
+    })
+    .filter((term) => term.category && term.summary && (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0));
+  const cleanScheduled = (terms: AdditionalInsuredEligibility["scheduledAdditionalInsureds"]) => terms
+    .map((term) => {
+      const evidence = normalizeEvidence(term.sourceNodeIds, term.sourceSpanIds);
+      return {
+        name: term.name.trim().slice(0, 180),
+        scope: term.scope.trim().slice(0, 700),
+        endorsementTitle: term.endorsementTitle?.trim().slice(0, 180) || null,
+        sourceNodeIds: evidence.sourceNodeIds,
+        sourceSpanIds: evidence.sourceSpanIds,
+      };
+    })
+    .filter((term) => term.name && (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0));
+  const cleanNamed = (terms: AdditionalInsuredEligibility["additionalInsureds"]) => terms
+    .map((term) => {
+      const evidence = normalizeEvidence(term.sourceNodeIds, term.sourceSpanIds);
+      return {
+        name: term.name.trim().slice(0, 180),
+        status: term.status,
+        scope: term.scope.trim().slice(0, 700),
+        endorsementTitle: term.endorsementTitle?.trim().slice(0, 180) || null,
+        sourceNodeIds: evidence.sourceNodeIds,
+        sourceSpanIds: evidence.sourceSpanIds,
+      };
+    })
+    .filter((term) => term.name && (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0));
+  const isEndorsementOnlyAdditionalInsured = (term: ReturnType<typeof cleanTerms>[number]) => {
+    const text = [term.category, term.condition, term.summary].join(" ");
+    return /\bscheduled additional insured\b/i.test(text)
+      && /\b(endorsement|endorsed|scheduled|named|added)\b/i.test(text);
+  };
+  const automaticTerms = cleanTerms(value.withoutEndorsement);
+  const movedEndorsementTerms = automaticTerms.filter(isEndorsementOnlyAdditionalInsured);
+  const withoutEndorsement = automaticTerms.filter((term) => !isEndorsementOnlyAdditionalInsured(term));
+  const requiresEndorsement = [
+    ...cleanTerms(value.requiresEndorsement),
+    ...movedEndorsementTerms.map((term) => ({
+      ...term,
+      category: term.category || "Scheduled Additional Insureds",
+      summary: term.summary || "Scheduled Additional Insured status requires endorsement-backed scheduling/naming in the policy evidence.",
+    })),
+  ];
+  const scheduledRequirement = sourceBackedScheduledRequirement();
+  if (
+    scheduledRequirement
+    && !requiresEndorsement.some((term) => /\bscheduled additional insured/i.test(term.category))
+  ) {
+    requiresEndorsement.push(scheduledRequirement);
+  }
+  return {
+    withoutEndorsement,
+    requiresEndorsement,
+    reviewRequired: cleanTerms(value.reviewRequired ?? []),
+    scheduledAdditionalInsureds: cleanScheduled(value.scheduledAdditionalInsureds ?? []),
+    additionalInsureds: cleanNamed(value.additionalInsureds ?? []),
+    overallSummary: value.overallSummary.trim().slice(0, 1200),
+  };
+}
+
+async function extractAdditionalInsuredEligibility(params: {
+  ctx: ActionCtx;
+  orgId: Id<"organizations">;
+  traceId?: string;
+  policyId: string;
+  sourceTree: DocumentSourceNode[];
+  profile: PolicyOperationalProfile;
+  log?: (message: string, level?: PipelineLogLevel) => Promise<void>;
+}): Promise<PolicyOperationalProfile> {
+  const excerpt = additionalInsuredEligibilityExcerpt(params.sourceTree);
+  if (excerpt.count === 0) {
+    return params.profile;
+  }
+  const generateEligibilityObject = makeGenerateObject("extraction", {
+    ctx: params.ctx,
+    orgId: params.orgId,
+    traceId: params.traceId,
+    tracePolicyId: params.policyId,
+  });
+  try {
+    const result = await generateEligibilityObject({
+      schema: additionalInsuredEligibilitySchema,
+      maxTokens: 2200,
+      system: `You extract additional-insured certificate eligibility from insurance policy source nodes.
+
+Rules:
+- Separate classes that can be treated as additional insureds without a new endorsement from classes that require a scheduled/additional endorsement.
+- "Without endorsement" means the policy wording itself automatically includes the class, usually subject to stated conditions.
+- "Requires endorsement" means the class only qualifies when scheduled, named, added, or endorsed.
+- If the policy only says "any Scheduled Additional Insured added by endorsement", that belongs under requiresEndorsement, not withoutEndorsement.
+- Extract scheduledAdditionalInsureds when an endorsement, schedule, table, or form names a specific person/company as an additional insured.
+- Extract additionalInsureds as a lookup list of named people/companies already identifiable from policy or endorsement evidence. Do not include generic classes like "subsidiary" unless a specific name is shown.
+- Do not decide whether a specific certificate holder qualifies unless the wording identifies that class.
+- Use only sourceNodeIds supplied in the evidence. Do not invent IDs.
+- Keep categories short and operational, suitable for COI gating.`,
+      prompt: `Extract additional insured eligibility from these source nodes.
+
+Return:
+- withoutEndorsement: each automatic class and its conditions.
+- requiresEndorsement: each class or situation that needs a scheduled/named/additional endorsement.
+- reviewRequired: ambiguous classes that need human review.
+- scheduledAdditionalInsureds: specific people/companies already named or scheduled by endorsement as additional insureds.
+- additionalInsureds: every specific named additional insured, with status scheduled_by_endorsement, automatic_class, or review_required.
+- overallSummary: one concise sentence explaining certificate impact.
+
+Evidence:
+${excerpt.text}`,
+    });
+    const eligibility = validateAdditionalInsuredEligibility(
+      result.object as AdditionalInsuredEligibility,
+      params.sourceTree,
+    );
+    if (
+      eligibility.withoutEndorsement.length === 0
+      && eligibility.requiresEndorsement.length === 0
+      && eligibility.reviewRequired.length === 0
+      && eligibility.scheduledAdditionalInsureds.length === 0
+      && eligibility.additionalInsureds.length === 0
+    ) {
+      return params.profile;
+    }
+    await params.log?.(
+      `Additional insured eligibility extracted: ${eligibility.withoutEndorsement.length} automatic, ${eligibility.requiresEndorsement.length} endorsement-required, ${eligibility.scheduledAdditionalInsureds.length} scheduled, ${eligibility.additionalInsureds.length} named`,
+      "info",
+    );
+    return {
+      ...params.profile,
+      additionalInsuredEligibility: eligibility,
+      additionalInsureds: eligibility.additionalInsureds,
+    } as OperationalProfileWithEligibility;
+  } catch (error) {
+    await params.log?.(
+      `Additional insured eligibility extraction skipped: ${error instanceof Error ? error.message : String(error)}`,
+      "warn",
+    );
+    return params.profile;
   }
 }
 
@@ -1254,17 +1707,35 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         sourceSpans,
         doc as Record<string, unknown>,
       );
-      const operationalProfile = withControlledPolicyTypes(
-        normalizedOperationalProfile,
+      const validatedOperationalProfile = await validateOperationalCoverageLines({
+        ctx: convexCtx,
+        orgId: state.orgId as Id<"organizations">,
+        traceId: state.traceId,
+        policyId,
+        sourceTree: sourceNodes,
+        profile: normalizedOperationalProfile,
+        log: async (message, level) => { await pCtx.log(message, level); },
+      });
+      const classifiedOperationalProfile = withControlledPolicyTypes(
+        validatedOperationalProfile,
         await classifyControlledPolicyTypes({
           ctx: convexCtx,
           orgId: state.orgId as Id<"organizations">,
           traceId: state.traceId,
           policyId,
           sourceTree: sourceNodes,
-          profile: normalizedOperationalProfile,
+          profile: validatedOperationalProfile,
         }),
       );
+      const operationalProfile = await extractAdditionalInsuredEligibility({
+        ctx: convexCtx,
+        orgId: state.orgId as Id<"organizations">,
+        traceId: state.traceId,
+        policyId,
+        sourceTree: sourceNodes,
+        profile: classifiedOperationalProfile,
+        log: async (message, level) => { await pCtx.log(message, level); },
+      });
       const fields = processed.fields;
       const docName = doc.type === "quote"
         ? (doc.quoteNumber || "quote")
@@ -2008,17 +2479,51 @@ export const completeExternalExtract = action({
       args.sourceSpans,
       doc,
     );
-    const operationalProfile = withControlledPolicyTypes(
-      normalizedOperationalProfile,
+    const validatedOperationalProfile = await validateOperationalCoverageLines({
+      ctx,
+      orgId: state.orgId as Id<"organizations">,
+      traceId: state.traceId,
+      policyId,
+      sourceTree: sourceNodes,
+      profile: normalizedOperationalProfile,
+      log: async (message, level = "info") => {
+        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+          jobId: policyId,
+          timestamp: nowMs(),
+          message,
+          phase: "extract",
+          level,
+        });
+      },
+    });
+    const classifiedOperationalProfile = withControlledPolicyTypes(
+      validatedOperationalProfile,
       await classifyControlledPolicyTypes({
         ctx,
         orgId: state.orgId as Id<"organizations">,
         traceId: state.traceId,
         policyId,
         sourceTree: sourceNodes,
-        profile: normalizedOperationalProfile,
+        profile: validatedOperationalProfile,
       }),
     );
+    const operationalProfile = await extractAdditionalInsuredEligibility({
+      ctx,
+      orgId: state.orgId as Id<"organizations">,
+      traceId: state.traceId,
+      policyId,
+      sourceTree: sourceNodes,
+      profile: classifiedOperationalProfile,
+      log: async (message, level = "info") => {
+        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+          jobId: policyId,
+          timestamp: nowMs(),
+          message,
+          phase: "extract",
+          level,
+        });
+      },
+    });
     const fields = processed.fields;
     if (processed.coverageReviewQuestionCount > 0) {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
@@ -2152,11 +2657,11 @@ export const ensurePolicyV3SourceTree = internalAction({
     } | null;
     if (!policy) throw new Error("Policy not found");
 
-    const sourceNodes = await ctx.runQuery(
-      (internal as any).sourceNodes.listByPolicyInternal,
+    const hasSourceNodes = await ctx.runQuery(
+      (internal as any).sourceNodes.hasNodesForPolicy,
       { policyId: args.policyId },
-    ).catch(() => []) as unknown[];
-    if (policy.sourceTreeVersion === "v3" && policy.sourceTreeStatus === "ready" && sourceNodes.length > 0) {
+    ).catch(() => false) as boolean;
+    if (policy.sourceTreeVersion === "v3" && policy.sourceTreeStatus === "ready" && hasSourceNodes) {
       return { status: "ready" as const };
     }
     if (policy.pipelineStatus === "running" || policy.sourceTreeStatus === "running" || policy.sourceTreeStatus === "queued") {

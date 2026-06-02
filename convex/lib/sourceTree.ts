@@ -710,13 +710,14 @@ function cleanCoverageName(value: string | undefined): string | undefined {
   if (!candidate) return undefined;
   if (/^(row\s+\d+|table\s+row|text|column\s+\d+)\b/i.test(candidate)) return undefined;
   if (/^(?:table|row|text)\s+(?:table|row|text)$/i.test(candidate)) return undefined;
-  if (/\b(?:erodes?|settlements?|parts?\s+combined|subject\s+to|provided\s+that)\b/i.test(candidate)) return undefined;
   if (/\b(?:under|of|and|or|for|to|with|which|that)$/i.test(candidate)) return undefined;
   if (!/[A-Za-z]/.test(candidate)) return undefined;
   return candidate;
 }
 
-function cleanOperationalCoverages(coverages: OperationalCoverageLine[]): OperationalCoverageLine[] {
+function cleanOperationalCoverages(
+  coverages: OperationalCoverageLine[],
+): OperationalCoverageLine[] {
   const cleaned: OperationalCoverageLine[] = [];
   const seen = new Set<string>();
   for (const coverage of coverages) {
@@ -743,6 +744,104 @@ function cleanOperationalCoverages(coverages: OperationalCoverageLine[]): Operat
     cleaned.push(normalized);
   }
   return cleaned;
+}
+
+type OperationalCoverageExtension = {
+  coverageOrigin?: "core" | "endorsement";
+  coverageOriginConfidence?: "low" | "medium" | "high";
+  coverageOriginReason?: string;
+};
+
+type OperationalProfileExtensions = {
+  additionalInsuredEligibility?: unknown;
+  additionalInsureds?: unknown;
+};
+
+function coverageExtensionKey(coverage: Record<string, unknown>): string {
+  const sourceNodeIds = Array.isArray(coverage.sourceNodeIds)
+    ? coverage.sourceNodeIds.filter((id): id is string => typeof id === "string")
+    : [];
+  const sourceSpanIds = Array.isArray(coverage.sourceSpanIds)
+    ? coverage.sourceSpanIds.filter((id): id is string => typeof id === "string")
+    : [];
+  return [
+    normalizeWhitespace(String(coverage.name ?? "")).toLowerCase(),
+    normalizeWhitespace(String(coverage.limit ?? "")).toLowerCase(),
+    normalizeWhitespace(String(coverage.deductible ?? "")).toLowerCase(),
+    normalizeWhitespace(String(coverage.premium ?? "")).toLowerCase(),
+    sourceNodeIds.join(","),
+    sourceSpanIds.join(","),
+  ].join("|");
+}
+
+function storedCoverageExtensions(rawProfile: unknown): Map<string, OperationalCoverageExtension> {
+  const extensions = new Map<string, OperationalCoverageExtension>();
+  const rows = rawProfile
+    && typeof rawProfile === "object"
+    && !Array.isArray(rawProfile)
+    && Array.isArray((rawProfile as Record<string, unknown>).coverages)
+    ? (rawProfile as { coverages: unknown[] }).coverages
+    : [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const record = row as Record<string, unknown>;
+    const coverageOrigin = record.coverageOrigin === "core" || record.coverageOrigin === "endorsement"
+      ? record.coverageOrigin
+      : undefined;
+    const coverageOriginConfidence = record.coverageOriginConfidence === "low"
+      || record.coverageOriginConfidence === "medium"
+      || record.coverageOriginConfidence === "high"
+      ? record.coverageOriginConfidence
+      : undefined;
+    const coverageOriginReason = typeof record.coverageOriginReason === "string"
+      ? record.coverageOriginReason
+      : undefined;
+    if (!coverageOrigin && !coverageOriginConfidence && !coverageOriginReason) continue;
+    extensions.set(coverageExtensionKey(record), {
+      coverageOrigin,
+      coverageOriginConfidence,
+      coverageOriginReason,
+    });
+  }
+  return extensions;
+}
+
+function preserveCoverageExtensions(
+  profile: PolicyOperationalProfile,
+  rawProfile: unknown,
+): PolicyOperationalProfile {
+  const extensions = storedCoverageExtensions(rawProfile);
+  if (extensions.size === 0) return profile;
+  return {
+    ...profile,
+    coverages: profile.coverages.map((coverage: OperationalCoverageLine) => ({
+      ...coverage,
+      ...extensions.get(coverageExtensionKey(coverage as unknown as Record<string, unknown>)),
+    })),
+  };
+}
+
+function storedProfileExtensions(rawProfile: unknown): OperationalProfileExtensions {
+  if (!rawProfile || typeof rawProfile !== "object" || Array.isArray(rawProfile)) return {};
+  const record = rawProfile as Record<string, unknown>;
+  return {
+    ...(record.additionalInsuredEligibility && typeof record.additionalInsuredEligibility === "object"
+      ? { additionalInsuredEligibility: record.additionalInsuredEligibility }
+      : {}),
+    ...(Array.isArray(record.additionalInsureds)
+      ? { additionalInsureds: record.additionalInsureds }
+      : {}),
+  };
+}
+
+function preserveOperationalProfileExtensions(
+  profile: PolicyOperationalProfile,
+  rawProfile: unknown,
+): PolicyOperationalProfile {
+  return {
+    ...preserveCoverageExtensions(profile, rawProfile),
+    ...storedProfileExtensions(rawProfile),
+  } as PolicyOperationalProfile;
 }
 
 function partiesFromProfile(profile: PolicyOperationalProfile): OperationalParty[] {
@@ -914,7 +1013,7 @@ export function normalizeOperationalProfile(
     validNodeIds,
     validSpanIds,
   );
-  return finalizeOperationalProfile(withDeclarations);
+  return preserveOperationalProfileExtensions(finalizeOperationalProfile(withDeclarations), rawProfile);
 }
 
 export function normalizeStoredOperationalProfile(
@@ -1133,18 +1232,28 @@ export function operationalProfilePolicyFields(
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.policyTypes.length > 0) fields.policyTypes = operationalProfile.policyTypes;
   if (operationalProfile.coverages.length > 0) {
-    fields.coverages = operationalProfile.coverages.map((coverage: OperationalCoverageLine) => ({
-      name: coverage.name,
-      coverageCode: coverage.coverageCode,
-      limit: coverage.limit,
-      deductible: coverage.deductible,
-      premium: coverage.premium,
-      formNumber: coverage.formNumber,
-      sectionRef: coverage.sectionRef,
-      documentNodeId: coverage.sourceNodeIds[0],
-      sourceSpanIds: coverage.sourceSpanIds,
-      originalContent: [coverage.name, coverage.limit, coverage.deductible, coverage.premium].filter(Boolean).join(" | "),
-    }));
+    fields.coverages = operationalProfile.coverages.map((coverage: OperationalCoverageLine) => {
+      const coverageRecord = coverage as OperationalCoverageLine & {
+        coverageOrigin?: "core" | "endorsement";
+        coverageOriginConfidence?: "low" | "medium" | "high";
+        coverageOriginReason?: string;
+      };
+      return {
+        name: coverage.name,
+        coverageCode: coverage.coverageCode,
+        limit: coverage.limit,
+        deductible: coverage.deductible,
+        premium: coverage.premium,
+        formNumber: coverage.formNumber,
+        sectionRef: coverage.sectionRef,
+        coverageOrigin: coverageRecord.coverageOrigin,
+        coverageOriginConfidence: coverageRecord.coverageOriginConfidence,
+        coverageOriginReason: coverageRecord.coverageOriginReason,
+        documentNodeId: coverage.sourceNodeIds[0],
+        sourceSpanIds: coverage.sourceSpanIds,
+        originalContent: [coverage.name, coverage.limit, coverage.deductible, coverage.premium].filter(Boolean).join(" | "),
+      };
+    });
   }
   return fields;
 }

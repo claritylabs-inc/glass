@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { getPolicyAccessForQuery } from "./lib/access";
+import { getActiveOperatorProfile } from "./lib/operatorIdentity";
 
 const sourceKindValidator = v.union(
   v.literal("policy_pdf"),
@@ -67,10 +68,16 @@ export const listSpansByPolicyAndSpanIds = query({
   args: {
     policyId: v.id("policies"),
     spanIds: v.array(v.string()),
+    allowOperatorAccess: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
-    if (!policyAccess) return [];
+    if (!policyAccess) {
+      const operatorAccess = args.allowOperatorAccess
+        ? await getActiveOperatorProfile(ctx)
+        : null;
+      if (!operatorAccess) return [];
+    }
 
     const wanted = new Set(args.spanIds);
     if (wanted.size === 0) return [];

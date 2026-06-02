@@ -585,7 +585,8 @@ function buildFallbackContext(
         p.coverages
           ?.slice(0, 5)
           .map(
-            (c: { name?: string; limit?: string }) => `${c.name}: ${c.limit}`,
+            (c: { name?: string; limit?: string; coverageOrigin?: string }) =>
+              `${c.name}: ${c.limit}${c.coverageOrigin ? ` (${c.coverageOrigin})` : ""}`,
           )
           .join("; ") ?? "";
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
@@ -606,8 +607,9 @@ function buildFallbackContext(
         name?: string;
         limit?: string;
         deductible?: string;
+        coverageOrigin?: string;
       }>) {
-        section += `\n  - ${c.name}: Limit ${c.limit}${c.deductible ? `, Deductible ${c.deductible}` : ""}`;
+        section += `\n  - ${c.name}: Limit ${c.limit}${c.coverageOrigin ? `, Origin ${c.coverageOrigin}` : ""}${c.deductible ? `, Deductible ${c.deductible}` : ""}`;
       }
     }
     const structure = formatDocumentStructureForPrompt(p as Record<string, unknown>, {

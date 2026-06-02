@@ -1248,6 +1248,7 @@ If the broker attached an endorsement or confirmation for this change, use compl
                 name: c.name,
                 limit: c.limit,
                 deductible: c.deductible,
+                origin: c.coverageOrigin,
               })),
             }));
           },
@@ -1396,6 +1397,7 @@ If the broker attached an endorsement or confirmation for this change, use compl
                 name: c.name,
                 limit: c.limit,
                 deductible: c.deductible,
+                origin: c.coverageOrigin,
               })),
             });
             return { policy1: mapP(p1), policy2: mapP(p2) };

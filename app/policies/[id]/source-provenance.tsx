@@ -80,6 +80,7 @@ function sourceUnit(span: SourceSpanDoc): string | undefined {
 export function usePolicySourceSpans(
   policyId: Id<"policies"> | undefined,
   sourceSpanIds: string[],
+  options?: { allowOperatorAccess?: boolean },
 ) {
   const uniqueIds = useMemo(
     () => [...new Set(sourceSpanIds)].sort(),
@@ -89,7 +90,11 @@ export function usePolicySourceSpans(
     "sourceSpans.listSpansByPolicyAndSpanIds.policy-detail",
     api.sourceSpans.listSpansByPolicyAndSpanIds,
     policyId && uniqueIds.length > 0
-      ? { policyId, spanIds: uniqueIds }
+      ? {
+          policyId,
+          spanIds: uniqueIds,
+          ...(options?.allowOperatorAccess ? { allowOperatorAccess: true } : {}),
+        }
       : "skip",
   ) as SourceSpanDoc[] | undefined;
 }
