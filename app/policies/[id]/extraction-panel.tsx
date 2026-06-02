@@ -1576,12 +1576,14 @@ function OutlineNodeRow({
   );
   const kind = nodeKind(node);
   const isTable = kind === "table";
+  const waitingForLazyChildren =
+    hasSourceNodeChildren(node) &&
+    !hasHydratedChildren &&
+    lazyChildren === undefined &&
+    policyId !== undefined;
   const loadingChildren =
     open &&
-    hasSourceNodeChildren(node) &&
-    lazyChildren === undefined &&
-    !hasHydratedChildren &&
-    policyId !== undefined;
+    waitingForLazyChildren;
   const children = lazyChildren ?? node.children ?? [];
   const hydratedNode = children === node.children ? node : { ...node, children };
   const tableRows = isTable ? tableRowsForNode(hydratedNode) : [];
@@ -1596,7 +1598,7 @@ function OutlineNodeRow({
   const structuredChildren = visibleChildren.filter((child) => !isTextLeafNode(child));
   const canExpand =
     factRows.length > 0 ||
-    hasSourceNodeChildren(node) ||
+    waitingForLazyChildren ||
     rendersTable ||
     visibleChildren.length > 0;
 
