@@ -27,6 +27,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
+import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
 import type { SourceSpanDoc } from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
@@ -242,7 +243,9 @@ function profileScalarRows(profile: Record<string, unknown>) {
   pushValue("Expiration", "expirationDate");
   pushValue("Retroactive", "retroactiveDate");
   pushValue("Premium", "premium");
-  const coverageTypes = stringArray(profile.coverageTypes);
+  const coverageTypes = policyTypes
+    .map((type) => POLICY_TYPE_LABELS[type] ?? undefined)
+    .filter((label): label is string => Boolean(label));
   if (coverageTypes.length) rows.push({ label: "Coverage types", value: coverageTypes.join(", ") });
   rows.push({ label: "Evidence", value: evidenceLabel(profile) });
   const warnings = stringArray(profile.warnings);
@@ -299,12 +302,12 @@ function ProfileTable({
 }) {
   if (!rows.length) return null;
   return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6">
-      <Table className="table-fixed">
+    <div className="rounded-lg border border-foreground/6">
+      <Table className="min-w-[860px] table-fixed">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             {columns.map((column) => (
-              <TableHead key={column} className="h-8 px-3 text-label-sm">
+              <TableHead key={column} className="h-8 px-3 text-label-sm whitespace-nowrap">
                 {profileColumnLabel(column)}
               </TableHead>
             ))}
@@ -314,7 +317,7 @@ function ProfileTable({
           {rows.map((row, rowIndex) => (
             <TableRow key={rowIndex}>
               {columns.map((column) => (
-                <TableCell key={column} className="px-3 py-2 align-top whitespace-normal">
+                <TableCell key={column} className="px-3 py-2 align-top whitespace-normal break-words [overflow-wrap:anywhere]">
                   {profileCellDisplay(row[column])}
                 </TableCell>
               ))}
@@ -1256,16 +1259,18 @@ export default function OperatorExtractionsPage() {
             onValueChange={(value) => selectTraceTab(parseTracePanelTab(value))}
             className="min-h-0 flex-1 overflow-hidden"
           >
-            <TabsList variant="pill" className="scrollbar-hide sticky top-0 z-10 max-w-full shrink-0 overflow-x-auto bg-background py-1">
-              <TabsTrigger value="summary">Summary</TabsTrigger>
-              <TabsTrigger value="extracted">Extracted data</TabsTrigger>
-              <TabsTrigger value="timeline">Timeline</TabsTrigger>
-              <TabsTrigger value="timing">Timing</TabsTrigger>
-              <TabsTrigger value="models">Model calls</TabsTrigger>
-              <TabsTrigger value="log">Log</TabsTrigger>
-            </TabsList>
+            <div className="sticky top-0 z-10 shrink-0 bg-background pb-3 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-[-18px] after:h-7 after:bg-gradient-to-b after:from-background after:to-transparent after:content-['']">
+              <TabsList variant="pill" className="scrollbar-hide max-w-full overflow-x-auto py-1">
+                <TabsTrigger value="summary">Summary</TabsTrigger>
+                <TabsTrigger value="extracted">Extracted data</TabsTrigger>
+                <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                <TabsTrigger value="timing">Timing</TabsTrigger>
+                <TabsTrigger value="models">Model calls</TabsTrigger>
+                <TabsTrigger value="log">Log</TabsTrigger>
+              </TabsList>
+            </div>
 
-            <TabsContent value="summary" className="scrollbar-hide min-h-0 overflow-y-auto pt-3">
+            <TabsContent value="summary" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
               <div className="space-y-3">
                 <dl className="rounded-lg border border-foreground/6">
                   <DetailRow
@@ -1301,7 +1306,7 @@ export default function OperatorExtractionsPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="extracted" className="scrollbar-hide min-h-0 overflow-y-auto pt-3">
+            <TabsContent value="extracted" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
               {detail?.policy ? (
                 <ExtractionCards
                   policyId={selected.policyId as Id<"policies">}
@@ -1316,7 +1321,7 @@ export default function OperatorExtractionsPage() {
               )}
             </TabsContent>
 
-            <TabsContent value="timeline" className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden pt-3">
+            <TabsContent value="timeline" className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden pt-1">
               <TimelineWaterfall
                 rows={timelineRows}
                 session={selected}
@@ -1332,7 +1337,7 @@ export default function OperatorExtractionsPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="timing" className="scrollbar-hide min-h-0 space-y-3 overflow-y-auto pt-3">
+            <TabsContent value="timing" className="scrollbar-hide min-h-0 space-y-3 overflow-y-auto pt-1">
               <div className="space-y-2">
                 <div>
                   <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Phases</h4>
@@ -1372,7 +1377,7 @@ export default function OperatorExtractionsPage() {
               ) : null}
             </TabsContent>
 
-            <TabsContent value="models" className="scrollbar-hide min-h-0 min-w-0 space-y-2 overflow-y-auto pt-3">
+            <TabsContent value="models" className="scrollbar-hide min-h-0 min-w-0 space-y-2 overflow-y-auto pt-1">
               <ModelCallsGrid
                 events={modelEvents}
                 selectedEventId={selectedModelEvent?._id}
@@ -1381,7 +1386,7 @@ export default function OperatorExtractionsPage() {
               <ModelCallDebugPanel event={selectedModelEvent} />
             </TabsContent>
 
-            <TabsContent value="log" className="scrollbar-hide min-h-0 space-y-2 overflow-y-auto pt-3">
+            <TabsContent value="log" className="scrollbar-hide min-h-0 space-y-2 overflow-y-auto pt-1">
               <div className="rounded-lg border border-foreground/6">
                 {logEvents.length ? logEvents.map((event) => (
                   <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">

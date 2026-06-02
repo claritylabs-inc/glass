@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { getOrgAccess } from "./lib/access";
+import { getOrgAccessForQuery } from "./lib/access";
 
 function policyLabel(policy: {
   carrier?: string;
@@ -31,7 +31,15 @@ export const list = query({
       };
     }
     const orgId = args.orgId;
-    const access = await getOrgAccess(ctx, orgId);
+    const access = await getOrgAccessForQuery(ctx, orgId);
+    if (!access) {
+      return {
+        policies: [],
+        quotes: [],
+        requirements: [],
+        mailboxes: [],
+      };
+    }
     const allPolicies = await ctx.db
       .query("policies")
       .withIndex("by_orgId", (q) => q.eq("orgId", orgId))

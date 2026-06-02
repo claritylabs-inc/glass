@@ -16,6 +16,7 @@ import {
   type SourceSpanUnit,
 } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
+import { POLICY_TYPE_LABELS } from "./policyTypes";
 
 export type {
   DocumentSourceNode,
@@ -92,6 +93,7 @@ const SOURCE_NODE_KINDS = new Set<DocumentSourceNodeKind>([
   "table_cell",
   "text",
 ]);
+const POLICY_TYPE_KEYS = new Set(Object.keys(POLICY_TYPE_LABELS));
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -348,6 +350,14 @@ function isBadOperationalIdentityValue(value: string | undefined): boolean {
   return /(__{3,}|claims-made|please read|all monetary amounts|page\s+\d+\s+of\s+\d+|in consideration of the payment|subject to the declarations|policy title|signature blocks?|errors?\s+and\s+omissions\s+liability\s+policy)/i.test(text);
 }
 
+function isLikelyNamedInsuredValue(value: string): boolean {
+  const text = normalizeWhitespace(value);
+  if (!text || text.length > 140) return false;
+  if (/^(holds|is|are|has|have|with|including|through|provides|administers|licensed|federally)\b/i.test(text)) return false;
+  if (/\b(policy|coverage|deductible|premium|claim|limit|retroactive|endorsement)\b/i.test(text)) return false;
+  return /[A-Za-z]/.test(text);
+}
+
 function valueOfSourceBackedValue(value: unknown): string | undefined {
   return value && typeof value === "object" && !Array.isArray(value) && "value" in value && typeof value.value === "string"
     ? value.value
@@ -379,18 +389,24 @@ function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<
     if (!label || !value) continue;
     const normalizedLabel = label.toLowerCase();
 
-    if (/item\s*1\b.*named insured/.test(normalizedLabel)) {
+    if (
+      !candidate.namedInsured
+      && /(?:item\s*1\b.*)?(?:named insured|insured name|policyholder|applicant)\b/.test(normalizedLabel)
+      && isLikelyNamedInsuredValue(value)
+    ) {
       candidate.namedInsured = sourceBackedValueFromNode(node, value);
-    } else if (/item\s*2\b.*policy number/.test(normalizedLabel)) {
+    } else if (!candidate.policyNumber && /(?:item\s*2\b.*)?(?:policy|contract)\s*(?:number|no\.?|#)\b/.test(normalizedLabel)) {
       candidate.policyNumber = sourceBackedValueFromNode(node, value);
-    } else if (/item\s*3\b.*policy period/.test(normalizedLabel)) {
+    } else if (/(?:item\s*3\b.*)?(?:policy period|policy term|period of insurance|effective.*(?:expiration|expiry)|from.*to)\b/.test(normalizedLabel)) {
       const period = value.match(/from:\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})\s+to:\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})/i);
       if (period) {
-        candidate.effectiveDate = sourceBackedValueFromNode(node, period[1]);
-        candidate.expirationDate = sourceBackedValueFromNode(node, period[2]);
+        candidate.effectiveDate ??= sourceBackedValueFromNode(node, period[1]);
+        candidate.expirationDate ??= sourceBackedValueFromNode(node, period[2]);
       }
-    } else if (/annual premium/.test(normalizedLabel)) {
+    } else if (!candidate.premium && /\b(?:annual premium|total premium|policy premium|premium due)\b/.test(normalizedLabel)) {
       candidate.premium = sourceBackedValueFromNode(node, value);
+    } else if (!candidate.broker && /\b(?:broker|broker of record|producer|agent of record)\b/.test(normalizedLabel)) {
+      candidate.broker = sourceBackedValueFromNode(node, value.replace(/\s+RIBO Registration\b.*$/i, ""));
     }
   }
 
@@ -411,6 +427,21 @@ function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<
   }
 
   return candidate;
+}
+
+function controlledPolicyTypes(values: unknown): string[] {
+  const types = Array.isArray(values)
+    ? values.filter((value): value is string => typeof value === "string")
+    : [];
+  const controlled = types
+    .map((type) => type.trim().toLowerCase())
+    .filter((type) => POLICY_TYPE_KEYS.has(type));
+  const unique = [...new Set(controlled)].slice(0, 6);
+  return unique.length ? unique : ["other"];
+}
+
+function controlledCoverageTypes(policyTypes: string[]): string[] {
+  return policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
 }
 
 function partiesFromProfile(profile: PolicyOperationalProfile): OperationalParty[] {
@@ -440,8 +471,11 @@ function finalizeSourceBackedIdentity(value: SourceBackedValue | undefined): Sou
 }
 
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
+  const policyTypes = controlledPolicyTypes(profile.policyTypes);
   const finalized: PolicyOperationalProfile = {
     ...profile,
+    policyTypes,
+    coverageTypes: controlledCoverageTypes(policyTypes),
     namedInsured: finalizeSourceBackedIdentity(profile.namedInsured),
     insurer: finalizeSourceBackedIdentity(profile.insurer),
     broker: finalizeSourceBackedIdentity(profile.broker),
@@ -457,6 +491,16 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
     ...finalized.parties.flatMap((party: OperationalParty) => party.sourceSpanIds),
   ])];
   return finalized;
+}
+
+export function withControlledPolicyTypes(
+  profile: PolicyOperationalProfile,
+  policyTypes: string[],
+): PolicyOperationalProfile {
+  return finalizeOperationalProfile({
+    ...profile,
+    policyTypes: controlledPolicyTypes(policyTypes),
+  });
 }
 
 function documentProfileCandidate(
@@ -502,7 +546,6 @@ function documentProfileCandidate(
     retroactiveDate: sourceBackedValueFromDocument(document.retroactiveDate, nodes),
     premium: sourceBackedValueFromDocument(document.premium ?? document.totalCost, nodes),
     coverages: documentCoverages.length ? documentCoverages : undefined,
-    coverageTypes: documentCoverages.length ? [...new Set(documentCoverages.map((coverage) => coverage.name))] : undefined,
   };
 }
 

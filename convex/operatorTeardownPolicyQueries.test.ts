@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import dayjs from "dayjs";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
+import { list as listAgentTargets } from "./agentTargets";
 import { listActivityByPolicy } from "./certificates";
 import {
   getCaseDetail,
@@ -13,6 +14,7 @@ import { listSpansByPolicyAndSpanIds } from "./sourceSpans";
 
 const modules = import.meta.glob("./**/*.ts");
 const listSpansByPolicyAndSpanIdsFn = listSpansByPolicyAndSpanIds as any;
+const listAgentTargetsFn = listAgentTargets as any;
 const listActivityByPolicyFn = listActivityByPolicy as any;
 const listPolicyChangesByPolicyFn = listPolicyChangesByPolicy as any;
 const getCaseDetailFn = getCaseDetail as any;
@@ -98,7 +100,14 @@ async function seedOperatorPolicyFixture() {
       updatedAt: now,
     });
 
-    return { operatorUserId, impersonationSessionId, policyId, caseId };
+    return {
+      operatorUserId,
+      impersonationSessionId,
+      brokerOrgId,
+      clientOrgId,
+      policyId,
+      caseId,
+    };
   });
 
   return { t, ...ids };
@@ -106,8 +115,15 @@ async function seedOperatorPolicyFixture() {
 
 describe("operator teardown policy-detail queries", () => {
   test("return empty state instead of throwing after impersonation ends", async () => {
-    const { t, operatorUserId, impersonationSessionId, policyId, caseId } =
-      await seedOperatorPolicyFixture();
+    const {
+      t,
+      operatorUserId,
+      impersonationSessionId,
+      brokerOrgId,
+      clientOrgId,
+      policyId,
+      caseId,
+    } = await seedOperatorPolicyFixture();
     const operatorSession = t.withIdentity({
       subject: `${operatorUserId}|session`,
     });
@@ -157,5 +173,21 @@ describe("operator teardown policy-detail queries", () => {
     await expect(
       operatorSession.query(getPolicyFileUrlFn, { policyId }),
     ).resolves.toBeNull();
+    await expect(
+      operatorSession.query(listAgentTargetsFn, { orgId: brokerOrgId }),
+    ).resolves.toEqual({
+      policies: [],
+      quotes: [],
+      requirements: [],
+      mailboxes: [],
+    });
+    await expect(
+      operatorSession.query(listAgentTargetsFn, { orgId: clientOrgId }),
+    ).resolves.toEqual({
+      policies: [],
+      quotes: [],
+      requirements: [],
+      mailboxes: [],
+    });
   });
 });
