@@ -1825,22 +1825,17 @@ export default defineSchema({
     order: v.number(),
     path: v.string(),
     metadata: v.optional(v.any()),
-    embedding: v.array(v.float64()),
+    embedding: v.optional(v.array(v.float64())),
     createdAt: v.number(),
   })
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
     .index("by_nodeId", ["nodeId"])
     .index("by_policyId_nodeId", ["policyId", "nodeId"])
-    .index("by_policyId_parentNodeId", ["policyId", "parentNodeId"])
-    .vectorIndex("by_embedding", {
-      vectorField: "embedding",
-      dimensions: 1536,
-      filterFields: ["orgId"],
-    }),
+    .index("by_policyId_parentNodeId", ["policyId", "parentNodeId"]),
 
-  // Embedded chunks over source spans. Unlike documentChunks, these preserve
-  // sourceSpanIds so exact policy facts can cite the raw evidence unit.
+  // Compatibility chunks over source spans. Source tree nodes are the primary
+  // retrieval layer; these preserve span IDs for legacy lookup surfaces.
   sourceChunks: defineTable({
     orgId: v.id("organizations"),
     policyId: v.optional(v.id("policies")),
@@ -1849,17 +1844,12 @@ export default defineSchema({
     sourceSpanIds: v.array(v.string()),
     text: v.string(),
     metadata: v.optional(v.any()),
-    embedding: v.array(v.float64()),
+    embedding: v.optional(v.array(v.float64())),
     createdAt: v.number(),
   })
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
-    .index("by_chunkId", ["chunkId"])
-    .vectorIndex("by_embedding", {
-      vectorField: "embedding",
-      dimensions: 1536,
-      filterFields: ["orgId"],
-    }),
+    .index("by_chunkId", ["chunkId"]),
 
   policyChangeCases: defineTable({
     orgId: v.id("organizations"),

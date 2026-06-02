@@ -438,6 +438,26 @@ export const getExtractionTrace = query({
   },
 });
 
+export const rerunExtraction = action({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args): Promise<{ success: boolean }> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
+
+    const policy = await ctx.runQuery(internalApi.policies.getInternal, {
+      id: args.policyId,
+    });
+    if (!policy) throw new Error("Policy not found");
+
+    await ctx.runAction(internalApi.actions.policyExtraction.retryPolicyExtraction, {
+      policyId: args.policyId,
+      mode: "full",
+    });
+    return { success: true };
+  },
+});
+
 export const checkBrokerSetupIdentifiers = query({
   args: {
     slug: v.optional(v.string()),

@@ -6,7 +6,6 @@ import type { ActionCtx } from "../_generated/server";
 import { searchPolicyDocument } from "./aiUtils";
 import type { GlassSourceSpan } from "./pdfSourceSpans";
 import { preparePdfTextWithParserFallback } from "./doclingPreprocessor";
-import { makeEmbedText } from "./sdkCallbacks";
 import { formatSourceSpanLabel } from "./policyDocumentStructure";
 
 type LookupResult = Record<string, unknown>;
@@ -290,102 +289,6 @@ async function loadOriginalPdfSpans(
   return sourceSpans.map(toSourceSpanDoc);
 }
 
-async function searchSemanticSourceChunks(
-  ctx: ActionCtx,
-  policy: Record<string, unknown>,
-  query: string,
-  spans: SourceSpanDoc[],
-): Promise<SourceSpanDoc[]> {
-  const policyId = policy._id as Id<"policies"> | undefined;
-  const orgId = policy.orgId as Id<"organizations"> | undefined;
-  if (!policyId || !orgId) return [];
-
-  try {
-    const vector = await makeEmbedText(ctx, orgId)(query);
-    const results = await ctx.vectorSearch("sourceChunks", "by_embedding", {
-      vector,
-      limit: 12,
-      filter: (q) => q.eq("orgId", orgId),
-    });
-    const spansById = new Map(spans.map((span) => [span.spanId, span]));
-    const semantic: SourceSpanDoc[] = [];
-
-    for (const result of results) {
-      const chunk = await ctx.runQuery(internal.sourceSpans.getChunk, {
-        id: result._id,
-      });
-      if (!chunk || String(chunk.policyId) !== String(policyId)) continue;
-      const matched = chunk.sourceSpanIds
-        .map((id: string) => spansById.get(id))
-        .filter((span: SourceSpanDoc | undefined): span is SourceSpanDoc => Boolean(span));
-      if (matched.length > 0) {
-        semantic.push(
-          ...matched.map((span: SourceSpanDoc) => ({
-            ...span,
-            semanticScore: Math.max(span.semanticScore ?? 0, result._score),
-          })),
-        );
-        continue;
-      }
-      semantic.push({
-        spanId: chunk.sourceSpanIds[0] ?? chunk.chunkId,
-        documentId: chunk.documentId,
-        sourceKind: "policy_pdf",
-        text: chunk.text,
-        metadata: chunk.metadata,
-        semanticScore: result._score,
-      });
-    }
-    return semantic;
-  } catch {
-    return [];
-  }
-}
-
-async function searchSemanticSourceNodes(
-  ctx: ActionCtx,
-  policy: Record<string, unknown>,
-  query: string,
-): Promise<SourceNodeDoc[]> {
-  const policyId = policy._id as Id<"policies"> | undefined;
-  const orgId = policy.orgId as Id<"organizations"> | undefined;
-  if (!policyId || !orgId) return [];
-
-  try {
-    const vector = await makeEmbedText(ctx, orgId)(query);
-    const results = await ctx.vectorSearch("sourceNodes", "by_embedding", {
-      vector,
-      limit: 12,
-      filter: (q) => q.eq("orgId", orgId),
-    });
-    const semantic: SourceNodeDoc[] = [];
-    for (const result of results) {
-      const node = await ctx.runQuery((internal as any).sourceNodes.get, {
-        id: result._id,
-      });
-      if (!node || String(node.policyId) !== String(policyId)) continue;
-      semantic.push({
-        nodeId: node.nodeId,
-        documentId: node.documentId,
-        parentNodeId: node.parentNodeId,
-        kind: node.kind,
-        title: node.title,
-        description: node.description,
-        textExcerpt: node.textExcerpt,
-        sourceSpanIds: Array.isArray(node.sourceSpanIds) ? node.sourceSpanIds : [],
-        pageStart: node.pageStart,
-        pageEnd: node.pageEnd,
-        path: node.path,
-        metadata: node.metadata,
-        semanticScore: result._score,
-      });
-    }
-    return semantic;
-  } catch {
-    return [];
-  }
-}
-
 function dedupeSpans(spans: SourceSpanDoc[]): SourceSpanDoc[] {
   const byKey = new Map<string, SourceSpanDoc>();
   for (const span of spans) {
@@ -422,8 +325,7 @@ export async function searchPolicyDocumentWithSourceSpans(
 
   const terms = queryTerms(query);
   const storedNodes = await loadStoredSourceNodes(ctx, policyId);
-  const semanticNodes = await searchSemanticSourceNodes(ctx, policy, query);
-  const rankedNodes = dedupeNodes([...storedNodes, ...semanticNodes])
+  const rankedNodes = dedupeNodes(storedNodes)
     .map((node) => ({ ...node, score: scoreNode(query, terms, node) }))
     .filter((node) => node.score > 0)
     .sort((left, right) => right.score - left.score);
@@ -432,8 +334,7 @@ export async function searchPolicyDocumentWithSourceSpans(
   if (spans.length === 0) {
     spans = await loadOriginalPdfSpans(ctx, policy);
   }
-  const semanticSpans = await searchSemanticSourceChunks(ctx, policy, query, spans);
-  const rankedSpans = dedupeSpans([...spans, ...semanticSpans])
+  const rankedSpans = dedupeSpans(spans)
     .map((span) => ({ ...span, score: scoreSpan(query, terms, span) }))
     .filter((span) => span.score > 0)
     .sort((left, right) => right.score - left.score);

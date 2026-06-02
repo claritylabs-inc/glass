@@ -592,6 +592,14 @@ function isBadOperationalIdentityValue(value: string | undefined): boolean {
   return /(__{3,}|claims-made|please read|all monetary amounts|page\s+\d+\s+of\s+\d+|in consideration of the payment|subject to the declarations|policy title|signature blocks?|errors?\s+and\s+omissions\s+liability\s+policy)/i.test(text);
 }
 
+function isBadBrokerValue(value: string | undefined): boolean {
+  const text = normalizeWhitespace(value ?? "");
+  if (isBadOperationalIdentityValue(text)) return true;
+  if (text.length > 140) return true;
+  if (/^[\\/]/.test(text)) return true;
+  return /\b(forms?\/endorsements?|endorsements?\s+at\s+inception|bilateral\s+discovery|discovery\/erp|erp\s+options?|list\s+of\s+forms?|coverage\s+parts?|declarations?|sublimits?|deductibles?|premium|truncated)\b/i.test(text);
+}
+
 function isLikelyNamedInsuredValue(value: string): boolean {
   const text = normalizeWhitespace(value);
   if (!text || text.length > 140) return false;
@@ -611,7 +619,11 @@ function sanitizeOperationalProfileCandidate(
 ): Partial<PolicyOperationalProfile> {
   const clean = { ...candidate };
   for (const key of ["namedInsured", "insurer", "broker"] as const) {
-    if (isBadOperationalIdentityValue(valueOfSourceBackedValue(clean[key]))) {
+    const value = valueOfSourceBackedValue(clean[key]);
+    const invalid = key === "broker"
+      ? isBadBrokerValue(value)
+      : isBadOperationalIdentityValue(value);
+    if (invalid) {
       delete clean[key];
     }
   }
@@ -736,7 +748,10 @@ function cleanOperationalCoverages(coverages: OperationalCoverageLine[]): Operat
 function partiesFromProfile(profile: PolicyOperationalProfile): OperationalParty[] {
   const parties: OperationalParty[] = [];
   const push = (role: OperationalParty["role"], value: SourceBackedValue | undefined) => {
-    if (!value || isBadOperationalIdentityValue(value.value)) return;
+    if (!value) return;
+    if (role === "broker" ? isBadBrokerValue(value.value) : isBadOperationalIdentityValue(value.value)) {
+      return;
+    }
     parties.push({
       role,
       name: value.value,
@@ -754,8 +769,14 @@ function restoreLegalSuffixPunctuation(value: string): string {
   return value.replace(/\b(Inc|Ltd|Corp|Co)$/i, "$1.");
 }
 
-function finalizeSourceBackedIdentity(value: SourceBackedValue | undefined): SourceBackedValue | undefined {
-  if (!value || isBadOperationalIdentityValue(value.value)) return undefined;
+function finalizeSourceBackedIdentity(
+  value: SourceBackedValue | undefined,
+  role?: OperationalParty["role"],
+): SourceBackedValue | undefined {
+  if (!value) return undefined;
+  if (role === "broker" ? isBadBrokerValue(value.value) : isBadOperationalIdentityValue(value.value)) {
+    return undefined;
+  }
   return { ...value, value: restoreLegalSuffixPunctuation(value.value) };
 }
 
@@ -767,9 +788,9 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
     policyTypes,
     coverageTypes: controlledCoverageTypes(policyTypes),
     coverages,
-    namedInsured: finalizeSourceBackedIdentity(profile.namedInsured),
-    insurer: finalizeSourceBackedIdentity(profile.insurer),
-    broker: finalizeSourceBackedIdentity(profile.broker),
+    namedInsured: finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
+    insurer: finalizeSourceBackedIdentity(profile.insurer, "insurer"),
+    broker: finalizeSourceBackedIdentity(profile.broker, "broker"),
     parties: [],
   };
   finalized.parties = partiesFromProfile(finalized);

@@ -1444,108 +1444,56 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         }
 
         if (sourceNodes?.length) {
-          const sourceNodeEmbedStartedAt = nowMs();
-          const { embedded: embeddedSourceNodes, failures: sourceNodeFailures } =
-            await embedAndStoreBatch({
-              items: sourceNodes,
-              embedTexts,
-              textForItem: (node) => [
-                node.title,
-                node.kind,
-                node.path ? `path ${node.path}` : undefined,
-                node.description,
-                node.textExcerpt,
-              ].filter(Boolean).join("\n"),
-              describeItem: (node) => `source node ${node.id}`,
-              isCancelled,
-              logWarning: logEmbedWarning,
-              storeItem: async (node, embedding) => {
-                await convexCtx.runMutation(
-                  (internal as any).sourceNodes.insertNode,
-                  {
-                    orgId: state.orgId,
-                    policyId,
-                    nodeId: node.id,
-                    documentId: node.documentId || policyId,
-                    parentNodeId: node.parentId,
-                    kind: node.kind,
-                    title: node.title,
-                    description: node.description,
-                    textExcerpt: node.textExcerpt,
-                    sourceSpanIds: node.sourceSpanIds,
-                    pageStart: node.pageStart,
-                    pageEnd: node.pageEnd,
-                    bbox: node.bbox,
-                    order: node.order,
-                    path: node.path,
-                    metadata: node.metadata,
-                    embedding,
-                    createdAt: nowMs(),
-                  },
-                );
+          let storedSourceNodes = 0;
+          for (const node of sourceNodes) {
+            if (await isCancelled()) throw new Error(CANCELLED_BY_USER);
+            await convexCtx.runMutation(
+              (internal as any).sourceNodes.insertNode,
+              {
+                orgId: state.orgId,
+                policyId,
+                nodeId: node.id,
+                documentId: node.documentId || policyId,
+                parentNodeId: node.parentId,
+                kind: node.kind,
+                title: node.title,
+                description: node.description,
+                textExcerpt: node.textExcerpt,
+                sourceSpanIds: node.sourceSpanIds,
+                pageStart: node.pageStart,
+                pageEnd: node.pageEnd,
+                bbox: node.bbox,
+                order: node.order,
+                path: node.path,
+                metadata: node.metadata,
+                createdAt: nowMs(),
               },
-            });
-          await traceEvent(convexCtx, state.traceId, {
-            kind: "embedding_batch",
-            label: "source nodes",
-            task: "embeddings",
-            provider: "openai",
-            model: "text-embedding-3-small",
-            status: sourceNodeFailures > 0 ? "partial" : "complete",
-            durationMs: nowMs() - sourceNodeEmbedStartedAt,
-            details: {
-              requested: sourceNodes.length,
-              embedded: embeddedSourceNodes,
-              failures: sourceNodeFailures,
-              batchSize: EMBEDDING_BATCH_SIZE,
-            },
-          });
-          await pCtx.log(`Stored ${embeddedSourceNodes}/${sourceNodes.length} source nodes`);
+            );
+            storedSourceNodes++;
+          }
+          await pCtx.log(`Stored ${storedSourceNodes}/${sourceNodes.length} source nodes`);
         }
 
         if (sourceChunks?.length) {
-          const sourceEmbedStartedAt = nowMs();
-          const { embedded: embeddedSourceChunks, failures: sourceChunkFailures } =
-            await embedAndStoreBatch({
-              items: sourceChunks,
-              embedTexts,
-              textForItem: (chunk) => chunk.text,
-              describeItem: (chunk) => `source chunk ${chunk.id}`,
-              isCancelled,
-              logWarning: logEmbedWarning,
-              storeItem: async (chunk, embedding) => {
-                await convexCtx.runMutation(
-                  (internal as any).sourceSpans.insertChunk,
-                  {
-                    orgId: state.orgId,
-                    policyId,
-                    chunkId: chunk.id,
-                    documentId: chunk.documentId ?? policyId,
-                    sourceSpanIds: chunk.sourceSpanIds ?? [],
-                    text: chunk.text,
-                    metadata: chunk.metadata,
-                    embedding,
-                    createdAt: nowMs(),
-                  },
-                );
+          let storedSourceChunks = 0;
+          for (const chunk of sourceChunks) {
+            if (await isCancelled()) throw new Error(CANCELLED_BY_USER);
+            await convexCtx.runMutation(
+              (internal as any).sourceSpans.insertChunk,
+              {
+                orgId: state.orgId,
+                policyId,
+                chunkId: chunk.id,
+                documentId: chunk.documentId ?? policyId,
+                sourceSpanIds: chunk.sourceSpanIds ?? [],
+                text: chunk.text,
+                metadata: chunk.metadata,
+                createdAt: nowMs(),
               },
-          });
-          await traceEvent(convexCtx, state.traceId, {
-            kind: "embedding_batch",
-            label: "source chunks",
-            task: "embeddings",
-            provider: "openai",
-            model: "text-embedding-3-small",
-            status: sourceChunkFailures > 0 ? "partial" : "complete",
-            durationMs: nowMs() - sourceEmbedStartedAt,
-            details: {
-              requested: sourceChunks.length,
-              embedded: embeddedSourceChunks,
-              failures: sourceChunkFailures,
-              batchSize: EMBEDDING_BATCH_SIZE,
-            },
-          });
-          await pCtx.log(`Stored ${embeddedSourceChunks}/${sourceChunks.length} source chunks`);
+            );
+            storedSourceChunks++;
+          }
+          await pCtx.log(`Stored ${storedSourceChunks}/${sourceChunks.length} source chunks`);
         }
       }
 
@@ -2363,7 +2311,6 @@ export const rebuildStoredSourceNodes = internalAction({
         order: node.order,
         path: node.path,
         metadata: node.metadata,
-        embedding: [],
         createdAt: nowMs(),
       });
     }

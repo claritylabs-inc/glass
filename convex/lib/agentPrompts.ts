@@ -155,10 +155,36 @@ export async function buildComplianceRequirementsContext(
   }
 }
 
+function sourceQueryTerms(query: string): string[] {
+  return Array.from(new Set(
+    query
+      .toLowerCase()
+      .split(/[^a-z0-9$.,%-]+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 2),
+  ));
+}
+
+function scoreSourceNode(query: string, terms: string[], node: Record<string, any>): number {
+  const text = [
+    node.title,
+    node.kind,
+    node.path,
+    node.description,
+    node.textExcerpt,
+  ].filter(Boolean).join(" ").toLowerCase();
+  let score = query && text.includes(query.toLowerCase()) ? 8 : 0;
+  for (const term of terms) {
+    if (text.includes(term)) score += 1;
+  }
+  if (node.kind === "table_row" || node.kind === "schedule") score += 1.5;
+  return score;
+}
+
 /**
  * Vector-search-based document context.
- * Embeds the query, searches sourceNodes for policy wording, then adds
- * compatibility source/document chunks as secondary context.
+ * Embeds the query for structured document chunks, then ranks source-tree
+ * nodes lexically for exact policy wording and provenance.
  */
 async function buildVectorContext(
   ctx: ActionCtx,
@@ -173,17 +199,10 @@ async function buildVectorContext(
 }> {
   const embed = makeEmbedText(ctx, orgId);
   const queryEmbedding = await embed(queryText);
+  const allDocs = [...policies, ...quotes];
+  const policyMap = new Map(allDocs.map((p) => [p._id, p]));
+  const terms = sourceQueryTerms(queryText);
 
-  const sourceNodeResults = await ctx.vectorSearch("sourceNodes", "by_embedding", {
-    vector: queryEmbedding,
-    limit: 18,
-    filter: (q) => q.eq("orgId", orgId),
-  });
-  const sourceResults = await ctx.vectorSearch("sourceChunks", "by_embedding", {
-    vector: queryEmbedding,
-    limit: 15,
-    filter: (q) => q.eq("orgId", orgId),
-  });
   const results = await ctx.vectorSearch("documentChunks", "by_embedding", {
     vector: queryEmbedding,
     limit: 30,
@@ -191,13 +210,21 @@ async function buildVectorContext(
   });
 
   // Hydrate chunks
-  const sourceNodeDocs = [];
-  for (const result of sourceNodeResults) {
-    const doc = await ctx.runQuery((internal as any).sourceNodes.get, {
-      id: result._id,
-    });
-    if (doc) sourceNodeDocs.push({ ...doc, _score: result._score });
+  const sourceNodeDocs: Array<Record<string, any>> = [];
+  const allSourceNodesByPolicy = new Map<string, Array<Record<string, any>>>();
+  for (const policy of allDocs.slice(0, 60)) {
+    const nodes = await ctx.runQuery((internal as any).sourceNodes.listByPolicyInternal, {
+      policyId: policy._id,
+    }) as Array<Record<string, any>>;
+    allSourceNodesByPolicy.set(String(policy._id), nodes);
+    for (const node of nodes) {
+      const score = scoreSourceNode(queryText, terms, node);
+      if (score > 0) sourceNodeDocs.push({ ...node, _score: score });
+    }
   }
+  sourceNodeDocs.sort((left, right) => Number(right._score ?? 0) - Number(left._score ?? 0));
+  sourceNodeDocs.splice(18);
+
   const chunkDocs = [];
   for (const result of results) {
     const doc = await ctx.runQuery(internal.documentChunks.get, {
@@ -205,17 +232,9 @@ async function buildVectorContext(
     });
     if (doc && isStructuredFactChunk(doc)) chunkDocs.push({ ...doc, _score: result._score });
   }
-  const sourceChunkDocs = [];
-  for (const result of sourceResults) {
-    const doc = await ctx.runQuery(internal.sourceSpans.getChunk, {
-      id: result._id,
-    });
-    if (doc) sourceChunkDocs.push({ ...doc, _score: result._score });
-  }
+  const sourceChunkDocs: Array<Record<string, any>> = [];
 
   // Group by policy
-  const allDocs = [...policies, ...quotes];
-  const policyMap = new Map(allDocs.map((p) => [p._id, p]));
   const relevantPolicyIdSet = new Set<Id<"policies">>();
   const relevantQuoteIdSet = new Set<Id<"policies">>();
 
@@ -271,9 +290,7 @@ async function buildVectorContext(
       relevantPolicyIdSet.add(policyId as Id<"policies">);
     }
 
-    const allNodes = await ctx.runQuery((internal as any).sourceNodes.listByPolicyInternal, {
-      policyId: policyId as Id<"policies">,
-    }) as Array<Record<string, any>>;
+    const allNodes = allSourceNodesByPolicy.get(policyId) ?? [];
     const carrier = policy.mga || policy.carrier || policy.security;
     const docLabel = isQuote ? "QUOTE" : "POLICY";
     const number = isQuote

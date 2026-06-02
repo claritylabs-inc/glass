@@ -117,6 +117,35 @@ type SourceNodeDoc = {
   _score?: number;
 };
 
+function queryTerms(query: string): string[] {
+  return Array.from(new Set(
+    query
+      .toLowerCase()
+      .split(/[^a-z0-9$.,%-]+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 2),
+  ));
+}
+
+function scoreText(query: string, terms: string[], text: string): number {
+  const lower = text.toLowerCase();
+  let score = query && lower.includes(query.toLowerCase()) ? 8 : 0;
+  for (const term of terms) {
+    if (lower.includes(term)) score += 1;
+  }
+  return score;
+}
+
+function scoreNode(query: string, terms: string[], node: SourceNodeDoc): number {
+  const score = scoreText(
+    query,
+    terms,
+    [node.title, node.kind, node.path, node.description, node.textExcerpt].filter(Boolean).join(" "),
+  );
+  if (score === 0) return 0;
+  return score + (node.kind === "table_row" || node.kind === "schedule" ? 1.5 : 0);
+}
+
 function toSourceSpan(span: SourceSpanDoc, chunkId?: string): SourceSpan {
   return {
     id: span.spanId,
@@ -203,22 +232,23 @@ function expandHierarchy(nodes: SourceNodeDoc[], target: SourceNodeDoc): SourceN
 export function createConvexSourceRetriever(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
-  embed: EmbedText,
+  _embed: EmbedText,
 ): SourceRetriever {
   return {
     async searchSourceNodes(query: SourceRetrievalQuery): Promise<SourceNodeRetrievalResult[]> {
-      const vector = await embed(query.question);
-      const nodeResults = await ctx.vectorSearch("sourceNodes", "by_embedding", {
-        vector,
-        limit: query.limit ?? 10,
-        filter: (q) => q.eq("orgId", orgId),
-      });
+      const terms = queryTerms(query.question);
+      const nodes = await ctx.runQuery((internal as any).sourceNodes.listByOrgInternal, {
+        orgId,
+        limit: 1200,
+      }) as SourceNodeDoc[];
+      const rankedNodes = nodes
+        .map((node) => ({ ...node, _score: scoreNode(query.question, terms, node) }))
+        .filter((node) => (node._score ?? 0) > 0)
+        .sort((left, right) => (right._score ?? 0) - (left._score ?? 0))
+        .slice(0, query.limit ?? 10);
 
       const results: SourceNodeRetrievalResult[] = [];
-      for (const result of nodeResults) {
-        const node = await ctx.runQuery((internal as any).sourceNodes.get, { id: result._id });
-        if (!node) continue;
-        const nodeDoc = { ...node, _score: result._score } as SourceNodeDoc;
+      for (const nodeDoc of rankedNodes) {
         const [policyNodes, policySpans] = nodeDoc.policyId
           ? await Promise.all([
               ctx.runQuery((internal as any).sourceNodes.listByPolicyInternal, { policyId: nodeDoc.policyId }),
@@ -240,7 +270,7 @@ export function createConvexSourceRetriever(
           .map((span) => toSourceSpan(span));
         results.push({
           node: toSourceNode(nodeDoc),
-          relevance: result._score,
+          relevance: nodeDoc._score ?? 0,
           hierarchy,
           spans,
         });
@@ -250,18 +280,19 @@ export function createConvexSourceRetriever(
     },
 
     async searchSourceSpans(query: SourceRetrievalQuery): Promise<SourceRetrievalResult[]> {
-      const vector = await embed(query.question);
-      const chunkResults = await ctx.vectorSearch("sourceChunks", "by_embedding", {
-        vector,
-        limit: query.limit ?? 10,
-        filter: (q) => q.eq("orgId", orgId),
-      });
+      const terms = queryTerms(query.question);
+      const chunks = await ctx.runQuery(internal.sourceSpans.listChunksByOrgInternal, {
+        orgId,
+        limit: 1200,
+      }) as SourceChunkDoc[];
+      const rankedChunks = chunks
+        .map((chunk) => ({ ...chunk, _score: scoreText(query.question, terms, chunk.text) }))
+        .filter((chunk) => (chunk._score ?? 0) > 0)
+        .sort((left, right) => (right._score ?? 0) - (left._score ?? 0))
+        .slice(0, query.limit ?? 10);
 
       const results: SourceRetrievalResult[] = [];
-      for (const result of chunkResults) {
-        const chunk = await ctx.runQuery(internal.sourceSpans.getChunk, { id: result._id });
-        if (!chunk) continue;
-        const chunkDoc = { ...chunk, _score: result._score } as SourceChunkDoc;
+      for (const chunkDoc of rankedChunks) {
         const policySpans = chunkDoc.policyId
           ? await ctx.runQuery(internal.sourceSpans.listSpansByPolicyInternal, { policyId: chunkDoc.policyId })
           : [];
@@ -273,14 +304,14 @@ export function createConvexSourceRetriever(
           .filter((span): span is SourceSpanDoc => Boolean(span));
 
         if (matchedSpans.length === 0) {
-          results.push({ span: fallbackSpan(chunkDoc), relevance: result._score });
+          results.push({ span: fallbackSpan(chunkDoc), relevance: chunkDoc._score ?? 0 });
           continue;
         }
 
         for (const span of matchedSpans) {
           results.push({
             span: toSourceSpan(span, chunkDoc.chunkId),
-            relevance: result._score,
+            relevance: chunkDoc._score ?? 0,
           });
         }
       }

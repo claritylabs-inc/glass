@@ -3,8 +3,10 @@
 import { useCallback, useMemo, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useAction } from "convex/react";
 import dayjs from "dayjs";
 import { toast } from "sonner";
+import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
@@ -1157,6 +1159,8 @@ export default function OperatorExtractionsPage() {
   const [timelineLabelWidth, setTimelineLabelWidth] = useState(150);
   const [collapsedTimelineIds, setCollapsedTimelineIds] = useState<Set<string>>(() => new Set());
   const [selectedTimelineRowId, setSelectedTimelineRowId] = useState<string | null>(null);
+  const [rerunningPolicyId, setRerunningPolicyId] = useState<string | null>(null);
+  const rerunExtraction = useAction(api.operator.rerunExtraction);
 
   const current = useCachedOperatorCurrent();
   const traces = useCachedOperatorExtractionTraces({
@@ -1180,6 +1184,8 @@ export default function OperatorExtractionsPage() {
     : orgOptions.find(([id]) => id === orgId)?.[1] ?? "Selected org";
 
   const selected = detail?.session ?? traces?.find((trace) => trace.traceId === selectedTraceId) ?? null;
+  const selectedPolicyId = selected?.policyId as Id<"policies"> | undefined;
+  const isRerunningSelected = !!selectedPolicyId && rerunningPolicyId === selectedPolicyId;
   const modelEvents = (detail?.events ?? []).filter((event) => event.kind === "model_call");
   const selectedModelEvent = modelEvents.find((event) => event._id === selectedModelEventId) ?? modelEvents[0];
   const logEvents = (detail?.events ?? []).filter((event) => event.kind === "log");
@@ -1228,6 +1234,18 @@ export default function OperatorExtractionsPage() {
       .then(() => toast.success("Extraction ID copied"))
       .catch(() => toast.error("Couldn't copy extraction ID"));
   }, []);
+  const rerunSelectedExtraction = useCallback(async () => {
+    if (!selectedPolicyId) return;
+    setRerunningPolicyId(selectedPolicyId);
+    try {
+      await rerunExtraction({ policyId: selectedPolicyId });
+      toast.success("Extraction rerun started");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rerun extraction");
+    } finally {
+      setRerunningPolicyId(null);
+    }
+  }, [rerunExtraction, selectedPolicyId]);
   const toggleTimelineCollapsed = useCallback((id: string) => {
     setCollapsedTimelineIds((current) => {
       const next = new Set(current);
@@ -1299,7 +1317,7 @@ export default function OperatorExtractionsPage() {
             onValueChange={(value) => selectTraceTab(parseTracePanelTab(value))}
             className="min-h-0 flex-1 overflow-hidden"
           >
-            <div className="sticky top-0 z-10 shrink-0 bg-background pb-3">
+            <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 bg-background pb-3">
               <TabsList variant="pill" className="scrollbar-hide max-w-full overflow-x-auto py-1">
                 <TabsTrigger value="summary">Summary</TabsTrigger>
                 <TabsTrigger value="extracted">Extracted data</TabsTrigger>
@@ -1308,6 +1326,21 @@ export default function OperatorExtractionsPage() {
                 <TabsTrigger value="models">Model calls</TabsTrigger>
                 <TabsTrigger value="log">Log</TabsTrigger>
               </TabsList>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                disabled={!selectedPolicyId || selected.status === "running" || isRerunningSelected}
+                onClick={rerunSelectedExtraction}
+              >
+                {isRerunningSelected ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Rerun
+              </Button>
             </div>
 
             <TabsContent value="summary" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">

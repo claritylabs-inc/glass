@@ -40,7 +40,7 @@ const sourceChunkInsertFields = {
   sourceSpanIds: v.array(v.string()),
   text: v.string(),
   metadata: v.optional(v.any()),
-  embedding: v.array(v.float64()),
+  embedding: v.optional(v.array(v.float64())),
   createdAt: v.number(),
 };
 
@@ -140,6 +140,20 @@ export const listChunksByPolicy = internalQuery({
       .query("sourceChunks")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
       .collect();
+  },
+});
+
+export const listChunksByOrgInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 1000), 2000));
+    return ctx.db
+      .query("sourceChunks")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .take(limit);
   },
 });
 
