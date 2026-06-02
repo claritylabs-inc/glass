@@ -1291,6 +1291,15 @@ function nodeBodyText(node: DocumentOutlineNode) {
   return text.trim() === nodeDisplayTitle(node).trim() ? undefined : text;
 }
 
+function normalizedNodeText(node: DocumentOutlineNode) {
+  return (nodeBodyText(node) ?? nodeDisplayTitle(node)).replace(/\s+/g, " ").trim();
+}
+
+function isDecorativeTextNode(node: DocumentOutlineNode) {
+  const text = normalizedNodeText(node);
+  return /^[-_=\s]{6,}$/.test(text);
+}
+
 function sortedTableCells(cells: DocumentOutlineNode[]) {
   return [...cells].sort((left, right) => {
     const leftIndex = metadataNumber(left.metadata, "columnIndex") ?? 0;
@@ -1406,42 +1415,44 @@ function SourceNodeTable({
       ));
   const headerCells = firstRowIsHeader
     ? firstRow.cells.map(tableCellValue)
-    : Array.from(
-        { length: maxColumnCount },
-        (_, index) => `Column ${index + 1}`,
-      );
+    : [];
   const bodyRows = firstRowIsHeader ? rows.slice(1) : rows;
 
   return (
-    <div className="overflow-hidden rounded-md border border-foreground/6">
-      <UiTable className="text-label-sm [&_td]:whitespace-normal [&_th]:whitespace-normal">
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            {Array.from({ length: maxColumnCount }, (_, index) => (
-              <TableHead
-                key={`head-${index}`}
-                className="h-8 bg-muted/40 px-3 text-xs font-medium text-muted-foreground"
-              >
-                {headerCells[index] ?? `Column ${index + 1}`}
+    <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+      <UiTable
+        className="w-max min-w-full text-sm [&_td]:whitespace-normal [&_th]:whitespace-normal"
+        style={{ minWidth: `${Math.max(34, maxColumnCount * 12 + 7)}rem` }}
+      >
+        {firstRowIsHeader ? (
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              {Array.from({ length: maxColumnCount }, (_, index) => (
+                <TableHead
+                  key={`head-${index}`}
+                  className="h-8 bg-muted/30 px-3 text-label-sm text-muted-foreground"
+                >
+                  {headerCells[index] ?? ""}
+                </TableHead>
+              ))}
+              <TableHead className="h-8 w-px bg-muted/30 px-3 text-label-sm text-muted-foreground">
+                Source
               </TableHead>
-            ))}
-            <TableHead className="h-8 w-px bg-muted/40 px-3 text-xs font-medium text-muted-foreground">
-              Source
-            </TableHead>
-          </TableRow>
-        </TableHeader>
+            </TableRow>
+          </TableHeader>
+        ) : null}
         <TableBody>
           {bodyRows.map(({ row, cells }, rowIndex) => (
-            <TableRow key={row.id || `row-${rowIndex}`}>
+            <TableRow key={row.id || `row-${rowIndex}`} className="hover:bg-foreground/[0.015]">
               {Array.from({ length: maxColumnCount }, (_, index) => (
                 <TableCell
                   key={`${row.id}-${index}`}
-                  className="px-3 py-2 align-top"
+                  className="px-3 py-2.5 align-top text-foreground"
                 >
                   {cells[index] ? tableCellValue(cells[index]) : ""}
                 </TableCell>
               ))}
-              <TableCell className="w-px px-3 py-2 align-top">
+              <TableCell className="w-px px-3 py-2.5 align-top">
                 <SourceEvidenceButton
                   sourceSpanIds={sourceSpanIdsForTableRow(row, cells)}
                   sourceSpans={tableSourceSpans}
@@ -1470,22 +1481,26 @@ function SourceTextParagraphs({
   fileUrl?: string;
   allowOperatorSourceAccess?: boolean;
 }) {
-  const paragraphSpanIds = useMemo(
-    () => [...new Set(nodes.flatMap((node) => sourceSpanIdsFrom(node)))],
+  const contentNodes = useMemo(
+    () => nodes.filter((node) => !isDecorativeTextNode(node)),
     [nodes],
+  );
+  const paragraphSpanIds = useMemo(
+    () => [...new Set(contentNodes.flatMap((node) => sourceSpanIdsFrom(node)))],
+    [contentNodes],
   );
   const queriedParagraphSpans = usePolicySourceSpans(policyId, paragraphSpanIds, {
     allowOperatorAccess: allowOperatorSourceAccess,
   });
   const paragraphSourceSpans = mergeSourceSpans(sourceSpans, queriedParagraphSpans);
-  if (!nodes.length) return null;
+  if (!contentNodes.length) return null;
   return (
-    <div className="space-y-2 py-2">
-      {nodes.map((node) => {
-        const text = nodeBodyText(node) ?? nodeDisplayTitle(node);
+    <div className="space-y-1 py-1">
+      {contentNodes.map((node) => {
+        const text = normalizedNodeText(node);
         return (
-          <div key={node.id} className="flex min-w-0 items-start gap-3">
-            <p className="min-w-0 flex-1 text-sm leading-6 text-foreground">
+          <div key={node.id} className="flex min-w-0 items-start gap-3 py-0.5">
+            <p className="min-w-0 flex-1 text-sm leading-5 text-foreground">
               {text}
             </p>
             <SourceEvidenceButton
@@ -1560,15 +1575,20 @@ function OutlineNodeRow({
     policyId !== undefined;
   const children = lazyChildren ?? node.children ?? [];
   const hydratedNode = children === node.children ? node : { ...node, children };
-  const visibleChildren = isNodeKind(node, "table_row")
+  const tableRows = isTable ? tableRowsForNode(hydratedNode) : [];
+  const rendersTable = tableRows.some((row) => row.cells.length > 0);
+  const allVisibleChildren = isNodeKind(node, "table_row")
     ? children
     : children.filter((child) => !isNodeKind(child, "table_cell"));
+  const visibleChildren = isTable && rendersTable
+    ? allVisibleChildren.filter((child) => !isNodeKind(child, "table_row"))
+    : allVisibleChildren;
   const textChildren = visibleChildren.filter(isTextLeafNode);
   const structuredChildren = visibleChildren.filter((child) => !isTextLeafNode(child));
   const canExpand =
     factRows.length > 0 ||
     hasSourceNodeChildren(node) ||
-    (isTable && tableRowsForNode(hydratedNode).some((row) => row.cells.length > 0)) ||
+    rendersTable ||
     visibleChildren.length > 0;
 
   return (
@@ -1610,7 +1630,7 @@ function OutlineNodeRow({
           {loadingChildren ? (
             <SourceNodeChildrenSkeleton />
           ) : null}
-          {isTable && tableRowsForNode(hydratedNode).some((row) => row.cells.length > 0) ? (
+          {rendersTable ? (
             <SourceNodeTable
               policyId={policyId}
               node={hydratedNode}
