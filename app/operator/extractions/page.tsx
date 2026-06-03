@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import type { ComponentProps } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAction } from "convex/react";
@@ -126,10 +127,12 @@ type SourceSpanDiagnostics = {
 type TraceDetail = {
   session: TraceRow;
   policy?: Record<string, unknown> | null;
+  sourceHierarchy?: Record<string, unknown>[];
   fileUrl?: string | null;
   events: TraceEvent[];
   sourceSpanDiagnostics?: SourceSpanDiagnostics;
 };
+type ExtractionCardsPolicyDocument = ComponentProps<typeof ExtractionCards>["policyDocument"];
 type TracePanelTab = "summary" | "extracted" | "source" | "timeline" | "timing" | "models" | "log";
 const TRACE_PANEL_TABS = ["summary", "extracted", "source", "timeline", "timing", "models", "log"] as const;
 
@@ -1902,8 +1905,11 @@ export default function OperatorExtractionsPage() {
                 </div>
               ) : detail?.policy ? (
                 <ExtractionCards
-                  policyId={selected.policyId as Id<"policies">}
-                  policyDocument={detail.policy}
+                  policyId={detail.sourceHierarchy?.length ? undefined : selected.policyId as Id<"policies">}
+                  policyDocument={{
+                    ...detail.policy,
+                    documentOutline: detail.sourceHierarchy ?? (detail.policy.documentOutline as Record<string, unknown>[] | undefined),
+                  } as ExtractionCardsPolicyDocument}
                   fileUrl={detail.fileUrl ?? undefined}
                   allowOperatorSourceAccess
                 />

@@ -31,7 +31,10 @@ import {
 dayjs.extend(customParseFormat);
 
 type PolicyPipelineStatus = "idle" | "running" | "paused" | "complete" | "error";
-type PolicyExtractionArtifactKind = "cl_sdk_checkpoint" | "embedding_payload";
+type PolicyExtractionArtifactKind =
+  | "cl_sdk_checkpoint"
+  | "embedding_payload"
+  | "external_completion_payload";
 type PolicyPipelineLogEntry = {
   timestamp: number;
   message: string;
@@ -1570,6 +1573,7 @@ export const pipelineSaveArtifact = internalMutation({
     kind: v.union(
       v.literal("cl_sdk_checkpoint"),
       v.literal("embedding_payload"),
+      v.literal("external_completion_payload"),
     ),
     storageId: v.id("_storage"),
   },
@@ -1594,6 +1598,7 @@ export const pipelineGetArtifact = internalQuery({
     kind: v.union(
       v.literal("cl_sdk_checkpoint"),
       v.literal("embedding_payload"),
+      v.literal("external_completion_payload"),
     ),
   },
   handler: async (ctx, { jobId, kind }) => {
@@ -1613,6 +1618,7 @@ export const pipelineClearArtifacts = internalMutation({
     kind: v.optional(v.union(
       v.literal("cl_sdk_checkpoint"),
       v.literal("embedding_payload"),
+      v.literal("external_completion_payload"),
     )),
   },
   handler: async (ctx, { jobId, kind }) => {

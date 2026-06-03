@@ -4,7 +4,7 @@ import { createAccount, getAuthUserId } from "@convex-dev/auth/server";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
@@ -27,6 +27,50 @@ const extractionTraceStatusValidator = v.union(
   v.literal("cancelled"),
 );
 const internalApi = internal as any;
+
+type OperatorSourceNode = Doc<"sourceNodes">;
+
+function buildOperatorSourceHierarchy(nodes: OperatorSourceNode[]) {
+  const ordered = [...nodes].sort((left, right) => left.order - right.order);
+  const root = ordered.find((node) => node.kind === "document");
+  const nodeIds = new Set(ordered.map((node) => node.nodeId));
+  const byParent = new Map<string | undefined, OperatorSourceNode[]>();
+
+  for (const node of ordered) {
+    if (node.kind === "document") continue;
+    const parentNodeId = node.parentNodeId && nodeIds.has(node.parentNodeId)
+      ? node.parentNodeId
+      : undefined;
+    const siblings = byParent.get(parentNodeId) ?? [];
+    siblings.push(node);
+    byParent.set(parentNodeId, siblings);
+  }
+
+  const visit = (node: OperatorSourceNode): Record<string, unknown> => {
+    const metadata = node.metadata && typeof node.metadata === "object" && !Array.isArray(node.metadata)
+      ? node.metadata as Record<string, unknown>
+      : undefined;
+    return {
+      id: node.nodeId,
+      nodeId: node.nodeId,
+      title: node.title,
+      type: node.kind,
+      label: node.kind,
+      description: node.description,
+      excerpt: node.textExcerpt,
+      content: node.textExcerpt,
+      sourceSpanIds: node.sourceSpanIds,
+      pageStart: node.pageStart,
+      pageEnd: node.pageEnd,
+      formNumber: typeof metadata?.formNumber === "string" ? metadata.formNumber : undefined,
+      metadata: node.metadata,
+      hasChildren: (byParent.get(node.nodeId) ?? []).length > 0,
+      children: (byParent.get(node.nodeId) ?? []).map(visit),
+    };
+  };
+
+  return (byParent.get(root?.nodeId) ?? byParent.get(undefined) ?? []).map(visit);
+}
 
 function normalizeSlug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
@@ -407,6 +451,19 @@ export const getExtractionTrace = query({
         .order("asc")
         .collect(),
     ]);
+    const sourceNodes = await ctx.db
+      .query("sourceNodes")
+      .withIndex("by_policyId", (q) => q.eq("policyId", session.policyId))
+      .collect();
+    const sourceHierarchy = buildOperatorSourceHierarchy(sourceNodes);
+    const policyWithOperatorHierarchy = policy
+      ? {
+          ...policy,
+          documentOutline: sourceHierarchy.length
+            ? sourceHierarchy
+            : policy.documentOutline,
+        }
+      : policy;
     const fileUrl = policy?.fileId ? await ctx.storage.getUrl(policy.fileId) : null;
     return {
       session: {
@@ -422,7 +479,8 @@ export const getExtractionTrace = query({
         fileName: session.fileName ?? policy?.fileName,
         documentType: policy?.documentType ?? "policy",
       },
-      policy,
+      policy: policyWithOperatorHierarchy,
+      sourceHierarchy,
       fileUrl,
       events,
     };
