@@ -4,7 +4,7 @@ import { createAccount, getAuthUserId } from "@convex-dev/auth/server";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
@@ -389,130 +389,6 @@ export const listExtractionTraces = query({
   },
 });
 
-
-function sourceSpanUnit(span: Doc<"sourceSpans">) {
-  const metadata = span.metadata && typeof span.metadata === "object"
-    ? span.metadata as Record<string, unknown>
-    : {};
-  const unit = span.sourceUnit ?? metadata.sourceUnit ?? metadata.elementType;
-  return typeof unit === "string" && unit.length > 0 ? unit : "unknown";
-}
-
-function sourceSpanPage(span: Doc<"sourceSpans">) {
-  if (typeof span.pageStart === "number") return span.pageStart;
-  const bbox = Array.isArray(span.bbox) ? span.bbox[0] : undefined;
-  if (bbox && typeof bbox === "object" && typeof (bbox as Record<string, unknown>).page === "number") {
-    return (bbox as Record<string, number>).page;
-  }
-  return undefined;
-}
-
-function sourceSpanTableId(span: Doc<"sourceSpans">) {
-  const table = span.table && typeof span.table === "object"
-    ? span.table as Record<string, unknown>
-    : {};
-  const metadata = span.metadata && typeof span.metadata === "object"
-    ? span.metadata as Record<string, unknown>
-    : {};
-  const tableId = table.tableId ?? metadata.tableId;
-  return typeof tableId === "string" && tableId.length > 0 ? tableId : undefined;
-}
-
-function compactSourceSpan(span: Doc<"sourceSpans">) {
-  return {
-    spanId: span.spanId,
-    pageStart: span.pageStart,
-    pageEnd: span.pageEnd,
-    sectionId: span.sectionId,
-    formNumber: span.formNumber,
-    sourceUnit: span.sourceUnit,
-    parentSpanId: span.parentSpanId,
-    table: span.table,
-    location: span.location,
-    text: span.text.length > 4000 ? `${span.text.slice(0, 4000)}…` : span.text,
-    bbox: span.bbox,
-    metadata: span.metadata,
-  };
-}
-
-function buildSourceSpanDiagnostics(spans: Doc<"sourceSpans">[]) {
-  const unitCounts: Record<string, number> = {};
-  const pageCounts: Record<string, number> = {};
-  const tableIds = new Set<string>();
-  const declarationPages = new Set<number>();
-  for (const span of spans) {
-    const unit = sourceSpanUnit(span);
-    unitCounts[unit] = (unitCounts[unit] ?? 0) + 1;
-    const page = sourceSpanPage(span);
-    if (page !== undefined) pageCounts[String(page)] = (pageCounts[String(page)] ?? 0) + 1;
-    const tableId = sourceSpanTableId(span);
-    if (tableId) tableIds.add(tableId);
-    if (
-      page !== undefined &&
-      /\b(declarations?|coverage parts? and limits?|item\s+1\.|item\s+6\.|premium|deductible)\b/i.test(span.text)
-    ) {
-      declarationPages.add(page);
-    }
-  }
-
-  const tableSpans = spans
-    .filter((span) => {
-      const unit = sourceSpanUnit(span);
-      return unit === "table_row" || unit === "table_cell";
-    })
-    .filter((span) => {
-      if (declarationPages.size === 0) return true;
-      const page = sourceSpanPage(span);
-      return page !== undefined && declarationPages.has(page);
-    })
-    .sort((left, right) => {
-      const leftPage = sourceSpanPage(left) ?? 0;
-      const rightPage = sourceSpanPage(right) ?? 0;
-      if (leftPage !== rightPage) return leftPage - rightPage;
-      const leftTable = sourceSpanTableId(left) ?? "";
-      const rightTable = sourceSpanTableId(right) ?? "";
-      if (leftTable !== rightTable) return leftTable.localeCompare(rightTable);
-      const leftRow = typeof (left.table as Record<string, unknown> | undefined)?.rowIndex === "number"
-        ? (left.table as Record<string, number>).rowIndex
-        : -1;
-      const rightRow = typeof (right.table as Record<string, unknown> | undefined)?.rowIndex === "number"
-        ? (right.table as Record<string, number>).rowIndex
-        : -1;
-      if (leftRow !== rightRow) return leftRow - rightRow;
-      const leftColumn = typeof (left.table as Record<string, unknown> | undefined)?.columnIndex === "number"
-        ? (left.table as Record<string, number>).columnIndex
-        : -1;
-      const rightColumn = typeof (right.table as Record<string, unknown> | undefined)?.columnIndex === "number"
-        ? (right.table as Record<string, number>).columnIndex
-        : -1;
-      return leftColumn - rightColumn;
-    })
-    .slice(0, 900)
-    .map(compactSourceSpan);
-
-  const declarationTextSpans = spans
-    .filter((span) => {
-      const page = sourceSpanPage(span);
-      if (page === undefined || !declarationPages.has(page)) return false;
-      const unit = sourceSpanUnit(span);
-      return unit === "page" || unit === "title" || unit === "paragraph" || unit === "text";
-    })
-    .sort((left, right) => (sourceSpanPage(left) ?? 0) - (sourceSpanPage(right) ?? 0))
-    .slice(0, 40)
-    .map(compactSourceSpan);
-
-  return {
-    total: spans.length,
-    unitCounts,
-    pageCounts,
-    tableCount: tableIds.size,
-    declarationPages: [...declarationPages].sort((a, b) => a - b),
-    tableSpans,
-    declarationTextSpans,
-    truncated: spans.length >= 5000,
-  };
-}
-
 export const getExtractionTrace = query({
   args: { traceId: v.string() },
   handler: async (ctx, args) => {
@@ -522,7 +398,7 @@ export const getExtractionTrace = query({
       .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId))
       .first();
     if (!session) return null;
-    const [org, policy, events, sourceSpans] = await Promise.all([
+    const [org, policy, events] = await Promise.all([
       ctx.db.get(session.orgId),
       ctx.db.get(session.policyId),
       ctx.db
@@ -530,13 +406,8 @@ export const getExtractionTrace = query({
         .withIndex("by_traceId_timestamp", (q) => q.eq("traceId", args.traceId))
         .order("asc")
         .collect(),
-      ctx.db
-        .query("sourceSpans")
-        .withIndex("by_policyId", (q) => q.eq("policyId", session.policyId))
-        .take(5000),
     ]);
     const fileUrl = policy?.fileId ? await ctx.storage.getUrl(policy.fileId) : null;
-    const sourceSpanDiagnostics = buildSourceSpanDiagnostics(sourceSpans);
     return {
       session: {
         ...session,
@@ -554,7 +425,6 @@ export const getExtractionTrace = query({
       policy,
       fileUrl,
       events,
-      sourceSpanDiagnostics,
     };
   },
 });

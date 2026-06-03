@@ -1324,6 +1324,21 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_pipelineStatus_updatedAt", ["pipelineStatus", "updatedAt"]),
 
+  // Narrow queue for external Railway extraction workers. Claim polling reads
+  // this table instead of scanning all running pipeline records.
+  policyExtractionQueue: defineTable({
+    policyId: v.id("policies"),
+    runId: v.id("policyExtractionRuns"),
+    status: v.union(v.literal("queued"), v.literal("leased")),
+    leaseId: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    heartbeatAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_status_updatedAt", ["status", "updatedAt"]),
+
   // Storage-backed transient extraction artifacts. These records point at JSON
   // blobs in Convex file storage for cl-sdk checkpoints and pre-embedding
   // chunk/source-span payloads. They are cleaned up on success/cancel/restart.

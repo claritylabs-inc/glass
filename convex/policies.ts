@@ -86,7 +86,7 @@ async function deactivatePolicyDeclarationFacts(
 const PIPELINE_LOG_LIMIT = 500;
 const PIPELINE_STALE_REQUEUE_MS = 5 * 60 * 1000;
 const PIPELINE_STALE_REQUEUE_BATCH_LIMIT = 25;
-const EXTERNAL_WORKER_CLAIM_BATCH_LIMIT = 50;
+const EXTERNAL_WORKER_CLAIM_BATCH_LIMIT = 10;
 
 function nowMs(): number {
   return dayjs().valueOf();
@@ -220,7 +220,7 @@ async function ensurePolicyExtractionRun(ctx: any, policyId: DataModelId<"polici
   if (existing) return existing;
 
   const policy = await ctx.db.get(policyId);
-  const now = Date.now();
+  const now = nowMs();
   const fields: Record<string, unknown> = {
     policyId,
     pipelineStatus: (policy?.pipelineStatus ?? "idle") as PolicyPipelineStatus,
@@ -248,8 +248,79 @@ async function patchPolicyExtractionRun(
 ) {
   const run = await ensurePolicyExtractionRun(ctx, policyId);
   if (!run) return null;
-  await ctx.db.patch(run._id, { ...patch, updatedAt: Date.now() });
+  await ctx.db.patch(run._id, { ...patch, updatedAt: nowMs() });
   return await ctx.db.get(run._id);
+}
+
+async function enqueueExternalPolicyExtraction(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+  runId: DataModelId<"policyExtractionRuns">,
+  now: number,
+) {
+  const existingRows = await ctx.db
+    .query("policyExtractionQueue")
+    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .collect();
+  const [first, ...duplicates] = existingRows;
+  const fields = {
+    runId,
+    status: "queued" as const,
+    leaseId: undefined,
+    leaseExpiresAt: undefined,
+    heartbeatAt: undefined,
+    updatedAt: now,
+  };
+  if (first) {
+    await ctx.db.patch(first._id, fields);
+  } else {
+    await ctx.db.insert("policyExtractionQueue", {
+      policyId,
+      ...fields,
+      createdAt: now,
+    });
+  }
+  for (const row of duplicates) {
+    await ctx.db.delete(row._id);
+  }
+}
+
+async function clearExternalPolicyExtractionQueue(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+) {
+  const rows = await ctx.db
+    .query("policyExtractionQueue")
+    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .collect();
+  for (const row of rows) {
+    await ctx.db.delete(row._id);
+  }
+}
+
+async function patchExternalPolicyExtractionQueueLease(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+  lease: { id: string; expiresAt: number; heartbeatAt: number },
+  status: "queued" | "leased",
+) {
+  const rows = await ctx.db
+    .query("policyExtractionQueue")
+    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .collect();
+  const [first, ...duplicates] = rows;
+  if (first) {
+    await ctx.db.patch(first._id, {
+      status,
+      leaseId: status === "leased" ? lease.id : undefined,
+      leaseExpiresAt: status === "leased" ? lease.expiresAt : undefined,
+      heartbeatAt: status === "leased" ? lease.heartbeatAt : undefined,
+      updatedAt: nowMs(),
+    });
+  }
+  for (const row of duplicates) {
+    await ctx.db.delete(row._id);
+  }
 }
 
 async function clearPolicyExtractionArtifacts(
@@ -277,6 +348,9 @@ async function setPolicyPipelineStatus(
   status: PolicyPipelineStatus,
   error: string | null,
 ) {
+  if (status !== "running") {
+    await clearExternalPolicyExtractionQueue(ctx, policyId);
+  }
   await patchPolicyExtractionRun(ctx, policyId, {
     pipelineStatus: status,
     pipelineError: error ?? undefined,
@@ -300,7 +374,7 @@ async function appendPolicyPipelineLog(
   const next = [...existing, entry].slice(-PIPELINE_LOG_LIMIT);
   await ctx.db.patch(run._id, {
     pipelineLog: next,
-    updatedAt: Date.now(),
+    updatedAt: nowMs(),
   });
 }
 
@@ -1581,6 +1655,7 @@ export const pipelineSetStatus = internalMutation({
   handler: async (ctx, { jobId, status, error }) => {
     const policyId = jobId as DataModelId<"policies">;
     if (status === "complete" || status === "error") {
+      await clearExternalPolicyExtractionQueue(ctx, policyId);
       await patchPolicyExtractionRun(ctx, policyId, {
         pipelineStatus: status,
         pipelineError: error ?? undefined,
@@ -1678,7 +1753,7 @@ export const pipelineStartExternalWorkerJob = internalMutation({
   handler: async (ctx, { jobId, state }) => {
     const policyId = jobId as DataModelId<"policies">;
     const now = nowMs();
-    await patchPolicyExtractionRun(ctx, policyId, {
+    const run = await patchPolicyExtractionRun(ctx, policyId, {
       pipelineStatus: "running",
       pipelineError: undefined,
       pipelineCheckpoint: {
@@ -1690,6 +1765,9 @@ export const pipelineStartExternalWorkerJob = internalMutation({
         createdAt: now,
       },
     });
+    if (run) {
+      await enqueueExternalPolicyExtraction(ctx, policyId, run._id, now);
+    }
     await ctx.db.patch(policyId, {
       pipelineStatus: "running",
       pipelineError: undefined,
@@ -1720,13 +1798,18 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
         Math.floor(args.batchSize ?? EXTERNAL_WORKER_CLAIM_BATCH_LIMIT),
       ),
     );
-    const runs = await ctx.db
-      .query("policyExtractionRuns")
-      .withIndex("by_pipelineStatus_updatedAt", (q) => q.eq("pipelineStatus", "running"))
+    const queueRows = await ctx.db
+      .query("policyExtractionQueue")
+      .withIndex("by_status_updatedAt", (q) => q.eq("status", "queued"))
       .order("asc")
       .take(batchSize);
 
-    for (const run of runs) {
+    for (const queueRow of queueRows) {
+      const run = await ctx.db.get(queueRow.runId);
+      if (!run) {
+        await ctx.db.delete(queueRow._id);
+        continue;
+      }
       const checkpoint = run.pipelineCheckpoint as
         | {
             nextPhase?: string;
@@ -1735,11 +1818,16 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
             lease?: { id?: string; phase?: string; expiresAt?: number; heartbeatAt?: number };
           }
         | undefined;
+      if (run.pipelineStatus !== "running") {
+        await ctx.db.delete(queueRow._id);
+        continue;
+      }
       if (
         checkpoint?.nextPhase !== "extract" ||
         !checkpoint.state?.externalWorker ||
         !checkpoint.state.fileId
       ) {
+        await ctx.db.delete(queueRow._id);
         continue;
       }
 
@@ -1755,17 +1843,25 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
         );
       if (activeLease) continue;
 
+      const lease = {
+        id: args.leaseId,
+        phase: "external_extract",
+        expiresAt: args.leaseExpiresAt,
+        heartbeatAt: now,
+      };
       const leasedCheckpoint = {
         ...checkpoint,
-        lease: {
-          id: args.leaseId,
-          phase: "external_extract",
-          expiresAt: args.leaseExpiresAt,
-          heartbeatAt: now,
-        },
+        lease,
       };
       await ctx.db.patch(run._id, {
         pipelineCheckpoint: leasedCheckpoint,
+        updatedAt: now,
+      });
+      await ctx.db.patch(queueRow._id, {
+        status: "leased",
+        leaseId: args.leaseId,
+        leaseExpiresAt: args.leaseExpiresAt,
+        heartbeatAt: now,
         updatedAt: now,
       });
       await appendPolicyPipelineLog(ctx, run.policyId, {
@@ -1810,10 +1906,32 @@ export const pipelineRequeueStale = internalMutation({
       )
       .order("asc")
       .take(batchSize);
+    const leasedQueueRows = await ctx.db
+      .query("policyExtractionQueue")
+      .withIndex("by_status_updatedAt", (q) =>
+        q.eq("status", "leased").lt("updatedAt", cutoff),
+      )
+      .order("asc")
+      .take(batchSize);
 
     const requeued: string[] = [];
     const markedError: string[] = [];
     const skipped: string[] = [];
+
+    for (const queueRow of leasedQueueRows) {
+      const heartbeatAt = queueRow.heartbeatAt ?? queueRow.updatedAt;
+      if (now - heartbeatAt <= olderThanMs) {
+        skipped.push(String(queueRow.policyId));
+        continue;
+      }
+      await ctx.db.patch(queueRow._id, {
+        status: "queued",
+        leaseId: undefined,
+        leaseExpiresAt: undefined,
+        heartbeatAt: undefined,
+        updatedAt: now,
+      });
+    }
 
     for (const run of runs) {
       const checkpoint = run.pipelineCheckpoint as
@@ -1867,6 +1985,7 @@ export const pipelineRequeueStale = internalMutation({
           },
           updatedAt: now,
         });
+        await enqueueExternalPolicyExtraction(ctx, run.policyId, run._id, now);
       } else {
         await appendPolicyPipelineLog(ctx, run.policyId, {
           timestamp: now,
@@ -1882,7 +2001,7 @@ export const pipelineRequeueStale = internalMutation({
     }
 
     return {
-      scanned: runs.length,
+      scanned: runs.length + leasedQueueRows.length,
       requeued,
       markedError,
       skipped,
@@ -1920,6 +2039,7 @@ export const pipelineReconcileTerminalState = internalMutation({
     ].filter((traceId): traceId is string => Boolean(traceId));
 
     if (run && run.pipelineCheckpoint !== undefined) {
+      await clearExternalPolicyExtractionQueue(ctx, policyId);
       await ctx.db.patch(run._id, {
         pipelineCheckpoint: undefined,
         updatedAt: nowMs(),
@@ -1961,7 +2081,7 @@ export const pipelineAcquireLease = internalMutation({
       createdAt: number;
       lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
     };
-    const now = Date.now();
+    const now = nowMs();
     if (checkpoint.lease && checkpoint.lease.expiresAt > now) {
       const lastLogAt = run.pipelineLog?.at(-1)?.timestamp ?? checkpoint.createdAt;
       const heartbeatAt = checkpoint.lease.heartbeatAt;
@@ -2013,7 +2133,18 @@ export const pipelineSaveStateForLease = internalMutation({
       return false;
     }
 
-    const now = Date.now();
+    const now = nowMs();
+    const stateRecord = state as { externalWorker?: boolean } | undefined;
+    if (stateRecord?.externalWorker && nextPhase === "extract") {
+      await patchExternalPolicyExtractionQueueLease(
+        ctx,
+        jobId as DataModelId<"policies">,
+        { id: leaseId, expiresAt: leaseExpiresAt, heartbeatAt: now },
+        "leased",
+      );
+    } else {
+      await clearExternalPolicyExtractionQueue(ctx, jobId as DataModelId<"policies">);
+    }
     await ctx.db.patch(run._id, {
       pipelineCheckpoint: {
         nextPhase,
@@ -2052,7 +2183,16 @@ export const pipelineExtendLease = internalMutation({
       return false;
     }
 
-    const now = Date.now();
+    const now = nowMs();
+    const stateRecord = checkpoint.state as { externalWorker?: boolean } | undefined;
+    if (stateRecord?.externalWorker && checkpoint.nextPhase === "extract") {
+      await patchExternalPolicyExtractionQueueLease(
+        ctx,
+        jobId as DataModelId<"policies">,
+        { id: leaseId, expiresAt: leaseExpiresAt, heartbeatAt: now },
+        "leased",
+      );
+    }
     await ctx.db.patch(run._id, {
       pipelineCheckpoint: {
         ...checkpoint,
@@ -2107,6 +2247,18 @@ export const pipelineCompleteLease = internalMutation({
       if (args.status === "complete" || args.status === "error") {
         patch.pipelineCheckpoint = undefined;
       }
+    }
+    const nextCheckpoint = patch.pipelineCheckpoint as
+      | { nextPhase?: string; state?: { externalWorker?: boolean } }
+      | undefined;
+    if (
+      args.status === "complete" ||
+      args.status === "error" ||
+      !nextCheckpoint ||
+      nextCheckpoint.nextPhase !== "extract" ||
+      !nextCheckpoint.state?.externalWorker
+    ) {
+      await clearExternalPolicyExtractionQueue(ctx, policyId);
     }
     patch.updatedAt = nowMs();
 

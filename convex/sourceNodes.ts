@@ -55,13 +55,16 @@ type PublicSourceNode = {
 async function canReadPolicySourceNodes(
   ctx: Pick<QueryCtx, "auth" | "db">,
   policyId: Id<"policies">,
+  allowOperatorAccess = false,
 ) {
   try {
     if (await getPolicyAccessForQuery(ctx as QueryCtx, policyId)) return true;
   } catch {
     // Fall through to the operator check. Unauthenticated callers still fail.
   }
-  return Boolean(await getActiveOperatorProfile(ctx as QueryCtx));
+  return allowOperatorAccess
+    ? Boolean(await getActiveOperatorProfile(ctx as QueryCtx))
+    : false;
 }
 
 function likelyHasChildNodes(node: SourceNodeDoc) {
@@ -135,9 +138,12 @@ async function publicChildNodes(
 }
 
 export const listTopLevelByPolicy = query({
-  args: { policyId: v.id("policies") },
+  args: {
+    policyId: v.id("policies"),
+    allowOperatorAccess: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
-    if (!await canReadPolicySourceNodes(ctx, args.policyId)) return [];
+    if (!await canReadPolicySourceNodes(ctx, args.policyId, args.allowOperatorAccess)) return [];
 
     const rootCandidates = await ctx.db
       .query("sourceNodes")
@@ -170,17 +176,21 @@ export const listChildrenByPolicyAndParentNodeId = query({
   args: {
     policyId: v.id("policies"),
     parentNodeId: v.string(),
+    allowOperatorAccess: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    if (!await canReadPolicySourceNodes(ctx, args.policyId)) return [];
+    if (!await canReadPolicySourceNodes(ctx, args.policyId, args.allowOperatorAccess)) return [];
     return await publicChildNodes(ctx, args.policyId, args.parentNodeId);
   },
 });
 
 export const listByPolicy = query({
-  args: { policyId: v.id("policies") },
+  args: {
+    policyId: v.id("policies"),
+    allowOperatorAccess: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
-    if (!await canReadPolicySourceNodes(ctx, args.policyId)) return [];
+    if (!await canReadPolicySourceNodes(ctx, args.policyId, args.allowOperatorAccess)) return [];
     const nodes = await ctx.db
       .query("sourceNodes")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
