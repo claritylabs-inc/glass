@@ -126,17 +126,17 @@ export function EntityPreviewPanel({
               <div className="min-w-0 flex-1">
                 {headerInfo ? (
                   <div className="flex items-baseline gap-2 min-w-0">
-                    <span className="text-sm font-medium text-foreground truncate">
+                    <span className="text-base font-medium text-foreground truncate">
                       {headerInfo.carrier}
                     </span>
                     {headerInfo.policyNum && (
-                      <span className="min-w-0 max-w-[45%] truncate text-sm text-muted-foreground/60">
+                      <span className="min-w-0 max-w-[45%] truncate text-base text-muted-foreground/60">
                         {headerInfo.policyNum}
                       </span>
                     )}
                   </div>
                 ) : (
-                  <span className="text-sm font-medium text-foreground">
+                  <span className="text-base font-medium text-foreground">
                     Policy Preview
                   </span>
                 )}

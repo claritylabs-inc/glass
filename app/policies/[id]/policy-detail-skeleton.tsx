@@ -1,3 +1,9 @@
+import {
+  OperationalItem,
+  OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function PolicyDetailSkeleton() {
@@ -24,7 +30,8 @@ export function PolicyDetailSkeleton() {
         <Skeleton className="h-7 w-24 rounded-full" />
       </div>
 
-      <div className="rounded-lg border border-foreground/6 bg-card px-4 py-3">
+      <OperationalPanel as="div">
+        <OperationalPanelBody className="px-4 py-3">
         <Skeleton className="h-4 w-40 mb-3" />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {[0, 1, 2].map((item) => (
@@ -34,25 +41,27 @@ export function PolicyDetailSkeleton() {
             </div>
           ))}
         </div>
-      </div>
+        </OperationalPanelBody>
+      </OperationalPanel>
 
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-foreground/4">
-          <Skeleton className="h-4 w-32" />
-        </div>
+      <OperationalPanel as="div">
+        <OperationalPanelHeader
+          title={<Skeleton className="h-4 w-32" />}
+          className="px-4 py-2.5 border-foreground/4"
+        />
         <div className="divide-y divide-foreground/4">
           {[0, 1, 2, 3, 4].map((item) => (
-            <div
+            <OperationalItem
               key={item}
-              className="grid grid-cols-[minmax(0,1fr)_120px] gap-4 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_140px_120px]"
+              className="grid grid-cols-[minmax(0,1fr)_120px] gap-4 border-foreground/4 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_140px_120px]"
             >
               <Skeleton className="h-4 w-44 max-w-full" />
               <Skeleton className="h-4 w-24 justify-self-end" />
               <Skeleton className="hidden h-4 w-20 justify-self-end sm:block" />
-            </div>
+            </OperationalItem>
           ))}
         </div>
-      </div>
+      </OperationalPanel>
     </div>
   );
 }

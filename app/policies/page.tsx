@@ -12,6 +12,7 @@ import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { AgentContactCallout } from "@/components/agent-contact-callout";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
 import { getPublicAgentDomain } from "@/lib/domains";
@@ -252,7 +253,7 @@ export default function PoliciesPage() {
             onUpload={handleEmptyStateFiles}
           />
         ) : (
-          <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <OperationalPanel as="div">
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             {(list as any[]).map((p: any) => (
               <PolicyListItem
@@ -268,7 +269,7 @@ export default function PoliciesPage() {
                 href={`/policies/${p._id}`}
               />
             ))}
-          </div>
+          </OperationalPanel>
         )}
       </div>
     </AppShell>

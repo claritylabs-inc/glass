@@ -10,7 +10,9 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { usePdf } from "@/components/pdf-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { ActionSurfaceButton } from "@/components/ui/action-surface";
 import { Badge } from "@/components/ui/badge";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -194,19 +196,19 @@ function DeliveryDrawer({
         <section className="space-y-3 rounded-lg border border-foreground/6 px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-body-sm font-medium text-foreground">
+              <p className="truncate text-base font-medium text-foreground">
                 {job.policy?.policyNumber ?? "Policy"}
               </p>
-              <p className="truncate text-body-sm text-muted-foreground">
+              <p className="truncate text-base text-muted-foreground">
                 {job.clientName ?? "Client"} · {job.policy?.carrier ?? job.policy?.security ?? "Carrier"}
               </p>
             </div>
             <Badge variant={statusVariant(job.status)}>{STATUS_LABELS[job.status]}</Badge>
           </div>
-          <p className="text-body-sm text-muted-foreground">{statusDescription(job)}</p>
+          <p className="text-base text-muted-foreground">{statusDescription(job)}</p>
         </section>
         <section className="border-t border-foreground/6 pt-5">
-          <div className="space-y-2 text-body-sm">
+          <div className="space-y-2 text-base">
           <Detail label="Decision" value={actionLabel(job.action)} />
           <Detail label="Rule" value={job.ruleName ?? "Default action"} />
           <Detail label="Channels" value={channelLabel(job.channels)} />
@@ -216,13 +218,13 @@ function DeliveryDrawer({
           </div>
         </section>
         <section className="space-y-2 border-t border-foreground/6 pt-5">
-          <p className="text-label-sm text-muted-foreground">Attempts</p>
+          <p className="text-label text-muted-foreground">Attempts</p>
           {(job.attempts ?? []).length === 0 ? (
-            <p className="text-body-sm text-muted-foreground">No attempts yet.</p>
+            <p className="text-base text-muted-foreground">No attempts yet.</p>
           ) : (
             <div className="divide-y divide-foreground/6 rounded-lg border border-foreground/6">
               {(job.attempts ?? []).map((attempt) => (
-                <div key={attempt._id} className="flex items-center justify-between gap-3 px-3 py-2 text-body-sm">
+                <div key={attempt._id} className="flex items-center justify-between gap-3 px-3 py-2 text-base">
                   <span>{attempt.channel === "email" ? "Email" : "iMessage"}</span>
                   <span className="text-muted-foreground">{attempt.status}</span>
                 </div>
@@ -260,26 +262,26 @@ function PolicyPreviewCard({ job }: { job: DeliveryJob }) {
 
   return (
     <section className="space-y-2 border-t border-foreground/6 pt-5">
-      <p className="text-label-sm text-muted-foreground">Policy document</p>
-      <button
+      <p className="text-label text-muted-foreground">Policy document</p>
+      <ActionSurfaceButton
         type="button"
         onClick={() => {
           if (canPreview) openWithUrl(fileUrl);
         }}
         disabled={!canPreview}
-        className="flex w-full items-center gap-3 rounded-lg border border-foreground/6 bg-card px-3 py-3 text-left transition-colors hover:bg-foreground/[0.02] disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex w-full items-center gap-3 px-3 py-3 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <div className="flex h-12 w-9 shrink-0 items-center justify-center rounded-md border border-foreground/8 bg-white text-muted-foreground">
           <FileText className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-body-sm font-medium text-foreground">{label}</p>
-          <p className="truncate text-label-sm text-muted-foreground">
+          <p className="truncate text-base font-medium text-foreground">{label}</p>
+          <p className="truncate text-label text-muted-foreground">
             {detail || "PDF policy"}
           </p>
         </div>
-        {!canPreview ? <span className="shrink-0 text-label-sm text-muted-foreground">Unavailable</span> : null}
-      </button>
+        {!canPreview ? <span className="shrink-0 text-label text-muted-foreground">Unavailable</span> : null}
+      </ActionSurfaceButton>
     </section>
   );
 }
@@ -319,17 +321,17 @@ export default function DeliveriesPage() {
           </TabsList>
         </Tabs>
 
-        <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+        <OperationalPanel as="div">
           <Table className="min-w-[980px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[18%] px-4 text-label-sm text-muted-foreground">Client</TableHead>
-                <TableHead className="w-[16%] text-label-sm text-muted-foreground">Policy</TableHead>
-                <TableHead className="w-[16%] text-label-sm text-muted-foreground">Carrier</TableHead>
-                <TableHead className="w-[13%] text-label-sm text-muted-foreground">Channel</TableHead>
-                <TableHead className="w-[14%] text-label-sm text-muted-foreground">Decision</TableHead>
-                <TableHead className="w-[11%] text-label-sm text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[12%] px-4 text-label-sm text-muted-foreground">Updated</TableHead>
+                <TableHead className="w-[18%] px-4 text-label text-muted-foreground">Client</TableHead>
+                <TableHead className="w-[16%] text-label text-muted-foreground">Policy</TableHead>
+                <TableHead className="w-[16%] text-label text-muted-foreground">Carrier</TableHead>
+                <TableHead className="w-[13%] text-label text-muted-foreground">Channel</TableHead>
+                <TableHead className="w-[14%] text-label text-muted-foreground">Decision</TableHead>
+                <TableHead className="w-[11%] text-label text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[12%] px-4 text-label text-muted-foreground">Updated</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -341,7 +343,7 @@ export default function DeliveriesPage() {
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="h-32 px-4 text-body-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="h-32 px-4 text-base text-muted-foreground">
                     No delivery jobs in this view.
                   </TableCell>
                 </TableRow>
@@ -366,7 +368,7 @@ export default function DeliveriesPage() {
               )}
             </TableBody>
           </Table>
-        </div>
+        </OperationalPanel>
       </div>
     </AppShell>
   );

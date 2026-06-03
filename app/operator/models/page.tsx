@@ -6,6 +6,10 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import {
+  OperationalPanel,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -271,7 +275,7 @@ export default function OperatorModelsPage() {
   }
 
   const actions = settings?.updatedAt ? (
-    <span className="text-label-sm text-muted-foreground">
+    <span className="text-label text-muted-foreground">
       Updated {dayjs(settings.updatedAt).format("MMM D")}
     </span>
   ) : null;
@@ -293,13 +297,13 @@ export default function OperatorModelsPage() {
       disableCommandPalette
       showBrokerShare={false}
     >
-      <main className="mx-auto flex w-full max-w-7xl flex-col">
+      <main className="flex w-full flex-col">
         {settings === undefined ? (
-          <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          <OperationalPanel>
             <div className="flex h-40 items-center justify-center text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
-          </section>
+          </OperationalPanel>
         ) : (
           <div className="grid gap-4">
             {TASK_GROUPS.map((group) => {
@@ -310,15 +314,8 @@ export default function OperatorModelsPage() {
                 .filter((task): task is TaskConfig => !!task);
               if (tasks.length === 0) return null;
               return (
-                <section
-                  key={group.id}
-                  className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card"
-                >
-                  <div className="border-b border-foreground/6 px-4 py-3">
-                    <h3 className="text-sm font-medium text-foreground">
-                      {group.label}
-                    </h3>
-                  </div>
+                <OperationalPanel key={group.id}>
+                  <OperationalPanelHeader title={group.label} />
                   <div className="divide-y divide-foreground/6 px-4">
                     {tasks.map((task) => {
                       const route = settings.routes[task.id] ?? null;
@@ -357,14 +354,14 @@ export default function OperatorModelsPage() {
                         >
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-body-sm font-medium text-foreground">
+                              <p className="text-base font-medium text-foreground">
                                 {task.label}
                               </p>
-                              <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label-sm text-muted-foreground">
+                              <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label text-muted-foreground">
                                 {displayRoute ? "Override" : "Default"}
                               </span>
                             </div>
-                            <p className="mt-0.5 text-label-sm text-muted-foreground/60">
+                            <p className="mt-0.5 text-label text-muted-foreground/60">
                               {task.description}
                             </p>
                           </div>
@@ -384,7 +381,7 @@ export default function OperatorModelsPage() {
                                       <ProviderLogo
                                         provider={displayRoute.provider}
                                       />
-                                      <span className="text-body-sm">
+                                      <span className="text-base">
                                         {displayRoute.model}
                                       </span>
                                     </span>
@@ -436,7 +433,7 @@ export default function OperatorModelsPage() {
                                               <span className="truncate">
                                                 {model}
                                               </span>
-                                              <span className="shrink-0 text-label-sm text-muted-foreground/60">
+                                              <span className="shrink-0 text-label text-muted-foreground/60">
                                                 {capabilitySummary(capability)}
                                               </span>
                                             </span>
@@ -456,16 +453,16 @@ export default function OperatorModelsPage() {
                       <div className="grid gap-3 py-3.5 md:grid-cols-[1fr_auto] md:items-center">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-body-sm font-medium text-foreground">
+                            <p className="text-base font-medium text-foreground">
                               Web browsing
                             </p>
-                            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label-sm text-muted-foreground">
+                            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label text-muted-foreground">
                               {settings.webRetrieval.primary === "exa"
                                 ? "Default"
                                 : "Override"}
                             </span>
                           </div>
-                          <p className="mt-0.5 text-label-sm text-muted-foreground/60">
+                          <p className="mt-0.5 text-label text-muted-foreground/60">
                             Public web retrieval for website enrichment and
                             agent web research.
                           </p>
@@ -510,7 +507,7 @@ export default function OperatorModelsPage() {
                                   <WebRetrievalLogo
                                     provider={settings.webRetrieval.primary}
                                   />
-                                  <span className="text-body-sm">
+                                  <span className="text-base">
                                     {settings.webRetrieval.primary === "exa"
                                       ? "Exa"
                                       : settings.webRetrieval.route?.model}
@@ -581,7 +578,7 @@ export default function OperatorModelsPage() {
                       </div>
                     ) : null}
                   </div>
-                </section>
+                </OperationalPanel>
               );
             })}
           </div>

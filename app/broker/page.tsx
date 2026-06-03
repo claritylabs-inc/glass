@@ -10,6 +10,7 @@ import {
   type BrokerIdentity,
 } from "@/components/settings/broker-identity-section";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   Table,
@@ -109,36 +110,36 @@ export default function BrokerPage() {
             dismissKey="glass:agent-contact-callout:broker"
           />
 
-          <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          <OperationalPanel>
             <Table className="min-w-[880px]">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[22%] px-4 text-label-sm text-muted-foreground">
+                  <TableHead className="w-[22%] px-4 text-label text-muted-foreground">
                     Broker company
                   </TableHead>
-                  <TableHead className="w-[22%] text-label-sm text-muted-foreground">
+                  <TableHead className="w-[22%] text-label text-muted-foreground">
                     Primary contact
                   </TableHead>
-                  <TableHead className="w-[24%] text-label-sm text-muted-foreground">
+                  <TableHead className="w-[24%] text-label text-muted-foreground">
                     Email
                   </TableHead>
-                  <TableHead className="w-[18%] text-label-sm text-muted-foreground">
+                  <TableHead className="w-[18%] text-label text-muted-foreground">
                     Phone
                   </TableHead>
-                  <TableHead className="w-[14%] pr-4 text-label-sm text-muted-foreground">
+                  <TableHead className="w-[14%] pr-4 text-label text-muted-foreground">
                     Relationship
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow className="hover:bg-transparent">
-                  <TableCell className="px-4 py-4 text-body-sm font-medium text-foreground">
+                  <TableCell className="px-4 py-4 text-base font-medium text-foreground">
                     {displayValue(brokerName)}
                   </TableCell>
-                  <TableCell className="py-4 text-body-sm text-foreground">
+                  <TableCell className="py-4 text-base text-foreground">
                     {displayValue(contactName)}
                   </TableCell>
-                  <TableCell className="py-4 text-body-sm">
+                  <TableCell className="py-4 text-base">
                     {contactEmail ? (
                       <a
                         href={`mailto:${contactEmail}`}
@@ -150,7 +151,7 @@ export default function BrokerPage() {
                       <span className="text-muted-foreground/60">Not set</span>
                     )}
                   </TableCell>
-                  <TableCell className="py-4 text-body-sm">
+                  <TableCell className="py-4 text-base">
                     {contactPhone ? (
                       <a
                         href={`tel:${contactPhone}`}
@@ -162,13 +163,13 @@ export default function BrokerPage() {
                       <span className="text-muted-foreground/60">Not set</span>
                     )}
                   </TableCell>
-                  <TableCell className="py-4 pr-4 text-body-sm text-muted-foreground">
+                  <TableCell className="py-4 pr-4 text-base text-muted-foreground">
                     {identity ? relationshipLabel(identity) : "Broker"}
                   </TableCell>
                 </TableRow>
               </TableBody>
             </Table>
-          </section>
+          </OperationalPanel>
 
           {!hasBrokerInfo && canEdit ? (
             <div className="border-t border-foreground/6 pt-5">

@@ -21,7 +21,19 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
 import { FileDropZone } from "@/components/ui/file-drop";
 import { Input } from "@/components/ui/input";
+import {
+  OperationalItem,
+  OperationalPanel,
+  OperationalSkeletonList,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
@@ -158,7 +170,7 @@ function categoryLabel(category: Category) {
 
 function CategoryBadge({ category }: { category: Category }) {
   return (
-    <Badge variant="outline" className="text-xs text-muted-foreground">
+    <Badge variant="outline" className="text-label text-muted-foreground">
       {categoryLabel(category)}
     </Badge>
   );
@@ -168,7 +180,7 @@ function RequirementBadge({ label, value }: { label: string; value: string }) {
   return (
     <Badge
       variant="outline"
-      className="max-w-full gap-1.5 text-xs font-normal text-muted-foreground"
+      className="max-w-full gap-1.5 text-label font-normal text-muted-foreground"
     >
       <span>{label}</span>
       <span className="min-w-0 truncate text-foreground">{value}</span>
@@ -226,22 +238,7 @@ function ComplianceStatusBadge({
 }
 
 function RequirementsLoadingSkeleton() {
-  return (
-    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-      {Array.from({ length: 3 }).map((_, index) => (
-        <div
-          key={index}
-          className="flex items-start justify-between gap-4 border-b border-foreground/4 px-5 py-4 last:border-b-0"
-        >
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-4 w-48 rounded-full bg-foreground/6" />
-            <div className="h-3 w-full max-w-xl rounded-full bg-foreground/4" />
-          </div>
-          <div className="h-7 w-20 rounded-full bg-foreground/4" />
-        </div>
-      ))}
-    </div>
-  );
+  return <OperationalSkeletonList rows={3} />;
 }
 
 function ComplianceEmptyState({
@@ -253,11 +250,11 @@ function ComplianceEmptyState({
 }) {
   const isVendorScope = scope === "vendors";
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6">
-      <h3 className="text-body-sm font-medium text-foreground">
+    <OperationalPanel as="div" className="p-5 sm:p-6">
+      <h3 className="text-base font-medium text-foreground">
         No requirements yet
       </h3>
-      <p className="text-body-sm text-muted-foreground mt-1">
+      <p className="text-base text-muted-foreground mt-1">
         {isVendorScope
           ? "Add the insurance standards vendors need to satisfy before they work with your organization."
           : "Add the insurance standards your organization needs to satisfy."}
@@ -271,22 +268,22 @@ function ComplianceEmptyState({
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/4 text-muted-foreground">
           <ClipboardCheck className="h-4.5 w-4.5" />
         </div>
-        <p className="text-body-sm font-medium text-foreground">
+        <p className="text-base font-medium text-foreground">
           {isVendorScope
             ? "Add a vendor requirement"
             : "Add one of my requirements"}
         </p>
-        <p className="mt-1 text-body-sm text-muted-foreground">
+        <p className="mt-1 text-base text-muted-foreground">
           {isVendorScope
             ? "Paste contract language or upload an existing vendor requirements document."
             : "Paste compliance notes or upload an existing requirements document."}
         </p>
-        <span className="mt-4 inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-foreground px-3.5 text-xs font-medium text-background">
+        <span className="mt-4 inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-foreground px-3.5 text-label font-medium text-background">
           <FileUp className="h-3.5 w-3.5" />
           Bulk import
         </span>
       </button>
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -568,19 +565,18 @@ export function CompliancePage() {
         </Tabs>
         {drawerMode === "bulk" ? (
           <>
-          <p className="text-body-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             {activeRequirementScope === "vendors"
               ? "Paste contract insurance language or upload a vendor requirements document. Glass will turn it into structured checklist items with source provenance."
               : "Upload a lease agreement, client contract, or other source document. Glass will extract the insurance requirements you need to satisfy and keep the original source language attached."}
           </p>
-          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Source type
-            <select
-              className="h-9 rounded-md border border-input bg-background px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            <Select
               value={sourceType}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 setSourceType(
-                  event.target.value as Exclude<
+                  value as Exclude<
                     RequirementSourceType,
                     "manual" | "bulk_import"
                   >,
@@ -588,13 +584,20 @@ export function CompliancePage() {
               }
               disabled={importing}
             >
-              <option value="vendor_requirements">Requirements document</option>
-              <option value="lease_agreement">Lease agreement</option>
-              <option value="client_contract">Client contract</option>
-              <option value="other">Other source document</option>
-            </select>
+              <SelectTrigger className="h-9 w-full bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vendor_requirements">
+                  Requirements document
+                </SelectItem>
+                <SelectItem value="lease_agreement">Lease agreement</SelectItem>
+                <SelectItem value="client_contract">Client contract</SelectItem>
+                <SelectItem value="other">Other source document</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
-          <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Requirement text
             <Textarea
               className="min-h-0 flex-1 resize-none field-sizing-fixed"
@@ -614,12 +617,12 @@ export function CompliancePage() {
             onFile={setSourceFile}
           />
           {sourceFile ? (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-card px-3 py-2">
+            <OperationalPanel as="div" className="flex items-center justify-between gap-3 px-3 py-2">
               <div className="min-w-0">
-                <p className="truncate text-body-sm font-medium text-foreground">
+                <p className="truncate text-base font-medium text-foreground">
                   {sourceFile.name}
                 </p>
-                <p className="text-label-sm text-muted-foreground">
+                <p className="text-label text-muted-foreground">
                   {(sourceFile.size / 1024).toFixed(1)} KB
                 </p>
               </div>
@@ -630,10 +633,10 @@ export function CompliancePage() {
                 disabled={importing}
                 onClick={() => setSourceFile(null)}
               >
-              Remove
-            </PillButton>
-          </div>
-            ) : null}
+                Remove
+              </PillButton>
+            </OperationalPanel>
+          ) : null}
           </>
         ) : (
           <form
@@ -641,7 +644,7 @@ export function CompliancePage() {
             onSubmit={submitRequirement}
             className="flex min-h-0 flex-1 flex-col gap-4"
           >
-          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Requirement title
             <Input
               value={title}
@@ -650,21 +653,25 @@ export function CompliancePage() {
               required
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Category
-            <select
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            <Select
               value={category}
-              onChange={(event) => setCategory(event.target.value as Category)}
+              onValueChange={(value) => setCategory(value as Category)}
             >
-              {CATEGORIES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
-          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Minimum limit
             <Input
               value={limit}
@@ -672,7 +679,7 @@ export function CompliancePage() {
               placeholder="$1M per occurrence"
             />
           </label>
-          <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Requirement
             <Textarea
               className="min-h-0 flex-1 resize-none field-sizing-fixed"
@@ -732,15 +739,15 @@ export function CompliancePage() {
             onBulkAdd={openAddRequirements}
           />
         ) : (
-          <section className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+          <OperationalPanel>
             {visibleRequirements.map((requirement) => (
-              <div
+              <OperationalItem
                 key={requirement._id}
-                className="flex items-center justify-between gap-4 border-b border-foreground/4 px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/40"
+                className="flex items-center justify-between gap-4 border-foreground/4 transition-colors hover:bg-muted/40"
               >
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="min-w-0 truncate text-sm font-medium text-foreground">
+                    <p className="min-w-0 truncate text-base font-medium text-foreground">
                       {requirement.title}
                     </p>
                     {activeRequirementScope === "own_org" &&
@@ -765,7 +772,7 @@ export function CompliancePage() {
                     {requirement.clientRequirementSource ? (
                       <Badge
                         variant="secondary"
-                        className="max-w-full text-xs font-normal text-muted-foreground"
+                        className="max-w-full text-label font-normal text-muted-foreground"
                       >
                         <span className="min-w-0 truncate">
                           Client requirements from{" "}
@@ -777,7 +784,7 @@ export function CompliancePage() {
                     {sourceTypeLabel(requirement.sourceType) ? (
                       <Badge
                         variant="secondary"
-                        className="max-w-full text-xs font-normal text-muted-foreground"
+                        className="max-w-full text-label font-normal text-muted-foreground"
                       >
                         <span className="min-w-0 truncate">
                           {sourceTypeLabel(requirement.sourceType)}
@@ -791,17 +798,17 @@ export function CompliancePage() {
                       </Badge>
                     ) : null}
                   </div>
-                  <p className="line-clamp-2 max-w-5xl text-sm leading-5 text-muted-foreground">
+                  <p className="line-clamp-2 max-w-5xl text-base leading-5 text-muted-foreground">
                     {requirement.requirementText}
                   </p>
                   {requirement.sourceExcerpt ? (
-                    <p className="line-clamp-1 max-w-5xl text-xs text-muted-foreground/70">
+                    <p className="line-clamp-1 max-w-5xl text-label text-muted-foreground/70">
                       Source language: {requirement.sourceExcerpt}
                     </p>
                   ) : null}
                   {activeRequirementScope === "own_org" &&
                   requirement.complianceCheck?.notes ? (
-                    <p className="line-clamp-1 max-w-5xl text-xs text-muted-foreground/70">
+                    <p className="line-clamp-1 max-w-5xl text-label text-muted-foreground/70">
                       {requirement.complianceCheck.notes}
                     </p>
                   ) : null}
@@ -837,9 +844,9 @@ export function CompliancePage() {
                     </PillButton>
                   ) : null}
                 </div>
-              </div>
+              </OperationalItem>
             ))}
-          </section>
+          </OperationalPanel>
         )}
       </div>
     </AppShell>

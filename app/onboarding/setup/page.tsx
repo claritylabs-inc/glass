@@ -11,6 +11,7 @@ import { PolicyEmptyState } from "@/components/policy-empty-state";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -83,10 +84,10 @@ const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
 ] as const;
 
 const inputClass =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
 const labelClass =
-  "text-label-sm font-medium text-muted-foreground block mb-1.5";
+  "text-label font-medium text-muted-foreground block mb-1.5";
 
 function StepDots({ currentStep }: { currentStep: Step }) {
   return (
@@ -126,7 +127,7 @@ function Shell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-20 w-full bg-background px-6 py-6 sm:px-8">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-sm text-muted-foreground">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-base text-muted-foreground">
           <div className="justify-self-start min-w-0">
             <div className="sm:hidden">
               <LogoIcon size={18} color="#A0D2FA" static />
@@ -148,7 +149,7 @@ function Shell({
               <StepDots currentStep={currentStep} />
             ) : null}
           </div>
-          <div className="justify-self-end text-right text-sm text-muted-foreground min-w-0">
+          <div className="justify-self-end text-right text-base text-muted-foreground min-w-0">
             {email ? (
               <div className="flex items-center gap-3">
                 <span className="hidden sm:inline">{email}</span>
@@ -565,7 +566,7 @@ export default function ClientOnboardingSetupPage() {
                   defaultCountry="US"
                   placeholder="Enter phone number"
                 />
-                <p className="text-label-sm text-muted-foreground/70">
+                <p className="text-label text-muted-foreground/70">
                   {phoneInvalid ? (
                     <span className="text-red-500/80">
                       Enter a valid phone number with country code.
@@ -586,13 +587,13 @@ export default function ClientOnboardingSetupPage() {
             </div>
 
             {error ? (
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base text-muted-foreground">{error}</p>
             ) : null}
 
             <PillButton
               type="submit"
               disabled={!canContinueStep0 || submitting}
-              className="w-full justify-center text-sm shadow-none sm:w-auto"
+              className="w-full justify-center text-base shadow-none sm:w-auto"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -631,7 +632,7 @@ export default function ClientOnboardingSetupPage() {
                   placeholder="acme.com"
                   className={inputClass}
                 />
-                <p className="text-label-sm text-muted-foreground/70">
+                <p className="text-label text-muted-foreground/70">
                   We&apos;ll use this to enrich your company profile
                   automatically.
                 </p>
@@ -639,13 +640,13 @@ export default function ClientOnboardingSetupPage() {
             </div>
 
             {error ? (
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base text-muted-foreground">{error}</p>
             ) : null}
 
             <PillButton
               type="submit"
               disabled={!canContinueStep1 || submitting}
-              className="w-full justify-center text-sm shadow-none sm:w-auto"
+              className="w-full justify-center text-base shadow-none sm:w-auto"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -657,22 +658,25 @@ export default function ClientOnboardingSetupPage() {
         {currentStep === 2 && (
           <div className="space-y-8">
             {policyCount > 0 ? (
-              <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6 flex items-start gap-3">
+              <OperationalPanel
+                as="div"
+                className="p-5 sm:p-6 flex items-start gap-3"
+              >
                 <div className="mt-0.5 h-8 w-8 rounded-full bg-foreground/4 flex items-center justify-center shrink-0">
                   <Check className="h-4 w-4 text-muted-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-body-sm font-semibold text-foreground">
+                  <div className="text-base font-semibold text-foreground">
                     {policyCount === 1
                       ? "1 policy uploaded"
                       : `${policyCount} policies uploaded`}
                   </div>
-                  <div className="text-body-sm text-muted-foreground mt-0.5">
+                  <div className="text-base text-muted-foreground mt-0.5">
                     We&apos;re extracting the details in the background — you
                     can move on.
                   </div>
                 </div>
-              </div>
+              </OperationalPanel>
             ) : (
               <PolicyEmptyState
                 docType="policy"
@@ -691,7 +695,7 @@ export default function ClientOnboardingSetupPage() {
             )}
 
             {error ? (
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base text-muted-foreground">{error}</p>
             ) : null}
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between -mt-4">
@@ -699,7 +703,7 @@ export default function ClientOnboardingSetupPage() {
                 type="button"
                 onClick={() => setCurrentStep(3)}
                 disabled={uploading}
-                className="text-label-sm text-muted-foreground hover:text-foreground transition self-start sm:self-center disabled:opacity-50"
+                className="text-label text-muted-foreground hover:text-foreground transition self-start sm:self-center disabled:opacity-50"
               >
                 Skip for now
               </button>
@@ -710,7 +714,7 @@ export default function ClientOnboardingSetupPage() {
                   uploading ||
                   (policyCount === 0 && stagedPolicies.length === 0)
                 }
-                className="w-full justify-center text-sm shadow-none sm:w-auto"
+                className="w-full justify-center text-base shadow-none sm:w-auto"
               >
                 {uploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -793,14 +797,14 @@ export default function ClientOnboardingSetupPage() {
             </ol>
 
             {error ? (
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base text-muted-foreground">{error}</p>
             ) : null}
 
             <PillButton
               type="button"
               onClick={handleFinish}
               disabled={submitting}
-              className="w-full justify-center text-sm shadow-none sm:w-auto"
+              className="w-full justify-center text-base shadow-none sm:w-auto"
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

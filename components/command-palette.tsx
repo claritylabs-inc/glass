@@ -155,7 +155,7 @@ export function CommandPalette() {
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     placeholder="Ask Glass anything..."
-                    className="w-full bg-transparent outline-none text-body-sm text-foreground placeholder:text-muted-foreground/40"
+                    className="w-full bg-transparent outline-none text-base text-foreground placeholder:text-muted-foreground/40"
                     disabled={sending}
                   />
                 </div>
@@ -164,12 +164,12 @@ export function CommandPalette() {
                 <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
                   <div className="flex items-center gap-1.5 ml-1">
                     <Asterisk className="w-3.5 h-3.5 text-primary-light" />
-                    <span className="text-label-sm font-medium text-muted-foreground/40">
+                    <span className="text-label font-medium text-muted-foreground/40">
                       Glass
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/4 text-muted-foreground/40 border border-foreground/6">
+                    <kbd className="text-label px-1.5 py-0.5 rounded bg-foreground/4 text-muted-foreground/40 border border-foreground/6">
                       esc
                     </kbd>
                     <button

@@ -19,6 +19,11 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import {
+  OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
@@ -116,7 +121,7 @@ export function ConnectionsSection() {
         >
           {generatedKey ? (
             <>
-              <p className="text-body-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 Copy this key now. You won&apos;t be able to see it again.
               </p>
               <div className="flex items-center gap-2 bg-foreground/3 border border-foreground/6 rounded-lg p-3">
@@ -138,11 +143,11 @@ export function ConnectionsSection() {
             </>
           ) : (
             <>
-              <p className="text-body-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 Create a new API key for programmatic MCP access.
               </p>
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+                <label className="text-label font-medium text-muted-foreground block mb-1.5">
                   Key name
                 </label>
                 <input
@@ -150,7 +155,7 @@ export function ConnectionsSection() {
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
                   placeholder="e.g. CI pipeline, ingestion script"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
             </>
@@ -178,7 +183,7 @@ export function ConnectionsSection() {
         >
           <div className="flex items-start gap-3">
             <Trash2 className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-            <p className="text-body-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               This will disconnect <strong>{revokeTarget?.clientName}</strong> and revoke its
               access to your Glass data.
             </p>
@@ -221,7 +226,7 @@ export function ConnectionsSection() {
         >
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-            <p className="text-body-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               This key will immediately stop working. Any integrations using it will lose access.
             </p>
           </div>
@@ -330,12 +335,10 @@ export function ConnectionsSection() {
   return (
     <div className="space-y-4">
       {/* MCP connections */}
-      <div className="rounded-lg border border-foreground/6 bg-card">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">MCP connections</h3>
-        </div>
-        <div className="px-5 py-5 space-y-4">
-          <p className="text-body-sm text-muted-foreground">
+      <OperationalPanel>
+        <OperationalPanelHeader title="MCP connections" className="px-5 py-3.5" />
+        <OperationalPanelBody className="space-y-4 px-5 py-5">
+          <p className="text-base text-muted-foreground">
             Connect Glass to Claude.ai, ChatGPT, or another AI assistant. In your assistant&apos;s
             connector or integration settings, add a new MCP connection and paste the URL below.
             You&apos;ll be asked to sign in to Glass the first time you use it.
@@ -355,16 +358,14 @@ export function ConnectionsSection() {
               )}
             </button>
           </div>
-        </div>
-      </div>
+        </OperationalPanelBody>
+      </OperationalPanel>
 
       {/* Glass CLI */}
-      <div className="rounded-lg border border-foreground/6 bg-card">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">Glass CLI</h3>
-        </div>
-        <div className="px-5 py-5 space-y-4">
-          <p className="text-body-sm text-muted-foreground">
+      <OperationalPanel>
+        <OperationalPanelHeader title="Glass CLI" className="px-5 py-3.5" />
+        <OperationalPanelBody className="space-y-4 px-5 py-5">
+          <p className="text-base text-muted-foreground">
             Install the command line interface for terminal workflows, scripts, and local
             automation. It uses the same OAuth sign-in as connected apps.
           </p>
@@ -385,14 +386,12 @@ export function ConnectionsSection() {
               )}
             </button>
           </div>
-        </div>
-      </div>
+        </OperationalPanelBody>
+      </OperationalPanel>
 
       {/* Connected apps */}
-      <div className="rounded-lg border border-foreground/6 bg-card">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">Connected apps</h3>
-        </div>
+      <OperationalPanel>
+        <OperationalPanelHeader title="Connected apps" className="px-5 py-3.5" />
         {connectedApps === undefined ? (
           <div className="px-5 py-8 text-center">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mx-auto" />
@@ -400,8 +399,8 @@ export function ConnectionsSection() {
         ) : connectedApps.length === 0 ? (
           <div className="px-5 py-8 text-center">
             <Plug className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
-            <p className="text-body-sm text-muted-foreground">No connected apps yet</p>
-            <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+            <p className="text-base text-muted-foreground">No connected apps yet</p>
+            <p className="text-label text-muted-foreground/50 mt-0.5">
               Apps appear here after they complete the OAuth sign-in.
             </p>
           </div>
@@ -410,8 +409,8 @@ export function ConnectionsSection() {
             {connectedApps.map((app) => (
               <div key={app.tokenId} className="px-5 py-3.5 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-body-sm font-medium text-foreground">{app.clientName}</p>
-                  <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+                  <p className="text-base font-medium text-foreground">{app.clientName}</p>
+                  <p className="text-label text-muted-foreground/50 mt-0.5">
                     Connected {dayjs(app.connectedAt).format("M/D/YYYY")}
                   </p>
                 </div>
@@ -433,17 +432,17 @@ export function ConnectionsSection() {
             ))}
           </div>
         )}
-      </div>
+      </OperationalPanel>
 
       {/* Advanced — API keys */}
-      <div className="rounded-lg border border-foreground/6 bg-card">
+      <OperationalPanel>
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
           className="w-full px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between hover:bg-foreground/2 transition-colors"
           style={{ borderBottomWidth: showAdvanced ? 1 : 0 }}
         >
-          <span className="text-sm font-medium text-foreground flex items-center gap-2">
+          <span className="text-base font-medium text-foreground flex items-center gap-2">
             {showAdvanced ? (
               <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
             ) : (
@@ -451,7 +450,7 @@ export function ConnectionsSection() {
             )}
             Advanced
           </span>
-          <span className="text-label-sm text-muted-foreground/60">
+          <span className="text-label text-muted-foreground/60">
             For developers
           </span>
         </button>
@@ -459,8 +458,8 @@ export function ConnectionsSection() {
           <div>
             <div className="px-5 py-5 border-b border-foreground/6 space-y-3">
               <div>
-                <h4 className="text-body-sm font-medium text-foreground mb-1">Local MCP</h4>
-                <p className="text-body-sm text-muted-foreground">
+                <h4 className="text-base font-medium text-foreground mb-1">Local MCP</h4>
+                <p className="text-base text-muted-foreground">
                   For Claude Code, Cursor, Codex, and other local MCP clients. Paste this into your MCP
                   config (e.g. <code className="text-label bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code> or
                   <code className="text-label bg-foreground/5 px-1 py-0.5 rounded ml-1">~/.cursor/mcp.json</code>).
@@ -486,8 +485,8 @@ export function ConnectionsSection() {
             </div>
             <div className="px-5 py-4 border-b border-foreground/6 flex items-start justify-between gap-3">
               <div>
-                <h4 className="text-body-sm font-medium text-foreground mb-1">API keys</h4>
-                <p className="text-body-sm text-muted-foreground">
+                <h4 className="text-base font-medium text-foreground mb-1">API keys</h4>
+                <p className="text-base text-muted-foreground">
                   Long-lived bearer tokens for programmatic access. Prefer the OAuth flow above for
                   interactive tools.
                 </p>
@@ -504,27 +503,27 @@ export function ConnectionsSection() {
             ) : apiKeys.length === 0 ? (
               <div className="px-5 py-8 text-center">
                 <Key className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
-                <p className="text-body-sm text-muted-foreground">No API keys yet</p>
+                <p className="text-base text-muted-foreground">No API keys yet</p>
               </div>
             ) : (
               <div className="divide-y divide-foreground/6">
                 {apiKeys.map((key) => (
                   <div key={key._id} className="px-5 py-3.5 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-body-sm font-medium text-foreground">
+                      <p className="text-base font-medium text-foreground">
                         {key.name}
                         {key.revokedAt && (
-                          <span className="text-label-sm text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded ml-2">
+                          <span className="text-label text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded ml-2">
                             Revoked
                           </span>
                         )}
                       </p>
-                      <p className="text-label-sm text-muted-foreground font-mono mt-0.5">
+                      <p className="text-label text-muted-foreground font-mono mt-0.5">
                         {key.keyPrefix}
                         {"••••••••"}
                       </p>
                       {key.lastUsedAt && (
-                        <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+                        <p className="text-label text-muted-foreground/50 mt-0.5">
                           Last used {dayjs(key.lastUsedAt).format("M/D/YYYY")}
                         </p>
                       )}
@@ -564,7 +563,7 @@ export function ConnectionsSection() {
             )}
           </div>
         )}
-      </div>
+      </OperationalPanel>
 
     </div>
   );

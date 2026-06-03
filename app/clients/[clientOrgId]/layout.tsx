@@ -67,7 +67,7 @@ export default function ClientDetailLayout({
             </span>
             {breadcrumbExtra ? (
               <>
-                <span className="text-muted-foreground/30 text-body-sm">/</span>
+                <span className="text-muted-foreground/30 text-base">/</span>
                 <span className="truncate">{breadcrumbExtra}</span>
               </>
             ) : null}

@@ -14,6 +14,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  OperationalPanel,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -291,7 +295,7 @@ function PageRef({ page }: { page: number }) {
 
   if (!pdf.fileUrl) {
     return (
-      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/5 text-muted-foreground/60">
+      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-label font-medium bg-foreground/5 text-muted-foreground/60">
         p.{page}
       </span>
     );
@@ -312,7 +316,7 @@ function PageRef({ page }: { page: number }) {
           pdf.navigateToPage(page);
         }
       }}
-      className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-foreground/5 text-muted-foreground/60 hover:bg-blue-100 hover:text-blue-600 transition-colors"
+      className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-label font-medium bg-foreground/5 text-muted-foreground/60 hover:bg-blue-100 hover:text-blue-600 transition-colors"
     >
       p.{page}
     </span>
@@ -321,7 +325,7 @@ function PageRef({ page }: { page: number }) {
 
 function DocContent({ children }: { children: string }) {
   return (
-    <ProseMarkdown gfm className="text-foreground !text-sm !leading-relaxed">
+    <ProseMarkdown gfm className="text-foreground !text-base !leading-relaxed">
       {children}
     </ProseMarkdown>
   );
@@ -739,7 +743,7 @@ function CoveredReasonDetailSection({
 
   return (
     <div className="border-t border-foreground/4 px-5 pt-3 sm:pl-[2.625rem] sm:pr-5">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+      <p className="mb-2 text-label font-medium text-muted-foreground">{title}</p>
       {shouldUseTable ? (
         <div className="overflow-hidden rounded-md border border-foreground/6">
           <KeyValueTable
@@ -749,7 +753,7 @@ function CoveredReasonDetailSection({
           />
         </div>
       ) : (
-        <div className="space-y-1.5 text-sm leading-relaxed text-foreground">
+        <div className="space-y-1.5 text-base leading-relaxed text-foreground">
           {items.map((item, i) => (
             <p key={`${title}-${i}`}>{item}</p>
           ))}
@@ -835,12 +839,11 @@ function StructuredItemsCard<T>({
     });
 
   return (
-    <div id={id}>
-      <div className="px-5 py-3 border-b border-foreground/4">
-        <p className="text-sm font-medium text-foreground">
-          {title} ({items.length})
-        </p>
-      </div>
+    <OperationalPanel as="div" id={id}>
+      <OperationalPanelHeader
+        title={`${title} (${items.length})`}
+        className="px-5 py-3 border-foreground/4"
+      />
       {items.map((item, i) => {
         const badges = getBadges?.(item) ?? [];
         const page = getPage?.(item);
@@ -861,7 +864,7 @@ function StructuredItemsCard<T>({
                 ) : (
                   <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                 )}
-                <span className="text-sm font-normal text-foreground flex-1 min-w-0 truncate">
+                <span className="text-base font-normal text-foreground flex-1 min-w-0 truncate">
                   {getTitle(item)}
                 </span>
                 {badges.length > 0 && (
@@ -869,7 +872,7 @@ function StructuredItemsCard<T>({
                     {badges.map((badge) => (
                       <span
                         key={badge.label}
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium ${badge.className}`}
                       >
                         {badge.label}
                       </span>
@@ -894,7 +897,7 @@ function StructuredItemsCard<T>({
                     {badges.map((badge) => (
                       <span
                         key={badge.label}
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium ${badge.className}`}
                       >
                         {badge.label}
                       </span>
@@ -907,7 +910,7 @@ function StructuredItemsCard<T>({
           </div>
         );
       })}
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -931,21 +934,21 @@ function ContactCard({
     <div className="border-t border-foreground/4 first:border-t-0 px-4 py-3">
       <div className="flex items-center gap-2">
         {contact.name && (
-          <p className="text-sm font-medium text-foreground">{contact.name}</p>
+          <p className="text-base font-medium text-foreground">{contact.name}</p>
         )}
         {showType && contact.type && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-foreground/5 text-muted-foreground">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium bg-foreground/5 text-muted-foreground">
             {contact.type}
           </span>
         )}
       </div>
       {contact.title && (
-        <p className="text-sm text-muted-foreground mt-0.5">{contact.title}</p>
+        <p className="text-base text-muted-foreground mt-0.5">{contact.title}</p>
       )}
       {fields.length > 0 && (
         <div className="flex flex-wrap gap-x-5 gap-y-0.5 mt-1">
           {fields.map((f) => (
-            <p key={f.label} className="text-sm text-foreground">
+            <p key={f.label} className="text-base text-foreground">
               <span className="text-muted-foreground">{f.label}:</span>{" "}
               {f.value}
             </p>
@@ -953,7 +956,7 @@ function ContactCard({
         </div>
       )}
       {contact.address && (
-        <p className="text-sm text-muted-foreground mt-1">{contact.address}</p>
+        <p className="text-base text-muted-foreground mt-1">{contact.address}</p>
       )}
     </div>
   );
@@ -975,23 +978,26 @@ function SupplementaryCard({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <div className="px-5 py-3 border-b border-foreground/4">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground">{title}</p>
-          {pageNumber != null && <PageRef page={pageNumber} />}
-        </div>
-      </div>
+    <OperationalPanel as="div">
+      <OperationalPanelHeader
+        title={
+          <span className="flex items-center gap-2">
+            <span>{title}</span>
+            {pageNumber != null && <PageRef page={pageNumber} />}
+          </span>
+        }
+        className="px-5 py-3 border-foreground/4"
+      />
       {hasStructured ? (
         <>
           <div className="px-5 py-3">{children}</div>
           <details className="group/raw border-t border-foreground/4">
-            <summary className="flex items-center gap-2 px-5 py-2.5 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
+            <summary className="flex items-center gap-2 px-5 py-2.5 text-label text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
               <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
               View raw text
             </summary>
             <div className="px-5 pt-1 pb-3">
-              <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
+              <p className="whitespace-pre-wrap break-words text-base text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
                 {content}
               </p>
             </div>
@@ -999,12 +1005,12 @@ function SupplementaryCard({
         </>
       ) : (
         <div className="px-5 py-3">
-          <p className="whitespace-pre-wrap break-words text-sm text-foreground leading-relaxed [overflow-wrap:anywhere]">
+          <p className="whitespace-pre-wrap break-words text-base text-foreground leading-relaxed [overflow-wrap:anywhere]">
             {content}
           </p>
         </div>
       )}
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -1021,10 +1027,10 @@ function RegulatoryContextStructured({ data }: { data: RegulatoryContext }) {
         <div className="flex flex-col sm:flex-row sm:divide-x divide-foreground/6 border-b border-foreground/4">
           {gridItems.map((item) => (
             <div key={item.label} className="flex-1 px-4 py-2.5">
-              <p className="text-xs font-semibold text-muted-foreground mb-0.5">
+              <p className="text-label font-semibold text-muted-foreground mb-0.5">
                 {item.label}
               </p>
-              <p className="text-sm text-foreground font-medium">
+              <p className="text-base text-foreground font-medium">
                 {item.value}
               </p>
             </div>
@@ -1039,10 +1045,10 @@ function RegulatoryContextStructured({ data }: { data: RegulatoryContext }) {
                 key={i}
                 className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors"
               >
-                <td className="px-4 py-2.5 text-sm text-muted-foreground align-top">
+                <td className="px-4 py-2.5 text-base text-muted-foreground align-top">
                   {d.label}
                 </td>
-                <td className="px-4 py-2.5 text-sm text-foreground font-medium">
+                <td className="px-4 py-2.5 text-base text-foreground font-medium">
                   {d.value}
                 </td>
               </tr>
@@ -1081,13 +1087,13 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
       )}
       {(data.processSteps?.length ?? 0) > 0 && (
         <div className="border-t border-foreground/4 px-4 py-3">
-          <p className="text-xs font-semibold text-muted-foreground mb-2">
+          <p className="text-label font-semibold text-muted-foreground mb-2">
             Claims Process
           </p>
           <ol className="space-y-1.5">
             {(data.processSteps ?? []).map((step: string, i: number) => (
-              <li key={i} className="flex gap-2.5 text-sm text-foreground">
-                <span className="text-muted-foreground/60 text-xs mt-px shrink-0">
+              <li key={i} className="flex gap-2.5 text-base text-foreground">
+                <span className="text-muted-foreground/60 text-label mt-px shrink-0">
                   {i + 1}.
                 </span>
                 {step}
@@ -1098,10 +1104,10 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
       )}
       {data.reportingTimeLimit && (
         <div className="border-t border-foreground/4 px-4 py-3">
-          <p className="text-xs font-semibold text-muted-foreground mb-1">
+          <p className="text-label font-semibold text-muted-foreground mb-1">
             Reporting Time Limit
           </p>
-          <p className="text-sm text-foreground font-medium">
+          <p className="text-base text-foreground font-medium">
             {data.reportingTimeLimit}
           </p>
         </div>
@@ -1135,17 +1141,17 @@ function KeyValueTable({
             className="block border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors sm:table-row"
           >
             <td
-              className={`block px-5 pt-3 pb-1 text-xs font-medium text-muted-foreground align-top sm:table-cell sm:w-1/3 sm:py-2.5 sm:text-sm sm:font-normal ${labelCellClassName}`}
+              className={`block px-5 pt-3 pb-1 text-label font-medium text-muted-foreground align-top sm:table-cell sm:w-1/3 sm:py-2.5 sm:text-base sm:font-normal ${labelCellClassName}`}
             >
               <span>{row.label}</span>
               {row.section && (
-                <span className="block text-[11px] text-muted-foreground/60 mt-0.5">
+                <span className="block text-label text-muted-foreground/60 mt-0.5">
                   {row.section}
                 </span>
               )}
             </td>
             <td
-              className={`block px-5 pt-0 pb-3 text-sm text-foreground font-normal sm:table-cell sm:py-2.5 ${valueCellClassName}`}
+              className={`block px-5 pt-0 pb-3 text-base text-foreground font-normal sm:table-cell sm:py-2.5 ${valueCellClassName}`}
             >
               <span className="inline-flex items-center gap-1.5 break-words">
                 <span>{row.value}</span>
@@ -1180,12 +1186,13 @@ function DataCard({
 }) {
   if (!rows.length) return null;
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-      <div className="px-5 py-3 border-b border-foreground/4">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-      </div>
+    <OperationalPanel as="div">
+      <OperationalPanelHeader
+        title={title}
+        className="px-5 py-3 border-foreground/4"
+      />
       <KeyValueTable rows={rows} sourceSpans={sourceSpans} fileUrl={fileUrl} />
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -1206,10 +1213,11 @@ function SectionedDataCard({
   if (!nonEmptySections.length) return null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-      <div className="px-5 py-3 border-b border-foreground/4">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-      </div>
+    <OperationalPanel as="div">
+      <OperationalPanelHeader
+        title={title}
+        className="px-5 py-3 border-foreground/4"
+      />
       {nonEmptySections.map((section, index) => (
         <GroupSection
           key={`${section.label}-${index}`}
@@ -1224,7 +1232,7 @@ function SectionedDataCard({
           />
         </GroupSection>
       ))}
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -1428,9 +1436,9 @@ function SourceNodeTable({
   const bodyRows = firstRowIsHeader ? rows.slice(1) : rows;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-foreground/6 bg-card">
+    <OperationalPanel as="div" className="overflow-x-auto">
       <UiTable
-        className="w-max min-w-full text-sm [&_td]:whitespace-normal [&_th]:whitespace-normal"
+        className="w-max min-w-full text-base [&_td]:whitespace-normal [&_th]:whitespace-normal"
         style={{ minWidth: `${Math.max(34, maxColumnCount * 12 + 7)}rem` }}
       >
         {firstRowIsHeader ? (
@@ -1439,12 +1447,12 @@ function SourceNodeTable({
               {Array.from({ length: maxColumnCount }, (_, index) => (
                 <TableHead
                   key={`head-${index}`}
-                  className="h-8 bg-muted/30 px-3 text-label-sm text-muted-foreground"
+                  className="h-8 bg-muted/30 px-3 text-label text-muted-foreground"
                 >
                   {headerCells[index] ?? ""}
                 </TableHead>
               ))}
-              <TableHead className="h-8 w-px bg-muted/30 px-3 text-label-sm text-muted-foreground">
+              <TableHead className="h-8 w-px bg-muted/30 px-3 text-label text-muted-foreground">
                 Source
               </TableHead>
             </TableRow>
@@ -1473,7 +1481,7 @@ function SourceNodeTable({
           ))}
         </TableBody>
       </UiTable>
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -1509,7 +1517,7 @@ function SourceTextParagraphs({
         const text = normalizedNodeText(node);
         return (
           <div key={node.id} className="flex min-w-0 items-start gap-3 py-0.5">
-            <p className="min-w-0 flex-1 text-sm leading-5 text-foreground">
+            <p className="min-w-0 flex-1 text-base leading-5 text-foreground">
               {text}
             </p>
             <SourceEvidenceButton
@@ -1662,10 +1670,10 @@ function OutlineNodeRow({
             <span className="size-3.5 shrink-0" />
           )}
           <div className="min-w-0 flex-1">
-            <p className="min-w-0 truncate text-sm font-medium text-foreground">
+            <p className="min-w-0 truncate text-base font-medium text-foreground">
               {nodeDisplayTitle(node)}
             </p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-label text-muted-foreground">
               <span>{nodeKindLabel(node)}</span>
               {node.formNumber ? <span>{node.formNumber}</span> : null}
             </div>
@@ -1762,20 +1770,19 @@ function SourceBackedBreakdown({
 
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-        <div className="border-b border-foreground/4 px-5 py-3">
-          <p className="text-sm font-medium text-foreground">
-            Source hierarchy
-          </p>
-        </div>
+      <OperationalPanel as="div">
+        <OperationalPanelHeader
+          title="Source hierarchy"
+          className="border-foreground/4 px-5 py-3"
+        />
         <div>
           {loadingSourceNodes ? (
-            <p className="px-5 py-4 text-label-sm text-muted-foreground">
+            <p className="px-5 py-4 text-label text-muted-foreground">
               Loading source hierarchy...
             </p>
           ) : null}
           {!loadingSourceNodes && renderableOutline.length === 0 ? (
-            <p className="px-5 py-4 text-label-sm text-muted-foreground">
+            <p className="px-5 py-4 text-label text-muted-foreground">
               Source hierarchy is unavailable for this policy.
             </p>
           ) : null}
@@ -1791,7 +1798,7 @@ function SourceBackedBreakdown({
             />
           ))}
         </div>
-      </div>
+      </OperationalPanel>
     </div>
   );
 }
@@ -1802,8 +1809,8 @@ function SourceNativeBreakdownUnavailable() {
       <div className="flex gap-2">
         <AlertCircle className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0">
-          <p className="text-sm font-medium">Source document outline unavailable</p>
-          <p className="mt-1 text-label-sm leading-5 opacity-80">
+          <p className="text-base font-medium">Source document outline unavailable</p>
+          <p className="mt-1 text-label leading-5 opacity-80">
             This policy does not have the top-level document outline generated by
             the current extraction pipeline. Re-extract it from the original PDF
             to see the source-order breakdown. The legacy extracted fields below
@@ -1839,7 +1846,7 @@ export function GroupSection({
         ) : (
           <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
         )}
-        <span className="text-sm font-medium text-foreground flex-1">
+        <span className="text-base font-medium text-foreground flex-1">
           {label}
         </span>
       </button>
@@ -2020,37 +2027,39 @@ export function ExtractionCards({
       )}
 
       {coverages.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <StructuredItemsCard
-            id="ep-coverages"
-            title="Coverages"
-            items={coverages}
-            getTitle={(coverage) => coverage.name ?? "Unnamed coverage"}
-            getPage={(coverage) => coverage.pageNumber}
-            getSourceSpanIds={(coverage) => coverage.sourceSpanIds}
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            getBadges={(coverage) =>
-              [
-                coverage.coverageCode
-                  ? {
-                      label: coverage.coverageCode,
-                      className: "bg-foreground/5 text-muted-foreground",
-                    }
-                  : undefined,
-                coverage.formNumber
-                  ? {
-                      label: coverage.formNumber,
-                      className: "bg-foreground/5 text-muted-foreground",
-                    }
-                  : undefined,
-              ].filter(Boolean) as { label: string; className: string }[]
-            }
-            renderBody={(coverage) => (
-              <CoverageBody coverage={coverage} sourceSpans={sourceSpans} fileUrl={fileUrl} />
-            )}
-          />
-        </div>
+        <StructuredItemsCard
+          id="ep-coverages"
+          title="Coverages"
+          items={coverages}
+          getTitle={(coverage) => coverage.name ?? "Unnamed coverage"}
+          getPage={(coverage) => coverage.pageNumber}
+          getSourceSpanIds={(coverage) => coverage.sourceSpanIds}
+          sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
+          getBadges={(coverage) =>
+            [
+              coverage.coverageCode
+                ? {
+                    label: coverage.coverageCode,
+                    className: "bg-foreground/5 text-muted-foreground",
+                  }
+                : undefined,
+              coverage.formNumber
+                ? {
+                    label: coverage.formNumber,
+                    className: "bg-foreground/5 text-muted-foreground",
+                  }
+                : undefined,
+            ].filter(Boolean) as { label: string; className: string }[]
+          }
+          renderBody={(coverage) => (
+            <CoverageBody
+              coverage={coverage}
+              sourceSpans={sourceSpans}
+              fileUrl={fileUrl}
+            />
+          )}
+        />
       )}
 
       {limits.length > 0 && (
@@ -2114,73 +2123,67 @@ export function ExtractionCards({
       )}
 
       {definitions.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <StructuredItemsCard
-            id="ep-definitions"
-            title="Definitions"
-            items={definitions}
-            getTitle={(definition) => definition.term ?? "Unnamed definition"}
-            getPage={(definition) => definition.pageNumber}
-            getSourceSpanIds={(definition) => definition.sourceSpanIds}
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            getBadges={(definition) =>
-              definition.sectionRef
-                ? [
-                    {
-                      label: definition.sectionRef,
-                      className:
-                        "bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400",
-                    },
-                  ]
-                : []
-            }
-            renderBody={(definition) => (
-              <DefinitionBody definition={definition} />
-            )}
-          />
-        </div>
+        <StructuredItemsCard
+          id="ep-definitions"
+          title="Definitions"
+          items={definitions}
+          getTitle={(definition) => definition.term ?? "Unnamed definition"}
+          getPage={(definition) => definition.pageNumber}
+          getSourceSpanIds={(definition) => definition.sourceSpanIds}
+          sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
+          getBadges={(definition) =>
+            definition.sectionRef
+              ? [
+                  {
+                    label: definition.sectionRef,
+                    className:
+                      "bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400",
+                  },
+                ]
+              : []
+          }
+          renderBody={(definition) => <DefinitionBody definition={definition} />}
+        />
       )}
 
       {coveredReasons.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <StructuredItemsCard
-            id="ep-covered-reasons"
-            title="Covered reasons"
-            items={coveredReasons}
-            getTitle={(reason) =>
-              [
-                reason.reasonNumber,
-                reason.title ?? reason.coverageName ?? "Covered reason",
-              ]
-                .filter(Boolean)
-                .join(". ")
-            }
-            getPage={(reason) => reason.pageNumber}
-            getSourceSpanIds={(reason) => reason.sourceSpanIds}
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            getBadges={(reason) =>
-              [
-                reason.coverageName
-                  ? {
-                      label: reason.coverageName,
-                      className:
-                        "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-                    }
-                  : undefined,
-                reason.conditions?.length
-                  ? {
-                      label: "Conditions",
-                      className:
-                        "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-                    }
-                  : undefined,
-              ].filter(Boolean) as { label: string; className: string }[]
-            }
-            renderBody={(reason) => <CoveredReasonBody reason={reason} />}
-          />
-        </div>
+        <StructuredItemsCard
+          id="ep-covered-reasons"
+          title="Covered reasons"
+          items={coveredReasons}
+          getTitle={(reason) =>
+            [
+              reason.reasonNumber,
+              reason.title ?? reason.coverageName ?? "Covered reason",
+            ]
+              .filter(Boolean)
+              .join(". ")
+          }
+          getPage={(reason) => reason.pageNumber}
+          getSourceSpanIds={(reason) => reason.sourceSpanIds}
+          sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
+          getBadges={(reason) =>
+            [
+              reason.coverageName
+                ? {
+                    label: reason.coverageName,
+                    className:
+                      "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+                  }
+                : undefined,
+              reason.conditions?.length
+                ? {
+                    label: "Conditions",
+                    className:
+                      "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+                  }
+                : undefined,
+            ].filter(Boolean) as { label: string; className: string }[]
+          }
+          renderBody={(reason) => <CoveredReasonBody reason={reason} />}
+        />
       )}
 
       {formInventory.length > 0 && (
@@ -2229,223 +2232,205 @@ export function ExtractionCards({
 
       {/* Endorsements */}
       {endorsements.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <StructuredItemsCard
-            id="ep-endorsements"
-            title="Endorsements"
-            items={endorsements}
-            getTitle={(e) =>
-              e.title ?? e.name ?? e.formNumber ?? "Unnamed endorsement"
-            }
-            getPage={(e) => e.pageStart}
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            getBadges={(e) =>
-              [
-                e?.endorsementType
-                  ? {
-                      label:
-                        formatStructuredLabel(e.endorsementType) ??
-                        e.endorsementType,
-                      className:
-                        e.endorsementType === "restriction" ||
-                        e.endorsementType === "exclusion"
-                          ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
-                          : e.endorsementType === "broadening"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                            : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
-                    }
-                  : undefined,
-                e?.effectiveDate
-                  ? {
-                      label: `Eff. ${e.effectiveDate}`,
-                      className: "bg-foreground/5 text-muted-foreground",
-                    }
-                  : undefined,
-              ].filter(Boolean) as { label: string; className: string }[]
-            }
-            renderBody={(e) => <EndorsementBody e={e} />}
-          />
-        </div>
+        <StructuredItemsCard
+          id="ep-endorsements"
+          title="Endorsements"
+          items={endorsements}
+          getTitle={(e) =>
+            e.title ?? e.name ?? e.formNumber ?? "Unnamed endorsement"
+          }
+          getPage={(e) => e.pageStart}
+          sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
+          getBadges={(e) =>
+            [
+              e?.endorsementType
+                ? {
+                    label:
+                      formatStructuredLabel(e.endorsementType) ??
+                      e.endorsementType,
+                    className:
+                      e.endorsementType === "restriction" ||
+                      e.endorsementType === "exclusion"
+                        ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+                        : e.endorsementType === "broadening"
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                          : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+                  }
+                : undefined,
+              e?.effectiveDate
+                ? {
+                    label: `Eff. ${e.effectiveDate}`,
+                    className: "bg-foreground/5 text-muted-foreground",
+                  }
+                : undefined,
+            ].filter(Boolean) as { label: string; className: string }[]
+          }
+          renderBody={(e) => <EndorsementBody e={e} />}
+        />
       )}
 
       {/* Costs & Fees */}
       {costsAndFees && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <SupplementaryCard
-            title="Costs & fees"
-            pageNumber={costsAndFees.pageNumber}
-            content={costsAndFees.content ?? ""}
-            hasStructured={fees.length > 0}
-          >
-            {fees.length > 0 && (
-              <div className="-mx-4 -mt-3">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-foreground/[0.02]">
-                      <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">
-                        Name
-                      </th>
-                      <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground text-right">
-                        Amount
-                      </th>
-                      <th className="hidden sm:table-cell px-4 py-2.5 text-xs font-semibold text-muted-foreground">
-                        Type
-                      </th>
+        <SupplementaryCard
+          title="Costs & fees"
+          pageNumber={costsAndFees.pageNumber}
+          content={costsAndFees.content ?? ""}
+          hasStructured={fees.length > 0}
+        >
+          {fees.length > 0 && (
+            <div className="-mx-4 -mt-3">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-foreground/[0.02]">
+                    <th className="px-4 py-2.5 text-label font-semibold text-muted-foreground">
+                      Name
+                    </th>
+                    <th className="px-4 py-2.5 text-label font-semibold text-muted-foreground text-right">
+                      Amount
+                    </th>
+                    <th className="hidden sm:table-cell px-4 py-2.5 text-label font-semibold text-muted-foreground">
+                      Type
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(fees as Record<string, unknown>[]).map((f, i: number) => (
+                    <tr
+                      key={i}
+                      className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
+                    >
+                      <td className="px-4 py-2.5 text-base text-foreground font-medium">
+                        {String(f.name ?? "—")}
+                      </td>
+                      <td className="px-4 py-2.5 text-base font-medium text-foreground text-right">
+                        {String(f.amount ?? "—")}
+                      </td>
+                      <td className="hidden sm:table-cell px-4 py-2.5 text-base text-muted-foreground">
+                        {String(f.type ?? "—")}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {(fees as Record<string, unknown>[]).map((f, i: number) => (
-                      <tr
-                        key={i}
-                        className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
-                      >
-                        <td className="px-4 py-2.5 text-sm text-foreground font-medium">
-                          {String(f.name ?? "—")}
-                        </td>
-                        <td className="px-4 py-2.5 text-sm font-medium text-foreground text-right">
-                          {String(f.amount ?? "—")}
-                        </td>
-                        <td className="hidden sm:table-cell px-4 py-2.5 text-sm text-muted-foreground">
-                          {String(f.type ?? "—")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </SupplementaryCard>
-        </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SupplementaryCard>
       )}
 
       {/* Exclusions */}
       {exclusions.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <StructuredItemsCard
-            id="ep-exclusions"
-            title="Exclusions"
-            items={exclusions}
-            getTitle={(ex) =>
-              typeof ex === "string"
-                ? ex
-                : (ex?.name ?? ex?.title ?? "Unnamed exclusion")
+        <StructuredItemsCard
+          id="ep-exclusions"
+          title="Exclusions"
+          items={exclusions}
+          getTitle={(ex) =>
+            typeof ex === "string"
+              ? ex
+              : (ex?.name ?? ex?.title ?? "Unnamed exclusion")
+          }
+          getPage={(ex) =>
+            typeof ex === "string" ? undefined : (ex.pageNumber ?? ex.pageStart)
+          }
+          sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
+          getBadges={(ex) => {
+            if (typeof ex === "string") return [];
+            return [
+              ex?.buybackAvailable
+                ? {
+                    label: "Buyback",
+                    className:
+                      "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+                  }
+                : undefined,
+            ].filter(Boolean) as { label: string; className: string }[];
+          }}
+          renderBody={(ex) => {
+            if (typeof ex === "string") {
+              return <DocContent>{ex}</DocContent>;
             }
-            getPage={(ex) =>
-              typeof ex === "string"
-                ? undefined
-                : (ex.pageNumber ?? ex.pageStart)
-            }
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            getBadges={(ex) => {
-              if (typeof ex === "string") return [];
-              return [
-                ex?.buybackAvailable
-                  ? {
-                      label: "Buyback",
-                      className:
-                        "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
-                    }
-                  : undefined,
-              ].filter(Boolean) as { label: string; className: string }[];
-            }}
-            renderBody={(ex) => {
-              if (typeof ex === "string") {
-                return <DocContent>{ex}</DocContent>;
-              }
-              return <ExclusionBody ex={ex} />;
-            }}
-          />
-        </div>
+            return <ExclusionBody ex={ex} />;
+          }}
+        />
       )}
 
       {/* Conditions */}
       {conditions.length > 0 && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <StructuredItemsCard
-            id="ep-conditions"
-            title="Conditions"
-            items={conditions}
-            getTitle={(c) => c.name ?? c.title ?? "Unnamed condition"}
-            getPage={(c) => c.pageNumber}
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            getBadges={(c) =>
-              c?.conditionType
-                ? [
-                    {
-                      label:
-                        formatStructuredLabel(c.conditionType) ??
-                        c.conditionType,
-                      className:
-                        "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-                    },
-                  ]
-                : []
-            }
-            renderBody={(c) => <ConditionBody c={c} />}
-          />
-        </div>
+        <StructuredItemsCard
+          id="ep-conditions"
+          title="Conditions"
+          items={conditions}
+          getTitle={(c) => c.name ?? c.title ?? "Unnamed condition"}
+          getPage={(c) => c.pageNumber}
+          sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
+          getBadges={(c) =>
+            c?.conditionType
+              ? [
+                  {
+                    label:
+                      formatStructuredLabel(c.conditionType) ??
+                      c.conditionType,
+                    className:
+                      "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+                  },
+                ]
+              : []
+          }
+          renderBody={(c) => <ConditionBody c={c} />}
+        />
       )}
 
       {/* Claims contact */}
       {policyDocument?.claimsContact && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <SupplementaryCard
-            title="Claims contact"
-            pageNumber={policyDocument.claimsContact.pageNumber}
-            content={policyDocument.claimsContact.content}
-            hasStructured={
-              !!(
-                policyDocument.claimsContact.contacts?.length ||
-                policyDocument.claimsContact.processSteps?.length ||
-                policyDocument.claimsContact.reportingTimeLimit
-              )
-            }
-          >
-            <ClaimsContactStructured data={policyDocument.claimsContact} />
-          </SupplementaryCard>
-        </div>
+        <SupplementaryCard
+          title="Claims contact"
+          pageNumber={policyDocument.claimsContact.pageNumber}
+          content={policyDocument.claimsContact.content}
+          hasStructured={
+            !!(
+              policyDocument.claimsContact.contacts?.length ||
+              policyDocument.claimsContact.processSteps?.length ||
+              policyDocument.claimsContact.reportingTimeLimit
+            )
+          }
+        >
+          <ClaimsContactStructured data={policyDocument.claimsContact} />
+        </SupplementaryCard>
       )}
 
       {/* Complaint contact */}
       {policyDocument?.complaintContact && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <SupplementaryCard
-            title="Complaint contact"
-            pageNumber={policyDocument.complaintContact.pageNumber}
-            content={policyDocument.complaintContact.content}
-            hasStructured={!!policyDocument.complaintContact.contacts?.length}
-          >
-            <ComplaintContactStructured
-              contacts={policyDocument.complaintContact.contacts}
-            />
-          </SupplementaryCard>
-        </div>
+        <SupplementaryCard
+          title="Complaint contact"
+          pageNumber={policyDocument.complaintContact.pageNumber}
+          content={policyDocument.complaintContact.content}
+          hasStructured={!!policyDocument.complaintContact.contacts?.length}
+        >
+          <ComplaintContactStructured
+            contacts={policyDocument.complaintContact.contacts}
+          />
+        </SupplementaryCard>
       )}
 
       {/* Regulatory context */}
       {policyDocument?.regulatoryContext && (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <SupplementaryCard
-            title="Regulatory context"
-            pageNumber={policyDocument.regulatoryContext.pageNumber}
-            content={policyDocument.regulatoryContext.content}
-            hasStructured={
-              !!(
-                policyDocument.regulatoryContext.jurisdiction ||
-                policyDocument.regulatoryContext.regulatoryBody ||
-                policyDocument.regulatoryContext.governingLaw ||
-                policyDocument.regulatoryContext.details?.length
-              )
-            }
-          >
-            <RegulatoryContextStructured
-              data={policyDocument.regulatoryContext}
-            />
-          </SupplementaryCard>
-        </div>
+        <SupplementaryCard
+          title="Regulatory context"
+          pageNumber={policyDocument.regulatoryContext.pageNumber}
+          content={policyDocument.regulatoryContext.content}
+          hasStructured={
+            !!(
+              policyDocument.regulatoryContext.jurisdiction ||
+              policyDocument.regulatoryContext.regulatoryBody ||
+              policyDocument.regulatoryContext.governingLaw ||
+              policyDocument.regulatoryContext.details?.length
+            )
+          }
+        >
+          <RegulatoryContextStructured data={policyDocument.regulatoryContext} />
+        </SupplementaryCard>
       )}
     </div>
   );

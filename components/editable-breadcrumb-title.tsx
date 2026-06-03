@@ -43,14 +43,14 @@ export function EditableBreadcrumbTitle({
 
   if (editing) {
     // Sizer in flow gives the wrapper its width; input is positioned over it.
-    // Both share the exact same text-body-sm + px/py so the input matches the
+    // Both share the exact same text-base + px/py so the input matches the
     // measured width to the pixel — no JS measurement, no flicker.
     return (
       <span className="relative inline-block align-middle -mx-1.5 max-w-[60vw]">
         <span
           aria-hidden
           style={{ visibility: "hidden", color: "transparent" }}
-          className="whitespace-pre text-body-sm px-1.5 py-0.5 block pointer-events-none select-none"
+          className="whitespace-pre text-base px-1.5 py-0.5 block pointer-events-none select-none"
         >
           {(draft || " ") + "\u00A0"}
         </span>
@@ -91,7 +91,7 @@ export function EditableBreadcrumbTitle({
         setEditing(true);
       }}
       title="Rename"
-      className="-mx-1.5 px-1.5 py-0.5 rounded-md text-body-sm text-foreground truncate hover:bg-foreground/4 transition-colors cursor-text text-left max-w-[60vw] align-middle"
+      className="-mx-1.5 px-1.5 py-0.5 rounded-md text-base text-foreground truncate hover:bg-foreground/4 transition-colors cursor-text text-left max-w-[60vw] align-middle"
     >
       {display}
     </button>

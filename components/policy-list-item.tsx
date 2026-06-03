@@ -21,14 +21,14 @@ interface PolicyListItemProps {
 function ProvenanceBadge({ side }: { side: UploadedBySide }) {
   if (side === "broker") {
     return (
-      <Badge variant="secondary" className="text-xs">
+      <Badge variant="secondary" className="text-label">
         Broker provided
       </Badge>
     );
   }
   if (side === "email_scan") {
     return (
-      <Badge variant="outline" className="text-xs">
+      <Badge variant="outline" className="text-label">
         Email scan
       </Badge>
     );
@@ -75,20 +75,20 @@ export function PolicyListItem({
     <>
       <div className="space-y-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground truncate">{title}</span>
+          <span className="text-base font-medium text-foreground truncate">{title}</span>
           {isProcessing ? (
-            <Badge variant="outline" className="text-xs text-muted-foreground">
+            <Badge variant="outline" className="text-label text-muted-foreground">
               Processing
             </Badge>
           ) : null}
           <ProvenanceBadge side={uploadedBySide} />
         </div>
         {policyNumberClean ? (
-          <p className="text-xs text-muted-foreground truncate">{policyNumberClean}</p>
+          <p className="text-label text-muted-foreground truncate">{policyNumberClean}</p>
         ) : null}
       </div>
       {hasDates ? (
-        <span className="text-xs text-muted-foreground hidden sm:block shrink-0 ml-4">
+        <span className="text-label text-muted-foreground hidden sm:block shrink-0 ml-4">
           {effectiveClean} – {expirationClean}
         </span>
       ) : null}

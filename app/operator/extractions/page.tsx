@@ -10,6 +10,10 @@ import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  OperationalPanel,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
@@ -180,8 +184,8 @@ function parseTracePanelTab(value: string | null): TracePanelTab {
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-3 border-b border-foreground/6 px-3 py-2.5 last:border-b-0">
-      <dt className="text-label-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-body-sm text-foreground">{value}</dd>
+      <dt className="text-label font-medium text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-base text-foreground">{value}</dd>
     </div>
   );
 }
@@ -234,10 +238,10 @@ function profileScalarRows(profile: Record<string, unknown>) {
         <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="min-w-0 break-words">{display.value}</span>
           {display.confidence ? (
-            <span className="text-label-sm text-muted-foreground">{display.confidence}</span>
+            <span className="text-label text-muted-foreground">{display.confidence}</span>
           ) : null}
           {display.sourceLabel ? (
-            <span className="text-label-sm text-muted-foreground">{display.sourceLabel}</span>
+            <span className="text-label text-muted-foreground">{display.sourceLabel}</span>
           ) : null}
         </span>
       ),
@@ -327,7 +331,7 @@ function ProfileListSection({
   return (
     <div className="overflow-hidden rounded-lg border border-foreground/6">
       <div className="border-b border-foreground/6 bg-muted/20 px-3 py-2">
-        <p className="text-label-sm font-medium text-muted-foreground">
+        <p className="text-label font-medium text-muted-foreground">
           {title}
         </p>
       </div>
@@ -361,20 +365,20 @@ function CoverageList({
             className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
           >
             <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-              <p className="min-w-[12rem] flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className="min-w-[12rem] flex-1 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
                 {name}
               </p>
               {limit !== "—" ? (
-                <span className="shrink-0 text-body-sm font-medium tabular-nums text-foreground">
+                <span className="shrink-0 text-base font-medium tabular-nums text-foreground">
                   {limit}
                 </span>
               ) : null}
-              <span className="shrink-0 text-label-sm text-muted-foreground">
+              <span className="shrink-0 text-label text-muted-foreground">
                 {evidenceLabel(row)}
               </span>
             </div>
             {metadata.length > 0 ? (
-              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-label-sm text-muted-foreground">
+              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-label text-muted-foreground">
                 {metadata.map((item) => (
                   <span key={item}>{item}</span>
                 ))}
@@ -400,13 +404,13 @@ function PartyList({ rows }: { rows: Array<Record<string, unknown>> }) {
             className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
           >
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-x-3 gap-y-1">
-              <p className="min-w-0 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className="min-w-0 text-base leading-5 text-foreground [overflow-wrap:anywhere]">
                 {name}
               </p>
               <Badge variant="outline" className="font-normal">
                 {formatProfileLabel(role)}
               </Badge>
-              <span className="shrink-0 text-label-sm text-muted-foreground">
+              <span className="shrink-0 text-label text-muted-foreground">
                 {evidenceLabel(row)}
               </span>
             </div>
@@ -431,7 +435,7 @@ function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>>
             className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
           >
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <p className="min-w-0 flex-1 truncate text-body-sm font-medium text-foreground">
+              <p className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
                 {formatProfileLabel(kind)}
               </p>
               {status !== "—" ? (
@@ -442,12 +446,12 @@ function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>>
                   {formatProfileLabel(status)}
                 </Badge>
               ) : null}
-              <span className="shrink-0 text-label-sm text-muted-foreground">
+              <span className="shrink-0 text-label text-muted-foreground">
                 {evidenceLabel(row)}
               </span>
             </div>
             <p
-              className="mt-2 min-w-0 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]"
+              className="mt-2 min-w-0 text-base leading-5 text-foreground [overflow-wrap:anywhere]"
               title={summary !== "—" ? summary : undefined}
             >
               {summary}
@@ -503,14 +507,14 @@ function AdditionalInsuredEligibilityList({
   return (
     <ProfileListSection title="Additional insured eligibility">
       {typeof eligibility.overallSummary === "string" && eligibility.overallSummary.trim() ? (
-        <p className="border-b border-foreground/6 px-3 py-2 text-body-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+        <p className="border-b border-foreground/6 px-3 py-2 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
           {eligibility.overallSummary}
         </p>
       ) : null}
       {groups.map((group) => (
         <div key={group.key} className="border-b border-foreground/6 last:border-b-0">
           <div className="flex items-center gap-2 border-b border-foreground/6 bg-muted/10 px-3 py-2">
-            <p className="flex-1 text-label-sm font-medium text-foreground">
+            <p className="flex-1 text-label font-medium text-foreground">
               {group.label}
             </p>
             <Badge variant={group.key === "requiresEndorsement" ? "outline" : "secondary"} className="font-normal">
@@ -533,18 +537,18 @@ function AdditionalInsuredEligibilityList({
                 className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
               >
                 <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-                  <p className="min-w-0 flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+                  <p className="min-w-0 flex-1 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
                     {category}
                   </p>
-                  <span className="shrink-0 text-label-sm text-muted-foreground">
+                  <span className="shrink-0 text-label text-muted-foreground">
                     {evidenceLabel(row)}
                   </span>
                 </div>
-                <p className="mt-1.5 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+                <p className="mt-1.5 text-base leading-5 text-foreground [overflow-wrap:anywhere]">
                   {summary}
                 </p>
                 {condition !== "—" && condition !== summary ? (
-                  <p className="mt-1 text-label-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                  <p className="mt-1 text-label leading-5 text-muted-foreground [overflow-wrap:anywhere]">
                     {condition}
                   </p>
                 ) : null}
@@ -572,7 +576,7 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
             className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
           >
             <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-              <p className="min-w-0 flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className="min-w-0 flex-1 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
                 {name}
               </p>
               {status !== "—" ? (
@@ -580,17 +584,17 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
                   {formatProfileLabel(status)}
                 </Badge>
               ) : null}
-              <span className="shrink-0 text-label-sm text-muted-foreground">
+              <span className="shrink-0 text-label text-muted-foreground">
                 {evidenceLabel(row)}
               </span>
             </div>
             {scope !== "—" ? (
-              <p className="mt-1.5 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className="mt-1.5 text-base leading-5 text-foreground [overflow-wrap:anywhere]">
                 {scope}
               </p>
             ) : null}
             {endorsementTitle !== "—" ? (
-              <p className="mt-1 text-label-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+              <p className="mt-1 text-label leading-5 text-muted-foreground [overflow-wrap:anywhere]">
                 {endorsementTitle}
               </p>
             ) : null}
@@ -751,7 +755,7 @@ function SourceSpanStats({ diagnostics }: { diagnostics: SourceSpanDiagnostics }
   const tableCells = diagnostics.unitCounts.table_cell ?? 0;
   const pages = Object.keys(diagnostics.pageCounts).length;
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card p-3">
+    <OperationalPanel as="div" className="p-3">
       <div className="grid gap-2 sm:grid-cols-4">
         <DetailRow label="Spans" value={diagnostics.total.toLocaleString()} />
         <DetailRow label="Pages" value={pages.toLocaleString()} />
@@ -766,11 +770,11 @@ function SourceSpanStats({ diagnostics }: { diagnostics: SourceSpanDiagnostics }
         ))}
       </div>
       {diagnostics.truncated ? (
-        <p className="mt-2 text-label-sm text-amber-600 dark:text-amber-400">
+        <p className="mt-2 text-label text-amber-600 dark:text-amber-400">
           Diagnostics are capped at the first 5,000 stored spans for this policy.
         </p>
       ) : null}
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -790,25 +794,28 @@ function RawSourceTablePreview({
   const headerCells = firstRowIsHeader ? firstRow?.cells ?? [] : [];
   const bodyRows = firstRowIsHeader ? table.rows.slice(1) : table.rows;
   return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-      <div className="flex flex-wrap items-center gap-2 border-b border-foreground/6 px-3 py-2">
-        <p className="min-w-0 flex-1 truncate text-label-sm font-medium text-foreground">
-          {table.id}
-        </p>
-        {table.page !== undefined ? <Badge variant="outline" className="font-normal">Page {table.page}</Badge> : null}
-        <Badge variant="secondary" className="font-normal">{table.rows.length} rows</Badge>
-      </div>
+    <OperationalPanel as="div">
+      <OperationalPanelHeader
+        title={table.id}
+        action={(
+          <div className="flex items-center gap-2">
+            {table.page !== undefined ? <Badge variant="outline" className="font-normal">Page {table.page}</Badge> : null}
+            <Badge variant="secondary" className="font-normal">{table.rows.length} rows</Badge>
+          </div>
+        )}
+        className="items-center px-3 py-2 [&_h2]:text-label"
+      />
       <div className="overflow-x-auto">
-        <table className="w-max min-w-full text-left text-sm" style={{ minWidth: `${Math.max(36, maxColumnCount * 13 + 7)}rem` }}>
+        <table className="w-max min-w-full text-left text-base" style={{ minWidth: `${Math.max(36, maxColumnCount * 13 + 7)}rem` }}>
           {firstRowIsHeader ? (
             <thead>
               <tr className="border-b border-foreground/6 bg-muted/30">
                 {Array.from({ length: maxColumnCount }, (_, index) => (
-                  <th key={index} className="px-3 py-2 text-label-sm font-medium text-muted-foreground">
+                  <th key={index} className="px-3 py-2 text-label font-medium text-muted-foreground">
                     {headerCells[index]?.text ?? tableString(headerCells[index] ?? {}, "columnName") ?? `Column ${index + 1}`}
                   </th>
                 ))}
-                <th className="w-px px-3 py-2 text-label-sm font-medium text-muted-foreground">Source</th>
+                <th className="w-px px-3 py-2 text-label font-medium text-muted-foreground">Source</th>
               </tr>
             </thead>
           ) : null}
@@ -821,7 +828,7 @@ function RawSourceTablePreview({
                     <td key={index} className="px-3 py-2.5 align-top text-foreground [overflow-wrap:anywhere]">
                       {row.cells[index]?.text ?? ""}
                       {!firstRowIsHeader && row.cells[index] ? (
-                        <span className="mt-1 block text-[10px] text-muted-foreground">
+                        <span className="mt-1 block text-label text-muted-foreground">
                           {tableString(row.cells[index], "columnName")}
                         </span>
                       ) : null}
@@ -845,7 +852,7 @@ function RawSourceTablePreview({
           </tbody>
         </table>
       </div>
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -853,7 +860,7 @@ function SourceSpanDiagnosticsPanel({ detail }: { detail?: TraceDetail | null })
   const diagnostics = detail?.sourceSpanDiagnostics;
   if (!diagnostics) {
     return (
-      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
         Source span diagnostics are unavailable for this trace.
       </div>
     );
@@ -863,18 +870,18 @@ function SourceSpanDiagnosticsPanel({ detail }: { detail?: TraceDetail | null })
   return (
     <div className="space-y-3">
       <SourceSpanStats diagnostics={diagnostics} />
-      <div className="rounded-lg border border-foreground/6 bg-card p-3">
+      <OperationalPanel as="div" className="p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-label-sm font-medium text-muted-foreground">Declaration-like pages</p>
+          <p className="text-label font-medium text-muted-foreground">Declaration-like pages</p>
           {diagnostics.declarationPages.length > 0 ? diagnostics.declarationPages.map((page) => (
             <Badge key={page} variant="outline" className="font-normal">Page {page}</Badge>
-          )) : <span className="text-body-sm text-muted-foreground">No declaration pages detected from raw span text.</span>}
+          )) : <span className="text-base text-muted-foreground">No declaration pages detected from raw span text.</span>}
         </div>
-      </div>
+      </OperationalPanel>
       <div className="space-y-2">
         <div>
-          <h4 className="text-label-sm font-medium text-muted-foreground">Raw table reconstruction</h4>
-          <p className="mt-0.5 text-label-sm text-muted-foreground">
+          <h4 className="text-label font-medium text-muted-foreground">Raw table reconstruction</h4>
+          <p className="mt-0.5 text-label text-muted-foreground">
             Rebuilt directly from stored table_row/table_cell source spans so operator review can separate parser quality from extracted-data rendering.
           </p>
         </div>
@@ -886,16 +893,14 @@ function SourceSpanDiagnosticsPanel({ detail }: { detail?: TraceDetail | null })
             fileUrl={detail?.fileUrl ?? undefined}
           />
         )) : (
-          <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+          <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
             No table source spans were found in the declaration diagnostic window.
           </div>
         )}
       </div>
       {diagnostics.declarationTextSpans.length ? (
-        <div className="rounded-lg border border-foreground/6 bg-card">
-          <div className="border-b border-foreground/6 px-3 py-2">
-            <h4 className="text-label-sm font-medium text-muted-foreground">Declaration text/page spans</h4>
-          </div>
+        <OperationalPanel as="div">
+          <OperationalPanelHeader title="Declaration text/page spans" className="px-3 py-2 [&_h2]:text-label [&_h2]:text-muted-foreground" />
           {diagnostics.declarationTextSpans.map((span) => (
             <div key={span.spanId} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
               <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -908,12 +913,12 @@ function SourceSpanDiagnosticsPanel({ detail }: { detail?: TraceDetail | null })
                   fileUrl={detail?.fileUrl ?? undefined}
                 />
               </div>
-              <p className="text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className="text-base leading-5 text-foreground [overflow-wrap:anywhere]">
                 {span.text}
               </p>
             </div>
           ))}
-        </div>
+        </OperationalPanel>
       ) : null}
     </div>
   );
@@ -1249,8 +1254,8 @@ function DebugPreview({
   if (!value) return null;
   return (
     <div className="space-y-1">
-      <p className="text-label-sm font-medium text-muted-foreground">{label}</p>
-      <pre className="max-h-64 overflow-auto rounded-lg border border-foreground/6 bg-muted/20 p-3 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground">
+      <p className="text-label font-medium text-muted-foreground">{label}</p>
+      <pre className="max-h-64 overflow-auto rounded-lg border border-foreground/6 bg-muted/20 p-3 whitespace-pre-wrap break-words font-mono text-label leading-relaxed text-foreground">
         {value}
       </pre>
     </div>
@@ -1262,7 +1267,7 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
   const details = modelCallDebugDetails(event);
   if (!details) {
     return (
-      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
         No prompt or output details were recorded for this call. Rerun the extraction to capture model-call debug payloads.
       </div>
     );
@@ -1279,7 +1284,7 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
 
   return (
     <div className="space-y-3 rounded-lg border border-foreground/6 p-3">
-      <div className="grid gap-2 text-label-sm text-muted-foreground sm:grid-cols-2">
+      <div className="grid gap-2 text-label text-muted-foreground sm:grid-cols-2">
         <div>
           <span className="font-medium text-foreground">Purpose</span>
           <span className="ml-2">{details.purpose ?? eventTitle(event)}</span>
@@ -1299,12 +1304,12 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
       </div>
       {inputRows.length ? (
         <div className="space-y-1">
-          <p className="text-label-sm font-medium text-muted-foreground">Input attachments</p>
+          <p className="text-label font-medium text-muted-foreground">Input attachments</p>
           <div className="rounded-lg border border-foreground/6">
             {inputRows.map(([label, value]) => (
               <div key={label} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 border-b border-foreground/6 px-3 py-2 last:border-b-0">
-                <span className="text-label-sm text-muted-foreground">{label}</span>
-                <span className="truncate text-label-sm text-foreground">{value}</span>
+                <span className="text-label text-muted-foreground">{label}</span>
+                <span className="truncate text-label text-foreground">{value}</span>
               </div>
             ))}
           </div>
@@ -1323,11 +1328,11 @@ function TimelineEventDetail({ row }: { row?: TimelineRow }) {
     <div className="space-y-2 rounded-lg border border-foreground/6 p-3">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-body-sm font-medium text-foreground">{row.label}</p>
+          <p className="truncate text-base font-medium text-foreground">{row.label}</p>
         </div>
         <Badge variant="secondary">{formatDuration(row.durationMs)}</Badge>
       </div>
-      <div className="grid gap-2 text-label-sm text-muted-foreground sm:grid-cols-2">
+      <div className="grid gap-2 text-label text-muted-foreground sm:grid-cols-2">
         <div>
           <span className="font-medium text-foreground">Kind</span>
           <span className="ml-2">{row.kind}</span>
@@ -1359,12 +1364,12 @@ function TimingBar({ row, maxDurationMs }: { row: TimingRow; maxDurationMs: numb
     <div className="border-b border-foreground/6 px-3 py-2.5 last:border-b-0">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-body-sm font-medium text-foreground">{row.label}</p>
-          <p className="truncate text-label-sm text-muted-foreground">{row.caption}</p>
+          <p className="truncate text-base font-medium text-foreground">{row.label}</p>
+          <p className="truncate text-label text-muted-foreground">{row.caption}</p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-body-sm text-foreground">{formatDuration(row.durationMs)}</p>
-          <p className="text-label-sm text-muted-foreground">
+          <p className="text-base text-foreground">{formatDuration(row.durationMs)}</p>
+          <p className="text-label text-muted-foreground">
             {formatCompactTokens(row.inputTokens, row.outputTokens) !== "—"
               ? formatCompactTokens(row.inputTokens, row.outputTokens)
               : (row.status ?? "")}
@@ -1446,7 +1451,7 @@ function TimelineWaterfall({
             </div>
           </div>
           <div className="relative z-10 grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
-            <div className="relative px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
+            <div className="relative px-2.5 py-2 text-label font-medium text-muted-foreground">
               Event
               <button
                 type="button"
@@ -1459,7 +1464,7 @@ function TimelineWaterfall({
               {ticks.map((tick) => (
                 <span
                   key={tick}
-                  className="absolute top-0 ml-1 text-[10px] leading-8 text-muted-foreground"
+                  className="absolute top-0 ml-1 text-label leading-8 text-muted-foreground"
                   style={{ left: `${tick * 100}%` }}
                 >
                   {formatDuration(durationMs * tick)}
@@ -1512,7 +1517,7 @@ function TimelineWaterfall({
                         ) : (
                           <span className="h-4 w-4 shrink-0" />
                         )}
-                        <p className="min-w-0 truncate text-label-sm font-medium text-foreground">{row.label}</p>
+                        <p className="min-w-0 truncate text-label font-medium text-foreground">{row.label}</p>
                       </div>
                     </div>
                     <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
@@ -1525,14 +1530,14 @@ function TimelineWaterfall({
                         title={`${row.label} · ${durationLabel} · ${row.caption}`}
                       >
                         {showDurationInside ? (
-                          <span className={`truncate text-[10px] font-medium ${timelineInsideTextColor(row.kind)}`}>
+                          <span className={`truncate text-label font-medium ${timelineInsideTextColor(row.kind)}`}>
                             {durationLabel}
                           </span>
                         ) : null}
                       </div>
                       {!showDurationInside ? (
                         <span
-                          className="pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-[10px] font-medium text-foreground"
+                          className="pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-label font-medium text-foreground"
                           style={showOutsideAfter
                             ? { left: `${constrainedLeft + constrainedWidth}%` }
                             : { right: `${100 - constrainedLeft}%` }}
@@ -1544,12 +1549,12 @@ function TimelineWaterfall({
                   </div>
                 );
               }) : (
-                <p className="px-3 py-3 text-body-sm text-muted-foreground">No timed events recorded yet.</p>
+                <p className="px-3 py-3 text-base text-muted-foreground">No timed events recorded yet.</p>
               )}
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-label text-muted-foreground">
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />embedding</span>
@@ -1578,7 +1583,7 @@ function ModelCallsGrid({
         {columns.map((column, index) => (
           <div
             key={column}
-            className={`px-3 py-2 text-label-sm font-medium text-muted-foreground ${
+            className={`px-3 py-2 text-label font-medium text-muted-foreground ${
               index < columns.length - 1 ? "border-r border-foreground/6" : ""
             }`}
           >
@@ -1620,26 +1625,26 @@ function ModelCallsGrid({
                 }}
               >
                 <div className="min-w-0 px-3 py-2">
-                  <p className="truncate text-body-sm text-foreground">{eventTitle(event)}</p>
-                  <p className="truncate text-label-sm text-muted-foreground">
+                  <p className="truncate text-base text-foreground">{eventTitle(event)}</p>
+                  <p className="truncate text-label text-muted-foreground">
                     {[event.status, event.routeSource, debugDetails ? "debug details" : undefined]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
                 </div>
-                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
+                <div className="min-w-0 px-3 py-2 text-base text-muted-foreground">
                   <p className="truncate">{[event.provider, event.model].filter(Boolean).join(" / ") || "—"}</p>
                 </div>
-                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
+                <div className="min-w-0 px-3 py-2 text-base text-muted-foreground">
                   <p className="truncate">{formatDuration(event.durationMs)}</p>
                 </div>
-                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
+                <div className="min-w-0 px-3 py-2 text-base text-muted-foreground">
                   <p className="truncate">{formatTokens(event.inputTokens, event.outputTokens)}</p>
                 </div>
               </div>
             );
           }) : (
-            <p className="px-3 py-3 text-body-sm text-muted-foreground">No model calls recorded.</p>
+            <p className="px-3 py-3 text-base text-muted-foreground">No model calls recorded.</p>
           )}
         </div>
       </div>
@@ -1859,7 +1864,7 @@ export default function OperatorExtractionsPage() {
                     label="Extraction ID"
                     value={(
                       <div className="flex min-w-0 items-center gap-2">
-                        <code className="min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-label-sm">
+                        <code className="min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-label">
                           {selected.traceId}
                         </code>
                         <Button
@@ -1892,7 +1897,7 @@ export default function OperatorExtractionsPage() {
 
             <TabsContent value="extracted" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
               {selectedIsRunning ? (
-                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
                   Extraction is running. Extracted policy data will appear after this run completes.
                 </div>
               ) : detail?.policy ? (
@@ -1903,7 +1908,7 @@ export default function OperatorExtractionsPage() {
                   allowOperatorSourceAccess
                 />
               ) : (
-                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
                   Extracted policy data is unavailable for this trace.
                 </div>
               )}
@@ -1932,28 +1937,28 @@ export default function OperatorExtractionsPage() {
             <TabsContent value="timing" className="scrollbar-hide min-h-0 space-y-3 overflow-y-auto pt-1">
               <div className="space-y-2">
                 <div>
-                  <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Phases</h4>
+                  <h4 className="mb-1 text-label font-medium text-muted-foreground">Phases</h4>
                   <div className="rounded-lg border border-foreground/6">
                     {phaseTimingRows.length ? phaseTimingRows.map((row) => (
                       <TimingBar key={row.id} row={row} maxDurationMs={maxPhaseDuration} />
                     )) : (
-                      <p className="px-3 py-3 text-body-sm text-muted-foreground">No phase timings recorded.</p>
+                      <p className="px-3 py-3 text-base text-muted-foreground">No phase timings recorded.</p>
                     )}
                   </div>
                 </div>
                 <div>
-                  <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Model calls</h4>
+                  <h4 className="mb-1 text-label font-medium text-muted-foreground">Model calls</h4>
                   <div className="rounded-lg border border-foreground/6">
                     {modelTimingRows.length ? modelTimingRows.map((row) => (
                       <TimingBar key={row.id} row={row} maxDurationMs={maxModelDuration} />
                     )) : (
-                      <p className="px-3 py-3 text-body-sm text-muted-foreground">No model timings recorded.</p>
+                      <p className="px-3 py-3 text-base text-muted-foreground">No model timings recorded.</p>
                     )}
                   </div>
                 </div>
                 {otherTimingRows.length ? (
                   <div>
-                    <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Other timed work</h4>
+                    <h4 className="mb-1 text-label font-medium text-muted-foreground">Other timed work</h4>
                     <div className="rounded-lg border border-foreground/6">
                       {otherTimingRows.map((row) => (
                         <TimingBar key={row.id} row={row} maxDurationMs={maxOtherDuration} />
@@ -1963,7 +1968,7 @@ export default function OperatorExtractionsPage() {
                 ) : null}
               </div>
               {selected.modelDurationMs && wallDurationMs && selected.modelDurationMs > wallDurationMs ? (
-                <p className="text-label-sm text-muted-foreground">
+                <p className="text-label text-muted-foreground">
                   Aggregate model time can exceed wall time when extraction runs model calls in parallel.
                 </p>
               ) : null}
@@ -1983,22 +1988,22 @@ export default function OperatorExtractionsPage() {
                 {logEvents.length ? logEvents.map((event) => (
                   <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-label-sm text-muted-foreground">
+                      <p className="text-label text-muted-foreground">
                         {dayjs(event.timestamp).format("h:mm:ss A")}{event.phase ? ` · ${event.phase}` : ""}
                       </p>
                       {event.level && event.level !== "info" ? <Badge variant={event.level === "error" ? "destructive" : "secondary"}>{event.level}</Badge> : null}
                     </div>
-                    <p className="mt-1 text-body-sm text-foreground">{event.message}</p>
+                    <p className="mt-1 text-base text-foreground">{event.message}</p>
                   </div>
                 )) : (
-                  <p className="px-3 py-3 text-body-sm text-muted-foreground">No log messages recorded.</p>
+                  <p className="px-3 py-3 text-base text-muted-foreground">No log messages recorded.</p>
                 )}
               </div>
             </TabsContent>
           </Tabs>
         </div>
       ) : (
-        <p className="text-body-sm text-muted-foreground">Trace not found.</p>
+        <p className="text-base text-muted-foreground">Trace not found.</p>
       )}
     </SettingsDrawer>
   );
@@ -2022,18 +2027,18 @@ export default function OperatorExtractionsPage() {
     >
       <main className="flex w-full flex-col gap-3">
         {filters}
-        <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+        <OperationalPanel>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[13%] px-4 text-label-sm text-muted-foreground">Started</TableHead>
-                <TableHead className="w-[16%] text-label-sm text-muted-foreground">Org</TableHead>
-                <TableHead className="w-[22%] text-label-sm text-muted-foreground">Policy / file</TableHead>
-                <TableHead className="w-[9%] text-label-sm text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[9%] text-label-sm text-muted-foreground">Duration</TableHead>
-                <TableHead className="w-[15%] text-label-sm text-muted-foreground">Slowest area</TableHead>
-                <TableHead className="w-[8%] text-label-sm text-muted-foreground">Calls</TableHead>
-                <TableHead className="w-[8%] px-4 text-label-sm text-muted-foreground">Model time</TableHead>
+                <TableHead className="w-[13%] px-4 text-label text-muted-foreground">Started</TableHead>
+                <TableHead className="w-[16%] text-label text-muted-foreground">Org</TableHead>
+                <TableHead className="w-[22%] text-label text-muted-foreground">Policy / file</TableHead>
+                <TableHead className="w-[9%] text-label text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[9%] text-label text-muted-foreground">Duration</TableHead>
+                <TableHead className="w-[15%] text-label text-muted-foreground">Slowest area</TableHead>
+                <TableHead className="w-[8%] text-label text-muted-foreground">Calls</TableHead>
+                <TableHead className="w-[8%] px-4 text-label text-muted-foreground">Model time</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -2041,12 +2046,12 @@ export default function OperatorExtractionsPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={8} className="h-32 px-4 text-center text-muted-foreground">
                     <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin" />
-                    <p className="text-body-sm">Loading extraction traces...</p>
+                    <p className="text-base">Loading extraction traces...</p>
                   </TableCell>
                 </TableRow>
               ) : traces.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={8} className="h-32 px-4 text-body-sm text-muted-foreground">
+                  <TableCell colSpan={8} className="h-32 px-4 text-base text-muted-foreground">
                     No extraction traces yet. Run a policy extraction and traces will appear here.
                   </TableCell>
                 </TableRow>
@@ -2088,7 +2093,7 @@ export default function OperatorExtractionsPage() {
               )}
             </TableBody>
           </Table>
-        </section>
+        </OperationalPanel>
       </main>
     </AppShell>
   );

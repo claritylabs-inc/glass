@@ -68,7 +68,7 @@ const variantConfig: Record<PillButtonVariant, VariantConfig> = {
 
 const sizeClasses: Record<PillButtonSize, string> = {
   default: "h-8 px-5 gap-2 text-label",
-  compact: "h-7 px-3 gap-1.5 text-[11px]",
+  compact: "h-7 px-3 gap-1.5 text-label",
 };
 
 const iconSizeClasses: Record<PillButtonSize, string> = {

@@ -11,6 +11,7 @@ import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { Badge } from "@/components/ui/badge";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
 import { CLIENT_PORTAL_HOST, getPublicAgentDomain } from "@/lib/domains";
@@ -48,9 +49,9 @@ type BrokerRow = {
 };
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 const AFFIXED_INPUT_CLASSES =
-  "min-w-0 flex-1 bg-transparent px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none";
+  "min-w-0 flex-1 bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none";
 const AGENT_DOMAIN = getPublicAgentDomain();
 const BROKER_SIGNUP_PREFIX = `${CLIENT_PORTAL_HOST}/signup/`;
 
@@ -88,9 +89,9 @@ function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-label-sm font-medium text-muted-foreground">{label}</span>
+      <span className="text-label font-medium text-muted-foreground">{label}</span>
       {children}
-      {error ? <span className="block text-label-sm text-destructive">{error}</span> : null}
+      {error ? <span className="block text-label text-destructive">{error}</span> : null}
     </label>
   );
 }
@@ -112,7 +113,7 @@ function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | 
   const source = iconUrl ?? faviconFromWebsite(website);
   const initial = name.trim().charAt(0).toUpperCase() || "?";
   return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label-sm font-medium text-foreground">
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label font-medium text-foreground">
       {source && !imageFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -396,7 +397,7 @@ export default function OperatorPage() {
                 <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
               ) : null}
               {brokerSettingsSaveLabel ? (
-                <span className={`max-w-28 truncate text-label-sm font-normal ${
+                <span className={`max-w-28 truncate text-label font-normal ${
                   brokerSettingsValidationError || settingsSaveStatus === "error"
                     ? "text-destructive"
                     : "text-muted-foreground"
@@ -455,7 +456,7 @@ export default function OperatorPage() {
           </Field>
           <Field label="Signup link">
             <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-              <span className="flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+              <span className="flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
                 {BROKER_SIGNUP_PREFIX}
               </span>
               <input
@@ -495,7 +496,7 @@ export default function OperatorPage() {
                 onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
                 placeholder="release"
               />
-              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
                 @{AGENT_DOMAIN}
               </span>
             </div>
@@ -546,7 +547,7 @@ export default function OperatorPage() {
         <section className="space-y-3">
           <Field label="Signup slug">
             <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-              <span className="flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+              <span className="flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
                 {BROKER_SIGNUP_PREFIX}
               </span>
               <input
@@ -582,7 +583,7 @@ export default function OperatorPage() {
                 }}
                 placeholder="release"
               />
-              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
                 @{AGENT_DOMAIN}
               </span>
             </div>
@@ -640,17 +641,17 @@ export default function OperatorPage() {
       rightPanel={rightPanel}
     >
       <main className="flex w-full flex-col">
-        <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+        <OperationalPanel>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[25%] px-4 text-label-sm text-muted-foreground">Broker</TableHead>
-                <TableHead className="w-[22%] text-label-sm text-muted-foreground">Admin</TableHead>
-                <TableHead className="w-[14%] text-label-sm text-muted-foreground">Slug</TableHead>
-                <TableHead className="w-[14%] text-label-sm text-muted-foreground">Agent handle</TableHead>
-                <TableHead className="w-[10%] text-label-sm text-muted-foreground">Clients</TableHead>
-                <TableHead className="w-[10%] text-label-sm text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[10%] px-4 text-label-sm text-muted-foreground">Created</TableHead>
+                <TableHead className="w-[25%] px-4 text-label text-muted-foreground">Broker</TableHead>
+                <TableHead className="w-[22%] text-label text-muted-foreground">Admin</TableHead>
+                <TableHead className="w-[14%] text-label text-muted-foreground">Slug</TableHead>
+                <TableHead className="w-[14%] text-label text-muted-foreground">Agent handle</TableHead>
+                <TableHead className="w-[10%] text-label text-muted-foreground">Clients</TableHead>
+                <TableHead className="w-[10%] text-label text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[10%] px-4 text-label text-muted-foreground">Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -662,7 +663,7 @@ export default function OperatorPage() {
                 </TableRow>
               ) : brokers.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="h-32 px-4 text-body-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="h-32 px-4 text-base text-muted-foreground">
                     No broker accounts found.
                   </TableCell>
                 </TableRow>
@@ -710,7 +711,7 @@ export default function OperatorPage() {
               )}
             </TableBody>
           </Table>
-        </section>
+        </OperationalPanel>
       </main>
     </AppShell>
   );

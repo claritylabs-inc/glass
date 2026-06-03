@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 
 export function EmptyStateCard({
@@ -17,13 +18,16 @@ export function EmptyStateCard({
   secondary?: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card p-8 flex flex-col items-center text-center gap-3">
+    <OperationalPanel
+      as="div"
+      className="flex flex-col items-center gap-3 p-8 text-center"
+    >
       {icon ? (
         <div className="text-muted-foreground/60 mb-1">{icon}</div>
       ) : null}
-      <h3 className="text-body font-medium">{title}</h3>
+      <h3 className="text-base font-medium">{title}</h3>
       {description ? (
-        <p className="text-body-sm text-muted-foreground max-w-md">
+        <p className="text-base text-muted-foreground max-w-md">
           {description}
         </p>
       ) : null}
@@ -42,6 +46,6 @@ export function EmptyStateCard({
       ) : secondary ? (
         <div className="mt-2">{secondary}</div>
       ) : null}
-    </div>
+    </OperationalPanel>
   );
 }

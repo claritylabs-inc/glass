@@ -10,6 +10,10 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { Badge } from "@/components/ui/badge";
+import {
+  OperationalPanel,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   Select,
@@ -130,7 +134,7 @@ function ChannelToggles({
           key={channel}
           type="button"
           onClick={() => toggle(channel)}
-          className={`h-8 rounded-lg border px-3 text-body-sm transition-colors ${
+          className={`h-8 rounded-lg border px-3 text-base transition-colors ${
             value.includes(channel)
               ? "border-foreground/20 bg-foreground/8 text-foreground"
               : "border-foreground/8 text-muted-foreground hover:bg-foreground/4"
@@ -243,44 +247,44 @@ function RuleDrawer({
     >
       <div className="space-y-4">
         <label className="space-y-1.5">
-          <span className="text-label-sm text-muted-foreground">Name</span>
-          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20" value={name} onChange={(event) => setName(event.target.value)} placeholder="Cyber renewals from Coalition" />
+          <span className="text-label text-muted-foreground">Name</span>
+          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={name} onChange={(event) => setName(event.target.value)} placeholder="Cyber renewals from Coalition" />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="space-y-1.5">
-            <span className="text-label-sm text-muted-foreground">Priority</span>
-            <input type="number" className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20" value={priority} onChange={(event) => setPriority(Number(event.target.value) || 100)} placeholder="100" />
+            <span className="text-label text-muted-foreground">Priority</span>
+            <input type="number" className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={priority} onChange={(event) => setPriority(Number(event.target.value) || 100)} placeholder="100" />
           </label>
           <div className="space-y-1.5">
-            <span className="text-label-sm text-muted-foreground">Enabled</span>
+            <span className="text-label text-muted-foreground">Enabled</span>
             <div className="flex h-9 items-center">
               <SettingsSwitch checked={enabled} onCheckedChange={() => setEnabled(!enabled)} label="Rule enabled" />
             </div>
           </div>
         </div>
         <div className="space-y-1.5">
-          <span className="text-label-sm text-muted-foreground">Action</span>
+          <span className="text-label text-muted-foreground">Action</span>
           <ActionSelect value={action} onChange={setAction} />
         </div>
         <div className="space-y-1.5">
-          <span className="text-label-sm text-muted-foreground">Channel override</span>
+          <span className="text-label text-muted-foreground">Channel override</span>
           <ChannelToggles value={channels} onChange={setChannels} />
         </div>
         <label className="space-y-1.5">
-          <span className="text-label-sm text-muted-foreground">Insurers or markets</span>
-          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20" value={insurers} onChange={(event) => setInsurers(event.target.value)} placeholder="Coalition, CNA, Lloyd's" />
+          <span className="text-label text-muted-foreground">Insurers or markets</span>
+          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={insurers} onChange={(event) => setInsurers(event.target.value)} placeholder="Coalition, CNA, Lloyd's" />
         </label>
         <label className="space-y-1.5">
-          <span className="text-label-sm text-muted-foreground">Lines or coverage types</span>
-          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20" value={lines} onChange={(event) => setLines(event.target.value)} placeholder="Cyber, Technology E&O, General liability" />
+          <span className="text-label text-muted-foreground">Lines or coverage types</span>
+          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={lines} onChange={(event) => setLines(event.target.value)} placeholder="Cyber, Technology E&O, General liability" />
         </label>
         <label className="space-y-1.5">
-          <span className="text-label-sm text-muted-foreground">LLM rule</span>
-          <textarea className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20" value={llmRuleText} onChange={(event) => setLlmRuleText(event.target.value)} placeholder="Only auto-send if the policy is a renewal and the named insured matches the client legal name." />
+          <span className="text-label text-muted-foreground">LLM rule</span>
+          <textarea className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={llmRuleText} onChange={(event) => setLlmRuleText(event.target.value)} placeholder="Only auto-send if the policy is a renewal and the named insured matches the client legal name." />
         </label>
         <label className="space-y-1.5">
-          <span className="text-label-sm text-muted-foreground">Copy instructions</span>
-          <textarea className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20" value={copyInstructions} onChange={(event) => setCopyInstructions(event.target.value)} placeholder="Mention that this replaces the expiring policy and ask the client to reply with any questions." />
+          <span className="text-label text-muted-foreground">Copy instructions</span>
+          <textarea className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={copyInstructions} onChange={(event) => setCopyInstructions(event.target.value)} placeholder="Mention that this replaces the expiring policy and ask the client to reply with any questions." />
         </label>
       </div>
     </SettingsDrawer>
@@ -489,10 +493,12 @@ function PolicyDeliveryEditor({
 
   return (
     <div className="space-y-4">
-      <section className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-        <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-5 py-3.5">
-          <h3 className="text-sm font-medium text-foreground">Policy delivery</h3>
-          <span className="text-label-sm text-muted-foreground">
+      <OperationalPanel>
+        <OperationalPanelHeader
+          title="Policy delivery"
+          className="px-5 py-3.5"
+          action={(
+            <span className="text-label text-muted-foreground">
             {isInheritedClientSettings
               ? "Inherited"
               : saveStatus === "saving"
@@ -500,11 +506,12 @@ function PolicyDeliveryEditor({
                 : saveStatus === "error"
                   ? "Not saved"
                   : "Saved"}
-          </span>
-        </div>
+            </span>
+          )}
+        />
         {isInheritedClientSettings ? (
           <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-body-sm">
+            <div className="flex flex-wrap items-center gap-2 text-base">
               <Badge variant={draft.enabled ? "secondary" : "outline"}>
                 Delivery {onOffLabel(draft.enabled)}
               </Badge>
@@ -527,34 +534,34 @@ function PolicyDeliveryEditor({
           <div className="space-y-5 px-5 py-5">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-body-sm font-medium text-foreground">Enable delivery automation</p>
-                <p className="text-body-sm text-muted-foreground">Deliver bound policy documents and endorsements after processing.</p>
+                <p className="text-base font-medium text-foreground">Enable delivery automation</p>
+                <p className="text-base text-muted-foreground">Deliver bound policy documents and endorsements after processing.</p>
               </div>
               <SettingsSwitch checked={draft.enabled} onCheckedChange={() => setDraft({ ...draft, enabled: !draft.enabled })} label="Enable policy delivery" />
             </div>
             <div className="grid gap-5 lg:grid-cols-2">
               <div className="space-y-2">
-                <p className="text-label-sm text-muted-foreground">Channels</p>
+                <p className="text-label text-muted-foreground">Channels</p>
                 <ChannelToggles value={draft.channels} onChange={(channels) => setDraft({ ...draft, channels })} />
               </div>
               <div className="space-y-2">
-                <p className="text-label-sm text-muted-foreground">Default action</p>
+                <p className="text-label text-muted-foreground">Default action</p>
                 <ActionSelect value={draft.defaultAction} onChange={(defaultAction) => setDraft({ ...draft, defaultAction })} />
               </div>
             </div>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-body-sm font-medium text-foreground">Deliver before invite acceptance</p>
-                <p className="text-body-sm text-muted-foreground">Use captured primary contact details before the client logs in.</p>
+                <p className="text-base font-medium text-foreground">Deliver before invite acceptance</p>
+                <p className="text-base text-muted-foreground">Use captured primary contact details before the client logs in.</p>
               </div>
               <SettingsSwitch checked={draft.deliverBeforeClientAcceptance} onCheckedChange={() => setDraft({ ...draft, deliverBeforeClientAcceptance: !draft.deliverBeforeClientAcceptance })} label="Deliver before invite acceptance" />
             </div>
             <label className="block space-y-2">
-              <span className="text-label-sm text-muted-foreground">Broker copy instructions</span>
+              <span className="text-label text-muted-foreground">Broker copy instructions</span>
               <textarea
                 value={draft.copyInstructions ?? ""}
                 onChange={(event) => setDraft({ ...draft, copyInstructions: event.target.value })}
-                className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm outline-none focus:border-foreground/20"
+                className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20"
                 placeholder="Use our standard policy delivery language. Mention claims contact details when available."
               />
             </label>
@@ -567,23 +574,21 @@ function PolicyDeliveryEditor({
             </div>
           </div>
         )}
-      </section>
+      </OperationalPanel>
 
-      <section className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-        <div className="border-b border-foreground/6 px-5 py-3.5">
-          <h3 className="text-sm font-medium text-foreground">Conditional rules</h3>
-        </div>
+      <OperationalPanel>
+        <OperationalPanelHeader title="Conditional rules" className="px-5 py-3.5" />
         {rules.length === 0 ? (
-          <div className="px-5 py-8 text-body-sm text-muted-foreground">No rules yet.</div>
+          <div className="px-5 py-8 text-base text-muted-foreground">No rules yet.</div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="px-4 text-label-sm text-muted-foreground">Rule</TableHead>
-                <TableHead className="text-label-sm text-muted-foreground">Action</TableHead>
-                <TableHead className="text-label-sm text-muted-foreground">Channels</TableHead>
-                <TableHead className="text-label-sm text-muted-foreground">Priority</TableHead>
-                <TableHead className="px-4 text-right text-label-sm text-muted-foreground">Actions</TableHead>
+                <TableHead className="px-4 text-label text-muted-foreground">Rule</TableHead>
+                <TableHead className="text-label text-muted-foreground">Action</TableHead>
+                <TableHead className="text-label text-muted-foreground">Channels</TableHead>
+                <TableHead className="text-label text-muted-foreground">Priority</TableHead>
+                <TableHead className="px-4 text-right text-label text-muted-foreground">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -623,7 +628,7 @@ function PolicyDeliveryEditor({
             </TableBody>
           </Table>
         )}
-      </section>
+      </OperationalPanel>
 
     </div>
   );

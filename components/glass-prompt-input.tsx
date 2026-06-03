@@ -80,7 +80,7 @@ function AttachmentTags({
       {attachments.files.map((file) => (
         <span
           key={file.id}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-label-sm font-medium text-foreground/75"
+          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-label font-medium text-foreground/75"
         >
           <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
           <span className="max-w-45 truncate sm:max-w-60" title={file.filename}>
@@ -140,7 +140,7 @@ function TriggerHintTags({
       {references.map((reference, index) => (
         <span
           key={`${reference.kind}-${reference.id}`}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-label-sm font-medium text-foreground/75"
+          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-label font-medium text-foreground/75"
         >
           <span className="text-muted-foreground/45">
             {reference.kind === "mailbox" ? "/" : "@"}
@@ -517,15 +517,15 @@ export const GlassPromptInput = forwardRef<
                   {referenceIcon(target.kind)}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-foreground/85">
+                  <span className="block truncate text-base font-medium text-foreground/85">
                     {target.label}
                   </span>
-                  <span className="block truncate text-[11px] text-muted-foreground/45">
+                  <span className="block truncate text-label text-muted-foreground/45">
                     {referenceKindLabel(target.kind)}
                     {target.sublabel ? ` · ${target.sublabel}` : ""}
                   </span>
                 </span>
-                <span className="shrink-0 text-[11px] font-medium text-muted-foreground/35">
+                <span className="shrink-0 text-label font-medium text-muted-foreground/35">
                   {target.kind === "mailbox" ? "/" : "@"}
                 </span>
               </button>
@@ -561,8 +561,8 @@ export const GlassPromptInput = forwardRef<
           onKeyDown={handleTextKeyDown}
           className={
             roomyOnMobile
-              ? "min-h-22 sm:min-h-5.5 text-body-sm leading-6 sm:leading-5 px-4 sm:px-3 pt-3 sm:pt-2.5 pb-2 sm:pb-1 placeholder:text-muted-foreground/40"
-              : "min-h-5.5 text-body-sm leading-5 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/40"
+              ? "min-h-22 sm:min-h-5.5 text-base leading-6 sm:leading-5 px-4 sm:px-3 pt-3 sm:pt-2.5 pb-2 sm:pb-1 placeholder:text-muted-foreground/40"
+              : "min-h-5.5 text-base leading-5 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/40"
           }
         />
 
@@ -597,12 +597,12 @@ export const GlassPromptInput = forwardRef<
                   className="shrink-0"
                 />
               )}
-              <span className="hidden sm:inline text-label-sm font-medium text-muted-foreground/40">
+              <span className="hidden sm:inline text-label font-medium text-muted-foreground/40">
                 {agentBranding?.name ?? "Glass"}
               </span>
               {contextLabel && (
                 <span
-                  className="text-[10px] font-medium text-muted-foreground/30 bg-foreground/3 px-1.5 py-0.5 rounded max-w-50 truncate inline-block align-middle"
+                  className="text-label font-medium text-muted-foreground/30 bg-foreground/3 px-1.5 py-0.5 rounded max-w-50 truncate inline-block align-middle"
                   title={contextLabel}
                 >
                   {contextLabel}
@@ -622,7 +622,7 @@ export const GlassPromptInput = forwardRef<
                   onClick={handleStopClick}
                   className={
                     roomyOnMobile
-                      ? "h-9 px-4 text-label sm:h-7 sm:px-3 sm:text-label-sm"
+                      ? "h-9 px-4 text-label sm:h-7 sm:px-3 sm:text-label"
                       : undefined
                   }
                 >
@@ -642,7 +642,7 @@ export const GlassPromptInput = forwardRef<
                   disabled={disabled || isGenerating}
                   className={
                     roomyOnMobile
-                      ? "h-9 px-4 text-label sm:h-7 sm:px-3 sm:text-label-sm"
+                      ? "h-9 px-4 text-label sm:h-7 sm:px-3 sm:text-label"
                       : undefined
                   }
                 >

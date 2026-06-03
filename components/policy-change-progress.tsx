@@ -87,7 +87,7 @@ export function PolicyChangeProgress({
             >
               <span
                 className={cn(
-                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium leading-none tabular-nums",
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-label font-medium leading-none tabular-nums",
                   done
                     ? "bg-foreground text-background"
                     : current
@@ -98,7 +98,7 @@ export function PolicyChangeProgress({
                 {done ? <Check className="h-3 w-3" strokeWidth={2.5} /> : stepNumber}
               </span>
 
-              <div className="flex w-full min-w-0 flex-1 flex-col gap-1 text-body-sm sm:flex-row sm:items-center sm:gap-x-2">
+              <div className="flex w-full min-w-0 flex-1 flex-col gap-1 text-base sm:flex-row sm:items-center sm:gap-x-2">
                 <div
                   className={cn(
                     "shrink-0 truncate font-medium",
@@ -118,7 +118,7 @@ export function PolicyChangeProgress({
               </div>
 
               {current ? (
-                <span className="shrink-0 rounded-full border border-foreground/8 px-2 py-0.5 text-body-sm font-medium text-muted-foreground">
+                <span className="shrink-0 rounded-full border border-foreground/8 px-2 py-0.5 text-base font-medium text-muted-foreground">
                   Current
                 </span>
               ) : null}
@@ -128,7 +128,7 @@ export function PolicyChangeProgress({
       </div>
 
       {interrupted ? (
-        <p className="mt-2 text-label-sm text-muted-foreground">
+        <p className="mt-2 text-label text-muted-foreground">
           This request is {formatPolicyChangeStatus(status)}.
         </p>
       ) : null}

@@ -124,7 +124,7 @@ export function MainSidebarContent({
         <button
           type="button"
           onClick={onToggleNotifications}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
+          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
             collapsed ? "justify-center" : ""
           } ${notificationsPanelOpen ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE}`}
           title={collapsed ? "Notifications" : undefined}
@@ -139,7 +139,7 @@ export function MainSidebarContent({
           )}
           {(unreadCount ?? 0) > 0 && (
             <span
-              className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-medium leading-none shrink-0 ${
+              className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-label font-medium leading-none shrink-0 ${
                 collapsed ? "w-4 h-4" : "min-w-4.5 h-4 px-1"
               }`}
             >
@@ -236,7 +236,7 @@ export function MainSidebarContent({
         <button
           type="button"
           onClick={onSignOut}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${MENU_ITEM_INACTIVE} ${
+          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${MENU_ITEM_INACTIVE} ${
             collapsed ? "justify-center" : ""
           }`}
         >
@@ -264,7 +264,7 @@ function ExpandedThreadList({
   return (
     <>
       <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
-        <span className="text-label-sm font-medium text-muted-foreground/50 ">
+        <span className="text-label font-medium text-muted-foreground/50 ">
           Threads
         </span>
         {conversations.length > 0 && (
@@ -284,7 +284,7 @@ function ExpandedThreadList({
         <button
           type="button"
           onClick={onNewChat}
-          className={`w-full flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label-sm text-muted-foreground/60 ${MENU_ITEM_HOVER}`}
+          className={`w-full flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label text-muted-foreground/60 ${MENU_ITEM_HOVER}`}
         >
           <Plus className="w-3 h-3 shrink-0" />
           <span>New chat</span>
@@ -297,7 +297,7 @@ function ExpandedThreadList({
           <Link
             href={`/agent/thread/${item.id}`}
             id={shortcut ? stableSidebarTooltipId(`${item.kind}-${item.id}`) : undefined}
-            className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-body-sm ${
+            className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
               isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
             }`}
           >
@@ -349,7 +349,7 @@ function ExpandedThreadList({
       {archivedThreadCount > 0 && (
         <Link
           href="/agent/archive"
-          className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label-sm ${MENU_ITEM_INACTIVE_SUBTLE}`}
+          className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label ${MENU_ITEM_INACTIVE_SUBTLE}`}
         >
           <Archive className="w-3 h-3 shrink-0" />
           <span>Archived</span>

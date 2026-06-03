@@ -10,6 +10,13 @@ import { BrandWordmark } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { ArrowRight, Check, Loader2, X } from "lucide-react";
 import { getPublicAgentDomain } from "@/lib/domains";
@@ -204,7 +211,7 @@ function Shell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-20 w-full bg-background px-6 py-6 sm:px-8">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-sm text-muted-foreground">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-base text-muted-foreground">
           <div className="justify-self-start min-w-0">
             <div className="sm:hidden">
               <LogoIcon size={18} color="#A0D2FA" static />
@@ -218,7 +225,7 @@ function Shell({
               <StepDots currentStep={currentStep} />
             ) : null}
           </div>
-          <div className="justify-self-end text-right text-sm text-muted-foreground min-w-0">
+          <div className="justify-self-end text-right text-base text-muted-foreground min-w-0">
             {email ? (
               <div className="flex items-center gap-3">
                 <span className="hidden sm:inline">{email}</span>
@@ -244,10 +251,10 @@ function Shell({
 }
 
 const inputClass =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
 const labelClass =
-  "text-label-sm font-medium text-muted-foreground block mb-1.5";
+  "text-label font-medium text-muted-foreground block mb-1.5";
 
 export default function BrokerOnboardingPage() {
   const router = useRouter();
@@ -568,18 +575,24 @@ export default function BrokerOnboardingPage() {
               </div>
               <div className="space-y-2">
                 <label className={labelClass}>Partner type</label>
-                <select
+                <Select
                   value={partnerType}
-                  onChange={(e) =>
-                    setPartnerType(e.target.value as typeof partnerType)
+                  onValueChange={(value) =>
+                    setPartnerType(value as typeof partnerType)
                   }
-                  className={inputClass}
                 >
-                  <option value="broker">Insurance broker</option>
-                  <option value="program_admin">Program administrator</option>
-                  <option value="carrier">Carrier / insurer</option>
-                  <option value="other">Other partner</option>
-                </select>
+                  <SelectTrigger className="h-9 w-full border-foreground/8 bg-popover">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="broker">Insurance broker</SelectItem>
+                    <SelectItem value="program_admin">
+                      Program administrator
+                    </SelectItem>
+                    <SelectItem value="carrier">Carrier / insurer</SelectItem>
+                    <SelectItem value="other">Other partner</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <label className={labelClass}>Website (optional)</label>
@@ -594,13 +607,13 @@ export default function BrokerOnboardingPage() {
             </div>
 
             {error ? (
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base text-muted-foreground">{error}</p>
             ) : null}
 
             <PillButton
               type="submit"
               disabled={!canContinueName || submitting}
-              className="w-full justify-center text-sm shadow-none sm:w-auto"
+              className="w-full justify-center text-base shadow-none sm:w-auto"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -621,7 +634,7 @@ export default function BrokerOnboardingPage() {
             <div className="space-y-2">
               <label className={labelClass}>Workspace link</label>
               <div className="flex items-stretch gap-0">
-                <div className="flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
+                <div className="flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-label text-muted-foreground/60 select-none whitespace-nowrap">
                   {WORKSPACE_DOMAIN}/
                 </div>
                 <input
@@ -634,7 +647,7 @@ export default function BrokerOnboardingPage() {
                   }
                   placeholder="acme-brokers"
                   autoFocus
-                  className="flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
 
@@ -642,7 +655,7 @@ export default function BrokerOnboardingPage() {
                 {slugChecking ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                    <span className="text-label-sm text-muted-foreground">
+                    <span className="text-label text-muted-foreground">
                       Checking...
                     </span>
                   </>
@@ -652,7 +665,7 @@ export default function BrokerOnboardingPage() {
                 slugCheck?.available ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-body-sm text-emerald-600">
+                    <span className="text-base text-emerald-600">
                       {WORKSPACE_DOMAIN}/{debouncedSlug} is available
                     </span>
                   </>
@@ -663,13 +676,13 @@ export default function BrokerOnboardingPage() {
                 !slugCheck.available ? (
                   <>
                     <X className="w-3.5 h-3.5 text-red-500" />
-                    <span className="text-body-sm text-red-500">
+                    <span className="text-base text-red-500">
                       {slugCheck.reason ?? "Not available"}
                     </span>
                   </>
                 ) : null}
                 {slugInput.length > 0 && slugInput.length < 3 ? (
-                  <span className="text-body-sm text-muted-foreground/50">
+                  <span className="text-base text-muted-foreground/50">
                     Minimum 3 characters
                   </span>
                 ) : null}
@@ -677,13 +690,13 @@ export default function BrokerOnboardingPage() {
             </div>
 
             {error ? (
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base text-muted-foreground">{error}</p>
             ) : null}
 
             <PillButton
               type="submit"
               disabled={(!viewerOrg?.org && !canContinueSlug) || submitting}
-              className="w-full justify-center text-sm shadow-none sm:w-auto"
+              className="w-full justify-center text-base shadow-none sm:w-auto"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -745,17 +758,17 @@ export default function BrokerOnboardingPage() {
                           ) : null}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate text-foreground">
+                          <div className="text-base font-medium truncate text-foreground">
                             {orgName.trim() || "Your organization"}
                           </div>
-                          <div className="text-xs truncate text-muted-foreground">
+                          <div className="text-label truncate text-muted-foreground">
                             Preview of your client workspace
                           </div>
                         </div>
                         <button
                           type="button"
                           disabled
-                          className="rounded-full px-3.5 py-1.5 text-xs font-medium"
+                          className="rounded-full px-3.5 py-1.5 text-label font-medium"
                           style={{
                             backgroundColor: brandingColor,
                             color: textColor,
@@ -771,14 +784,14 @@ export default function BrokerOnboardingPage() {
             </div>
 
             {error ? (
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base text-muted-foreground">{error}</p>
             ) : null}
 
             <PillButton
               type="button"
               onClick={handleBrandingNext}
               disabled={submitting}
-              className="w-full justify-center text-sm shadow-none sm:w-auto"
+              className="w-full justify-center text-base shadow-none sm:w-auto"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -817,9 +830,9 @@ export default function BrokerOnboardingPage() {
                   }
                   placeholder="acme"
                   autoFocus
-                  className="flex-1 min-w-0 rounded-l-lg border border-r-0 border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="flex-1 min-w-0 rounded-l-lg border border-r-0 border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
-                <div className="flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-label-sm text-muted-foreground/60 select-none whitespace-nowrap">
+                <div className="flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-label text-muted-foreground/60 select-none whitespace-nowrap">
                   @{WORKSPACE_DOMAIN}
                 </div>
               </div>
@@ -827,7 +840,7 @@ export default function BrokerOnboardingPage() {
                 {handleChecking ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                    <span className="text-label-sm text-muted-foreground">
+                    <span className="text-label text-muted-foreground">
                       Checking…
                     </span>
                   </>
@@ -838,7 +851,7 @@ export default function BrokerOnboardingPage() {
                 handleCheck?.available ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-body-sm text-emerald-600">
+                    <span className="text-base text-emerald-600">
                       {debouncedHandle}@{WORKSPACE_DOMAIN} is available
                     </span>
                   </>
@@ -850,18 +863,18 @@ export default function BrokerOnboardingPage() {
                 !handleCheck.available ? (
                   <>
                     <X className="w-3.5 h-3.5 text-red-500" />
-                    <span className="text-body-sm text-red-500">
+                    <span className="text-base text-red-500">
                       {handleCheck.reason ?? "Not available"}
                     </span>
                   </>
                 ) : null}
                 {agentHandle.length > 0 && agentHandle.length < 3 ? (
-                  <span className="text-body-sm text-muted-foreground/50">
+                  <span className="text-base text-muted-foreground/50">
                     Minimum 3 characters
                   </span>
                 ) : null}
                 {agentHandle.length === 0 ? (
-                  <span className="text-label-sm text-muted-foreground">
+                  <span className="text-label text-muted-foreground">
                     Clients will email this address to reach your AI agent.
                   </span>
                 ) : null}
@@ -869,7 +882,7 @@ export default function BrokerOnboardingPage() {
             </div>
 
             {error ? (
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-base text-muted-foreground">{error}</p>
             ) : null}
 
             <PillButton
@@ -881,7 +894,7 @@ export default function BrokerOnboardingPage() {
                   agentHandle !== viewerOrg?.org?.agentHandle &&
                   (handleChecking || !handleCheck?.available))
               }
-              className="w-full justify-center text-sm shadow-none sm:w-auto"
+              className="w-full justify-center text-base shadow-none sm:w-auto"
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

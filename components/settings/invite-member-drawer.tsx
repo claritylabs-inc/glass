@@ -8,10 +8,10 @@ import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
 const LABEL_CLASSES =
-  "text-label-sm font-medium text-muted-foreground block mb-1";
+  "text-label font-medium text-muted-foreground block mb-1";
 
 export function InviteMemberDrawer({
   open,
@@ -73,7 +73,7 @@ export function InviteMemberDrawer({
         onSubmit={handleSubmit}
         className="space-y-4"
       >
-        <p className="text-body-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           Send an invitation to join your organization. They&apos;ll receive an
           email with instructions.
         </p>
@@ -100,7 +100,7 @@ export function InviteMemberDrawer({
                 key={r}
                 type="button"
                 onClick={() => setRole(r)}
-                className={`flex-1 py-2 rounded-lg border text-body-sm font-medium transition-colors ${
+                className={`flex-1 py-2 rounded-lg border text-base font-medium transition-colors ${
                   role === r
                     ? "border-foreground/15 bg-foreground/3 text-foreground"
                     : "border-foreground/6 text-muted-foreground hover:border-foreground/10"
@@ -110,7 +110,7 @@ export function InviteMemberDrawer({
               </button>
             ))}
           </div>
-          <p className="text-label-sm text-muted-foreground/60 mt-1.5">
+          <p className="text-label text-muted-foreground/60 mt-1.5">
             {role === "admin"
               ? "Admins can manage connections, settings, and team members."
               : "Members can view policies and use the agent, but can't manage connections or settings."}

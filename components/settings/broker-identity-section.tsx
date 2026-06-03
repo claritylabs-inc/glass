@@ -9,6 +9,14 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { OperationalPanel } from "@/components/ui/operational-panel";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import {
   cachedQueryArgsKey,
@@ -17,9 +25,10 @@ import {
 } from "@/lib/sync/use-cached-query";
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NO_PRODUCER_ID = "__none";
 
 function optionalEmailInvalid(value: string) {
   const trimmed = value.trim();
@@ -95,18 +104,16 @@ export function BrokerIdentitySection({
   ) as BrokerIdentity | null | undefined;
 
   if (identity === undefined) {
-    return (
-      <section
-        className={
-          surface === "card"
-            ? "rounded-lg border border-foreground/6 bg-card"
-            : "min-h-28"
-        }
-      >
-        <div className="flex items-center justify-center py-10 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
-        </div>
-      </section>
+    const content = (
+      <div className="flex items-center justify-center py-10 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    );
+
+    return surface === "card" ? (
+      <OperationalPanel>{content}</OperationalPanel>
+    ) : (
+      <section className="min-h-28">{content}</section>
     );
   }
 
@@ -308,23 +315,21 @@ function BrokerIdentityForm({
   const saving = autoSave.saving;
   const savedAt = autoSave.savedAt;
 
-  return (
-    <section
-      className={
-        surface === "card"
-          ? "rounded-lg border border-foreground/6 bg-card"
-          : "space-y-4"
-      }
-    >
+  const content = (
+    <>
       {surface === "card" ? (
         <div className="border-b border-foreground/6 px-5 py-3.5">
-          <h3 className="mb-0! text-sm font-medium text-foreground">Broker</h3>
+          <h3 className="mb-0! text-base font-medium text-foreground">
+            Broker
+          </h3>
         </div>
       ) : null}
-      <div className={surface === "card" ? "space-y-4 px-5 py-5" : "space-y-4"}>
+      <div
+        className={surface === "card" ? "space-y-4 px-5 py-5" : "space-y-4"}
+      >
         <div className={twoColumnGridClass}>
           <div>
-            <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+            <label className="mb-1.5 block text-label font-medium text-muted-foreground">
               Broker company
             </label>
             <input
@@ -341,27 +346,35 @@ function BrokerIdentityForm({
           </div>
           {identity.canEditConnected ? (
             <div>
-              <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                 Broker contact
               </label>
-              <select
-                value={producerId}
-                onChange={(event) =>
-                  setProducerId(event.target.value as Id<"users"> | "")
+              <Select
+                value={producerId || NO_PRODUCER_ID}
+                onValueChange={(value) =>
+                  setProducerId(
+                    value === NO_PRODUCER_ID ? "" : (value as Id<"users">),
+                  )
                 }
-                className={INPUT_CLASSES}
               >
-                <option value="">Select a broker user</option>
-                {identity.brokerMembers.map((member) => (
-                  <option key={member.userId} value={member.userId}>
-                    {member.name ?? member.email ?? "Team member"}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="h-9 w-full border-foreground/8 bg-popover">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_PRODUCER_ID}>
+                    Select a broker user
+                  </SelectItem>
+                  {identity.brokerMembers.map((member) => (
+                    <SelectItem key={member.userId} value={member.userId}>
+                      {member.name ?? member.email ?? "Team member"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           ) : (
             <div>
-              <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                 Contact name
               </label>
               <input
@@ -382,7 +395,7 @@ function BrokerIdentityForm({
         {identity.canEditConnected ? (
           <div className={threeColumnGridClass}>
             <div>
-              <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                 Name override
               </label>
               <input
@@ -393,7 +406,7 @@ function BrokerIdentityForm({
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                 Email override
               </label>
               <input
@@ -405,7 +418,7 @@ function BrokerIdentityForm({
                 type="email"
                 className={INPUT_CLASSES}
               />
-              <p className="mt-1.5 min-h-4 text-label-sm text-muted-foreground/60">
+              <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
                 {overrideEmailInvalid ? (
                   <span className="text-red-500/80">
                     Enter a valid email address.
@@ -414,7 +427,7 @@ function BrokerIdentityForm({
               </p>
             </div>
             <div>
-              <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                 Phone override
               </label>
               <PhoneInput
@@ -425,7 +438,7 @@ function BrokerIdentityForm({
                   selectedMember?.phone ?? "Use selected user's phone"
                 }
               />
-              <p className="mt-1.5 min-h-4 text-label-sm text-muted-foreground/60">
+              <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
                 {overridePhoneInvalid ? (
                   <span className="text-red-500/80">
                     Enter a valid phone number with country code.
@@ -439,7 +452,7 @@ function BrokerIdentityForm({
         ) : (
           <div className={twoColumnGridClass}>
             <div>
-              <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                 Contact email
               </label>
               <input
@@ -454,7 +467,7 @@ function BrokerIdentityForm({
                 type="email"
                 className={INPUT_CLASSES}
               />
-              <p className="mt-1.5 min-h-4 text-label-sm text-muted-foreground/60">
+              <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
                 {manualEmailInvalid ? (
                   <span className="text-red-500/80">
                     Enter a valid email address.
@@ -463,7 +476,7 @@ function BrokerIdentityForm({
               </p>
             </div>
             <div>
-              <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                 Contact phone
               </label>
               <PhoneInput
@@ -477,7 +490,7 @@ function BrokerIdentityForm({
                 disabled={identity.connected || !identity.canEditManual}
                 placeholder="(555) 555-5555"
               />
-              <p className="mt-1.5 min-h-4 text-label-sm text-muted-foreground/60">
+              <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
                 {manualPhoneInvalid ? (
                   <span className="text-red-500/80">
                     Enter a valid phone number with country code.
@@ -492,14 +505,14 @@ function BrokerIdentityForm({
 
         <div className="flex min-h-5 items-center justify-between gap-3">
           {identity.connected && !identity.canEditConnected ? (
-            <p className="text-body-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               This broker information is managed by your broker.
             </p>
           ) : (
             <span />
           )}
           {identity.canEditManual || identity.canEditConnected ? (
-            <span className="flex items-center gap-1.5 text-label-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-label text-muted-foreground">
               {saving ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -512,6 +525,12 @@ function BrokerIdentityForm({
           ) : null}
         </div>
       </div>
-    </section>
+    </>
+  );
+
+  return surface === "card" ? (
+    <OperationalPanel>{content}</OperationalPanel>
+  ) : (
+    <section className="space-y-4">{content}</section>
   );
 }

@@ -108,8 +108,8 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   const nameBlock = (
     <div className="flex-1 min-w-0">
       <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
-        <p className="text-sm font-medium text-foreground truncate">{row.name}</p>
-        <p className="text-sm text-muted-foreground truncate">
+        <p className="text-base font-medium text-foreground truncate">{row.name}</p>
+        <p className="text-base text-muted-foreground truncate">
           {row.kind === "client"
             ? (row.primaryContactName ?? "No primary contact")
             : (row.primaryContactEmail ?? "No email")}
@@ -125,7 +125,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   );
 
   const timestamp = (label: string) => (
-    <span className="hidden sm:block text-xs text-muted-foreground shrink-0 whitespace-nowrap tabular-nums">
+    <span className="hidden sm:block text-label text-muted-foreground shrink-0 whitespace-nowrap tabular-nums">
       {label}
     </span>
   );
@@ -214,7 +214,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   return (
     <Link href={`/clients/${row.clientOrgId}`} className={rowClass}>
       {nameBlock}
-      <span className="hidden max-w-40 truncate text-label-sm text-muted-foreground lg:block">
+      <span className="hidden max-w-40 truncate text-label text-muted-foreground lg:block">
         {brokerContactLabel}
       </span>
       {badge}

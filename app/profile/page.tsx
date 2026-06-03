@@ -10,6 +10,11 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Loader2, Monitor, Moon, Sun } from "lucide-react";
+import {
+  OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { useTheme } from "@/hooks/use-theme";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
@@ -20,9 +25,9 @@ import {
 } from "@/lib/sync/use-cached-query";
 
 const inputClass =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 const labelClass =
-  "text-label-sm font-medium text-muted-foreground block mb-1.5";
+  "text-label font-medium text-muted-foreground block mb-1.5";
 
 type ProfileValues = {
   name: string;
@@ -172,7 +177,7 @@ export default function ProfilePage() {
   }
 
   const saveStatus = (
-    <span className="text-label-sm text-muted-foreground flex items-center gap-1.5">
+    <span className="text-label text-muted-foreground flex items-center gap-1.5">
       {saving ? (
         <>
           <Loader2 className="w-3 h-3 animate-spin" />
@@ -188,13 +193,9 @@ export default function ProfilePage() {
     <AppShell actions={saveStatus}>
       <FadeIn when={true} staggerIndex={1} duration={0.6}>
         <form onSubmit={handleSubmit}>
-          <div className="rounded-lg border border-foreground/6 bg-card mb-4">
-            <div className="px-5 py-3.5 border-b border-foreground/6">
-              <h3 className="!mb-0 text-sm font-medium text-foreground">
-                Account
-              </h3>
-            </div>
-            <div className="px-5 py-5 space-y-4">
+          <OperationalPanel className="mb-4">
+            <OperationalPanelHeader title="Account" className="px-5 py-3.5" />
+            <OperationalPanelBody className="space-y-4 px-5 py-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Name</label>
@@ -212,7 +213,7 @@ export default function ProfilePage() {
                     type="email"
                     value={viewer?.email ?? ""}
                     disabled
-                    className="w-full rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-body-sm text-muted-foreground/60 cursor-not-allowed"
+                    className="w-full rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2 text-base text-muted-foreground/60 cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -234,7 +235,7 @@ export default function ProfilePage() {
                   defaultCountry="US"
                   placeholder="Enter phone number"
                 />
-                <p className="text-label-sm text-muted-foreground/60 mt-1.5 flex items-center gap-1.5">
+                <p className="text-label text-muted-foreground/60 mt-1.5 flex items-center gap-1.5">
                   {phoneInvalid ? (
                     <span className="text-red-500/80">
                       Enter a valid phone number with country code.
@@ -255,10 +256,10 @@ export default function ProfilePage() {
                   )}
                 </p>
               </div>
-            </div>
-          </div>
+            </OperationalPanelBody>
+          </OperationalPanel>
 
-          <p className="text-label-sm text-muted-foreground/50 mt-2">
+          <p className="text-label text-muted-foreground/50 mt-2">
             Company settings, broker info, and team management are in{" "}
             <a
               href="/settings"
@@ -272,13 +273,9 @@ export default function ProfilePage() {
       </FadeIn>
 
       <FadeIn when={true} staggerIndex={2} duration={0.6}>
-        <div className="rounded-lg border border-foreground/6 bg-card mt-4">
-          <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="!mb-0 text-sm font-medium text-foreground">
-              Appearance
-            </h3>
-          </div>
-          <div className="px-5 py-5">
+        <OperationalPanel className="mt-4">
+          <OperationalPanelHeader title="Appearance" className="px-5 py-3.5" />
+          <OperationalPanelBody className="px-5 py-5">
             <div className="flex gap-2">
               {[
                 { value: "light" as const, label: "Light", icon: Sun },
@@ -289,7 +286,7 @@ export default function ProfilePage() {
                   key={value}
                   type="button"
                   onClick={() => setTheme(value)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-body-sm font-medium transition-colors ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-base font-medium transition-colors ${
                     theme === value
                       ? "bg-foreground/[0.07] text-foreground"
                       : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
@@ -300,8 +297,8 @@ export default function ProfilePage() {
                 </button>
               ))}
             </div>
-          </div>
-        </div>
+          </OperationalPanelBody>
+        </OperationalPanel>
       </FadeIn>
     </AppShell>
   );

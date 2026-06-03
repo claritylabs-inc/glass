@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { X, FileText, FileUp } from "lucide-react";
 import { toast } from "sonner";
+import { OperationalItem, OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
@@ -13,7 +14,7 @@ import {
 export type DocumentType = "policy" | "quote";
 
 const LABEL_CLASSES =
-  "text-label-sm font-medium text-muted-foreground block mb-1.5";
+  "text-label font-medium text-muted-foreground block mb-1.5";
 
 interface PolicyUploadDrawerProps {
   open: boolean;
@@ -136,12 +137,12 @@ export function PolicyUploadDrawer({
           <p className="text-base font-semibold text-foreground">
             Drag and drop {typeLabel} PDFs
           </p>
-          <p className="text-body-sm text-muted-foreground mt-1">
+          <p className="text-base text-muted-foreground mt-1">
             {files.length > 0
               ? "or click to add more files"
               : "or click to choose files"}
           </p>
-          <p className="text-label-sm text-muted-foreground/60 mt-3">
+          <p className="text-label text-muted-foreground/60 mt-3">
             {uploadMode === "separate"
               ? `Multiple PDFs will create separate ${typePlural}.`
               : `Multiple PDFs will be combined into a single ${typeLabel}.`}
@@ -174,14 +175,14 @@ export function PolicyUploadDrawer({
             <label className={LABEL_CLASSES}>
               {files.length} file{files.length === 1 ? "" : "s"} selected
             </label>
-            <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+            <OperationalPanel as="div">
               {files.map((file, i) => (
-                <div
+                <OperationalItem
                   key={`${file.name}:${file.size}:${i}`}
-                  className="flex items-center gap-2 px-3 py-2 border-t border-foreground/4 first:border-t-0"
+                  className="flex items-center gap-2 border-foreground/4 px-3 py-2"
                 >
                   <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-body-sm truncate flex-1">
+                  <span className="text-base truncate flex-1">
                     {file.name}
                   </span>
                   <button
@@ -193,9 +194,9 @@ export function PolicyUploadDrawer({
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
-                </div>
+                </OperationalItem>
               ))}
-            </div>
+            </OperationalPanel>
           </div>
         ) : null}
       </div>

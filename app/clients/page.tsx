@@ -27,7 +27,7 @@ export default function ClientsPage() {
     return (
       <AppShell>
         <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground/60">
+          <p className="text-base text-muted-foreground/60">
             This page is for broker organizations only.
           </p>
         </div>

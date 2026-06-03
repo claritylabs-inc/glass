@@ -11,6 +11,11 @@ import { toast } from "sonner";
 import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
 import { PolicyDeliverySection } from "@/components/settings/policy-delivery-section";
 import {
+  OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
+import {
   useCachedQuery,
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
@@ -19,7 +24,7 @@ import { useClientDetailActions } from "../layout";
 type Verification = "strict" | "domain" | "open";
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
 
 export default function ClientSettingsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
@@ -142,20 +147,16 @@ export default function ClientSettingsPage() {
         setRightPanel={setRightPanel}
       />
 
-      <section className="rounded-xl border border-foreground/6 bg-card overflow-hidden">
-        <header className="px-6 py-5 border-b border-foreground/6">
-          <h2 className="text-base font-medium text-foreground">
-            Email verification
-          </h2>
-          <p className="mt-1 text-body-sm text-muted-foreground">
-            Choose which inbound senders count as this client when they email
-            your agent handle.
-          </p>
-        </header>
+      <OperationalPanel>
+        <OperationalPanelHeader
+          title="Email verification"
+          description="Choose which inbound senders count as this client when they email your agent handle."
+          className="px-6 py-5"
+        />
 
-        <div className="px-6 py-5">
+        <OperationalPanelBody className="px-6 py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-body-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               {verification === "strict"
                 ? "Only the emails listed below are recognized as this client."
                 : verification === "domain"
@@ -173,14 +174,14 @@ export default function ClientSettingsPage() {
               </TabsList>
             </Tabs>
           </div>
-        </div>
+        </OperationalPanelBody>
 
-        <div className="px-6 py-5 border-t border-foreground/6 space-y-4">
+        <OperationalPanelBody className="border-t border-foreground/6 px-6 py-5 space-y-4">
           <div>
-            <h3 className="text-body-sm font-medium text-foreground">
+            <h3 className="text-base font-medium text-foreground">
               Allowed emails
             </h3>
-            <p className="mt-1 text-body-sm text-muted-foreground">
+            <p className="mt-1 text-base text-muted-foreground">
               Exact senders that should route to this client.
             </p>
           </div>
@@ -203,7 +204,7 @@ export default function ClientSettingsPage() {
               {emails.map((e) => (
                 <span
                   key={e}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover pl-3 pr-1.5 py-1 text-label-sm text-foreground"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover pl-3 pr-1.5 py-1 text-label text-foreground"
                 >
                   {e}
                   <button
@@ -220,14 +221,14 @@ export default function ClientSettingsPage() {
               ))}
             </div>
           ) : null}
-        </div>
+        </OperationalPanelBody>
 
-        <div className="px-6 py-5 border-t border-foreground/6 space-y-4">
+        <OperationalPanelBody className="border-t border-foreground/6 px-6 py-5 space-y-4">
           <div>
-            <h3 className="text-body-sm font-medium text-foreground">
+            <h3 className="text-base font-medium text-foreground">
               Allowed domains
             </h3>
-            <p className="mt-1 text-body-sm text-muted-foreground">
+            <p className="mt-1 text-base text-muted-foreground">
               Anyone sending from these domains is recognized as this client.
             </p>
           </div>
@@ -251,7 +252,7 @@ export default function ClientSettingsPage() {
               {domains.map((d) => (
                 <span
                   key={d}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover pl-3 pr-1.5 py-1 text-label-sm text-foreground"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover pl-3 pr-1.5 py-1 text-label text-foreground"
                 >
                   @{d}
                   <button
@@ -270,7 +271,7 @@ export default function ClientSettingsPage() {
           ) : null}
           {suggestedDomains.length > 0 && verification !== "strict" ? (
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <span className="text-label-sm text-muted-foreground/70">
+              <span className="text-label text-muted-foreground/70">
                 Suggested from members:
               </span>
               {suggestedDomains.map((d) => (
@@ -278,15 +279,15 @@ export default function ClientSettingsPage() {
                   key={d}
                   type="button"
                   onClick={() => addDomain(d)}
-                  className="rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-label-sm text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                  className="rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-label text-muted-foreground hover:text-foreground hover:border-foreground/30"
                 >
                   + @{d}
                 </button>
               ))}
             </div>
           ) : null}
-        </div>
-      </section>
+        </OperationalPanelBody>
+      </OperationalPanel>
     </div>
   );
 }

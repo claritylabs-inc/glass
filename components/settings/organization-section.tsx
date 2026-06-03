@@ -13,7 +13,19 @@ import { Loader2, AlertTriangle, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
@@ -255,7 +267,7 @@ export function OrganizationSection() {
   useEffect(() => {
     setActions(
       <div className="flex items-center gap-3">
-        <span className="text-label-sm text-muted-foreground flex items-center gap-1.5">
+        <span className="text-label text-muted-foreground flex items-center gap-1.5">
           {saving ? (
             <>
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -307,7 +319,7 @@ export function OrganizationSection() {
       >
         <div className="flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-          <p className="text-body-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             This will permanently delete all policies (including stored files),
             emails, connections, and conversations for your organization. This
             action cannot be undone.
@@ -400,15 +412,11 @@ export function OrganizationSection() {
     <div className="space-y-4">
       {/* Organization info */}
       <div>
-        <div className="rounded-lg border border-foreground/6 bg-card mb-4">
-          <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="mb-0! text-sm font-medium text-foreground">
-              Organization
-            </h3>
-          </div>
-          <div className="px-5 py-5 space-y-4">
+        <OperationalPanel className="mb-4">
+          <OperationalPanelHeader title="Organization" className="px-5 py-3.5" />
+          <OperationalPanelBody className="space-y-4 px-5 py-5">
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+              <label className="text-label font-medium text-muted-foreground block mb-1.5">
                 Organization Name
               </label>
               <input
@@ -416,17 +424,17 @@ export function OrganizationSection() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Acme Corp"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
             </div>
 
             {isBroker && (
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+                <label className="text-label font-medium text-muted-foreground block mb-1.5">
                   Workspace link
                 </label>
                 <div className="flex items-stretch gap-0">
-                  <span className="inline-flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/3 px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
+                  <span className="inline-flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/3 px-3 text-base text-muted-foreground select-none whitespace-nowrap">
                     {WORKSPACE_DOMAIN}/
                   </span>
                   <input
@@ -438,7 +446,7 @@ export function OrganizationSection() {
                       )
                     }
                     placeholder="my-brokerage"
-                    className="flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className="flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
                 </div>
                 <HandleAvailability
@@ -456,7 +464,7 @@ export function OrganizationSection() {
             )}
 
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+              <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                 Website
               </label>
               <input
@@ -464,17 +472,17 @@ export function OrganizationSection() {
                 value={website}
                 onChange={(e) => setWebsite(e.target.value)}
                 placeholder="https://yourcompany.com"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
             </div>
 
             <div className="space-y-3 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground block">
+                  <label className="text-label font-medium text-muted-foreground block">
                     Legal names and related entities
                   </label>
-                  <p className="mt-0.5 text-label-sm text-muted-foreground/60">
+                  <p className="mt-0.5 text-label text-muted-foreground/60">
                     Used to match named insureds against current names, FKAs,
                     DBAs, subsidiaries, and legal registry identifiers.
                   </p>
@@ -490,7 +498,7 @@ export function OrganizationSection() {
                 </PillButton>
               </div>
               {relatedLegalEntities.length === 0 ? (
-                <p className="text-body-sm text-muted-foreground/70">
+                <p className="text-base text-muted-foreground/70">
                   No related legal entities listed.
                 </p>
               ) : (
@@ -498,7 +506,7 @@ export function OrganizationSection() {
                   {relatedLegalEntities.map((entity, index) => (
                     <div
                       key={index}
-                      className="grid gap-2 rounded-lg border border-foreground/6 bg-card p-3 sm:grid-cols-12"
+                      className="grid gap-2 rounded-lg border border-foreground/8 bg-popover p-3 sm:grid-cols-12"
                     >
                       <input
                         type="text"
@@ -509,26 +517,32 @@ export function OrganizationSection() {
                           })
                         }
                         placeholder="Actual legal name"
-                        className="sm:col-span-5 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className="sm:col-span-5 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
-                      <select
-                        value={entity.relationship ?? "other"}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            relationship: event.target
-                              .value as RelatedLegalEntity["relationship"],
-                          })
-                        }
-                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      >
-                        <option value="current">Current</option>
-                        <option value="fka">FKA</option>
-                        <option value="dba">DBA</option>
-                        <option value="subsidiary">Subsidiary</option>
-                        <option value="parent">Parent</option>
-                        <option value="affiliate">Affiliate</option>
-                        <option value="other">Other</option>
-                      </select>
+                      <div className="sm:col-span-2">
+                        <Select
+                          value={entity.relationship ?? "other"}
+                          onValueChange={(value) =>
+                            updateRelatedLegalEntity(index, {
+                              relationship:
+                                value as RelatedLegalEntity["relationship"],
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-9 w-full border-foreground/8 bg-popover">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="current">Current</SelectItem>
+                            <SelectItem value="fka">FKA</SelectItem>
+                            <SelectItem value="dba">DBA</SelectItem>
+                            <SelectItem value="subsidiary">Subsidiary</SelectItem>
+                            <SelectItem value="parent">Parent</SelectItem>
+                            <SelectItem value="affiliate">Affiliate</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <input
                         type="text"
                         value={entity.incorporationNumber ?? ""}
@@ -538,7 +552,7 @@ export function OrganizationSection() {
                           })
                         }
                         placeholder="Incorp. no."
-                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                       <input
                         type="text"
@@ -549,7 +563,7 @@ export function OrganizationSection() {
                           })
                         }
                         placeholder="EIN / tax ID"
-                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                       <button
                         type="button"
@@ -568,7 +582,7 @@ export function OrganizationSection() {
                           })
                         }
                         placeholder="Jurisdiction"
-                        className="sm:col-span-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className="sm:col-span-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                       <input
                         type="text"
@@ -579,7 +593,7 @@ export function OrganizationSection() {
                           })
                         }
                         placeholder="Notes"
-                        className="sm:col-span-9 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className="sm:col-span-9 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                     </div>
                   ))}
@@ -590,7 +604,7 @@ export function OrganizationSection() {
             {!isBroker && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                     Industry
                   </label>
                   <SearchableSelect
@@ -607,7 +621,7 @@ export function OrganizationSection() {
                   />
                 </div>
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                     Vertical
                   </label>
                   <SearchableSelect
@@ -630,7 +644,7 @@ export function OrganizationSection() {
 
             {!isBroker && (
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                   Company Context
                 </label>
                 <textarea
@@ -640,26 +654,22 @@ export function OrganizationSection() {
                   onInput={autoResize}
                   placeholder="Brief description of your company, industry, and insurance needs..."
                   rows={4}
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
                 />
               </div>
             )}
-          </div>
-        </div>
+          </OperationalPanelBody>
+        </OperationalPanel>
 
         {isBroker && <BrandingCard website={website} />}
 
         {/* Relationship Context section — client orgs only */}
         {!isBroker && (
-          <div className="rounded-lg border border-foreground/6 bg-card mb-4">
-            <div className="px-5 py-3.5 border-b border-foreground/6">
-              <h3 className="mb-0! text-sm font-medium text-foreground">
-                Relationship Context
-              </h3>
-            </div>
-            <div className="px-5 py-5 space-y-4">
+          <OperationalPanel className="mb-4">
+            <OperationalPanelHeader title="Relationship Context" className="px-5 py-3.5" />
+            <OperationalPanelBody className="space-y-4 px-5 py-5">
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                   Clients &amp; Customers
                 </label>
                 <input
@@ -667,11 +677,11 @@ export function OrganizationSection() {
                   value={clientsContext}
                   onChange={(e) => setClientsContext(e.target.value)}
                   placeholder="e.g. Small to mid-size restaurants in the Bay Area"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                   Vendors &amp; Service Providers
                 </label>
                 <input
@@ -679,11 +689,11 @@ export function OrganizationSection() {
                   value={vendorsContext}
                   onChange={(e) => setVendorsContext(e.target.value)}
                   placeholder="e.g. AWS for cloud, Stripe for payments, WeWork for office space"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
               <div>
-                <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                   Insurance Relationships
                 </label>
                 <input
@@ -691,12 +701,12 @@ export function OrganizationSection() {
                   value={insuranceContext}
                   onChange={(e) => setInsuranceContext(e.target.value)}
                   placeholder="e.g. Marsh as broker, Hartford and Travelers as carriers"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                     Investors &amp; Shareholders
                   </label>
                   <input
@@ -704,11 +714,11 @@ export function OrganizationSection() {
                     value={investorsContext}
                     onChange={(e) => setInvestorsContext(e.target.value)}
                     placeholder="e.g. Series A from Sequoia, angel investors"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground  block mb-1.5">
+                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
                     Partners &amp; Affiliates
                   </label>
                   <input
@@ -716,29 +726,25 @@ export function OrganizationSection() {
                     value={partnersContext}
                     onChange={(e) => setPartnersContext(e.target.value)}
                     placeholder="e.g. Joint venture with ABC Corp, reseller agreement with XYZ"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
                 </div>
               </div>
-            </div>
-          </div>
+            </OperationalPanelBody>
+          </OperationalPanel>
         )}
       </div>
 
       {/* Onboarding section */}
-      <div className="rounded-lg border border-foreground/6 bg-card">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">
-            Onboarding
-          </h3>
-        </div>
-        <div className="px-5 py-5">
+      <OperationalPanel>
+        <OperationalPanelHeader title="Onboarding" className="px-5 py-3.5" />
+        <OperationalPanelBody className="px-5 py-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-body-sm font-medium text-foreground">
+              <p className="text-base font-medium text-foreground">
                 Re-run Setup
               </p>
-              <p className="text-label-sm text-muted-foreground mt-0.5">
+              <p className="text-label text-muted-foreground mt-0.5">
                 Walk through the onboarding steps again. Your existing data will
                 not be affected.
               </p>
@@ -759,25 +765,25 @@ export function OrganizationSection() {
               Re-run
             </PillButton>
           </div>
-        </div>
-      </div>
+        </OperationalPanelBody>
+      </OperationalPanel>
 
       {/* Danger Zone */}
       {viewer?.isAdmin && (
         <div className="mt-4">
           <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/30">
             <div className="px-5 py-3.5 border-b border-red-200 dark:border-red-900/50">
-              <h3 className="mb-0! text-sm font-medium text-red-900 dark:text-red-400">
+              <h3 className="mb-0! text-base font-medium text-red-900 dark:text-red-400">
                 Danger Zone
               </h3>
             </div>
             <div className="px-5 py-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-body-sm font-medium text-foreground">
+                  <p className="text-base font-medium text-foreground">
                     Reset Organization
                   </p>
-                  <p className="text-label-sm text-muted-foreground mt-0.5">
+                  <p className="text-label text-muted-foreground mt-0.5">
                     Delete all policies, emails, connections, and conversations.
                     This cannot be undone.
                   </p>
@@ -802,7 +808,7 @@ export function OrganizationSection() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const brandingLabelClass =
-  "text-label-sm font-medium text-muted-foreground block mb-1.5";
+  "text-label font-medium text-muted-foreground block mb-1.5";
 
 type BrandingMode = "light" | "dark";
 type TextOnAccent = "light" | "dark" | "auto";
@@ -905,17 +911,15 @@ function BrandingCard({ website }: { website: string }) {
       : null;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card mb-4">
-      <div className="px-5 py-3.5 border-b border-foreground/6">
-        <h3 className="mb-0! text-sm font-medium text-foreground">Brand</h3>
-      </div>
-      <div className="px-5 py-5 space-y-5">
+    <OperationalPanel as="div" className="mb-4">
+      <OperationalPanelHeader title="Brand" className="px-5 py-3.5" />
+      <OperationalPanelBody className="space-y-5 px-5 py-5">
         <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
           <div>
-            <p className="text-body-sm font-medium text-foreground">
+            <p className="text-base font-medium text-foreground">
               White labeling
             </p>
-            <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
+            <p className="text-label text-muted-foreground/60 mt-0.5 max-w-md">
               Apply your broker logo, accent color, agent name, and branded
               emails to client-facing surfaces.
             </p>
@@ -973,16 +977,16 @@ function BrandingCard({ website }: { website: string }) {
                   className="h-full w-full object-contain"
                 />
               ) : (
-                <span className="text-label-sm text-muted-foreground/60">
+                <span className="text-label text-muted-foreground/60">
                   —
                 </span>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-body-sm font-medium text-foreground">
+              <div className="text-base font-medium text-foreground">
                 {logoUrl ? "Replace logo" : "Upload logo"}
               </div>
-              <div className="text-label-sm text-muted-foreground/70">
+              <div className="text-label text-muted-foreground/70">
                 Drop an image, or click to browse. Auto-filled from your
                 website.
               </div>
@@ -1013,7 +1017,7 @@ function BrandingCard({ website }: { website: string }) {
             website={website}
           />
         </div>
-      </div>
-    </div>
+      </OperationalPanelBody>
+    </OperationalPanel>
   );
 }

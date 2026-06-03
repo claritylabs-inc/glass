@@ -134,7 +134,7 @@ export function NewChatEmptyState({
   if (prompts.length === 0) {
     return (
       <div className="mx-auto w-full max-w-3xl pt-10 pb-8">
-        <p className="mb-4 text-body-sm text-muted-foreground/60">Get started</p>
+        <p className="mb-4 text-base text-muted-foreground/60">Get started</p>
         <div className="grid gap-2 border-t border-foreground/10 pt-3 sm:grid-cols-2">
           {GET_STARTED_ACTIONS.map((item) => {
             const Icon = item.icon;
@@ -148,10 +148,10 @@ export function NewChatEmptyState({
                   <Icon className="h-3.5 w-3.5" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-body-sm font-medium leading-snug text-foreground/78 group-hover:text-foreground">
+                  <span className="block text-base font-medium leading-snug text-foreground/78 group-hover:text-foreground">
                     {item.label}
                   </span>
-                  <span className="mt-1 block text-body-xs leading-snug text-muted-foreground/62">
+                  <span className="mt-1 block text-label leading-snug text-muted-foreground/62">
                     {item.description}
                   </span>
                 </span>
@@ -165,14 +165,14 @@ export function NewChatEmptyState({
 
   return (
     <div className="mx-auto w-full max-w-3xl pt-10 pb-8">
-      <p className="mb-4 text-body-sm text-muted-foreground/60">Some ideas...</p>
+      <p className="mb-4 text-base text-muted-foreground/60">Some ideas...</p>
       <div className="border-t border-foreground/10">
         {prompts.map((item) => (
           <button
             key={item.label}
             type="button"
             onClick={() => onSelectPrompt(item.prompt)}
-            className="w-full border-b border-foreground/10 py-2.5 text-left text-body-sm leading-snug text-foreground/70 transition-colors hover:text-foreground"
+            className="w-full border-b border-foreground/10 py-2.5 text-left text-base leading-snug text-foreground/70 transition-colors hover:text-foreground"
           >
             {item.label}
           </button>

@@ -114,14 +114,14 @@ function EmailBodyPreview({ html, text }: { html?: string; text: string }) {
   if (safeHtml) {
     return (
       <div
-        className="break-words text-body-sm leading-6 text-foreground/90 [overflow-wrap:anywhere] [&_a]:text-primary-light [&_a]:underline [&_img]:inline-block [&_img]:align-middle"
+        className="break-words text-base leading-6 text-foreground/90 [overflow-wrap:anywhere] [&_a]:text-primary-light [&_a]:underline [&_img]:inline-block [&_img]:align-middle"
         dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
     );
   }
 
   return (
-    <div className="whitespace-pre-wrap break-words text-body-sm leading-6 text-foreground/90 [overflow-wrap:anywhere]">
+    <div className="whitespace-pre-wrap break-words text-base leading-6 text-foreground/90 [overflow-wrap:anywhere]">
       {text}
     </div>
   );
@@ -138,10 +138,10 @@ function EmailHeaderRow({
 
   return (
     <>
-      <dt className="pt-0.5 text-[13px] font-medium leading-5 text-muted-foreground/55">
+      <dt className="pt-0.5 text-base font-medium leading-5 text-muted-foreground/55">
         {label}
       </dt>
-      <dd className="min-w-0 break-words text-[13px] leading-6 text-foreground/80">
+      <dd className="min-w-0 break-words text-base leading-6 text-foreground/80">
         {value}
       </dd>
     </>
@@ -166,7 +166,7 @@ function EmailHeaderAttachments({
 
   return (
     <>
-      <dt className="col-span-1 mt-2 text-[12px] font-medium leading-4 text-muted-foreground/55">
+      <dt className="col-span-1 mt-2 text-label font-medium leading-4 text-muted-foreground/55">
         Attachments
       </dt>
       <dd className="col-span-1 min-w-0 mt-1">
@@ -183,7 +183,7 @@ function EmailHeaderAttachments({
               type="button"
               aria-expanded={isExpanded}
               onClick={() => setIsExpanded((value) => !value)}
-              className="inline-flex h-6 shrink-0 items-center rounded-full bg-foreground/5 px-2 text-[11px] font-medium text-foreground/40 transition-colors hover:bg-foreground/8 hover:text-foreground/80"
+              className="inline-flex h-6 shrink-0 items-center rounded-full bg-foreground/5 px-2 text-label font-medium text-foreground/40 transition-colors hover:bg-foreground/8 hover:text-foreground/80"
             >
               {isExpanded ? "Hide" : `+ ${hiddenAttachmentCount} more`}
             </button>
@@ -290,13 +290,13 @@ export function EmailSummaryCard({
         className="block w-full min-w-0 px-3 py-2.5 text-left"
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11px] font-medium leading-4 text-muted-foreground/45">
+          <span className="block truncate text-label font-medium leading-4 text-muted-foreground/45">
             {label}
           </span>
-          <span className="block truncate text-[13px] font-medium leading-5 text-foreground/85">
+          <span className="block truncate text-base font-medium leading-5 text-foreground/85">
             {preview}
           </span>
-          <span className="block truncate text-[11px] leading-4 text-muted-foreground/40">
+          <span className="block truncate text-label leading-4 text-muted-foreground/40">
             {recipients}
           </span>
         </span>
@@ -442,10 +442,10 @@ export function EmailStackCard({
     <div className="w-full max-w-md overflow-hidden rounded-md border border-foreground/8 bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium leading-4 text-muted-foreground/45">
+          <p className="text-label font-medium leading-4 text-muted-foreground/45">
             Email drafts
           </p>
-          <p className="truncate text-[13px] font-medium leading-5 text-foreground/85">
+          <p className="truncate text-base font-medium leading-5 text-foreground/85">
             {orderedMessages.length} email
             {orderedMessages.length === 1 ? "" : "s"}
           </p>
@@ -482,22 +482,22 @@ export function EmailStackCard({
             >
               <span className="flex min-w-0 items-start justify-between gap-3">
                 <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium leading-5 text-foreground/85">
+                  <span className="block truncate text-base font-medium leading-5 text-foreground/85">
                     {getEmailSummaryPreview(message)}
                   </span>
-                  <span className="block truncate text-[11px] leading-4 text-muted-foreground/45">
+                  <span className="block truncate text-label leading-4 text-muted-foreground/45">
                     {getEmailSummaryRecipients(message)}
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5">
                   {attachmentCount > 0 ? (
-                    <span className="text-[11px] leading-4 text-muted-foreground/35">
+                    <span className="text-label leading-4 text-muted-foreground/35">
                       {attachmentCount} file{attachmentCount === 1 ? "" : "s"}
                     </span>
                   ) : null}
                   <Badge
                     variant="outline"
-                    className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55"
+                    className="h-5 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55"
                   >
                     {getEmailStatusLabel(message)}
                   </Badge>
@@ -617,13 +617,13 @@ export function EmailThreadSidebar({
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-body-sm font-semibold text-foreground">
+          <h2 className="truncate text-base font-semibold text-foreground">
             {message.subject ||
               (message.role === "agent" ? "Sent email" : "Received email")}
           </h2>
           <Badge
             variant="outline"
-            className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55"
+            className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55"
           >
             {isDraft
               ? "Draft"

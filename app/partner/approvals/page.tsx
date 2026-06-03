@@ -15,6 +15,10 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Badge } from "@/components/ui/badge";
+import {
+  OperationalItem,
+  OperationalPanel,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -68,11 +72,11 @@ function ProgramApprovalsLoadingSkeleton() {
         <Skeleton className="h-7 w-24 rounded-full" />
         <Skeleton className="h-7 w-28 rounded-full" />
       </div>
-      <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+      <OperationalPanel as="div">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div
+          <OperationalItem
             key={index}
-            className="flex items-center justify-between gap-4 border-t border-foreground/4 px-4 py-3 first:border-t-0"
+            className="flex items-center justify-between gap-4 border-foreground/4"
           >
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <Skeleton className="size-8 rounded-md" />
@@ -85,9 +89,9 @@ function ProgramApprovalsLoadingSkeleton() {
               <Skeleton className="h-7 w-20 rounded-full" />
               <Skeleton className="h-7 w-20 rounded-full" />
             </div>
-          </div>
+          </OperationalItem>
         ))}
-      </div>
+      </OperationalPanel>
     </div>
   );
 }
@@ -118,14 +122,14 @@ function ApprovalRow({
   const approveLabel = kind === "certificate" ? "Approve" : "Stage";
 
   return (
-    <div className="flex flex-col gap-3 border-t border-foreground/4 px-4 py-3 transition-colors first:border-t-0 hover:bg-muted/40 sm:flex-row sm:items-start sm:justify-between">
+    <OperationalItem className="flex flex-col gap-3 border-foreground/4 transition-colors hover:bg-muted/40 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/4 text-muted-foreground">
           <Icon className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <p className="min-w-0 truncate text-sm font-medium text-foreground">
+            <p className="min-w-0 truncate text-base font-medium text-foreground">
               {title}
             </p>
             <Badge variant="secondary" className="font-normal text-muted-foreground">
@@ -137,15 +141,15 @@ function ApprovalRow({
               </Badge>
             ) : null}
           </div>
-          <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
+          <p className="mt-1 line-clamp-1 text-base text-muted-foreground">
             {subtitle}
           </p>
           {description ? (
-            <p className="mt-2 line-clamp-2 whitespace-pre-line text-sm leading-5 text-muted-foreground">
+            <p className="mt-2 line-clamp-2 whitespace-pre-line text-base leading-5 text-muted-foreground">
               {description}
             </p>
           ) : null}
-          <p className="mt-2 text-xs text-muted-foreground/70">
+          <p className="mt-2 text-label text-muted-foreground/70">
             Requested {formatCreatedAt(createdAt)}
           </p>
         </div>
@@ -169,7 +173,7 @@ function ApprovalRow({
           {approveLabel}
         </PillButton>
       </div>
-    </div>
+    </OperationalItem>
   );
 }
 
@@ -254,7 +258,7 @@ export default function ProgramAdminApprovalsPage() {
               </TabsList>
             </Tabs>
 
-            <section className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+            <OperationalPanel>
               {visibleCertificateRequests.map((request) => (
                 <ApprovalRow
                   key={request._id}
@@ -311,7 +315,7 @@ export default function ProgramAdminApprovalsPage() {
                   }
                 />
               ))}
-            </section>
+            </OperationalPanel>
           </>
         )}
       </div>

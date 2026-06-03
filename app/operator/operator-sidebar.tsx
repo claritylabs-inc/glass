@@ -74,14 +74,14 @@ export function OperatorSidebar({
       </div>
       <div className="border-t border-foreground/6 px-2 py-2">
         {!collapsed && email ? (
-          <p className="truncate px-3 pb-2 text-label-sm text-muted-foreground/60">
+          <p className="truncate px-3 pb-2 text-label text-muted-foreground/60">
             {email}
           </p>
         ) : null}
         <button
           type="button"
           onClick={() => void signOut()}
-          className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-body-sm ${
+          className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-base ${
             collapsed ? "justify-center" : ""
           } ${MENU_ITEM_BASE} ${MENU_ITEM_INACTIVE}`}
           aria-label={collapsed ? "Sign out" : undefined}

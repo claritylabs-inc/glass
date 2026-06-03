@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
+import { ActionSurface } from "@/components/ui/action-surface";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
@@ -35,7 +36,7 @@ export default function ArchivePage() {
       <FadeIn when={true} duration={0.12}>
         {(threads ?? []).length === 0 && (
           <div className="text-center py-16">
-            <p className="text-body-sm text-muted-foreground/40">
+            <p className="text-base text-muted-foreground/40">
               No archived threads
             </p>
           </div>
@@ -44,9 +45,9 @@ export default function ArchivePage() {
         {(threads ?? []).length > 0 && (
           <div className="space-y-1">
             {(threads ?? []).map((thread) => (
-              <div
+              <ActionSurface
                 key={thread._id}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] transition-colors group"
+                className="flex items-center gap-3 px-4 py-3 group"
               >
                 <div className="shrink-0 text-muted-foreground/30">
                   {thread.originChannel === "imessage" ? (
@@ -59,10 +60,10 @@ export default function ArchivePage() {
                   href={`/agent/thread/${thread._id}`}
                   className="flex-1 min-w-0"
                 >
-                  <p className="text-body-sm font-medium text-foreground truncate">
+                  <p className="text-base font-medium text-foreground truncate">
                     {thread.title}
                   </p>
-                  <p className="text-[11px] text-muted-foreground/40">
+                  <p className="text-label text-muted-foreground/40">
                     {dayjs(thread.lastMessageAt ?? thread._creationTime).format(
                       "MMM D, YYYY · h:mm A",
                     )}
@@ -82,7 +83,7 @@ export default function ArchivePage() {
                 >
                   <ArchiveRestore className="w-4 h-4" />
                 </PillButton>
-              </div>
+              </ActionSurface>
             ))}
           </div>
         )}

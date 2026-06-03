@@ -8,6 +8,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { Check, Loader2, Mail, Plug, Plus, Trash2 } from "lucide-react";
+import {
+  OperationalPanel,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   Select,
@@ -327,7 +331,7 @@ export function EmailConnectionsSection() {
         }
       >
         <div className="flex flex-col gap-5">
-          <p className="text-body-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             Choose a preset, then enter the mailbox credentials Glass should use for agent email access.
           </p>
 
@@ -350,10 +354,10 @@ export function EmailConnectionsSection() {
                     <Icon className="size-3.5" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-body-sm font-medium text-foreground">
+                    <span className="block text-base font-medium text-foreground">
                       {preset.name}
                     </span>
-                    <span className="mt-0.5 block text-label-sm text-muted-foreground/60">
+                    <span className="mt-0.5 block text-label text-muted-foreground/60">
                       {preset.detail}
                     </span>
                   </span>
@@ -364,16 +368,16 @@ export function EmailConnectionsSection() {
           </div>
 
           <div className="grid gap-3">
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Email address
               <input
                 value={form.emailAddress}
                 onChange={(event) => updateEmailAddress(event.target.value)}
                 placeholder="name@company.com"
-                className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20"
+                className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20"
               />
             </label>
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               IMAP host
               <input
                 value={form.host}
@@ -381,10 +385,10 @@ export function EmailConnectionsSection() {
                   setForm((current) => ({ ...current, host: event.target.value }))
                 }
                 placeholder="imap.company.com"
-                className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20"
+                className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20"
               />
             </label>
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Port
               <input
                 value={form.port}
@@ -392,7 +396,7 @@ export function EmailConnectionsSection() {
                   setForm((current) => ({ ...current, port: event.target.value }))
                 }
                 inputMode="numeric"
-                className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm text-foreground focus:outline-none focus:border-foreground/20"
+                className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base text-foreground focus:outline-none focus:border-foreground/20"
               />
             </label>
             <button
@@ -403,10 +407,10 @@ export function EmailConnectionsSection() {
               className="flex items-center justify-between gap-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-left transition-colors hover:border-foreground/14"
             >
               <span>
-                <span className="block text-label-sm font-medium text-muted-foreground">
+                <span className="block text-label font-medium text-muted-foreground">
                   Use TLS
                 </span>
-                <span className="mt-0.5 block text-label-sm text-muted-foreground/60">
+                <span className="mt-0.5 block text-label text-muted-foreground/60">
                   Recommended for IMAP on port 993
                 </span>
               </span>
@@ -420,7 +424,7 @@ export function EmailConnectionsSection() {
                 {form.secure ? <Check className="size-3" /> : null}
               </span>
             </button>
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               {selectedPreset.passwordLabel}
               <input
                 value={form.password}
@@ -428,22 +432,22 @@ export function EmailConnectionsSection() {
                   setForm((current) => ({ ...current, password: event.target.value }))
                 }
                 type="password"
-                className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm text-foreground focus:outline-none focus:border-foreground/20"
+                className="rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base text-foreground focus:outline-none focus:border-foreground/20"
               />
             </label>
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Agent access
               <EmailScopeSelect
                 value={form.scope}
                 onValueChange={(scope) =>
                   setForm((current) => ({ ...current, scope }))
                 }
-                className="h-9 w-full border-foreground/8 bg-popover text-body-sm"
+                className="h-9 w-full border-foreground/8 bg-popover text-base"
               />
             </label>
           </div>
 
-          <p className="text-label-sm text-muted-foreground/70">
+          <p className="text-label text-muted-foreground/70">
             {selectedPreset.note}
             {selectedPreset.setupHref ? (
               <>
@@ -479,15 +483,13 @@ export function EmailConnectionsSection() {
     <div className="flex w-full flex-col gap-5">
       <div>
         <h1 className="text-lg font-medium text-foreground">Email</h1>
-        <p className="mt-1 text-body-sm text-muted-foreground/70">
+        <p className="mt-1 text-base text-muted-foreground/70">
           Connect IMAP mailboxes for live Glass agent search, reading, and attachment imports.
         </p>
       </div>
 
-      <section className="rounded-lg border border-foreground/6 bg-card">
-        <div className="border-b border-foreground/6 px-5 py-3.5">
-          <h2 className="text-sm font-medium text-foreground">Connected mailboxes</h2>
-        </div>
+      <OperationalPanel>
+        <OperationalPanelHeader title="Connected mailboxes" className="px-5 py-3.5" />
         {connectedEmailAccounts === undefined ? (
           <div className="px-5 py-8 text-center">
             <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
@@ -507,10 +509,10 @@ export function EmailConnectionsSection() {
                         <ProviderIcon className="size-4" />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-body-sm font-medium text-foreground">
+                        <p className="truncate text-base font-medium text-foreground">
                           {account.emailAddress}
                         </p>
-                        <p className="truncate text-label-sm text-muted-foreground/60">
+                        <p className="truncate text-label text-muted-foreground/60">
                           {account.host} · {account.scope === "org" ? "Organization" : "Only me"}
                         </p>
                       </div>
@@ -541,7 +543,7 @@ export function EmailConnectionsSection() {
                           )
                           .catch(() => toast.error("Failed to update scope"))
                       }
-                      className="h-8 w-32 rounded-md border-foreground/8 bg-popover text-label-sm"
+                      className="h-8 w-32 rounded-md border-foreground/8 bg-popover text-label"
                     />
                     <PillButton
                       variant="destructive"
@@ -575,10 +577,10 @@ export function EmailConnectionsSection() {
             <span className="flex size-10 items-center justify-center rounded-lg bg-foreground/5 text-muted-foreground">
               <Mail className="size-5" />
             </span>
-            <h3 className="mt-3 text-body-sm font-medium text-foreground">
+            <h3 className="mt-3 text-base font-medium text-foreground">
               Add your first inbox
             </h3>
-            <p className="mt-1 max-w-sm text-body-sm text-muted-foreground/70">
+            <p className="mt-1 max-w-sm text-base text-muted-foreground/70">
               Connect a shared or personal mailbox so Glass can search email, read attachments, and surface insurance follow-ups.
             </p>
             <PillButton
@@ -592,7 +594,7 @@ export function EmailConnectionsSection() {
             </PillButton>
           </div>
         )}
-      </section>
+      </OperationalPanel>
     </div>
   );
 }

@@ -9,8 +9,12 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Input } from "@/components/ui/input";
+import {
+  OperationalItem,
+  OperationalPanel,
+  OperationalSkeletonList,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -62,25 +66,6 @@ const MODE_LABELS: Record<ApprovalMode, string> = {
 
 const STANDARD_TEMPLATE_VALUE = "__standard_glass__";
 
-function ProgramSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div
-          key={index}
-          className="flex items-center justify-between gap-4 border-t border-foreground/4 px-4 py-3 first:border-t-0"
-        >
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-3 w-72" />
-          </div>
-          <Skeleton className="h-7 w-20 rounded-full" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function addListValue(items: string[], value: string) {
   const trimmed = value.trim();
   if (!trimmed) return items;
@@ -111,7 +96,7 @@ function TagListEditor({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-label-sm font-medium text-muted-foreground">{label}</p>
+      <p className="text-label font-medium text-muted-foreground">{label}</p>
       <div className="flex gap-2">
         <Input
           value={draft}
@@ -134,7 +119,7 @@ function TagListEditor({
           {values.map((value) => (
             <span
               key={value}
-              className="inline-flex h-6 items-center gap-1 rounded-full border border-foreground/8 bg-foreground/[0.03] px-2 text-label-sm text-foreground"
+              className="inline-flex h-6 items-center gap-1 rounded-full border border-foreground/8 bg-foreground/[0.03] px-2 text-label text-foreground"
             >
               {value}
               <button
@@ -176,8 +161,8 @@ function SecurityPanelEditor({
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-label-sm font-medium text-muted-foreground">Security panel</p>
-          <p className="text-label-sm text-muted-foreground/70">
+          <p className="text-label font-medium text-muted-foreground">Security panel</p>
+          <p className="text-label text-muted-foreground/70">
             Carriers, Lloyd&apos;s underwriters, reinsurers or coverholders backing this program.
           </p>
         </div>
@@ -188,7 +173,7 @@ function SecurityPanelEditor({
       </div>
       {value.length > 0 ? (
         <div className="overflow-hidden rounded-lg border border-foreground/8">
-          <div className="grid grid-cols-[1fr_6rem_2rem] border-b border-foreground/8 bg-muted/25 px-2 py-1.5 text-label-sm font-medium text-muted-foreground">
+          <div className="grid grid-cols-[1fr_6rem_2rem] border-b border-foreground/8 bg-muted/25 px-2 py-1.5 text-label font-medium text-muted-foreground">
             <span>Security</span>
             <span className="text-right">Share</span>
             <span />
@@ -205,7 +190,7 @@ function SecurityPanelEditor({
               />
               <div className="flex items-center rounded-lg border border-input bg-transparent pr-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
                 <input
-                  className="min-w-0 flex-1 bg-transparent py-2 pl-2.5 text-right text-sm outline-none"
+                  className="min-w-0 flex-1 bg-transparent py-2 pl-2.5 text-right text-base outline-none"
                   type="number"
                   min="0"
                   max="100"
@@ -218,7 +203,7 @@ function SecurityPanelEditor({
                   }
                   placeholder="50"
                 />
-                <span className="text-label-sm text-muted-foreground">%</span>
+                <span className="text-label text-muted-foreground">%</span>
               </div>
               <button
                 type="button"
@@ -230,7 +215,7 @@ function SecurityPanelEditor({
               </button>
             </div>
           ))}
-          <div className="flex justify-end border-t border-foreground/8 bg-muted/15 px-2 py-1.5 text-label-sm text-muted-foreground">
+          <div className="flex justify-end border-t border-foreground/8 bg-muted/15 px-2 py-1.5 text-label text-muted-foreground">
             Total {Math.round(total * 100) / 100}%
           </div>
         </div>
@@ -379,7 +364,7 @@ export default function PartnerProgramsPage() {
           }
         >
           <div className="flex flex-col gap-4">
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Program name
               <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Startup Coverage" />
             </label>
@@ -399,13 +384,13 @@ export default function PartnerProgramsPage() {
               onDraftChange={setAliasDraft}
               onValuesChange={setAliases}
             />
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Description
               <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} />
             </label>
             <SecurityPanelEditor value={securityPanel} onChange={setSecurityPanel} />
             <div className="flex flex-col gap-1.5">
-              <p className="text-label-sm font-medium text-muted-foreground">Default certificate template</p>
+              <p className="text-label font-medium text-muted-foreground">Default certificate template</p>
               <Select
                 value={defaultTemplateId || STANDARD_TEMPLATE_VALUE}
                 onValueChange={(value) => {
@@ -434,7 +419,7 @@ export default function PartnerProgramsPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <p className="text-label-sm font-medium text-muted-foreground">Certificate approval mode</p>
+              <p className="text-label font-medium text-muted-foreground">Certificate approval mode</p>
               <Select
                 value={approvalMode}
                 onValueChange={(value) => setApprovalMode(value as ApprovalMode)}
@@ -450,7 +435,7 @@ export default function PartnerProgramsPage() {
               </Select>
             </div>
             {approvalMode === "llm_review" ? (
-              <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+              <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                 Agentic review instructions
                 <Textarea
                   value={approvalRuleText}
@@ -462,7 +447,7 @@ export default function PartnerProgramsPage() {
               </label>
             ) : null}
             <div className="flex flex-col gap-1.5">
-              <p className="text-label-sm font-medium text-muted-foreground">Status</p>
+              <p className="text-label font-medium text-muted-foreground">Status</p>
               <Select value={status} onValueChange={(value) => setStatus(value as "active" | "inactive")}>
                 <SelectTrigger className="w-full">
                   <SelectValue>{status === "active" ? "Active" : "Inactive"}</SelectValue>
@@ -479,7 +464,7 @@ export default function PartnerProgramsPage() {
     >
       <div className="flex w-full flex-col gap-4">
         {programs === undefined ? (
-          <ProgramSkeleton />
+          <OperationalSkeletonList rows={4} />
         ) : programs.length === 0 ? (
           <EmptyStateCard
             icon={<ClipboardCheck className="size-5" />}
@@ -489,39 +474,43 @@ export default function PartnerProgramsPage() {
             onAction={() => openEditor()}
           />
         ) : (
-          <section className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          <OperationalPanel>
             {programs.map((program) => (
-              <button
+              <OperationalItem
                 key={program._id}
-                type="button"
-                onClick={() => openEditor(program)}
-                className="flex w-full items-center justify-between gap-4 border-t border-foreground/4 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-muted/40"
+                className="border-foreground/4 p-0"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-medium text-foreground">{program.name}</p>
-                    <Badge variant={program.status === "active" ? "secondary" : "outline"} className="font-normal text-muted-foreground">
-                      {program.status}
-                    </Badge>
-                    <Badge variant="outline" className="font-normal text-muted-foreground">
-                      {MODE_LABELS[program.approvalMode ?? "require_approval_all"]}
-                    </Badge>
+                <button
+                  type="button"
+                  onClick={() => openEditor(program)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="truncate text-base font-medium text-foreground">{program.name}</p>
+                      <Badge variant={program.status === "active" ? "secondary" : "outline"} className="font-normal text-muted-foreground">
+                        {program.status}
+                      </Badge>
+                      <Badge variant="outline" className="font-normal text-muted-foreground">
+                        {MODE_LABELS[program.approvalMode ?? "require_approval_all"]}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 line-clamp-1 text-base text-muted-foreground">
+                      {[
+                        program.categoryLabels?.join(", "),
+                        program.securityPanel?.length
+                          ? `${program.securityPanel.length} security panel ${
+                              Math.round(program.securityPanel.reduce((sum, member) => sum + member.participationPercent, 0) * 100) / 100
+                            }%`
+                          : undefined,
+                        program.defaultTemplate?.name ?? "Standard Glass certificate",
+                      ].filter(Boolean).join(" · ")}
+                    </p>
                   </div>
-                  <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
-                    {[
-                      program.categoryLabels?.join(", "),
-                      program.securityPanel?.length
-                        ? `${program.securityPanel.length} security panel ${
-                            Math.round(program.securityPanel.reduce((sum, member) => sum + member.participationPercent, 0) * 100) / 100
-                          }%`
-                        : undefined,
-                      program.defaultTemplate?.name ?? "Standard Glass certificate",
-                    ].filter(Boolean).join(" · ")}
-                  </p>
-                </div>
-              </button>
+                </button>
+              </OperationalItem>
             ))}
-          </section>
+          </OperationalPanel>
         )}
       </div>
     </AppShell>

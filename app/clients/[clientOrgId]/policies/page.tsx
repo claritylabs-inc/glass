@@ -12,6 +12,7 @@ import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { Badge } from "@/components/ui/badge";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import {
   Table,
   TableBody,
@@ -289,29 +290,29 @@ export default function ClientPoliciesPage() {
           onUpload={handleUpload}
         />
       ) : (
-        <section className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+        <OperationalPanel>
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[22%] px-4 text-label-sm text-muted-foreground">
+                <TableHead className="w-[22%] px-4 text-label text-muted-foreground">
                   Carrier
                 </TableHead>
-                <TableHead className="w-[16%] text-label-sm text-muted-foreground">
+                <TableHead className="w-[16%] text-label text-muted-foreground">
                   Policy no.
                 </TableHead>
-                <TableHead className="w-[20%] text-label-sm text-muted-foreground">
+                <TableHead className="w-[20%] text-label text-muted-foreground">
                   Term
                 </TableHead>
-                <TableHead className="w-[12%] text-label-sm text-muted-foreground">
+                <TableHead className="w-[12%] text-label text-muted-foreground">
                   Premium
                 </TableHead>
-                <TableHead className="w-[12%] text-label-sm text-muted-foreground">
+                <TableHead className="w-[12%] text-label text-muted-foreground">
                   Uploaded by
                 </TableHead>
-                <TableHead className="w-[10%] text-label-sm text-muted-foreground">
+                <TableHead className="w-[10%] text-label text-muted-foreground">
                   Status
                 </TableHead>
-                <TableHead className="w-[18%] px-4 text-label-sm text-muted-foreground">
+                <TableHead className="w-[18%] px-4 text-label text-muted-foreground">
                   File
                 </TableHead>
               </TableRow>
@@ -376,7 +377,7 @@ export default function ClientPoliciesPage() {
               })}
             </TableBody>
           </Table>
-        </section>
+        </OperationalPanel>
       )}
     </div>
   );

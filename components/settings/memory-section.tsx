@@ -3,6 +3,11 @@
 import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import { Brain, MessageSquare, Mail, FileText, Sparkles } from "lucide-react";
+import {
+  OperationalItem,
+  OperationalPanel,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -31,9 +36,9 @@ export function MemorySection() {
 
   if (memories === undefined) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-card px-5 py-10 text-center text-body-sm text-muted-foreground/60">
+      <OperationalPanel as="div" className="px-5 py-10 text-center text-base text-muted-foreground/60">
         Loading memory…
-      </div>
+      </OperationalPanel>
     );
   }
 
@@ -41,19 +46,19 @@ export function MemorySection() {
     return (
       <div className="space-y-4">
         <div>
-          <h3 className="text-body-sm font-medium text-foreground mb-1">Memory</h3>
-          <p className="text-body-sm text-muted-foreground">
+          <h3 className="text-base font-medium text-foreground mb-1">Memory</h3>
+          <p className="text-base text-muted-foreground">
             Facts Glass has learned about your organization from chats, emails,
             and website enrichment.
           </p>
         </div>
-        <div className="rounded-lg border border-foreground/6 bg-card px-5 py-10 text-center">
+        <OperationalPanel as="div" className="px-5 py-10 text-center">
           <Brain className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
-          <p className="text-body-sm text-muted-foreground">No memory yet</p>
-          <p className="text-label-sm text-muted-foreground/50 mt-0.5">
+          <p className="text-base text-muted-foreground">No memory yet</p>
+          <p className="text-label text-muted-foreground/50 mt-0.5">
             Glass will capture durable facts as you chat and forward emails.
           </p>
-        </div>
+        </OperationalPanel>
       </div>
     );
   }
@@ -70,8 +75,8 @@ export function MemorySection() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-body-sm font-medium text-foreground mb-1">Memory</h3>
-        <p className="text-body-sm text-muted-foreground">
+        <h3 className="text-base font-medium text-foreground mb-1">Memory</h3>
+        <p className="text-base text-muted-foreground">
           Facts Glass has learned about your organization from chats, emails,
           and website enrichment.
         </p>
@@ -81,42 +86,40 @@ export function MemorySection() {
         {order
           .filter((t) => grouped[t]?.length)
           .map((type) => (
-            <div
-              key={type}
-              className="rounded-lg border border-foreground/6 bg-card overflow-hidden"
-            >
-              <div className="px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between">
-                <h4 className="mb-0! text-sm font-medium text-foreground">
-                  {TYPE_LABELS[type] ?? type}
-                </h4>
-                <span className="text-label-sm text-muted-foreground/50">
-                  {grouped[type].length}
-                </span>
-              </div>
+            <OperationalPanel key={type}>
+              <OperationalPanelHeader
+                title={TYPE_LABELS[type] ?? type}
+                action={
+                  <span className="text-label text-muted-foreground/50">
+                    {grouped[type].length}
+                  </span>
+                }
+                className="px-5 py-3.5"
+              />
               <div className="divide-y divide-foreground/6">
                 {grouped[type].map((m) => {
                   const Icon = SOURCE_ICONS[m.source] ?? Brain;
                   return (
-                    <div
+                    <OperationalItem
                       key={m._id}
-                      className="px-5 py-3 flex items-start gap-3"
+                      className="flex items-start gap-3 px-5 py-3"
                     >
                       <Icon className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-body-sm text-foreground leading-snug">
+                        <p className="text-base text-foreground leading-snug">
                           {m.content}
                         </p>
-                        <p className="text-label-sm text-muted-foreground/50 mt-1">
+                        <p className="text-label text-muted-foreground/50 mt-1">
                           {SOURCE_LABELS[m.source] ?? m.source}
                           {" · "}
                           {dayjs(m.updatedAt).format("M/D/YYYY")}
                         </p>
                       </div>
-                    </div>
+                    </OperationalItem>
                   );
                 })}
               </div>
-            </div>
+            </OperationalPanel>
           ))}
       </div>
     </div>

@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useMutation } from "convex/react";
-import Link from "next/link";
 import dayjs from "dayjs";
 import JSZip from "jszip";
 import { toast } from "sonner";
@@ -34,6 +33,7 @@ import {
 } from "@/lib/sync/glass-cached-queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ActionSurfaceLink } from "@/components/ui/action-surface";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   splitQuotedReply,
@@ -240,7 +240,7 @@ function ThreadAttachmentList({
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
         aria-expanded={isExpanded}
-        className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+        className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
       >
         <Paperclip className="h-3 w-3" />
         {attachments.length} files
@@ -270,7 +270,7 @@ function ThreadAttachmentList({
             size="sm"
             onClick={handleDownloadAll}
             disabled={!urls?.length || isDownloadingAll}
-            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
+            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-label font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
           >
             <Download className="h-3.5 w-3.5" />
             {isDownloadingAll ? "Preparing..." : "Download all"}
@@ -492,19 +492,19 @@ function ToolCallCard({
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="min-w-0">
-            <span className="block truncate text-[11px] font-medium text-muted-foreground/65">
+            <span className="block truncate text-label font-medium text-muted-foreground/65">
               {displayName}
             </span>
           </span>
         </span>
         <span className="ml-3 flex shrink-0 items-center gap-2">
           <Badge
-            className="h-4 gap-1 border-success/20 bg-success/10 px-1.5 text-[10px] font-medium text-success/75"
+            className="h-4 gap-1 border-success/20 bg-success/10 px-1.5 text-label font-medium text-success/75"
             variant="outline"
           >
             Completed
           </Badge>
-          <span className="text-[10px] font-medium text-muted-foreground/35">
+          <span className="text-label font-medium text-muted-foreground/35">
             {isOpen ? "Hide" : "Show"}
           </span>
         </span>
@@ -513,10 +513,10 @@ function ToolCallCard({
         <div className="space-y-2 border-t border-foreground/6 px-2.5 pb-2.5 pt-2">
           {showOutput && toolCall.output ? (
             <div>
-              <p className="mb-1 text-[10px] font-medium text-muted-foreground/40">
+              <p className="mb-1 text-label font-medium text-muted-foreground/40">
                 Output
               </p>
-              <pre className="max-h-64 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-[10px] leading-4 text-foreground/70">
+              <pre className="max-h-64 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-label leading-4 text-foreground/70">
                 <code className="whitespace-pre-wrap break-words">
                   {formatToolInput(toolCall.output)}
                 </code>
@@ -525,10 +525,10 @@ function ToolCallCard({
           ) : null}
           {!showOutput || !toolCall.output ? (
             <div>
-              <p className="mb-1 text-[10px] font-medium text-muted-foreground/40">
+              <p className="mb-1 text-label font-medium text-muted-foreground/40">
                 Parameters
               </p>
-              <pre className="max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-[10px] leading-4 text-foreground/70">
+              <pre className="max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-label leading-4 text-foreground/70">
                 <code className="whitespace-pre-wrap break-words">
                   {formatToolInput(toolCall.input)}
                 </code>
@@ -571,7 +571,7 @@ function EmailRecipientMeta({
   const ccCount = ccAddresses?.length ?? 0;
 
   return (
-    <span className="min-w-0 truncate text-label-sm font-normal text-muted-foreground/30">
+    <span className="min-w-0 truncate text-label font-normal text-muted-foreground/30">
       <span className="text-muted-foreground/22">to</span>{" "}
       <span className="text-muted-foreground/38">{toAddresses.join(", ")}</span>
       {ccCount > 0 ? (
@@ -712,7 +712,7 @@ function MessageFooterActions({
           if (!messageId) return;
           onOpenMailboxArtifact?.({ messageId, index });
         }}
-        className={`inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border bg-transparent px-2 text-label-sm font-medium transition-colors ${
+        className={`inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border bg-transparent px-2 text-label font-medium transition-colors ${
           isSelected
             ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
             : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
@@ -744,7 +744,7 @@ function MessageFooterActions({
               type="button"
               onClick={onToggleToolCalls}
               aria-expanded={showToolCalls}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
             >
               <ClipboardList className="h-3 w-3" />
               {toolCalls.length} tool{toolCalls.length === 1 ? "" : "s"}
@@ -761,7 +761,7 @@ function MessageFooterActions({
               type="button"
               onClick={() => setIsAttachmentExpanded((value) => !value)}
               aria-expanded={isAttachmentExpanded}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
             >
               <Paperclip className="h-3 w-3" />
               {attachmentList.length} files
@@ -772,7 +772,7 @@ function MessageFooterActions({
               type="button"
               onClick={onToggleSubagentActivity}
               aria-expanded={showSubagentActivity}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
             >
               <LogoIcon size={12} static className="h-3 w-3" />
               {subagentActivityCount} subagent
@@ -787,7 +787,7 @@ function MessageFooterActions({
                 type="button"
                 onClick={() => setIsMailboxExpanded((value) => !value)}
                 aria-expanded={isMailboxExpanded}
-                className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label-sm font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+                className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
               >
                 {mailboxTasks.length} background agents
               </button>
@@ -845,7 +845,7 @@ function MessageFooterActions({
             size="sm"
             onClick={handleDownloadAttachments}
             disabled={!attachmentUrls?.length || isDownloadingAttachments}
-            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
+            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-label font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
           >
             <Download className="h-3.5 w-3.5" />
             {isDownloadingAttachments ? "Preparing..." : "Download all"}
@@ -1061,7 +1061,7 @@ function PendingSendCountdown({
 
   return (
     <div className="flex items-center gap-2 mt-1.5">
-      <span className="text-label-sm text-muted-foreground/50">
+      <span className="text-label text-muted-foreground/50">
         Sending in {remaining}s...
       </span>
       <button
@@ -1077,7 +1077,7 @@ function PendingSendCountdown({
             toast.error("Failed to cancel");
           }
         }}
-        className="text-label-sm font-medium text-red-500 hover:text-red-600 transition-colors"
+        className="text-label font-medium text-red-500 hover:text-red-600 transition-colors"
       >
         Cancel
       </button>
@@ -1108,7 +1108,7 @@ function AgentProcessingActivity({
 
   return (
     <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
-      <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/60">
+      <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-label font-medium text-muted-foreground/60">
         <LogoIcon
           size={12}
           static
@@ -1120,12 +1120,12 @@ function AgentProcessingActivity({
         <button
           type="button"
           onClick={onOpenBackgroundProcess}
-          className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04]"
+          className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04]"
         >
           {backgroundProcessContent}
         </button>
       ) : backgroundProcessCount > 0 ? (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/55">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-label font-medium text-muted-foreground/55">
           {backgroundProcessContent}
         </span>
       ) : null}
@@ -1227,7 +1227,7 @@ export function UnifiedMessageBubble({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-label-sm font-medium text-muted-foreground/50">
+            <p className="text-label font-medium text-muted-foreground/50">
               {agentBranding?.name ?? "Glass"}
             </p>
             {channelIcon}
@@ -1283,7 +1283,7 @@ export function UnifiedMessageBubble({
   if (msg.status === "error" && msg.role !== "agent") {
     return (
       <div className="rounded-lg bg-red-50/50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 p-3">
-        <p className="text-label-sm text-red-600 dark:text-red-400">
+        <p className="text-label text-red-600 dark:text-red-400">
           {msg.error ?? "An error occurred processing this message."}
         </p>
         <RetryButton messageId={msg._id} />
@@ -1360,7 +1360,7 @@ export function UnifiedMessageBubble({
               className={`flex items-center gap-2 mb-1 ${brokerPerspective ? "justify-end" : ""}`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <p className="shrink-0 text-label-sm font-medium text-muted-foreground/50">
+                <p className="shrink-0 text-label font-medium text-muted-foreground/50">
                   {agentBranding?.name ?? "Glass"}
                 </p>
                 {msg.channel === "email" && !collapseEmailMessages ? (
@@ -1371,7 +1371,7 @@ export function UnifiedMessageBubble({
                 ) : null}
                 {channelIcon}
                 <span className="text-muted-foreground/20">·</span>
-                <span className="text-label-sm text-muted-foreground/25">
+                <span className="text-label text-muted-foreground/25">
                   {time.format("MMM D, h:mm A")}
                 </span>
               </div>
@@ -1516,7 +1516,7 @@ export function UnifiedMessageBubble({
       className={`flex items-start gap-2.5 max-w-lg w-fit ${isOwnMessage ? "ml-auto flex-row-reverse" : ""}`}
     >
       <div className="w-7 h-7 rounded-full bg-foreground/8 flex items-center justify-center shrink-0">
-        <span className="text-label-sm font-semibold text-foreground/60">
+        <span className="text-label font-semibold text-foreground/60">
           {initials}
         </span>
       </div>
@@ -1524,7 +1524,7 @@ export function UnifiedMessageBubble({
         <div
           className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "justify-end" : ""}`}
         >
-          <p className="shrink-0 text-label-sm font-medium text-muted-foreground/50">
+          <p className="shrink-0 text-label font-medium text-muted-foreground/50">
             {displayName}
           </p>
           {isEmail && !collapseEmailMessages ? (
@@ -1535,7 +1535,7 @@ export function UnifiedMessageBubble({
           ) : null}
           {channelIcon}
           <span className="text-muted-foreground/20">·</span>
-          <span className="text-label-sm text-muted-foreground/25">
+          <span className="text-label text-muted-foreground/25">
             {time.format("MMM D, h:mm A")}
           </span>
         </div>
@@ -1547,7 +1547,7 @@ export function UnifiedMessageBubble({
           />
         ) : (
           <div
-            className={`rounded-lg px-3.5 py-2.5 text-body-sm text-foreground ${
+            className={`rounded-lg px-3.5 py-2.5 text-base text-foreground ${
               isEmail
                 ? `border border-foreground/6 ${isOwnMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]"}`
                 : isOwnMessage
@@ -1563,7 +1563,7 @@ export function UnifiedMessageBubble({
                 <button
                   type="button"
                   onClick={() => setShowQuoted(!showQuoted)}
-                  className="mt-1.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors"
+                  className="mt-1.5 text-label text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors"
                 >
                   {showQuoted ? "Hide quoted text ▴" : "Show quoted text ▾"}
                 </button>
@@ -1616,7 +1616,7 @@ function CancelButton({
           setCancelling(false);
         }
       }}
-      className="inline-flex h-5 items-center gap-1.5 text-label-sm leading-5 text-muted-foreground/35 transition-colors hover:text-muted-foreground/60 disabled:opacity-50"
+      className="inline-flex h-5 items-center gap-1.5 text-label leading-5 text-muted-foreground/35 transition-colors hover:text-muted-foreground/60 disabled:opacity-50"
     >
       {cancelling ? "Cancelling..." : "Cancel"}
     </button>
@@ -1698,7 +1698,7 @@ function RetryButton({ messageId }: { messageId: string }) {
           setRetrying(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 mt-2 ml-9.5 text-label-sm text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 mt-2 ml-9.5 text-label text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors disabled:opacity-50"
     >
       <RotateCcw className={`w-3 h-3 ${retrying ? "animate-spin" : ""}`} />
       {retrying ? "Retrying..." : "Retry response"}
@@ -1723,22 +1723,22 @@ export function ThreadContextLink({
   if (context.pageType === "quote" && context.summary) {
     const href = `/policies/${context.entityId}`;
     return (
-      <Link
+      <ActionSurfaceLink
         href={href}
-        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] hover:border-foreground/10 transition-colors text-left max-w-sm"
+        className="inline-flex items-center gap-2 px-3 py-2 hover:border-foreground/10 max-w-sm"
       >
         <div className="w-6 h-6 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
           <ClipboardList className="w-3.5 h-3.5 text-muted-foreground/50" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-label-sm text-muted-foreground/40 font-medium leading-none mb-0.5">
+          <p className="text-label text-muted-foreground/40 font-medium leading-none mb-0.5">
             Quote
           </p>
-          <p className="text-label-sm text-foreground truncate">
+          <p className="text-label text-foreground truncate">
             {context.summary}
           </p>
         </div>
-      </Link>
+      </ActionSurfaceLink>
     );
   }
 
@@ -1764,7 +1764,7 @@ function QueuedThreadMessage({
   return (
     <div className="mb-2 flex items-center gap-2 rounded-lg border border-foreground/8 bg-card px-2.5 py-2">
       <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/35" />
-      <p className="min-w-0 flex-1 truncate text-label-sm text-muted-foreground/55">
+      <p className="min-w-0 flex-1 truncate text-label text-muted-foreground/55">
         Queued: <span className="text-foreground/75">{preview}</span>
       </p>
       <PillButton
@@ -2347,7 +2347,7 @@ export function UnifiedThreadContent({
             });
           })()}
           {chatError && (
-            <div className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-base text-red-700">
               {chatError}
             </div>
           )}

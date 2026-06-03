@@ -81,17 +81,17 @@ export function CertificateHoldArtifacts({
                 <FileLock2 className="mt-0.5 size-4 shrink-0 text-amber-600" />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-[13px] font-medium leading-5 text-foreground/90">
+                    <p className="text-base font-medium leading-5 text-foreground/90">
                       Certificate on hold
                     </p>
                     <Badge
                       variant="outline"
-                      className="h-5 border-amber-500/25 px-1.5 text-[10px] capitalize text-amber-700"
+                      className="h-5 border-amber-500/25 px-1.5 text-label capitalize text-amber-700"
                     >
                       broker review
                     </Badge>
                   </div>
-                  <p className="mt-1 text-body-sm leading-5 text-muted-foreground">
+                  <p className="mt-1 text-base leading-5 text-muted-foreground">
                     {message}
                   </p>
                 </div>
@@ -102,7 +102,7 @@ export function CertificateHoldArtifacts({
                   {requiredChanges.map((change) => (
                     <span
                       key={change}
-                      className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
+                      className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-label text-muted-foreground"
                     >
                       {labelForChange(change)}
                     </span>
@@ -112,7 +112,7 @@ export function CertificateHoldArtifacts({
 
               {evidence.length > 0 ? (
                 <details className="mt-3 rounded-md border border-foreground/8 bg-background/60 p-2">
-                  <summary className="flex cursor-pointer items-center gap-1.5 text-label-sm font-medium text-muted-foreground">
+                  <summary className="flex cursor-pointer items-center gap-1.5 text-label font-medium text-muted-foreground">
                     <AlertTriangle className="size-3.5" />
                     Evidence checked
                   </summary>
@@ -120,7 +120,7 @@ export function CertificateHoldArtifacts({
                     {evidence.map((item, evidenceIndex) => (
                       <p
                         key={`${String(item.label ?? "evidence")}-${evidenceIndex}`}
-                        className="text-[11px] leading-5 text-muted-foreground/80"
+                        className="text-label leading-5 text-muted-foreground/80"
                       >
                         {typeof item.label === "string" ? `${item.label}: ` : ""}
                         {String(item.excerpt)}

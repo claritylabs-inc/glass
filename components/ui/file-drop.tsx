@@ -93,8 +93,8 @@ export function FileDropZone({
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.04]">
           <FileUp className="h-5 w-5 text-foreground/70" />
         </div>
-        <p className="text-body-sm font-medium text-foreground">{label}</p>
-        {hint && <p className="mt-1 text-label-sm text-muted-foreground">{hint}</p>}
+        <p className="text-base font-medium text-foreground">{label}</p>
+        {hint && <p className="mt-1 text-label text-muted-foreground">{hint}</p>}
       </button>
 
       <input

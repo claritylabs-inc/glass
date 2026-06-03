@@ -137,11 +137,11 @@ function ExtractionBannerBase({
       <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
         <AnimatedStatusText
           value={isError ? errorLabel : runningLabel}
-          className="shrink-0 text-sm font-medium text-white"
+          className="shrink-0 text-base font-medium text-white"
         />
         <AnimatedStatusText
           value={statusDetail}
-          className="min-w-0 truncate text-sm text-white/72"
+          className="min-w-0 truncate text-base text-white/72"
         />
       </div>
 
