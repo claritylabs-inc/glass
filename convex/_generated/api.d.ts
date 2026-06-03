@@ -59,6 +59,7 @@ import type * as crons from "../crons.js";
 import type * as declarationFacts from "../declarationFacts.js";
 import type * as devClear from "../devClear.js";
 import type * as documentChunks from "../documentChunks.js";
+import type * as externalExtractionPayload from "../externalExtractionPayload.js";
 import type * as extractionTraces from "../extractionTraces.js";
 import type * as http from "../http.js";
 import type * as imessageChats from "../imessageChats.js";
@@ -223,6 +224,7 @@ declare const fullApi: ApiFromModules<{
   declarationFacts: typeof declarationFacts;
   devClear: typeof devClear;
   documentChunks: typeof documentChunks;
+  externalExtractionPayload: typeof externalExtractionPayload;
   extractionTraces: typeof extractionTraces;
   http: typeof http;
   imessageChats: typeof imessageChats;

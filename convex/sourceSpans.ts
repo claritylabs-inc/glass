@@ -196,10 +196,36 @@ export const insertSpan = internalMutation({
   },
 });
 
+export const insertSpansBatch = internalMutation({
+  args: {
+    spans: v.array(v.object(sourceSpanInsertFields)),
+  },
+  handler: async (ctx, args) => {
+    const inserted = [];
+    for (const span of args.spans) {
+      inserted.push(await ctx.db.insert("sourceSpans", span));
+    }
+    return { inserted: inserted.length };
+  },
+});
+
 export const insertChunk = internalMutation({
   args: sourceChunkInsertFields,
   handler: async (ctx, args) => {
     return ctx.db.insert("sourceChunks", args);
+  },
+});
+
+export const insertChunksBatch = internalMutation({
+  args: {
+    chunks: v.array(v.object(sourceChunkInsertFields)),
+  },
+  handler: async (ctx, args) => {
+    const inserted = [];
+    for (const chunk of args.chunks) {
+      inserted.push(await ctx.db.insert("sourceChunks", chunk));
+    }
+    return { inserted: inserted.length };
   },
 });
 

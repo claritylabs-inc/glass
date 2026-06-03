@@ -377,11 +377,14 @@ function compactRows(rows: unknown[]) {
   );
 }
 
-function useTopLevelSourceNodes(policyId: Id<"policies"> | undefined) {
+function useTopLevelSourceNodes(
+  policyId: Id<"policies"> | undefined,
+  allowOperatorAccess?: boolean,
+) {
   return useCachedQuery(
     "sourceNodes.listTopLevelByPolicy.policy-detail.v2",
     api.sourceNodes.listTopLevelByPolicy,
-    policyId ? { policyId } : "skip",
+    policyId ? { policyId, allowOperatorAccess } : "skip",
   ) as DocumentOutlineNode[] | undefined;
 }
 
@@ -389,12 +392,13 @@ function useSourceNodeChildren(
   policyId: Id<"policies"> | undefined,
   parentNodeId: string | undefined,
   enabled: boolean,
+  allowOperatorAccess?: boolean,
 ) {
   return useCachedQuery(
     "sourceNodes.listChildrenByPolicyAndParentNodeId.policy-detail.v2",
     api.sourceNodes.listChildrenByPolicyAndParentNodeId,
     policyId && parentNodeId && enabled
-      ? { policyId, parentNodeId }
+      ? { policyId, parentNodeId, allowOperatorAccess }
       : "skip",
   ) as DocumentOutlineNode[] | undefined;
 }
@@ -1602,6 +1606,7 @@ function OutlineNodeRow({
     policyId,
     parentNodeId,
     open && hasSourceNodeChildren(node) && !hasHydratedChildren,
+    allowOperatorSourceAccess,
   );
   const factRows = extractedFactRowsForNode(policyDocument, node.id);
   const sourceSpanIds = sourceSpanIdsFrom(node);
@@ -1745,7 +1750,7 @@ function SourceBackedBreakdown({
   fileUrl?: string;
   allowOperatorSourceAccess?: boolean;
 }) {
-  const topLevelSourceNodes = useTopLevelSourceNodes(policyId);
+  const topLevelSourceNodes = useTopLevelSourceNodes(policyId, allowOperatorSourceAccess);
   const loadingSourceNodes = policyId !== undefined && topLevelSourceNodes === undefined;
   const usingSourceNodes = Boolean(topLevelSourceNodes?.length);
   const renderableOutline = useMemo(

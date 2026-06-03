@@ -107,6 +107,15 @@ const workerPackage = require("../package.json") as {
 const WORKER_PROTOCOL_VERSION = "source-tree-v1";
 
 const actions = {
+  saveExternalCompletionPayload: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      policyId: string;
+      payload: unknown;
+    },
+    { storageId: string; byteLength: number }
+  >("externalExtractionPayload:saveExternalCompletionPayload"),
   claimExternalJob: makeFunctionReference<
     "action",
     {
@@ -152,10 +161,11 @@ const actions = {
       policyId: string;
       leaseId: string;
       state: WorkerState;
-      document: unknown;
-      chunks: unknown[];
-      sourceSpans: Array<Record<string, unknown>>;
-      sourceChunks: Array<Record<string, unknown>>;
+      payloadStorageId?: string;
+      document?: unknown;
+      chunks?: unknown[];
+      sourceSpans?: Array<Record<string, unknown>>;
+      sourceChunks?: Array<Record<string, unknown>>;
       sourceTree?: Array<Record<string, unknown>>;
       operationalProfile?: unknown;
       warnings?: string[];
@@ -1463,12 +1473,7 @@ async function completeJob(
   const sourceChunks = dedupeById(resultSourceChunks.length > 0
     ? [...resultSourceChunks, ...rawSourceChunks]
     : rawSourceChunks);
-
-  const completed = await convex.action(actions.completeExternalExtract, {
-    secret: SECRET,
-    policyId: job.policyId,
-    leaseId: job.leaseId,
-    state: job.state,
+  const payload = {
     document: result.document,
     chunks: result.chunks,
     sourceSpans,
@@ -1483,6 +1488,19 @@ async function completeJob(
           totalModelCallDurationMs: result.performanceReport.totalModelCallDurationMs,
         }
       : undefined,
+  };
+  const savedPayload = await convex.action(actions.saveExternalCompletionPayload, {
+    secret: SECRET,
+    policyId: job.policyId,
+    payload,
+  });
+
+  const completed = await convex.action(actions.completeExternalExtract, {
+    secret: SECRET,
+    policyId: job.policyId,
+    leaseId: job.leaseId,
+    state: job.state,
+    payloadStorageId: savedPayload.storageId,
   });
   if (!completed.ok) {
     throw new Error(`Convex rejected completion for ${job.policyId}`);

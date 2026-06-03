@@ -63,6 +63,12 @@ const EMBEDDING_BATCH_SIZE = readBoundedIntEnv(
   1,
   512,
 );
+const SOURCE_STORAGE_BATCH_SIZE = readBoundedIntEnv(
+  "EXTRACTION_SOURCE_STORAGE_BATCH_SIZE",
+  200,
+  25,
+  500,
+);
 
 type StoredArtifact = {
   storageId: string;
@@ -143,6 +149,19 @@ type EmbeddingPayload = Pick<
   PolicyExtractionState,
   "documentChunksForEmbedding" | "sourceSpansForStorage" | "sourceChunksForEmbedding" | "sourceNodesForStorage"
 >;
+
+type ExternalCompletionPayload = {
+  document: unknown;
+  chunks: unknown[];
+  sourceSpans: unknown[];
+  sourceChunks: unknown[];
+  sourceTree?: unknown[];
+  operationalProfile?: unknown;
+  warnings?: string[];
+  tokenUsage?: unknown;
+  performanceReport?: unknown;
+  checkpoint?: PipelineCheckpoint<ExtractionState>;
+};
 
 type ExternalClaimResult = {
   policyId: string;
@@ -465,7 +484,7 @@ async function loadPdfBytes(
 async function storeJsonArtifact(
   ctx: ActionCtx,
   jobId: string,
-  kind: "cl_sdk_checkpoint" | "embedding_payload",
+  kind: "cl_sdk_checkpoint" | "embedding_payload" | "external_completion_payload",
   value: unknown,
 ): Promise<StoredArtifact> {
   const json = JSON.stringify(value);
@@ -500,7 +519,7 @@ async function loadJsonArtifact<T>(
 async function getLatestArtifactStorageId(
   ctx: ActionCtx,
   jobId: string,
-  kind: "cl_sdk_checkpoint" | "embedding_payload",
+  kind: "cl_sdk_checkpoint" | "embedding_payload" | "external_completion_payload",
 ): Promise<string | undefined> {
   const artifact = await ctx.runQuery(internal.policies.pipelineGetArtifact, {
     jobId,
@@ -526,6 +545,13 @@ async function storeEmbeddingPayload(
   payload: EmbeddingPayload,
 ): Promise<string> {
   return (await storeJsonArtifact(ctx, jobId, "embedding_payload", payload)).storageId;
+}
+
+async function loadExternalCompletionPayload(
+  ctx: ActionCtx,
+  storageId: string | undefined,
+): Promise<ExternalCompletionPayload | undefined> {
+  return await loadJsonArtifact<ExternalCompletionPayload>(ctx, storageId);
 }
 
 function asOptionalId<T extends string>(value: unknown): T | undefined {
@@ -587,7 +613,7 @@ async function loadEmbeddingPayload(
 async function clearArtifacts(
   ctx: ActionCtx,
   jobId: string,
-  kind?: "cl_sdk_checkpoint" | "embedding_payload",
+  kind?: "cl_sdk_checkpoint" | "embedding_payload" | "external_completion_payload",
 ): Promise<void> {
   await ctx.runMutation(internal.policies.pipelineClearArtifacts, {
     jobId,
@@ -1870,7 +1896,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
 
       if (sourceSpans?.length || sourceChunks?.length || sourceNodes?.length) {
-        await pCtx.log(`Storing ${sourceSpans?.length ?? 0} source spans, ${sourceNodes?.length ?? 0} source nodes, and ${sourceChunks?.length ?? 0} compatibility source chunks…`);
+        await pCtx.log(`Storing ${sourceSpans?.length ?? 0} source spans, ${sourceNodes?.length ?? 0} source nodes, and ${sourceChunks?.length ?? 0} compatibility source chunks in batches of ${SOURCE_STORAGE_BATCH_SIZE}...`);
         await deletePolicyRowsInBatches(
           convexCtx,
           (internal as any).sourceSpans.deleteByPolicy,
@@ -1882,11 +1908,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           policyId as Id<"policies">,
         );
 
-        for (const span of sourceSpans ?? []) {
+        const spanRows = (sourceSpans ?? []).map((span) => {
           const table = span.table;
-          await convexCtx.runMutation(
-            (internal as any).sourceSpans.insertSpan,
-            {
+          return {
               orgId: state.orgId,
               policyId,
               spanId: span.id,
@@ -1911,59 +1935,68 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               bbox: span.bbox,
               metadata: span.metadata,
               createdAt: nowMs(),
-            },
+          };
+        });
+        for (const batch of chunkItems(spanRows, SOURCE_STORAGE_BATCH_SIZE)) {
+          if (await isCancelled()) throw new Error(CANCELLED_BY_USER);
+          await convexCtx.runMutation(
+            (internal as any).sourceSpans.insertSpansBatch,
+            { spans: batch },
           );
         }
+        if (spanRows.length) await pCtx.log(`Stored ${spanRows.length}/${spanRows.length} source spans`);
 
         if (sourceNodes?.length) {
+          const nodeRows = sourceNodes.map((node) => ({
+            orgId: state.orgId,
+            policyId,
+            nodeId: node.id,
+            documentId: node.documentId || policyId,
+            parentNodeId: node.parentId,
+            kind: node.kind,
+            title: node.title,
+            description: node.description,
+            textExcerpt: node.textExcerpt,
+            sourceSpanIds: node.sourceSpanIds,
+            pageStart: node.pageStart,
+            pageEnd: node.pageEnd,
+            bbox: node.bbox,
+            order: node.order,
+            path: node.path,
+            metadata: node.metadata,
+            createdAt: nowMs(),
+          }));
           let storedSourceNodes = 0;
-          for (const node of sourceNodes) {
+          for (const batch of chunkItems(nodeRows, SOURCE_STORAGE_BATCH_SIZE)) {
             if (await isCancelled()) throw new Error(CANCELLED_BY_USER);
             await convexCtx.runMutation(
-              (internal as any).sourceNodes.insertNode,
-              {
-                orgId: state.orgId,
-                policyId,
-                nodeId: node.id,
-                documentId: node.documentId || policyId,
-                parentNodeId: node.parentId,
-                kind: node.kind,
-                title: node.title,
-                description: node.description,
-                textExcerpt: node.textExcerpt,
-                sourceSpanIds: node.sourceSpanIds,
-                pageStart: node.pageStart,
-                pageEnd: node.pageEnd,
-                bbox: node.bbox,
-                order: node.order,
-                path: node.path,
-                metadata: node.metadata,
-                createdAt: nowMs(),
-              },
+              (internal as any).sourceNodes.insertNodesBatch,
+              { nodes: batch },
             );
-            storedSourceNodes++;
+            storedSourceNodes += batch.length;
           }
           await pCtx.log(`Stored ${storedSourceNodes}/${sourceNodes.length} source nodes`);
         }
 
         if (sourceChunks?.length) {
+          const chunkRows = sourceChunks.map((chunk) => ({
+            orgId: state.orgId,
+            policyId,
+            chunkId: chunk.id,
+            documentId: chunk.documentId ?? policyId,
+            sourceSpanIds: chunk.sourceSpanIds ?? [],
+            text: chunk.text,
+            metadata: chunk.metadata,
+            createdAt: nowMs(),
+          }));
           let storedSourceChunks = 0;
-          for (const chunk of sourceChunks) {
+          for (const batch of chunkItems(chunkRows, SOURCE_STORAGE_BATCH_SIZE)) {
             if (await isCancelled()) throw new Error(CANCELLED_BY_USER);
             await convexCtx.runMutation(
-              (internal as any).sourceSpans.insertChunk,
-              {
-                orgId: state.orgId,
-                policyId,
-                chunkId: chunk.id,
-                documentId: chunk.documentId ?? policyId,
-                sourceSpanIds: chunk.sourceSpanIds ?? [],
-                text: chunk.text,
-                metadata: chunk.metadata,
-                createdAt: nowMs(),
-              },
+              (internal as any).sourceSpans.insertChunksBatch,
+              { chunks: batch },
             );
-            storedSourceChunks++;
+            storedSourceChunks += batch.length;
           }
           await pCtx.log(`Stored ${storedSourceChunks}/${sourceChunks.length} source chunks`);
         }
@@ -2403,10 +2436,11 @@ export const completeExternalExtract = action({
     policyId: v.string(),
     leaseId: v.string(),
     state: v.any(),
-    document: v.any(),
-    chunks: v.array(v.any()),
-    sourceSpans: v.array(v.any()),
-    sourceChunks: v.array(v.any()),
+    payloadStorageId: v.optional(v.string()),
+    document: v.optional(v.any()),
+    chunks: v.optional(v.array(v.any())),
+    sourceSpans: v.optional(v.array(v.any())),
+    sourceChunks: v.optional(v.array(v.any())),
     sourceTree: v.optional(v.array(v.any())),
     operationalProfile: v.optional(v.any()),
     warnings: v.optional(v.array(v.string())),
@@ -2418,7 +2452,21 @@ export const completeExternalExtract = action({
     requireExtractionWorkerSecret(args.secret);
     const state = args.state as PolicyExtractionState;
     const policyId = args.policyId;
-    let doc = args.document as Record<string, unknown>;
+    const payload = args.payloadStorageId
+      ? await loadExternalCompletionPayload(ctx, args.payloadStorageId)
+      : undefined;
+    if (args.payloadStorageId && !payload) {
+      throw new Error("External extraction completion payload artifact is missing");
+    }
+    const document = payload?.document ?? args.document;
+    const chunks = (payload?.chunks ?? args.chunks ?? []) as Array<{ id?: string }>;
+    const sourceSpans = (payload?.sourceSpans ?? args.sourceSpans ?? []) as SourceSpanLike[];
+    const sourceChunks = (payload?.sourceChunks ?? args.sourceChunks ?? []) as Array<{ id?: unknown }>;
+    const sourceTree = (payload?.sourceTree ?? args.sourceTree ?? []) as unknown[];
+    const operationalProfileInput = payload?.operationalProfile ?? args.operationalProfile;
+    const performanceReport = payload?.performanceReport ?? args.performanceReport;
+    const checkpoint = payload?.checkpoint ?? args.checkpoint;
+    let doc = document as Record<string, unknown>;
     if (!state.orgId || !state.userId) {
       throw new Error("External extraction completion missing orgId or userId");
     }
@@ -2426,13 +2474,13 @@ export const completeExternalExtract = action({
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: policyId,
       timestamp: nowMs(),
-      message: `External extraction complete. Type: ${String(doc.type ?? "policy")}. ${args.chunks.length} chunks, ${args.sourceSpans.length} source spans.`,
+      message: `External extraction complete. Type: ${String(doc.type ?? "policy")}. ${chunks.length} chunks, ${sourceSpans.length} source spans.`,
       phase: "extract",
       level: "info",
     });
-    const modelCallCount = args.performanceReport?.modelCallCount ?? args.performanceReport?.modelCalls?.length;
+    const modelCallCount = performanceReport?.modelCallCount ?? performanceReport?.modelCalls?.length;
     if (modelCallCount) {
-      const totalSeconds = Math.round((args.performanceReport.totalModelCallDurationMs ?? 0) / 1000);
+      const totalSeconds = Math.round((performanceReport.totalModelCallDurationMs ?? 0) / 1000);
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
         timestamp: nowMs(),
@@ -2441,8 +2489,8 @@ export const completeExternalExtract = action({
         level: "info",
       });
     }
-    if (args.checkpoint) {
-      for (const line of summarizeExtractionCheckpoint({ checkpoint: args.checkpoint })) {
+    if (checkpoint) {
+      for (const line of summarizeExtractionCheckpoint({ checkpoint })) {
         await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
           jobId: policyId,
           timestamp: nowMs(),
@@ -2457,7 +2505,7 @@ export const completeExternalExtract = action({
       ctx,
       orgId: state.orgId as Id<"organizations">,
       document: doc,
-      sourceSpans: args.sourceSpans,
+      sourceSpans,
       log: async (message, level = "info") => {
         await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
           jobId: policyId,
@@ -2470,14 +2518,14 @@ export const completeExternalExtract = action({
     });
     doc = processed.document;
     const sourceNodes = normalizeSourceTree(
-      args.sourceTree ?? [],
-      args.sourceSpans,
+      sourceTree,
+      sourceSpans,
       policyId,
     );
     const normalizedOperationalProfile = normalizeOperationalProfile(
-      args.operationalProfile,
+      operationalProfileInput,
       sourceNodes,
-      args.sourceSpans,
+      sourceSpans,
       doc,
     );
     const validatedOperationalProfile = await validateOperationalCoverageLines({
@@ -2568,9 +2616,9 @@ export const completeExternalExtract = action({
     }
 
     const embeddingPayloadFileId = await storeEmbeddingPayload(ctx, policyId, {
-      documentChunksForEmbedding: args.chunks as PolicyExtractionState["documentChunksForEmbedding"],
-      sourceSpansForStorage: args.sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
-      sourceChunksForEmbedding: args.sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
+      documentChunksForEmbedding: chunks as PolicyExtractionState["documentChunksForEmbedding"],
+      sourceSpansForStorage: sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
+      sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
       sourceNodesForStorage: sourceNodes,
     });
     const nextState: PolicyExtractionState = {
@@ -2578,13 +2626,16 @@ export const completeExternalExtract = action({
       clSdkCheckpoint: undefined,
       clSdkCheckpointFileId: undefined,
       embeddingPayloadFileId,
-      chunkIds: args.chunks.map((chunk: { id: string }) => chunk.id),
-      sourceSpanIds: args.sourceSpans.map((span: { id: unknown }) => String(span.id)),
-      sourceChunkIds: args.sourceChunks.map((chunk: { id: unknown }) => String(chunk.id)),
+      chunkIds: chunks.map((chunk) => String(chunk.id)),
+      sourceSpanIds: sourceSpans.map((span) => String(span.id)),
+      sourceChunkIds: sourceChunks.map((chunk) => String(chunk.id)),
       operationalProfile,
       fileName: resolvedFileName,
       externalWorker: undefined,
     };
+    if (args.payloadStorageId) {
+      await clearArtifacts(ctx, policyId, "external_completion_payload");
+    }
 
     const checkpointUpdated = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
       jobId: policyId,
@@ -2802,8 +2853,7 @@ export const rebuildStoredSourceNodes = internalAction({
       (internal as any).sourceNodes.deleteByPolicy,
       args.policyId,
     );
-    for (const node of sourceNodes) {
-      await ctx.runMutation((internal as any).sourceNodes.insertNode, {
+    const nodeRows = sourceNodes.map((node) => ({
         orgId: policy.orgId,
         policyId: args.policyId,
         nodeId: node.id,
@@ -2821,6 +2871,10 @@ export const rebuildStoredSourceNodes = internalAction({
         path: node.path,
         metadata: node.metadata,
         createdAt: nowMs(),
+      }));
+    for (const batch of chunkItems(nodeRows, SOURCE_STORAGE_BATCH_SIZE)) {
+      await ctx.runMutation((internal as any).sourceNodes.insertNodesBatch, {
+        nodes: batch,
       });
     }
 

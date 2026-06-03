@@ -1347,6 +1347,7 @@ export default defineSchema({
     kind: v.union(
       v.literal("cl_sdk_checkpoint"),
       v.literal("embedding_payload"),
+      v.literal("external_completion_payload"),
     ),
     storageId: v.id("_storage"),
     createdAt: v.number(),

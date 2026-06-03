@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { ComponentProps, PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAction } from "convex/react";
 import dayjs from "dayjs";
@@ -13,13 +13,6 @@ import { Button } from "@/components/ui/button";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -27,12 +20,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
-import { SourceEvidenceButton, type SourceSpanDoc } from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
@@ -108,26 +107,16 @@ type ModelCallDebugDetails = {
     images?: Array<{ mimeType?: string; base64Chars?: number }>;
   };
 };
-type SourceSpanDiagnostics = {
-  total: number;
-  unitCounts: Record<string, number>;
-  pageCounts: Record<string, number>;
-  tableCount: number;
-  declarationPages: number[];
-  tableSpans: SourceSpanDoc[];
-  declarationTextSpans: SourceSpanDoc[];
-  truncated?: boolean;
-};
-
 type TraceDetail = {
   session: TraceRow;
   policy?: Record<string, unknown> | null;
+  sourceHierarchy?: Record<string, unknown>[];
   fileUrl?: string | null;
   events: TraceEvent[];
-  sourceSpanDiagnostics?: SourceSpanDiagnostics;
 };
-type TracePanelTab = "summary" | "extracted" | "source" | "timeline" | "timing" | "models" | "log";
-const TRACE_PANEL_TABS = ["summary", "extracted", "source", "timeline", "timing", "models", "log"] as const;
+type ExtractionCardsPolicyDocument = ComponentProps<typeof ExtractionCards>["policyDocument"];
+type TracePanelTab = "summary" | "extracted" | "timeline" | "models" | "log";
+const TRACE_PANEL_TABS = ["summary", "extracted", "timeline", "models", "log"] as const;
 
 const ALL = "__all__";
 const STATUS_LABELS: Record<string, string> = {
@@ -654,271 +643,6 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
 }
 
 
-function sourceSpanDiagnosticUnit(span: SourceSpanDoc) {
-  const value = span.sourceUnit ?? span.metadata?.sourceUnit ?? span.metadata?.elementType;
-  return typeof value === "string" && value.length > 0 ? value : "unknown";
-}
-
-function tableRecord(span: SourceSpanDoc) {
-  return span.table && typeof span.table === "object" ? span.table : {};
-}
-
-function spanPageNumber(span: SourceSpanDoc) {
-  if (typeof span.pageStart === "number") return span.pageStart;
-  const box = span.bbox?.[0];
-  return typeof box?.page === "number" ? box.page : undefined;
-}
-
-function tableNumber(span: SourceSpanDoc, key: "rowIndex" | "columnIndex") {
-  const value = tableRecord(span)[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function tableString(span: SourceSpanDoc, key: "tableId" | "columnName" | "rowSpanId") {
-  const value = tableRecord(span)[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function tableBoolean(span: SourceSpanDoc, key: "isHeader") {
-  const value = tableRecord(span)[key];
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") return value.toLowerCase() === "true";
-  return false;
-}
-
-type RawSourceTableRow = {
-  rowIndex: number;
-  rowSpan?: SourceSpanDoc;
-  cells: SourceSpanDoc[];
-};
-
-type RawSourceTable = {
-  id: string;
-  page?: number;
-  rows: RawSourceTableRow[];
-};
-
-function buildRawSourceTables(spans: SourceSpanDoc[]): RawSourceTable[] {
-  const groups = new Map<string, Map<number, RawSourceTableRow>>();
-  const rowSpanById = new Map<string, SourceSpanDoc>();
-  for (const span of spans) {
-    if (sourceSpanDiagnosticUnit(span) === "table_row") rowSpanById.set(span.spanId, span);
-  }
-  for (const span of spans) {
-    const unit = sourceSpanDiagnosticUnit(span);
-    if (unit !== "table_row" && unit !== "table_cell") continue;
-    const tableId = tableString(span, "tableId") ?? `${spanPageNumber(span) ?? "unknown"}:table`;
-    const rowIndex = tableNumber(span, "rowIndex") ?? 0;
-    let rows = groups.get(tableId);
-    if (!rows) {
-      rows = new Map();
-      groups.set(tableId, rows);
-    }
-    let row = rows.get(rowIndex);
-    if (!row) {
-      row = { rowIndex, cells: [] };
-      rows.set(rowIndex, row);
-    }
-    if (unit === "table_row") row.rowSpan = span;
-    if (unit === "table_cell") row.cells.push(span);
-  }
-
-  return [...groups.entries()].map(([id, rows]) => {
-    const sortedRows = [...rows.values()].map((row) => {
-      const cells = row.cells
-        .map((cell) => ({
-          ...cell,
-          parentSpanId: cell.parentSpanId ?? tableString(cell, "rowSpanId"),
-        }))
-        .sort((left, right) => (tableNumber(left, "columnIndex") ?? 0) - (tableNumber(right, "columnIndex") ?? 0));
-      return {
-        ...row,
-        rowSpan: row.rowSpan ?? cells.map((cell) => rowSpanById.get(cell.parentSpanId ?? "")).find(Boolean),
-        cells,
-      };
-    }).sort((left, right) => left.rowIndex - right.rowIndex);
-    return {
-      id,
-      page: sortedRows.map((row) => spanPageNumber(row.rowSpan ?? row.cells[0])).find((page) => page !== undefined),
-      rows: sortedRows,
-    };
-  }).sort((left, right) => (left.page ?? 0) - (right.page ?? 0) || left.id.localeCompare(right.id));
-}
-
-function SourceSpanStats({ diagnostics }: { diagnostics: SourceSpanDiagnostics }) {
-  const units = Object.entries(diagnostics.unitCounts).sort((a, b) => b[1] - a[1]);
-  const tableRows = diagnostics.unitCounts.table_row ?? 0;
-  const tableCells = diagnostics.unitCounts.table_cell ?? 0;
-  const pages = Object.keys(diagnostics.pageCounts).length;
-  return (
-    <div className="rounded-lg border border-foreground/6 bg-card p-3">
-      <div className="grid gap-2 sm:grid-cols-4">
-        <DetailRow label="Spans" value={diagnostics.total.toLocaleString()} />
-        <DetailRow label="Pages" value={pages.toLocaleString()} />
-        <DetailRow label="Tables" value={diagnostics.tableCount.toLocaleString()} />
-        <DetailRow label="Rows / cells" value={`${tableRows.toLocaleString()} / ${tableCells.toLocaleString()}`} />
-      </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {units.map(([unit, count]) => (
-          <Badge key={unit} variant="secondary" className="font-normal">
-            {formatProfileLabel(unit)}: {count.toLocaleString()}
-          </Badge>
-        ))}
-      </div>
-      {diagnostics.truncated ? (
-        <p className="mt-2 text-label-sm text-amber-600 dark:text-amber-400">
-          Diagnostics are capped at the first 5,000 stored spans for this policy.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function RawSourceTablePreview({
-  table,
-  sourceSpans,
-  fileUrl,
-}: {
-  table: RawSourceTable;
-  sourceSpans: SourceSpanDoc[];
-  fileUrl?: string;
-}) {
-  const maxColumnCount = Math.max(...table.rows.map((row) => row.cells.length), 1);
-  const firstRow = table.rows[0];
-  const firstRowIsHeader = Boolean(firstRow?.rowSpan && tableBoolean(firstRow.rowSpan, "isHeader")) ||
-    Boolean(firstRow?.cells.some((cell) => tableBoolean(cell, "isHeader")));
-  const headerCells = firstRowIsHeader ? firstRow?.cells ?? [] : [];
-  const bodyRows = firstRowIsHeader ? table.rows.slice(1) : table.rows;
-  return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-      <div className="flex flex-wrap items-center gap-2 border-b border-foreground/6 px-3 py-2">
-        <p className="min-w-0 flex-1 truncate text-label-sm font-medium text-foreground">
-          {table.id}
-        </p>
-        {table.page !== undefined ? <Badge variant="outline" className="font-normal">Page {table.page}</Badge> : null}
-        <Badge variant="secondary" className="font-normal">{table.rows.length} rows</Badge>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-max min-w-full text-left text-sm" style={{ minWidth: `${Math.max(36, maxColumnCount * 13 + 7)}rem` }}>
-          {firstRowIsHeader ? (
-            <thead>
-              <tr className="border-b border-foreground/6 bg-muted/30">
-                {Array.from({ length: maxColumnCount }, (_, index) => (
-                  <th key={index} className="px-3 py-2 text-label-sm font-medium text-muted-foreground">
-                    {headerCells[index]?.text ?? tableString(headerCells[index] ?? {}, "columnName") ?? `Column ${index + 1}`}
-                  </th>
-                ))}
-                <th className="w-px px-3 py-2 text-label-sm font-medium text-muted-foreground">Source</th>
-              </tr>
-            </thead>
-          ) : null}
-          <tbody>
-            {bodyRows.map((row) => {
-              const ids = [row.rowSpan?.spanId, ...row.cells.map((cell) => cell.spanId)].filter((id): id is string => Boolean(id));
-              return (
-                <tr key={row.rowIndex} className="border-b border-foreground/6 last:border-b-0 hover:bg-foreground/[0.015]">
-                  {row.cells.length > 0 ? Array.from({ length: maxColumnCount }, (_, index) => (
-                    <td key={index} className="px-3 py-2.5 align-top text-foreground [overflow-wrap:anywhere]">
-                      {row.cells[index]?.text ?? ""}
-                      {!firstRowIsHeader && row.cells[index] ? (
-                        <span className="mt-1 block text-[10px] text-muted-foreground">
-                          {tableString(row.cells[index], "columnName")}
-                        </span>
-                      ) : null}
-                    </td>
-                  )) : (
-                    <td className="px-3 py-2.5 align-top text-foreground [overflow-wrap:anywhere]" colSpan={maxColumnCount}>
-                      {row.rowSpan?.text ?? "—"}
-                    </td>
-                  )}
-                  <td className="w-px px-3 py-2.5 align-top">
-                    <SourceEvidenceButton
-                      sourceSpanIds={ids}
-                      sourceSpans={sourceSpans}
-                      fallbackPage={table.page}
-                      fileUrl={fileUrl}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function SourceSpanDiagnosticsPanel({ detail }: { detail?: TraceDetail | null }) {
-  const diagnostics = detail?.sourceSpanDiagnostics;
-  if (!diagnostics) {
-    return (
-      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
-        Source span diagnostics are unavailable for this trace.
-      </div>
-    );
-  }
-  const sourceSpans = [...diagnostics.tableSpans, ...diagnostics.declarationTextSpans];
-  const tables = buildRawSourceTables(diagnostics.tableSpans);
-  return (
-    <div className="space-y-3">
-      <SourceSpanStats diagnostics={diagnostics} />
-      <div className="rounded-lg border border-foreground/6 bg-card p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-label-sm font-medium text-muted-foreground">Declaration-like pages</p>
-          {diagnostics.declarationPages.length > 0 ? diagnostics.declarationPages.map((page) => (
-            <Badge key={page} variant="outline" className="font-normal">Page {page}</Badge>
-          )) : <span className="text-body-sm text-muted-foreground">No declaration pages detected from raw span text.</span>}
-        </div>
-      </div>
-      <div className="space-y-2">
-        <div>
-          <h4 className="text-label-sm font-medium text-muted-foreground">Raw table reconstruction</h4>
-          <p className="mt-0.5 text-label-sm text-muted-foreground">
-            Rebuilt directly from stored table_row/table_cell source spans so operator review can separate parser quality from extracted-data rendering.
-          </p>
-        </div>
-        {tables.length ? tables.map((table) => (
-          <RawSourceTablePreview
-            key={table.id}
-            table={table}
-            sourceSpans={sourceSpans}
-            fileUrl={detail?.fileUrl ?? undefined}
-          />
-        )) : (
-          <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
-            No table source spans were found in the declaration diagnostic window.
-          </div>
-        )}
-      </div>
-      {diagnostics.declarationTextSpans.length ? (
-        <div className="rounded-lg border border-foreground/6 bg-card">
-          <div className="border-b border-foreground/6 px-3 py-2">
-            <h4 className="text-label-sm font-medium text-muted-foreground">Declaration text/page spans</h4>
-          </div>
-          {diagnostics.declarationTextSpans.map((span) => (
-            <div key={span.spanId} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
-              <div className="mb-1 flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="font-normal">{formatProfileLabel(sourceSpanDiagnosticUnit(span))}</Badge>
-                {spanPageNumber(span) !== undefined ? <Badge variant="outline" className="font-normal">Page {spanPageNumber(span)}</Badge> : null}
-                <SourceEvidenceButton
-                  sourceSpanIds={[span.spanId]}
-                  sourceSpans={sourceSpans}
-                  fallbackPage={spanPageNumber(span)}
-                  fileUrl={detail?.fileUrl ?? undefined}
-                />
-              </div>
-              <p className="text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
-                {span.text}
-              </p>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function humanizeTaskKind(value?: string) {
   if (!value) return undefined;
   const labels: Record<string, string> = {
@@ -978,16 +702,6 @@ function eventCaption(event: TraceEvent) {
   return [event.kind, event.status].filter(Boolean).join(" · ");
 }
 
-type TimingRow = {
-  id: string;
-  label: string;
-  caption: string;
-  durationMs: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  status?: string;
-};
-
 type TimelineRow = {
   id: string;
   event: TraceEvent;
@@ -1002,105 +716,6 @@ type TimelineRow = {
   durationMs: number;
   status?: string;
 };
-
-function modelGroupKey(event: TraceEvent) {
-  return [
-    eventTitle(event),
-    event.provider ?? "unknown",
-    event.model ?? "unknown",
-  ].join("||");
-}
-
-function buildModelTimingRows(events: TraceEvent[]): TimingRow[] {
-  const groups = new Map<string, TimingRow & { count: number }>();
-  for (const event of events) {
-    const durationMs = event.durationMs ?? 0;
-    if (durationMs <= 0) continue;
-    const key = modelGroupKey(event);
-    const existing = groups.get(key);
-    const caption = [
-      [event.provider, event.model].filter(Boolean).join(" / ") || "model",
-      event.taskKind,
-    ].filter(Boolean).join(" · ");
-    if (existing) {
-      existing.durationMs += durationMs;
-      existing.inputTokens = (existing.inputTokens ?? 0) + (event.inputTokens ?? 0);
-      existing.outputTokens = (existing.outputTokens ?? 0) + (event.outputTokens ?? 0);
-      existing.count += 1;
-      continue;
-    }
-    groups.set(key, {
-      id: key,
-      label: eventTitle(event),
-      caption,
-      durationMs,
-      inputTokens: event.inputTokens,
-      outputTokens: event.outputTokens,
-      status: event.status,
-      count: 1,
-    });
-  }
-  return [...groups.values()]
-    .map((row) => ({
-      ...row,
-      caption: `${row.caption} · ${row.count} ${row.count === 1 ? "call" : "calls"}`,
-    }))
-    .sort((a, b) => b.durationMs - a.durationMs);
-}
-
-function buildPhaseTimingRows(events: TraceEvent[], session: TraceRow): TimingRow[] {
-  const completed = events
-    .filter((event) => event.kind === "phase" && (event.durationMs ?? 0) > 0)
-    .map((event) => ({
-      id: event._id,
-      event,
-      label: event.phase ?? event.label ?? "phase",
-      caption: event.message ?? event.status ?? "completed phase",
-      durationMs: event.durationMs ?? 0,
-      status: event.status,
-    }));
-  if (completed.length) return completed.sort((a, b) => b.durationMs - a.durationMs);
-
-  const activeStarts = events.filter(
-    (event) => event.kind === "phase" && event.status === "started" && event.phase,
-  );
-  const endAt = session.completedAt ?? session.lastEventAt ?? dayjs().valueOf();
-  return activeStarts
-    .filter((event) => {
-      const finished = events.some(
-        (candidate) =>
-          candidate.kind === "phase" &&
-          candidate.phase === event.phase &&
-          candidate.timestamp > event.timestamp &&
-          candidate.status !== "started",
-      );
-      return !finished && endAt > event.timestamp;
-    })
-    .map((event) => ({
-      id: event._id,
-      event,
-      label: event.phase ?? "active phase",
-      caption: "active; elapsed so far",
-      durationMs: endAt - event.timestamp,
-      status: "running",
-    }))
-    .sort((a, b) => b.durationMs - a.durationMs);
-}
-
-function buildOtherTimingRows(events: TraceEvent[]): TimingRow[] {
-  return events
-    .filter((event) => event.kind !== "phase" && event.kind !== "model_call" && (event.durationMs ?? 0) > 0)
-    .map((event) => ({
-      id: event._id,
-      label: eventTitle(event),
-      caption: eventCaption(event),
-      durationMs: event.durationMs ?? 0,
-      inputTokens: event.inputTokens,
-      outputTokens: event.outputTokens,
-      status: event.status,
-    }))
-    .sort((a, b) => b.durationMs - a.durationMs);
-}
 
 function cleanTraceText(value?: string) {
   const trimmed = value?.trim();
@@ -1250,7 +865,7 @@ function DebugPreview({
   return (
     <div className="space-y-1">
       <p className="text-label-sm font-medium text-muted-foreground">{label}</p>
-      <pre className="max-h-64 overflow-auto rounded-lg border border-foreground/6 bg-muted/20 p-3 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground">
+      <pre className="rounded-lg border border-foreground/6 bg-muted/20 p-3 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground">
         {value}
       </pre>
     </div>
@@ -1317,67 +932,6 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
   );
 }
 
-function TimelineEventDetail({ row }: { row?: TimelineRow }) {
-  if (!row) return null;
-  return (
-    <div className="space-y-2 rounded-lg border border-foreground/6 p-3">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-body-sm font-medium text-foreground">{row.label}</p>
-        </div>
-        <Badge variant="secondary">{formatDuration(row.durationMs)}</Badge>
-      </div>
-      <div className="grid gap-2 text-label-sm text-muted-foreground sm:grid-cols-2">
-        <div>
-          <span className="font-medium text-foreground">Kind</span>
-          <span className="ml-2">{row.kind}</span>
-        </div>
-        <div>
-          <span className="font-medium text-foreground">Status</span>
-          <span className="ml-2">{row.status ?? "—"}</span>
-        </div>
-        {row.event.provider || row.event.model ? (
-          <div className="sm:col-span-2">
-            <span className="font-medium text-foreground">Model</span>
-            <span className="ml-2">{[row.event.provider, row.event.model].filter(Boolean).join(" / ")}</span>
-          </div>
-        ) : null}
-        {row.event.inputTokens || row.event.outputTokens ? (
-          <div className="sm:col-span-2">
-            <span className="font-medium text-foreground">Tokens</span>
-            <span className="ml-2">{formatTokens(row.event.inputTokens, row.event.outputTokens)}</span>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function TimingBar({ row, maxDurationMs }: { row: TimingRow; maxDurationMs: number }) {
-  const width = Math.max(4, Math.min(100, (row.durationMs / Math.max(maxDurationMs, 1)) * 100));
-  return (
-    <div className="border-b border-foreground/6 px-3 py-2.5 last:border-b-0">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-body-sm font-medium text-foreground">{row.label}</p>
-          <p className="truncate text-label-sm text-muted-foreground">{row.caption}</p>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className="text-body-sm text-foreground">{formatDuration(row.durationMs)}</p>
-          <p className="text-label-sm text-muted-foreground">
-            {formatCompactTokens(row.inputTokens, row.outputTokens) !== "—"
-              ? formatCompactTokens(row.inputTokens, row.outputTokens)
-              : (row.status ?? "")}
-          </p>
-        </div>
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-foreground/70" style={{ width: `${width}%` }} />
-      </div>
-    </div>
-  );
-}
-
 function TimelineWaterfall({
   rows,
   session,
@@ -1385,8 +939,6 @@ function TimelineWaterfall({
   onLabelWidthChange,
   collapsedIds,
   onToggleCollapsed,
-  selectedRowId,
-  onSelectRow,
 }: {
   rows: TimelineRow[];
   session: TraceRow;
@@ -1394,8 +946,6 @@ function TimelineWaterfall({
   onLabelWidthChange: (width: number) => void;
   collapsedIds: Set<string>;
   onToggleCollapsed: (id: string) => void;
-  selectedRowId?: string | null;
-  onSelectRow: (id: string) => void;
 }) {
   const startAt = session.startedAt;
   const endAt = Math.max(
@@ -1409,7 +959,7 @@ function TimelineWaterfall({
   const gridTemplateColumns = `${labelWidth}px minmax(0, 1fr)`;
   const visibleRows = rows.filter((row) => !row.parentId || !collapsedIds.has(row.parentId));
 
-  function startResize(event: ReactPointerEvent<HTMLButtonElement>) {
+  function startResize(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = labelWidth;
@@ -1418,17 +968,29 @@ function TimelineWaterfall({
       onLabelWidthChange(next);
     };
     const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
   }
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden rounded-lg border border-foreground/6">
+    <div className="flex h-[70vh] min-h-96 overflow-hidden rounded-lg border border-foreground/6">
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)]">
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize event column"
+            onPointerDown={startResize}
+            className="absolute top-0 bottom-0 z-20 w-1 cursor-col-resize hover:bg-foreground/8 active:bg-foreground/12"
+            style={{ left: `${labelWidth - 2}px` }}
+          />
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 grid"
@@ -1446,15 +1008,7 @@ function TimelineWaterfall({
             </div>
           </div>
           <div className="relative z-10 grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
-            <div className="relative px-2.5 py-2 text-label-sm font-medium text-muted-foreground">
-              Event
-              <button
-                type="button"
-                aria-label="Resize event column"
-                className="absolute -right-1 top-0 h-full w-2 cursor-col-resize rounded-sm hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                onPointerDown={startResize}
-              />
-            </div>
+            <div className="px-2.5 py-2 text-label-sm font-medium text-muted-foreground">Event</div>
             <div className="relative h-8 min-w-0 overflow-hidden">
               {ticks.map((tick) => (
                 <span
@@ -1481,19 +1035,9 @@ function TimelineWaterfall({
                 const hasChildren = (row.childCount ?? 0) > 0;
                 return (
                   <div
-                    role="button"
-                    tabIndex={0}
                     key={row.id}
-                    className={`grid min-h-7 border-b border-foreground/6 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                      selectedRowId === row.id ? "bg-muted/50" : ""
-                    }`}
+                    className="grid min-h-7 border-b border-foreground/6 text-left hover:bg-muted/40"
                     style={{ gridTemplateColumns }}
-                    onClick={() => onSelectRow(row.id)}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      onSelectRow(row.id);
-                    }}
                   >
                     <div className={`min-w-0 py-1.5 pr-2.5 ${row.level > 0 ? "pl-5" : "pl-2.5"}`}>
                       <div className="flex min-w-0 items-center gap-1">
@@ -1560,7 +1104,7 @@ function TimelineWaterfall({
   );
 }
 
-function ModelCallsGrid({
+function ModelCallSelector({
   events,
   selectedEventId,
   onSelectEvent,
@@ -1569,82 +1113,56 @@ function ModelCallsGrid({
   selectedEventId?: string;
   onSelectEvent: (id: string) => void;
 }) {
-  const gridTemplateColumns = "minmax(10rem,1.25fr) minmax(8rem,0.9fr) minmax(4.5rem,0.35fr) minmax(6rem,0.5fr)";
-  const columns = ["Call", "Model", "Time", "Tokens"];
-
+  if (!events.length) {
+    return (
+      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+        No model calls recorded.
+      </div>
+    );
+  }
+  const selectedEvent = events.find((event) => event._id === selectedEventId) ?? events[0];
   return (
-    <div className="w-full min-w-0 overflow-hidden rounded-lg border border-foreground/6">
-      <div className="grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
-        {columns.map((column, index) => (
-          <div
-            key={column}
-            className={`px-3 py-2 text-label-sm font-medium text-muted-foreground ${
-              index < columns.length - 1 ? "border-r border-foreground/6" : ""
-            }`}
-          >
-            {column}
-          </div>
-        ))}
-      </div>
-      <div className="relative min-h-48 overflow-hidden">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 grid min-h-full"
-          style={{ gridTemplateColumns }}
-        >
-          {columns.map((column, index) => (
-            <div
-              key={column}
-              className={index < columns.length - 1 ? "border-r border-foreground/6" : ""}
-            />
+    <div className="space-y-2">
+      <Select value={selectedEvent._id} onValueChange={(value) => {
+        if (value) onSelectEvent(value);
+      }}>
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue>{modelCallSelectLabel(selectedEvent)}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {events.map((event) => (
+            <SelectItem key={event._id} value={event._id}>
+              {modelCallSelectLabel(event)}
+            </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+      <dl className="grid gap-2 rounded-lg border border-foreground/6 p-3 text-label-sm text-muted-foreground sm:grid-cols-3">
+        <div className="min-w-0">
+          <dt className="font-medium text-foreground">Model</dt>
+          <dd className="mt-1 truncate">{[selectedEvent.provider, selectedEvent.model].filter(Boolean).join(" / ") || "—"}</dd>
         </div>
-        <div className="relative z-10 min-h-full">
-          {events.length ? events.map((event) => {
-            const debugDetails = modelCallDebugDetails(event);
-            const selected = selectedEventId === event._id;
-            return (
-              <div
-                role="button"
-                tabIndex={0}
-                key={event._id}
-                className={`grid min-h-12 border-b border-foreground/6 text-left last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                  selected ? "bg-muted/50" : ""
-                }`}
-                style={{ gridTemplateColumns }}
-                onClick={() => onSelectEvent(event._id)}
-                onKeyDown={(keyboardEvent) => {
-                  if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
-                  keyboardEvent.preventDefault();
-                  onSelectEvent(event._id);
-                }}
-              >
-                <div className="min-w-0 px-3 py-2">
-                  <p className="truncate text-body-sm text-foreground">{eventTitle(event)}</p>
-                  <p className="truncate text-label-sm text-muted-foreground">
-                    {[event.status, event.routeSource, debugDetails ? "debug details" : undefined]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                </div>
-                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
-                  <p className="truncate">{[event.provider, event.model].filter(Boolean).join(" / ") || "—"}</p>
-                </div>
-                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
-                  <p className="truncate">{formatDuration(event.durationMs)}</p>
-                </div>
-                <div className="min-w-0 px-3 py-2 text-body-sm text-muted-foreground">
-                  <p className="truncate">{formatTokens(event.inputTokens, event.outputTokens)}</p>
-                </div>
-              </div>
-            );
-          }) : (
-            <p className="px-3 py-3 text-body-sm text-muted-foreground">No model calls recorded.</p>
-          )}
+        <div>
+          <dt className="font-medium text-foreground">Time</dt>
+          <dd className="mt-1">{formatDuration(selectedEvent.durationMs)}</dd>
         </div>
-      </div>
+        <div>
+          <dt className="font-medium text-foreground">Tokens</dt>
+          <dd className="mt-1">{formatTokens(selectedEvent.inputTokens, selectedEvent.outputTokens)}</dd>
+        </div>
+      </dl>
     </div>
   );
+}
+
+function modelCallSelectLabel(event: TraceEvent) {
+  return [
+    eventTitle(event),
+    formatDuration(event.durationMs),
+    formatCompactTokens(event.inputTokens, event.outputTokens) !== "—"
+      ? formatCompactTokens(event.inputTokens, event.outputTokens)
+      : undefined,
+  ].filter(Boolean).join(" · ");
 }
 
 export default function OperatorExtractionsPage() {
@@ -1661,7 +1179,6 @@ export default function OperatorExtractionsPage() {
   const [selectedModelEventId, setSelectedModelEventId] = useState<string | null>(null);
   const [timelineLabelWidth, setTimelineLabelWidth] = useState(150);
   const [collapsedTimelineIds, setCollapsedTimelineIds] = useState<Set<string>>(() => new Set());
-  const [selectedTimelineRowId, setSelectedTimelineRowId] = useState<string | null>(null);
   const [rerunningPolicyId, setRerunningPolicyId] = useState<string | null>(null);
   const rerunExtraction = useAction(api.operator.rerunExtraction);
 
@@ -1693,17 +1210,7 @@ export default function OperatorExtractionsPage() {
   const modelEvents = (detail?.events ?? []).filter((event) => event.kind === "model_call");
   const selectedModelEvent = modelEvents.find((event) => event._id === selectedModelEventId) ?? modelEvents[0];
   const logEvents = (detail?.events ?? []).filter((event) => event.kind === "log");
-  const modelTimingRows = selected ? buildModelTimingRows(modelEvents) : [];
-  const phaseTimingRows = selected && detail?.events ? buildPhaseTimingRows(detail.events, selected) : [];
-  const otherTimingRows = detail?.events ? buildOtherTimingRows(detail.events) : [];
   const timelineRows = selected && detail?.events ? buildTimelineRows(detail.events, selected) : [];
-  const selectedTimelineRow = timelineRows.find((row) => row.id === selectedTimelineRowId) ?? null;
-  const maxPhaseDuration = Math.max(...phaseTimingRows.map((row) => row.durationMs), 1);
-  const maxModelDuration = Math.max(...modelTimingRows.map((row) => row.durationMs), 1);
-  const maxOtherDuration = Math.max(...otherTimingRows.map((row) => row.durationMs), 1);
-  const wallDurationMs = selected?.totalDurationMs ?? (
-    selected?.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined
-  );
   const updateTraceUrl = useCallback((traceId: string | null, tab: TracePanelTab) => {
     const next = new URLSearchParams(searchParams.toString());
     if (traceId) {
@@ -1719,7 +1226,6 @@ export default function OperatorExtractionsPage() {
   const resetTraceLocalState = useCallback(() => {
     setSelectedModelEventId(null);
     setCollapsedTimelineIds(new Set());
-    setSelectedTimelineRowId(null);
   }, []);
   const openTrace = useCallback((traceId: string, tab: TracePanelTab = "summary") => {
     resetTraceLocalState();
@@ -1834,25 +1340,23 @@ export default function OperatorExtractionsPage() {
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : selected ? (
-        <div className="flex min-h-0 flex-1">
+        <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
           <Tabs
             value={activeTraceTab}
             onValueChange={(value) => selectTraceTab(parseTracePanelTab(value))}
-            className="min-h-0 flex-1 overflow-hidden"
+            className="min-h-full"
           >
             <div className="sticky top-0 z-10 flex shrink-0 items-center bg-background pb-3">
               <TabsList variant="pill" className="scrollbar-hide max-w-full overflow-x-auto py-1">
                 <TabsTrigger value="summary">Summary</TabsTrigger>
                 <TabsTrigger value="extracted">Extracted data</TabsTrigger>
-                <TabsTrigger value="source">Source spans</TabsTrigger>
                 <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                <TabsTrigger value="timing">Timing</TabsTrigger>
                 <TabsTrigger value="models">Model calls</TabsTrigger>
                 <TabsTrigger value="log">Log</TabsTrigger>
               </TabsList>
             </div>
 
-            <TabsContent value="summary" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
+            <TabsContent value="summary" className="pt-1">
               <div className="space-y-3">
                 <dl className="rounded-lg border border-foreground/6">
                   <DetailRow
@@ -1890,15 +1394,18 @@ export default function OperatorExtractionsPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="extracted" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
+            <TabsContent value="extracted" className="pt-1">
               {selectedIsRunning ? (
                 <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
                   Extraction is running. Extracted policy data will appear after this run completes.
                 </div>
               ) : detail?.policy ? (
                 <ExtractionCards
-                  policyId={selected.policyId as Id<"policies">}
-                  policyDocument={detail.policy}
+                  policyId={detail.sourceHierarchy?.length ? undefined : selected.policyId as Id<"policies">}
+                  policyDocument={{
+                    ...detail.policy,
+                    documentOutline: detail.sourceHierarchy ?? (detail.policy.documentOutline as Record<string, unknown>[] | undefined),
+                  } as ExtractionCardsPolicyDocument}
                   fileUrl={detail.fileUrl ?? undefined}
                   allowOperatorSourceAccess
                 />
@@ -1909,11 +1416,7 @@ export default function OperatorExtractionsPage() {
               )}
             </TabsContent>
 
-            <TabsContent value="source" className="scrollbar-hide min-h-0 overflow-y-auto pt-1">
-              <SourceSpanDiagnosticsPanel detail={detail} />
-            </TabsContent>
-
-            <TabsContent value="timeline" className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden pt-1">
+            <TabsContent value="timeline" className="pt-1">
               <TimelineWaterfall
                 rows={timelineRows}
                 session={selected}
@@ -1921,56 +1424,11 @@ export default function OperatorExtractionsPage() {
                 onLabelWidthChange={setTimelineLabelWidth}
                 collapsedIds={collapsedTimelineIds}
                 onToggleCollapsed={toggleTimelineCollapsed}
-                selectedRowId={selectedTimelineRowId}
-                onSelectRow={setSelectedTimelineRowId}
               />
-              <div className="scrollbar-hide min-h-0 max-h-44 overflow-y-auto">
-                <TimelineEventDetail row={selectedTimelineRow ?? timelineRows[0]} />
-              </div>
             </TabsContent>
 
-            <TabsContent value="timing" className="scrollbar-hide min-h-0 space-y-3 overflow-y-auto pt-1">
-              <div className="space-y-2">
-                <div>
-                  <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Phases</h4>
-                  <div className="rounded-lg border border-foreground/6">
-                    {phaseTimingRows.length ? phaseTimingRows.map((row) => (
-                      <TimingBar key={row.id} row={row} maxDurationMs={maxPhaseDuration} />
-                    )) : (
-                      <p className="px-3 py-3 text-body-sm text-muted-foreground">No phase timings recorded.</p>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Model calls</h4>
-                  <div className="rounded-lg border border-foreground/6">
-                    {modelTimingRows.length ? modelTimingRows.map((row) => (
-                      <TimingBar key={row.id} row={row} maxDurationMs={maxModelDuration} />
-                    )) : (
-                      <p className="px-3 py-3 text-body-sm text-muted-foreground">No model timings recorded.</p>
-                    )}
-                  </div>
-                </div>
-                {otherTimingRows.length ? (
-                  <div>
-                    <h4 className="mb-1 text-label-sm font-medium text-muted-foreground">Other timed work</h4>
-                    <div className="rounded-lg border border-foreground/6">
-                      {otherTimingRows.map((row) => (
-                        <TimingBar key={row.id} row={row} maxDurationMs={maxOtherDuration} />
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              {selected.modelDurationMs && wallDurationMs && selected.modelDurationMs > wallDurationMs ? (
-                <p className="text-label-sm text-muted-foreground">
-                  Aggregate model time can exceed wall time when extraction runs model calls in parallel.
-                </p>
-              ) : null}
-            </TabsContent>
-
-            <TabsContent value="models" className="scrollbar-hide min-h-0 min-w-0 space-y-2 overflow-y-auto pt-1">
-              <ModelCallsGrid
+            <TabsContent value="models" className="min-w-0 space-y-3 pt-1">
+              <ModelCallSelector
                 events={modelEvents}
                 selectedEventId={selectedModelEvent?._id}
                 onSelectEvent={setSelectedModelEventId}
@@ -1978,7 +1436,7 @@ export default function OperatorExtractionsPage() {
               <ModelCallDebugPanel event={selectedModelEvent} />
             </TabsContent>
 
-            <TabsContent value="log" className="scrollbar-hide min-h-0 space-y-2 overflow-y-auto pt-1">
+            <TabsContent value="log" className="space-y-2 pt-1">
               <div className="rounded-lg border border-foreground/6">
                 {logEvents.length ? logEvents.map((event) => (
                   <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">

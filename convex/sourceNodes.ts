@@ -311,6 +311,19 @@ export const insertNode = internalMutation({
   },
 });
 
+export const insertNodesBatch = internalMutation({
+  args: {
+    nodes: v.array(v.object(sourceNodeInsertFields)),
+  },
+  handler: async (ctx, args) => {
+    const inserted = [];
+    for (const node of args.nodes) {
+      inserted.push(await ctx.db.insert("sourceNodes", node));
+    }
+    return { inserted: inserted.length };
+  },
+});
+
 export const deleteByPolicy = internalMutation({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
