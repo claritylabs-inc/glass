@@ -184,6 +184,7 @@ function policyWithOperationalCoverages(policy: any, profile: any | undefined): 
       coverageOrigin: coverage.coverageOrigin,
       coverageOriginConfidence: coverage.coverageOriginConfidence,
       coverageOriginReason: coverage.coverageOriginReason,
+      isOperationalProfileCoverage: true,
       documentNodeId: coverage.sourceNodeIds?.[0],
       sourceSpanIds: coverage.sourceSpanIds,
       originalContent: [coverage.name, coverage.limit, coverage.deductible, coverage.premium].filter(Boolean).join(" | "),
@@ -416,7 +417,9 @@ function buildCoverageLines(
     }
   >();
   for (const coverage of rawCoverages) {
-    const group = coverageGroupName(coverage.name ?? coverage.type ?? "");
+    const group = coverage.isOperationalProfileCoverage
+      ? titleCase(String(coverage.name ?? coverage.type ?? "Coverage"))
+      : coverageGroupName(coverage.name ?? coverage.type ?? "");
     const row = grouped.get(group) ?? { limits: [] };
     const value = formatMoneyLike(coverage.limit);
     const label = coverageLimitLabel(coverage);

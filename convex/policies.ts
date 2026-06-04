@@ -445,6 +445,8 @@ export const getSummary = query({
       premium: enrichedPolicy.premium,
       limits: enrichedPolicy.limits,
       deductibles: enrichedPolicy.deductibles,
+      coverages: enrichedPolicy.coverages,
+      operationalProfile: enrichedPolicy.operationalProfile,
       summary: enrichedPolicy.summary,
       isRenewal: enrichedPolicy.isRenewal,
       isDemo: enrichedPolicy.isDemo,

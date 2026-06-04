@@ -92,6 +92,7 @@ import type * as lib_complianceAgent from "../lib/complianceAgent.js";
 import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
 import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
 import type * as lib_convexSourceRetriever from "../lib/convexSourceRetriever.js";
+import type * as lib_coverageBreakdown from "../lib/coverageBreakdown.js";
 import type * as lib_coverageNames from "../lib/coverageNames.js";
 import type * as lib_coverageScoping from "../lib/coverageScoping.js";
 import type * as lib_declarationFacts from "../lib/declarationFacts.js";
@@ -258,6 +259,7 @@ declare const fullApi: ApiFromModules<{
   "lib/convexDocumentStore": typeof lib_convexDocumentStore;
   "lib/convexMemoryStore": typeof lib_convexMemoryStore;
   "lib/convexSourceRetriever": typeof lib_convexSourceRetriever;
+  "lib/coverageBreakdown": typeof lib_coverageBreakdown;
   "lib/coverageNames": typeof lib_coverageNames;
   "lib/coverageScoping": typeof lib_coverageScoping;
   "lib/declarationFacts": typeof lib_declarationFacts;

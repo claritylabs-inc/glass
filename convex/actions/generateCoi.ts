@@ -18,6 +18,7 @@ import {
   getPolicyDocumentMetadata,
   getPolicyDocumentOutline,
 } from "../lib/policyDocumentStructure";
+import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
 
 type OverlayFieldMapping = {
   fields?: Array<Record<string, unknown>>;
@@ -111,6 +112,7 @@ async function resolveCustomSmartFields(
     : [];
   const policyContext = trimForPrompt({
     operationalProfile: policy.operationalProfile,
+    coverageBreakdown: coverageBreakdownForTool(policy),
     policyNumber: policy.policyNumber,
     policyTypes: policy.policyTypes,
     carrier: policy.carrier ?? policy.security ?? policy.carrierLegalName,

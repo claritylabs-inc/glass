@@ -2,6 +2,7 @@ import {
   formatDocumentStructureForPrompt,
   formatSourceSpanLabel,
 } from "./policyDocumentStructure";
+import { coverageBreakdownForTool } from "./coverageBreakdown";
 
 export type CertificateEndorsementKind =
   | "additional_insured"
@@ -339,6 +340,7 @@ function buildEvidenceCorpus(
   };
 
   addStructured("Operational profile", policy.operationalProfile);
+  addStructured("Coverage breakdown", coverageBreakdownForTool(policy));
   addStructured("Coverage projection", policy.coverages);
   addStructured("Declarations projection", policy.declarations);
   addStructured("Supplementary source-backed facts", policy.supplementaryFacts);

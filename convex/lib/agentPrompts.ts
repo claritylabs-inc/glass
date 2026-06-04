@@ -32,6 +32,7 @@ import { internal } from "../_generated/api";
 import { makeEmbedText } from "./sdkCallbacks";
 import { formatComplianceRequirementsContext } from "./complianceAgent";
 import { formatDocumentStructureForPrompt } from "./policyDocumentStructure";
+import { formatCoverageBreakdownForPrompt } from "./coverageBreakdown";
 
 /**
  * Build document context using vector search over pre-embedded chunks.
@@ -245,14 +246,7 @@ async function buildVectorContext(
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
       const carrier = p.mga || p.carrier || p.security;
-      const covSummary = (p.coverages ?? [])
-        .slice(0, 8)
-        .map((c: any) => {
-          const parts = [c.name];
-          if (c.limit) parts.push(c.limit);
-          return parts.join(": ");
-        })
-        .join("; ");
+      const covSummary = formatCoverageBreakdownForPrompt(p, 8).replace(/\n/g, " | ");
       const covLine = covSummary ? ` | Coverages: ${covSummary}` : "";
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName}${covLine}`;
     });
@@ -581,14 +575,7 @@ function buildFallbackContext(
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
       const carrier = p.mga || p.carrier || p.security;
-      const coverages =
-        p.coverages
-          ?.slice(0, 5)
-          .map(
-            (c: { name?: string; limit?: string; coverageOrigin?: string }) =>
-              `${c.name}: ${c.limit}${c.coverageOrigin ? ` (${c.coverageOrigin})` : ""}`,
-          )
-          .join("; ") ?? "";
+      const coverages = formatCoverageBreakdownForPrompt(p, 8).replace(/\n/g, " | ");
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
     });
     parts.push(
@@ -601,17 +588,8 @@ function buildFallbackContext(
     const carrier = p.security || p.carrier;
     let section = `\n--- POLICY: ${carrier} #${p.policyNumber} ---`;
     if (p.summary) section += `\nSummary: ${p.summary}`;
-    if (p.coverages?.length) {
-      section += "\nCoverages:";
-      for (const c of p.coverages as Array<{
-        name?: string;
-        limit?: string;
-        deductible?: string;
-        coverageOrigin?: string;
-      }>) {
-        section += `\n  - ${c.name}: Limit ${c.limit}${c.coverageOrigin ? `, Origin ${c.coverageOrigin}` : ""}${c.deductible ? `, Deductible ${c.deductible}` : ""}`;
-      }
-    }
+    const coverageBreakdown = formatCoverageBreakdownForPrompt(p);
+    if (coverageBreakdown) section += `\n${coverageBreakdown}`;
     const structure = formatDocumentStructureForPrompt(p as Record<string, unknown>, {
       maxNodes: 14,
       maxChars: 4500,

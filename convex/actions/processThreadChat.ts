@@ -88,6 +88,7 @@ import {
   normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
+import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
 import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
@@ -709,6 +710,7 @@ function buildTools(
             deductible: c.deductible,
             origin: c.coverageOrigin,
           })),
+          coverageBreakdown: coverageBreakdownForTool(p),
         }));
       },
     },
@@ -738,6 +740,7 @@ function buildTools(
             deductible: c.deductible,
             origin: c.coverageOrigin,
           })),
+          coverageBreakdown: coverageBreakdownForTool(p),
         });
         return { policy1: mapPolicy(p1), policy2: mapPolicy(p2) };
       },

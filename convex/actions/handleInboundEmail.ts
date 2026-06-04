@@ -84,6 +84,7 @@ import {
   normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
+import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
 import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
@@ -1250,6 +1251,7 @@ If the broker attached an endorsement or confirmation for this change, use compl
                 deductible: c.deductible,
                 origin: c.coverageOrigin,
               })),
+              coverageBreakdown: coverageBreakdownForTool(p),
             }));
           },
         },
@@ -1399,6 +1401,7 @@ If the broker attached an endorsement or confirmation for this change, use compl
                 deductible: c.deductible,
                 origin: c.coverageOrigin,
               })),
+              coverageBreakdown: coverageBreakdownForTool(p),
             });
             return { policy1: mapP(p1), policy2: mapP(p2) };
           },

@@ -17,7 +17,9 @@ const PolicyPdfThumbnail = dynamic(
     })),
   {
     ssr: false,
-    loading: () => <Skeleton className="hidden aspect-8.5/11 w-40 shrink-0 bg-white sm:block" />,
+    loading: () => (
+      <Skeleton className="hidden aspect-8.5/11 w-40 shrink-0 bg-white sm:block" />
+    ),
   },
 );
 
@@ -38,9 +40,18 @@ function SummaryRow({
   );
 }
 
-function StatusBadge({ expirationDate }: { effectiveDate?: string; expirationDate?: string }) {
+function StatusBadge({
+  expirationDate,
+}: {
+  effectiveDate?: string;
+  expirationDate?: string;
+}) {
   const now = dayjs();
-  const expiry = dayjs(expirationDate, ["MM/DD/YYYY", "YYYY-MM-DD", "M/D/YYYY"], true);
+  const expiry = dayjs(
+    expirationDate,
+    ["MM/DD/YYYY", "YYYY-MM-DD", "M/D/YYYY"],
+    true,
+  );
   if (!expiry.isValid()) {
     return null;
   }
@@ -70,7 +81,8 @@ function StatusBadge({ expirationDate }: { effectiveDate?: string; expirationDat
 }
 
 function isPendingValue(value: unknown) {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  const normalized =
+    typeof value === "string" ? value.trim().toLowerCase() : "";
   return (
     normalized === "extracting" ||
     normalized === "extracting..." ||
@@ -112,9 +124,20 @@ function ExtractionPendingDetails() {
         </span>
       </div>
       <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
-        {["Coverage types", "Carrier", "Named insured", "Policy period", "Premium"].map((label, index) => (
-          <div key={label} className={index === 0 ? "sm:col-span-2" : undefined}>
-            <p className="mb-1.5 text-label text-muted-foreground/55">{label}</p>
+        {[
+          "Coverage types",
+          "Carrier",
+          "Named insured",
+          "Policy period",
+          "Premium",
+        ].map((label, index) => (
+          <div
+            key={label}
+            className={index === 0 ? "sm:col-span-2" : undefined}
+          >
+            <p className="mb-1.5 text-label text-muted-foreground/55">
+              {label}
+            </p>
             <Skeleton className="h-4 w-full max-w-56 bg-foreground/6" />
           </div>
         ))}
@@ -127,6 +150,7 @@ export interface PolicySummaryProps {
   policyNumber?: string;
   carrier?: string;
   administrator?: string;
+  broker?: string;
   insuredName?: string;
   effectiveDate?: string;
   expirationDate?: string;
@@ -141,46 +165,11 @@ export interface PolicySummaryProps {
   pdfUrl?: string | null;
 }
 
-function buildFactualSummary({
-  policyNumber,
-  carrier,
-  administrator,
-  insuredName,
-  periodValue,
-  premium,
-  policyTypes,
-}: {
-  policyNumber?: string;
-  carrier?: string;
-  administrator?: string;
-  insuredName?: string;
-  periodValue?: string;
-  premium?: string;
-  policyTypes: string[];
-}) {
-  const issuer = administrator || carrier;
-  const coverageLabel = policyTypes
-    .map((type) => POLICY_TYPE_LABELS[type] ?? type)
-    .filter(Boolean)
-    .join(", ");
-  const parts = [
-    issuer ? `Issued by ${issuer}` : null,
-    insuredName ? `for ${insuredName}` : null,
-    coverageLabel ? `covering ${coverageLabel}` : null,
-    policyNumber ? `under policy ${policyNumber}` : null,
-    periodValue && !periodValue.includes("Unknown")
-      ? `effective ${periodValue}`
-      : null,
-    premium ? `with premium ${premium}` : null,
-  ].filter(Boolean);
-
-  return parts.length > 0 ? `${parts.join(" ")}.` : null;
-}
-
 export function PolicySummary({
   policyNumber,
   carrier,
   administrator,
+  broker,
   insuredName,
   effectiveDate,
   expirationDate,
@@ -188,7 +177,6 @@ export function PolicySummary({
   policyTypes,
   policyTermType,
   limits,
-  deductibles,
   summary: _summary,
   isRenewal,
   documentType,
@@ -197,6 +185,7 @@ export function PolicySummary({
   const realPolicyNumber = realText(policyNumber);
   const realCarrier = realText(carrier);
   const realAdministrator = realText(administrator);
+  const realBroker = realText(broker);
   const realInsuredName = realText(insuredName);
   const realEffectiveDate = realText(effectiveDate);
   const realExpirationDate = realText(expirationDate);
@@ -221,24 +210,6 @@ export function PolicySummary({
     pushRealValue(keyLimits, "General Aggregate", l.generalAggregate);
   }
 
-  const keyDeductibles: { label: string; value: string }[] = [];
-  if (deductibles && typeof deductibles === "object") {
-    const d = deductibles as Record<string, unknown>;
-    if (!pushRealValue(keyDeductibles, "Deductible", d.perOccurrence)) {
-      if (!pushRealValue(keyDeductibles, "Deductible", d.perClaim)) {
-        pushRealValue(keyDeductibles, "Deductible (Agg)", d.aggregate);
-      }
-    }
-  }
-  const factualSummary = buildFactualSummary({
-    policyNumber: realPolicyNumber,
-    carrier: realCarrier,
-    administrator: realAdministrator,
-    insuredName: realInsuredName,
-    periodValue,
-    premium: realPremium,
-    policyTypes: realPolicyTypes,
-  });
   const hasExtractedDetails =
     realPolicyTypes.length > 0 ||
     !!realAdministrator ||
@@ -246,8 +217,7 @@ export function PolicySummary({
     !!realInsuredName ||
     !!periodValue ||
     !!realPremium ||
-    keyLimits.length > 0 ||
-    keyDeductibles.length > 0;
+    keyLimits.length > 0;
 
   return (
     <OperationalPanel className="mb-6 @container">
@@ -262,7 +232,10 @@ export function PolicySummary({
               Renewal
             </span>
           )}
-          <StatusBadge effectiveDate={realEffectiveDate} expirationDate={realExpirationDate} />
+          <StatusBadge
+            effectiveDate={realEffectiveDate}
+            expirationDate={realExpirationDate}
+          />
         </div>
       </div>
 
@@ -274,6 +247,11 @@ export function PolicySummary({
         {/* Details column */}
         <div className="flex-1 min-w-0 space-y-2.5 self-start pt-1">
           {!hasExtractedDetails && <ExtractionPendingDetails />}
+
+          {/* Policy number */}
+          {realPolicyNumber && (
+            <SummaryRow label="Policy number" value={realPolicyNumber} />
+          )}
 
           {/* Coverage types — same row style as other fields */}
           {realPolicyTypes.length > 0 && (
@@ -302,32 +280,20 @@ export function PolicySummary({
           {realAdministrator && (
             <SummaryRow label="Administrator" value={realAdministrator} />
           )}
-          {realCarrier && (
-            <SummaryRow label="Carrier" value={realCarrier} />
-          )}
+          {realCarrier && <SummaryRow label="Carrier" value={realCarrier} />}
+          {realBroker && <SummaryRow label="Broker" value={realBroker} />}
           {realInsuredName && (
             <SummaryRow label="Named insured" value={realInsuredName} />
           )}
           {periodValue && (
             <SummaryRow label="Policy period" value={periodValue} />
           )}
-          {realPremium && (
-            <SummaryRow label="Premium" value={realPremium} />
-          )}
+          {realPremium && <SummaryRow label="Premium" value={realPremium} />}
           {keyLimits.map(({ label, value }) => (
-            <SummaryRow key={label} label={label} value={value} />
-          ))}
-          {keyDeductibles.map(({ label, value }) => (
             <SummaryRow key={label} label={label} value={value} />
           ))}
         </div>
       </OperationalPanelBody>
-
-      {factualSummary && (
-        <div className="px-5 py-3 border-t border-foreground/6 bg-foreground/1">
-          <p className="text-base text-muted-foreground leading-relaxed">{factualSummary}</p>
-        </div>
-      )}
     </OperationalPanel>
   );
 }

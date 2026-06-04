@@ -69,6 +69,7 @@ import {
   normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
+import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
 import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
 import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
 import {
@@ -1084,6 +1085,7 @@ export const processInbound = internalAction({
                 deductible: c.deductible,
                 origin: c.coverageOrigin,
               })),
+              coverageBreakdown: coverageBreakdownForTool(p),
             }));
           },
         },
@@ -1265,6 +1267,7 @@ export const processInbound = internalAction({
                 limit: c.limit,
                 origin: c.coverageOrigin,
               })),
+              coverageBreakdown: coverageBreakdownForTool(p),
             });
             return { policy1: mapP(p1), policy2: mapP(p2) };
           },

@@ -16,6 +16,8 @@ import { MergePolicyDialog } from "@/components/merge-policy-dialog";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { ClientDetailSidebarContent } from "@/components/app-sidebar/client-detail-sidebar-content";
 import { MainSidebarContent } from "@/components/app-sidebar/main-sidebar-content";
+import { LogoIcon } from "@/components/ui/logo-icon";
+import { PillButton } from "@/components/ui/pill-button";
 import {
   AGENT_DOMAIN,
   ALL_NAV_ITEMS,
@@ -396,8 +398,10 @@ export function AppSidebar({
   const activeContent = isOperatorImpersonating ? (
     <div className="flex h-full min-h-0 flex-col">
       <div
-        className={`shrink-0 border-b border-amber-300/70 bg-amber-100 px-2 py-2 text-amber-950 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-100 ${
-          collapsed ? "text-center" : ""
+        className={`shrink-0 border-b text-amber-950 dark:text-amber-100 ${
+          collapsed
+            ? "flex h-12 items-center justify-center border-foreground/6 bg-amber-100 dark:bg-amber-400/10"
+            : "border-amber-300/70 bg-amber-100 px-2 py-2 dark:border-amber-400/25 dark:bg-amber-400/10"
         }`}
       >
         {collapsed ? (
@@ -406,30 +410,34 @@ export function AppSidebar({
             onClick={async () => {
               await stopOperatorImpersonation();
             }}
-            className="mx-auto flex h-7 w-7 items-center justify-center rounded-md border border-amber-950/15 text-label font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-amber-950 transition-colors hover:bg-amber-200 dark:text-amber-100 dark:hover:bg-amber-300/20"
             title={`Stop viewing ${impersonation?.targetOrgName ?? "organization"}`}
             aria-label="Stop operator mode"
           >
-            Op
+            <LogoIcon size={17} static />
           </button>
         ) : (
-          <div className="space-y-2">
-            <div className="min-w-0">
-              <p className="truncate text-label font-medium">Operator mode</p>
-              <p className="mt-0.5 truncate text-label text-amber-950/70 dark:text-amber-100/65">
-                {operatorContext?.user?.email} viewing {impersonation?.targetOrgName} as{" "}
-                {impersonation?.targetRole}
-              </p>
+          <div className="space-y-3">
+            <div className="flex flex-row gap-3 items-center pl-2">
+              <LogoIcon static />
+              <div className="min-w-0">
+                <p className="truncate text-base font-medium">Operator mode</p>
+                <p className="mt-0.5 truncate text-label text-amber-950/70 dark:text-amber-100/65">
+                  {operatorContext?.user?.email}
+                </p>
+              </div>
             </div>
-            <button
+            <PillButton
               type="button"
+              variant="secondary"
+              size="compact"
               onClick={async () => {
                 await stopOperatorImpersonation();
               }}
-              className="h-7 w-full rounded-md border border-amber-950/15 bg-amber-50 px-2 text-label font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
+              className="w-full"
             >
               Stop
-            </button>
+            </PillButton>
           </div>
         )}
       </div>

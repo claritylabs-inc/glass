@@ -51,6 +51,7 @@ import {
 } from "./threadTitle";
 import { getClientPortalUrl } from "../lib/domains";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
+import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
 
 /**
  * Simplified chat action for MCP — no streaming. Programmatic email draft/send
@@ -240,6 +241,7 @@ MCP MODE:
               deductible: c.deductible,
               origin: c.coverageOrigin,
             })),
+            coverageBreakdown: coverageBreakdownForTool(p),
           }));
         },
       },
