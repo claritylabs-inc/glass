@@ -178,8 +178,8 @@
   --font-serif: var(--font-instrument-serif);
 
   /* Typography scale */
-  --text-label: 0.75rem;
-  --text-base: 0.9rem;
+  --text-label: 0.7rem;
+  --text-base: 0.85rem;
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);

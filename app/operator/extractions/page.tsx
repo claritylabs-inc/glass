@@ -1127,36 +1127,35 @@ function ModelCallSelector({
   }
   const selectedEvent = events.find((event) => event._id === selectedEventId) ?? events[0];
   return (
-    <OperationalPanel as="section" className="space-y-3 px-3 py-3">
-      <Select value={selectedEvent._id} onValueChange={(value) => {
-        if (value) onSelectEvent(value);
-      }}>
-        <SelectTrigger size="sm" className="w-full">
-          <SelectValue>{modelCallSelectLabel(selectedEvent)}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {events.map((event) => (
-            <SelectItem key={event._id} value={event._id}>
-              {modelCallSelectLabel(event)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <dl className="grid gap-x-8 gap-y-2 text-base text-muted-foreground sm:grid-cols-3">
-        <div className="min-w-0">
-          <dt className="font-medium text-foreground">Model</dt>
-          <dd className="mt-1 truncate">{[selectedEvent.provider, selectedEvent.model].filter(Boolean).join(" / ") || "—"}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-foreground">Time</dt>
-          <dd className="mt-1">{formatDuration(selectedEvent.durationMs)}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-foreground">Tokens</dt>
-          <dd className="mt-1">{formatTokens(selectedEvent.inputTokens, selectedEvent.outputTokens)}</dd>
-        </div>
-      </dl>
-    </OperationalPanel>
+    <div className="space-y-3">
+      <OperationalPanel as="section" className="px-3 py-3">
+        <Select value={selectedEvent._id} onValueChange={(value) => {
+          if (value) onSelectEvent(value);
+        }}>
+          <SelectTrigger size="sm" className="w-full">
+            <SelectValue>{modelCallSelectLabel(selectedEvent)}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {events.map((event) => (
+              <SelectItem key={event._id} value={event._id}>
+                {modelCallSelectLabel(event)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </OperationalPanel>
+      <OperationalLabelValueList>
+        <OperationalLabelValueRow
+          label="Model"
+          value={[selectedEvent.provider, selectedEvent.model].filter(Boolean).join(" / ") || "—"}
+        />
+        <OperationalLabelValueRow label="Time" value={formatDuration(selectedEvent.durationMs)} />
+        <OperationalLabelValueRow
+          label="Tokens"
+          value={formatTokens(selectedEvent.inputTokens, selectedEvent.outputTokens)}
+        />
+      </OperationalLabelValueList>
+    </div>
   );
 }
 

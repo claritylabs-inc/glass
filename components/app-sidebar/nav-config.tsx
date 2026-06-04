@@ -161,7 +161,6 @@ export const PARTNER_NAV_ITEMS: NavItemConfig[] = [
 export const CLIENT_DETAIL_NAV: NavItemConfig[] = [
   { href: "", label: "Details", icon: User },
   { href: "/policies", label: "Policies", icon: FileText },
-  { href: "/activity", label: "Activity", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
