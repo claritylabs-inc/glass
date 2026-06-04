@@ -36,6 +36,10 @@ import customParseFormat from "dayjs/plugin/customParseFormat";
 import { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Badge } from "@/components/ui/badge";
+import {
+  OperationalPanel,
+  OperationalPanelBody,
+} from "@/components/ui/operational-panel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -689,15 +693,15 @@ function PolicyExtractionReview({
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-body-sm font-medium text-foreground">
+                  <p className="text-base font-medium text-foreground">
                     {displayReviewQuestion(question)}
                   </p>
-                  <p className="mt-1 max-w-4xl text-label-sm leading-5 text-muted-foreground">
+                  <p className="mt-1 max-w-4xl text-label leading-5 text-muted-foreground">
                     {displayReviewReason(question)}
                   </p>
                 </div>
                 {brokerRequested ? (
-                  <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-label font-medium text-muted-foreground">
                     Broker requested
                   </span>
                 ) : null}
@@ -726,35 +730,35 @@ function PolicyExtractionReview({
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+                        <p className="text-label font-medium uppercase tracking-normal text-muted-foreground">
                           {heading}
                         </p>
-                        <p className="mt-1 text-body-sm font-medium text-foreground">
+                        <p className="mt-1 text-base font-medium text-foreground">
                           {optionDisplayLabel(option)}
                         </p>
                         {details.source || details.type ? (
-                          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                          <p className="mt-1 text-label leading-4 text-muted-foreground">
                             {[details.type, details.source]
                               .filter(Boolean)
                               .join(" from ")}
                           </p>
                         ) : null}
                         {key === recommendedEntry?.key ? (
-                          <p className="mt-1 text-label-sm leading-5 text-muted-foreground">
+                          <p className="mt-1 text-label leading-5 text-muted-foreground">
                             {recommendationText(question, option)}
                           </p>
                         ) : details.name ? (
-                          <p className="mt-1 text-label-sm leading-5 text-muted-foreground">
+                          <p className="mt-1 text-label leading-5 text-muted-foreground">
                             {details.name}
                           </p>
                         ) : null}
                         {details.text ? (
-                          <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
+                          <p className="mt-1 line-clamp-2 text-label leading-4 text-muted-foreground">
                             {details.text}
                           </p>
                         ) : null}
                       </div>
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-label font-medium text-muted-foreground">
                         {selected ? (
                           <CheckCircle2 className="size-3.5" />
                         ) : null}
@@ -1002,7 +1006,7 @@ function PolicyBreakdownEditor({
       onOpenChange={onOpenChange}
       title="Edit extracted fields"
       footer={
-        <span className="text-xs text-muted-foreground">
+        <span className="text-label text-muted-foreground">
           {saving ? "Saving..." : "Saved on change"}
         </span>
       }
@@ -1011,7 +1015,7 @@ function PolicyBreakdownEditor({
         <div className="grid grid-cols-1 gap-3">
           {fields.map(({ key, label, kind }) => (
             <div key={key} className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">{label}</Label>
+              <Label className="text-label text-muted-foreground">{label}</Label>
               <Input
                 type={kind === "date" ? "date" : "text"}
                 inputMode={kind === "money" ? "decimal" : undefined}
@@ -1035,7 +1039,7 @@ function PolicyBreakdownEditor({
 
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <p className="text-sm font-medium text-foreground flex-1">
+            <p className="text-base font-medium text-foreground flex-1">
               Premium breakdown
             </p>
             <PillButton
@@ -1104,7 +1108,7 @@ function PolicyBreakdownEditor({
 
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <p className="text-sm font-medium text-foreground flex-1">
+            <p className="text-base font-medium text-foreground flex-1">
               Taxes and fees
             </p>
             <PillButton
@@ -1182,7 +1186,7 @@ function PolicyBreakdownEditor({
 
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <p className="text-sm font-medium text-foreground flex-1">
+            <p className="text-base font-medium text-foreground flex-1">
               Coverages
             </p>
             <PillButton
@@ -1381,15 +1385,15 @@ function DeclarationDiscrepancyList({
     <section className="rounded-lg border border-amber-500/20 bg-amber-500/[0.035] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-body-sm font-medium text-foreground">
+          <h3 className="text-base font-medium text-foreground">
             Policy details need confirmation
           </h3>
-          <p className="mt-1 max-w-3xl text-label-sm leading-5 text-muted-foreground">
+          <p className="mt-1 max-w-3xl text-label leading-5 text-muted-foreground">
             Different active policies show different values. Confirm the correct
             detail before using it on certificates, renewals, or policy changes.
           </p>
         </div>
-        <span className="rounded-full border border-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+        <span className="rounded-full border border-amber-500/20 px-2 py-0.5 text-label font-medium text-amber-700 dark:text-amber-300">
           {discrepancies.length} to check
         </span>
       </div>
@@ -1399,31 +1403,31 @@ function DeclarationDiscrepancyList({
           <div key={discrepancy._id} className="py-3 first:pt-3 last:pb-0">
             <div className="grid gap-3 md:grid-cols-[minmax(160px,0.8fr)_minmax(220px,1fr)_minmax(220px,1.4fr)_auto] md:items-start">
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+                <p className="text-label font-medium uppercase tracking-normal text-muted-foreground">
                   Detail
                 </p>
-                <p className="mt-1 text-label-sm font-medium text-foreground">
+                <p className="mt-1 text-label font-medium text-foreground">
                   {discrepancy.question ??
                     formatDeclarationFieldGroup(discrepancy.fieldGroup)}
                 </p>
                 {discrepancy.plainLanguageSummary && (
-                  <p className="mt-1 text-label-sm leading-5 text-muted-foreground">
+                  <p className="mt-1 text-label leading-5 text-muted-foreground">
                     {discrepancy.plainLanguageSummary}
                   </p>
                 )}
               </div>
 
               <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+                <p className="text-label font-medium uppercase tracking-normal text-muted-foreground">
                   Best guess
                 </p>
-                <p className="mt-1 text-label-sm font-medium text-foreground">
+                <p className="mt-1 text-label font-medium text-foreground">
                   {displayDeclarationValue(discrepancy.likelyCurrentValue)}
                 </p>
               </div>
 
               <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-normal text-muted-foreground">
+                <p className="text-label font-medium uppercase tracking-normal text-muted-foreground">
                   Values found
                 </p>
                 <div className="mt-1 space-y-2">
@@ -1432,7 +1436,7 @@ function DeclarationDiscrepancyList({
                       key={`${value.normalizedValue ?? value.displayValue ?? "value"}-${index}`}
                       className="min-w-0"
                     >
-                      <p className="break-words text-label-sm font-medium text-foreground">
+                      <p className="break-words text-label font-medium text-foreground">
                         {displayDeclarationValue(
                           value.displayValue ?? value.normalizedValue,
                         )}
@@ -1443,7 +1447,7 @@ function DeclarationDiscrepancyList({
                             <Link
                               key={policy.policyId}
                               href={`/policies/${policy.policyId}`}
-                              className="rounded-full border border-foreground/8 bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                              className="rounded-full border border-foreground/8 bg-background/60 px-2 py-0.5 text-label text-muted-foreground transition-colors hover:text-foreground"
                             >
                               {policy.label}
                             </Link>
@@ -1455,12 +1459,12 @@ function DeclarationDiscrepancyList({
                 </div>
               </div>
 
-              <span className="justify-self-start rounded-full border border-foreground/8 bg-background/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:justify-self-end">
+              <span className="justify-self-start rounded-full border border-foreground/8 bg-background/60 px-2 py-0.5 text-label font-medium text-muted-foreground md:justify-self-end">
                 Updated {dayjs(discrepancy.updatedAt).format("MMM D")}
               </span>
             </div>
             {discrepancy.recommendedAction && (
-              <p className="mt-2 text-label-sm leading-5 text-muted-foreground">
+              <p className="mt-2 text-label leading-5 text-muted-foreground">
                 {discrepancy.recommendedAction}
               </p>
             )}
@@ -1529,11 +1533,13 @@ function PolicyChangesTab({
     return (
       <div className="space-y-3">
         <DeclarationDiscrepancyList discrepancies={declarationDiscrepancies} />
-        <div className="rounded-lg border border-foreground/6 bg-card px-4 py-6 text-center">
-          <p className="text-body-sm text-muted-foreground">
-            No policy change requests recorded yet.
-          </p>
-        </div>
+        <OperationalPanel as="div">
+          <OperationalPanelBody className="px-4 py-6 text-center">
+            <p className="text-base text-muted-foreground">
+              No policy change requests recorded yet.
+            </p>
+          </OperationalPanelBody>
+        </OperationalPanel>
       </div>
     );
   }
@@ -1640,21 +1646,22 @@ function PolicyChangesTab({
           const terminal = isPolicyChangeTerminal(change.status);
 
           return (
-            <div
+            <OperationalPanel
               key={change._id}
-              className="rounded-lg border border-foreground/6 bg-card p-4"
+              as="div"
+              className="p-4"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-body-sm font-medium text-foreground">
+                    <p className="text-base font-medium text-foreground">
                       {change.summary ?? "Policy change request"}
                     </p>
-                    <span className="rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    <span className="rounded-full border border-foreground/8 px-2 py-0.5 text-label font-medium text-muted-foreground">
                       {formatPolicyChangeStatus(change.status)}
                     </span>
                   </div>
-                  <p className="mt-2 max-w-3xl text-label-sm leading-5 text-muted-foreground">
+                  <p className="mt-2 max-w-3xl text-label leading-5 text-muted-foreground">
                     {change.requestText}
                   </p>
                 </div>
@@ -1677,7 +1684,7 @@ function PolicyChangesTab({
 
               <PolicyChangeProgress status={change.status} className="mt-4" />
 
-              <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+              <div className="mt-3 flex flex-wrap gap-3 text-label text-muted-foreground">
                 <span>
                   Updated {dayjs(change.updatedAt).format("MMM D, YYYY")}
                 </span>
@@ -1693,7 +1700,7 @@ function PolicyChangesTab({
                   </span>
                 )}
               </div>
-            </div>
+            </OperationalPanel>
           );
         })}
       </div>
@@ -1725,7 +1732,7 @@ function PolicyChangesTab({
         </div>
       )}
 
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+      <OperationalPanel as="div">
         {cases.map((change) => {
           const missingInfoCount = Array.isArray(change.missingInfoQuestions)
             ? change.missingInfoQuestions.length
@@ -1747,18 +1754,18 @@ function PolicyChangesTab({
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-body-sm font-medium text-foreground truncate">
+                  <p className="text-base font-medium text-foreground truncate">
                     {change.summary ?? "Policy change request"}
                   </p>
-                  <p className="mt-1 text-label-sm text-muted-foreground line-clamp-2">
+                  <p className="mt-1 text-label text-muted-foreground line-clamp-2">
                     {change.requestText}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full border border-foreground/8 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <span className="shrink-0 rounded-full border border-foreground/8 px-2 py-0.5 text-label font-medium text-muted-foreground">
                   {formatPolicyChangeStatus(change.status)}
                 </span>
               </div>
-              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+              <div className="mt-2 flex flex-wrap gap-2 text-label text-muted-foreground">
                 <span>{humanizeSnake(change.sourceKind)}</span>
                 <span>{dayjs(change.updatedAt).format("MMM D, YYYY")}</span>
                 {missingInfoCount > 0 && (
@@ -1777,9 +1784,9 @@ function PolicyChangesTab({
             </button>
           );
         })}
-      </div>
+      </OperationalPanel>
 
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+      <OperationalPanel as="div">
         {detail === undefined ? (
           <div className="p-4 space-y-3">
             <Skeleton className="h-5 w-48 rounded" />
@@ -1791,10 +1798,10 @@ function PolicyChangesTab({
             <div className="p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-body-sm font-medium text-foreground">
+                  <p className="text-base font-medium text-foreground">
                     {activeCase.summary ?? "Policy change request"}
                   </p>
-                  <p className="mt-1 text-label-sm text-muted-foreground">
+                  <p className="mt-1 text-label text-muted-foreground">
                     {activeCase.requestText}
                   </p>
                 </div>
@@ -1888,17 +1895,17 @@ function PolicyChangesTab({
 
             <div className="p-4 grid gap-4 xl:grid-cols-2">
               <section>
-                <h3 className="text-label-sm font-medium text-foreground">
+                <h3 className="text-label font-medium text-foreground">
                   Requested changes
                 </h3>
                 <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
                   {items.length > 0 ? (
                     items.map((item, i) => (
                       <div key={String(item.id ?? i)} className="py-3">
-                        <p className="text-label-sm font-medium text-foreground">
+                        <p className="text-label font-medium text-foreground">
                           {displayPolicyChangeItemLabel(item)}
                         </p>
-                        <p className="mt-2 text-label-sm text-muted-foreground">
+                        <p className="mt-2 text-label text-muted-foreground">
                           Current:{" "}
                           <span className="text-foreground">
                             {displayPolicyChangeValue(item.beforeValue)}
@@ -1911,7 +1918,7 @@ function PolicyChangesTab({
                           </span>
                         </p>
                         {item.action || item.kind ? (
-                          <p className="mt-1 text-[11px] text-muted-foreground">
+                          <p className="mt-1 text-label text-muted-foreground">
                             {[
                               humanizeSnake(item.action),
                               humanizeSnake(item.kind),
@@ -1923,7 +1930,7 @@ function PolicyChangesTab({
                       </div>
                     ))
                   ) : (
-                    <p className="py-3 text-label-sm text-muted-foreground">
+                    <p className="py-3 text-label text-muted-foreground">
                       No specific policy fields have been prepared yet.
                     </p>
                   )}
@@ -1931,7 +1938,7 @@ function PolicyChangesTab({
               </section>
 
               <section>
-                <h3 className="text-label-sm font-medium text-foreground">
+                <h3 className="text-label font-medium text-foreground">
                   Items to check
                 </h3>
                 <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
@@ -1941,18 +1948,18 @@ function PolicyChangesTab({
                         key={`${String(issue.code ?? "issue")}-${i}`}
                         className="py-3"
                       >
-                        <p className="text-label-sm font-medium text-foreground">
+                        <p className="text-label font-medium text-foreground">
                           {displayValidationMessage(issue)}
                         </p>
                         {issue.severity ? (
-                          <p className="mt-1 text-[11px] text-muted-foreground">
+                          <p className="mt-1 text-label text-muted-foreground">
                             {humanizeSnake(issue.severity)}
                           </p>
                         ) : null}
                       </div>
                     ))
                   ) : (
-                    <p className="py-3 text-label-sm text-muted-foreground">
+                    <p className="py-3 text-label text-muted-foreground">
                       No issues to review.
                     </p>
                   )}
@@ -1962,7 +1969,7 @@ function PolicyChangesTab({
 
             <div className="p-4 grid gap-4 xl:grid-cols-2">
               <section>
-                <h3 className="text-label-sm font-medium text-foreground">
+                <h3 className="text-label font-medium text-foreground">
                   Packet preview
                 </h3>
                 <div className="mt-2 space-y-2">
@@ -1972,20 +1979,20 @@ function PolicyChangesTab({
                         key={`${String(artifact.kind ?? "artifact")}-${i}`}
                         className="border-y border-foreground/6 py-3"
                       >
-                        <summary className="text-label-sm font-medium text-foreground transition-colors hover:text-muted-foreground">
+                        <summary className="text-label font-medium text-foreground transition-colors hover:text-muted-foreground">
                           {String(
                             artifact.title ??
                               humanizeSnake(artifact.kind) ??
                               "Packet draft",
                           )}
                         </summary>
-                        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
+                        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-label leading-5 text-muted-foreground">
                           {String(artifact.content ?? "")}
                         </pre>
                       </details>
                     ))
                   ) : (
-                    <p className="text-label-sm text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                       No generated packet yet.
                     </p>
                   )}
@@ -1993,7 +2000,7 @@ function PolicyChangesTab({
               </section>
 
               <section>
-                <h3 className="text-label-sm font-medium text-foreground">
+                <h3 className="text-label font-medium text-foreground">
                   Information needed
                 </h3>
                 <div className="mt-2 space-y-3">
@@ -2004,16 +2011,16 @@ function PolicyChangesTab({
                           key={String(question.id ?? question.code ?? i)}
                           className="py-3"
                         >
-                          <p className="text-label-sm text-foreground">
+                          <p className="text-label text-foreground">
                             {String(question.question ?? "Missing information")}
                           </p>
                           {question.reason ? (
-                            <p className="mt-1 text-label-sm text-muted-foreground">
+                            <p className="mt-1 text-label text-muted-foreground">
                               {String(question.reason)}
                             </p>
                           ) : null}
                           {question.answer ? (
-                            <p className="mt-2 text-label-sm text-muted-foreground">
+                            <p className="mt-2 text-label text-muted-foreground">
                               Answer: {String(question.answer)}
                             </p>
                           ) : null}
@@ -2021,7 +2028,7 @@ function PolicyChangesTab({
                       ))}
                     </div>
                   ) : (
-                    <p className="text-label-sm text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                       No open questions.
                     </p>
                   )}
@@ -2030,7 +2037,7 @@ function PolicyChangesTab({
             </div>
           </div>
         ) : null}
-      </div>
+      </OperationalPanel>
     </div>
   );
 }
@@ -2334,7 +2341,7 @@ function CertificateCreatePanel({
       }
     >
       <div className="space-y-4">
-        <p className="text-body-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           Create a certificate from this policy and list the certificate holder
           on the PDF.
         </p>
@@ -2346,13 +2353,13 @@ function CertificateCreatePanel({
         >
           {resolvingProgram || programCandidates.length > 0 ? (
             <div className="rounded-lg border border-foreground/8 bg-card p-3">
-              <p className="text-body-sm font-medium text-foreground">
+              <p className="text-base font-medium text-foreground">
                 {programCandidates.length > 1 ? "Choose program" : "Program"}
               </p>
               <div className="mt-3 grid gap-2">
                 {resolvingProgram ? (
                   <div className="rounded-md border border-foreground/8 px-3 py-2">
-                    <div className="flex items-center gap-2 text-body-sm text-muted-foreground">
+                    <div className="flex items-center gap-2 text-base text-muted-foreground">
                       <Loader2 className="size-3.5 animate-spin" />
                       Checking policy program...
                     </div>
@@ -2376,10 +2383,10 @@ function CertificateCreatePanel({
                         disabled={generating}
                         aria-pressed={selected}
                       >
-                        <span className="block text-body-sm font-medium text-foreground">
+                        <span className="block text-base font-medium text-foreground">
                           {candidate.programName}
                         </span>
-                        <span className="mt-0.5 block text-label-sm text-muted-foreground/70">
+                        <span className="mt-0.5 block text-label text-muted-foreground/70">
                           {[
                             candidate.categoryLabels?.join(", "),
                             candidate.approvalMode,
@@ -2506,7 +2513,7 @@ function CertificateCreatePanel({
                           : [...current, option.value],
                       )
                     }
-                    className={`rounded-md border px-2.5 py-1.5 text-label-sm capitalize transition-colors ${
+                    className={`rounded-md border px-2.5 py-1.5 text-label capitalize transition-colors ${
                       selected
                         ? "border-foreground/25 bg-foreground/[0.04] text-foreground"
                         : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15"
@@ -2517,7 +2524,7 @@ function CertificateCreatePanel({
                 );
               })}
             </div>
-            <p className="text-label-sm text-muted-foreground/60">
+            <p className="text-label text-muted-foreground/60">
               Endorsement-bearing requests are checked against policy wording
               before Glass issues a certificate.
             </p>
@@ -2555,42 +2562,45 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-foreground/6 bg-card px-4 py-8 text-center">
-        <BadgeCheck className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
-        <p className="text-body-sm font-medium text-foreground">
-          No certificates yet
-        </p>
-        <p className="mt-1 text-label-sm text-muted-foreground">
-          Generate a COI from the page header to store it here.
-        </p>
-      </div>
+      <OperationalPanel as="div">
+        <OperationalPanelBody className="px-4 py-8 text-center">
+          <BadgeCheck className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
+          <p className="text-base font-medium text-foreground">
+            No certificates yet
+          </p>
+          <p className="mt-1 text-label text-muted-foreground">
+            Generate a COI from the page header to store it here.
+          </p>
+        </OperationalPanelBody>
+      </OperationalPanel>
     );
   }
 
   return (
     <div className="space-y-2">
       {rows.map((row) => (
-        <div
+        <OperationalPanel
           key={String(row._id)}
-          className="rounded-lg border border-foreground/6 bg-card px-4 py-3"
+          as="div"
+          className="px-4 py-3"
         >
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-body-sm font-medium text-foreground truncate">
+              <p className="text-base font-medium text-foreground truncate">
                 {String(
                   row.certificateHolderName ??
                     row.holderName ??
                     "Certificate of Insurance",
                 )}
               </p>
-              <p className="mt-1 whitespace-pre-line text-label-sm text-muted-foreground">
+              <p className="mt-1 whitespace-pre-line text-label text-muted-foreground">
                 {String(
                   row.certificateHolder ??
                     row.reasonMessage ??
                     "No certificate holder recorded",
                 )}
               </p>
-              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+              <div className="mt-2 flex flex-wrap gap-2 text-label text-muted-foreground">
                 <span>{formatCertificateTimestamp(Number(row.createdAt))}</span>
                 {typeof row.source === "string" && row.source ? (
                   <span>{String(row.source).replace("_", " ")}</span>
@@ -2627,7 +2637,7 @@ function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
               </PillButton>
             )}
           </div>
-        </div>
+        </OperationalPanel>
       ))}
     </div>
   );
@@ -2818,7 +2828,7 @@ export function PolicyDetailBody({
       <>
         {displayName} {policyNumber}
         {documentType === "quote" && (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400 ml-1.5">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-label font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400 ml-1.5">
             Quote
           </span>
         )}
@@ -2995,7 +3005,7 @@ export function PolicyDetailBody({
         <p className="text-muted-foreground mb-2">Policy not found</p>
         <Link
           href={afterDeleteHref}
-          className="text-primary hover:underline text-body-sm"
+          className="text-primary hover:underline text-base"
         >
           Back to policies
         </Link>
@@ -3008,7 +3018,7 @@ export function PolicyDetailBody({
       <FadeIn when={true} staggerIndex={0} duration={0.6}>
         {isDeleted && (
           <div className="flex items-center gap-3 mb-4 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-4 py-2.5">
-            <p className="text-body-sm text-red-700 dark:text-red-400 flex-1">
+            <p className="text-base text-red-700 dark:text-red-400 flex-1">
               This policy has been deleted.
             </p>
             {!readOnly ? (
@@ -3090,7 +3100,7 @@ export function PolicyDetailBody({
 
       {Boolean(p.isDemo) && !demoBannerDismissed && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
-          <p className="text-label-sm text-amber-700 dark:text-amber-400 flex-1">
+          <p className="text-label text-amber-700 dark:text-amber-400 flex-1">
             You&apos;re viewing demo data.{" "}
             <Link
               href="/profile"
@@ -3130,7 +3140,7 @@ export function PolicyDetailBody({
               {tab.id === "review" ? (
                 <span className="inline-flex items-center gap-1.5">
                   Review
-                  <span className="rounded-full border border-foreground/10 px-1.5 text-[10px] leading-4 text-muted-foreground">
+                  <span className="rounded-full border border-foreground/10 px-1.5 text-label leading-4 text-muted-foreground">
                     {reviewQuestions.length}
                   </span>
                 </span>

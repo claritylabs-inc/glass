@@ -8,8 +8,8 @@ export function BrandWordmark() {
     <div className="flex items-center gap-2.5 text-foreground">
       <LogoIcon size={16} color={BRAND_BLUE} static />
       <div className="flex items-baseline gap-1.5">
-        <span className="text-sm font-medium tracking-tight">Glass</span>
-        <span className="text-sm text-muted-foreground">from Clarity Labs</span>
+        <span className="text-base font-medium tracking-tight">Glass</span>
+        <span className="text-base text-muted-foreground">from Clarity Labs</span>
       </div>
     </div>
   );
@@ -49,14 +49,14 @@ export function PartnerWordmark({
           <LogoIcon size={24} color={BRAND_BLUE} static />
         )}
       </div>
-      <span className="text-sm font-medium tracking-tight">{name?.trim() || "Glass from Clarity Labs"}</span>
+      <span className="text-base font-medium tracking-tight">{name?.trim() || "Glass from Clarity Labs"}</span>
     </div>
   );
 }
 
 export function PoweredByGlassWordmark() {
   return (
-    <div className="flex items-center justify-center gap-2 text-xs leading-none text-muted-foreground">
+    <div className="flex items-center justify-center gap-2 text-label leading-none text-muted-foreground">
       <span>Powered by</span>
       <div className="flex items-center gap-1.5 leading-none">
         <LogoIcon size={12} color={BRAND_BLUE} static />
@@ -71,7 +71,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8 sm:px-8 sm:py-10">
-        <header className="flex items-center justify-between text-sm text-muted-foreground">
+        <header className="flex items-center justify-between text-base text-muted-foreground">
           <BrandWordmark />
         </header>
         <main className="flex flex-1 items-center justify-center py-12 sm:py-20">{children}</main>

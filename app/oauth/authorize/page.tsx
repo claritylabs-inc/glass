@@ -140,7 +140,7 @@ export default function OAuthAuthorizePage() {
         <AuthCard title="Invalid request" subtitle="This authorization request could not be completed.">
           <div className="text-center">
             <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               This authorization request is missing required parameters.
             </p>
           </div>
@@ -167,7 +167,7 @@ export default function OAuthAuthorizePage() {
             {loginStep === "email" ? (
               <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+                  <label className="text-label font-medium text-muted-foreground block mb-1.5">
                     Email Address
                   </label>
                   <input
@@ -177,15 +177,15 @@ export default function OAuthAuthorizePage() {
                     placeholder="you@company.com"
                     required
                     autoFocus
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
                 </div>
                 {error && (
-                  <p className="px-1 py-1 text-sm text-muted-foreground">
+                  <p className="px-1 py-1 text-base text-muted-foreground">
                     {error}
                   </p>
                 )}
-                <PillButton type="submit" disabled={sendingCode || !email} className="h-12 w-full justify-center text-sm shadow-none">
+                <PillButton type="submit" disabled={sendingCode || !email} className="h-12 w-full justify-center text-base shadow-none">
                   {sendingCode ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {sendingCode ? "Sending code..." : "Send verification code"}
                   {!sendingCode ? <ArrowRight className="h-4 w-4" /> : null}
@@ -194,7 +194,7 @@ export default function OAuthAuthorizePage() {
             ) : (
               <form onSubmit={handleCodeSubmit} className="space-y-4">
                 <div>
-                  <label className="text-label-sm font-medium text-muted-foreground block mb-2">
+                  <label className="text-label font-medium text-muted-foreground block mb-2">
                     Verification Code
                   </label>
                   <div
@@ -230,18 +230,18 @@ export default function OAuthAuthorizePage() {
                       aria-label="Verification code"
                     />
                   </div>
-                  <p className="mt-2 text-sm text-muted-foreground">
+                  <p className="mt-2 text-base text-muted-foreground">
                     We sent a 6-digit code to{" "}
                     <span className="font-medium text-foreground">{email}</span>
                   </p>
                 </div>
                 {error && (
-                  <p className="px-1 py-1 text-sm text-muted-foreground">
+                  <p className="px-1 py-1 text-base text-muted-foreground">
                     {error}
                   </p>
                 )}
                 <div className="flex flex-col gap-3 pt-1">
-                  <PillButton type="submit" disabled={verifying || code.length < 6} className="h-12 w-full justify-center text-sm shadow-none">
+                  <PillButton type="submit" disabled={verifying || code.length < 6} className="h-12 w-full justify-center text-base shadow-none">
                     {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     {verifying ? "Verifying..." : "Verify and continue"}
                     {!verifying ? <ArrowRight className="h-4 w-4" /> : null}
@@ -250,7 +250,7 @@ export default function OAuthAuthorizePage() {
                     type="button"
                     variant="secondary"
                     onClick={() => { setLoginStep("email"); setCode(""); setError(""); }}
-                    className="h-12 w-full justify-center text-sm shadow-none"
+                    className="h-12 w-full justify-center text-base shadow-none"
                   >
                     <ArrowLeft className="h-4 w-4" />
                     Use a different email
@@ -282,13 +282,13 @@ export default function OAuthAuthorizePage() {
             <div className="text-center py-4">
               <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
               <h2 className="mb-1 text-lg font-medium text-foreground">Unknown application</h2>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 This application is not registered or the redirect URI doesn&apos;t match.
               </p>
             </div>
           ) : redirecting ? (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 If you&apos;re not redirected automatically,{" "}
                 <a href={redirectUrl} className="font-medium text-foreground hover:underline">
                   click here
@@ -299,10 +299,10 @@ export default function OAuthAuthorizePage() {
           ) : (
             <div className="space-y-5">
               <div className="text-base text-muted-foreground">
-                <p className="mb-2 text-sm font-medium text-foreground">
+                <p className="mb-2 text-base font-medium text-foreground">
                   This will allow the app to:
                 </p>
-                <ul className="space-y-1.5 text-sm text-muted-foreground">
+                <ul className="space-y-1.5 text-base text-muted-foreground">
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
                     Read your policies and quotes
@@ -327,14 +327,14 @@ export default function OAuthAuthorizePage() {
                   )}
                 </ul>
                 {scope && (
-                  <p className="mt-2 text-xs text-muted-foreground/60">
+                  <p className="mt-2 text-label text-muted-foreground/60">
                     Requested scopes: {scope}
                   </p>
                 )}
               </div>
 
               {error && (
-                <p className="px-1 py-1 text-sm text-muted-foreground">
+                <p className="px-1 py-1 text-base text-muted-foreground">
                   {error}
                 </p>
               )}
@@ -344,7 +344,7 @@ export default function OAuthAuthorizePage() {
                   type="button"
                   onClick={handleAllow}
                   disabled={authorizing}
-                  className="h-12 w-full justify-center text-sm shadow-none"
+                  className="h-12 w-full justify-center text-base shadow-none"
                 >
                   {authorizing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {authorizing ? "Authorizing..." : "Allow"}
@@ -354,7 +354,7 @@ export default function OAuthAuthorizePage() {
                   variant="secondary"
                   onClick={handleDeny}
                   disabled={authorizing}
-                  className="h-12 w-full justify-center text-sm shadow-none"
+                  className="h-12 w-full justify-center text-base shadow-none"
                 >
                   Deny
                 </PillButton>

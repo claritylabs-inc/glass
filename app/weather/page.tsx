@@ -40,17 +40,17 @@ export default function WeatherPage() {
             className="inline-flex items-center gap-2 leading-none text-foreground/60 transition-colors hover:text-foreground"
           >
             <LogoIcon size={16} color={BRAND_BLUE} static />
-            <span className="text-sm font-medium tracking-tight text-foreground">
+            <span className="text-base font-medium tracking-tight text-foreground">
               Glass
             </span>
-            <span className="text-sm tracking-tight text-foreground/50">
+            <span className="text-base tracking-tight text-foreground/50">
               from Clarity Labs
             </span>
           </Link>
           <h1 className="mt-4 text-2xl font-semibold tracking-tight">
             AI Weather Report
           </h1>
-          <p className="mt-1 text-sm text-foreground/50">
+          <p className="mt-1 text-base text-foreground/50">
             Current model routing across Glass.
           </p>
         </div>
@@ -64,16 +64,16 @@ export default function WeatherPage() {
         ) : (
           <>
             <div className="rounded-xl border border-foreground/8 overflow-hidden">
-              <table className="w-full text-sm">
+              <table className="w-full text-base">
                 <thead>
                   <tr className="border-b border-foreground/8 bg-foreground/[0.02]">
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs ">
+                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-label ">
                       Task
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs ">
+                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-label ">
                       Model
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-xs ">
+                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-label ">
                       Provider
                     </th>
                   </tr>
@@ -91,12 +91,12 @@ export default function WeatherPage() {
                       <td className="px-4 py-3 text-foreground/70">
                         {TASK_LABELS[route.task] ?? route.task}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-foreground/60">
+                      <td className="px-4 py-3 font-mono text-label text-foreground/60">
                         {route.model}
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          className={`inline-block rounded-full px-2.5 py-0.5 text-label font-medium ${
                             PROVIDER_COLORS[route.provider] ??
                             "bg-foreground/10 text-foreground/60"
                           }`}
@@ -110,7 +110,7 @@ export default function WeatherPage() {
               </table>
             </div>
 
-            <p className="mt-4 text-xs text-foreground/30">
+            <p className="mt-4 text-label text-foreground/30">
               Fallback:{" "}
               <span className="font-mono">{config.fallback.model}</span> (
               {config.fallback.provider})

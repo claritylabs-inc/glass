@@ -11,7 +11,7 @@ export default async function ConnectRequestPage({
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center">
-          <div className="text-sm text-gray-500">Loading request…</div>
+          <div className="text-base text-gray-500">Loading request…</div>
         </div>
       }
     >

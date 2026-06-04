@@ -119,19 +119,19 @@ function CertificateProgramSelectionCard({
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <FileCheck2 className="h-4 w-4 shrink-0 text-muted-foreground/45" />
-          <span className="truncate text-[13px] font-medium text-foreground/85">
+          <span className="truncate text-base font-medium text-foreground/85">
             Choose certificate program
           </span>
         </div>
         <Badge
           variant="outline"
-          className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55"
+          className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55"
         >
           Certified COI
         </Badge>
       </div>
       <div className="space-y-2 px-3 py-3">
-        <p className="text-[12px] leading-5 text-muted-foreground/65">
+        <p className="text-label leading-5 text-muted-foreground/65">
           Glass found multiple possible program administrator programs for this
           policy. Choose one to generate the certified certificate.
         </p>
@@ -149,17 +149,17 @@ function CertificateProgramSelectionCard({
                 className="flex w-full items-center justify-between gap-3 rounded-md border border-foreground/8 bg-background px-3 py-2 text-left transition-colors hover:border-foreground/14 disabled:cursor-default disabled:opacity-70"
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium text-foreground/85">
+                  <span className="block truncate text-base font-medium text-foreground/85">
                     {candidate.programName}
                   </span>
                   {subtitle ? (
-                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground/50">
+                    <span className="mt-0.5 block truncate text-label text-muted-foreground/50">
                       {subtitle}
                     </span>
                   ) : null}
                 </span>
                 <span
-                  className={`inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-full px-3 text-[11px] font-medium ${
+                  className={`inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-full px-3 text-label font-medium ${
                     isSelected
                       ? "bg-foreground text-background"
                       : "border border-foreground/8 text-muted-foreground"

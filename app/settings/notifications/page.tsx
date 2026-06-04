@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Mail, MessageSquareText } from "lucide-react";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import {
   useCachedQuery,
   useUpsertCachedQuery,
@@ -79,6 +80,45 @@ interface NotificationPreferencesPageProps {
 }
 
 type NotificationChannel = "in_app" | "email" | "imessage";
+
+function MasterNotificationRow({
+  icon: Icon,
+  title,
+  description,
+  checked,
+  onCheckedChange,
+  label,
+}: {
+  icon: typeof Mail;
+  title: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: () => void;
+  label: string;
+}) {
+  return (
+    <OperationalPanel as="div">
+      <div className="flex items-center justify-between gap-4 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
+            <Icon className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-base font-medium text-foreground">{title}</p>
+            <p className="mt-0.5 text-label text-muted-foreground/60">
+              {description}
+            </p>
+          </div>
+        </div>
+        <SettingsSwitch
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          label={label}
+        />
+      </div>
+    </OperationalPanel>
+  );
+}
 
 export default function NotificationPreferencesPage({ orgId, orgType }: NotificationPreferencesPageProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -236,56 +276,32 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
     <div className="flex w-full flex-col gap-5">
       <div>
         <h1 className="text-lg font-medium text-foreground">Notifications</h1>
-        <p className="mt-1 text-body-sm text-muted-foreground/70">
+        <p className="mt-1 text-base text-muted-foreground/70">
           Choose how Glass should notify your team about {descriptor}.
         </p>
       </div>
 
-      <div className="rounded-lg border border-foreground/6 bg-card">
-        <div className="flex items-center justify-between gap-4 px-5 py-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
-              <Mail className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-body-sm font-medium text-foreground">Email notifications</p>
-              <p className="mt-0.5 text-label-sm text-muted-foreground/60">
-                Master control for every email notification.
-              </p>
-            </div>
-          </div>
-          <SettingsSwitch
-            checked={allEmailEnabled}
-            onCheckedChange={() => void toggleAllEmail()}
-            label="Toggle all email notifications"
-          />
-        </div>
-      </div>
+      <MasterNotificationRow
+        icon={Mail}
+        title="Email notifications"
+        description="Master control for every email notification."
+        checked={allEmailEnabled}
+        onCheckedChange={() => void toggleAllEmail()}
+        label="Toggle all email notifications"
+      />
 
-      <div className="rounded-lg border border-foreground/6 bg-card">
-        <div className="flex items-center justify-between gap-4 px-5 py-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
-              <MessageSquareText className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-body-sm font-medium text-foreground">iMessage notifications</p>
-              <p className="mt-0.5 text-label-sm text-muted-foreground/60">
-                Master control for opt-in text updates.
-              </p>
-            </div>
-          </div>
-          <SettingsSwitch
-            checked={allImessageEnabled}
-            onCheckedChange={() => void toggleAllImessage()}
-            label="Toggle all iMessage notifications"
-          />
-        </div>
-      </div>
+      <MasterNotificationRow
+        icon={MessageSquareText}
+        title="iMessage notifications"
+        description="Master control for opt-in text updates."
+        checked={allImessageEnabled}
+        onCheckedChange={() => void toggleAllImessage()}
+        label="Toggle all iMessage notifications"
+      />
 
       <div className="flex flex-col gap-4">
         {groups.map((group) => (
-          <section key={group} className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          <OperationalPanel key={group}>
             <table className="w-full table-fixed">
               <colgroup>
                 <col />
@@ -295,16 +311,16 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
               </colgroup>
               <thead>
                 <tr className="border-b border-foreground/6">
-                  <th className="px-5 py-3.5 text-left text-sm font-medium text-foreground">
+                  <th className="px-5 py-3.5 text-left text-base font-medium text-foreground">
                     {group}
                   </th>
-                  <th className="px-3 py-3.5 text-center text-label-sm font-medium text-muted-foreground/70">
+                  <th className="px-3 py-3.5 text-center text-label font-medium text-muted-foreground/70">
                     In-app
                   </th>
-                  <th className="px-3 py-3.5 text-center text-label-sm font-medium text-muted-foreground/70">
+                  <th className="px-3 py-3.5 text-center text-label font-medium text-muted-foreground/70">
                     Email
                   </th>
-                  <th className="px-3 py-3.5 text-center text-label-sm font-medium text-muted-foreground/70">
+                  <th className="px-3 py-3.5 text-center text-label font-medium text-muted-foreground/70">
                     iMessage
                   </th>
                 </tr>
@@ -312,7 +328,7 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
               <tbody>
                 {visibleRows.filter((r) => r.group === group).map((row) => (
                   <tr key={row.type} className="border-b border-foreground/6 last:border-b-0">
-                    <td className="px-5 py-3.5 text-body-sm text-foreground">{row.label}</td>
+                    <td className="px-5 py-3.5 text-base text-foreground">{row.label}</td>
                     {(["in_app", "email", "imessage"] as const).map((channel) => {
                       const enabled = getEnabled(row.type, channel);
                       return (
@@ -337,7 +353,7 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
                 ))}
               </tbody>
             </table>
-          </section>
+          </OperationalPanel>
         ))}
       </div>
     </div>

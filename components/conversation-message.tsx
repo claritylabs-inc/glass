@@ -65,7 +65,7 @@ export function QuotedContent({ text }: { text: string }) {
   }
 
   return (
-    <div className="text-body-sm text-muted-foreground/50 mt-3 space-y-1">
+    <div className="text-base text-muted-foreground/50 mt-3 space-y-1">
       {blocks.map((block, i) => {
         const blockText = block.lines.join("\n").trim();
         if (!blockText) return null;

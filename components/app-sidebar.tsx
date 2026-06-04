@@ -406,7 +406,7 @@ export function AppSidebar({
             onClick={async () => {
               await stopOperatorImpersonation();
             }}
-            className="mx-auto flex h-7 w-7 items-center justify-center rounded-md border border-amber-950/15 text-label-sm font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
+            className="mx-auto flex h-7 w-7 items-center justify-center rounded-md border border-amber-950/15 text-label font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
             title={`Stop viewing ${impersonation?.targetOrgName ?? "organization"}`}
             aria-label="Stop operator mode"
           >
@@ -415,8 +415,8 @@ export function AppSidebar({
         ) : (
           <div className="space-y-2">
             <div className="min-w-0">
-              <p className="truncate text-label-sm font-medium">Operator mode</p>
-              <p className="mt-0.5 truncate text-label-sm text-amber-950/70 dark:text-amber-100/65">
+              <p className="truncate text-label font-medium">Operator mode</p>
+              <p className="mt-0.5 truncate text-label text-amber-950/70 dark:text-amber-100/65">
                 {operatorContext?.user?.email} viewing {impersonation?.targetOrgName} as{" "}
                 {impersonation?.targetRole}
               </p>
@@ -426,7 +426,7 @@ export function AppSidebar({
               onClick={async () => {
                 await stopOperatorImpersonation();
               }}
-              className="h-7 w-full rounded-md border border-amber-950/15 bg-amber-50 px-2 text-label-sm font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
+              className="h-7 w-full rounded-md border border-amber-950/15 bg-amber-50 px-2 text-label font-medium transition-colors hover:bg-amber-200 dark:border-amber-200/20 dark:bg-amber-300/10 dark:hover:bg-amber-300/20"
             >
               Stop
             </button>

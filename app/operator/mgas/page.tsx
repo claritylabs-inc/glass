@@ -9,6 +9,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
+import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+  OperationalPanel,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   Table,
@@ -41,16 +46,7 @@ type MGARow = {
 };
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-foreground/6 py-2.5 last:border-b-0">
-      <dt className="shrink-0 text-label-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-right text-body-sm text-foreground">{value}</dd>
-    </div>
-  );
-}
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
 function faviconFromWebsite(website?: string | null) {
   if (!website) return null;
@@ -69,7 +65,7 @@ function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | 
   const source = iconUrl ?? faviconFromWebsite(website);
   const initial = name.trim().charAt(0).toUpperCase() || "?";
   return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label-sm font-medium text-foreground">
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label font-medium text-foreground">
       {source && !imageFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -289,8 +285,8 @@ export default function OperatorMGAsPage() {
         <div className="space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="truncate text-body-sm font-medium text-foreground">{selected.name}</p>
-              <p className="mt-1 truncate text-label-sm text-muted-foreground">
+              <p className="truncate text-base font-medium text-foreground">{selected.name}</p>
+              <p className="mt-1 truncate text-label text-muted-foreground">
                 {selected.adminName ?? selected.adminEmail ?? "No admin contact"}
               </p>
             </div>
@@ -298,17 +294,23 @@ export default function OperatorMGAsPage() {
               {selected.operatorStatus === "live" ? "Live" : "Onboarding"}
             </Badge>
           </div>
-          <dl className="border-t border-foreground/6">
-            <DetailRow
+          <OperationalLabelValueList>
+            <OperationalLabelValueRow
               label="Program"
               value={<span className="block truncate">{selected.programName ?? "Not set"}</span>}
+              align="right"
             />
-            <DetailRow
+            <OperationalLabelValueRow
               label="Website"
               value={<span className="block truncate">{selected.website ?? "Not set"}</span>}
+              align="right"
             />
-            <DetailRow label="Created" value={dayjs(selected.createdAt).format("MMM D, YYYY")} />
-          </dl>
+            <OperationalLabelValueRow
+              label="Created"
+              value={dayjs(selected.createdAt).format("MMM D, YYYY")}
+              align="right"
+            />
+          </OperationalLabelValueList>
         </div>
       ) : null}
     </SettingsDrawer>
@@ -333,16 +335,16 @@ export default function OperatorMGAsPage() {
       rightPanel={rightPanel}
     >
       <main className="flex w-full flex-col">
-        <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+        <OperationalPanel>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[27%] px-4 text-label-sm text-muted-foreground">MGA</TableHead>
-                <TableHead className="w-[24%] text-label-sm text-muted-foreground">Admin</TableHead>
-                <TableHead className="w-[22%] text-label-sm text-muted-foreground">Program</TableHead>
-                <TableHead className="w-[18%] text-label-sm text-muted-foreground">Website</TableHead>
-                <TableHead className="w-[10%] text-label-sm text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[8%] px-4 text-label-sm text-muted-foreground">Created</TableHead>
+                <TableHead className="w-[27%] px-4 text-label text-muted-foreground">MGA</TableHead>
+                <TableHead className="w-[24%] text-label text-muted-foreground">Admin</TableHead>
+                <TableHead className="w-[22%] text-label text-muted-foreground">Program</TableHead>
+                <TableHead className="w-[18%] text-label text-muted-foreground">Website</TableHead>
+                <TableHead className="w-[10%] text-label text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[8%] px-4 text-label text-muted-foreground">Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -354,7 +356,7 @@ export default function OperatorMGAsPage() {
                 </TableRow>
               ) : mgas.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="h-32 px-4 text-body-sm text-muted-foreground">
+                  <TableCell colSpan={6} className="h-32 px-4 text-base text-muted-foreground">
                     No MGA accounts found.
                   </TableCell>
                 </TableRow>
@@ -405,7 +407,7 @@ export default function OperatorMGAsPage() {
               )}
             </TableBody>
           </Table>
-        </section>
+        </OperationalPanel>
       </main>
     </AppShell>
   );

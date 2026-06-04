@@ -43,11 +43,11 @@ export function DocSection({
         onClick={() => setOpen(!open)}
         className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.03] dark:hover:bg-foreground/[0.06]"
       >
-        <span className="text-body-sm font-medium text-foreground flex-1 truncate">
+        <span className="text-base font-medium text-foreground flex-1 truncate">
           {title || typeLabel || "Section"}
         </span>
         {pages && (
-          <span className="text-body-sm text-muted-foreground/40 shrink-0">
+          <span className="text-base text-muted-foreground/40 shrink-0">
             p.{pages}
           </span>
         )}

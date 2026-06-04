@@ -31,10 +31,10 @@ type InviteData = {
 };
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
 const LABEL_CLASSES =
-  "text-label-sm font-medium text-muted-foreground block mb-1.5";
+  "text-label font-medium text-muted-foreground block mb-1.5";
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
@@ -184,7 +184,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
           subtitle={fetchError}
           logo={<BrandWordmark />}
         >
-          <p className="text-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             If you believe this is an error, ask your broker to resend the invitation.
           </p>
         </AuthCard>
@@ -224,14 +224,14 @@ export default function InviteAcceptance({ token }: { token: string }) {
       >
         {isAutoFlow ? (
           <div className="space-y-4">
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-3 text-base text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>
                 {autoVerifying ? "Signing you in…" : "Opening your workspace…"}
               </span>
             </div>
             {error && (
-              <p className="px-1 py-1 text-sm text-muted-foreground">{error}</p>
+              <p className="px-1 py-1 text-base text-muted-foreground">{error}</p>
             )}
           </div>
         ) : step === "details" ? (
@@ -253,13 +253,13 @@ export default function InviteAcceptance({ token }: { token: string }) {
             </div>
 
             {error && (
-              <p className="px-1 py-1 text-sm text-muted-foreground">{error}</p>
+              <p className="px-1 py-1 text-base text-muted-foreground">{error}</p>
             )}
 
             <PillButton
               type="submit"
               disabled={loading || !email.trim()}
-              className="w-full justify-center text-sm shadow-none sm:w-auto"
+              className="w-full justify-center text-base shadow-none sm:w-auto"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Sending code..." : "Continue"}
@@ -269,7 +269,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
         ) : (
           <form onSubmit={handleCodeSubmit} className="space-y-4">
             <div>
-              <label className="text-label-sm font-medium text-muted-foreground block mb-2">
+              <label className="text-label font-medium text-muted-foreground block mb-2">
                 Verification Code
               </label>
               <div
@@ -309,21 +309,21 @@ export default function InviteAcceptance({ token }: { token: string }) {
                   aria-label="Verification code"
                 />
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-base text-muted-foreground">
                 We sent a 6-digit code to{" "}
                 <span className="font-medium text-foreground">{email}</span>
               </p>
             </div>
 
             {error && (
-              <p className="px-1 py-1 text-sm text-muted-foreground">{error}</p>
+              <p className="px-1 py-1 text-base text-muted-foreground">{error}</p>
             )}
 
             <div className="flex flex-col items-start gap-5 pt-6">
               <PillButton
                 type="submit"
                 disabled={loading || code.length < 6}
-                className="w-full justify-center text-sm shadow-none sm:w-auto"
+                className="w-full justify-center text-base shadow-none sm:w-auto"
               >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -340,7 +340,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
                   setCode("");
                   setError("");
                 }}
-                className="self-center text-sm text-muted-foreground transition-colors hover:text-foreground sm:self-start"
+                className="self-center text-base text-muted-foreground transition-colors hover:text-foreground sm:self-start"
               >
                 Use a different email
               </button>

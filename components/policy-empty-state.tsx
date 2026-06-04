@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Copy, CornerUpRight, FileUp, FileText, X } from "lucide-react";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   PolicyUploadModeToggle,
@@ -61,10 +62,10 @@ export function PolicyEmptyState({
   const content = (
     <>
       {heading ? (
-        <h3 className="text-body-sm font-semibold text-foreground">{heading}</h3>
+        <h3 className="text-base font-semibold text-foreground">{heading}</h3>
       ) : null}
       {sub ? (
-        <p className="text-body-sm text-muted-foreground mt-1">{sub}</p>
+        <p className="text-base text-muted-foreground mt-1">{sub}</p>
       ) : null}
 
       {agentEmail ? (
@@ -90,9 +91,9 @@ export function PolicyEmptyState({
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card p-5 sm:p-6">
+    <OperationalPanel as="div" className="p-5 sm:p-6">
       {content}
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -119,10 +120,10 @@ function AgentForwardCard({
           <CornerUpRight className="h-4 w-4 text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-body-sm font-medium text-foreground">
+          <div className="text-base font-medium text-foreground">
             Email or forward to your agent
           </div>
-          <div className="text-body-sm text-muted-foreground truncate mt-0.5">
+          <div className="text-base text-muted-foreground truncate mt-0.5">
             {email}
           </div>
         </div>
@@ -258,15 +259,15 @@ function DropZone({
         <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-foreground/4 text-muted-foreground mb-3">
           <FileUp className="h-4.5 w-4.5" />
         </div>
-        <p className="text-body-sm font-semibold text-foreground">
+        <p className="text-base font-semibold text-foreground">
           Drag and drop {label} PDFs
         </p>
-        <p className="text-body-sm text-muted-foreground mt-1">
+        <p className="text-base text-muted-foreground mt-1">
           {staged.length > 0
             ? "or click to add more files"
             : "or click to choose files"}
         </p>
-        <p className="text-body-sm text-muted-foreground/60 mt-3">
+        <p className="text-base text-muted-foreground/60 mt-3">
           {uploadMode === "separate"
             ? `Multiple PDFs will create separate ${pluralLabel}.`
             : `Multiple PDFs will be combined into a single ${label}.`}
@@ -302,7 +303,7 @@ function DropZone({
               className="flex items-center gap-2 px-3 py-2 border-t border-foreground/4 first:border-t-0"
             >
               <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-body-sm truncate flex-1">{file.name}</span>
+              <span className="text-base truncate flex-1">{file.name}</span>
               <button
                 type="button"
                 onClick={() => removeAt(i)}

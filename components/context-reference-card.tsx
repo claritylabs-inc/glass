@@ -3,11 +3,14 @@
 import { useState } from "react";
 import { Id } from "@/convex/_generated/dataModel";
 import { FileText } from "lucide-react";
+import {
+  ActionSurface,
+  ActionSurfaceButton,
+} from "@/components/ui/action-surface";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { useCachedPolicySummary } from "@/lib/sync/glass-cached-queries";
 
-/** Convex document IDs are base32-encoded and always contain non-digit chars */
 function isConvexId(id: string): boolean {
   return id.length > 0 && !/^\d+$/.test(id);
 }
@@ -27,7 +30,6 @@ function extractIdAndType(
   return null;
 }
 
-/** Extract all internal entity references from markdown content */
 export function extractEntityRefs(
   content: string,
 ): { type: "policy"; id: string; page?: number }[] {
@@ -64,10 +66,10 @@ export function PolicyReferenceCard({
 
   if (!policy) {
     return (
-      <div className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md border border-foreground/6 bg-card px-2 py-1.5 text-label-sm">
+      <ActionSurface className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md px-2 py-1.5 text-label">
         <FileText className="h-3 w-3 text-muted-foreground/40" />
         <span className="text-muted-foreground/50">Policy</span>
-      </div>
+      </ActionSurface>
     );
   }
 
@@ -88,7 +90,7 @@ export function PolicyReferenceCard({
     : summaryParts;
 
   return (
-    <button
+    <ActionSurfaceButton
       type="button"
       onClick={() =>
         openPreview({
@@ -100,20 +102,20 @@ export function PolicyReferenceCard({
           citedSourceSpanIds,
         })
       }
-      className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md border border-foreground/6 bg-card px-2 py-1.5 text-left transition-colors hover:border-foreground/10 hover:bg-foreground/2"
+      className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md px-2 py-1.5 hover:border-foreground/10 hover:bg-foreground/2"
     >
       <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-foreground/4">
         <FileText className="h-3 w-3 text-muted-foreground/50" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="mb-0.5 text-[10px] font-medium leading-none text-muted-foreground/40">
+        <p className="mb-0.5 text-label font-medium leading-none text-muted-foreground/40">
           Policy
         </p>
-        <p className="truncate text-label-sm leading-4 text-foreground">
+        <p className="truncate text-label leading-4 text-foreground">
           {summary}
         </p>
       </div>
-    </button>
+    </ActionSurfaceButton>
   );
 }
 
@@ -152,7 +154,7 @@ export function PolicyCitation({
           citedSourceSpanIds,
         })
       }
-      className="mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 rounded-full border border-foreground/8 bg-foreground/3 px-1.5 align-middle text-[10px] font-medium leading-none text-muted-foreground/65 no-underline transition-colors hover:border-foreground/12 hover:bg-foreground/5 hover:text-foreground/80"
+      className="mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 rounded-full border border-foreground/8 bg-foreground/3 px-1.5 align-middle text-label font-medium leading-none text-muted-foreground/65 no-underline transition-colors hover:border-foreground/12 hover:bg-foreground/5 hover:text-foreground/80"
       title={label}
     >
       <FileText className="h-2.5 w-2.5 shrink-0" />
@@ -198,7 +200,7 @@ export function PolicySourcePill({
           citedSourceSpanIds,
         })
       }
-      className="inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label-sm font-medium text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+      className="inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
       title={label}
     >
       <span className="text-muted-foreground/35">{index}</span>
@@ -282,7 +284,7 @@ export function ReferenceCardStrip({
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
         aria-expanded={isExpanded}
-        className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label-sm font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+        className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
       >
         {refs.length} sources
       </button>

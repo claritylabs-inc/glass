@@ -66,7 +66,7 @@ function OnboardingLoading() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="w-full px-6 py-6 sm:px-8">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-sm text-muted-foreground">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-base text-muted-foreground">
           <div className="justify-self-start min-w-0">
             <div className="h-5 w-24 bg-foreground/10 rounded" />
           </div>
@@ -168,7 +168,7 @@ function PendingLiveScreen() {
           <h1 className="text-base font-medium text-foreground">
             Workspace is being prepared
           </h1>
-          <p className="mt-2 text-body-sm text-muted-foreground">
+          <p className="mt-2 text-base text-muted-foreground">
             Your Glass workspace is not live yet. You will receive an email when
             it is ready.
           </p>

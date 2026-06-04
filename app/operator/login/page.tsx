@@ -83,7 +83,7 @@ export default function OperatorLoginPage() {
         {step === "email" ? (
           <form onSubmit={sendCode} className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                 Operator email
               </label>
               <input
@@ -93,16 +93,16 @@ export default function OperatorLoginPage() {
                 placeholder="you@claritylabs.inc"
                 required
                 autoFocus
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8"
               />
             </div>
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || !email} className="justify-center text-sm">
+            {error ? <p className="text-base text-muted-foreground">{error}</p> : null}
+            <PillButton type="submit" disabled={loading || !email} className="justify-center text-base">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Sending code..." : "Continue"}
               {!loading ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
-            <p className="text-label-sm text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               Looking for Glass?{" "}
               <Link href="/login" className="font-medium text-foreground hover:opacity-70">
                 Go to the main login
@@ -112,7 +112,7 @@ export default function OperatorLoginPage() {
         ) : (
           <form onSubmit={verifyCode} className="space-y-4">
             <div>
-              <label className="mb-2 block text-label-sm font-medium text-muted-foreground">
+              <label className="mb-2 block text-label font-medium text-muted-foreground">
                 Verification Code
               </label>
               <div
@@ -148,17 +148,17 @@ export default function OperatorLoginPage() {
                   aria-label="Verification code"
                 />
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-base text-muted-foreground">
                 We sent a 6-digit code to <span className="font-medium text-foreground">{email}</span>
               </p>
             </div>
-            {error ? <p className="text-sm text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || code.length < 6} className="justify-center text-sm">
+            {error ? <p className="text-base text-muted-foreground">{error}</p> : null}
+            <PillButton type="submit" disabled={loading || code.length < 6} className="justify-center text-base">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Verifying..." : "Verify and continue"}
               {!loading ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
-            <p className="text-label-sm text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               Not an operator?{" "}
               <Link href="/login" className="font-medium text-foreground hover:opacity-70">
                 Go to the main login

@@ -51,7 +51,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center">
-          <div className="text-sm text-gray-500">Loading invitation…</div>
+          <div className="text-base text-gray-500">Loading invitation…</div>
         </div>
       }
     >

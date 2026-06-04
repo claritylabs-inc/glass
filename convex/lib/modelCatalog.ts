@@ -115,6 +115,9 @@ export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {
     "gpt-5-nano",
     "gpt-5-pro",
     "gpt-5-codex",
+    "gpt-oss-120b",
+    "gpt-oss-20b",
+    "gpt-oss-safeguard-20b",
     "gpt-4.1",
     "gpt-4.1-mini",
     "gpt-4.1-nano",
@@ -203,6 +206,7 @@ export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {
 
 export const EMBEDDING_MODEL_CATALOG: Partial<Record<ModelProvider, string[]>> = {
   openai: ["text-embedding-3-small", "text-embedding-3-large"],
+  google: ["gemini-embedding-001"],
 };
 
 export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {

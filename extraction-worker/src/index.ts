@@ -107,15 +107,23 @@ const workerPackage = require("../package.json") as {
 const WORKER_PROTOCOL_VERSION = "source-tree-v1";
 
 const actions = {
-  saveExternalCompletionPayload: makeFunctionReference<
+  createExternalCompletionUploadUrl: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+    },
+    { uploadUrl: string }
+  >("externalExtractionPayload:createExternalCompletionUploadUrl"),
+  finalizeExternalCompletionPayload: makeFunctionReference<
     "action",
     {
       secret: string;
       policyId: string;
-      payload: unknown;
+      storageId: string;
+      byteLength: number;
     },
     { storageId: string; byteLength: number }
-  >("externalExtractionPayload:saveExternalCompletionPayload"),
+  >("externalExtractionPayload:finalizeExternalCompletionPayload"),
   claimExternalJob: makeFunctionReference<
     "action",
     {
@@ -1446,6 +1454,94 @@ async function saveCheckpoint(
   };
 }
 
+function jsonByteLength(value: unknown): number {
+  const json = JSON.stringify(value);
+  return json ? Buffer.byteLength(json) : 0;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function payloadSizeSummary(payload: Record<string, unknown>): string {
+  return Object.entries(payload)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key} ${formatBytes(jsonByteLength(value))}`)
+    .join(", ");
+}
+
+async function uploadCompletionPayload(
+  job: ClaimedJob,
+  payload: Record<string, unknown>,
+): Promise<{ storageId: string; byteLength: number }> {
+  const json = JSON.stringify(payload);
+  const byteLength = Buffer.byteLength(json);
+  const { uploadUrl } = await convex.action(actions.createExternalCompletionUploadUrl, {
+    secret: SECRET,
+  });
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: json,
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to upload completion payload: ${response.status} ${await response.text()}`);
+  }
+  const uploaded = await response.json() as { storageId?: string };
+  if (!uploaded.storageId) {
+    throw new Error("Completion payload upload did not return a storageId");
+  }
+  return await convex.action(actions.finalizeExternalCompletionPayload, {
+    secret: SECRET,
+    policyId: job.policyId,
+    storageId: uploaded.storageId,
+    byteLength,
+  });
+}
+
+const HEAVY_PAYLOAD_KEYS = new Set([
+  "base64",
+  "data",
+  "image",
+  "imageBase64",
+  "images",
+  "pageImages",
+  "pageScreenshots",
+  "pdf",
+  "pdfBase64",
+  "providerOptions",
+  "request",
+  "requestBody",
+  "sourceChunks",
+  "sourceSpans",
+  "sourceTree",
+]);
+
+function sanitizeCompletionDocument(value: unknown, depth = 0): unknown {
+  if (depth > 8) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeCompletionDocument(item, depth + 1))
+      .filter((item) => item !== undefined);
+  }
+  if (!value || typeof value !== "object") {
+    if (typeof value === "string" && value.length > 100_000) {
+      return `${value.slice(0, 100_000)}...[truncated ${value.length - 100_000} chars]`;
+    }
+    return value;
+  }
+
+  const output: Record<string, unknown> = {};
+  for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
+    if (HEAVY_PAYLOAD_KEYS.has(key)) continue;
+    const sanitized = sanitizeCompletionDocument(entryValue, depth + 1);
+    if (sanitized !== undefined) output[key] = sanitized;
+  }
+  return output;
+}
+
 async function completeJob(
   job: ClaimedJob,
   result: ExtractionResult,
@@ -1473,8 +1569,9 @@ async function completeJob(
   const sourceChunks = dedupeById(resultSourceChunks.length > 0
     ? [...resultSourceChunks, ...rawSourceChunks]
     : rawSourceChunks);
+  const document = sanitizeCompletionDocument(result.document);
   const payload = {
-    document: result.document,
+    document,
     chunks: result.chunks,
     sourceSpans,
     sourceChunks,
@@ -1489,11 +1586,8 @@ async function completeJob(
         }
       : undefined,
   };
-  const savedPayload = await convex.action(actions.saveExternalCompletionPayload, {
-    secret: SECRET,
-    policyId: job.policyId,
-    payload,
-  });
+  await logJob(job, `External extraction payload sizes: ${payloadSizeSummary(payload)}`);
+  const savedPayload = await uploadCompletionPayload(job, payload);
 
   const completed = await convex.action(actions.completeExternalExtract, {
     secret: SECRET,

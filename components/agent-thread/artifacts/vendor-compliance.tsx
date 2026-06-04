@@ -139,14 +139,14 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="min-w-0 truncate text-[13px] font-medium text-foreground">
+                    <h3 className="min-w-0 truncate text-base font-medium text-foreground">
                       {row.name ?? "Vendor"}
                     </h3>
-                    <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/60">
+                    <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/60">
                       {vendorStatusLabel(row.status)}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground/45">
+                  <p className="mt-1 text-label text-muted-foreground/45">
                     {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
                     {policyText ? ` · ${policyText}` : ""}
                   </p>
@@ -154,7 +154,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                 {row.vendorOrgId ? (
                   <Link
                     href={`/connect/vendors/${row.vendorOrgId}/policies`}
-                    className="shrink-0 rounded-full border border-foreground/8 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-foreground/14 hover:text-foreground"
+                    className="shrink-0 rounded-full border border-foreground/8 px-2.5 py-1 text-label font-medium text-muted-foreground transition-colors hover:border-foreground/14 hover:text-foreground"
                   >
                     View vendor
                   </Link>
@@ -171,15 +171,15 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                   return (
                     <div key={`${check.requirementId ?? check.title ?? "check"}-${checkIndex}`} className="px-3 py-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground/85">
+                        <span className="min-w-0 flex-1 truncate text-label font-medium text-foreground/85">
                           {check.title ?? "Requirement"}
                         </span>
-                        <Badge variant="outline" className={`h-5 gap-1 px-1.5 text-[10px] font-medium ${meta.className}`}>
+                        <Badge variant="outline" className={`h-5 gap-1 px-1.5 text-label font-medium ${meta.className}`}>
                           <StatusIcon className="h-3 w-3" />
                           {meta.label}
                         </Badge>
                       </div>
-                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground/55">
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-label text-muted-foreground/55">
                         {check.requiredLimit ? <span>Required: {check.requiredLimit}</span> : null}
                         {policy?.coverageLimit ? <span>Coverage: {policy.coverageLimit}</span> : null}
                         {detectedLimit ? <span>Detected: {detectedLimit}</span> : null}
@@ -187,12 +187,12 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                         {policy?.insuredName ? <span>Insured: {policy.insuredName}</span> : null}
                       </div>
                       {policy?.carrier || policy?.policyNumber || policy?.coverageName ? (
-                        <p className="mt-1 truncate text-[11px] text-muted-foreground/40">
+                        <p className="mt-1 truncate text-label text-muted-foreground/40">
                           {[policy.carrier, policy.policyNumber, policy.coverageName].filter(Boolean).join(" · ")}
                         </p>
                       ) : null}
                       {check.notes ? (
-                        <p className="mt-1 text-[11px] leading-4 text-muted-foreground/65">
+                        <p className="mt-1 text-label leading-4 text-muted-foreground/65">
                           {check.notes}
                         </p>
                       ) : null}
@@ -230,10 +230,10 @@ function VendorComplianceSummaryCard({
       }`}
     >
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5">
-        <span className="truncate text-[13px] font-medium text-foreground/85">
+        <span className="truncate text-base font-medium text-foreground/85">
           Vendor compliance checks
         </span>
-        <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+        <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55">
           {rows.length} vendor{rows.length === 1 ? "" : "s"}
         </Badge>
       </div>
@@ -249,7 +249,7 @@ function VendorComplianceSummaryCard({
               : `${row.policyCount} polic${row.policyCount === 1 ? "y" : "ies"}`
             : null;
           return (
-            <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${index}`} className="flex items-center gap-2 text-[11px]">
+            <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${index}`} className="flex items-center gap-2 text-label">
               <span className="min-w-0 flex-1 truncate font-medium text-foreground/75">{row.name ?? "Vendor"}</span>
               <span className="shrink-0 text-muted-foreground/45">
                 {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
@@ -259,7 +259,7 @@ function VendorComplianceSummaryCard({
           );
         })}
         {rows.length > 3 ? (
-          <p className="text-[11px] text-muted-foreground/40">
+          <p className="text-label text-muted-foreground/40">
             +{rows.length - 3} more vendor{rows.length - 3 === 1 ? "" : "s"}
           </p>
         ) : null}
@@ -280,8 +280,8 @@ export function VendorComplianceSidebar({
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-body-sm font-semibold text-foreground">Vendor compliance checks</h2>
-          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-[10px] font-medium text-muted-foreground/55">
+          <h2 className="truncate text-base font-semibold text-foreground">Vendor compliance checks</h2>
+          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55">
             {rows.length} vendor{rows.length === 1 ? "" : "s"}
           </Badge>
         </div>

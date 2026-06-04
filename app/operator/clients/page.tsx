@@ -11,6 +11,7 @@ import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { Badge } from "@/components/ui/badge";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
 import {
@@ -67,9 +68,9 @@ type BrokerOption = {
 };
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 const AFFIXED_INPUT_CLASSES =
-  "min-w-0 flex-1 bg-transparent px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none";
+  "min-w-0 flex-1 bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none";
 const STANDALONE_VALUE = "__standalone__";
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -112,9 +113,9 @@ function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-label-sm font-medium text-muted-foreground">{label}</span>
+      <span className="text-label font-medium text-muted-foreground">{label}</span>
       {children}
-      {error ? <span className="block text-label-sm text-destructive">{error}</span> : null}
+      {error ? <span className="block text-label text-destructive">{error}</span> : null}
     </label>
   );
 }
@@ -140,12 +141,17 @@ function OrgMark({
   name: string;
   iconUrl?: string | null;
   website?: string | null;
-  size?: "sm" | "md";
+  size?: "sm" | "select" | "md";
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const source = iconUrl ?? faviconFromWebsite(website);
   const initial = name.trim().charAt(0).toUpperCase() || "?";
-  const sizeClass = size === "sm" ? "h-3.5 w-3.5 rounded-sm text-[8px]" : "h-7 w-7 rounded-md text-label-sm";
+  const sizeClass =
+    size === "sm"
+      ? "h-3.5 w-3.5 rounded-sm text-label"
+      : size === "select"
+        ? "h-6 w-6 rounded-sm text-label"
+        : "h-7 w-7 rounded-md text-label";
   return (
     <div className={`flex shrink-0 items-center justify-center overflow-hidden border border-foreground/8 bg-white font-medium text-foreground ${sizeClass}`}>
       {source && !imageFailed ? (
@@ -451,7 +457,7 @@ export default function OperatorClientsPage() {
                 <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
               ) : null}
               {clientSettingsSaveLabel ? (
-                <span className={`max-w-28 truncate text-label-sm font-normal ${
+                <span className={`max-w-28 truncate text-label font-normal ${
                   clientSettingsValidationError || settingsSaveStatus === "error"
                     ? "text-destructive"
                     : "text-muted-foreground"
@@ -521,7 +527,7 @@ export default function OperatorClientsPage() {
                         name={selectedBroker.name}
                         iconUrl={selectedBroker.iconUrl}
                         website={selectedBroker.website}
-                        size="sm"
+                        size="select"
                       />
                       <span className="truncate">{selectedBroker.name}</span>
                     </span>
@@ -535,7 +541,7 @@ export default function OperatorClientsPage() {
                 {(brokers ?? []).map((broker) => (
                   <SelectItem key={broker._id} value={broker._id}>
                     <span className="flex min-w-0 items-center gap-2">
-                      <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="sm" />
+                      <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="select" />
                       <span className="truncate">{broker.name}</span>
                     </span>
                   </SelectItem>
@@ -559,7 +565,7 @@ export default function OperatorClientsPage() {
                 onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
                 placeholder="release"
               />
-              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
                 @{AGENT_DOMAIN}
               </span>
             </div>
@@ -621,7 +627,7 @@ export default function OperatorClientsPage() {
                           name={selectedEditBroker.name}
                           iconUrl={selectedEditBroker.iconUrl}
                           website={selectedEditBroker.website}
-                          size="sm"
+                          size="select"
                         />
                         <span className="truncate">{selectedEditBroker.name}</span>
                       </span>
@@ -635,7 +641,7 @@ export default function OperatorClientsPage() {
                   {(brokers ?? []).map((broker) => (
                     <SelectItem key={broker._id} value={broker._id}>
                       <span className="flex min-w-0 items-center gap-2">
-                        <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="sm" />
+                        <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="select" />
                         <span className="truncate">{broker.name}</span>
                       </span>
                     </SelectItem>
@@ -665,7 +671,7 @@ export default function OperatorClientsPage() {
                   }}
                   placeholder="client"
                 />
-                <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label-sm text-muted-foreground">
+                <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
                   @{AGENT_DOMAIN}
                 </span>
               </div>
@@ -735,16 +741,16 @@ export default function OperatorClientsPage() {
       rightPanel={rightPanel}
     >
       <main className="flex w-full flex-col">
-        <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+        <OperationalPanel>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[25%] px-4 text-label-sm text-muted-foreground">Client</TableHead>
-                <TableHead className="w-[20%] text-label-sm text-muted-foreground">Broker</TableHead>
-                <TableHead className="w-[22%] text-label-sm text-muted-foreground">Admin</TableHead>
-                <TableHead className="w-[18%] text-label-sm text-muted-foreground">Website</TableHead>
-                <TableHead className="w-[10%] text-label-sm text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[8%] px-4 text-label-sm text-muted-foreground">Created</TableHead>
+                <TableHead className="w-[25%] px-4 text-label text-muted-foreground">Client</TableHead>
+                <TableHead className="w-[20%] text-label text-muted-foreground">Broker</TableHead>
+                <TableHead className="w-[22%] text-label text-muted-foreground">Admin</TableHead>
+                <TableHead className="w-[18%] text-label text-muted-foreground">Website</TableHead>
+                <TableHead className="w-[10%] text-label text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[8%] px-4 text-label text-muted-foreground">Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -756,7 +762,7 @@ export default function OperatorClientsPage() {
                 </TableRow>
               ) : clients.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="h-32 px-4 text-body-sm text-muted-foreground">
+                  <TableCell colSpan={6} className="h-32 px-4 text-base text-muted-foreground">
                     No client accounts found.
                   </TableCell>
                 </TableRow>
@@ -809,7 +815,7 @@ export default function OperatorClientsPage() {
               )}
             </TableBody>
           </Table>
-        </section>
+        </OperationalPanel>
       </main>
     </AppShell>
   );

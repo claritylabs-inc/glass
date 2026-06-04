@@ -35,6 +35,11 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { FileDropZone } from "@/components/ui/file-drop";
 import { Input } from "@/components/ui/input";
+import {
+  OperationalItem,
+  OperationalPanel,
+  OperationalSkeletonList,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -541,25 +546,6 @@ async function extractAutoPlaceCandidates(fileUrl: string): Promise<AutoPlaceCan
   return coverageArea ? [...labelCandidates, coverageArea] : labelCandidates;
 }
 
-function TemplateSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div
-          key={index}
-          className="flex items-center justify-between gap-4 border-t border-foreground/4 px-4 py-3 first:border-t-0"
-        >
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-3 w-72" />
-          </div>
-          <Skeleton className="h-7 w-20 rounded-full" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function PdfTemplateBuilderPanel({
   open,
   fileUrl,
@@ -900,8 +886,8 @@ function PdfTemplateBuilderPanel({
       <div className="flex h-full w-76 shrink-0 flex-col border-r border-foreground/6 bg-card">
         <div className="flex h-12 items-center gap-3 border-b border-foreground/6 px-4">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-body-sm font-medium text-foreground">PDF field builder</p>
-            <p className="truncate text-label-sm text-muted-foreground/60">{fileName}</p>
+            <p className="truncate text-base font-medium text-foreground">PDF field builder</p>
+            <p className="truncate text-label text-muted-foreground/60">{fileName}</p>
           </div>
           <button
             type="button"
@@ -919,7 +905,7 @@ function PdfTemplateBuilderPanel({
               <div className="flex flex-col gap-4">
                 {SMART_FIELD_GROUPS.map((group) => (
                   <div key={group.label}>
-                    <p className="mb-1.5 text-label-sm font-medium text-muted-foreground">
+                    <p className="mb-1.5 text-label font-medium text-muted-foreground">
                       {group.label}
                     </p>
                     <div className="grid gap-1">
@@ -938,7 +924,7 @@ function PdfTemplateBuilderPanel({
                               })
                             }
                             onClick={() => onAddField(field.key, field.label)}
-                            className="group flex h-8 w-full items-center gap-2 rounded-md bg-foreground/[0.035] px-2 text-left text-body-sm text-foreground transition-colors hover:bg-foreground/[0.06]"
+                            className="group flex h-8 w-full items-center gap-2 rounded-md bg-foreground/[0.035] px-2 text-left text-base text-foreground transition-colors hover:bg-foreground/[0.06]"
                           >
                             <Icon className="size-3.5 text-muted-foreground/70" />
                             <span className="min-w-0 flex-1 truncate">{field.label}</span>
@@ -950,7 +936,7 @@ function PdfTemplateBuilderPanel({
                   </div>
                 ))}
                 <div>
-                  <p className="mb-1.5 text-label-sm font-medium text-muted-foreground">
+                  <p className="mb-1.5 text-label font-medium text-muted-foreground">
                     {STANDARD_FIELD_GROUP.label}
                   </p>
                   <div className="grid gap-1">
@@ -969,7 +955,7 @@ function PdfTemplateBuilderPanel({
                             })
                           }
                           onClick={() => onAddField(field.key, field.label)}
-                          className="group flex h-8 w-full items-center gap-2 rounded-md bg-foreground/[0.035] px-2 text-left text-body-sm text-foreground transition-colors hover:bg-foreground/[0.06]"
+                          className="group flex h-8 w-full items-center gap-2 rounded-md bg-foreground/[0.035] px-2 text-left text-base text-foreground transition-colors hover:bg-foreground/[0.06]"
                         >
                           <Icon className="size-3.5 text-muted-foreground/70" />
                           <span className="min-w-0 flex-1 truncate">{field.label}</span>
@@ -980,7 +966,7 @@ function PdfTemplateBuilderPanel({
                   </div>
                 </div>
                 <div>
-                  <p className="mb-1.5 text-label-sm font-medium text-muted-foreground">
+                  <p className="mb-1.5 text-label font-medium text-muted-foreground">
                     Smart areas
                   </p>
                   <button
@@ -994,7 +980,7 @@ function PdfTemplateBuilderPanel({
                       })
                     }
                     onClick={() => onAddField(CUSTOM_SMART_FIELD.key, CUSTOM_SMART_FIELD.label)}
-                    className="group mb-1 flex h-8 w-full items-center gap-2 rounded-md bg-foreground/[0.035] px-2 text-left text-body-sm text-foreground transition-colors hover:bg-foreground/[0.06]"
+                    className="group mb-1 flex h-8 w-full items-center gap-2 rounded-md bg-foreground/[0.035] px-2 text-left text-base text-foreground transition-colors hover:bg-foreground/[0.06]"
                   >
                     <CustomSmartIcon className="size-3.5 text-muted-foreground/70" />
                     <span className="min-w-0 flex-1 truncate">{CUSTOM_SMART_FIELD.label}</span>
@@ -1011,7 +997,7 @@ function PdfTemplateBuilderPanel({
                       })
                     }
                     onClick={onAddCoverageTable}
-                    className="group flex h-8 w-full items-center gap-2 rounded-md bg-foreground/[0.035] px-2 text-left text-body-sm text-foreground transition-colors hover:bg-foreground/[0.06]"
+                    className="group flex h-8 w-full items-center gap-2 rounded-md bg-foreground/[0.035] px-2 text-left text-base text-foreground transition-colors hover:bg-foreground/[0.06]"
                   >
                     <Columns3 className="size-3.5 text-muted-foreground/70" />
                     <span className="min-w-0 flex-1 truncate">Coverage rows table</span>
@@ -1027,8 +1013,8 @@ function PdfTemplateBuilderPanel({
       <div className="flex min-w-0 flex-1 flex-col bg-foreground/[0.025]">
         <div className="flex h-12 items-center justify-between border-b border-foreground/6 bg-background px-4">
           <div className="min-w-0">
-            <p className="truncate text-body-sm font-medium text-foreground">{fileName}</p>
-            <p className="text-label-sm text-muted-foreground/60">{fields.length} placed fields</p>
+            <p className="truncate text-base font-medium text-foreground">{fileName}</p>
+            <p className="text-label text-muted-foreground/60">{fields.length} placed fields</p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex h-8 items-center rounded-lg border border-foreground/8 bg-card">
@@ -1040,7 +1026,7 @@ function PdfTemplateBuilderPanel({
               >
                 <ZoomOut className="size-3.5" />
               </button>
-              <span className="w-12 text-center text-label-sm text-muted-foreground">
+              <span className="w-12 text-center text-label text-muted-foreground">
                 {Math.round(zoom * 100)}%
               </span>
               <button
@@ -1098,7 +1084,7 @@ function PdfTemplateBuilderPanel({
                     onKeyDown={(event) => {
                       if (event.key === "Enter") onSelectField(field.id, event.currentTarget, event.shiftKey || event.metaKey);
                     }}
-                    className={`group absolute flex items-center truncate border px-1 text-[10px] shadow-[0_1px_0_rgba(0,0,0,0.03)] transition-colors ${
+                    className={`group absolute flex items-center truncate border px-1 text-label shadow-[0_1px_0_rgba(0,0,0,0.03)] transition-colors ${
                       selectedFieldIds.has(field.id)
                         ? "border-foreground bg-background text-foreground"
                         : field.type === "static"
@@ -1278,13 +1264,13 @@ function PdfTemplateBuilderPanel({
 
       <div className="flex h-full w-80 shrink-0 flex-col border-l border-foreground/6 bg-card">
         <div className="flex h-12 items-center border-b border-foreground/6 px-4">
-          <p className="text-body-sm font-medium text-foreground">Properties</p>
+          <p className="text-base font-medium text-foreground">Properties</p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {selectedIds.length > 1 ? (
             <div className="flex flex-col gap-3">
-              <p className="text-body-sm font-medium text-foreground">{selectedIds.length} fields selected</p>
-              <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+              <p className="text-base font-medium text-foreground">{selectedIds.length} fields selected</p>
+              <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                 Font size
                 <Input
                   type="number"
@@ -1301,7 +1287,7 @@ function PdfTemplateBuilderPanel({
                 />
               </label>
               <div>
-                <p className="mb-1.5 text-label-sm font-medium text-muted-foreground">Field position</p>
+                <p className="mb-1.5 text-label font-medium text-muted-foreground">Field position</p>
                 <div className="flex gap-1">
                   {(["left", "center", "right"] as const).map((align) => {
                     const Icon = align === "left" ? AlignLeft : align === "center" ? AlignCenter : AlignRight;
@@ -1320,7 +1306,7 @@ function PdfTemplateBuilderPanel({
                 </div>
               </div>
               <div>
-                <p className="mb-1.5 text-label-sm font-medium text-muted-foreground">Text alignment</p>
+                <p className="mb-1.5 text-label font-medium text-muted-foreground">Text alignment</p>
                 <div className="flex gap-1">
                   {(["left", "center", "right"] as const).map((align) => {
                     const Icon = align === "left" ? AlignLeft : align === "center" ? AlignCenter : AlignRight;
@@ -1345,7 +1331,7 @@ function PdfTemplateBuilderPanel({
             </div>
           ) : selectedField ? (
             <div className="flex flex-col gap-4">
-              <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+              <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                 Label
                 <Input
                   value={selectedField.label}
@@ -1354,14 +1340,14 @@ function PdfTemplateBuilderPanel({
               </label>
               {connectedFieldLabel(selectedField) ? (
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-label-sm font-medium text-muted-foreground">Connected data</p>
-                  <div className="rounded-md border border-foreground/8 bg-background px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                  <p className="text-label font-medium text-muted-foreground">Connected data</p>
+                  <div className="rounded-md border border-foreground/8 bg-background px-2 py-1.5 font-mono text-label text-muted-foreground">
                     {connectedFieldLabel(selectedField)}
                   </div>
                 </div>
               ) : null}
               {selectedField.key === "static" ? (
-                <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+                <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                   Static text
                   <Textarea
                     value={selectedField.value ?? ""}
@@ -1371,7 +1357,7 @@ function PdfTemplateBuilderPanel({
                 </label>
               ) : null}
               {selectedField.type === "custom_smart" ? (
-                <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+                <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                   Autofill prompt
                   <Textarea
                     value={selectedField.customPrompt ?? ""}
@@ -1379,12 +1365,12 @@ function PdfTemplateBuilderPanel({
                     rows={4}
                     placeholder="Example: Summarize only the additional insured endorsement status in 12 words or fewer."
                   />
-                  <span className="text-label-sm font-normal leading-5 text-muted-foreground/60">
+                  <span className="text-label font-normal leading-5 text-muted-foreground/60">
                     Glass fills this from the policy and certificate data when generating the PDF. Keep the prompt narrow and specify formatting.
                   </span>
                 </label>
               ) : null}
-              <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+              <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                 Font size
                 <Input
                   type="number"
@@ -1395,7 +1381,7 @@ function PdfTemplateBuilderPanel({
                 />
               </label>
               <div>
-                <p className="mb-1.5 text-label-sm font-medium text-muted-foreground">Alignment</p>
+                <p className="mb-1.5 text-label font-medium text-muted-foreground">Alignment</p>
                 <div className="flex gap-1">
                   {(["left", "center", "right"] as const).map((align) => {
                     const Icon = align === "left" ? AlignLeft : align === "center" ? AlignCenter : AlignRight;
@@ -1419,9 +1405,9 @@ function PdfTemplateBuilderPanel({
               </div>
               {selectedField.type === "coverage_table" ? (
                 <div className="flex flex-col gap-3 border-t border-foreground/6 pt-4">
-                  <p className="text-body-sm font-medium text-foreground">Coverage table</p>
+                  <p className="text-base font-medium text-foreground">Coverage table</p>
                   <div className="flex flex-col gap-1.5">
-                    <p className="text-label-sm font-medium text-muted-foreground">Coverages to show</p>
+                    <p className="text-label font-medium text-muted-foreground">Coverages to show</p>
                     <Select
                       value={selectedField.coverageConfig?.coverageMode ?? "all"}
                       onValueChange={(value) =>
@@ -1442,7 +1428,7 @@ function PdfTemplateBuilderPanel({
                     </Select>
                   </div>
                   {(selectedField.coverageConfig?.coverageMode ?? "all") === "llm_specified" ? (
-                    <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+                    <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                       Coverage instruction
                       <Textarea
                         value={selectedField.coverageConfig?.coveragePrompt ?? ""}
@@ -1453,7 +1439,7 @@ function PdfTemplateBuilderPanel({
                     </label>
                   ) : null}
                   <div>
-                    <p className="mb-1.5 text-label-sm font-medium text-muted-foreground">Columns</p>
+                    <p className="mb-1.5 text-label font-medium text-muted-foreground">Columns</p>
                     <div className="grid gap-1">
                       {selectedCoverageColumns.map((columnKey) => {
                         const column = COVERAGE_COLUMN_OPTIONS.find((option) => option.key === columnKey);
@@ -1466,7 +1452,7 @@ function PdfTemplateBuilderPanel({
                             onDragOver={(event) => event.preventDefault()}
                             onDrop={() => moveCoverageColumn(column.key)}
                             onDragEnd={() => setDraggedColumn(null)}
-                            className={`flex h-8 items-center gap-2 rounded-md border px-2 text-label-sm transition-colors ${
+                            className={`flex h-8 items-center gap-2 rounded-md border px-2 text-label transition-colors ${
                               draggedColumn === column.key
                                 ? "border-foreground/20 bg-foreground/[0.06] text-foreground"
                                 : "border-foreground/8 bg-foreground/[0.035] text-foreground"
@@ -1495,7 +1481,7 @@ function PdfTemplateBuilderPanel({
                           <button
                             key={column.key}
                             type="button"
-                            className="flex h-7 items-center rounded-md border border-foreground/8 px-2 text-label-sm text-muted-foreground transition-colors hover:text-foreground"
+                            className="flex h-7 items-center rounded-md border border-foreground/8 px-2 text-label text-muted-foreground transition-colors hover:text-foreground"
                             onClick={() =>
                               onUpdateCoverageConfig({
                                 columns: [...selectedCoverageColumns, column.key],
@@ -1510,9 +1496,9 @@ function PdfTemplateBuilderPanel({
                     ) : null}
                   </div>
                   <div>
-                    <p className="mb-1.5 text-label-sm font-medium text-muted-foreground">Preview</p>
+                    <p className="mb-1.5 text-label font-medium text-muted-foreground">Preview</p>
                     <div className="overflow-x-auto rounded-md border border-foreground/8 bg-background">
-                      <table className="min-w-full border-collapse text-left text-[11px]">
+                      <table className="min-w-full border-collapse text-left text-label">
                         <thead>
                           <tr className="border-b border-foreground/8 bg-foreground/[0.035]">
                             {selectedCoverageColumns.map((columnKey) => {
@@ -1553,13 +1539,13 @@ function PdfTemplateBuilderPanel({
               </PillButton>
             </div>
           ) : (
-            <div className="rounded-lg border border-foreground/6 bg-background p-3 text-body-sm text-muted-foreground">
+            <div className="rounded-lg border border-foreground/6 bg-background p-3 text-base text-muted-foreground">
               Select a field to configure it.
             </div>
           )}
         </div>
         <div className="border-t border-foreground/6 px-4 py-3">
-          <p className="text-label-sm font-medium text-muted-foreground">Keyboard shortcuts</p>
+          <p className="text-label font-medium text-muted-foreground">Keyboard shortcuts</p>
           <div className="mt-2 grid gap-1.5">
             {[
               { label: "Undo", keys: ["Cmd", "Z"], enabled: canUndo },
@@ -1571,12 +1557,12 @@ function PdfTemplateBuilderPanel({
                   shortcut.enabled ? "" : "opacity-45"
                 }`}
               >
-                <span className="shrink-0 text-label-sm text-muted-foreground/65">{shortcut.label}</span>
+                <span className="shrink-0 text-label text-muted-foreground/65">{shortcut.label}</span>
                 <span className="flex min-w-0 flex-wrap justify-end gap-1">
                   {shortcut.keys.map((key) => (
                     <kbd
                       key={`${shortcut.label}-${key}`}
-                      className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-foreground/8 bg-background px-1.5 font-mono text-[10px] leading-none text-muted-foreground"
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-foreground/8 bg-background px-1.5 font-mono text-label leading-none text-muted-foreground"
                     >
                       {key}
                     </kbd>
@@ -1586,12 +1572,12 @@ function PdfTemplateBuilderPanel({
             ))}
             {KEYBOARD_SHORTCUTS.map((shortcut) => (
               <div key={shortcut.label} className="flex min-h-6 items-center justify-between gap-3">
-                <span className="shrink-0 text-label-sm text-muted-foreground/65">{shortcut.label}</span>
+                <span className="shrink-0 text-label text-muted-foreground/65">{shortcut.label}</span>
                 <span className="flex min-w-0 flex-wrap justify-end gap-1">
                   {shortcut.keys.map((key) => (
                     <kbd
                       key={`${shortcut.label}-${key}`}
-                      className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-foreground/8 bg-background px-1.5 font-mono text-[10px] leading-none text-muted-foreground"
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-foreground/8 bg-background px-1.5 font-mono text-label leading-none text-muted-foreground"
                     >
                       {key}
                     </kbd>
@@ -2146,7 +2132,7 @@ export default function PartnerTemplatesPage() {
           title={editing ? "Edit template" : "New template"}
           footer={
             <>
-              <div className="flex min-h-7 flex-1 items-center text-label-sm text-muted-foreground/70">
+              <div className="flex min-h-7 flex-1 items-center text-label text-muted-foreground/70">
                 {saving || uploading ? (
                   <span className="inline-flex items-center gap-1.5">
                     <Loader2 className="size-3.5 animate-spin" />
@@ -2169,23 +2155,23 @@ export default function PartnerTemplatesPage() {
           }
         >
           <div className="flex flex-col gap-4">
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Template name
               <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Template name" />
             </label>
-            <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Generated PDF file name
               <Input
                 value={outputFileName}
                 onChange={(event) => setOutputFileName(event.target.value)}
                 placeholder="COI - {{holder}} - {{policy_number}}.pdf"
               />
-              <span className="text-label-sm font-normal leading-5 text-muted-foreground/60">
+              <span className="text-label font-normal leading-5 text-muted-foreground/60">
                 Optional. Supports {"{{holder}}"}, {"{{policy_number}}"}, {"{{carrier}}"}, {"{{insured}}"} and {"{{date}}"}.
               </span>
             </label>
             <div className="flex flex-col gap-1.5">
-              <p className="text-label-sm font-medium text-muted-foreground">Generation process</p>
+              <p className="text-label font-medium text-muted-foreground">Generation process</p>
               <Select value={templateKind} onValueChange={(value) => setTemplateKind(value as TemplateKind)}>
                 <SelectTrigger className="w-full">
                   <SelectValue>{TEMPLATE_KIND_LABELS[templateKind]}</SelectValue>
@@ -2197,10 +2183,10 @@ export default function PartnerTemplatesPage() {
               </Select>
             </div>
             {templateKind !== "pdf_overlay" ? (
-              <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+              <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                 Certified notice
                 <Textarea value={certifiedNotice} onChange={(event) => setCertifiedNotice(event.target.value)} rows={3} />
-                <span className="text-label-sm font-normal leading-5 text-muted-foreground/60">
+                <span className="text-label font-normal leading-5 text-muted-foreground/60">
                   Optional language printed on certified COIs, usually the MGA approval or certification statement.
                   Example: “Approved and certified by ReLease for the named program.”
                 </span>
@@ -2217,11 +2203,11 @@ export default function PartnerTemplatesPage() {
                   hint="PDF overlay templates fall back to standard Glass generation if rendering fails."
                 />
                 {fileUrl ? (
-                  <div className="rounded-lg border border-foreground/6 bg-card p-3">
+                  <OperationalPanel as="div" className="p-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-body-sm font-medium text-foreground">{fileName}</p>
-                        <p className="text-label-sm text-muted-foreground/60">
+                        <p className="truncate text-base font-medium text-foreground">{fileName}</p>
+                        <p className="text-label text-muted-foreground/60">
                           {fields.length} fields placed
                         </p>
                       </div>
@@ -2235,12 +2221,12 @@ export default function PartnerTemplatesPage() {
                         Configure fields
                       </PillButton>
                     </div>
-                  </div>
+                  </OperationalPanel>
                 ) : null}
               </>
             ) : null}
             <div className="flex flex-col gap-1.5">
-              <p className="text-label-sm font-medium text-muted-foreground">Status</p>
+              <p className="text-label font-medium text-muted-foreground">Status</p>
               <Select value={status} onValueChange={(value) => setStatus(value as "active" | "inactive")}>
                 <SelectTrigger className="w-full">
                   <SelectValue>{status === "active" ? "Active" : "Inactive"}</SelectValue>
@@ -2257,7 +2243,7 @@ export default function PartnerTemplatesPage() {
     >
       <div className="flex w-full flex-col gap-4">
         {templates === undefined ? (
-          <TemplateSkeleton />
+          <OperationalSkeletonList rows={4} showTrailing={false} />
         ) : templates.length === 0 ? (
           <EmptyStateCard
             icon={<FileText className="size-5" />}
@@ -2267,37 +2253,41 @@ export default function PartnerTemplatesPage() {
             onAction={() => openEditor()}
           />
         ) : (
-          <section className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          <OperationalPanel>
             {sortedTemplates.map((template) => (
-              <button
+              <OperationalItem
                 key={template._id}
-                type="button"
-                onClick={() => openEditor(template)}
-                className="flex w-full items-center justify-between gap-4 border-t border-foreground/4 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-muted/40"
+                className="border-foreground/4 p-0"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-medium text-foreground">{template.name}</p>
-                    <Badge variant="secondary" className="font-normal text-muted-foreground">
-                      {template.templateKind === "pdf_overlay"
-                        ? "PDF overlay"
-                        : "Standard Glass"}
-                    </Badge>
-                    <Badge variant={template.status === "active" ? "secondary" : "outline"} className="font-normal text-muted-foreground">
-                      {template.status}
-                    </Badge>
+                <button
+                  type="button"
+                  onClick={() => openEditor(template)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="truncate text-base font-medium text-foreground">{template.name}</p>
+                      <Badge variant="secondary" className="font-normal text-muted-foreground">
+                        {template.templateKind === "pdf_overlay"
+                          ? "PDF overlay"
+                          : "Standard Glass"}
+                      </Badge>
+                      <Badge variant={template.status === "active" ? "secondary" : "outline"} className="font-normal text-muted-foreground">
+                        {template.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 line-clamp-1 text-base text-muted-foreground">
+                      {[
+                        template.outputFileName
+                          ? `Outputs ${template.outputFileName}`
+                          : template.fileName,
+                      ].filter(Boolean).join(" · ")}
+                    </p>
                   </div>
-                  <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
-                    {[
-                      template.outputFileName
-                        ? `Outputs ${template.outputFileName}`
-                        : template.fileName,
-                    ].filter(Boolean).join(" · ")}
-                  </p>
-                </div>
-              </button>
+                </button>
+              </OperationalItem>
             ))}
-          </section>
+          </OperationalPanel>
         )}
       </div>
     </AppShell>

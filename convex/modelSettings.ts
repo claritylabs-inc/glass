@@ -123,6 +123,10 @@ function maskProviderKeys(keys: ProviderKeys | undefined) {
   ) as Record<ModelProvider, { configured: boolean; suffix: string | null }>;
 }
 
+function gatewayConfigured() {
+  return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+}
+
 function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefined) {
   return Object.fromEntries(
     MODEL_TASKS.map((task) => {
@@ -326,6 +330,7 @@ export const getGlobal = query({
       .first();
 
     return {
+      gatewayConfigured: gatewayConfigured(),
       providers: CONFIGURABLE_MODEL_PROVIDERS.map((id) => ({
         id,
         label: PROVIDER_LABELS[id],

@@ -118,7 +118,7 @@ export function ActivityFeed({
       ) : (
         grouped.map((group) => (
           <div key={group.date.toISOString()}>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+            <p className="text-label font-medium text-muted-foreground uppercase tracking-wide mb-2">
               {format(group.date, "MMMM d, yyyy")}
             </p>
             <div className="space-y-2">
@@ -132,17 +132,17 @@ export function ActivityFeed({
                   >
                     <Icon className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm">{event.summary}</p>
+                      <p className="text-base">{event.summary}</p>
                       {showClientColumn && event.clientOrgName && (
                         <Link
                           href={`/clients/${event.clientOrgId}`}
-                          className="text-xs text-muted-foreground hover:underline"
+                          className="text-label text-muted-foreground hover:underline"
                         >
                           {event.clientOrgName}
                         </Link>
                       )}
                     </div>
-                    <span className="text-xs text-muted-foreground shrink-0">
+                    <span className="text-label text-muted-foreground shrink-0">
                       {formatDistanceToNow(new Date(event.createdAt), {
                         addSuffix: true,
                       })}

@@ -32,29 +32,29 @@ function PolicySummaryCard({
 
   return (
     <div className="flex-1 rounded-md border border-foreground/10 p-3 space-y-1.5">
-      <p className="text-label-sm font-medium text-muted-foreground/50 uppercase tracking-wide">
+      <p className="text-label font-medium text-muted-foreground/50 uppercase tracking-wide">
         {label}
       </p>
       {policy === undefined ? (
         <div className="min-h-16" aria-hidden="true" />
       ) : policy === null ? (
-        <p className="text-body-sm text-muted-foreground/40">Not found</p>
+        <p className="text-base text-muted-foreground/40">Not found</p>
       ) : (
         <>
-          <p className="text-body-sm text-foreground font-medium">
+          <p className="text-base text-foreground font-medium">
             {policy.policyNumber}
           </p>
           {policy.carrier && (
-            <p className="text-label-sm text-muted-foreground/70">
+            <p className="text-label text-muted-foreground/70">
               {policy.carrier}
             </p>
           )}
           {policy.insuredName && (
-            <p className="text-label-sm text-muted-foreground/70">
+            <p className="text-label text-muted-foreground/70">
               {policy.insuredName}
             </p>
           )}
-          <p className="text-label-sm text-muted-foreground/50">
+          <p className="text-label text-muted-foreground/50">
             {policy.effectiveDate} – {policy.expirationDate}
           </p>
         </>
@@ -101,7 +101,7 @@ export function MergePolicyDialog({
           <DialogTitle>Merge policies</DialogTitle>
         </DialogHeader>
 
-        <p className="text-body-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           The primary policy will be kept and updated with any missing data from
           the secondary. The secondary policy will be removed.
         </p>

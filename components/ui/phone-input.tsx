@@ -76,7 +76,7 @@ function CountrySelect({
           <button
             {...props}
             type="button"
-            className="inline-flex h-full shrink-0 items-center gap-2 rounded-md px-2 text-body-sm text-foreground transition-colors hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex h-full shrink-0 items-center gap-2 rounded-md px-2 text-base text-foreground transition-colors hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-50"
             disabled={isDisabled}
             aria-label="Select country"
           >
@@ -108,7 +108,7 @@ function CountrySelect({
                   >
                     <Icon country={country} label={option.label} />
                     <span className="truncate">{option.label}</span>
-                    <span className="ml-auto text-xs text-muted-foreground">+{getCountryCallingCode(country)}</span>
+                    <span className="ml-auto text-label text-muted-foreground">+{getCountryCallingCode(country)}</span>
                     {isSelected ? <CheckIcon className="text-foreground" /> : null}
                   </CommandItem>
                 )
@@ -129,7 +129,7 @@ const PhoneInputField = React.forwardRef<
     <input
       ref={ref}
       className={cn(
-        "h-full w-full bg-transparent px-3 text-body-sm placeholder:text-muted-foreground/40 outline-none",
+        "h-full w-full bg-transparent px-3 text-base placeholder:text-muted-foreground/40 outline-none",
         className
       )}
       {...props}

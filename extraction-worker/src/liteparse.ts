@@ -266,18 +266,52 @@ function isContinuationTableRow(previous: PositionedRow, row: PositionedRow): bo
   return previousHasContinuationMarker;
 }
 
+function sharesColumnGrid(left: PositionedRow, right: PositionedRow): boolean {
+  if (left.cells.length < 2 || right.cells.length < 2) return false;
+  const comparable = Math.min(left.cells.length, right.cells.length);
+  let matches = 0;
+  for (let index = 0; index < comparable; index += 1) {
+    if (Math.abs(left.cells[index].item.x - right.cells[index].item.x) <= 36) {
+      matches += 1;
+    }
+  }
+  return matches >= Math.min(2, comparable);
+}
+
+function isSingleCellTableBridgeRow(
+  previous: PositionedRow,
+  row: PositionedRow,
+  next: PositionedRow | undefined,
+): boolean {
+  if (row.cells.length !== 1 || !next) return false;
+  if (!isTableLikeRow(previous) || !isTableLikeRow(next)) return false;
+  if (!sharesColumnGrid(previous, next)) return false;
+  if (startsNewLogicalTableRow(row) && !TABLE_VALUE_PATTERN.test(row.text)) return false;
+  const nearestIndex = nearestCellIndex(previous.cells, row.cells[0]);
+  return nearestIndex !== undefined || TABLE_HEADER_PATTERN.test(row.text) || TABLE_VALUE_PATTERN.test(row.text);
+}
+
 function normalizeLiteParseRows(rows: PositionedRow[], pageHeight: number): PositionedRow[] {
   const normalized: PositionedRow[] = [];
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     if (isPageFooterRow(row, pageHeight)) continue;
     const previous = normalized[normalized.length - 1];
-    if (previous && isContinuationTableRow(previous, row)) {
+    const next = rows[index + 1];
+    if (previous && (isContinuationTableRow(previous, row) || isSingleCellTableBridgeRow(previous, row, next))) {
       normalized[normalized.length - 1] = mergeRows(previous, row);
       continue;
     }
     normalized.push(row);
   }
   return normalized;
+}
+
+function continuesCurrentTable(row: PositionedRow, next: PositionedRow | undefined): boolean {
+  if (row.cells.length !== 1) return false;
+  if (isHeaderRow(row)) return false;
+  if (startsNewLogicalTableRow(row)) return true;
+  if (TABLE_HEADER_PATTERN.test(row.text) || TABLE_VALUE_PATTERN.test(row.text)) return true;
+  return Boolean(next && isTableLikeRow(next) && /\b(coverage|endorsement|aggregate|claim|loss|sublimit|sub-limit|defense)\b/i.test(row.text));
 }
 
 function classifyTextElement(row: PositionedRow, pageRows: PositionedRow[]): "title" | "paragraph" {
@@ -357,8 +391,8 @@ function buildLiteParseSourceSpans(params: {
     let rowIndex = 0;
     let inTable = false;
 
-    for (const row of rows) {
-      const tableLike = isTableLikeRow(row);
+    for (const [index, row] of rows.entries()) {
+      const tableLike = isTableLikeRow(row) || (inTable && continuesCurrentTable(row, rows[index + 1]));
       if (!tableLike) {
         inTable = false;
         currentHeaders = [];

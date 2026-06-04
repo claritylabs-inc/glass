@@ -14,6 +14,11 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { InviteMemberDrawer } from "@/components/settings/invite-member-drawer";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import {
+  OperationalItem,
+  OperationalPanel,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import {
@@ -145,25 +150,25 @@ export function TeamSection() {
         >
           <div className="space-y-4">
             <label className="block space-y-1.5">
-              <span className="text-label-sm font-medium text-muted-foreground">Name</span>
+              <span className="text-label font-medium text-muted-foreground">Name</span>
               <input
                 value={editName}
                 onChange={(event) => setEditName(event.target.value)}
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 placeholder="Name"
               />
             </label>
             <label className="block space-y-1.5">
-              <span className="text-label-sm font-medium text-muted-foreground">Title</span>
+              <span className="text-label font-medium text-muted-foreground">Title</span>
               <input
                 value={editTitle}
                 onChange={(event) => setEditTitle(event.target.value)}
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                 placeholder="Title"
               />
             </label>
             <label className="block space-y-1.5">
-              <span className="text-label-sm font-medium text-muted-foreground">Phone</span>
+              <span className="text-label font-medium text-muted-foreground">Phone</span>
               <PhoneInput
                 value={editPhone}
                 onChange={(value) => setEditPhone(value ?? "")}
@@ -202,29 +207,27 @@ export function TeamSection() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-foreground/6 bg-card">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">Team Members</h3>
-        </div>
+      <OperationalPanel>
+        <OperationalPanelHeader title="Team Members" className="px-5 py-3.5" />
         <div className="divide-y divide-foreground/6">
           {members.map((member) => {
             const isLastAdmin = member.role === "admin" && adminCount <= 1;
 
             return (
-              <div key={member.membershipId} className="px-5 py-3.5 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-foreground/8 flex items-center justify-center text-label-sm font-medium text-foreground shrink-0">
+              <OperationalItem key={member.membershipId} className="flex items-center gap-3 border-0 px-5 py-3.5">
+                <div className="w-8 h-8 rounded-full bg-foreground/8 flex items-center justify-center text-label font-medium text-foreground shrink-0">
                   {member.name
                     ? member.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
                     : member.email?.[0]?.toUpperCase() ?? "?"}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-body-sm font-medium text-foreground truncate">
+                  <p className="text-base font-medium text-foreground truncate">
                     {member.name || member.email}
                     {member.userId === viewer?._id && (
-                      <span className="text-label-sm text-muted-foreground/40 ml-1">(you)</span>
+                      <span className="text-label text-muted-foreground/40 ml-1">(you)</span>
                     )}
                   </p>
-                  <p className="text-label-sm text-muted-foreground truncate">
+                  <p className="text-label text-muted-foreground truncate">
                     {[member.name ? member.email : null, member.title, member.phone]
                       .filter(Boolean)
                       .join(" · ") || member.email}
@@ -232,11 +235,11 @@ export function TeamSection() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {member.userId === org?.primaryInsuranceContactId && (
-                    <span className="text-label-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
+                    <span className="text-label text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
                       Primary Contact
                     </span>
                   )}
-                  <span className={`text-label-sm px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                  <span className={`text-label px-1.5 py-0.5 rounded flex items-center gap-1 ${
                     member.role === "admin"
                       ? "text-primary-muted bg-primary-light/10"
                       : "text-muted-foreground bg-foreground/5"
@@ -342,19 +345,19 @@ export function TeamSection() {
                     </div>
                   )}
                 </div>
-              </div>
+              </OperationalItem>
             );
           })}
 
           {/* Pending invitations */}
           {invitations?.filter((i) => i.status === "pending").map((inv) => (
-            <div key={inv._id} className="px-5 py-3.5 flex items-center gap-3 opacity-60">
+            <OperationalItem key={inv._id} className="flex items-center gap-3 border-0 px-5 py-3.5 opacity-60">
               <div className="flex-1 min-w-0">
-                <p className="text-body-sm text-muted-foreground truncate">{inv.email}</p>
-                <p className="text-label-sm text-muted-foreground/40">Invitation pending</p>
+                <p className="text-base text-muted-foreground truncate">{inv.email}</p>
+                <p className="text-label text-muted-foreground/40">Invitation pending</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-label-sm text-muted-foreground bg-foreground/5 px-1.5 py-0.5 rounded">
+                <span className="text-label text-muted-foreground bg-foreground/5 px-1.5 py-0.5 rounded">
                   {inv.role}
                 </span>
                 <PillButton
@@ -375,10 +378,10 @@ export function TeamSection() {
                   Cancel
                 </PillButton>
               </div>
-            </div>
+            </OperationalItem>
           ))}
         </div>
-      </div>
+      </OperationalPanel>
 
     </div>
   );

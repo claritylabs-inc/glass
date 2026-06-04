@@ -35,8 +35,8 @@ type RequestData = {
 
 const connectedOrgsApi = api as unknown as ConnectedOrgsApi;
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
-const LABEL_CLASSES = "text-label-sm font-medium text-muted-foreground block mb-1.5";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+const LABEL_CLASSES = "text-label font-medium text-muted-foreground block mb-1.5";
 
 function isEmailLike(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -178,7 +178,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
     return (
       <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
         <AuthCard title="Invite unavailable" subtitle={fetchError ?? "Invite not found"} logo={<BrandWordmark />}>
-          <p className="text-sm text-muted-foreground">Ask the client to resend the vendor invite.</p>
+          <p className="text-base text-muted-foreground">Ask the client to resend the vendor invite.</p>
         </AuthCard>
       </AuthMinimalShell>
     );
@@ -198,16 +198,16 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
     <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
       <AuthCard title={title} subtitle={subtitle} logo={<BrandWordmark />}>
         {autoVerifying ? (
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-3 text-base text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>Opening your vendor invite...</span>
           </div>
         ) : requestData.status !== "pending" ? (
-          <p className="text-sm text-muted-foreground">This vendor invite is {requestData.status}.</p>
+          <p className="text-base text-muted-foreground">This vendor invite is {requestData.status}.</p>
         ) : step === "details" ? (
           <form onSubmit={handleDetailsSubmit} className="space-y-4">
             {requestData.note ? (
-              <p className="rounded-lg border border-foreground/6 bg-foreground/3 p-3 text-sm text-muted-foreground">
+              <p className="rounded-lg border border-foreground/6 bg-foreground/3 p-3 text-base text-muted-foreground">
                 {requestData.note}
               </p>
             ) : null}
@@ -223,8 +223,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
                 className={INPUT_CLASSES}
               />
             </div>
-            {error ? <p className="px-1 py-1 text-sm text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || !email.trim()} className="w-full justify-center text-sm shadow-none sm:w-auto">
+            {error ? <p className="px-1 py-1 text-base text-muted-foreground">{error}</p> : null}
+            <PillButton type="submit" disabled={loading || !email.trim()} className="w-full justify-center text-base shadow-none sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Sending code..." : "Continue"}
               {!loading ? <ArrowRight className="h-4 w-4" /> : null}
@@ -243,8 +243,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
                 className={INPUT_CLASSES}
               />
             </div>
-            {error ? <p className="px-1 py-1 text-sm text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || !code.trim()} className="w-full justify-center text-sm shadow-none sm:w-auto">
+            {error ? <p className="px-1 py-1 text-base text-muted-foreground">{error}</p> : null}
+            <PillButton type="submit" disabled={loading || !code.trim()} className="w-full justify-center text-base shadow-none sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Accepting..." : "Accept invite"}
             </PillButton>

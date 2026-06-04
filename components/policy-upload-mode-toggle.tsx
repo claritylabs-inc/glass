@@ -25,7 +25,7 @@ export function PolicyUploadModeToggle({
 
   return (
     <div className={cn("flex items-center justify-between gap-3", className)}>
-      <div className="text-label-sm font-medium text-muted-foreground">
+      <div className="text-label font-medium text-muted-foreground">
         Import as
       </div>
       <Tabs

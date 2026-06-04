@@ -4,6 +4,10 @@ import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import dayjs from "dayjs";
 import dynamic from "next/dynamic";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  OperationalPanel,
+  OperationalPanelBody,
+} from "@/components/ui/operational-panel";
 import { Loader2 } from "lucide-react";
 
 const PolicyPdfThumbnail = dynamic(
@@ -26,8 +30,8 @@ function SummaryRow({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-4">
-      <span className="text-body-sm text-muted-foreground shrink-0">{label}</span>
-      <span className="text-body-sm font-medium text-foreground text-right">
+      <span className="text-base text-muted-foreground shrink-0">{label}</span>
+      <span className="text-base font-medium text-foreground text-right">
         {value}
       </span>
     </div>
@@ -46,20 +50,20 @@ function StatusBadge({ expirationDate }: { effectiveDate?: string; expirationDat
 
   if (isExpired) {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label font-medium bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400">
         Expired
       </span>
     );
   }
   if (isExpiringSoon) {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label font-medium bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
         Expiring Soon
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-sm font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
       Active
     </span>
   );
@@ -103,14 +107,14 @@ function ExtractionPendingDetails() {
     <div className="min-w-0 space-y-4">
       <div className="flex items-center gap-2">
         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/45" />
-        <span className="text-body-sm font-medium text-muted-foreground">
+        <span className="text-base font-medium text-muted-foreground">
           Extracting policy details
         </span>
       </div>
       <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
         {["Coverage types", "Carrier", "Named insured", "Policy period", "Premium"].map((label, index) => (
           <div key={label} className={index === 0 ? "sm:col-span-2" : undefined}>
-            <p className="mb-1.5 text-label-sm text-muted-foreground/55">{label}</p>
+            <p className="mb-1.5 text-label text-muted-foreground/55">{label}</p>
             <Skeleton className="h-4 w-full max-w-56 bg-foreground/6" />
           </div>
         ))}
@@ -246,15 +250,15 @@ export function PolicySummary({
     keyDeductibles.length > 0;
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden mb-6 @container">
+    <OperationalPanel className="mb-6 @container">
       {/* Header row */}
       <div className="px-5 py-3 border-b border-foreground/6 flex items-center gap-3">
-        <h2 className="text-body-sm font-semibold text-foreground flex-1">
+        <h2 className="text-base font-semibold text-foreground flex-1">
           Policy Overview
         </h2>
         <div className="flex items-center gap-1.5 flex-wrap">
           {isRenewal && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
               Renewal
             </span>
           )}
@@ -263,7 +267,7 @@ export function PolicySummary({
       </div>
 
       {/* Body — stacks when narrow, side-by-side when wide */}
-      <div className="flex flex-col @lg:flex-row gap-5 p-5">
+      <OperationalPanelBody className="flex flex-col @lg:flex-row gap-5 p-5">
         {/* PDF thumbnail */}
         {pdfUrl && <PolicyPdfThumbnail url={pdfUrl} />}
 
@@ -280,13 +284,13 @@ export function PolicySummary({
                   {realPolicyTypes.slice(0, 4).map((t) => (
                     <span
                       key={t}
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-foreground/70"
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium bg-foreground/5 text-foreground/70"
                     >
                       {POLICY_TYPE_LABELS[t] ?? t}
                     </span>
                   ))}
                   {realPolicyTypes.length > 4 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-sm font-medium bg-foreground/5 text-muted-foreground">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium bg-foreground/5 text-muted-foreground">
                       +{realPolicyTypes.length - 4} more
                     </span>
                   )}
@@ -317,13 +321,13 @@ export function PolicySummary({
             <SummaryRow key={label} label={label} value={value} />
           ))}
         </div>
-      </div>
+      </OperationalPanelBody>
 
       {factualSummary && (
         <div className="px-5 py-3 border-t border-foreground/6 bg-foreground/1">
-          <p className="text-body-sm text-muted-foreground leading-relaxed">{factualSummary}</p>
+          <p className="text-base text-muted-foreground leading-relaxed">{factualSummary}</p>
         </div>
       )}
-    </div>
+    </OperationalPanel>
   );
 }

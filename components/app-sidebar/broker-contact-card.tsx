@@ -2,6 +2,7 @@
 
 import { Mail, MessageSquare, UserPlus } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   buildAgentContactVCard,
@@ -47,7 +48,7 @@ export function SidebarBrokerContact({
 
   return (
     <div className="border-t border-foreground/6 px-3 py-3">
-      <div className="rounded-lg border border-foreground/6 bg-card px-3 py-2.5">
+      <OperationalPanel as="div" className="px-3 py-2.5">
         <div className="flex items-center gap-2.5">
           <div
             className={`h-8 w-8 shrink-0 overflow-hidden rounded-md flex items-center justify-center ${
@@ -75,17 +76,17 @@ export function SidebarBrokerContact({
                 className="h-full w-full object-contain bg-white"
               />
             ) : (
-              <span className="text-sm font-semibold text-white">
+              <span className="text-base font-semibold text-white">
                 {initial}
               </span>
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-body-sm font-medium text-foreground truncate">
+            <p className="text-base font-medium text-foreground truncate">
               {name}
             </p>
             {primaryContact?.name ? (
-              <p className="text-label-sm text-muted-foreground truncate">
+              <p className="text-label text-muted-foreground truncate">
                 {primaryContact.name}
               </p>
             ) : null}
@@ -96,7 +97,7 @@ export function SidebarBrokerContact({
             {primaryContact?.email ? (
               <a
                 href={`mailto:${primaryContact.email}`}
-                className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+                className="block text-label text-muted-foreground hover:text-foreground truncate"
               >
                 {primaryContact.email}
               </a>
@@ -104,7 +105,7 @@ export function SidebarBrokerContact({
             {primaryContact?.phone ? (
               <a
                 href={`tel:${primaryContact.phone}`}
-                className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+                className="block text-label text-muted-foreground hover:text-foreground truncate"
               >
                 {primaryContact.phone}
               </a>
@@ -112,7 +113,7 @@ export function SidebarBrokerContact({
             {agentEmail ? (
               <a
                 href={`mailto:${agentEmail}`}
-                className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+                className="block text-label text-muted-foreground hover:text-foreground truncate"
                 title={broker ? "Partner assistant" : "Glass assistant"}
               >
                 {agentEmail}
@@ -121,7 +122,7 @@ export function SidebarBrokerContact({
             {IMESSAGE_CONTACT_ENABLED ? (
               <a
                 href={`sms:${AGENT_TEXT_NUMBER}`}
-                className="block text-label-sm text-muted-foreground hover:text-foreground truncate"
+                className="block text-label text-muted-foreground hover:text-foreground truncate"
               >
                 {AGENT_TEXT_NUMBER_DISPLAY}
               </a>
@@ -166,7 +167,7 @@ export function SidebarBrokerContact({
             </PillButton>
           </div>
         ) : null}
-      </div>
+      </OperationalPanel>
     </div>
   );
 }

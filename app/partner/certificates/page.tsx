@@ -7,6 +7,12 @@ import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import {
+  OperationalDetailGroup,
+  OperationalDetailRow,
+  OperationalPanel,
+  OperationalSkeletonList,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   Select,
@@ -15,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -110,38 +115,9 @@ function formatTimestamp(value: number) {
   return dayjs(value).format("MMM D, YYYY h:mm A");
 }
 
-function CertificateSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div key={index} className="border-t border-foreground/4 px-4 py-3 first:border-t-0">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-3 w-32" />
-            </div>
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-7 w-16 rounded-full" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function authorityLabel(certificate: PartnerCertificate) {
   if (certificate.authorityType === "certified") return "Certified";
   return "Non-binding";
-}
-
-function DetailRow({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null;
-  return (
-    <div className="flex flex-col gap-1 border-t border-foreground/6 py-3 first:border-t-0">
-      <p className="text-label-sm text-muted-foreground">{label}</p>
-      <p className="min-w-0 break-words text-body-sm leading-5 text-foreground">{value}</p>
-    </div>
-  );
 }
 
 function CertificateDetailPanel({
@@ -185,31 +161,26 @@ function CertificateDetailPanel({
                 </Badge>
               ) : null}
             </div>
-            <h2 className="text-body font-medium text-foreground">{certificate.certificateHolderName}</h2>
-            <p className="text-body-sm text-muted-foreground">{formatTimestamp(certificate.createdAt)}</p>
+            <h2 className="text-base font-medium text-foreground">{certificate.certificateHolderName}</h2>
+            <p className="text-base text-muted-foreground">{formatTimestamp(certificate.createdAt)}</p>
           </section>
 
-          <section>
-            <h3 className="mb-2 text-label-sm font-medium text-muted-foreground">Certificate</h3>
-            <div className="rounded-lg border border-foreground/6 bg-card px-3 py-0.5">
-              <DetailRow label="Holder" value={certificate.certificateHolderName} />
-              <DetailRow label="Address" value={certificate.certificateHolder} />
-              <DetailRow label="Source" value={certificate.source?.replace(/_/g, " ")} />
-              <DetailRow label="File" value={certificate.fileName} />
-            </div>
-          </section>
+          <OperationalDetailGroup title="Certificate">
+            <OperationalDetailRow label="Holder" value={certificate.certificateHolderName} />
+            <OperationalDetailRow label="Address" value={certificate.certificateHolder} />
+            <OperationalDetailRow label="Source" value={certificate.source?.replace(/_/g, " ")} />
+            <OperationalDetailRow label="File" value={certificate.fileName} />
+          </OperationalDetailGroup>
 
-          <section>
-            <h3 className="mb-2 text-label-sm font-medium text-muted-foreground">Policy</h3>
-            <div className="rounded-lg border border-foreground/6 bg-card px-3 py-0.5">
-              <DetailRow label="Policy" value={certificate.policy?.displayName} />
-              <DetailRow label="Insured" value={certificate.policy?.insuredName} />
-              <DetailRow label="Policy no." value={certificate.policy?.policyNumber} />
-              <DetailRow
+          <OperationalDetailGroup title="Policy">
+            <OperationalDetailRow label="Policy" value={certificate.policy?.displayName} />
+            <OperationalDetailRow label="Insured" value={certificate.policy?.insuredName} />
+            <OperationalDetailRow label="Policy no." value={certificate.policy?.policyNumber} />
+            <OperationalDetailRow
                 label="Carrier"
                 value={certificate.policy?.carrier ?? certificate.policy?.security ?? certificate.policy?.mga}
               />
-              <DetailRow
+            <OperationalDetailRow
                 label="Term"
                 value={
                   certificate.policy?.effectiveDate || certificate.policy?.expirationDate
@@ -217,17 +188,13 @@ function CertificateDetailPanel({
                     : undefined
                 }
               />
-            </div>
-          </section>
+          </OperationalDetailGroup>
 
-          <section>
-            <h3 className="mb-2 text-label-sm font-medium text-muted-foreground">Program and broker</h3>
-            <div className="rounded-lg border border-foreground/6 bg-card px-3 py-0.5">
-              <DetailRow label="Program" value={certificate.program?.name ?? "No program"} />
-              <DetailRow label="Broker" value={certificate.broker.brokerName} />
-              <DetailRow label="Client" value={certificate.broker.clientOrgName} />
-            </div>
-          </section>
+          <OperationalDetailGroup title="Program and broker">
+            <OperationalDetailRow label="Program" value={certificate.program?.name ?? "No program"} />
+            <OperationalDetailRow label="Broker" value={certificate.broker.brokerName} />
+            <OperationalDetailRow label="Client" value={certificate.broker.clientOrgName} />
+          </OperationalDetailGroup>
         </div>
       ) : null}
     </SettingsDrawer>
@@ -264,7 +231,7 @@ function CertificateList({
   return (
     <div className="flex w-full flex-col gap-4">
       {certificates === undefined ? (
-        <CertificateSkeleton />
+        <OperationalSkeletonList />
       ) : certificates.length === 0 ? (
         <EmptyStateCard
           icon={<BadgeCheck className="size-5" />}
@@ -272,19 +239,19 @@ function CertificateList({
           description="Certified and non-binding certificates generated for this program administrator's policies will appear here."
         />
       ) : (
-        <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+        <OperationalPanel>
           <Table className="min-w-[1180px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[14%] px-4 text-label-sm text-muted-foreground">Holder</TableHead>
-                <TableHead className="w-[18%] text-label-sm text-muted-foreground">Address</TableHead>
-                <TableHead className="w-[12%] text-label-sm text-muted-foreground">Insured</TableHead>
-                <TableHead className="w-[15%] text-label-sm text-muted-foreground">Policy</TableHead>
-                <TableHead className="w-[12%] text-label-sm text-muted-foreground">Program</TableHead>
-                <TableHead className="w-[12%] text-label-sm text-muted-foreground">Broker</TableHead>
-                <TableHead className="w-[10%] text-label-sm text-muted-foreground">Issued</TableHead>
-                <TableHead className="w-[7%] text-label-sm text-muted-foreground">Type</TableHead>
-                <TableHead className="w-16 px-4 text-right text-label-sm text-muted-foreground">File</TableHead>
+                <TableHead className="w-[14%] px-4 text-label text-muted-foreground">Holder</TableHead>
+                <TableHead className="w-[18%] text-label text-muted-foreground">Address</TableHead>
+                <TableHead className="w-[12%] text-label text-muted-foreground">Insured</TableHead>
+                <TableHead className="w-[15%] text-label text-muted-foreground">Policy</TableHead>
+                <TableHead className="w-[12%] text-label text-muted-foreground">Program</TableHead>
+                <TableHead className="w-[12%] text-label text-muted-foreground">Broker</TableHead>
+                <TableHead className="w-[10%] text-label text-muted-foreground">Issued</TableHead>
+                <TableHead className="w-[7%] text-label text-muted-foreground">Type</TableHead>
+                <TableHead className="w-16 px-4 text-right text-label text-muted-foreground">File</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -354,7 +321,7 @@ function CertificateList({
               })}
             </TableBody>
           </Table>
-        </section>
+        </OperationalPanel>
       )}
     </div>
   );
@@ -385,7 +352,7 @@ export default function PartnerCertificatesPage() {
       actions={
         brokerOptions.length > 1 ? (
           <Select value={brokerFilter} onValueChange={(value) => setBrokerFilter(value ?? ALL_BROKERS)}>
-            <SelectTrigger className="h-8 w-52">
+            <SelectTrigger className="w-52">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

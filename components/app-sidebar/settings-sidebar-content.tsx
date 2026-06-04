@@ -41,7 +41,7 @@ export function SettingsSidebarContent({
 
       <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
         {!collapsed && (
-          <p className="text-label-sm font-medium text-muted-foreground/50 px-3 pt-3 pb-1.5">
+          <p className="text-label font-medium text-muted-foreground/50 px-3 pt-3 pb-1.5">
             Settings
           </p>
         )}

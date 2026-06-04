@@ -9,6 +9,11 @@ import { Loader2 } from "lucide-react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
+import {
+  OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import {
@@ -25,6 +30,37 @@ type AgentSettingsArgs = {
   policyChangeRequestsEnabled: boolean;
   certificateChangeRequestsEnabled: boolean;
 };
+
+function AgentSwitchRow({
+  title,
+  description,
+  checked,
+  onCheckedChange,
+  label,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: () => void;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <div>
+        <p className="text-base font-medium text-foreground">{title}</p>
+        <p className="mt-0.5 max-w-md text-label text-muted-foreground/60">
+          {description}
+        </p>
+      </div>
+      <SettingsSwitch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        label={label}
+        className="ml-4"
+      />
+    </div>
+  );
+}
 
 export function BrokerAgentTab() {
   const viewerOrg = useCachedViewerOrg();
@@ -129,7 +165,7 @@ export function BrokerAgentTab() {
 
   useEffect(() => {
     setActions(
-      <span className="text-label-sm text-muted-foreground flex items-center gap-1.5">
+      <span className="text-label text-muted-foreground flex items-center gap-1.5">
         {saving ? (
           <>
             <Loader2 className="w-3 h-3 animate-spin" />
@@ -224,14 +260,10 @@ export function BrokerAgentTab() {
   return (
     <div className="space-y-4">
       {isBroker ? (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="mb-0! text-sm font-medium text-foreground">
-              Agent email handle
-            </h3>
-          </div>
-          <div className="px-5 py-5 space-y-1">
-            <p className="text-body-sm text-muted-foreground/70 mb-3">
+        <OperationalPanel>
+          <OperationalPanelHeader title="Agent email handle" />
+          <OperationalPanelBody className="space-y-1 px-5 py-5">
+            <p className="text-base text-muted-foreground/70 mb-3">
               Clients and carriers email your agent at this address. Forwarding
               a policy or asking a question routes to the Glass agent for this
               org.
@@ -249,9 +281,9 @@ export function BrokerAgentTab() {
                 spellCheck={false}
                 autoCapitalize="off"
                 autoCorrect="off"
-                className="flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
-              <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/3 px-3 text-body-sm text-muted-foreground select-none whitespace-nowrap">
+              <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/3 px-3 text-base text-muted-foreground select-none whitespace-nowrap">
                 @{agentDomain}
               </span>
             </div>
@@ -266,163 +298,92 @@ export function BrokerAgentTab() {
               currentLabel="Current agent handle"
               renderAvailablePreview={(s) => `${s}@${agentDomain} is available`}
             />
-          </div>
-        </div>
+          </OperationalPanelBody>
+        </OperationalPanel>
       ) : (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="mb-0! text-sm font-medium text-foreground">
-              Agent email address
-            </h3>
-          </div>
-          <div className="px-5 py-5 space-y-1">
-            <p className="text-body-sm text-muted-foreground/70 mb-3">
+        <OperationalPanel>
+          <OperationalPanelHeader title="Agent email address" />
+          <OperationalPanelBody className="space-y-1 px-5 py-5">
+            <p className="text-base text-muted-foreground/70 mb-3">
               Email sent to this address routes to your Glass agent for this
               org.
             </p>
             <div
               aria-disabled="true"
-              className="rounded-lg border border-foreground/8 bg-muted/40 px-3 py-2 text-body-sm text-muted-foreground cursor-not-allowed select-none"
+              className="rounded-lg border border-foreground/8 bg-muted/40 px-3 py-2 text-base text-muted-foreground cursor-not-allowed select-none"
             >
               {displayedAgentHandle}@{agentDomain}
             </div>
-          </div>
-        </div>
+          </OperationalPanelBody>
+        </OperationalPanel>
       )}
 
-      {/* Email behavior */}
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">
-            Email behavior
-          </h3>
-        </div>
-        <div className="px-5 py-2 divide-y divide-foreground/6">
-          <div className="flex items-center justify-between gap-4 py-3">
-            <div>
-              <p className="text-body-sm font-medium text-foreground">
-                Email notifications for chat responses
-              </p>
-              <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-                Send the requesting team member an email copy when the agent
-                replies in chat.
-              </p>
-            </div>
-            <SettingsSwitch
-              checked={chatEmailNotifications}
-              onCheckedChange={() => setChatEmailNotifications((v) => !v)}
-              label="Toggle email notifications for chat responses"
-              className="ml-4"
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-4 py-3">
-            <div>
-              <p className="text-body-sm font-medium text-foreground">
-                Auto-send emails
-              </p>
-              <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-                When off, drafted emails require confirmation before sending.
-              </p>
-            </div>
-            <SettingsSwitch
-              checked={autoSendEmails}
-              onCheckedChange={() => setAutoSendEmails((v) => !v)}
-              label="Toggle auto-send emails"
-              className="ml-4"
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-4 py-3">
-            <div>
-              <p className="text-body-sm font-medium text-foreground">
-                BCC requester
-              </p>
-              <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-                Blind copy the team member who asked the agent to send an email.
-              </p>
-            </div>
-            <SettingsSwitch
-              checked={bccRequesterOnAgentEmails}
-              onCheckedChange={() => setBccRequesterOnAgentEmails((v) => !v)}
-              label="Toggle BCC requester"
-              className="ml-4"
-            />
-          </div>
-        </div>
-      </div>
+      <OperationalPanel>
+        <OperationalPanelHeader title="Email behavior" />
+        <OperationalPanelBody className="divide-y divide-foreground/6 px-5 py-2">
+          <AgentSwitchRow
+            title="Email notifications for chat responses"
+            description="Send the requesting team member an email copy when the agent replies in chat."
+            checked={chatEmailNotifications}
+            onCheckedChange={() => setChatEmailNotifications((v) => !v)}
+            label="Toggle email notifications for chat responses"
+          />
+          <AgentSwitchRow
+            title="Auto-send emails"
+            description="When off, drafted emails require confirmation before sending."
+            checked={autoSendEmails}
+            onCheckedChange={() => setAutoSendEmails((v) => !v)}
+            label="Toggle auto-send emails"
+          />
+          <AgentSwitchRow
+            title="BCC requester"
+            description="Blind copy the team member who asked the agent to send an email."
+            checked={bccRequesterOnAgentEmails}
+            onCheckedChange={() => setBccRequesterOnAgentEmails((v) => !v)}
+            label="Toggle BCC requester"
+          />
+        </OperationalPanelBody>
+      </OperationalPanel>
 
       {isBroker ? (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-foreground/6">
-            <h3 className="mb-0! text-sm font-medium text-foreground">
-              Certificate safeguards
-            </h3>
-          </div>
-          <div className="px-5 py-2 divide-y divide-foreground/6">
-            <div className="flex items-center justify-between gap-4 py-3">
-              <div>
-                <p className="text-body-sm font-medium text-foreground">
-                  Policy change requests
-                </p>
-                <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-                  Allow Glass to open broker-mediated policy change requests
-                  when certificates require endorsements.
-                </p>
-              </div>
-              <SettingsSwitch
-                checked={policyChangeRequestsEnabled}
-                onCheckedChange={() => {
-                  setPolicyChangeRequestsEnabled((value) => {
-                    const next = !value;
-                    if (!next) setCertificateChangeRequestsEnabled(false);
-                    return next;
-                  });
-                }}
-                label="Toggle policy change requests"
-                className="ml-4"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-4 py-3">
-              <div>
-                <p className="text-body-sm font-medium text-foreground">
-                  Certificate change requests
-                </p>
-                <p className="text-label-sm text-muted-foreground/60 mt-0.5 max-w-md">
-                  Held certificate requests create a linked policy change case
-                  when this is on. When off, Glass keeps the hold and offers
-                  broker email or iMessage handoff.
-                </p>
-              </div>
-              <SettingsSwitch
-                checked={
-                  policyChangeRequestsEnabled &&
-                  certificateChangeRequestsEnabled
-                }
-                onCheckedChange={() =>
-                  setCertificateChangeRequestsEnabled((value) =>
-                    policyChangeRequestsEnabled ? !value : false,
-                  )
-                }
-                label="Toggle certificate change requests"
-                className="ml-4"
-              />
-            </div>
-          </div>
-        </div>
+        <OperationalPanel>
+          <OperationalPanelHeader title="Certificate safeguards" />
+          <OperationalPanelBody className="divide-y divide-foreground/6 px-5 py-2">
+            <AgentSwitchRow
+              title="Policy change requests"
+              description="Allow Glass to open broker-mediated policy change requests when certificates require endorsements."
+              checked={policyChangeRequestsEnabled}
+              onCheckedChange={() => {
+                setPolicyChangeRequestsEnabled((value) => {
+                  const next = !value;
+                  if (!next) setCertificateChangeRequestsEnabled(false);
+                  return next;
+                });
+              }}
+              label="Toggle policy change requests"
+            />
+            <AgentSwitchRow
+              title="Certificate change requests"
+              description="Held certificate requests create a linked policy change case when this is on. When off, Glass keeps the hold and offers broker email or iMessage handoff."
+              checked={
+                policyChangeRequestsEnabled && certificateChangeRequestsEnabled
+              }
+              onCheckedChange={() =>
+                setCertificateChangeRequestsEnabled((value) =>
+                  policyChangeRequestsEnabled ? !value : false,
+                )
+              }
+              label="Toggle certificate change requests"
+            />
+          </OperationalPanelBody>
+        </OperationalPanel>
       ) : null}
 
-      {/* Send delay */}
-      <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-foreground/6">
-          <h3 className="mb-0! text-sm font-medium text-foreground">
-            Send delay
-          </h3>
-        </div>
-        <div className="px-5 py-5">
+      <OperationalPanel>
+        <OperationalPanelHeader title="Send delay" />
+        <OperationalPanelBody className="px-5 py-5">
           <div>
-            <label className="text-label-sm font-medium text-muted-foreground block mb-1.5">
+            <label className="text-label font-medium text-muted-foreground block mb-1.5">
               Email send delay (seconds)
             </label>
             <div className="flex flex-wrap gap-2">
@@ -433,7 +394,7 @@ export function BrokerAgentTab() {
                     key={value}
                     type="button"
                     onClick={() => setEmailSendDelay(value)}
-                    className={`rounded-lg border px-3 py-1.5 text-body-sm transition-colors ${
+                    className={`rounded-lg border px-3 py-1.5 text-base transition-colors ${
                       selected
                         ? "border-foreground/20 bg-foreground/3 text-foreground"
                         : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15"
@@ -444,12 +405,12 @@ export function BrokerAgentTab() {
                 );
               })}
             </div>
-            <p className="text-label-sm text-muted-foreground/60 mt-2">
+            <p className="text-label text-muted-foreground/60 mt-2">
               Undo window before outgoing emails are sent.
             </p>
           </div>
-        </div>
-      </div>
+        </OperationalPanelBody>
+      </OperationalPanel>
     </div>
   );
 }

@@ -182,14 +182,14 @@ export function PolicyPreview({
     <div className="min-w-0 space-y-5 overflow-x-hidden">
       {policy.summary && (
         <div className="min-w-0">
-          <p className="wrap-break-word text-body-sm leading-relaxed text-foreground/90">
+          <p className="wrap-break-word text-base leading-relaxed text-foreground/90">
             {policy.summary}
           </p>
         </div>
       )}
 
       {fileCount > 1 && (
-        <p className="text-xs text-muted-foreground/50">
+        <p className="text-label text-muted-foreground/50">
           Combined from {fileCount} files
         </p>
       )}
@@ -197,7 +197,7 @@ export function PolicyPreview({
       {citedSourceSpans.length > 0 && (
         <div className="min-w-0 rounded-md border border-foreground/8 bg-foreground/[0.02]">
           <div className="border-b border-foreground/6 px-3 py-2">
-            <p className="text-label-sm font-medium text-foreground">
+            <p className="text-label font-medium text-foreground">
               Exact source locations
             </p>
           </div>
@@ -205,14 +205,14 @@ export function PolicyPreview({
             {citedSourceSpans.slice(0, 5).map((span) => (
               <div key={span.spanId} className="px-3 py-2">
                 <div className="mb-1 flex min-w-0 items-center gap-2">
-                  <span className="text-label-sm font-medium text-muted-foreground">
+                  <span className="text-label font-medium text-muted-foreground">
                     p.{span.pageStart ?? span.bbox?.[0]?.page ?? "?"}
                   </span>
-                  <span className="truncate text-label-sm text-muted-foreground/50">
+                  <span className="truncate text-label text-muted-foreground/50">
                     {span.sectionId ?? span.formNumber ?? (span.metadata?.elementType as string | undefined) ?? "Source span"}
                   </span>
                 </div>
-                <p className="line-clamp-3 text-body-sm leading-relaxed text-foreground/80">
+                <p className="line-clamp-3 text-base leading-relaxed text-foreground/80">
                   {span.text}
                 </p>
               </div>
@@ -224,14 +224,14 @@ export function PolicyPreview({
       <div className="min-w-0 space-y-3">
         {types.length > 0 && (
           <div className="min-w-0">
-            <p className="text-xs text-muted-foreground/50 mb-1.5">
+            <p className="text-label text-muted-foreground/50 mb-1.5">
               Coverage types
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {visibleTypes.map((t) => (
                 <span
                   key={t}
-                  className="text-body-sm px-2.5 py-1 rounded-full bg-secondary text-muted-foreground"
+                  className="text-base px-2.5 py-1 rounded-full bg-secondary text-muted-foreground"
                 >
                   {POLICY_TYPE_LABELS[t] ?? t}
                 </span>
@@ -251,10 +251,10 @@ export function PolicyPreview({
 
         {(policy.effectiveDate || policy.expirationDate) && (
           <div className="min-w-0">
-            <p className="text-xs text-muted-foreground/50 mb-1">
+            <p className="text-label text-muted-foreground/50 mb-1">
               Policy period
             </p>
-            <p className="text-body-sm text-muted-foreground">
+            <p className="text-base text-muted-foreground">
               {policy.effectiveDate
                 ? dayjs(policy.effectiveDate).format("MMM D, YYYY")
                 : "—"}
@@ -268,8 +268,8 @@ export function PolicyPreview({
 
         {policy.insuredName && (
           <div className="min-w-0">
-            <p className="text-xs text-muted-foreground/50 mb-1">Insured</p>
-            <p className="wrap-break-word text-body-sm text-muted-foreground">
+            <p className="text-label text-muted-foreground/50 mb-1">Insured</p>
+            <p className="wrap-break-word text-base text-muted-foreground">
               {policy.insuredName}
             </p>
           </div>
@@ -299,14 +299,14 @@ function ReextractNotice({
       <div className="flex gap-2">
         <AlertCircle className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0">
-          <p className="text-body-sm font-medium">Re-extraction required</p>
-          <p className="mt-1 text-label-sm leading-5 opacity-80">
+          <p className="text-base font-medium">Re-extraction required</p>
+          <p className="mt-1 text-label leading-5 opacity-80">
             This policy was extracted before source-native document outlines were
             available. Re-extract it to preview the source-order structure and
             exact source locations.
           </p>
           {hasLegacyCitations && (
-            <p className="mt-2 text-label-sm leading-5 opacity-80">
+            <p className="mt-2 text-label leading-5 opacity-80">
               Legacy section citations are not shown in this preview.
             </p>
           )}
@@ -328,7 +328,7 @@ function DocumentOutlinePreview({
   return (
     <div className="min-w-0">
       <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 text-body-sm font-medium text-muted-foreground/60">
+        <p className="min-w-0 text-base font-medium text-muted-foreground/60">
           Source document outline
         </p>
       </div>
@@ -381,16 +381,16 @@ function OutlineNodePreview({
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="min-w-0 wrap-break-word text-body-sm font-medium text-foreground">
+            <p className="min-w-0 wrap-break-word text-base font-medium text-foreground">
               {nodeTitle(node)}
             </p>
             {pages && (
-              <span className="shrink-0 text-label-sm text-muted-foreground/50">
+              <span className="shrink-0 text-label text-muted-foreground/50">
                 {pages}
               </span>
             )}
             {node.formNumber && (
-              <span className="shrink-0 text-label-sm text-muted-foreground/50">
+              <span className="shrink-0 text-label text-muted-foreground/50">
                 {node.formNumber}
               </span>
             )}
@@ -403,7 +403,7 @@ function OutlineNodePreview({
             />
           </div>
           {excerpt && (
-            <p className="mt-1 line-clamp-3 text-body-sm leading-relaxed text-muted-foreground">
+            <p className="mt-1 line-clamp-3 text-base leading-relaxed text-muted-foreground">
               {excerpt}
             </p>
           )}

@@ -94,7 +94,7 @@ export default function ClientThreadReadOnlyPage() {
   if (thread === null) {
     return (
       <div className="text-center py-16">
-        <p className="text-body-sm text-muted-foreground/40">
+        <p className="text-base text-muted-foreground/40">
           Thread not found
         </p>
       </div>
@@ -107,7 +107,7 @@ export default function ClientThreadReadOnlyPage() {
     <div className="max-w-2xl mx-auto space-y-4">
       {messages.length === 0 && (
         <div className="text-center py-16">
-          <p className="text-body-sm text-muted-foreground/40">No messages</p>
+          <p className="text-base text-muted-foreground/40">No messages</p>
         </div>
       )}
 

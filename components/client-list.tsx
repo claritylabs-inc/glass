@@ -7,6 +7,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserPlus } from "lucide-react";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { ClientListRow, type ClientRow } from "@/components/client-list-row";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
@@ -153,7 +154,7 @@ export function ClientList({
           />
         )
       ) : (
-        <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+        <OperationalPanel as="div">
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           {filteredRows.map((row: any) => {
             const mapped = toClientRow(row);
@@ -163,7 +164,7 @@ export function ClientList({
                 : `client-${mapped.clientOrgId}`;
             return <ClientListRow key={key} row={mapped} />;
           })}
-        </div>
+        </OperationalPanel>
       )}
     </div>
   );

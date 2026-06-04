@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
 import { Textarea } from "@/components/ui/textarea";
@@ -217,7 +218,7 @@ function VendorComplianceChecklist({
 }) {
   if (summary.requirementCount === 0) {
     return (
-      <div className="border-t border-foreground/6 px-4 py-4 text-sm text-muted-foreground">
+      <div className="border-t border-foreground/6 px-4 py-4 text-base text-muted-foreground">
         No vendor requirements are configured yet.
       </div>
     );
@@ -235,16 +236,16 @@ function VendorComplianceChecklist({
           >
             <div className="min-w-0 space-y-1">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <p className="truncate text-sm font-medium text-foreground">
+                <p className="truncate text-base font-medium text-foreground">
                   {check.requirement.title}
                 </p>
                 <ComplianceCheckBadge status={check.status} />
               </div>
-              <p className="line-clamp-2 text-xs text-muted-foreground">
+              <p className="line-clamp-2 text-label text-muted-foreground">
                 {check.requirement.requirementText}
               </p>
               {check.requirement.limit ? (
-                <p className="text-xs text-muted-foreground/75">
+                <p className="text-label text-muted-foreground/75">
                   Required limit:{" "}
                   <span className="text-foreground">
                     {check.requirement.limit}
@@ -254,7 +255,7 @@ function VendorComplianceChecklist({
             </div>
             <div className="min-w-0 rounded-md border border-foreground/6 bg-background/40 px-3 py-2">
               {check.matchedPolicy ? (
-                <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="space-y-1 text-label text-muted-foreground">
                   <p className="truncate text-foreground">
                     {check.matchedPolicy.carrier ?? "Policy"}{" "}
                     {check.matchedPolicy.policyNumber ?? ""}
@@ -300,7 +301,7 @@ function VendorComplianceChecklist({
                   ) : null}
                 </div>
               ) : (
-                <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="space-y-1 text-label text-muted-foreground">
                   <p className="text-foreground">No matching policy found</p>
                   <p>{check.notes ?? "Upload a matching active policy."}</p>
                 </div>
@@ -349,7 +350,7 @@ function RelationshipCard({
       <div className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0 sm:flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-medium text-foreground">
+            <p className="truncate text-base font-medium text-foreground">
               {displayName}
             </p>
             {side === "vendor" ? (
@@ -362,7 +363,7 @@ function RelationshipCard({
             )}
           </div>
           {showInviteCopy || org?.website ? (
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-label text-muted-foreground">
               {showInviteCopy
                 ? row.relationshipLabel ||
                   (side === "vendor" ? "Vendor access" : "Client access")
@@ -372,12 +373,12 @@ function RelationshipCard({
             </p>
           ) : null}
           {showInviteCopy && row.note ? (
-            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/80">
+            <p className="mt-1 line-clamp-2 text-label text-muted-foreground/80">
               {row.note}
             </p>
           ) : null}
           {side === "vendor" && row.status === "active" && complianceSummary ? (
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-2 text-label text-muted-foreground">
               {complianceSummary.requirementCount === 0
                 ? "No vendor requirements configured"
                 : `${complianceSummary.metCount}/${complianceSummary.requirementCount} requirements met`}
@@ -579,12 +580,12 @@ export function ConnectedOrgsSection({
         }
       >
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <p className="text-body-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             Enter a vendor contact email. If they already have an account, we’ll
             send the request to their org; otherwise we’ll send an invite link
             so they can create an account and approve access.
           </p>
-          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Vendor email
             <Input
               value={vendorEmail}
@@ -592,7 +593,7 @@ export function ConnectedOrgsSection({
               placeholder="risk@vendor.com"
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Relationship label
             <Input
               value={relationshipLabel}
@@ -600,7 +601,7 @@ export function ConnectedOrgsSection({
               placeholder="e.g. Required subcontractor coverage"
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-label-sm font-medium text-muted-foreground">
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
             Note
             <Textarea
               value={note}
@@ -741,7 +742,7 @@ export function ConnectedOrgsSection({
   }
 
   return (
-    <div className="rounded-lg border border-foreground/6 bg-card overflow-hidden">
+    <OperationalPanel as="div">
       {rows.map((row) => (
         <RelationshipCard
           key={row._id}
@@ -769,6 +770,6 @@ export function ConnectedOrgsSection({
           }
         />
       ))}
-    </div>
+    </OperationalPanel>
   );
 }

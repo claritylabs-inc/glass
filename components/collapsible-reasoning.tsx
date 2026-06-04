@@ -32,7 +32,7 @@ export function CollapsibleReasoning({
         aria-expanded={isOpen}
         className={cn(
           "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 transition-colors",
-          "border-foreground/8 bg-foreground/2 text-label-sm leading-none text-muted-foreground/55",
+          "border-foreground/8 bg-foreground/2 text-label leading-none text-muted-foreground/55",
           "hover:border-foreground/12 hover:bg-foreground/4 hover:text-muted-foreground/80",
           isOpen &&
             "border-foreground/12 bg-foreground/4.5 text-muted-foreground/80",
@@ -66,7 +66,7 @@ export function CollapsibleReasoning({
         )}
       >
         <div className="max-h-64 overflow-y-auto rounded-lg border border-foreground/8 bg-foreground/2.5 px-3 pt-2 pb-1.5 shadow-sm shadow-black/2">
-          <div className="space-y-1.5 text-body-sm leading-5 text-muted-foreground/70">
+          <div className="space-y-1.5 text-base leading-5 text-muted-foreground/70">
             {lines.map((line, index) => (
               <p
                 key={`${index}-${line.slice(0, 16)}`}

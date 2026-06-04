@@ -102,7 +102,7 @@ export default function ThreadPage({
     <AppShell breadcrumbDetail="Conversation" presenceUsers={presenceUsers}>
       <div className="absolute inset-0 overflow-hidden">
         <div className="h-full flex items-center justify-center">
-          <p className="text-body-sm text-muted-foreground/40">
+          <p className="text-base text-muted-foreground/40">
             Thread not found
           </p>
         </div>

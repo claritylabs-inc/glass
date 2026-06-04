@@ -6,6 +6,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { PolicyListItem } from "@/components/policy-list-item";
+import {
+  OperationalPanel,
+  OperationalPanelBody,
+} from "@/components/ui/operational-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -52,7 +56,7 @@ export default function ConnectedVendorPoliciesPage({
       breadcrumbDetail={
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-muted-foreground/80">{vendorName}</span>
-          <span className="text-body-sm text-muted-foreground/30">/</span>
+          <span className="text-base text-muted-foreground/30">/</span>
           <span className="truncate">Policies</span>
         </span>
       }
@@ -68,16 +72,18 @@ export default function ConnectedVendorPoliciesPage({
         {policies === undefined ? (
           <VendorPoliciesLoadingSkeleton />
         ) : rows.length === 0 ? (
-          <div className="rounded-lg border border-foreground/6 bg-card px-5 py-6">
-            <p className="text-body-sm font-medium text-foreground">
-              No {docType === "quote" ? "quotes" : "policies"} yet
-            </p>
-            <p className="mt-1 text-body-sm text-muted-foreground">
-              Uploaded vendor insurance records will appear here when available.
-            </p>
-          </div>
+          <OperationalPanel as="div">
+            <OperationalPanelBody className="px-5 py-6">
+              <p className="text-base font-medium text-foreground">
+                No {docType === "quote" ? "quotes" : "policies"} yet
+              </p>
+              <p className="mt-1 text-base text-muted-foreground">
+                Uploaded vendor insurance records will appear here when available.
+              </p>
+            </OperationalPanelBody>
+          </OperationalPanel>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-foreground/6 bg-card">
+          <OperationalPanel as="div">
             {rows.map((policy) => (
               <PolicyListItem
                 key={policy._id}
@@ -96,7 +102,7 @@ export default function ConnectedVendorPoliciesPage({
                 }
               />
             ))}
-          </div>
+          </OperationalPanel>
         )}
       </div>
     </AppShell>

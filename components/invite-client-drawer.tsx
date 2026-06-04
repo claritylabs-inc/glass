@@ -8,6 +8,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  OperationalItem,
+  OperationalPanel,
+} from "@/components/ui/operational-panel";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PolicyListItem } from "@/components/policy-list-item";
@@ -23,10 +27,10 @@ import {
 } from "@/lib/sync/use-cached-query";
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-body-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
 const LABEL_CLASSES =
-  "text-label-sm font-medium text-muted-foreground block mb-1";
+  "text-label font-medium text-muted-foreground block mb-1";
 
 function cleanError(error: unknown, fallback: string) {
   if (!(error instanceof Error)) return fallback;
@@ -501,7 +505,7 @@ export function InviteClientDrawer({
             placeholder="acme.com"
             className={INPUT_CLASSES}
           />
-          <p className="mt-1.5 text-label-sm text-muted-foreground/60">
+          <p className="mt-1.5 text-label text-muted-foreground/60">
             Glass will enrich the company profile in the background.
           </p>
         </div>
@@ -539,7 +543,7 @@ export function InviteClientDrawer({
             defaultCountry="US"
             placeholder="Enter phone number"
           />
-          <p className="mt-1.5 min-h-4 text-label-sm text-muted-foreground/60">
+          <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
             {phoneInvalid ? (
               <span className="text-red-500/80">
                 Enter a valid phone number with country code.
@@ -560,11 +564,14 @@ export function InviteClientDrawer({
         <div>
           <label className={LABEL_CLASSES}>Policies</label>
           {activeDraftId && existingPolicies === undefined ? (
-            <div className="mb-2 rounded-lg border border-foreground/6 bg-card px-3 py-2 text-body-sm text-muted-foreground">
+            <OperationalPanel
+              as="div"
+              className="mb-2 px-3 py-2 text-base text-muted-foreground"
+            >
               Loading policy uploads…
-            </div>
+            </OperationalPanel>
           ) : existingPolicies && existingPolicies.length > 0 ? (
-            <div className="mb-2 overflow-hidden rounded-lg border border-foreground/6 bg-card">
+            <OperationalPanel as="div" className="mb-2">
               {existingPolicies.map((policy) => (
                 <PolicyListItem
                   key={policy._id}
@@ -578,7 +585,7 @@ export function InviteClientDrawer({
                   uploadedBySide={policy.uploadedBySide}
                 />
               ))}
-            </div>
+            </OperationalPanel>
           ) : null}
           <button
             type="button"
@@ -604,10 +611,10 @@ export function InviteClientDrawer({
                 <FileUp className="h-4 w-4" />
               </span>
               <span className="min-w-0">
-                <span className="block text-body-sm font-medium text-foreground">
+                <span className="block text-base font-medium text-foreground">
                   Upload policy PDFs
                 </span>
-                <span className="block text-label-sm text-muted-foreground/60">
+                <span className="block text-label text-muted-foreground/60">
                   Extraction starts after you create or send the invite.
                 </span>
               </span>
@@ -634,14 +641,14 @@ export function InviteClientDrawer({
             />
           ) : null}
           {policyFiles.length > 0 ? (
-            <div className="mt-2 rounded-lg border border-foreground/6 bg-card">
+            <OperationalPanel as="div" className="mt-2">
               {policyFiles.map((file, index) => (
-                <div
+                <OperationalItem
                   key={`${file.name}:${file.size}:${index}`}
                   className="flex items-center gap-2 border-t border-foreground/4 px-3 py-2 first:border-t-0"
                 >
                   <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-body-sm">
+                  <span className="min-w-0 flex-1 truncate text-base">
                     {file.name}
                   </span>
                   <button
@@ -657,9 +664,9 @@ export function InviteClientDrawer({
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
-                </div>
+                </OperationalItem>
               ))}
-            </div>
+            </OperationalPanel>
           ) : null}
         </div>
       </form>

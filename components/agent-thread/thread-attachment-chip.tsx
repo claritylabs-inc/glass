@@ -48,7 +48,7 @@ export function ThreadAttachmentChip({
       aria-label={url ? `Open ${attachment.filename}` : attachment.filename}
       style={{ maxWidth: "13rem" }}
       className={cn(
-        "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors",
+        "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-full px-2 text-label font-medium transition-colors",
         url
           ? "bg-foreground/5 text-foreground/75 hover:bg-foreground/8"
           : "pointer-events-none bg-foreground/3 text-muted-foreground/40",

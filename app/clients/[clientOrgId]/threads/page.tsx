@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { ActionSurfaceButton } from "@/components/ui/action-surface";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Mail, MessageCircle } from "lucide-react";
 import dayjs from "dayjs";
@@ -36,7 +37,7 @@ export default function ClientThreadsPage() {
     <FadeIn when={true} duration={0.12}>
       {visibleThreads.length === 0 && (
         <div className="text-center py-16">
-          <p className="text-body-sm text-muted-foreground/40">
+          <p className="text-base text-muted-foreground/40">
             No threads yet
           </p>
         </div>
@@ -45,13 +46,13 @@ export default function ClientThreadsPage() {
       {visibleThreads.length > 0 && (
         <div className="space-y-1">
           {visibleThreads.map((thread) => (
-            <button
+            <ActionSurfaceButton
               key={thread._id}
               type="button"
               onClick={() =>
                 router.push(`/clients/${clientOrgId}/threads/${thread._id}`)
               }
-              className="w-full text-left flex items-center gap-3 px-4 py-3 rounded-lg border border-foreground/6 bg-card hover:bg-foreground/[0.02] transition-colors group"
+              className="w-full flex items-center gap-3 px-4 py-3 group"
             >
               <div className="shrink-0 text-muted-foreground/30">
                 {thread.originChannel === "imessage" ? (
@@ -61,10 +62,10 @@ export default function ClientThreadsPage() {
                 ) : null}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-body-sm font-medium text-foreground truncate">
+                <p className="text-base font-medium text-foreground truncate">
                   {thread.title}
                 </p>
-                <p className="text-[11px] text-muted-foreground/40">
+                <p className="text-label text-muted-foreground/40">
                   {dayjs(thread.lastMessageAt ?? thread._creationTime).format(
                     "MMM D, YYYY · h:mm A",
                   )}
@@ -75,7 +76,7 @@ export default function ClientThreadsPage() {
                       : " · Chat"}
                 </p>
               </div>
-            </button>
+            </ActionSurfaceButton>
           ))}
         </div>
       )}

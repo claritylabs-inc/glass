@@ -12,7 +12,7 @@ export function CoverageRow({ name, limit, deductible }: { name: string; limit?:
   const hasHiddenCondition = !!deductibleText;
 
   return (
-    <div className="flex min-w-0 items-baseline justify-between gap-3 px-3 py-2.5 text-body-sm">
+    <div className="flex min-w-0 items-baseline justify-between gap-3 px-3 py-2.5 text-base">
       <span className="min-w-0 flex-1 truncate text-foreground">{name}</span>
       <div className="flex min-w-0 max-w-[48%] shrink-0 items-baseline justify-end gap-1.5 text-right">
         {limit && <span className="truncate tabular-nums text-muted-foreground">{limit}</span>}

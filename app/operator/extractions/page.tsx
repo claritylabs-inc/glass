@@ -3,13 +3,20 @@
 import { useCallback, useMemo, useState } from "react";
 import type { ComponentProps, PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  OperationalItem,
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+  OperationalPanel,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
@@ -28,8 +35,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw, XCircle } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
+import { normalizeCoverageName } from "@/convex/lib/coverageNames";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
 import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
 import { OperatorSidebar } from "../operator-sidebar";
@@ -110,7 +118,7 @@ type ModelCallDebugDetails = {
 type TraceDetail = {
   session: TraceRow;
   policy?: Record<string, unknown> | null;
-  sourceHierarchy?: Record<string, unknown>[];
+  eventsTruncated?: boolean;
   fileUrl?: string | null;
   events: TraceEvent[];
 };
@@ -166,15 +174,6 @@ function parseTracePanelTab(value: string | null): TracePanelTab {
   return TRACE_PANEL_TABS.includes(value as TracePanelTab) ? value as TracePanelTab : "summary";
 }
 
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-3 border-b border-foreground/6 px-3 py-2.5 last:border-b-0">
-      <dt className="text-label-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-body-sm text-foreground">{value}</dd>
-    </div>
-  );
-}
-
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -192,24 +191,10 @@ function sourceBackedDisplay(value: unknown) {
   if (!record || typeof record.value !== "string" || !record.value.trim()) {
     return null;
   }
-  const sourceNodeCount = stringArray(record.sourceNodeIds).length;
-  const sourceSpanCount = stringArray(record.sourceSpanIds).length;
   return {
     value: record.value,
     confidence: typeof record.confidence === "string" ? record.confidence : undefined,
-    sourceLabel:
-      sourceNodeCount || sourceSpanCount
-        ? `${sourceNodeCount} node${sourceNodeCount === 1 ? "" : "s"} / ${sourceSpanCount} span${sourceSpanCount === 1 ? "" : "s"}`
-        : undefined,
   };
-}
-
-function evidenceLabel(record: Record<string, unknown>) {
-  const sourceNodeCount = stringArray(record.sourceNodeIds).length;
-  const sourceSpanCount = stringArray(record.sourceSpanIds).length;
-  return sourceNodeCount || sourceSpanCount
-    ? `${sourceNodeCount} node${sourceNodeCount === 1 ? "" : "s"} / ${sourceSpanCount} span${sourceSpanCount === 1 ? "" : "s"}`
-    : "—";
 }
 
 function profileScalarRows(profile: Record<string, unknown>) {
@@ -219,17 +204,7 @@ function profileScalarRows(profile: Record<string, unknown>) {
     if (!display) return;
     rows.push({
       label,
-      value: (
-        <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="min-w-0 break-words">{display.value}</span>
-          {display.confidence ? (
-            <span className="text-label-sm text-muted-foreground">{display.confidence}</span>
-          ) : null}
-          {display.sourceLabel ? (
-            <span className="text-label-sm text-muted-foreground">{display.sourceLabel}</span>
-          ) : null}
-        </span>
-      ),
+      value: display.value,
     });
   };
 
@@ -250,17 +225,13 @@ function profileScalarRows(profile: Record<string, unknown>) {
     .map((type) => POLICY_TYPE_LABELS[type] ?? undefined)
     .filter((label): label is string => Boolean(label));
   if (coverageTypes.length) rows.push({ label: "Coverage types", value: coverageTypes.join(", ") });
-  rows.push({ label: "Evidence", value: evidenceLabel(profile) });
   const warnings = stringArray(profile.warnings);
   if (warnings.length) rows.push({ label: "Warnings", value: warnings.join(" | ") });
   return rows;
 }
 
-function profileTableRow(row: Record<string, unknown>): Record<string, unknown> & { evidence: string } {
-  return {
-    ...row,
-    evidence: evidenceLabel(row),
-  };
+function profileTableRow(row: Record<string, unknown>): Record<string, unknown> {
+  return row;
 }
 
 function formatProfileLabel(value: string) {
@@ -287,16 +258,9 @@ function profileCellDisplay(value: unknown): string {
   return "—";
 }
 
-function profileMetadataItems(
-  row: Record<string, unknown>,
-  keys: Array<{ key: string; label: string }>,
-) {
-  return keys
-    .map(({ key, label }) => {
-      const value = profileCellDisplay(row[key]);
-      return value !== "—" ? `${label}: ${value}` : null;
-    })
-    .filter((item): item is string => Boolean(item));
+function profileCellValue(row: Record<string, unknown>, key: string) {
+  const value = profileCellDisplay(row[key]);
+  return value !== "—" ? value : undefined;
 }
 
 function supportStatusVariant(status: string) {
@@ -304,6 +268,91 @@ function supportStatusVariant(status: string) {
   if (normalized === "supported") return "secondary";
   if (normalized === "unsupported" || normalized === "conflicting") return "destructive";
   return "outline";
+}
+
+function normalizeDisplayText(value?: string) {
+  return value?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+const SMALL_TITLE_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "with"]);
+const PRESERVED_TITLE_WORDS = new Set(["AI", "ML", "OFAC", "SIR", "TRIA"]);
+
+function readableTitleCase(value: string) {
+  const normalized = normalizeDisplayText(value);
+  if (!normalized || /[a-z]/.test(normalized)) return normalized;
+  return normalized
+    .toLowerCase()
+    .split(" ")
+    .map((word, index) => {
+      const segments = word.split(/([/-])/);
+      const cased = segments.map((segment) => {
+        if (segment === "/" || segment === "-") return segment;
+        const upper = segment.toUpperCase();
+        if (PRESERVED_TITLE_WORDS.has(upper)) return upper;
+        if (index > 0 && SMALL_TITLE_WORDS.has(segment)) return segment;
+        return segment.charAt(0).toUpperCase() + segment.slice(1);
+      });
+      return cased.join("");
+    })
+    .join(" ");
+}
+
+function cleanCoverageTitle(value?: string) {
+  const normalized = normalizeDisplayText(value);
+  if (!normalized) return undefined;
+  const endorsementMatch = normalized.match(
+    /\bENDORSEMENT\s+NO\.?\s*([A-Z0-9-]+)\s*[—-]\s*([\s\S]*?)(?=\s+(?:This endorsement|SCHEDULE|NORTHWOODS|Policy Number|THIS ENDORSEMENT CHANGES)\b|$)/i,
+  );
+  if (endorsementMatch) {
+    return `Endorsement No. ${endorsementMatch[1]} — ${readableTitleCase(endorsementMatch[2])}`;
+  }
+  const sectionMatch = normalized.match(/^Endorsement\s+No\.?\s*([A-Z0-9-]+)\s*[—-]\s*([\s\S]+)$/i);
+  if (sectionMatch) {
+    return `Endorsement No. ${sectionMatch[1]} — ${readableTitleCase(sectionMatch[2])}`;
+  }
+  const coverageName = normalizeCoverageName(normalized);
+  return coverageName ? readableTitleCase(coverageName) : normalized.slice(0, 140);
+}
+
+function coverageRowTitle(row: Record<string, unknown>) {
+  const origin = profileCellValue(row, "coverageOrigin");
+  if (origin === "endorsement") {
+    const fromSection = cleanCoverageTitle(profileCellValue(row, "sectionRef"));
+    if (fromSection) return fromSection;
+  }
+  return cleanCoverageTitle(profileCellValue(row, "name")) ?? "Coverage";
+}
+
+function coverageMetadata(
+  row: Record<string, unknown>,
+  terms: Array<{ label: string; value: string }>,
+) {
+  const retroactiveDate = profileCellValue(row, "retroactiveDate");
+  const hasRetroactiveTerm = terms.some((term) => /retroactive/i.test(term.label));
+  return [
+    profileCellValue(row, "formNumber"),
+    retroactiveDate && !hasRetroactiveTerm ? `Retroactive ${retroactiveDate}` : undefined,
+  ].filter((item): item is string => Boolean(item));
+}
+
+function coverageLimitTerms(row: Record<string, unknown>) {
+  const terms = Array.isArray(row.limits)
+    ? row.limits.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
+    : [];
+  const seen = new Set<string>();
+  return terms
+    .map((term) => {
+      const label = cleanCoverageTitle(profileCellValue(term, "label") ?? profileCellValue(term, "kind"));
+      const value = profileCellValue(term, "value")
+        ?? profileCellValue(term, "limit")
+        ?? profileCellValue(term, "amount");
+      if (!label || !value) return null;
+      const key = `${label.toLowerCase()}|${value.toLowerCase()}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return { label, value };
+    })
+    .filter((term): term is { label: string; value: string } => Boolean(term));
 }
 
 function ProfileListSection({
@@ -314,14 +363,10 @@ function ProfileListSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-foreground/6">
-      <div className="border-b border-foreground/6 bg-muted/20 px-3 py-2">
-        <p className="text-label-sm font-medium text-muted-foreground">
-          {title}
-        </p>
-      </div>
+    <OperationalPanel as="div">
+      <OperationalPanelHeader title={title} />
       <div>{children}</div>
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -336,40 +381,52 @@ function CoverageList({
   return (
     <ProfileListSection title={title}>
       {rows.map((row, rowIndex) => {
-        const name = profileCellDisplay(row.name);
+        const name = coverageRowTitle(row);
         const limit = profileCellDisplay(row.limit);
-        const metadata = profileMetadataItems(row, [
-          { key: "deductible", label: "Deductible" },
-          { key: "premium", label: "Premium" },
-          { key: "formNumber", label: "Form" },
-          { key: "sectionRef", label: "Section" },
-        ]);
+        const terms = coverageLimitTerms(row);
+        const metadata = coverageMetadata(row, terms);
         return (
-          <div
+          <OperationalItem
             key={rowIndex}
-            className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
+            className="px-4"
           >
-            <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-              <p className="min-w-[12rem] flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
-                {name}
-              </p>
-              {limit !== "—" ? (
-                <span className="shrink-0 text-body-sm font-medium tabular-nums text-foreground">
-                  {limit}
-                </span>
-              ) : null}
-              <span className="shrink-0 text-label-sm text-muted-foreground">
-                {evidenceLabel(row)}
-              </span>
-            </div>
-            {metadata.length > 0 ? (
-              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-label-sm text-muted-foreground">
-                {metadata.map((item) => (
-                  <span key={item}>{item}</span>
-                ))}
+            <div className="min-w-0 space-y-2">
+              <div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
+                <div className="min-w-0">
+                  <p className="text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
+                    {name}
+                  </p>
+                  {metadata.length ? (
+                    <p className="mt-1 text-label leading-4 text-muted-foreground">
+                      {metadata.join(" | ")}
+                    </p>
+                  ) : null}
+                </div>
+                {terms.length === 0 && limit !== "—" ? (
+                  <span className="text-base font-normal tabular-nums text-foreground sm:text-right">
+                    {limit}
+                  </span>
+                ) : null}
               </div>
-            ) : null}
-          </div>
+              {terms.length ? (
+                <dl className="divide-y divide-foreground/6">
+                  {terms.map((term) => (
+                    <div
+                      key={`${term.label}-${term.value}`}
+                      className="grid gap-1 py-2 first:pt-1 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.55fr)] sm:gap-4"
+                    >
+                      <dt className="min-w-0 text-base font-normal leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                        {term.label}
+                      </dt>
+                      <dd className="min-w-0 text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
+                        {term.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+            </div>
+          </OperationalItem>
         );
       })}
     </ProfileListSection>
@@ -379,30 +436,19 @@ function CoverageList({
 function PartyList({ rows }: { rows: Array<Record<string, unknown>> }) {
   if (!rows.length) return null;
   return (
-    <ProfileListSection title="Parties">
+    <OperationalLabelValueList title="Parties">
       {rows.map((row, rowIndex) => {
         const role = profileCellDisplay(row.role);
         const name = profileCellDisplay(row.name);
         return (
-          <div
+          <OperationalLabelValueRow
             key={rowIndex}
-            className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
-          >
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-x-3 gap-y-1">
-              <p className="min-w-0 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
-                {name}
-              </p>
-              <Badge variant="outline" className="font-normal">
-                {formatProfileLabel(role)}
-              </Badge>
-              <span className="shrink-0 text-label-sm text-muted-foreground">
-                {evidenceLabel(row)}
-              </span>
-            </div>
-          </div>
+            label={formatProfileLabel(role)}
+            value={name}
+          />
         );
       })}
-    </ProfileListSection>
+    </OperationalLabelValueList>
   );
 }
 
@@ -415,12 +461,12 @@ function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>>
         const status = profileCellDisplay(row.status);
         const summary = profileCellDisplay(row.summary);
         return (
-          <div
+          <OperationalItem
             key={rowIndex}
-            className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
+            className="px-4"
           >
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <p className="min-w-0 flex-1 truncate text-body-sm font-medium text-foreground">
+              <p className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
                 {formatProfileLabel(kind)}
               </p>
               {status !== "—" ? (
@@ -431,17 +477,14 @@ function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>>
                   {formatProfileLabel(status)}
                 </Badge>
               ) : null}
-              <span className="shrink-0 text-label-sm text-muted-foreground">
-                {evidenceLabel(row)}
-              </span>
             </div>
             <p
-              className="mt-2 min-w-0 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]"
+              className="mt-2 min-w-0 text-base leading-5 text-foreground [overflow-wrap:anywhere]"
               title={summary !== "—" ? summary : undefined}
             >
               {summary}
             </p>
-          </div>
+          </OperationalItem>
         );
       })}
     </ProfileListSection>
@@ -490,59 +533,22 @@ function AdditionalInsuredEligibilityList({
   ].filter((group) => group.rows.length > 0);
   if (groups.length === 0) return null;
   return (
-    <ProfileListSection title="Additional insured eligibility">
-      {typeof eligibility.overallSummary === "string" && eligibility.overallSummary.trim() ? (
-        <p className="border-b border-foreground/6 px-3 py-2 text-body-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-          {eligibility.overallSummary}
-        </p>
-      ) : null}
+    <OperationalLabelValueList title="Additional insured eligibility">
       {groups.map((group) => (
-        <div key={group.key} className="border-b border-foreground/6 last:border-b-0">
-          <div className="flex items-center gap-2 border-b border-foreground/6 bg-muted/10 px-3 py-2">
-            <p className="flex-1 text-label-sm font-medium text-foreground">
-              {group.label}
-            </p>
-            <Badge variant={group.key === "requiresEndorsement" ? "outline" : "secondary"} className="font-normal">
-              {group.badge}
-            </Badge>
-          </div>
-          {group.rows.map((row, rowIndex) => {
+        group.rows.map((row, rowIndex) => {
             const category = profileCellDisplay(row.name) !== "—"
               ? profileCellDisplay(row.name)
               : profileCellDisplay(row.category);
-            const summary = profileCellDisplay(row.summary) !== "—"
-              ? profileCellDisplay(row.summary)
-              : profileCellDisplay(row.scope);
-            const condition = profileCellDisplay(row.condition) !== "—"
-              ? profileCellDisplay(row.condition)
-              : profileCellDisplay(row.endorsementTitle);
             return (
-              <div
+              <OperationalLabelValueRow
                 key={`${group.key}-${rowIndex}`}
-                className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
-              >
-                <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-                  <p className="min-w-0 flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
-                    {category}
-                  </p>
-                  <span className="shrink-0 text-label-sm text-muted-foreground">
-                    {evidenceLabel(row)}
-                  </span>
-                </div>
-                <p className="mt-1.5 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
-                  {summary}
-                </p>
-                {condition !== "—" && condition !== summary ? (
-                  <p className="mt-1 text-label-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-                    {condition}
-                  </p>
-                ) : null}
-              </div>
+                label={group.label}
+                value={category}
+              />
             );
-          })}
-        </div>
+          })
       ))}
-    </ProfileListSection>
+    </OperationalLabelValueList>
   );
 }
 
@@ -556,12 +562,12 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
         const scope = profileCellDisplay(row.scope);
         const endorsementTitle = profileCellDisplay(row.endorsementTitle);
         return (
-          <div
+          <OperationalItem
             key={rowIndex}
-            className="border-b border-foreground/6 px-3 py-3 last:border-b-0"
+            className="px-4"
           >
             <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-              <p className="min-w-0 flex-1 text-body-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className="min-w-0 flex-1 text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
                 {name}
               </p>
               {status !== "—" ? (
@@ -569,21 +575,18 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
                   {formatProfileLabel(status)}
                 </Badge>
               ) : null}
-              <span className="shrink-0 text-label-sm text-muted-foreground">
-                {evidenceLabel(row)}
-              </span>
             </div>
             {scope !== "—" ? (
-              <p className="mt-1.5 text-body-sm leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className="mt-1.5 text-base leading-5 text-foreground [overflow-wrap:anywhere]">
                 {scope}
               </p>
             ) : null}
             {endorsementTitle !== "—" ? (
-              <p className="mt-1 text-label-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+              <p className="mt-1 text-label leading-5 text-muted-foreground [overflow-wrap:anywhere]">
                 {endorsementTitle}
               </p>
             ) : null}
-          </div>
+          </OperationalItem>
         );
       })}
     </ProfileListSection>
@@ -626,11 +629,11 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
   return (
     <div className="space-y-3">
       {scalarRows.length > 0 ? (
-        <dl className="rounded-lg border border-foreground/6">
+        <OperationalLabelValueList>
           {scalarRows.map((row) => (
-            <DetailRow key={row.label} label={row.label} value={row.value} />
+            <OperationalLabelValueRow key={row.label} label={row.label} value={row.value} />
           ))}
-        </dl>
+        </OperationalLabelValueList>
       ) : null}
       <CoverageList title="Core coverage limits" rows={coreCoverages} />
       <CoverageList title="Endorsement coverage limits" rows={endorsementCoverages} />
@@ -863,12 +866,12 @@ function DebugPreview({
 }) {
   if (!value) return null;
   return (
-    <div className="space-y-1">
-      <p className="text-label-sm font-medium text-muted-foreground">{label}</p>
-      <pre className="rounded-lg border border-foreground/6 bg-muted/20 p-3 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground">
+    <OperationalPanel as="section">
+      <OperationalPanelHeader title={label} />
+      <pre className="bg-muted/20 p-3 whitespace-pre-wrap break-words font-mono text-label leading-relaxed text-foreground">
         {value}
       </pre>
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -877,7 +880,7 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
   const details = modelCallDebugDetails(event);
   if (!details) {
     return (
-      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
         No prompt or output details were recorded for this call. Rerun the extraction to capture model-call debug payloads.
       </div>
     );
@@ -893,37 +896,39 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
   ].filter((row): row is [string, string] => !!row);
 
   return (
-    <div className="space-y-3 rounded-lg border border-foreground/6 p-3">
-      <div className="grid gap-2 text-label-sm text-muted-foreground sm:grid-cols-2">
-        <div>
-          <span className="font-medium text-foreground">Purpose</span>
-          <span className="ml-2">{details.purpose ?? eventTitle(event)}</span>
-        </div>
-        <div>
-          <span className="font-medium text-foreground">Task</span>
-          <span className="ml-2">{[details.task, details.taskKind].filter(Boolean).join(" / ") || "—"}</span>
-        </div>
-        <div>
-          <span className="font-medium text-foreground">Output</span>
-          <span className="ml-2">{details.outputKind ?? "—"}</span>
-        </div>
-        <div>
-          <span className="font-medium text-foreground">Max tokens</span>
-          <span className="ml-2">{details.maxOutputTokens?.toLocaleString() ?? "—"}</span>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <OperationalPanel as="section" className="px-3 py-3">
+        <dl className="grid gap-x-8 gap-y-2 text-base text-muted-foreground sm:grid-cols-2">
+          <div className="min-w-0">
+            <dt className="inline font-medium text-foreground">Purpose</dt>
+            <dd className="ml-2 inline">{details.purpose ?? eventTitle(event)}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="inline font-medium text-foreground">Task</dt>
+            <dd className="ml-2 inline">{[details.task, details.taskKind].filter(Boolean).join(" / ") || "—"}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="inline font-medium text-foreground">Output</dt>
+            <dd className="ml-2 inline">{details.outputKind ?? "—"}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="inline font-medium text-foreground">Max tokens</dt>
+            <dd className="ml-2 inline">{details.maxOutputTokens?.toLocaleString() ?? "—"}</dd>
+          </div>
+        </dl>
+      </OperationalPanel>
       {inputRows.length ? (
-        <div className="space-y-1">
-          <p className="text-label-sm font-medium text-muted-foreground">Input attachments</p>
-          <div className="rounded-lg border border-foreground/6">
+        <OperationalPanel as="section" className="px-3 py-3">
+          <h4 className="mb-1.5 text-base font-medium text-muted-foreground">Input attachments</h4>
+          <dl className="grid gap-x-8 gap-y-1.5 text-base text-muted-foreground sm:grid-cols-2">
             {inputRows.map(([label, value]) => (
-              <div key={label} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 border-b border-foreground/6 px-3 py-2 last:border-b-0">
-                <span className="text-label-sm text-muted-foreground">{label}</span>
-                <span className="truncate text-label-sm text-foreground">{value}</span>
+              <div key={label} className="min-w-0">
+                <dt className="inline font-medium text-foreground">{label}</dt>
+                <dd className="ml-2 inline break-words">{value}</dd>
               </div>
             ))}
-          </div>
-        </div>
+          </dl>
+        </OperationalPanel>
       ) : null}
       <DebugPreview label="System" value={details.systemPreview} />
       <DebugPreview label="Prompt / input text" value={details.promptPreview} />
@@ -1008,12 +1013,12 @@ function TimelineWaterfall({
             </div>
           </div>
           <div className="relative z-10 grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
-            <div className="px-2.5 py-2 text-label-sm font-medium text-muted-foreground">Event</div>
+            <div className="px-2.5 py-2 text-label font-medium text-muted-foreground">Event</div>
             <div className="relative h-8 min-w-0 overflow-hidden">
               {ticks.map((tick) => (
                 <span
                   key={tick}
-                  className="absolute top-0 ml-1 text-[10px] leading-8 text-muted-foreground"
+                  className="absolute top-0 ml-1 text-label leading-8 text-muted-foreground"
                   style={{ left: `${tick * 100}%` }}
                 >
                   {formatDuration(durationMs * tick)}
@@ -1056,7 +1061,7 @@ function TimelineWaterfall({
                         ) : (
                           <span className="h-4 w-4 shrink-0" />
                         )}
-                        <p className="min-w-0 truncate text-label-sm font-medium text-foreground">{row.label}</p>
+                        <p className="min-w-0 truncate text-label font-medium text-foreground">{row.label}</p>
                       </div>
                     </div>
                     <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
@@ -1069,14 +1074,14 @@ function TimelineWaterfall({
                         title={`${row.label} · ${durationLabel} · ${row.caption}`}
                       >
                         {showDurationInside ? (
-                          <span className={`truncate text-[10px] font-medium ${timelineInsideTextColor(row.kind)}`}>
+                          <span className={`truncate text-label font-medium ${timelineInsideTextColor(row.kind)}`}>
                             {durationLabel}
                           </span>
                         ) : null}
                       </div>
                       {!showDurationInside ? (
                         <span
-                          className="pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-[10px] font-medium text-foreground"
+                          className="pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-label font-medium text-foreground"
                           style={showOutsideAfter
                             ? { left: `${constrainedLeft + constrainedWidth}%` }
                             : { right: `${100 - constrainedLeft}%` }}
@@ -1088,12 +1093,12 @@ function TimelineWaterfall({
                   </div>
                 );
               }) : (
-                <p className="px-3 py-3 text-body-sm text-muted-foreground">No timed events recorded yet.</p>
+                <p className="px-3 py-3 text-base text-muted-foreground">No timed events recorded yet.</p>
               )}
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-label text-muted-foreground">
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />embedding</span>
@@ -1115,14 +1120,14 @@ function ModelCallSelector({
 }) {
   if (!events.length) {
     return (
-      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
         No model calls recorded.
       </div>
     );
   }
   const selectedEvent = events.find((event) => event._id === selectedEventId) ?? events[0];
   return (
-    <div className="space-y-2">
+    <OperationalPanel as="section" className="space-y-3 px-3 py-3">
       <Select value={selectedEvent._id} onValueChange={(value) => {
         if (value) onSelectEvent(value);
       }}>
@@ -1137,7 +1142,7 @@ function ModelCallSelector({
           ))}
         </SelectContent>
       </Select>
-      <dl className="grid gap-2 rounded-lg border border-foreground/6 p-3 text-label-sm text-muted-foreground sm:grid-cols-3">
+      <dl className="grid gap-x-8 gap-y-2 text-base text-muted-foreground sm:grid-cols-3">
         <div className="min-w-0">
           <dt className="font-medium text-foreground">Model</dt>
           <dd className="mt-1 truncate">{[selectedEvent.provider, selectedEvent.model].filter(Boolean).join(" / ") || "—"}</dd>
@@ -1151,7 +1156,7 @@ function ModelCallSelector({
           <dd className="mt-1">{formatTokens(selectedEvent.inputTokens, selectedEvent.outputTokens)}</dd>
         </div>
       </dl>
-    </div>
+    </OperationalPanel>
   );
 }
 
@@ -1180,7 +1185,9 @@ export default function OperatorExtractionsPage() {
   const [timelineLabelWidth, setTimelineLabelWidth] = useState(150);
   const [collapsedTimelineIds, setCollapsedTimelineIds] = useState<Set<string>>(() => new Set());
   const [rerunningPolicyId, setRerunningPolicyId] = useState<string | null>(null);
+  const [stoppingTraceId, setStoppingTraceId] = useState<string | null>(null);
   const rerunExtraction = useAction(api.operator.rerunExtraction);
+  const stopExtraction = useMutation(api.operator.stopExtraction);
 
   const current = useCachedOperatorCurrent();
   const traces = useCachedOperatorExtractionTraces({
@@ -1206,6 +1213,7 @@ export default function OperatorExtractionsPage() {
   const selected = detail?.session ?? traces?.find((trace) => trace.traceId === selectedTraceId) ?? null;
   const selectedPolicyId = selected?.policyId as Id<"policies"> | undefined;
   const isRerunningSelected = !!selectedPolicyId && rerunningPolicyId === selectedPolicyId;
+  const isStoppingSelected = !!selectedTraceId && stoppingTraceId === selectedTraceId;
   const selectedIsRunning = selected?.status === "running";
   const modelEvents = (detail?.events ?? []).filter((event) => event.kind === "model_call");
   const selectedModelEvent = modelEvents.find((event) => event._id === selectedModelEventId) ?? modelEvents[0];
@@ -1259,6 +1267,18 @@ export default function OperatorExtractionsPage() {
       setRerunningPolicyId(null);
     }
   }, [openTrace, rerunExtraction, selectedPolicyId]);
+  const stopSelectedExtraction = useCallback(async () => {
+    if (!selectedTraceId) return;
+    setStoppingTraceId(selectedTraceId);
+    try {
+      const result = await stopExtraction({ traceId: selectedTraceId });
+      toast.success(result?.stopped ? "Extraction stopped" : "Extraction was already stopped");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to stop extraction");
+    } finally {
+      setStoppingTraceId(null);
+    }
+  }, [selectedTraceId, stopExtraction]);
   const toggleTimelineCollapsed = useCallback((id: string) => {
     setCollapsedTimelineIds((current) => {
       const next = new Set(current);
@@ -1319,20 +1339,38 @@ export default function OperatorExtractionsPage() {
       }}
       title={selected ? traceDisplayTitle(selected) : "Extraction trace"}
       footer={selected ? (
-        <PillButton
-          type="button"
-          variant="secondary"
-          size="compact"
-          disabled={!selectedPolicyId || selectedIsRunning || isRerunningSelected}
-          onClick={rerunSelectedExtraction}
-        >
-          {isRerunningSelected ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5" />
-          )}
-          Rerun
-        </PillButton>
+        <div className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+          <PillButton
+            type="button"
+            variant="secondary"
+            size="compact"
+            className="w-full sm:w-auto"
+            disabled={!selectedTraceId || !selectedIsRunning || isStoppingSelected}
+            onClick={stopSelectedExtraction}
+          >
+            {isStoppingSelected ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <XCircle className="h-3.5 w-3.5" />
+            )}
+            Stop
+          </PillButton>
+          <PillButton
+            type="button"
+            variant="secondary"
+            size="compact"
+            className="w-full sm:w-auto"
+            disabled={!selectedPolicyId || selectedIsRunning || isRerunningSelected || isStoppingSelected}
+            onClick={rerunSelectedExtraction}
+          >
+            {isRerunningSelected ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Rerun
+          </PillButton>
+        </div>
       ) : undefined}
     >
       {detail === undefined && selectedTraceId ? (
@@ -1358,12 +1396,17 @@ export default function OperatorExtractionsPage() {
 
             <TabsContent value="summary" className="pt-1">
               <div className="space-y-3">
-                <dl className="rounded-lg border border-foreground/6">
-                  <DetailRow
+                {detail?.eventsTruncated ? (
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-base text-amber-700 dark:text-amber-300">
+                    This trace is large, so operator detail is showing a capped event snapshot.
+                  </div>
+                ) : null}
+                <OperationalLabelValueList>
+                  <OperationalLabelValueRow
                     label="Extraction ID"
                     value={(
                       <div className="flex min-w-0 items-center gap-2">
-                        <code className="min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-label-sm">
+                        <code className="min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-label">
                           {selected.traceId}
                         </code>
                         <Button
@@ -1378,16 +1421,16 @@ export default function OperatorExtractionsPage() {
                       </div>
                     )}
                   />
-                  <DetailRow label="Org" value={selected.orgName} />
-                  <DetailRow label="File" value={traceDisplayFile(selected)} />
-                  <DetailRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
-                  <DetailRow label="Started" value={dayjs(selected.startedAt).format("MMM D, h:mm:ss A")} />
-                  <DetailRow label="Duration" value={formatDuration(selected.totalDurationMs ?? (selected.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined))} />
-                  <DetailRow label="Model time" value={formatDuration(selected.modelDurationMs)} />
-                  <DetailRow label="Tokens" value={formatTokens(selected.inputTokens, selected.outputTokens)} />
-                  <DetailRow label="Slowest" value={selected.slowestLabel ? `${selected.slowestLabel} · ${formatDuration(selected.slowestDurationMs)}` : "—"} />
-                  {selected.error ? <DetailRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
-                </dl>
+                  <OperationalLabelValueRow label="Org" value={selected.orgName} />
+                  <OperationalLabelValueRow label="File" value={traceDisplayFile(selected)} />
+                  <OperationalLabelValueRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
+                  <OperationalLabelValueRow label="Started" value={dayjs(selected.startedAt).format("MMM D, h:mm:ss A")} />
+                  <OperationalLabelValueRow label="Duration" value={formatDuration(selected.totalDurationMs ?? (selected.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined))} />
+                  <OperationalLabelValueRow label="Model time" value={formatDuration(selected.modelDurationMs)} />
+                  <OperationalLabelValueRow label="Tokens" value={formatTokens(selected.inputTokens, selected.outputTokens)} />
+                  <OperationalLabelValueRow label="Slowest" value={selected.slowestLabel ? `${selected.slowestLabel} · ${formatDuration(selected.slowestDurationMs)}` : "—"} />
+                  {selected.error ? <OperationalLabelValueRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
+                </OperationalLabelValueList>
                 {!selectedIsRunning ? (
                   <OperationalProfileSummary policy={detail?.policy} />
                 ) : null}
@@ -1396,21 +1439,19 @@ export default function OperatorExtractionsPage() {
 
             <TabsContent value="extracted" className="pt-1">
               {selectedIsRunning ? (
-                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
                   Extraction is running. Extracted policy data will appear after this run completes.
                 </div>
               ) : detail?.policy ? (
                 <ExtractionCards
-                  policyId={detail.sourceHierarchy?.length ? undefined : selected.policyId as Id<"policies">}
-                  policyDocument={{
-                    ...detail.policy,
-                    documentOutline: detail.sourceHierarchy ?? (detail.policy.documentOutline as Record<string, unknown>[] | undefined),
-                  } as ExtractionCardsPolicyDocument}
+                  policyId={selected.policyId as Id<"policies">}
+                  policyDocument={detail.policy as ExtractionCardsPolicyDocument}
                   fileUrl={detail.fileUrl ?? undefined}
                   allowOperatorSourceAccess
+                  sourceHierarchyOnly
                 />
               ) : (
-                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-body-sm text-muted-foreground">
+                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
                   Extracted policy data is unavailable for this trace.
                 </div>
               )}
@@ -1427,7 +1468,7 @@ export default function OperatorExtractionsPage() {
               />
             </TabsContent>
 
-            <TabsContent value="models" className="min-w-0 space-y-3 pt-1">
+            <TabsContent value="models" className="min-w-0 space-y-4 pt-1">
               <ModelCallSelector
                 events={modelEvents}
                 selectedEventId={selectedModelEvent?._id}
@@ -1441,22 +1482,22 @@ export default function OperatorExtractionsPage() {
                 {logEvents.length ? logEvents.map((event) => (
                   <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-label-sm text-muted-foreground">
+                      <p className="text-label text-muted-foreground">
                         {dayjs(event.timestamp).format("h:mm:ss A")}{event.phase ? ` · ${event.phase}` : ""}
                       </p>
                       {event.level && event.level !== "info" ? <Badge variant={event.level === "error" ? "destructive" : "secondary"}>{event.level}</Badge> : null}
                     </div>
-                    <p className="mt-1 text-body-sm text-foreground">{event.message}</p>
+                    <p className="mt-1 text-base text-foreground">{event.message}</p>
                   </div>
                 )) : (
-                  <p className="px-3 py-3 text-body-sm text-muted-foreground">No log messages recorded.</p>
+                  <p className="px-3 py-3 text-base text-muted-foreground">No log messages recorded.</p>
                 )}
               </div>
             </TabsContent>
           </Tabs>
         </div>
       ) : (
-        <p className="text-body-sm text-muted-foreground">Trace not found.</p>
+        <p className="text-base text-muted-foreground">Trace not found.</p>
       )}
     </SettingsDrawer>
   );
@@ -1484,14 +1525,14 @@ export default function OperatorExtractionsPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[13%] px-4 text-label-sm text-muted-foreground">Started</TableHead>
-                <TableHead className="w-[16%] text-label-sm text-muted-foreground">Org</TableHead>
-                <TableHead className="w-[22%] text-label-sm text-muted-foreground">Policy / file</TableHead>
-                <TableHead className="w-[9%] text-label-sm text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[9%] text-label-sm text-muted-foreground">Duration</TableHead>
-                <TableHead className="w-[15%] text-label-sm text-muted-foreground">Slowest area</TableHead>
-                <TableHead className="w-[8%] text-label-sm text-muted-foreground">Calls</TableHead>
-                <TableHead className="w-[8%] px-4 text-label-sm text-muted-foreground">Model time</TableHead>
+                <TableHead className="w-[13%] px-4 text-label text-muted-foreground">Started</TableHead>
+                <TableHead className="w-[16%] text-label text-muted-foreground">Org</TableHead>
+                <TableHead className="w-[22%] text-label text-muted-foreground">Policy / file</TableHead>
+                <TableHead className="w-[9%] text-label text-muted-foreground">Status</TableHead>
+                <TableHead className="w-[9%] text-label text-muted-foreground">Duration</TableHead>
+                <TableHead className="w-[15%] text-label text-muted-foreground">Slowest area</TableHead>
+                <TableHead className="w-[8%] text-label text-muted-foreground">Calls</TableHead>
+                <TableHead className="w-[8%] px-4 text-label text-muted-foreground">Model time</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1499,12 +1540,12 @@ export default function OperatorExtractionsPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={8} className="h-32 px-4 text-center text-muted-foreground">
                     <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin" />
-                    <p className="text-body-sm">Loading extraction traces...</p>
+                    <p className="text-base">Loading extraction traces...</p>
                   </TableCell>
                 </TableRow>
               ) : traces.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={8} className="h-32 px-4 text-body-sm text-muted-foreground">
+                  <TableCell colSpan={8} className="h-32 px-4 text-base text-muted-foreground">
                     No extraction traces yet. Run a policy extraction and traces will appear here.
                   </TableCell>
                 </TableRow>

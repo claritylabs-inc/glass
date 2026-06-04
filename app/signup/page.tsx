@@ -19,10 +19,10 @@ export default function SignupPage() {
           >
             <Briefcase className="mt-0.5 h-5 w-5 text-foreground" />
             <div className="flex-1">
-              <div className="text-body-sm font-medium text-foreground">
+              <div className="text-base font-medium text-foreground">
                 I&apos;m a broker or insurance agent
               </div>
-              <div className="text-label-sm text-muted-foreground">
+              <div className="text-label text-muted-foreground">
                 Set up your brokerage and invite clients.
               </div>
             </div>
@@ -35,10 +35,10 @@ export default function SignupPage() {
           >
             <ShieldCheck className="mt-0.5 h-5 w-5 text-foreground" />
             <div className="flex-1">
-              <div className="text-body-sm font-medium text-foreground">
+              <div className="text-base font-medium text-foreground">
                 I&apos;m an MGA or program administrator
               </div>
-              <div className="text-label-sm text-muted-foreground">
+              <div className="text-label text-muted-foreground">
                 Approve PCEs and certify COIs for partnered programs.
               </div>
             </div>
@@ -51,10 +51,10 @@ export default function SignupPage() {
           >
             <Building2 className="mt-0.5 h-5 w-5 text-foreground" />
             <div className="flex-1">
-              <div className="text-body-sm font-medium text-foreground">
+              <div className="text-base font-medium text-foreground">
                 I&apos;m a company signing up directly
               </div>
-              <div className="text-label-sm text-muted-foreground">
+              <div className="text-label text-muted-foreground">
                 Manage your own policies, get answers, and generate COIs.
               </div>
             </div>
@@ -64,10 +64,10 @@ export default function SignupPage() {
           <div className="flex items-start gap-3 rounded-lg border border-dashed border-foreground/8 p-4">
             <UserRound className="mt-0.5 h-5 w-5 text-muted-foreground" />
             <div className="flex-1">
-              <div className="text-body-sm font-medium text-foreground">
+              <div className="text-base font-medium text-foreground">
                 I have an invitation from my partner
               </div>
-              <div className="text-label-sm text-muted-foreground">
+              <div className="text-label text-muted-foreground">
                 Use the signup link your partner shared with you (it looks like{" "}
                 app.glass.insure/signup/your-partner), or{" "}
                 <Link href="/login" className="font-medium text-foreground underline-offset-2 hover:underline">
@@ -79,11 +79,11 @@ export default function SignupPage() {
           </div>
         </div>
 
-        <div className="pt-5 text-label-sm text-muted-foreground">
+        <div className="pt-5 text-label text-muted-foreground">
           <span>Already have an account? </span>
           <Link
             href="/login"
-            className="text-label-sm font-medium text-foreground transition hover:opacity-70"
+            className="text-label font-medium text-foreground transition hover:opacity-70"
           >
             Log in
           </Link>

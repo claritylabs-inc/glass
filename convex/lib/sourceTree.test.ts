@@ -292,15 +292,172 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name)).toEqual([
-      "Part: A. Technology Errors & Omissions",
+      "Coverage Part A: Technology Errors & Omissions",
       "Regulatory Defense and Fines — Each",
       "Bricking Loss — Each Loss",
-      "Part: AI/ML Output Sub-Limit",
+      "AI/ML Output Sub-Limit",
     ]);
   });
 });
 
 describe("normalizeSourceTree", () => {
+  it("preserves valid semantic nodes and drops invalid tree references", () => {
+    const tree = normalizeSourceTree([
+      {
+        id: "document",
+        documentId: "policy",
+        kind: "document",
+        title: "Policy",
+        description: "Policy",
+        sourceSpanIds: [],
+        order: 0,
+        path: "",
+      },
+      {
+        id: "declarations",
+        documentId: "policy",
+        parentId: "document",
+        kind: "page_group",
+        title: "Declarations",
+        description: "Declarations",
+        sourceSpanIds: ["span-declarations", "missing-span"],
+        order: 1,
+        path: "",
+      },
+      {
+        id: "orphan",
+        documentId: "policy",
+        parentId: "missing-parent",
+        kind: "section",
+        title: "Orphan",
+        description: "Orphan",
+        sourceSpanIds: [],
+        order: 2,
+        path: "",
+      },
+      {
+        id: "cycle-a",
+        documentId: "policy",
+        parentId: "cycle-b",
+        kind: "section",
+        title: "Cycle A",
+        description: "Cycle A",
+        sourceSpanIds: [],
+        order: 3,
+        path: "",
+      },
+      {
+        id: "cycle-b",
+        documentId: "policy",
+        parentId: "cycle-a",
+        kind: "section",
+        title: "Cycle B",
+        description: "Cycle B",
+        sourceSpanIds: [],
+        order: 4,
+        path: "",
+      },
+      {
+        id: "",
+        documentId: "policy",
+        parentId: "document",
+        kind: "section",
+        title: "Invalid ID",
+        description: "Invalid ID",
+        sourceSpanIds: [],
+        order: 5,
+        path: "",
+      },
+    ], [
+      { id: "span-declarations", text: "Declarations page", pageStart: 1 },
+    ], "policy");
+
+    const ids = new Set(tree.map((node) => node.id));
+    expect(ids.has("declarations")).toBe(true);
+    expect(ids.has("orphan")).toBe(false);
+    expect(ids.has("cycle-a")).toBe(false);
+    expect(ids.has("cycle-b")).toBe(false);
+    expect(tree.find((node) => node.id === "declarations")?.sourceSpanIds)
+      .toEqual(["span-declarations"]);
+  });
+
+  it("repairs tables and content nested under title-block text nodes", () => {
+    const tree = normalizeSourceTree([
+      {
+        id: "document",
+        documentId: "policy",
+        kind: "document",
+        title: "Policy",
+        description: "Policy",
+        sourceSpanIds: [],
+        order: 0,
+        path: "",
+      },
+      {
+        id: "page-6",
+        documentId: "policy",
+        parentId: "document",
+        kind: "page",
+        title: "Declarations",
+        description: "Declarations page",
+        sourceSpanIds: ["span-title"],
+        pageStart: 6,
+        pageEnd: 6,
+        order: 1,
+        path: "",
+      },
+      {
+        id: "title-block",
+        documentId: "policy",
+        parentId: "page-6",
+        kind: "text",
+        title: "Coverage notice",
+        description: "Coverage notice",
+        textExcerpt: "Coverage notice",
+        sourceSpanIds: ["span-title"],
+        pageStart: 6,
+        pageEnd: 6,
+        order: 2,
+        path: "",
+        metadata: { organizer: "title_block" },
+      },
+      {
+        id: "table-1",
+        documentId: "policy",
+        parentId: "title-block",
+        kind: "table",
+        title: "Declarations table",
+        description: "Declarations table",
+        sourceSpanIds: ["span-table"],
+        pageStart: 6,
+        pageEnd: 6,
+        order: 3,
+        path: "",
+      },
+      {
+        id: "line-after-title",
+        documentId: "policy",
+        parentId: "title-block",
+        kind: "text",
+        title: "Text",
+        description: "Continuation text",
+        textExcerpt: "Continuation text",
+        sourceSpanIds: ["span-continuation"],
+        pageStart: 6,
+        pageEnd: 6,
+        order: 4,
+        path: "",
+      },
+    ], [
+      { id: "span-title", text: "Coverage notice", pageStart: 6 },
+      { id: "span-table", text: "Coverage Part | Limit", pageStart: 6 },
+      { id: "span-continuation", text: "Continuation text", pageStart: 6 },
+    ], "policy");
+
+    expect(tree.find((node) => node.id === "table-1")?.parentId).toBe("page-6");
+    expect(tree.find((node) => node.id === "line-after-title")?.parentId).toBe("page-6");
+  });
+
   it("keeps generated fallback source span IDs distinct for repeated table-cell text", () => {
     const tree = normalizeSourceTree([], [
       {

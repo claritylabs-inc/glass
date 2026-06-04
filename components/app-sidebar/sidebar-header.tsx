@@ -29,7 +29,7 @@ export function SidebarHeader({
       {!collapsed && backHref ? (
         <Link
           href={backHref}
-          className="flex items-center gap-1.5 text-body-sm text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
+          className="flex items-center gap-1.5 text-base text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
         >
           <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
           <span>Back</span>
@@ -39,7 +39,7 @@ export function SidebarHeader({
       {!collapsed && !backHref ? (
         <>
           <div
-            className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-label-sm font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}
+            className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-label font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}
           >
             {headerOrgIcon ? (
               <Image
@@ -66,7 +66,7 @@ export function SidebarHeader({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-body-sm font-medium text-foreground truncate">
+            <p className="text-base font-medium text-foreground truncate">
               {headerOrgName}
             </p>
           </div>

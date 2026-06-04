@@ -28,7 +28,7 @@ export default function ConnectedVendorPolicyDetailPage({
       breadcrumbDetail={
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-muted-foreground/80">{vendorName}</span>
-          <span className="text-body-sm text-muted-foreground/30">/</span>
+          <span className="text-base text-muted-foreground/30">/</span>
           <span className="truncate">{breadcrumb}</span>
         </span>
       }
