@@ -15,7 +15,11 @@ function uniqueDomains(domains: string[]): string[] {
 export function getAgentDomain(): string {
   const configured = process.env.AGENT_EMAIL_DOMAIN ?? process.env.AGENT_DOMAIN;
   if (!configured) return DEFAULT_AGENT_DOMAIN;
-  return normalizeDomain(configured);
+  const normalized = normalizeDomain(configured);
+  if (DEFAULT_LEGACY_AGENT_DOMAINS.includes(normalized)) {
+    return DEFAULT_AGENT_DOMAIN;
+  }
+  return normalized;
 }
 
 export function getLegacyAgentDomains(): string[] {
@@ -25,7 +29,7 @@ export function getLegacyAgentDomains(): string[] {
 }
 
 export function getAgentDomains(): string[] {
-  return uniqueDomains([getAgentDomain(), ...getLegacyAgentDomains()]);
+  return uniqueDomains([DEFAULT_AGENT_DOMAIN, getAgentDomain(), ...getLegacyAgentDomains()]);
 }
 
 export function getNotificationEmailDomain(): string {
