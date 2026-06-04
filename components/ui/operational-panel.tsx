@@ -46,7 +46,7 @@ function OperationalPanelHeader({
       )}
     >
       <div className="min-w-0">
-        <h2 className="min-w-0 truncate text-base font-medium text-foreground">
+        <h2 className="min-w-0 truncate text-base font-medium leading-5 text-foreground">
           {title}
         </h2>
         {description ? (
@@ -128,6 +128,52 @@ function OperationalDetailRow({
   );
 }
 
+function OperationalLabelValueList({
+  children,
+  title,
+  className,
+}: {
+  children: ReactNode;
+  title?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <OperationalPanel as="div" className={className}>
+      {title ? (
+        <OperationalPanelHeader title={title} />
+      ) : null}
+      <dl>{children}</dl>
+    </OperationalPanel>
+  );
+}
+
+function OperationalLabelValueRow({
+  label,
+  value,
+  align = "left",
+}: {
+  label: ReactNode;
+  value?: ReactNode;
+  align?: "left" | "right";
+}) {
+  if (value === undefined || value === null || value === "") return null;
+  return (
+    <div className="grid grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] gap-3 border-t border-foreground/6 px-4 py-3 first:border-t-0">
+      <dt className="min-w-0 text-base font-normal text-muted-foreground">
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          "min-w-0 break-words text-base leading-5 text-foreground",
+          align === "right" && "text-right",
+        )}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 function OperationalSkeletonList({
   rows = 6,
   showTrailing = true,
@@ -166,5 +212,7 @@ export {
   OperationalItem,
   OperationalDetailGroup,
   OperationalDetailRow,
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
   OperationalSkeletonList,
 };

@@ -74,6 +74,16 @@ const policyDeliverySourceKindValidator = v.union(
   v.literal("endorsement"),
 );
 
+const coverageTermValidator = v.object({
+  kind: v.optional(v.string()),
+  label: v.string(),
+  value: v.string(),
+  amount: v.optional(v.number()),
+  appliesTo: v.optional(v.string()),
+  sourceNodeIds: v.optional(v.array(v.string())),
+  sourceSpanIds: v.optional(v.array(v.string())),
+});
+
 const policyDeliveryRuleFiltersValidator = v.object({
   carriers: v.optional(v.array(v.string())),
   securities: v.optional(v.array(v.string())),
@@ -1163,6 +1173,8 @@ export default defineSchema({
         included: v.optional(v.boolean()),
         coveragePremium: v.optional(v.string()),
         premium: v.optional(v.string()),
+        endorsementNumber: v.optional(v.string()),
+        limits: v.optional(v.array(coverageTermValidator)),
         coverageOrigin: v.optional(v.union(v.literal("core"), v.literal("endorsement"))),
         coverageOriginConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
         coverageOriginReason: v.optional(v.string()),

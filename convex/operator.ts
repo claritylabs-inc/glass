@@ -5,10 +5,11 @@ import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
 import { getAuthSiteUrl } from "./lib/domains";
+import { normalizeCoverageName } from "./lib/coverageNames";
 import { normalizeAvailableUserPhone } from "./lib/userPhone";
 import {
   assertCustomerUser,
@@ -27,50 +28,10 @@ const extractionTraceStatusValidator = v.union(
   v.literal("cancelled"),
 );
 const internalApi = internal as any;
+const OPERATOR_TRACE_EVENT_LIMIT = 500;
+const CANCELLED_BY_USER = "Cancelled by user";
 
 type OperatorSourceNode = Doc<"sourceNodes">;
-
-function buildOperatorSourceHierarchy(nodes: OperatorSourceNode[]) {
-  const ordered = [...nodes].sort((left, right) => left.order - right.order);
-  const root = ordered.find((node) => node.kind === "document");
-  const nodeIds = new Set(ordered.map((node) => node.nodeId));
-  const byParent = new Map<string | undefined, OperatorSourceNode[]>();
-
-  for (const node of ordered) {
-    if (node.kind === "document") continue;
-    const parentNodeId = node.parentNodeId && nodeIds.has(node.parentNodeId)
-      ? node.parentNodeId
-      : undefined;
-    const siblings = byParent.get(parentNodeId) ?? [];
-    siblings.push(node);
-    byParent.set(parentNodeId, siblings);
-  }
-
-  const visit = (node: OperatorSourceNode): Record<string, unknown> => {
-    const metadata = node.metadata && typeof node.metadata === "object" && !Array.isArray(node.metadata)
-      ? node.metadata as Record<string, unknown>
-      : undefined;
-    return {
-      id: node.nodeId,
-      nodeId: node.nodeId,
-      title: node.title,
-      type: node.kind,
-      label: node.kind,
-      description: node.description,
-      excerpt: node.textExcerpt,
-      content: node.textExcerpt,
-      sourceSpanIds: node.sourceSpanIds,
-      pageStart: node.pageStart,
-      pageEnd: node.pageEnd,
-      formNumber: typeof metadata?.formNumber === "string" ? metadata.formNumber : undefined,
-      metadata: node.metadata,
-      hasChildren: (byParent.get(node.nodeId) ?? []).length > 0,
-      children: (byParent.get(node.nodeId) ?? []).map(visit),
-    };
-  };
-
-  return (byParent.get(root?.nodeId) ?? byParent.get(undefined) ?? []).map(visit);
-}
 
 function normalizeSlug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
@@ -114,6 +75,167 @@ function normalizeOptionalContactPhone(value: string | undefined) {
     throw new Error("Enter a valid contact phone number");
   }
   return parsed.number;
+}
+
+async function clearOperatorExtractionQueue(
+  ctx: MutationCtx,
+  policyId: Id<"policies">,
+) {
+  const rows = await ctx.db
+    .query("policyExtractionQueue")
+    .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+    .collect();
+  for (const row of rows) await ctx.db.delete(row._id);
+}
+
+async function clearOperatorExtractionArtifacts(
+  ctx: MutationCtx,
+  policyId: Id<"policies">,
+) {
+  const artifacts = await ctx.db
+    .query("policyExtractionArtifacts")
+    .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+    .collect();
+  for (const artifact of artifacts) {
+    await ctx.storage.delete(artifact.storageId).catch(() => {});
+    await ctx.db.delete(artifact._id);
+  }
+}
+
+function appendExtractionStopLog(
+  log: Doc<"policyExtractionRuns">["pipelineLog"],
+  timestamp: number,
+) {
+  return [
+    ...(Array.isArray(log) ? log : []),
+    {
+      timestamp,
+      message: "Extraction stopped by operator",
+      phase: "cancel",
+      level: "warn",
+    },
+  ].slice(-200);
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+}
+
+function sourceNodeText(node: OperatorSourceNode) {
+  return node.textExcerpt || node.description || node.title;
+}
+
+function normalizeCoverageContextText(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s+[|/:-]+$/g, "")
+    .trim();
+}
+
+function coverageSourceContext(
+  coverage: Record<string, unknown>,
+  node: OperatorSourceNode | undefined,
+  children: OperatorSourceNode[],
+) {
+  if (!node) return undefined;
+  const excluded = new Set(
+    [
+      coverage.name,
+      coverage.limit,
+      coverage.deductible,
+      coverage.premium,
+    ]
+      .map((value) => typeof value === "string" ? normalizeCoverageContextText(value).toLowerCase() : "")
+      .filter(Boolean),
+  );
+  const cells = children
+    .filter((child) => child.kind === "table_cell")
+    .sort((left, right) => left.order - right.order);
+  const contextCells = cells
+    .map((cell) => ({
+      label: normalizeCoverageContextText(cell.title),
+      value: normalizeCoverageContextText(sourceNodeText(cell)),
+    }))
+    .filter((cell) => {
+      if (!cell.value || excluded.has(cell.value.toLowerCase())) return false;
+      if (/^\$?[\d,.]+(?:\s*\/\s*\$?[\d,.]+)?(?:\s*\([^)]*\))?$/i.test(cell.value)) return false;
+      if (/^(each claim limit|aggregate limit|deductible|premium|retroactive date)$/i.test(cell.label)) return false;
+      return true;
+    });
+  const preferred = contextCells.find((cell) =>
+    /\b(coverage|part|class|description|item|subject|type|column 1)\b/i.test(cell.label),
+  ) ?? contextCells[0];
+  if (preferred) {
+    return preferred.label && !/^column\s+\d+$/i.test(preferred.label)
+      ? `${preferred.label}: ${preferred.value}`
+      : preferred.value;
+  }
+  const rowText = normalizeCoverageContextText(node.textExcerpt ?? "");
+  return rowText || undefined;
+}
+
+async function policyWithOperatorCoverageContext(
+  ctx: QueryCtx,
+  policy: Doc<"policies"> | null,
+) {
+  const profile = recordValue(policy?.operationalProfile);
+  const coverages = Array.isArray(profile?.coverages)
+    ? profile.coverages.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
+    : [];
+  if (!policy || !profile || coverages.length === 0) return policy;
+
+  const coverageNodeIds = [
+    ...new Set(coverages.flatMap((coverage) => stringArray(coverage.sourceNodeIds))),
+  ].slice(0, 80);
+  if (coverageNodeIds.length === 0) return policy;
+
+  const nodeEntries = await Promise.all(
+    coverageNodeIds.map(async (nodeId) => {
+      const node = await ctx.db
+        .query("sourceNodes")
+        .withIndex("by_policyId_nodeId", (q) =>
+          q.eq("policyId", policy._id).eq("nodeId", nodeId),
+        )
+        .first();
+      const children = node
+        ? await ctx.db
+            .query("sourceNodes")
+            .withIndex("by_policyId_parentNodeId", (q) =>
+              q.eq("policyId", policy._id).eq("parentNodeId", node.nodeId),
+            )
+            .collect()
+        : [];
+      return [nodeId, { node, children }] as const;
+    }),
+  );
+  const nodesById = new Map(nodeEntries);
+  return {
+    ...policy,
+    operationalProfile: {
+      ...profile,
+      coverages: coverages.map((coverage) => {
+        const nodeId = stringArray(coverage.sourceNodeIds)[0];
+        const entry = nodeId ? nodesById.get(nodeId) : undefined;
+        const context = coverageSourceContext(
+          coverage,
+          entry?.node ?? undefined,
+          entry?.children ?? [],
+        );
+        const name = normalizeCoverageName(context) ?? normalizeCoverageName(
+          typeof coverage.name === "string" ? coverage.name : undefined,
+        );
+        return name ? { ...coverage, name } : coverage;
+      }),
+    },
+  };
 }
 
 function operatorOwnerEmails() {
@@ -411,25 +533,47 @@ export const listExtractionTraces = query({
       .filter((session) => args.dateTo === undefined || session.startedAt <= args.dateTo!)
       .slice(0, limit);
 
-    return await Promise.all(filtered.map(async (session) => {
-      const [org, policy] = await Promise.all([
-        ctx.db.get(session.orgId),
-        ctx.db.get(session.policyId),
-      ]);
+    const orgIds = Array.from(new Set(filtered.map((session) => session.orgId)));
+    const orgRows = await Promise.all(orgIds.map(async (orgId) => {
+      const org = await ctx.db.get(orgId);
+      return [orgId, org] as const;
+    }));
+    const orgsById = new Map(orgRows);
+
+    return filtered.map((session) => {
+      const org = orgsById.get(session.orgId);
+      const policyLabel = session.fileName ?? "Extraction trace";
       return {
-        ...session,
+        _id: session._id,
+        _creationTime: session._creationTime,
+        traceId: session.traceId,
+        policyId: session.policyId,
+        orgId: session.orgId,
+        userId: session.userId,
+        sourceKind: session.sourceKind,
+        trigger: session.trigger,
+        fileName: session.fileName,
+        status: session.status,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        lastEventAt: session.lastEventAt,
+        totalDurationMs: session.totalDurationMs,
+        modelCallCount: session.modelCallCount,
+        modelDurationMs: session.modelDurationMs,
+        inputTokens: session.inputTokens,
+        outputTokens: session.outputTokens,
+        slowestLabel: session.slowestLabel,
+        slowestKind: session.slowestKind,
+        slowestDurationMs: session.slowestDurationMs,
+        error: session.error,
+        expiresAt: session.expiresAt,
+        updatedAt: session.updatedAt,
         orgName: org?.name ?? "Unknown org",
         orgType: org?.type ?? "client",
-        policyLabel: policy
-          ? [
-              policy.carrier && policy.carrier !== "Extracting..." ? policy.carrier : null,
-              policy.policyNumber && policy.policyNumber !== "Extracting..." ? policy.policyNumber : null,
-            ].filter(Boolean).join(" · ") || policy.fileName || "Extracting..."
-          : "Deleted policy",
-        fileName: session.fileName ?? policy?.fileName,
-        documentType: policy?.documentType ?? "policy",
+        policyLabel,
+        documentType: session.sourceKind ?? "policy",
       };
-    }));
+    });
   },
 });
 
@@ -442,28 +586,18 @@ export const getExtractionTrace = query({
       .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId))
       .first();
     if (!session) return null;
-    const [org, policy, events] = await Promise.all([
+    const [org, rawPolicy, eventsWithExtra] = await Promise.all([
       ctx.db.get(session.orgId),
       ctx.db.get(session.policyId),
       ctx.db
         .query("policyExtractionTraceEvents")
         .withIndex("by_traceId_timestamp", (q) => q.eq("traceId", args.traceId))
         .order("asc")
-        .collect(),
+        .take(OPERATOR_TRACE_EVENT_LIMIT + 1),
     ]);
-    const sourceNodes = await ctx.db
-      .query("sourceNodes")
-      .withIndex("by_policyId", (q) => q.eq("policyId", session.policyId))
-      .collect();
-    const sourceHierarchy = buildOperatorSourceHierarchy(sourceNodes);
-    const policyWithOperatorHierarchy = policy
-      ? {
-          ...policy,
-          documentOutline: sourceHierarchy.length
-            ? sourceHierarchy
-            : policy.documentOutline,
-        }
-      : policy;
+    const policy = await policyWithOperatorCoverageContext(ctx, rawPolicy);
+    const eventsTruncated = eventsWithExtra.length > OPERATOR_TRACE_EVENT_LIMIT;
+    const events = eventsWithExtra.slice(0, OPERATOR_TRACE_EVENT_LIMIT);
     const fileUrl = policy?.fileId ? await ctx.storage.getUrl(policy.fileId) : null;
     return {
       session: {
@@ -479,8 +613,8 @@ export const getExtractionTrace = query({
         fileName: session.fileName ?? policy?.fileName,
         documentType: policy?.documentType ?? "policy",
       },
-      policy: policyWithOperatorHierarchy,
-      sourceHierarchy,
+      policy,
+      eventsTruncated,
       fileUrl,
       events,
     };
@@ -504,6 +638,79 @@ export const rerunExtraction = action({
       mode: "full",
     }) as { success?: boolean; traceId?: string } | undefined;
     return { success: true, traceId: result?.traceId };
+  },
+});
+
+export const stopExtraction = mutation({
+  args: { traceId: v.string() },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const session = await ctx.db
+      .query("policyExtractionTraceSessions")
+      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId))
+      .first();
+    if (!session) throw new Error("Extraction trace not found");
+    if (session.status !== "running") {
+      return { success: true, stopped: false };
+    }
+
+    const timestamp = dayjs().valueOf();
+    const policy = await ctx.db.get(session.policyId);
+    const run = await ctx.db
+      .query("policyExtractionRuns")
+      .withIndex("by_policyId", (q) => q.eq("policyId", session.policyId))
+      .first();
+
+    if (run) {
+      await ctx.db.patch(run._id, {
+        pipelineStatus: "error",
+        pipelineError: CANCELLED_BY_USER,
+        pipelineCheckpoint: undefined,
+        pipelineLog: appendExtractionStopLog(run.pipelineLog, timestamp),
+        updatedAt: timestamp,
+      });
+    }
+    await clearOperatorExtractionQueue(ctx, session.policyId);
+    await clearOperatorExtractionArtifacts(ctx, session.policyId);
+
+    if (policy) {
+      await ctx.db.patch(session.policyId, {
+        pipelineStatus: "error",
+        pipelineError: CANCELLED_BY_USER,
+        pipelineCheckpoint: undefined,
+        pipelineLog: undefined,
+      });
+      await ctx.db.insert("policyAuditLog", {
+        policyId: session.policyId,
+        userId: operator.userId,
+        orgId: policy.orgId,
+        action: "operator_cancelled_extraction",
+        detail: args.traceId,
+      });
+    }
+
+    await ctx.db.patch(session._id, {
+      status: "cancelled",
+      completedAt: timestamp,
+      lastEventAt: timestamp,
+      totalDurationMs: timestamp - session.startedAt,
+      error: CANCELLED_BY_USER,
+      updatedAt: timestamp,
+    });
+    await ctx.db.insert("policyExtractionTraceEvents", {
+      traceId: session.traceId,
+      policyId: session.policyId,
+      orgId: session.orgId,
+      kind: "session",
+      timestamp,
+      status: "cancelled",
+      message: "Extraction stopped by operator",
+      error: CANCELLED_BY_USER,
+      durationMs: timestamp - session.startedAt,
+      expiresAt: session.expiresAt,
+    });
+
+    return { success: true, stopped: true };
   },
 });
 

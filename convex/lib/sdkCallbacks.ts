@@ -9,9 +9,10 @@
 
 import dayjs from "dayjs";
 import { Output, embed, embedMany, gateway } from "ai";
-import type { LanguageModelUsage } from "ai";
+import type { EmbeddingModel, LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import {
   getModel,
   getModelAndRouteForOrg,
@@ -21,6 +22,7 @@ import {
   mergeProviderOptions,
   modelTaskForCall,
   type ModelCallTaskKind,
+  type ModelProvider,
   type ModelRoute,
   type ModelTask,
 } from "./models";
@@ -660,30 +662,76 @@ export function makeGenerateObject(
   };
 }
 
-// Lazy OpenAI provider for embeddings
+// Lazy providers for embeddings
 let _openai: ReturnType<typeof createOpenAI> | null = null;
 function openai() {
   if (!_openai) _openai = createOpenAI();
   return _openai;
 }
 
+let _google: ReturnType<typeof createGoogleGenerativeAI> | null = null;
+function google() {
+  if (!_google) _google = createGoogleGenerativeAI();
+  return _google;
+}
+
+function directEmbeddingApiKey(provider: ModelProvider): string | undefined {
+  switch (provider) {
+    case "openai":
+      return process.env.OPENAI_API_KEY;
+    case "google":
+      return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY;
+    default:
+      return undefined;
+  }
+}
+
+function embeddingGatewayModelId(route: ModelRoute) {
+  return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
+}
+
+function embeddingProviderModel(route: ModelRoute, apiKey?: string): EmbeddingModel {
+  switch (route.provider) {
+    case "openai":
+      return (apiKey ? createOpenAI({ apiKey }) : openai()).embeddingModel(route.model);
+    case "google":
+      return (apiKey ? createGoogleGenerativeAI({ apiKey }) : google()).embeddingModel(route.model);
+    default:
+      return gateway.embeddingModel(embeddingGatewayModelId(route));
+  }
+}
+
+function embeddingProviderOptions(route: ModelRoute): ProviderOptions | undefined {
+  if (route.provider === "openai" && route.model.startsWith("text-embedding-3-")) {
+    return { openai: { dimensions: EMBEDDING_DIMENSIONS } };
+  }
+  if (route.provider === "google" && route.model === "gemini-embedding-001") {
+    return { google: { outputDimensionality: EMBEDDING_DIMENSIONS } };
+  }
+  return undefined;
+}
+
 async function resolveEmbeddingConfig(ctx?: ActionCtx, orgId?: Id<"organizations">) {
-  let model = "text-embedding-3-small";
+  let route: ModelRoute = { provider: "openai", model: "text-embedding-3-small" };
   let apiKey: string | undefined;
   if (ctx && orgId) {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
-    const route = settings?.routes?.embeddings;
-    if (route?.provider === "openai") {
+    const configuredRoute = settings?.routes?.embeddings;
+    if (configuredRoute) {
+      route = configuredRoute;
       apiKey = settings?.routeSources?.embeddings === "broker"
-        ? settings?.providerKeys?.openai
+        ? settings?.providerKeys?.[configuredRoute.provider]
         : undefined;
-      model = route.model;
     }
   }
-  const embeddingModel = apiKey || process.env.OPENAI_API_KEY
-    ? (apiKey ? createOpenAI({ apiKey }) : openai()).embedding(model)
-    : gateway.textEmbeddingModel(`openai/${model}`);
-  return { embeddingModel };
+  const envApiKey = directEmbeddingApiKey(route.provider);
+  const embeddingModel = apiKey || envApiKey
+    ? embeddingProviderModel(route, apiKey)
+    : gateway.embeddingModel(embeddingGatewayModelId(route));
+  return {
+    embeddingModel,
+    providerOptions: embeddingProviderOptions(route),
+  };
 }
 
 export type EmbedTexts = (texts: string[]) => Promise<number[][]>;
@@ -705,14 +753,12 @@ export function makeEmbedTexts(
 
   return async (texts: string[]) => {
     if (!texts.length) return [];
-    const { embeddingModel } = await getConfig();
+    const { embeddingModel, providerOptions } = await getConfig();
     const { embeddings } = await embedMany({
       model: embeddingModel,
       values: texts,
       maxParallelCalls: options?.maxParallelCalls,
-      providerOptions: {
-        openai: { dimensions: EMBEDDING_DIMENSIONS },
-      },
+      providerOptions,
     });
     return embeddings;
   };
@@ -730,12 +776,10 @@ export function makeEmbedText(ctx?: ActionCtx, orgId?: Id<"organizations">): Emb
   };
 
   return async (text: string) => {
-    const { embeddingModel } = await getConfig();
+    const { embeddingModel, providerOptions } = await getConfig();
     const { embedding } = await embed({
       model: embeddingModel,
-      providerOptions: {
-        openai: { dimensions: EMBEDDING_DIMENSIONS },
-      },
+      providerOptions,
       value: text,
     });
     return embedding;

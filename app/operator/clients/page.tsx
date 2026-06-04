@@ -519,7 +519,7 @@ export default function OperatorClientsPage() {
               value={brokerOrgId}
               onValueChange={(value) => setBrokerOrgId(value ?? STANDALONE_VALUE)}
             >
-              <SelectTrigger className="w-full data-[size=default]:h-10">
+              <SelectTrigger className="w-full">
                 <SelectValue>
                   {selectedBroker ? (
                     <span className="flex min-w-0 items-center gap-2">
@@ -619,7 +619,7 @@ export default function OperatorClientsPage() {
                   markClientSettingsDirty();
                 }}
               >
-                <SelectTrigger className="w-full data-[size=default]:h-10">
+                <SelectTrigger className="w-full">
                   <SelectValue>
                     {selectedEditBroker ? (
                       <span className="flex min-w-0 items-center gap-2">

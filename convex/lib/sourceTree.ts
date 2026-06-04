@@ -1,8 +1,8 @@
 "use node";
 
 import {
+  buildDocumentSourceTree as buildSdkDocumentSourceTree,
   buildDeterministicOperationalProfile as buildSdkOperationalProfile,
-  buildDocumentSourceTree,
   mergeOperationalProfile,
   normalizeDocumentSourceTreePaths,
   stableHash,
@@ -16,6 +16,7 @@ import {
   type SourceSpanUnit,
 } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
+import { normalizeCoverageName, normalizeText } from "./coverageNames";
 import { POLICY_TYPE_LABELS } from "./policyTypes";
 
 export type {
@@ -103,7 +104,7 @@ const SOURCE_NODE_KINDS = new Set<DocumentSourceNodeKind>([
 const POLICY_TYPE_KEYS = new Set(Object.keys(POLICY_TYPE_LABELS));
 
 function normalizeWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return normalizeText(value);
 }
 
 function truncate(value: string | undefined, maxChars: number): string | undefined {
@@ -255,7 +256,293 @@ function sourceSpansForSdk(sourceSpans: SourceSpanLike[], documentId: string): S
 
 export function buildSourceTreeFromSpans(sourceSpans: SourceSpanLike[], documentId?: string): DocumentSourceNode[] {
   const resolvedDocumentId = documentId ?? sourceSpans[0]?.documentId ?? "document";
-  return buildDocumentSourceTree(sourceSpansForSdk(sourceSpans, resolvedDocumentId), resolvedDocumentId);
+  const nodes: DocumentSourceNode[] = [];
+  let order = 0;
+  const rootId = nodeId(resolvedDocumentId, "document", 0);
+  const spans = sourceSpans
+    .filter((span) => typeof span.text === "string" && span.text.trim())
+    .map((span, index) => ({ span, index }))
+    .sort((left, right) => {
+      const leftPage = pageStart(left.span) ?? Number.MAX_SAFE_INTEGER;
+      const rightPage = pageStart(right.span) ?? Number.MAX_SAFE_INTEGER;
+      if (leftPage !== rightPage) return leftPage - rightPage;
+      return left.index - right.index;
+    });
+  nodes.push({
+    id: rootId,
+    documentId: resolvedDocumentId,
+    kind: "document",
+    title: "Document",
+    description: "Document root for source-native policy hierarchy",
+    sourceSpanIds: [],
+    pageStart: spans[0] ? pageStart(spans[0].span) : undefined,
+    pageEnd: spans.at(-1) ? pageEnd(spans.at(-1)!.span) : undefined,
+    order: order++,
+    path: "1",
+  });
+
+  const pageIds = new Map<number, string>();
+  const tableIds = new Map<string, string>();
+  const rowIds = new Map<string, string>();
+  const tableNumberByPage = new Map<number, number>();
+
+  function ensurePage(page: number, span?: SourceSpanLike) {
+    const existing = pageIds.get(page);
+    if (existing) return existing;
+    const id = nodeId(resolvedDocumentId, "page", page);
+    pageIds.set(page, id);
+    nodes.push({
+      id,
+      documentId: resolvedDocumentId,
+      parentId: rootId,
+      kind: "page",
+      title: `Page ${page}`,
+      description: nodeDescription({
+        kind: "page",
+        title: `Page ${page}`,
+        text: span?.text,
+        page,
+      }),
+      textExcerpt: truncate(span?.text, 1600),
+      sourceSpanIds: span ? [spanId(span)] : [],
+      pageStart: page,
+      pageEnd: page,
+      bbox: span?.bbox,
+      order: order++,
+      path: "",
+      metadata: span?.metadata,
+    });
+    return id;
+  }
+
+  function ensureTable(pageId: string, page: number, tableId: string) {
+    const existing = tableIds.get(tableId);
+    if (existing) return existing;
+    const nextTableNumber = (tableNumberByPage.get(page) ?? 0) + 1;
+    tableNumberByPage.set(page, nextTableNumber);
+    const id = nodeId(resolvedDocumentId, "table", nodes.length);
+    tableIds.set(tableId, id);
+    nodes.push({
+      id,
+      documentId: resolvedDocumentId,
+      parentId: pageId,
+      kind: "table",
+      title: `Table ${nextTableNumber}`,
+      description: nodeDescription({
+        kind: "table",
+        title: `Table ${nextTableNumber}`,
+        page,
+      }),
+      sourceSpanIds: [],
+      pageStart: page,
+      pageEnd: page,
+      order: order++,
+      path: "",
+      metadata: { tableId },
+    });
+    return id;
+  }
+
+  for (const { span } of spans) {
+    const page = pageStart(span) ?? 1;
+    const unit = span.sourceUnit ?? span.metadata?.sourceUnit ?? span.metadata?.elementType;
+    if (unit === "text" && /^SPECIMEN POLICY — FOR TESTING ONLY$/i.test(normalizeWhitespace(span.text ?? ""))) {
+      continue;
+    }
+    const table = normalizedTable(span.table);
+    const pageId = ensurePage(page, unit === "page" ? span : undefined);
+    if (unit === "page") continue;
+
+    if (unit === "table_row" && table?.tableId) {
+      const tableNodeId = ensureTable(pageId, page, table.tableId);
+      const id = nodeId(resolvedDocumentId, "table_row", nodes.length);
+      rowIds.set(spanId(span), id);
+      nodes.push({
+        id,
+        documentId: resolvedDocumentId,
+        parentId: tableNodeId,
+        kind: "table_row",
+        title: table.isHeader ? "Header row" : `Row ${typeof table.rowIndex === "number" ? table.rowIndex + 1 : rowIds.size}`,
+        description: nodeDescription({
+          kind: "table_row",
+          title: table.isHeader ? "Header row" : "Table row",
+          text: span.text,
+          page,
+        }),
+        textExcerpt: truncate(span.text, 1600),
+        sourceSpanIds: [spanId(span)],
+        pageStart: page,
+        pageEnd: pageEnd(span),
+        bbox: span.bbox,
+        order: order++,
+        path: "",
+        metadata: { ...span.metadata, table },
+      });
+      continue;
+    }
+
+    if (unit === "table_cell" && table?.tableId) {
+      const tableNodeId = ensureTable(pageId, page, table.tableId);
+      const rowKey = table.rowSpanId ?? span.parentSpanId ?? `${table.tableId}:row:${table.rowIndex ?? "unknown"}`;
+      let rowNodeId = rowIds.get(rowKey);
+      if (!rowNodeId) {
+        rowNodeId = nodeId(resolvedDocumentId, "table_row", nodes.length);
+        rowIds.set(rowKey, rowNodeId);
+        nodes.push({
+          id: rowNodeId,
+          documentId: resolvedDocumentId,
+          parentId: tableNodeId,
+          kind: "table_row",
+          title: `Row ${typeof table.rowIndex === "number" ? table.rowIndex + 1 : rowIds.size}`,
+          description: nodeDescription({
+            kind: "table_row",
+            title: "Table row",
+            page,
+          }),
+          sourceSpanIds: [],
+          pageStart: page,
+          pageEnd: page,
+          order: order++,
+          path: "",
+          metadata: { tableId: table.tableId, rowIndex: table.rowIndex },
+        });
+      }
+      nodes.push({
+        id: nodeId(resolvedDocumentId, "table_cell", nodes.length),
+        documentId: resolvedDocumentId,
+        parentId: rowNodeId,
+        kind: "table_cell",
+        title: table.columnName || `Column ${typeof table.columnIndex === "number" ? table.columnIndex + 1 : ""}`.trim(),
+        description: nodeDescription({
+          kind: "table_cell",
+          title: table.columnName || "Table cell",
+          text: span.text,
+          page,
+        }),
+        textExcerpt: truncate(span.text, 1600),
+        sourceSpanIds: [spanId(span)],
+        pageStart: page,
+        pageEnd: pageEnd(span),
+        bbox: span.bbox,
+        order: order++,
+        path: "",
+        metadata: { ...span.metadata, table },
+      });
+      continue;
+    }
+
+    nodes.push({
+      id: nodeId(resolvedDocumentId, "text", nodes.length),
+      documentId: resolvedDocumentId,
+      parentId: pageId,
+      kind: "text",
+      title: truncate(span.text, 80) ?? "Text",
+      description: nodeDescription({
+        kind: "text",
+        title: "Text",
+        text: span.text,
+        page,
+      }),
+      textExcerpt: truncate(span.text, 1600),
+      sourceSpanIds: [spanId(span)],
+      pageStart: page,
+      pageEnd: pageEnd(span),
+      bbox: span.bbox,
+      order: order++,
+      path: "",
+      metadata: span.metadata,
+    });
+  }
+
+  return nodes;
+}
+
+function buildFallbackSourceTree(sourceSpans: SourceSpanLike[], documentId: string): DocumentSourceNode[] {
+  const sdkSpans = sourceSpansForSdk(sourceSpans, documentId);
+  if (sdkSpans.length > 0) {
+    const sdkTree = buildSdkDocumentSourceTree(sdkSpans, documentId);
+    if (sdkTree.some((node) => node.kind !== "document")) {
+      return sdkTree;
+    }
+  }
+  return buildSourceTreeFromSpans(sourceSpans, documentId);
+}
+
+function isValidSourceNodeId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 512;
+}
+
+function hasParentCycle(nodeId: string, parentById: Map<string, string | undefined>): boolean {
+  const seen = new Set<string>();
+  let currentId: string | undefined = nodeId;
+  while (currentId) {
+    if (seen.has(currentId)) return true;
+    seen.add(currentId);
+    currentId = parentById.get(currentId);
+  }
+  return false;
+}
+
+function pruneInvalidTree(nodes: DocumentSourceNode[]): DocumentSourceNode[] {
+  const uniqueNodes: DocumentSourceNode[] = [];
+  const seenIds = new Set<string>();
+  for (const node of nodes) {
+    if (seenIds.has(node.id)) continue;
+    seenIds.add(node.id);
+    uniqueNodes.push(node);
+  }
+
+  const activeIds = new Set(uniqueNodes.map((node) => node.id));
+  const parentById = new Map(
+    uniqueNodes.map((node) => [node.id, node.parentId] as const),
+  );
+
+  for (const node of uniqueNodes) {
+    if (node.parentId && !activeIds.has(node.parentId)) {
+      activeIds.delete(node.id);
+      continue;
+    }
+    if (hasParentCycle(node.id, parentById)) {
+      activeIds.delete(node.id);
+    }
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const node of uniqueNodes) {
+      if (!activeIds.has(node.id)) continue;
+      if (node.parentId && !activeIds.has(node.parentId)) {
+        activeIds.delete(node.id);
+        changed = true;
+      }
+    }
+  }
+
+  return uniqueNodes.filter((node) => activeIds.has(node.id));
+}
+
+function isTitleOrganizerNode(node: DocumentSourceNode | undefined) {
+  return Boolean(
+    node?.kind === "text" &&
+    node.metadata &&
+    typeof node.metadata === "object" &&
+    !Array.isArray(node.metadata) &&
+    (node.metadata as Record<string, unknown>).organizer === "title_block",
+  );
+}
+
+function repairTextParentedNodes(nodes: DocumentSourceNode[]): DocumentSourceNode[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  return nodes.map((node) => {
+    if (!node.parentId) return node;
+    const parent = byId.get(node.parentId);
+    if (!parent || parent.kind !== "text") return node;
+    if (isTitleOrganizerNode(parent) || node.kind !== "text") {
+      return { ...node, parentId: parent.parentId };
+    }
+    return node;
+  });
 }
 
 export function normalizeSourceTree(
@@ -264,19 +551,18 @@ export function normalizeSourceTree(
   documentId: string,
 ): DocumentSourceNode[] {
   if (!Array.isArray(rawNodes) || rawNodes.length === 0) {
-    return normalizeDocumentSourceTreePaths(buildSourceTreeFromSpans(sourceSpans, documentId));
+    return normalizeDocumentSourceTreePaths(buildFallbackSourceTree(sourceSpans, documentId));
   }
   const validSpanIds = new Set(sourceSpans.map(spanId));
   const nodes = rawNodes
     .map((node, index): DocumentSourceNode | undefined => {
       if (!node || typeof node !== "object") return undefined;
       const record = node as Record<string, unknown>;
+      if (!isValidSourceNodeId(record.id)) return undefined;
       const kind = typeof record.kind === "string" && SOURCE_NODE_KINDS.has(record.kind as DocumentSourceNodeKind)
         ? record.kind as DocumentSourceNodeKind
-        : "text";
-      const id = typeof record.id === "string" && record.id.length > 0
-        ? record.id
-        : nodeId(documentId, kind, index);
+        : undefined;
+      if (!kind) return undefined;
       const title = typeof record.title === "string" && record.title.trim()
         ? record.title.trim()
         : titleCase(kind);
@@ -289,10 +575,11 @@ export function normalizeSourceTree(
           page: typeof record.pageStart === "number" ? record.pageStart : undefined,
         });
       const rawSpanIds = Array.isArray(record.sourceSpanIds) ? record.sourceSpanIds : [];
+      const parentId = isValidSourceNodeId(record.parentId) ? record.parentId : undefined;
       return {
-        id,
+        id: record.id,
         documentId: typeof record.documentId === "string" ? record.documentId : documentId,
-        parentId: typeof record.parentId === "string" ? record.parentId : undefined,
+        parentId,
         kind,
         title,
         description,
@@ -311,8 +598,10 @@ export function normalizeSourceTree(
       };
     })
     .filter((node): node is DocumentSourceNode => Boolean(node));
+  const validNodes = pruneInvalidTree(nodes);
+  const hasDocumentRoot = validNodes.some((node) => node.kind === "document" && !node.parentId);
   return normalizeDocumentSourceTreePaths(
-    nodes.length ? nodes : buildSourceTreeFromSpans(sourceSpans, documentId),
+    hasDocumentRoot ? repairTextParentedNodes(validNodes) : buildFallbackSourceTree(sourceSpans, documentId),
   );
 }
 
@@ -475,21 +764,70 @@ function controlledCoverageTypes(policyTypes: string[]): string[] {
   return policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
 }
 
-function cleanCoverageName(value: string | undefined): string | undefined {
-  const text = normalizeWhitespace(value ?? "");
-  if (!text) return undefined;
-  const columnMatch = text.match(/\bColumn\s+1:\s*([\s\S]*?)(?=\s+\|\s+Column\s+\d+:|\s+Column\s+\d+:|$)/i);
-  const candidate = normalizeWhitespace(columnMatch?.[1] ?? text)
-    .replace(/^coverage\s*:?\s*/i, "")
-    .replace(/\s*\([^)]*$/g, "")
-    .replace(/\b(?:table row|text)\s*$/i, "")
-    .replace(/^[\s:;#-]+|[\s;,.\\/]+$/g, "");
-  if (!candidate) return undefined;
-  if (/^(row\s+\d+|table\s+row|text|column\s+\d+)\b/i.test(candidate)) return undefined;
-  if (/^(?:table|row|text)\s+(?:table|row|text)$/i.test(candidate)) return undefined;
-  if (/\b(?:under|of|and|or|for|to|with|which|that)$/i.test(candidate)) return undefined;
-  if (!/[A-Za-z]/.test(candidate)) return undefined;
-  return candidate;
+const COVERAGE_TERM_KINDS = new Set([
+  "each_claim_limit",
+  "each_occurrence_limit",
+  "each_loss_limit",
+  "aggregate_limit",
+  "sublimit",
+  "retention",
+  "deductible",
+  "retroactive_date",
+  "premium",
+  "other",
+]);
+
+function stringValues(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+}
+
+function cleanCoverageTerms(value: unknown): Array<{
+  kind: string;
+  label: string;
+  value: string;
+  amount?: number;
+  appliesTo?: string;
+  sourceNodeIds: string[];
+  sourceSpanIds: string[];
+}> {
+  if (!Array.isArray(value)) return [];
+  const terms: Array<{
+    kind: string;
+    label: string;
+    value: string;
+    amount?: number;
+    appliesTo?: string;
+    sourceNodeIds: string[];
+    sourceSpanIds: string[];
+  }> = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const label = typeof record.label === "string" ? normalizeWhitespace(record.label) : "";
+    const termValue = typeof record.value === "string" ? normalizeWhitespace(record.value) : "";
+    if (!label || !termValue) continue;
+    const sourceNodeIds = stringValues(record.sourceNodeIds);
+    const sourceSpanIds = stringValues(record.sourceSpanIds);
+    const kind = typeof record.kind === "string" && COVERAGE_TERM_KINDS.has(record.kind)
+      ? record.kind
+      : "other";
+    const key = [kind, label.toLowerCase(), termValue.toLowerCase(), sourceNodeIds.join(","), sourceSpanIds.join(",")].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    terms.push({
+      kind,
+      label,
+      value: termValue,
+      ...(typeof record.amount === "number" && Number.isFinite(record.amount) ? { amount: record.amount } : {}),
+      ...(typeof record.appliesTo === "string" && record.appliesTo.trim() ? { appliesTo: normalizeWhitespace(record.appliesTo) } : {}),
+      sourceNodeIds: [...new Set(sourceNodeIds)],
+      sourceSpanIds: [...new Set(sourceSpanIds)],
+    });
+  }
+  return terms;
 }
 
 function cleanOperationalCoverages(
@@ -498,21 +836,42 @@ function cleanOperationalCoverages(
   const cleaned: OperationalCoverageLine[] = [];
   const seen = new Set<string>();
   for (const coverage of coverages) {
-    const name = cleanCoverageName(coverage.name);
+    const name = normalizeCoverageName(coverage.name);
     if (!name) continue;
-    if (!coverage.limit && !coverage.deductible && !coverage.premium) continue;
-    if (coverage.sourceNodeIds.length === 0 && coverage.sourceSpanIds.length === 0) continue;
+    const record = coverage as OperationalCoverageLine & {
+      limits?: unknown;
+      retroactiveDate?: unknown;
+      coverageOrigin?: unknown;
+      endorsementNumber?: unknown;
+    };
+    const limits = cleanCoverageTerms(record.limits);
+    if (!coverage.limit && !coverage.deductible && !coverage.premium && !record.retroactiveDate && limits.length === 0) continue;
+    if (coverage.sourceNodeIds.length === 0 && coverage.sourceSpanIds.length === 0 && limits.every((term) => term.sourceNodeIds.length === 0 && term.sourceSpanIds.length === 0)) {
+      continue;
+    }
     const normalized: OperationalCoverageLine = {
       ...coverage,
       name,
+      ...(limits.length ? { limits } : {}),
+      ...(typeof record.retroactiveDate === "string" && record.retroactiveDate.trim()
+        ? { retroactiveDate: record.retroactiveDate.trim() }
+        : {}),
+      ...(record.coverageOrigin === "core" || record.coverageOrigin === "endorsement"
+        ? { coverageOrigin: record.coverageOrigin }
+        : {}),
+      ...(typeof record.endorsementNumber === "string" && record.endorsementNumber.trim()
+        ? { endorsementNumber: record.endorsementNumber.trim() }
+        : {}),
       sourceNodeIds: [...new Set(coverage.sourceNodeIds)],
       sourceSpanIds: [...new Set(coverage.sourceSpanIds)],
-    };
+    } as OperationalCoverageLine;
     const key = [
       normalized.name.toLowerCase(),
       normalized.limit ?? "",
       normalized.deductible ?? "",
       normalized.premium ?? "",
+      (normalized as OperationalCoverageLine & { retroactiveDate?: string }).retroactiveDate ?? "",
+      JSON.stringify((normalized as OperationalCoverageLine & { limits?: unknown[] }).limits ?? []),
       normalized.formNumber ?? "",
       normalized.sectionRef ?? "",
     ].join("|");
@@ -713,11 +1072,17 @@ function documentProfileCandidate(
             limit: typeof coverage.limit === "string" ? coverage.limit : undefined,
             deductible: typeof coverage.deductible === "string" ? coverage.deductible : undefined,
             premium: typeof coverage.premium === "string" ? coverage.premium : typeof coverage.coveragePremium === "string" ? coverage.coveragePremium : undefined,
+            retroactiveDate: typeof coverage.retroactiveDate === "string" ? coverage.retroactiveDate : undefined,
             formNumber: typeof coverage.formNumber === "string" ? coverage.formNumber : undefined,
             sectionRef: typeof coverage.sectionRef === "string" ? coverage.sectionRef : undefined,
+            coverageOrigin: coverage.coverageOrigin === "core" || coverage.coverageOrigin === "endorsement"
+              ? coverage.coverageOrigin
+              : undefined,
+            endorsementNumber: typeof coverage.endorsementNumber === "string" ? coverage.endorsementNumber : undefined,
+            limits: cleanCoverageTerms(coverage.limits),
             sourceNodeIds: node ? [node.id] : nodeId ? [nodeId] : [],
             sourceSpanIds,
-          };
+          } as OperationalCoverageLine;
         })
         .filter((coverage): coverage is OperationalCoverageLine => Boolean(coverage))
     : [];
@@ -1115,6 +1480,9 @@ export function operationalProfilePolicyFields(
         coverageOrigin?: "core" | "endorsement";
         coverageOriginConfidence?: "low" | "medium" | "high";
         coverageOriginReason?: string;
+        endorsementNumber?: string;
+        retroactiveDate?: string;
+        limits?: unknown[];
       };
       return {
         name: coverage.name,
@@ -1122,14 +1490,27 @@ export function operationalProfilePolicyFields(
         limit: coverage.limit,
         deductible: coverage.deductible,
         premium: coverage.premium,
+        retroactiveDate: coverageRecord.retroactiveDate,
         formNumber: coverage.formNumber,
         sectionRef: coverage.sectionRef,
         coverageOrigin: coverageRecord.coverageOrigin,
         coverageOriginConfidence: coverageRecord.coverageOriginConfidence,
         coverageOriginReason: coverageRecord.coverageOriginReason,
+        endorsementNumber: coverageRecord.endorsementNumber,
+        limits: coverageRecord.limits,
         documentNodeId: coverage.sourceNodeIds[0],
         sourceSpanIds: coverage.sourceSpanIds,
-        originalContent: [coverage.name, coverage.limit, coverage.deductible, coverage.premium].filter(Boolean).join(" | "),
+        originalContent: [
+          coverage.name,
+          ...(Array.isArray(coverageRecord.limits) && coverageRecord.limits.length
+            ? coverageRecord.limits.map((term: unknown) => {
+              const record = term && typeof term === "object" && !Array.isArray(term)
+                ? term as Record<string, unknown>
+                : {};
+              return [record.label, record.value].filter((part) => typeof part === "string" && part.trim()).join(": ");
+            })
+            : [coverage.limit, coverage.deductible, coverage.premium]),
+        ].filter(Boolean).join(" | "),
       };
     });
   }

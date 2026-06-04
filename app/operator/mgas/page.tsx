@@ -9,7 +9,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
-import { OperationalPanel } from "@/components/ui/operational-panel";
+import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+  OperationalPanel,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   Table,
@@ -43,15 +47,6 @@ type MGARow = {
 
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-foreground/6 py-2.5 last:border-b-0">
-      <dt className="shrink-0 text-label font-medium text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-right text-base text-foreground">{value}</dd>
-    </div>
-  );
-}
 
 function faviconFromWebsite(website?: string | null) {
   if (!website) return null;
@@ -299,17 +294,23 @@ export default function OperatorMGAsPage() {
               {selected.operatorStatus === "live" ? "Live" : "Onboarding"}
             </Badge>
           </div>
-          <dl className="border-t border-foreground/6">
-            <DetailRow
+          <OperationalLabelValueList>
+            <OperationalLabelValueRow
               label="Program"
               value={<span className="block truncate">{selected.programName ?? "Not set"}</span>}
+              align="right"
             />
-            <DetailRow
+            <OperationalLabelValueRow
               label="Website"
               value={<span className="block truncate">{selected.website ?? "Not set"}</span>}
+              align="right"
             />
-            <DetailRow label="Created" value={dayjs(selected.createdAt).format("MMM D, YYYY")} />
-          </dl>
+            <OperationalLabelValueRow
+              label="Created"
+              value={dayjs(selected.createdAt).format("MMM D, YYYY")}
+              align="right"
+            />
+          </OperationalLabelValueList>
         </div>
       ) : null}
     </SettingsDrawer>

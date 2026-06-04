@@ -310,7 +310,7 @@ export default function PartnerPoliciesPage() {
       actions={
         brokerOptions.length > 1 ? (
           <Select value={brokerFilter} onValueChange={(value) => setBrokerFilter(value ?? ALL_BROKERS)}>
-            <SelectTrigger className="h-8 w-52">
+            <SelectTrigger className="w-52">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

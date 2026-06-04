@@ -89,6 +89,71 @@ type LeasedPolicyCheckpoint = {
   };
 };
 
+function sourceSpanIdentity(span: SourceSpanLike) {
+  const table = span.table && typeof span.table === "object" ? span.table : {};
+  const metadata = span.metadata && typeof span.metadata === "object" ? span.metadata : {};
+  const sourceUnit = span.sourceUnit ?? metadata.sourceUnit ?? metadata.elementType ?? "";
+  if (sourceUnit === "page") {
+    return [
+      span.documentId ?? "",
+      span.sourceKind ?? "",
+      span.pageStart ?? "",
+      span.pageEnd ?? "",
+      sourceUnit,
+    ].join("\u001f");
+  }
+  return [
+    span.documentId ?? "",
+    span.sourceKind ?? "",
+    span.pageStart ?? "",
+    span.pageEnd ?? "",
+    sourceUnit,
+    typeof table.tableId === "string" ? table.tableId : "",
+    typeof table.rowIndex === "number" ? table.rowIndex : "",
+    typeof table.columnIndex === "number" ? table.columnIndex : "",
+    typeof table.columnName === "string" ? table.columnName : "",
+    typeof span.text === "string" ? span.text
+      .replace(/\s+/g, " ")
+      .replace(/^SPECIMEN POLICY — FOR TESTING ONLY\s+/i, "")
+      .trim() : "",
+  ].join("\u001f");
+}
+
+function sourceSpanOrder(span: SourceSpanLike, fallbackIndex: number) {
+  const id = typeof span.id === "string" ? span.id : typeof span.spanId === "string" ? span.spanId : "";
+  const idIndex = Number(id.match(/:span:\d+:(\d+):/)?.[1]);
+  return {
+    page: typeof span.pageStart === "number" ? span.pageStart : Number.MAX_SAFE_INTEGER,
+    index: Number.isFinite(idIndex) ? idIndex : fallbackIndex,
+  };
+}
+
+function canonicalSourceSpans(sourceSpans: SourceSpanLike[]) {
+  const seen = new Set<string>();
+  const deduped: SourceSpanLike[] = [];
+  sourceSpans.forEach((span) => {
+    const key = sourceSpanIdentity(span);
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(span);
+  });
+  return deduped.sort((left, right) => {
+    const leftOrder = sourceSpanOrder(left, sourceSpans.indexOf(left));
+    const rightOrder = sourceSpanOrder(right, sourceSpans.indexOf(right));
+    return leftOrder.page - rightOrder.page || leftOrder.index - rightOrder.index;
+  });
+}
+
+function sourceKindForStorage(value: unknown) {
+  return value === "policy_pdf" ||
+    value === "application_pdf" ||
+    value === "email" ||
+    value === "attachment" ||
+    value === "manual_note"
+    ? value
+    : "policy_pdf";
+}
+
 // ─── State Type ────────────────────────────────────────────────────────────────
 
 export type PolicyExtractionState = {
@@ -650,17 +715,6 @@ const policyTypeClassificationSchema = z.object({
   reason: z.string(),
 });
 
-const coverageLineValidationSchema = z.object({
-  rows: z.array(z.object({
-    index: z.number().int().min(0),
-    keep: z.boolean(),
-    correctedName: z.string().nullable(),
-    coverageOrigin: z.enum(["core", "endorsement"]),
-    coverageOriginConfidence: z.enum(["low", "medium", "high"]),
-    reason: z.string(),
-  })).max(40),
-});
-
 const additionalInsuredEligibilityTermSchema = z.object({
   category: z.string(),
   condition: z.string(),
@@ -694,8 +748,6 @@ const additionalInsuredEligibilitySchema = z.object({
   additionalInsureds: z.array(namedAdditionalInsuredSchema).max(60),
   overallSummary: z.string(),
 });
-
-type CoverageLineValidationRow = z.infer<typeof coverageLineValidationSchema>["rows"][number];
 
 type OperationalCoverageOrigin = "core" | "endorsement";
 
@@ -809,42 +861,6 @@ ${policyTypeClassificationExcerpt(params.sourceTree, params.profile)}`,
   }
 }
 
-function coverageValidationExcerpt(
-  sourceTree: DocumentSourceNode[],
-  profile: PolicyOperationalProfile,
-): string {
-  const nodesById = new Map(sourceTree.map((node) => [node.id, node]));
-  const coverageRows = profile.coverages.slice(0, 40).map((
-    coverage: PolicyOperationalProfile["coverages"][number],
-    index: number,
-  ) => ({
-    index,
-    name: coverage.name,
-    limit: coverage.limit,
-    deductible: coverage.deductible,
-    premium: coverage.premium,
-    formNumber: coverage.formNumber,
-    sectionRef: coverage.sectionRef,
-    evidence: coverage.sourceNodeIds.slice(0, 4).map((nodeId: string) => {
-      const node = nodesById.get(nodeId);
-      return node
-        ? {
-          nodeId,
-          kind: node.kind,
-          page: node.pageStart,
-          path: node.path,
-          title: node.title,
-          text: [node.description, node.textExcerpt]
-            .filter(Boolean)
-            .join(" ")
-            .slice(0, 900),
-        }
-        : { nodeId, kind: "unknown" };
-    }),
-  }));
-  return JSON.stringify({ coverageRows }, null, 2).slice(0, 20000);
-}
-
 function fallbackCoverageOrigin(
   coverage: PolicyOperationalProfile["coverages"][number],
   nodesById: Map<string, DocumentSourceNode>,
@@ -907,76 +923,8 @@ async function validateOperationalCoverageLines(params: {
   log?: (message: string, level?: PipelineLogLevel) => Promise<void>;
 }): Promise<PolicyOperationalProfile> {
   if (params.profile.coverages.length === 0) return params.profile;
-  const nodesById = new Map(params.sourceTree.map((node) => [node.id, node]));
-  const generateValidatorObject = makeGenerateObject("extraction", {
-    ctx: params.ctx,
-    orgId: params.orgId,
-    traceId: params.traceId,
-    tracePolicyId: params.policyId,
-  });
-  try {
-    const result = await generateValidatorObject({
-      schema: coverageLineValidationSchema,
-      maxTokens: 1800,
-      system: `You validate insurance coverage-limit rows extracted from a policy source tree.
-
-Rules:
-- Keep rows that are actual coverage lines, sublimits, aggregate limits, deductibles, retentions, or premium rows.
-- Drop rows where the name is just a prose clause, endorsement paragraph, condition, exclusion, worked example, or sentence fragment that happens to mention money.
-- Classify kept rows as "core" when they come from declarations, schedules, the main policy form, base insuring agreements, or base coverage grants/limits.
-- Classify kept rows as "endorsement" when they come from an endorsement, amendatory form, rider, or a page/form that modifies, replaces, broadens, restricts, or adds coverage.
-- If source evidence path/title/kind says endorsement or amendatory, choose "endorsement" even if the coverage label is generic.
-- If the evidence supports a short clearer label, return correctedName. Otherwise return null.
-- Never invent a row or a limit. Use only the supplied row evidence.
-- Prefer table, schedule, declarations, and row evidence over generic paragraph evidence.`,
-      prompt: `Validate these extracted coverage rows. Return one decision for each index.
-
-${coverageValidationExcerpt(params.sourceTree, params.profile)}`,
-    });
-    const decisions = new Map(
-      ((result.object as z.infer<typeof coverageLineValidationSchema>).rows ?? [])
-        .map((row) => [row.index, row]),
-    );
-    const coverages = params.profile.coverages.flatMap((
-      coverage: PolicyOperationalProfile["coverages"][number],
-      index: number,
-    ) => {
-      const decision = decisions.get(index) as CoverageLineValidationRow | undefined;
-      if (decision?.keep === false) return [];
-      const correctedName = decision?.correctedName?.trim();
-      const fallback = fallbackCoverageOrigin(coverage, nodesById);
-      const withOrigin: OperationalCoverageWithOrigin = {
-        ...coverage,
-        ...(correctedName ? { name: correctedName } : {}),
-        coverageOrigin: decision?.coverageOrigin ?? fallback.origin,
-        coverageOriginConfidence: decision?.coverageOriginConfidence ?? fallback.confidence,
-        coverageOriginReason: decision?.reason?.trim() || fallback.reason,
-      };
-      return [withOrigin];
-    });
-    const dropped = params.profile.coverages.length - coverages.length;
-    if (dropped > 0) {
-      await params.log?.(
-        `Coverage validation dropped ${dropped} non-coverage row${dropped === 1 ? "" : "s"}`,
-        "warn",
-      );
-    }
-    const coreCount = coverages.filter((coverage: OperationalCoverageWithOrigin) => coverage.coverageOrigin !== "endorsement").length;
-    const endorsementCount = coverages.length - coreCount;
-    if (endorsementCount > 0) {
-      await params.log?.(
-        `Coverage validation classified ${coreCount} core and ${endorsementCount} endorsement coverage row${coverages.length === 1 ? "" : "s"}`,
-        "info",
-      );
-    }
-    return { ...params.profile, coverages: coverages as PolicyOperationalProfile["coverages"] };
-  } catch (error) {
-    await params.log?.(
-      `Coverage validation skipped: ${error instanceof Error ? error.message : String(error)}`,
-      "warn",
-    );
-    return annotateCoverageOriginsFallback(params.profile, params.sourceTree);
-  }
+  await params.log?.("Using source-native coverage rows without LLM coverage validation", "info");
+  return annotateCoverageOriginsFallback(params.profile, params.sourceTree);
 }
 
 function additionalInsuredEligibilityExcerpt(sourceTree: DocumentSourceNode[]): {
@@ -1694,6 +1642,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const sourceSpans = resultSourceSpans.length > 0
         ? resultSourceSpans
         : pdfSource.sourceSpans as Array<Record<string, any>>;
+      const canonicalSpans = canonicalSourceSpans(sourceSpans as SourceSpanLike[]);
       const sourceChunks = resultSourceChunks.length > 0
         ? resultSourceChunks
         : pdfSource.sourceChunks as Array<Record<string, any>>;
@@ -1717,20 +1666,16 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         ctx: convexCtx,
         orgId: state.orgId as Id<"organizations">,
         document: result.document as Record<string, unknown>,
-        sourceSpans: [...sourceSpans, ...(pdfSource.sourceSpans as Array<Record<string, any>>)],
+        sourceSpans: canonicalSpans as Array<Record<string, any>>,
         log: async (message, level) => { await pCtx.log(message, level); },
       });
       result.document = processed.document as typeof result.document;
       const doc = processed.document;
-      const sourceNodes = normalizeSourceTree(
-        resultSourceTree,
-        sourceSpans,
-        policyId,
-      );
+      const sourceNodes = normalizeSourceTree(resultSourceTree, canonicalSpans, policyId);
       const normalizedOperationalProfile = normalizeOperationalProfile(
         (result as any).operationalProfile,
         sourceNodes,
-        sourceSpans,
+        canonicalSpans,
         doc as Record<string, unknown>,
       );
       const validatedOperationalProfile = await validateOperationalCoverageLines({
@@ -1802,7 +1747,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       const embeddingPayloadFileId = await storeEmbeddingPayload(convexCtx, policyId, {
         documentChunksForEmbedding: chunks,
-        sourceSpansForStorage: sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
+        sourceSpansForStorage: canonicalSpans as PolicyExtractionState["sourceSpansForStorage"],
         sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
         sourceNodesForStorage: sourceNodes,
       });
@@ -1813,7 +1758,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         clSdkCheckpointFileId: undefined,
         embeddingPayloadFileId,
         chunkIds,
-        sourceSpanIds: sourceSpans.map((span) => String(span.id)),
+        sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
         sourceChunkIds: sourceChunks.map((chunk) => String(chunk.id)),
         operationalProfile,
         fileName: resolvedFileName,
@@ -1915,7 +1860,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               policyId,
               spanId: span.id,
               documentId: span.documentId ?? policyId,
-              sourceKind: span.sourceKind ?? "policy_pdf",
+              sourceKind: sourceKindForStorage(span.sourceKind),
               pageStart: span.pageStart,
               pageEnd: span.pageEnd,
               sectionId: span.sectionId,
@@ -2461,8 +2406,9 @@ export const completeExternalExtract = action({
     const document = payload?.document ?? args.document;
     const chunks = (payload?.chunks ?? args.chunks ?? []) as Array<{ id?: string }>;
     const sourceSpans = (payload?.sourceSpans ?? args.sourceSpans ?? []) as SourceSpanLike[];
+    const canonicalSpans = canonicalSourceSpans(sourceSpans);
     const sourceChunks = (payload?.sourceChunks ?? args.sourceChunks ?? []) as Array<{ id?: unknown }>;
-    const sourceTree = (payload?.sourceTree ?? args.sourceTree ?? []) as unknown[];
+    const rawSourceTree = payload?.sourceTree ?? args.sourceTree ?? [];
     const operationalProfileInput = payload?.operationalProfile ?? args.operationalProfile;
     const performanceReport = payload?.performanceReport ?? args.performanceReport;
     const checkpoint = payload?.checkpoint ?? args.checkpoint;
@@ -2505,7 +2451,7 @@ export const completeExternalExtract = action({
       ctx,
       orgId: state.orgId as Id<"organizations">,
       document: doc,
-      sourceSpans,
+      sourceSpans: canonicalSpans,
       log: async (message, level = "info") => {
         await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
           jobId: policyId,
@@ -2517,15 +2463,11 @@ export const completeExternalExtract = action({
       },
     });
     doc = processed.document;
-    const sourceNodes = normalizeSourceTree(
-      sourceTree,
-      sourceSpans,
-      policyId,
-    );
+    const sourceNodes = normalizeSourceTree(rawSourceTree, canonicalSpans, policyId);
     const normalizedOperationalProfile = normalizeOperationalProfile(
       operationalProfileInput,
       sourceNodes,
-      sourceSpans,
+      canonicalSpans,
       doc,
     );
     const validatedOperationalProfile = await validateOperationalCoverageLines({
@@ -2617,7 +2559,7 @@ export const completeExternalExtract = action({
 
     const embeddingPayloadFileId = await storeEmbeddingPayload(ctx, policyId, {
       documentChunksForEmbedding: chunks as PolicyExtractionState["documentChunksForEmbedding"],
-      sourceSpansForStorage: sourceSpans as PolicyExtractionState["sourceSpansForStorage"],
+      sourceSpansForStorage: canonicalSpans as PolicyExtractionState["sourceSpansForStorage"],
       sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
       sourceNodesForStorage: sourceNodes,
     });
@@ -2627,7 +2569,7 @@ export const completeExternalExtract = action({
       clSdkCheckpointFileId: undefined,
       embeddingPayloadFileId,
       chunkIds: chunks.map((chunk) => String(chunk.id)),
-      sourceSpanIds: sourceSpans.map((span) => String(span.id)),
+      sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
       sourceChunkIds: sourceChunks.map((chunk) => String(chunk.id)),
       operationalProfile,
       fileName: resolvedFileName,
@@ -2804,6 +2746,44 @@ function storedSourceSpanLike(span: Record<string, any>, policyId: Id<"policies"
   };
 }
 
+const SEMANTIC_SOURCE_NODE_KINDS = new Set([
+  "page_group",
+  "form",
+  "endorsement",
+  "section",
+  "schedule",
+  "clause",
+]);
+
+function storedSourceNodeTreeInput(node: Record<string, any>, policyId: Id<"policies">): Record<string, unknown> | undefined {
+  if (typeof node.nodeId !== "string" || !node.nodeId.trim()) return undefined;
+  if (typeof node.kind !== "string" || !node.kind.trim()) return undefined;
+  return {
+    id: node.nodeId,
+    documentId: typeof node.documentId === "string" ? node.documentId : policyId,
+    parentId: typeof node.parentNodeId === "string" ? node.parentNodeId : undefined,
+    kind: node.kind,
+    title: typeof node.title === "string" ? node.title : node.kind,
+    description: typeof node.description === "string" ? node.description : node.kind,
+    textExcerpt: typeof node.textExcerpt === "string" ? node.textExcerpt : undefined,
+    sourceSpanIds: Array.isArray(node.sourceSpanIds)
+      ? node.sourceSpanIds.filter((spanId): spanId is string => typeof spanId === "string")
+      : [],
+    pageStart: typeof node.pageStart === "number" ? node.pageStart : undefined,
+    pageEnd: typeof node.pageEnd === "number" ? node.pageEnd : undefined,
+    bbox: node.bbox,
+    order: typeof node.order === "number" ? node.order : 0,
+    path: typeof node.path === "string" ? node.path : "",
+    metadata: node.metadata,
+  };
+}
+
+function hasSemanticSourceHierarchy(nodes: Array<Record<string, unknown>>): boolean {
+  return nodes.some((node) =>
+    typeof node.kind === "string" && SEMANTIC_SOURCE_NODE_KINDS.has(node.kind),
+  );
+}
+
 export const rebuildStoredSourceNodes = internalAction({
   args: {
     policyId: v.id("policies"),
@@ -2830,11 +2810,23 @@ export const rebuildStoredSourceNodes = internalAction({
     }
 
     const sourceSpans = spanDocs.map((span) => storedSourceSpanLike(span, args.policyId));
-    const sourceNodes = normalizeSourceTree([], sourceSpans, args.policyId);
+    const canonicalSpans = canonicalSourceSpans(sourceSpans);
+    const existingNodeDocs = await ctx.runQuery(
+      (internal as any).sourceNodes.listByPolicyInternal,
+      { policyId: args.policyId },
+    ) as Array<Record<string, any>>;
+    const existingSourceTree = existingNodeDocs
+      .map((node) => storedSourceNodeTreeInput(node, args.policyId))
+      .filter((node): node is Record<string, unknown> => Boolean(node));
+    const sourceNodes = normalizeSourceTree(
+      hasSemanticSourceHierarchy(existingSourceTree) ? existingSourceTree : [],
+      canonicalSpans,
+      args.policyId,
+    );
     const operationalProfile = normalizeOperationalProfile(
       policy.operationalProfile,
       sourceNodes,
-      sourceSpans,
+      canonicalSpans,
       policy.document,
     );
 
@@ -2848,11 +2840,42 @@ export const rebuildStoredSourceNodes = internalAction({
       }),
     });
 
-    await deletePolicyRowsInBatches(
-      ctx,
-      (internal as any).sourceNodes.deleteByPolicy,
-      args.policyId,
-    );
+    await deletePolicyRowsInBatches(ctx, (internal as any).sourceSpans.deleteByPolicy, args.policyId);
+    await deletePolicyRowsInBatches(ctx, (internal as any).sourceNodes.deleteByPolicy, args.policyId);
+    const spanRows = canonicalSpans.map((span) => {
+      const table = span.table;
+      return {
+        orgId: policy.orgId,
+        policyId: args.policyId,
+        spanId: String(span.id ?? span.spanId),
+        documentId: span.documentId ?? args.policyId,
+        sourceKind: sourceKindForStorage(span.sourceKind),
+        pageStart: span.pageStart,
+        pageEnd: span.pageEnd,
+        sectionId: span.sectionId,
+        formNumber: span.formNumber,
+        sourceUnit: span.sourceUnit ?? span.metadata?.sourceUnit,
+        parentSpanId:
+          span.parentSpanId ??
+          table?.rowSpanId ??
+          table?.tableSpanId ??
+          span.metadata?.parentSpanId ??
+          span.metadata?.rowSpanId ??
+          span.metadata?.tableSpanId,
+        table,
+        location: span.location,
+        text: span.text ?? "",
+        textHash: span.textHash ?? String(span.id ?? span.spanId),
+        bbox: span.bbox,
+        metadata: span.metadata,
+        createdAt: nowMs(),
+      };
+    });
+    for (const batch of chunkItems(spanRows, SOURCE_STORAGE_BATCH_SIZE)) {
+      await ctx.runMutation((internal as any).sourceSpans.insertSpansBatch, {
+        spans: batch,
+      });
+    }
     const nodeRows = sourceNodes.map((node) => ({
         orgId: policy.orgId,
         policyId: args.policyId,
@@ -2880,6 +2903,7 @@ export const rebuildStoredSourceNodes = internalAction({
 
     return {
       ok: true,
+      sourceSpanCount: canonicalSpans.length,
       sourceNodeCount: sourceNodes.length,
       topLevelCount: sourceNodes.filter((node) => {
         const root = sourceNodes.find((candidate) => candidate.kind === "document");

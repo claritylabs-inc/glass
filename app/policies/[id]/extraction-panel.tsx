@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { usePdf } from "@/components/pdf-context";
@@ -71,6 +71,7 @@ type DocumentOutlineNode = {
   children?: DocumentOutlineNode[];
   metadata?: Record<string, unknown>;
   hasChildren?: boolean;
+  order?: number;
 };
 
 type DocumentMetadata = {
@@ -154,6 +155,7 @@ type PolicyFee = {
 
 type CoverageEntry = {
   name?: string;
+  coverageSourceContext?: string;
   coverageCode?: string;
   limit?: string;
   limitType?: string;
@@ -386,8 +388,8 @@ function useTopLevelSourceNodes(
   allowOperatorAccess?: boolean,
 ) {
   return useCachedQuery(
-    "sourceNodes.listTopLevelByPolicy.policy-detail.v2",
-    api.sourceNodes.listTopLevelByPolicy,
+    "sourceNodes.listOutlineByPolicy.policy-detail.v3",
+    api.sourceNodes.listOutlineByPolicy,
     policyId ? { policyId, allowOperatorAccess } : "skip",
   ) as DocumentOutlineNode[] | undefined;
 }
@@ -399,7 +401,7 @@ function useSourceNodeChildren(
   allowOperatorAccess?: boolean,
 ) {
   return useCachedQuery(
-    "sourceNodes.listChildrenByPolicyAndParentNodeId.policy-detail.v2",
+    "sourceNodes.listChildrenByPolicyAndParentNodeId.policy-detail.v5",
     api.sourceNodes.listChildrenByPolicyAndParentNodeId,
     policyId && parentNodeId && enabled
       ? { policyId, parentNodeId, allowOperatorAccess }
@@ -651,16 +653,24 @@ function EndorsementBody({ e }: { e: PolicyEndorsement }) {
 
 function CoverageBody({
   coverage,
-  sourceSpans,
-  fileUrl,
 }: {
   coverage: CoverageEntry;
-  sourceSpans?: SourceSpanDoc[];
-  fileUrl?: string;
 }) {
+  const normalizedOriginalContent = coverage.originalContent?.trim();
+  const repeatedOriginalContent =
+    normalizedOriginalContent &&
+    [
+      coverage.name,
+      coverage.limit,
+      coverage.name && coverage.limit
+        ? `${coverage.name} ${coverage.limit}`
+        : undefined,
+      coverage.name && coverage.limit
+        ? `${coverage.name} | ${coverage.limit}`
+        : undefined,
+    ].some((value) => value?.trim() === normalizedOriginalContent);
   const metaItems = [
     coverage.coverageCode && { label: "Code", value: coverage.coverageCode },
-    coverage.limit && { label: "Limit", value: coverage.limit },
     coverage.limitType && {
       label: "Limit type",
       value: formatStructuredLabel(coverage.limitType) ?? coverage.limitType,
@@ -669,6 +679,9 @@ function CoverageBody({
     coverage.formNumber && { label: "Form", value: coverage.formNumber },
     coverage.sectionRef && { label: "Section", value: coverage.sectionRef },
   ].filter(Boolean) as { label: string; value: string }[];
+  if (metaItems.length === 0 && (!normalizedOriginalContent || repeatedOriginalContent)) {
+    return null;
+  }
 
   return (
     <div className="space-y-3">
@@ -679,20 +692,64 @@ function CoverageBody({
           valueCellClassName={STRUCTURED_BODY_VALUE_CLASS}
         />
       )}
-      <SourceEvidenceButton
-        sourceSpanIds={coverage.sourceSpanIds}
-        sourceSpans={sourceSpans}
-        fallbackPage={coverage.pageNumber}
-        fileUrl={fileUrl}
-        className="ml-[2.625rem]"
-      />
-      {coverage.originalContent && (
+      {normalizedOriginalContent && !repeatedOriginalContent && (
         <div className={STRUCTURED_BODY_TEXT_CLASS}>
-          <DocContent>{coverage.originalContent}</DocContent>
+          <DocContent>{normalizedOriginalContent}</DocContent>
         </div>
       )}
     </div>
   );
+}
+
+function coverageHasExtraDetails(coverage: CoverageEntry) {
+  const originalContent = coverage.originalContent?.trim();
+  const repeatedOriginalContent =
+    originalContent &&
+    [
+      coverage.name,
+      coverage.limit,
+      coverage.name && coverage.limit
+        ? `${coverage.name} ${coverage.limit}`
+        : undefined,
+      coverage.name && coverage.limit
+        ? `${coverage.name} | ${coverage.limit}`
+        : undefined,
+    ].some((value) => value?.trim() === originalContent);
+  return Boolean(
+    coverage.coverageCode ||
+      coverage.limitType ||
+      coverage.deductible ||
+      coverage.formNumber ||
+      coverage.sectionRef ||
+      (originalContent && !repeatedOriginalContent),
+  );
+}
+
+function enrichedCoverageRows(policyDocument: PolicyDocument | null | undefined) {
+  const coverages = policyDocument?.coverages ?? [];
+  const operationalCoverages = Array.isArray(
+    (policyDocument as { operationalProfile?: { coverages?: unknown } } | null | undefined)
+      ?.operationalProfile?.coverages,
+  )
+    ? ((policyDocument as { operationalProfile?: { coverages?: CoverageEntry[] } })
+        .operationalProfile?.coverages ?? [])
+    : [];
+  if (coverages.length === 0 || operationalCoverages.length === 0) {
+    return coverages;
+  }
+  const operationalByKey = new Map(
+    operationalCoverages.map((coverage) => [
+      `${coverage.name ?? ""}::${coverage.limit ?? ""}`,
+      coverage,
+    ]),
+  );
+  return coverages.map((coverage) => ({
+    ...coverage,
+    coverageSourceContext:
+      coverage.coverageSourceContext ??
+      operationalByKey.get(`${coverage.name ?? ""}::${coverage.limit ?? ""}`)
+        ?.coverageSourceContext,
+  }));
 }
 
 function DefinitionBody({ definition }: { definition: DefinitionEntry }) {
@@ -812,10 +869,13 @@ function StructuredItemsCard<T>({
   getTitle,
   getPage,
   getBadges,
+  getTrailing,
+  hasBody,
   renderBody,
   getSourceSpanIds,
   sourceSpans,
   fileUrl,
+  defaultExpanded,
 }: {
   id: string;
   title: string;
@@ -823,12 +883,17 @@ function StructuredItemsCard<T>({
   getTitle: (item: T) => string;
   getPage?: (item: T) => number | undefined;
   getBadges?: (item: T) => { label: string; className: string }[];
+  getTrailing?: (item: T) => React.ReactNode;
+  hasBody?: (item: T) => boolean;
   renderBody: (item: T) => React.ReactNode;
   getSourceSpanIds?: (item: T) => string[] | undefined;
   sourceSpans?: SourceSpanDoc[];
   fileUrl?: string;
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [expanded, setExpanded] = useState<Set<number>>(
+    () => new Set(defaultExpanded ? items.map((_, index) => index) : []),
+  );
   if (!items?.length) return null;
 
   const toggle = (i: number) =>
@@ -844,12 +909,11 @@ function StructuredItemsCard<T>({
 
   return (
     <OperationalPanel as="div" id={id}>
-      <OperationalPanelHeader
-        title={`${title} (${items.length})`}
-        className="px-5 py-3 border-foreground/4"
-      />
+      <OperationalPanelHeader title={`${title} (${items.length})`} />
       {items.map((item, i) => {
         const badges = getBadges?.(item) ?? [];
+        const trailing = getTrailing?.(item);
+        const canExpand = hasBody?.(item) ?? true;
         const page = getPage?.(item);
         const sourceSpanIds = getSourceSpanIds?.(item) ?? [];
         return (
@@ -857,20 +921,28 @@ function StructuredItemsCard<T>({
             key={i}
             className="border-t border-foreground/4 first:border-t-0"
           >
-            <div className="flex items-center gap-2 px-5 py-2.5 hover:bg-foreground/[0.015] transition-colors">
+            <div className="flex items-center gap-2 px-4 py-3 hover:bg-foreground/[0.015] transition-colors">
               <button
                 type="button"
-                onClick={() => toggle(i)}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                onClick={() => canExpand && toggle(i)}
+                disabled={!canExpand}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default"
               >
-                {expanded.has(i) ? (
-                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                ) : (
-                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                )}
+                {canExpand ? (
+                  expanded.has(i) ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  )
+                ) : null}
                 <span className="text-base font-normal text-foreground flex-1 min-w-0 truncate">
                   {getTitle(item)}
                 </span>
+                {trailing ? (
+                  <span className="shrink-0 text-base font-normal tabular-nums text-foreground">
+                    {trailing}
+                  </span>
+                ) : null}
                 {badges.length > 0 && (
                   <div className="hidden md:flex items-center gap-1.5 shrink-0">
                     {badges.map((badge) => (
@@ -894,7 +966,7 @@ function StructuredItemsCard<T>({
                 <PageRef page={page} />
               )}
             </div>
-            {expanded.has(i) && (
+            {canExpand && expanded.has(i) && (
               <div className="space-y-3 pt-2 pb-3">
                 {badges.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 px-5 md:hidden">
@@ -990,7 +1062,6 @@ function SupplementaryCard({
             {pageNumber != null && <PageRef page={pageNumber} />}
           </span>
         }
-        className="px-5 py-3 border-foreground/4"
       />
       {hasStructured ? (
         <>
@@ -1191,10 +1262,7 @@ function DataCard({
   if (!rows.length) return null;
   return (
     <OperationalPanel as="div">
-      <OperationalPanelHeader
-        title={title}
-        className="px-5 py-3 border-foreground/4"
-      />
+      <OperationalPanelHeader title={title} />
       <KeyValueTable rows={rows} sourceSpans={sourceSpans} fileUrl={fileUrl} />
     </OperationalPanel>
   );
@@ -1218,10 +1286,7 @@ function SectionedDataCard({
 
   return (
     <OperationalPanel as="div">
-      <OperationalPanelHeader
-        title={title}
-        className="px-5 py-3 border-foreground/4"
-      />
+      <OperationalPanelHeader title={title} />
       {nonEmptySections.map((section, index) => (
         <GroupSection
           key={`${section.label}-${index}`}
@@ -1286,6 +1351,13 @@ function truncateInline(value: string, maxLength = 96) {
     : text;
 }
 
+function normalizeSourceDisplayText(value: string | undefined) {
+  return (value ?? "")
+    .replace(/\s+/g, " ")
+    .replace(/([A-Za-z])-\s+([A-Za-z])/g, "$1-$2")
+    .trim();
+}
+
 function isGenericNodeTitle(title: string | undefined, kind: string | undefined) {
   if (!title || !kind) return false;
   const normalizedTitle = title.toLowerCase().replace(/\s+/g, "_");
@@ -1306,6 +1378,11 @@ function nodeDisplayTitle(node: DocumentOutlineNode) {
   return title ?? nodeKindLabel(node);
 }
 
+function sourceTableTitle(node: DocumentOutlineNode) {
+  const title = normalizeSourceDisplayText(node.title ?? node.originalTitle);
+  return title && !isGenericNodeTitle(title, nodeKind(node)) ? title : undefined;
+}
+
 function nodeBodyText(node: DocumentOutlineNode) {
   const text = node.excerpt ?? node.content;
   if (!text) return undefined;
@@ -1313,7 +1390,7 @@ function nodeBodyText(node: DocumentOutlineNode) {
 }
 
 function normalizedNodeText(node: DocumentOutlineNode) {
-  return (nodeBodyText(node) ?? nodeDisplayTitle(node)).replace(/\s+/g, " ").trim();
+  return normalizeSourceDisplayText(nodeBodyText(node) ?? nodeDisplayTitle(node));
 }
 
 function isDecorativeTextNode(node: DocumentOutlineNode) {
@@ -1323,9 +1400,14 @@ function isDecorativeTextNode(node: DocumentOutlineNode) {
 
 function sortedTableCells(cells: DocumentOutlineNode[]) {
   return [...cells].sort((left, right) => {
-    const leftIndex = metadataNumber(left.metadata, "columnIndex") ?? 0;
-    const rightIndex = metadataNumber(right.metadata, "columnIndex") ?? 0;
-    return leftIndex - rightIndex || left.id.localeCompare(right.id);
+    const leftIndex = metadataNumber(left.metadata, "columnIndex");
+    const rightIndex = metadataNumber(right.metadata, "columnIndex");
+    if (leftIndex !== undefined && rightIndex !== undefined) {
+      return leftIndex - rightIndex || left.id.localeCompare(right.id);
+    }
+    if (leftIndex !== undefined) return -1;
+    if (rightIndex !== undefined) return 1;
+    return (left.order ?? 0) - (right.order ?? 0) || left.id.localeCompare(right.id);
   });
 }
 
@@ -1384,11 +1466,146 @@ function tableRowsForNode(node: DocumentOutlineNode) {
 }
 
 function tableCellValue(cell: DocumentOutlineNode) {
-  return cell.excerpt ?? cell.content ?? nodeDisplayTitle(cell);
+  return normalizeSourceDisplayText(cell.excerpt ?? cell.content ?? nodeDisplayTitle(cell));
 }
 
 function isTextLeafNode(node: DocumentOutlineNode) {
   return (isNodeKind(node, "text") || isNodeKind(node, "table_cell")) && !hasSourceNodeChildren(node);
+}
+
+function isTitleBlockNode(node: DocumentOutlineNode) {
+  return isNodeKind(node, "text") &&
+    node.metadata &&
+    typeof node.metadata === "object" &&
+    !Array.isArray(node.metadata) &&
+    (node.metadata as Record<string, unknown>).organizer === "title_block";
+}
+
+function titleBlockHeadingNode(node: DocumentOutlineNode) {
+  const title = nodeDisplayTitle(node);
+  if (!title || isGenericNodeTitle(title, nodeKind(node))) return undefined;
+  return {
+    ...node,
+    id: `${node.id}:heading`,
+    excerpt: title,
+    content: title,
+    sourceSpanIds: sourceSpanIdsFrom(node).slice(0, 1),
+    children: undefined,
+    hasChildren: false,
+  } satisfies DocumentOutlineNode;
+}
+
+function inlineTextNodesForDisplay(node: DocumentOutlineNode): DocumentOutlineNode[] {
+  if (isTextLeafNode(node)) return [node];
+  if (!isTitleBlockNode(node)) return [];
+  const heading = titleBlockHeadingNode(node);
+  return heading ? [heading] : [];
+}
+
+type InlineSourceContentItem =
+  | { id: string; type: "text"; nodes: DocumentOutlineNode[] }
+  | {
+      id: string;
+      type: "table";
+      node: DocumentOutlineNode;
+      trailingTextNodes?: DocumentOutlineNode[];
+    };
+
+function isContinuationText(previousText: string, nextText: string) {
+  const previous = normalizeSourceDisplayText(previousText);
+  const next = normalizeSourceDisplayText(nextText);
+  if (!previous || !next || /^item\s+\d+[a-z]?\./i.test(next)) return false;
+  if (/^[a-z]/.test(next)) return true;
+  if (
+    /\b(?:and|or|of|in|to|the|under|part|see|sub-|applicable)$/i.test(previous)
+  ) {
+    return true;
+  }
+  return /^(?:addition\b|aggregate limit\)?|coverage part\s+[A-Z]\b|endorsement no\.|sub-limit\b|period\b|regardless\b)/i.test(next);
+}
+
+function shouldAttachTextNodeToPreviousTable(
+  item: InlineSourceContentItem,
+  node: DocumentOutlineNode,
+) {
+  if (item.type !== "table") return false;
+  const text = normalizedNodeText(node);
+  if (!text || text.length > 140) return false;
+  if ((item.trailingTextNodes?.length ?? 0) > 0) {
+    return !/^item\s+\d+[a-z]?\./i.test(text);
+  }
+  const rows = tableRowsForNode(item.node);
+  const lastRow = rows[rows.length - 1];
+  if (!lastRow || isTableHeaderRow(lastRow) || lastRow.cells.length > 1) {
+    return false;
+  }
+  return isContinuationText(tableRowText(lastRow), text);
+}
+
+function inlineContentForDisplay(nodes: DocumentOutlineNode[]) {
+  const items: InlineSourceContentItem[] = [];
+  let pendingTextNodes: DocumentOutlineNode[] = [];
+
+  const flushTextNodes = () => {
+    if (pendingTextNodes.length === 0) return;
+    items.push({
+      id: `text-${pendingTextNodes[0]?.id ?? items.length}`,
+      type: "text",
+      nodes: pendingTextNodes,
+    });
+    pendingTextNodes = [];
+  };
+
+  for (const node of nodes) {
+    if (isTitleBlockNode(node) && node.children?.length) {
+      const nestedItems = inlineContentForDisplay([
+        ...inlineTextNodesForDisplay(node),
+        ...node.children,
+      ]);
+      for (const item of nestedItems) {
+        if (item.type === "text") {
+          pendingTextNodes.push(...item.nodes);
+        } else {
+          flushTextNodes();
+          items.push(item);
+        }
+      }
+      continue;
+    }
+    const textNodes = inlineTextNodesForDisplay(node);
+    if (textNodes.length > 0) {
+      if (
+        pendingTextNodes.length === 0 &&
+        textNodes.length === 1 &&
+        items.length > 0
+      ) {
+        const previousItem = items[items.length - 1]!;
+        if (shouldAttachTextNodeToPreviousTable(previousItem, textNodes[0]!)) {
+          if (previousItem.type === "table") {
+            previousItem.trailingTextNodes = [
+              ...(previousItem.trailingTextNodes ?? []),
+              textNodes[0]!,
+            ];
+          }
+          continue;
+        }
+      }
+      pendingTextNodes.push(...textNodes);
+      continue;
+    }
+    if (isNodeKind(node, "table")) {
+      flushTextNodes();
+      items.push({ id: `table-${node.id}`, type: "table", node });
+    }
+  }
+
+  flushTextNodes();
+  return items;
+}
+
+function shouldRenderTextChild(parent: DocumentOutlineNode) {
+  const kind = nodeKind(parent);
+  return kind === undefined || !["document", "page_group", "form", "table"].includes(kind);
 }
 
 function sourceSpanIdsForTableRow(
@@ -1403,21 +1620,412 @@ function sourceSpanIdsForTableRow(
   ];
 }
 
+type SourceTableRow = ReturnType<typeof tableRowsForNode>[number];
+
+function isTableHeaderRow(row: SourceTableRow) {
+  return Boolean(
+    metadataBoolean(row.row.metadata, "isHeader") ??
+      row.cells.some((cell) => metadataBoolean(cell.metadata, "isHeader")),
+  );
+}
+
+function isGenericTableColumnName(value: string | undefined) {
+  return !value || /^column\s+\d+$/i.test(value.trim());
+}
+
+function tableCellColumnName(cell: DocumentOutlineNode) {
+  const raw = cell.metadata?.columnName;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : cell.title;
+}
+
+function tableRowText(row: SourceTableRow) {
+  if (row.cells.length > 0) {
+    return row.cells.map(tableCellValue).filter(Boolean).join(" ");
+  }
+  return normalizeSourceDisplayText(
+    row.row.excerpt ?? row.row.content ?? nodeDisplayTitle(row.row),
+  );
+}
+
+function isGenericCellRow(row: SourceTableRow) {
+  return row.cells.length > 0 &&
+    row.cells.every((cell) => isGenericTableColumnName(tableCellColumnName(cell)));
+}
+
+function isGridContinuationRow(row: SourceTableRow, previous: SourceTableRow | undefined) {
+  if (!previous || previous.cells.length <= 1 || isTableHeaderRow(row)) return false;
+  if (!isGenericCellRow(row) || row.cells.length >= previous.cells.length) return false;
+  const firstText = tableCellValue(row.cells[0]!);
+  if (/^item\s+\d+[a-z]?\./i.test(firstText)) return false;
+  return isContinuationText(tableCellValue(previous.cells[0]!), firstText) ||
+    isContinuationText(tableCellValue(previous.cells[previous.cells.length - 1]!), tableRowText(row));
+}
+
+function withAppendedCellText(
+  cell: DocumentOutlineNode,
+  text: string,
+  sourceSpanIds: string[],
+) {
+  const value = normalizeSourceDisplayText(`${tableCellValue(cell)} ${text}`);
+  return {
+    ...cell,
+    excerpt: value,
+    content: value,
+    sourceSpanIds: [
+      ...new Set([
+        ...sourceSpanIdsFrom(cell),
+        ...sourceSpanIds,
+      ]),
+    ],
+  };
+}
+
+function appendContinuationToRow(
+  target: SourceTableRow,
+  continuation: SourceTableRow,
+) {
+  if (!target.cells.length) return target;
+  const continuationSpanIds = sourceSpanIdsForTableRow(
+    continuation.row,
+    continuation.cells,
+  );
+  const cells = [...target.cells];
+  continuation.cells.forEach((cell, index) => {
+    const targetIndex = index === 0
+      ? 0
+      : index === continuation.cells.length - 1
+        ? cells.length - 1
+        : Math.min(index, cells.length - 1);
+    cells[targetIndex] = withAppendedCellText(
+      cells[targetIndex]!,
+      tableCellValue(cell),
+      sourceSpanIdsFrom(cell),
+    );
+  });
+  return {
+    row: {
+      ...target.row,
+      sourceSpanIds: [
+        ...new Set([
+          ...sourceSpanIdsFrom(target.row),
+          ...continuationSpanIds,
+        ]),
+      ],
+    },
+    cells,
+  };
+}
+
+function compactGridContinuationRows(rows: SourceTableRow[]) {
+  const compacted: SourceTableRow[] = [];
+  for (const row of rows) {
+    const previous = compacted[compacted.length - 1];
+    if (isGridContinuationRow(row, previous)) {
+      compacted[compacted.length - 1] = appendContinuationToRow(
+        previous!,
+        row,
+      );
+      continue;
+    }
+    compacted.push(row);
+  }
+  return compacted;
+}
+
+function mergeTrailingTextIntoTableRows(
+  rows: SourceTableRow[],
+  trailingTextNodes: DocumentOutlineNode[] | undefined,
+) {
+  const trailingText = (trailingTextNodes ?? [])
+    .map(normalizedNodeText)
+    .filter(Boolean)
+    .join(" ");
+  if (!trailingText) return rows;
+
+  const lastTextRowIndex = rows.findLastIndex((row) =>
+    !isTableHeaderRow(row) && row.cells.length <= 1,
+  );
+  if (lastTextRowIndex < 0) return rows;
+
+  const trailingSpanIds = trailingTextNodes!.flatMap((node) => sourceSpanIdsFrom(node));
+  return rows.map((row, index) => {
+    if (index !== lastTextRowIndex) return row;
+    if (row.cells.length === 0) {
+      const text = normalizeSourceDisplayText(`${tableRowText(row)} ${trailingText}`);
+      return {
+        row: {
+          ...row.row,
+          excerpt: text,
+          content: text,
+          sourceSpanIds: [
+            ...new Set([...sourceSpanIdsFrom(row.row), ...trailingSpanIds]),
+          ],
+        },
+        cells: [],
+      };
+    }
+    const cells = [...row.cells];
+    cells[0] = withAppendedCellText(cells[0]!, trailingText, trailingSpanIds);
+    return {
+      row: {
+        ...row.row,
+        sourceSpanIds: [
+          ...new Set([...sourceSpanIdsFrom(row.row), ...trailingSpanIds]),
+        ],
+      },
+      cells,
+    };
+  });
+}
+
+function splitMixedTableRows(rows: SourceTableRow[]) {
+  const segments: Array<
+    | { type: "key_value"; rows: SourceTableRow[] }
+    | { type: "text"; rows: SourceTableRow[] }
+    | { type: "grid"; rows: SourceTableRow[] }
+  > = [];
+  let index = 0;
+
+  while (index < rows.length) {
+    const row = rows[index]!;
+    if (isTableHeaderRow(row) && row.cells.length > 1) {
+      const gridRows = [row];
+      index += 1;
+      while (index < rows.length) {
+        const next = rows[index]!;
+        if (isTableHeaderRow(next) && next.cells.length > 1) break;
+        const continuationBase = [...gridRows]
+          .reverse()
+          .find((candidate) => candidate.cells.length > 1);
+        if (
+          next.cells.length <= 1 &&
+          !isTableHeaderRow(next) &&
+          !isGridContinuationRow(next, continuationBase)
+        ) {
+          break;
+        }
+        gridRows.push(next);
+        index += 1;
+      }
+      segments.push({ type: "grid", rows: gridRows });
+      continue;
+    }
+
+    if (
+      row.cells.length === 2 &&
+      row.cells.every((cell) => isGenericTableColumnName(tableCellColumnName(cell)))
+    ) {
+      const keyValueRows = [row];
+      index += 1;
+      while (index < rows.length) {
+        const next = rows[index]!;
+        if (
+          next.cells.length !== 2 ||
+          isTableHeaderRow(next) ||
+          !next.cells.every((cell) => isGenericTableColumnName(tableCellColumnName(cell)))
+        ) {
+          break;
+        }
+        keyValueRows.push(next);
+        index += 1;
+      }
+      segments.push({ type: "key_value", rows: keyValueRows });
+      continue;
+    }
+
+    const textRows = [row];
+    index += 1;
+    while (index < rows.length) {
+      const next = rows[index]!;
+      if (
+        isTableHeaderRow(next) ||
+        (
+          next.cells.length === 2 &&
+          next.cells.every((cell) => isGenericTableColumnName(tableCellColumnName(cell)))
+        )
+      ) {
+        break;
+      }
+      if (next.cells.length > 1) break;
+      textRows.push(next);
+      index += 1;
+    }
+    segments.push({ type: "text", rows: textRows });
+  }
+
+  return segments;
+}
+
+function SourceTableTextRows({
+  rows,
+  sourceSpans,
+  fileUrl,
+}: {
+  rows: SourceTableRow[];
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="space-y-1 px-5 py-2.5">
+      {rows.map((row) => (
+        <div key={row.row.id} className="flex min-w-0 items-start gap-3">
+          <p className="min-w-0 flex-1 text-base leading-5 text-foreground">
+            {tableRowText(row)}
+          </p>
+          <SourceEvidenceButton
+            sourceSpanIds={sourceSpanIdsForTableRow(row.row, row.cells)}
+            sourceSpans={sourceSpans}
+            fallbackPage={row.row.pageStart}
+            fileUrl={fileUrl}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SourceTableKeyValueRows({
+  rows,
+  sourceSpans,
+  fileUrl,
+}: {
+  rows: SourceTableRow[];
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
+  const keyValueRows = rows
+    .map((row) => ({
+      label: tableCellValue(row.cells[0]!),
+      value: tableCellValue(row.cells[1]!),
+      sourceSpanIds: sourceSpanIdsForTableRow(row.row, row.cells),
+      pageNumber: row.row.pageStart,
+    }))
+    .filter((row) => row.label && row.value);
+  if (keyValueRows.length === 0) return null;
+  return (
+    <KeyValueTable
+      rows={keyValueRows}
+      sourceSpans={sourceSpans}
+      fileUrl={fileUrl}
+      className="border-0"
+    />
+  );
+}
+
+function SourceTableGrid({
+  rows,
+  sourceSpans,
+  fileUrl,
+}: {
+  rows: SourceTableRow[];
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
+  if (rows.length === 0) return null;
+  const firstRow = rows[0];
+  const firstRowIsHeader = Boolean(firstRow) && isTableHeaderRow(firstRow);
+  const headerCells = firstRowIsHeader ? firstRow!.cells.map(tableCellValue) : [];
+  const compactedRows = compactGridContinuationRows(rows);
+  const bodyRows = firstRowIsHeader ? compactedRows.slice(1) : compactedRows;
+  const maxColumnCount = Math.max(...rows.map((row) => row.cells.length), 1);
+  const fitToCard = maxColumnCount <= 4;
+  const sourceColumnWidth = "4.25rem";
+  const dataColumnWidths = fitToCard
+    ? maxColumnCount === 1
+      ? ["calc(100% - 4.25rem)"]
+      : maxColumnCount === 2
+        ? ["34%", `calc(66% - ${sourceColumnWidth})`]
+        : maxColumnCount === 3
+          ? ["40%", "24%", `calc(36% - ${sourceColumnWidth})`]
+          : ["38%", "18%", "18%", `calc(26% - ${sourceColumnWidth})`]
+    : [];
+  return (
+    <UiTable
+      className={`${fitToCard ? "w-full table-fixed" : "w-max min-w-full"} text-base [&_td]:whitespace-normal [&_th]:whitespace-normal`}
+      style={fitToCard ? undefined : { minWidth: `${Math.max(34, maxColumnCount * 12 + 7)}rem` }}
+    >
+      {fitToCard ? (
+        <colgroup>
+          {dataColumnWidths.map((width, index) => (
+            <col key={`col-${index}`} style={{ width }} />
+          ))}
+          <col style={{ width: sourceColumnWidth }} />
+        </colgroup>
+      ) : null}
+      {firstRowIsHeader ? (
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            {Array.from({ length: maxColumnCount }, (_, index) => (
+              <TableHead
+                key={`head-${index}`}
+                className="h-8 bg-muted/30 px-3 text-label text-muted-foreground"
+              >
+                {headerCells[index] ?? ""}
+              </TableHead>
+            ))}
+            <TableHead className="h-8 w-px bg-muted/30 px-3 text-label text-muted-foreground">
+              Source
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+      ) : null}
+      <TableBody>
+        {bodyRows.map(({ row, cells }, rowIndex) => (
+          <TableRow key={row.id || `row-${rowIndex}`} className="hover:bg-foreground/[0.015]">
+            {Array.from({ length: maxColumnCount }, (_, index) => (
+              <TableCell
+                key={`${row.id}-${index}`}
+                className="px-3 py-2.5 align-top text-foreground"
+              >
+                {cells[index] ? tableCellValue(cells[index]) : ""}
+              </TableCell>
+            ))}
+            <TableCell className="w-px px-3 py-2.5 align-top">
+              <SourceEvidenceButton
+                sourceSpanIds={sourceSpanIdsForTableRow(row, cells)}
+                sourceSpans={sourceSpans}
+                fallbackPage={row.pageStart}
+                fileUrl={fileUrl}
+              />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </UiTable>
+  );
+}
+
 function SourceNodeTable({
   policyId,
   node,
   sourceSpans,
   fileUrl,
   allowOperatorSourceAccess,
+  trailingTextNodes,
 }: {
   policyId?: Id<"policies">;
   node: DocumentOutlineNode;
   sourceSpans?: SourceSpanDoc[];
   fileUrl?: string;
   allowOperatorSourceAccess?: boolean;
+  trailingTextNodes?: DocumentOutlineNode[];
 }) {
-  const rows = tableRowsForNode(node);
-  const tableSourceSpanIds = useMemo(() => collectSourceSpanIds(node), [node]);
+  const rows = mergeTrailingTextIntoTableRows(
+    tableRowsForNode(node),
+    trailingTextNodes,
+  );
+  const tableSourceSpanIds = useMemo(
+    () => [
+      ...new Set([
+        ...collectSourceSpanIds(node),
+        ...(trailingTextNodes ?? []).flatMap((textNode) =>
+          sourceSpanIdsFrom(textNode),
+        ),
+      ]),
+    ],
+    [node, trailingTextNodes],
+  );
   const queriedTableSourceSpans = usePolicySourceSpans(
     policyId,
     tableSourceSpanIds,
@@ -1425,67 +2033,95 @@ function SourceNodeTable({
   );
   const tableSourceSpans = mergeSourceSpans(sourceSpans, queriedTableSourceSpans);
   if (!rows.length) return null;
-  const maxColumnCount = Math.max(...rows.map((row) => row.cells.length), 1);
-  const firstRow = rows[0];
-  const firstRowIsHeader =
-    rows.length > 1 &&
-    Boolean(firstRow) &&
-    (metadataBoolean(firstRow.row.metadata, "isHeader") ??
-      firstRow.cells.some((cell) =>
-        metadataBoolean(cell.metadata, "isHeader"),
-      ));
-  const headerCells = firstRowIsHeader
-    ? firstRow.cells.map(tableCellValue)
-    : [];
-  const bodyRows = firstRowIsHeader ? rows.slice(1) : rows;
+  const segments = splitMixedTableRows(rows);
+  const title = sourceTableTitle(node);
 
   return (
-    <OperationalPanel as="div" className="overflow-x-auto">
-      <UiTable
-        className="w-max min-w-full text-base [&_td]:whitespace-normal [&_th]:whitespace-normal"
-        style={{ minWidth: `${Math.max(34, maxColumnCount * 12 + 7)}rem` }}
-      >
-        {firstRowIsHeader ? (
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              {Array.from({ length: maxColumnCount }, (_, index) => (
-                <TableHead
-                  key={`head-${index}`}
-                  className="h-8 bg-muted/30 px-3 text-label text-muted-foreground"
-                >
-                  {headerCells[index] ?? ""}
-                </TableHead>
-              ))}
-              <TableHead className="h-8 w-px bg-muted/30 px-3 text-label text-muted-foreground">
-                Source
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-        ) : null}
-        <TableBody>
-          {bodyRows.map(({ row, cells }, rowIndex) => (
-            <TableRow key={row.id || `row-${rowIndex}`} className="hover:bg-foreground/[0.015]">
-              {Array.from({ length: maxColumnCount }, (_, index) => (
-                <TableCell
-                  key={`${row.id}-${index}`}
-                  className="px-3 py-2.5 align-top text-foreground"
-                >
-                  {cells[index] ? tableCellValue(cells[index]) : ""}
-                </TableCell>
-              ))}
-              <TableCell className="w-px px-3 py-2.5 align-top">
-                <SourceEvidenceButton
-                  sourceSpanIds={sourceSpanIdsForTableRow(row, cells)}
-                  sourceSpans={tableSourceSpans}
-                  fallbackPage={row.pageStart}
-                  fileUrl={fileUrl}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </UiTable>
-    </OperationalPanel>
+    <div className="overflow-hidden rounded-md border border-foreground/6 bg-card">
+      {title ? (
+        <div className="flex min-w-0 items-center gap-2 px-4 py-2.5">
+          <p className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
+            {title}
+          </p>
+          <span className="text-label text-muted-foreground">Table</span>
+        </div>
+      ) : null}
+      <div className={title ? "border-t border-foreground/6" : undefined}>
+        {segments.map((segment, index) => (
+          <Fragment key={`${segment.type}-${index}`}>
+            {index > 0 ? <div className="border-t border-foreground/6" /> : null}
+            {segment.type === "key_value" ? (
+              <SourceTableKeyValueRows
+                rows={segment.rows}
+                sourceSpans={tableSourceSpans}
+                fileUrl={fileUrl}
+              />
+            ) : segment.type === "text" ? (
+              <SourceTableTextRows
+                rows={segment.rows}
+                sourceSpans={tableSourceSpans}
+                fileUrl={fileUrl}
+              />
+            ) : (
+              <SourceTableGrid
+                rows={segment.rows}
+                sourceSpans={tableSourceSpans}
+                fileUrl={fileUrl}
+              />
+            )}
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InlineSourceNodeTable({
+  policyId,
+  node,
+  sourceSpans,
+  fileUrl,
+  allowOperatorSourceAccess,
+  trailingTextNodes,
+}: {
+  policyId?: Id<"policies">;
+  node: DocumentOutlineNode;
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+  allowOperatorSourceAccess?: boolean;
+  trailingTextNodes?: DocumentOutlineNode[];
+}) {
+  const parentNodeId = sourceNodeId(node);
+  const hasHydratedChildren = Boolean(node.children?.length);
+  const lazyChildren = useSourceNodeChildren(
+    policyId,
+    parentNodeId,
+    hasSourceNodeChildren(node) && !hasHydratedChildren,
+    allowOperatorSourceAccess,
+  );
+  const waitingForChildren =
+    hasSourceNodeChildren(node) &&
+    !hasHydratedChildren &&
+    lazyChildren === undefined &&
+    policyId !== undefined;
+  const children = lazyChildren ?? node.children ?? [];
+  const hydratedNode = children === node.children ? node : { ...node, children };
+  const rendersTable = tableRowsForNode(hydratedNode).some(
+    (row) => row.cells.length > 0,
+  );
+
+  if (waitingForChildren) return <SourceNodeChildrenSkeleton />;
+  if (!rendersTable) return null;
+
+  return (
+    <SourceNodeTable
+      policyId={policyId}
+      node={hydratedNode}
+      sourceSpans={sourceSpans}
+      fileUrl={fileUrl}
+      allowOperatorSourceAccess={allowOperatorSourceAccess}
+      trailingTextNodes={trailingTextNodes}
+    />
   );
 }
 
@@ -1518,7 +2154,9 @@ function SourceTextParagraphs({
   return (
     <div className="space-y-1 py-1">
       {contentNodes.map((node) => {
-        const text = normalizedNodeText(node);
+        const text = isTitleBlockNode(node)
+          ? nodeDisplayTitle(node)
+          : normalizedNodeText(node);
         return (
           <div key={node.id} className="flex min-w-0 items-start gap-3 py-0.5">
             <p className="min-w-0 flex-1 text-base leading-5 text-foreground">
@@ -1554,7 +2192,9 @@ function visibleRenderableSourceChildren(
     : directChildren;
 
   return standaloneChildren.filter((child) => {
-    if (isTextLeafNode(child)) return !isDecorativeTextNode(child);
+    if (isTextLeafNode(child)) {
+      return shouldRenderTextChild(node) && !isDecorativeTextNode(child);
+    }
     return sourceNodeHasRenderableContent(child, policyDocument);
   });
 }
@@ -1563,6 +2203,7 @@ function sourceNodeHasRenderableContent(
   node: DocumentOutlineNode,
   policyDocument: PolicyDocument,
 ): boolean {
+  if (hasSourceNodeChildren(node)) return true;
   if (isTextLeafNode(node)) return !isDecorativeTextNode(node);
   if (extractedFactRowsForNode(policyDocument, node.id).length > 0) return true;
   if (isNodeKind(node, "table")) {
@@ -1646,11 +2287,19 @@ function OutlineNodeRow({
     ? allVisibleChildren.filter((child) => !isNodeKind(child, "table_row"))
     : allVisibleChildren;
   const renderableChildren = visibleChildren.filter((child) => {
-    if (isTextLeafNode(child)) return !isDecorativeTextNode(child);
+    if (isTextLeafNode(child)) {
+      return shouldRenderTextChild(node) && !isDecorativeTextNode(child);
+    }
     return sourceNodeHasRenderableContent(child, policyDocument);
   });
-  const textChildren = renderableChildren.filter(isTextLeafNode);
-  const structuredChildren = renderableChildren.filter((child) => !isTextLeafNode(child));
+  const inlineContent = inlineContentForDisplay(renderableChildren);
+  const structuredChildren = renderableChildren.filter((child) =>
+    !isTextLeafNode(child) && !isTitleBlockNode(child) && !isNodeKind(child, "table"),
+  );
+  const shouldFrameStructuredChildren =
+    kind === "document" ||
+    kind === "page_group" ||
+    kind === "form";
   const canExpand =
     factRows.length > 0 ||
     waitingForLazyChildren ||
@@ -1715,17 +2364,36 @@ function OutlineNodeRow({
               />
             </div>
           ) : null}
-          {textChildren.length > 0 ? (
-            <SourceTextParagraphs
-              policyId={policyId}
-              nodes={textChildren}
-              sourceSpans={rowSourceSpans}
-              fileUrl={fileUrl}
-              allowOperatorSourceAccess={allowOperatorSourceAccess}
-            />
-          ) : null}
+          {inlineContent.map((item) =>
+            item.type === "text" ? (
+              <SourceTextParagraphs
+                key={item.id}
+                policyId={policyId}
+                nodes={item.nodes}
+                sourceSpans={rowSourceSpans}
+                fileUrl={fileUrl}
+                allowOperatorSourceAccess={allowOperatorSourceAccess}
+              />
+            ) : (
+              <InlineSourceNodeTable
+                key={item.id}
+                policyId={policyId}
+                node={item.node}
+                sourceSpans={rowSourceSpans}
+                fileUrl={fileUrl}
+                allowOperatorSourceAccess={allowOperatorSourceAccess}
+                trailingTextNodes={item.trailingTextNodes}
+              />
+            ),
+          )}
           {structuredChildren.length > 0 ? (
-            <div className="overflow-hidden rounded-md border border-foreground/6 bg-background">
+            <div
+              className={
+                shouldFrameStructuredChildren
+                  ? "overflow-hidden rounded-md border border-foreground/6 bg-background"
+                  : "-mx-5 border-t border-foreground/6 bg-background"
+              }
+            >
               {structuredChildren.map((child) => (
                 <OutlineNodeRow
                   key={child.id}
@@ -1776,10 +2444,7 @@ function SourceBackedBreakdown({
   return (
     <div className="space-y-4">
       <OperationalPanel as="div">
-        <OperationalPanelHeader
-          title="Source hierarchy"
-          className="border-foreground/4 px-5 py-3"
-        />
+        <OperationalPanelHeader title="Source hierarchy" />
         <div>
           {loadingSourceNodes ? (
             <p className="px-5 py-4 text-label text-muted-foreground">
@@ -1871,6 +2536,7 @@ export interface ExtractionPanelProps {
   sourceSpansOverride?: SourceSpanDoc[];
   fileUrl?: string;
   allowOperatorSourceAccess?: boolean;
+  sourceHierarchyOnly?: boolean;
 }
 
 /** Renders extraction details as separate, flat cards — one per data type */
@@ -1881,6 +2547,7 @@ export function ExtractionCards({
   sourceSpansOverride,
   fileUrl,
   allowOperatorSourceAccess,
+  sourceHierarchyOnly,
 }: ExtractionPanelProps) {
   const allSourceSpanIds = useMemo(
     () => collectSourceSpanIds(policyDocument),
@@ -1892,7 +2559,7 @@ export function ExtractionCards({
     { allowOperatorAccess: allowOperatorSourceAccess },
   );
   const sourceSpans = sourceSpansOverride ?? queriedSourceSpans;
-  const coverages = policyDocument?.coverages ?? [];
+  const coverages = enrichedCoverageRows(policyDocument);
   const declarations = Array.isArray(
     (
       policyDocument?.declarations as
@@ -2004,25 +2671,27 @@ export function ExtractionCards({
   if (!hasAnyData) return null;
   if (!policyDocument) return null;
 
-  if (policyId || documentOutline.length > 0) {
+  if (sourceHierarchyOnly) {
     return (
       <div className="space-y-4">
-        <SourceBackedBreakdown
-          policyId={policyId}
-          policyDocument={policyDocument}
-          sourceSpans={sourceSpans}
-          fileUrl={fileUrl}
-          allowOperatorSourceAccess={allowOperatorSourceAccess}
-        />
+        {policyId || documentOutline.length > 0 ? (
+          <SourceBackedBreakdown
+            policyId={policyId}
+            policyDocument={policyDocument}
+            sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
+            allowOperatorSourceAccess={allowOperatorSourceAccess}
+          />
+        ) : (
+          <SourceNativeBreakdownUnavailable />
+        )}
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <SourceNativeBreakdownUnavailable />
-
-      {documentOutline.length === 0 && topLevelRows.length > 0 && (
+      {topLevelRows.length > 0 && (
         <DataCard
           title="Policy details"
           rows={topLevelRows}
@@ -2031,12 +2700,30 @@ export function ExtractionCards({
         />
       )}
 
+      {policyId || documentOutline.length > 0 ? (
+        <SourceBackedBreakdown
+          policyId={policyId}
+          policyDocument={policyDocument}
+          sourceSpans={sourceSpans}
+          fileUrl={fileUrl}
+          allowOperatorSourceAccess={allowOperatorSourceAccess}
+        />
+      ) : (
+        <SourceNativeBreakdownUnavailable />
+      )}
+
       {coverages.length > 0 && (
         <StructuredItemsCard
           id="ep-coverages"
           title="Coverages"
           items={coverages}
-          getTitle={(coverage) => coverage.name ?? "Unnamed coverage"}
+          getTitle={(coverage) =>
+            coverage.coverageSourceContext ??
+            coverage.name ??
+            "Unnamed coverage"
+          }
+          getTrailing={(coverage) => coverage.limit}
+          hasBody={coverageHasExtraDetails}
           getPage={(coverage) => coverage.pageNumber}
           getSourceSpanIds={(coverage) => coverage.sourceSpanIds}
           sourceSpans={sourceSpans}
@@ -2058,11 +2745,7 @@ export function ExtractionCards({
             ].filter(Boolean) as { label: string; className: string }[]
           }
           renderBody={(coverage) => (
-            <CoverageBody
-              coverage={coverage}
-              sourceSpans={sourceSpans}
-              fileUrl={fileUrl}
-            />
+            <CoverageBody coverage={coverage} />
           )}
         />
       )}

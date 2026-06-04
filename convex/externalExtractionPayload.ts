@@ -49,3 +49,38 @@ export const saveExternalCompletionPayload = action({
     return { storageId, byteLength };
   },
 });
+
+export const createExternalCompletionUploadUrl = action({
+  args: {
+    secret: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ uploadUrl: string }> => {
+    requireExtractionWorkerSecret(args.secret);
+    return { uploadUrl: await ctx.storage.generateUploadUrl() };
+  },
+});
+
+export const finalizeExternalCompletionPayload = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    storageId: v.string(),
+    byteLength: v.number(),
+  },
+  handler: async (ctx, args): Promise<{ storageId: string; byteLength: number }> => {
+    requireExtractionWorkerSecret(args.secret);
+    await ctx.runMutation(internal.policies.pipelineSaveArtifact, {
+      jobId: args.policyId,
+      kind: "external_completion_payload",
+      storageId: args.storageId as Id<"_storage">,
+    });
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+      jobId: args.policyId,
+      timestamp: nowMs(),
+      message: `Saved external extraction completion payload (${formatBytes(args.byteLength)})`,
+      phase: "worker",
+      level: args.byteLength >= 4 * 1024 * 1024 ? "warn" : "info",
+    });
+    return { storageId: args.storageId, byteLength: args.byteLength };
+  },
+});

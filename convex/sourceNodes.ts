@@ -68,7 +68,88 @@ async function canReadPolicySourceNodes(
 }
 
 function likelyHasChildNodes(node: SourceNodeDoc) {
+  if (
+    node.kind === "text" &&
+    node.metadata &&
+    typeof node.metadata === "object" &&
+    !Array.isArray(node.metadata) &&
+    (node.metadata as Record<string, unknown>).organizer === "title_block"
+  ) {
+    return true;
+  }
   return !["text", "table_cell"].includes(node.kind);
+}
+
+function metadataRecord(node: SourceNodeDoc) {
+  return node.metadata && typeof node.metadata === "object" && !Array.isArray(node.metadata)
+    ? node.metadata as Record<string, unknown>
+    : undefined;
+}
+
+const SEMANTIC_OUTLINE_KINDS = new Set([
+  "page_group",
+  "form",
+  "endorsement",
+  "section",
+  "schedule",
+  "clause",
+]);
+
+const OUTLINE_NODE_KINDS = new Set([
+  ...SEMANTIC_OUTLINE_KINDS,
+  "page",
+  "table",
+]);
+
+const CONTENT_OUTLINE_KINDS = new Set([
+  "endorsement",
+  "section",
+  "schedule",
+  "clause",
+  "table",
+]);
+
+function isOutlineNode(node: SourceNodeDoc) {
+  return OUTLINE_NODE_KINDS.has(node.kind);
+}
+
+function shouldInlineOutlineChildren(node: SourceNodeDoc) {
+  return !["table", "table_row", "table_cell", "text"].includes(node.kind);
+}
+
+function cleanNodeText(value: string | undefined) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function sourceNodeSearchText(node: SourceNodeDoc) {
+  return cleanNodeText([node.title, node.description, node.textExcerpt].filter(Boolean).join(" "));
+}
+
+function isNoticesAndJacketNode(node: SourceNodeDoc | undefined) {
+  return Boolean(node?.kind === "page_group" && /^notices?\s+and\s+jacket$/i.test(node.title));
+}
+
+function hasSignificantNoticePageValue(node: SourceNodeDoc) {
+  const text = sourceNodeSearchText(node);
+  return /\b(important notice|how to report a claim|privacy notice|ofac|terrorism risk insurance act|tria|trade or economic sanctions|economic sanctions limitation|sanctions limitation|declarations page|coverage part|named insured|premium|forms? and endorsements?|endorsement no\.?)\b/i.test(text);
+}
+
+function isLowValueJacketPage(node: SourceNodeDoc) {
+  const text = sourceNodeSearchText(node);
+  return /\b(admitted stock insurance company|organized under the laws|home office|corporate secretary|president and ceo|countersigned|licensed resident agent|signature)\b/i.test(text) &&
+    !hasSignificantNoticePageValue(node);
+}
+
+function shouldShowOutlineChild(parent: SourceNodeDoc | undefined, node: SourceNodeDoc) {
+  if (node.kind !== "page") return true;
+  if (isNoticesAndJacketNode(parent)) return hasSignificantNoticePageValue(node);
+  return !isLowValueJacketPage(node);
+}
+
+function shouldHidePageChildrenBehindStoredContent(parent: SourceNodeDoc, children: SourceNodeDoc[]) {
+  if (isNoticesAndJacketNode(parent)) return false;
+  if (!["page_group", "form", "endorsement"].includes(parent.kind)) return false;
+  return children.some((child) => CONTENT_OUTLINE_KINDS.has(child.kind));
 }
 
 function publicSourceNode(
@@ -76,9 +157,7 @@ function publicSourceNode(
   hasChildren: boolean,
   children?: PublicSourceNode[],
 ) {
-  const metadata = node.metadata && typeof node.metadata === "object" && !Array.isArray(node.metadata)
-    ? node.metadata as Record<string, unknown>
-    : undefined;
+  const metadata = metadataRecord(node);
   return {
     _id: node._id,
     _creationTime: node._creationTime,
@@ -126,7 +205,11 @@ async function publicChildNodes(
 ): Promise<PublicSourceNode[]> {
   const children = await childNodes(ctx, policyId, parentNodeId);
   return Promise.all(children.map(async (node: SourceNodeDoc) => {
-    if (node.kind !== "table_row") {
+    if (
+      node.kind !== "table" &&
+      node.kind !== "table_row" &&
+      !(node.kind === "text" && likelyHasChildNodes(node))
+    ) {
       return publicSourceNode(node, likelyHasChildNodes(node));
     }
     return publicSourceNode(
@@ -137,6 +220,48 @@ async function publicChildNodes(
   }));
 }
 
+async function publicOutlineChildren(
+  ctx: Pick<QueryCtx, "db">,
+  policyId: Id<"policies">,
+  parent: SourceNodeDoc,
+): Promise<PublicSourceNode[]> {
+  const children = (await childNodes(ctx, policyId, parent.nodeId))
+    .filter((child) => isOutlineNode(child) && shouldShowOutlineChild(parent, child));
+  const visibleChildren = shouldHidePageChildrenBehindStoredContent(parent, children)
+    ? children.filter((child) => child.kind !== "page")
+    : children;
+  return Promise.all(visibleChildren.map(async (node: SourceNodeDoc) => {
+    if (!shouldInlineOutlineChildren(node)) {
+      return publicSourceNode(node, likelyHasChildNodes(node));
+    }
+    const outlineChildren = await publicOutlineChildren(ctx, policyId, node);
+    return publicSourceNode(
+      node,
+      likelyHasChildNodes(node),
+      outlineChildren.length > 0 ? outlineChildren : undefined,
+    );
+  }));
+}
+
+async function topLevelSourceNodes(
+  ctx: Pick<QueryCtx, "db">,
+  policyId: Id<"policies">,
+) {
+  const rootCandidates = await ctx.db
+    .query("sourceNodes")
+    .withIndex("by_policyId_parentNodeId", (q) =>
+      q.eq("policyId", policyId).eq("parentNodeId", undefined),
+    )
+    .collect();
+  const root = rootCandidates.find((node) => node.kind === "document");
+  const topLevel = root
+    ? await childNodes(ctx, policyId, root.nodeId)
+    : rootCandidates
+      .filter((node) => node.kind !== "document")
+      .sort((left, right) => left.order - right.order);
+  return { root, topLevel };
+}
+
 export const listTopLevelByPolicy = query({
   args: {
     policyId: v.id("policies"),
@@ -145,18 +270,7 @@ export const listTopLevelByPolicy = query({
   handler: async (ctx, args) => {
     if (!await canReadPolicySourceNodes(ctx, args.policyId, args.allowOperatorAccess)) return [];
 
-    const rootCandidates = await ctx.db
-      .query("sourceNodes")
-      .withIndex("by_policyId_parentNodeId", (q) =>
-        q.eq("policyId", args.policyId).eq("parentNodeId", undefined),
-      )
-      .collect();
-    const root = rootCandidates.find((node) => node.kind === "document");
-    const topLevel = root
-      ? await childNodes(ctx, args.policyId, root.nodeId)
-      : rootCandidates
-        .filter((node) => node.kind !== "document")
-        .sort((left, right) => left.order - right.order);
+    const { topLevel } = await topLevelSourceNodes(ctx, args.policyId);
 
     const hydratedTopLevel = await Promise.all(topLevel.map(async (node) => {
       if (!likelyHasChildNodes(node) || node.kind === "page") {
@@ -169,6 +283,37 @@ export const listTopLevelByPolicy = query({
       );
     }));
     return hydratedTopLevel;
+  },
+});
+
+export const listOutlineByPolicy = query({
+  args: {
+    policyId: v.id("policies"),
+    allowOperatorAccess: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    if (!await canReadPolicySourceNodes(ctx, args.policyId, args.allowOperatorAccess)) return [];
+
+    const { topLevel } = await topLevelSourceNodes(ctx, args.policyId);
+    const hasSemanticTopLevel = topLevel.some((node) => SEMANTIC_OUTLINE_KINDS.has(node.kind));
+    if (!hasSemanticTopLevel) {
+      return Promise.all(topLevel.map(async (node) =>
+        publicSourceNode(node, likelyHasChildNodes(node)),
+      ));
+    }
+
+    const outlineTopLevel = topLevel.filter((node) => isOutlineNode(node) && shouldShowOutlineChild(undefined, node));
+    return Promise.all(outlineTopLevel.map(async (node) => {
+      if (!shouldInlineOutlineChildren(node)) {
+        return publicSourceNode(node, likelyHasChildNodes(node));
+      }
+      const outlineChildren = await publicOutlineChildren(ctx, args.policyId, node);
+      return publicSourceNode(
+        node,
+        likelyHasChildNodes(node),
+        outlineChildren.length > 0 ? outlineChildren : undefined,
+      );
+    }));
   },
 });
 

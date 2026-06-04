@@ -584,7 +584,7 @@ export function CompliancePage() {
               }
               disabled={importing}
             >
-              <SelectTrigger className="h-9 w-full bg-background">
+              <SelectTrigger className="w-full bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -659,7 +659,7 @@ export function CompliancePage() {
               value={category}
               onValueChange={(value) => setCategory(value as Category)}
             >
-              <SelectTrigger className="h-8 w-full">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

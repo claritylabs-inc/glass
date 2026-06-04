@@ -581,7 +581,7 @@ export default function BrokerOnboardingPage() {
                     setPartnerType(value as typeof partnerType)
                   }
                 >
-                  <SelectTrigger className="h-9 w-full border-foreground/8 bg-popover">
+                  <SelectTrigger className="w-full border-foreground/8 bg-popover">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
