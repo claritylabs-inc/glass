@@ -51,7 +51,7 @@ import {
   logAiError,
 } from "../lib/aiUtils";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
-import { tryBuildParsedPdfText } from "../lib/doclingPreprocessor";
+import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import { getNotificationFromAddress, sendResendEmail } from "../lib/resend";
 import { buildEmailShell, escapeHtml } from "../lib/emailTemplate";
 import { getPortalUrlForOrg } from "../lib/domains";

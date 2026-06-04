@@ -27,7 +27,7 @@ import {
 import { policyToInsuranceDoc } from "../lib/documentMapping";
 import { makeGenerateObject, makeEmbedText } from "../lib/sdkCallbacks";
 import { Id } from "../_generated/dataModel";
-import { tryBuildParsedPdfText } from "../lib/doclingPreprocessor";
+import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 
 /**
  * Build a summary of data already captured by structured extractors.

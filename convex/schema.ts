@@ -74,16 +74,6 @@ const policyDeliverySourceKindValidator = v.union(
   v.literal("endorsement"),
 );
 
-const coverageTermValidator = v.object({
-  kind: v.optional(v.string()),
-  label: v.string(),
-  value: v.string(),
-  amount: v.optional(v.number()),
-  appliesTo: v.optional(v.string()),
-  sourceNodeIds: v.optional(v.array(v.string())),
-  sourceSpanIds: v.optional(v.array(v.string())),
-});
-
 const policyDeliveryRuleFiltersValidator = v.object({
   carriers: v.optional(v.array(v.string())),
   securities: v.optional(v.array(v.string())),
@@ -686,7 +676,6 @@ export default defineSchema({
     parserBackend: v.optional(
       v.union(
         v.literal("liteparse"),
-        v.literal("docling"),
         v.literal("pdfjs"),
         v.literal("mammoth"),
         v.literal("plain_text"),
@@ -1152,12 +1141,25 @@ export default defineSchema({
     coverages: v.array(
       v.object({
         name: v.string(),
+        endorsementNumber: v.optional(v.string()),
         coverageCode: v.optional(v.string()),
         formEditionDate: v.optional(v.string()),
         limit: v.optional(v.string()),
         limitAmount: v.optional(v.number()),
         limitType: v.optional(v.string()),
         limitValueType: v.optional(v.string()),
+        limits: v.optional(
+          v.array(
+            v.object({
+              label: v.string(),
+              value: v.string(),
+              amount: v.optional(v.number()),
+              kind: v.optional(v.string()),
+              sourceNodeIds: v.optional(v.array(v.string())),
+              sourceSpanIds: v.optional(v.array(v.string())),
+            }),
+          ),
+        ),
         deductible: v.optional(v.string()),
         deductibleAmount: v.optional(v.number()),
         deductibleType: v.optional(v.string()),
@@ -1173,8 +1175,6 @@ export default defineSchema({
         included: v.optional(v.boolean()),
         coveragePremium: v.optional(v.string()),
         premium: v.optional(v.string()),
-        endorsementNumber: v.optional(v.string()),
-        limits: v.optional(v.array(coverageTermValidator)),
         coverageOrigin: v.optional(v.union(v.literal("core"), v.literal("endorsement"))),
         coverageOriginConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
         coverageOriginReason: v.optional(v.string()),

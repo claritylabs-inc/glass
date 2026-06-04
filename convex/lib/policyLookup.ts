@@ -5,7 +5,7 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { searchPolicyDocument } from "./aiUtils";
 import type { GlassSourceSpan } from "./pdfSourceSpans";
-import { preparePdfTextWithParserFallback } from "./doclingPreprocessor";
+import { preparePdfTextWithParserFallback } from "./liteparsePreprocessor";
 import { formatSourceSpanLabel } from "./policyDocumentStructure";
 
 type LookupResult = Record<string, unknown>;

@@ -82,13 +82,13 @@ describe("source spans and PCE backend surfaces", () => {
     const queryAgent = read("convex/lib/queryAgent.ts");
     const sourceRetriever = read("convex/lib/convexSourceRetriever.ts");
 
-    expect(prompts).toContain("ctx.vectorSearch(\"sourceNodes\"");
     expect(prompts).toContain("SOURCE-TREE EVIDENCE");
     expect(prompts).toContain("sourceSpanIds");
+    expect(prompts).toContain("sourceNodes.listByPolicyInternal");
     expect(sourceRetriever).toContain("createConvexSourceRetriever");
     expect(sourceRetriever).toContain("searchSourceNodes");
-    expect(sourceRetriever).toContain("ctx.vectorSearch(\"sourceNodes\"");
-    expect(sourceRetriever).toContain("ctx.vectorSearch(\"sourceChunks\"");
+    expect(sourceRetriever).toContain("sourceNodes.listByOrgInternal");
+    expect(sourceRetriever).toContain("sourceSpans.listChunksByOrgInternal");
     expect(queryAgent).toContain("sourceRetriever: createConvexSourceRetriever");
     expect(queryAgent).toContain("retrievalMode: \"hybrid\"");
   });
@@ -125,20 +125,19 @@ describe("source spans and PCE backend surfaces", () => {
 
   it("prepares LiteParse or PDF source spans before policy extraction", () => {
     const policyExtraction = read("convex/actions/policyExtraction.ts");
-    const doclingPreprocessor = read("convex/lib/doclingPreprocessor.ts");
+    const liteparsePreprocessor = read("convex/lib/liteparsePreprocessor.ts");
     const pdfSourceSpans = read("convex/lib/pdfSourceSpans.ts");
 
-    expect(doclingPreprocessor).toContain("preparePdfTextWithParserFallback");
-    expect(doclingPreprocessor).toContain("tryConvertPdfWithLiteParse");
-    expect(doclingPreprocessor).toContain("/liteparse/convert");
-    expect(doclingPreprocessor).toContain("EXTRACTION_WORKER_URL");
-    expect(doclingPreprocessor).toContain("buildPdfSourceSpans");
+    expect(liteparsePreprocessor).toContain("preparePdfTextWithParserFallback");
+    expect(liteparsePreprocessor).toContain("tryConvertPdfWithLiteParse");
+    expect(liteparsePreprocessor).toContain("/liteparse/convert");
+    expect(liteparsePreprocessor).toContain("EXTRACTION_WORKER_URL");
+    expect(liteparsePreprocessor).toContain("buildPdfSourceSpans");
     expect(pdfSourceSpans).toContain("pdfjs-dist/legacy/build/pdf.mjs");
     expect(pdfSourceSpans).toContain("getTextContent");
     expect(pdfSourceSpans).toContain("splitPageIntoSectionCandidates");
     expect(pdfSourceSpans).toContain("sourceUnit: \"section_candidate\"");
     expect(policyExtraction).toContain("preparePdfTextWithParserFallback");
-    expect(policyExtraction).not.toContain("kind: \"docling_document\"");
     expect(policyExtraction).toContain("sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>>");
     expect(policyExtraction).toContain(": pdfSource.sourceSpans as Array<Record<string, any>>");
     expect(policyExtraction).not.toContain("SDK source-grounding is disabled");

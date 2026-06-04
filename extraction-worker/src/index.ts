@@ -225,15 +225,18 @@ const WORKER_CL_SDK_VERSION =
 const POLL_MS = readBoundedIntEnv("EXTRACTION_WORKER_POLL_MS", 5000, 500, 60_000);
 const IDLE_LOG_MS = readBoundedIntEnv("EXTRACTION_WORKER_IDLE_LOG_MS", 60_000, 5_000, 10 * 60_000);
 const HEARTBEAT_MS = readBoundedIntEnv("EXTRACTION_WORKER_HEARTBEAT_MS", 30_000, 5_000, 5 * 60_000);
-const HTTP_PORT = readOptionalIntEnv("PORT") ?? readOptionalIntEnv("LITEPARSE_HTTP_PORT") ?? readOptionalIntEnv("DOCLING_HTTP_PORT");
+const HTTP_PORT =
+  readOptionalIntEnv("PORT") ?? readOptionalIntEnv("LITEPARSE_HTTP_PORT");
 const HTTP_MAX_BODY_BYTES = readBoundedIntEnv(
   "LITEPARSE_HTTP_MAX_BODY_BYTES",
-  readBoundedIntEnv("DOCLING_HTTP_MAX_BODY_BYTES", 50 * 1024 * 1024, 1024, 250 * 1024 * 1024),
+  50 * 1024 * 1024,
   1024,
   250 * 1024 * 1024,
 );
-const LITEPARSE_MAX_PAGES = readOptionalIntEnv("LITEPARSE_MAX_PAGES") ?? readOptionalIntEnv("DOCLING_MAX_PAGES");
-const LITEPARSE_MAX_FILE_SIZE = readOptionalIntEnv("LITEPARSE_MAX_FILE_SIZE_BYTES") ?? readOptionalIntEnv("DOCLING_MAX_FILE_SIZE_BYTES");
+const LITEPARSE_MAX_PAGES = readOptionalIntEnv("LITEPARSE_MAX_PAGES");
+const LITEPARSE_MAX_FILE_SIZE = readOptionalIntEnv(
+  "LITEPARSE_MAX_FILE_SIZE_BYTES",
+);
 const MODEL_CALL_TIMEOUT_MS = readBoundedIntEnv("MODEL_CALL_TIMEOUT_MS", 180_000, 30_000, 15 * 60_000);
 
 const convex = new ConvexHttpClient(CONVEX_URL);
@@ -1405,7 +1408,7 @@ function startHttpServer(): { close: () => void } | null {
       });
       return;
     }
-    if (req.method === "POST" && (url.pathname === "/liteparse/convert" || url.pathname === "/docling/convert")) {
+    if (req.method === "POST" && url.pathname === "/liteparse/convert") {
       handleConvertRequest(req, res).catch((error) => {
         console.error("LiteParse HTTP conversion failed:", error);
         jsonResponse(res, 500, { error: errorMessage(error) });

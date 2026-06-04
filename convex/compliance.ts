@@ -556,6 +556,30 @@ async function requireOrgMember(
   return access;
 }
 
+async function requireAdminWriteActor(
+  ctx: QueryCtx | MutationCtx,
+  orgId: Id<"organizations">,
+  userId: Id<"users">,
+  errorMessage: string,
+) {
+  const membership = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_orgId_userId", (q) =>
+      q.eq("orgId", orgId).eq("userId", userId),
+    )
+    .first();
+  if (membership?.role === "admin") return;
+
+  try {
+    const access = await requireOrgMember(ctx, orgId);
+    if (access.userId === userId && access.role === "admin") return;
+  } catch {
+    // Fall through to the consistent caller-facing authorization error.
+  }
+
+  throw new Error(errorMessage);
+}
+
 async function listRequirementsForOrg(
   ctx: QueryCtx,
   orgId: Id<"organizations">,
@@ -1137,13 +1161,12 @@ export const upsertRequirementInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
-        q.eq("orgId", args.orgId).eq("userId", args.userId),
-      )
-      .first();
-    if (membership?.role !== "admin") throw new Error("Admin role required");
+    await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Admin role required",
+    );
     const now = dayjs().valueOf();
     return await ctx.db.insert("insuranceRequirements", {
       orgId: args.orgId,
@@ -1258,7 +1281,6 @@ export const createRequirementSourceDocumentInternal = internalMutation({
     parserBackend: v.optional(
       v.union(
         v.literal("liteparse"),
-        v.literal("docling"),
         v.literal("pdfjs"),
         v.literal("mammoth"),
         v.literal("plain_text"),
@@ -1269,13 +1291,12 @@ export const createRequirementSourceDocumentInternal = internalMutation({
     parsingMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
-        q.eq("orgId", args.orgId).eq("userId", args.userId),
-      )
-      .first();
-    if (membership?.role !== "admin") throw new Error("Admin role required");
+    await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Admin role required",
+    );
     const now = dayjs().valueOf();
     return await ctx.db.insert("requirementSourceDocuments", {
       orgId: args.orgId,
@@ -1330,13 +1351,12 @@ export const createRequirementsInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
-        q.eq("orgId", args.orgId).eq("userId", args.userId),
-      )
-      .first();
-    if (membership?.role !== "admin") throw new Error("Admin role required");
+    await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Admin role required",
+    );
     const existing = await listRequirementsForOrg(ctx, args.orgId);
     const seen = new Set(
       existing.map((requirement) =>

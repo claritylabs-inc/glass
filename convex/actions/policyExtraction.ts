@@ -15,7 +15,7 @@ import {
   buildExtractor,
   summarizeExtractionCheckpoint,
 } from "../lib/extraction";
-import { preparePdfTextWithParserFallback } from "../lib/doclingPreprocessor";
+import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";

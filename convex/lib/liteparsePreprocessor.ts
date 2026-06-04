@@ -6,9 +6,18 @@ import {
   type SourceChunk,
   type SourceSpan,
 } from "@claritylabs/cl-sdk";
-import { buildPdfSourceSpans, type GlassSourceChunk, type GlassSourceSpan } from "./pdfSourceSpans";
+import {
+  buildPdfSourceSpans,
+  type GlassSourceChunk,
+  type GlassSourceSpan,
+} from "./pdfSourceSpans";
 
-type ParsedPdfSourceKind = "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note";
+type ParsedPdfSourceKind =
+  | "policy_pdf"
+  | "application_pdf"
+  | "email"
+  | "attachment"
+  | "manual_note";
 
 export type PdfPreparationResult = {
   text: string;
@@ -45,12 +54,17 @@ export type LiteParseConvertResult = {
 
 const DEFAULT_TIMEOUT_MS = readBoundedIntEnv(
   "LITEPARSE_CONVERT_TIMEOUT_MS",
-  readBoundedIntEnv("DOCLING_CONVERT_TIMEOUT_MS", 120_000, 1_000, 15 * 60_000),
+  120_000,
   1_000,
   15 * 60_000,
 );
 
-function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
+function readBoundedIntEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const value = Number.parseInt(raw, 10);
@@ -64,13 +78,18 @@ function workerUrl(): string | undefined {
   return raw.replace(/\/+$/, "");
 }
 
-function sourceTextFromSpans(sourceSpans: Array<SourceSpan | GlassSourceSpan>): string {
+function sourceTextFromSpans(
+  sourceSpans: Array<SourceSpan | GlassSourceSpan>,
+): string {
   const pageSpans = sourceSpans.filter(
-    (span) => (span as { metadata?: Record<string, unknown> }).metadata?.sourceUnit !== "section_candidate",
+    (span) =>
+      (span as { metadata?: Record<string, unknown> }).metadata?.sourceUnit !==
+      "section_candidate",
   );
   return pageSpans
     .map((span) => {
-      const page = typeof span.pageStart === "number" ? `Page ${span.pageStart}\n` : "";
+      const page =
+        typeof span.pageStart === "number" ? `Page ${span.pageStart}\n` : "";
       return `${page}${span.text}`;
     })
     .filter((text) => text.trim())
@@ -104,33 +123,40 @@ export async function tryConvertPdfWithLiteParse(params: {
     if (!response.ok) {
       throw new Error(`LiteParse worker returned ${response.status}`);
     }
-    const payload = await response.json() as {
+    const payload = (await response.json()) as {
       text?: unknown;
       sourceSpans?: unknown;
       sourceChunks?: unknown;
       pageScreenshots?: unknown;
       metadata?: LiteParseConvertResult["metadata"];
     };
-    if (typeof payload.text !== "string" || !Array.isArray(payload.sourceSpans)) {
+    if (
+      typeof payload.text !== "string" ||
+      !Array.isArray(payload.sourceSpans)
+    ) {
       throw new Error("LiteParse worker returned no text/source spans");
     }
     return {
       text: payload.text,
       sourceSpans: payload.sourceSpans as SourceSpan[],
-      sourceChunks: Array.isArray(payload.sourceChunks) ? payload.sourceChunks as SourceChunk[] : undefined,
-      pageScreenshots: Array.isArray(payload.pageScreenshots) ? payload.pageScreenshots as PageScreenshot[] : undefined,
+      sourceChunks: Array.isArray(payload.sourceChunks)
+        ? (payload.sourceChunks as SourceChunk[])
+        : undefined,
+      pageScreenshots: Array.isArray(payload.pageScreenshots)
+        ? (payload.pageScreenshots as PageScreenshot[])
+        : undefined,
       metadata: {
         parserBackend: "liteparse",
         ...payload.metadata,
       },
     };
   } catch (error) {
-    console.warn(`LiteParse conversion unavailable; using PDF fallback: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(
+      `LiteParse conversion unavailable; using PDF fallback: ${error instanceof Error ? error.message : String(error)}`,
+    );
     return null;
   }
 }
-
-export const tryConvertPdfWithDocling = tryConvertPdfWithLiteParse;
 
 export async function preparePdfTextWithParserFallback(params: {
   pdfBytes: Uint8Array;
@@ -145,10 +171,7 @@ export async function preparePdfTextWithParserFallback(params: {
       documentId: params.documentId,
       sourceKind: params.sourceKind ?? "policy_pdf",
     });
-    const sourceSpans = [
-      ...converted.sourceSpans,
-      ...rawSource.sourceSpans,
-    ];
+    const sourceSpans = [...converted.sourceSpans, ...rawSource.sourceSpans];
     const sourceChunks = [
       ...(converted.sourceChunks ?? chunkSourceSpans(converted.sourceSpans)),
       ...rawSource.sourceChunks,
@@ -180,8 +203,6 @@ export async function preparePdfTextWithParserFallback(params: {
   };
 }
 
-export const preparePdfTextWithDoclingFallback = preparePdfTextWithParserFallback;
-
 export async function tryBuildParsedPdfText(params: {
   pdfBytes: Uint8Array;
   documentId: string;
@@ -196,5 +217,3 @@ export async function tryBuildParsedPdfText(params: {
   const maxChars = params.maxChars ?? 40_000;
   return text.length > maxChars ? text.slice(0, maxChars) : text;
 }
-
-export const tryBuildDoclingPdfText = tryBuildParsedPdfText;

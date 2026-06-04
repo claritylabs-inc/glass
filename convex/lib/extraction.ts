@@ -29,7 +29,7 @@ import { makeGenerateText, makeGenerateObject } from "./sdkCallbacks";
 import { modelCapabilitiesForTask } from "./modelCatalog";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import type { PageScreenshot } from "./doclingPreprocessor";
+import type { PageScreenshot } from "./liteparsePreprocessor";
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];

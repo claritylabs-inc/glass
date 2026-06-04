@@ -15,7 +15,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Id } from "../_generated/dataModel";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
-import { preparePdfTextWithParserFallback } from "../lib/doclingPreprocessor";
+import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
 
 type ConnectedEmailAccount = {
   _id: Id<"connectedEmailAccounts">;

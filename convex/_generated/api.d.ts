@@ -95,7 +95,6 @@ import type * as lib_convexSourceRetriever from "../lib/convexSourceRetriever.js
 import type * as lib_coverageNames from "../lib/coverageNames.js";
 import type * as lib_coverageScoping from "../lib/coverageScoping.js";
 import type * as lib_declarationFacts from "../lib/declarationFacts.js";
-import type * as lib_doclingPreprocessor from "../lib/doclingPreprocessor.js";
 import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_domains from "../lib/domains.js";
 import type * as lib_emailAddress from "../lib/emailAddress.js";
@@ -112,6 +111,7 @@ import type * as lib_imessageConfig from "../lib/imessageConfig.js";
 import type * as lib_imessageGroupResolution from "../lib/imessageGroupResolution.js";
 import type * as lib_imessageOutbound from "../lib/imessageOutbound.js";
 import type * as lib_industries from "../lib/industries.js";
+import type * as lib_liteparsePreprocessor from "../lib/liteparsePreprocessor.js";
 import type * as lib_mcpAuth from "../lib/mcpAuth.js";
 import type * as lib_mergePdfs from "../lib/mergePdfs.js";
 import type * as lib_modelCatalog from "../lib/modelCatalog.js";
@@ -261,7 +261,6 @@ declare const fullApi: ApiFromModules<{
   "lib/coverageNames": typeof lib_coverageNames;
   "lib/coverageScoping": typeof lib_coverageScoping;
   "lib/declarationFacts": typeof lib_declarationFacts;
-  "lib/doclingPreprocessor": typeof lib_doclingPreprocessor;
   "lib/documentMapping": typeof lib_documentMapping;
   "lib/domains": typeof lib_domains;
   "lib/emailAddress": typeof lib_emailAddress;
@@ -278,6 +277,7 @@ declare const fullApi: ApiFromModules<{
   "lib/imessageGroupResolution": typeof lib_imessageGroupResolution;
   "lib/imessageOutbound": typeof lib_imessageOutbound;
   "lib/industries": typeof lib_industries;
+  "lib/liteparsePreprocessor": typeof lib_liteparsePreprocessor;
   "lib/mcpAuth": typeof lib_mcpAuth;
   "lib/mergePdfs": typeof lib_mergePdfs;
   "lib/modelCatalog": typeof lib_modelCatalog;

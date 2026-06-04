@@ -56,7 +56,7 @@ import {
   buildPolicyToolInstructions,
   policySearchScore,
 } from "../lib/aiUtils";
-import { tryBuildParsedPdfText } from "../lib/doclingPreprocessor";
+import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import {
   classifyPromptInjection,

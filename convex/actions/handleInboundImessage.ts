@@ -37,7 +37,7 @@ import {
   policySearchScore,
 } from "../lib/aiUtils";
 import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
-import { tryBuildParsedPdfText } from "../lib/doclingPreprocessor";
+import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { AgentScope } from "../lib/agentScope";

@@ -10,7 +10,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModel } from "../lib/models";
-import { tryBuildParsedPdfText } from "../lib/doclingPreprocessor";
+import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 
 const CATEGORY_VALUES = [
   "general_liability",
@@ -58,7 +58,7 @@ type RequirementImportContext = {
 };
 type ExtractedFileText = {
   text: string;
-  parserBackend?: "liteparse" | "docling" | "pdfjs" | "mammoth" | "plain_text";
+  parserBackend?: "liteparse" | "pdfjs" | "mammoth" | "plain_text";
   parserVersion?: string;
   parsedAt?: number;
   parsingMs?: number;
