@@ -1,10 +1,20 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { action, internalAction, internalMutation, internalQuery, query } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
+import {
+  getCurrentOrgAccess,
+  getOrgAccess,
+  getPolicyAccessForQuery,
+} from "./lib/access";
 import {
   buildCertificateGateEvidencePacket,
   inferCertificateEndorsements,
@@ -29,6 +39,32 @@ const certificateSourceValidator = v.union(
 
 const requestedEndorsementValidator = v.array(v.string());
 
+function normalizeHolderSearchText(value: string | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function holderKeyFromParts(
+  name: string | undefined,
+  fullAddress: string | undefined,
+) {
+  const normalizedName = normalizeHolderSearchText(name);
+  if (normalizedName) return normalizedName;
+  return normalizeHolderSearchText(fullAddress?.split(/\r?\n/)[0]);
+}
+
+function policyDisplayName(policy: any) {
+  return (
+    [policy.mga ?? policy.carrier ?? policy.security, policy.policyNumber]
+      .filter(Boolean)
+      .join(" · ") ||
+    policy.fileName ||
+    "Policy"
+  );
+}
+
 function compactCertificateHolder(args: {
   holderName: string;
   addressLine1?: string;
@@ -40,22 +76,23 @@ function compactCertificateHolder(args: {
   const cityStateZip = [
     args.city?.trim(),
     [args.state?.trim(), args.postalCode?.trim()].filter(Boolean).join(" "),
-  ].filter(Boolean).join(", ");
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   return [
     args.holderName.trim(),
     args.addressLine1?.trim(),
     args.addressLine2?.trim(),
     cityStateZip,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-function sourceKindForPolicyChange(source: string | undefined):
-  | "manual"
-  | "chat"
-  | "email"
-  | "imessage"
-  | "mcp" {
+function sourceKindForPolicyChange(
+  source: string | undefined,
+): "manual" | "chat" | "email" | "imessage" | "mcp" {
   if (source === "email") return "email";
   if (source === "imessage" || source === "sms") return "imessage";
   if (source === "mcp") return "mcp";
@@ -65,9 +102,10 @@ function sourceKindForPolicyChange(source: string | undefined):
 
 function buildBrokerSubmissionFromIdentity(identity: any | null) {
   if (!identity || !identity.clientOrgId) return undefined;
-  const recipientEmail = typeof identity.contactEmail === "string"
-    ? identity.contactEmail.trim()
-    : "";
+  const recipientEmail =
+    typeof identity.contactEmail === "string"
+      ? identity.contactEmail.trim()
+      : "";
   const recipientName = identity.contactName ?? identity.brokerCompanyName;
   return {
     routingStatus: recipientEmail
@@ -87,11 +125,15 @@ function buildBrokerSubmissionFromIdentity(identity: any | null) {
 
 function missingBrokerRecipientInfo(brokerSubmission: any | undefined) {
   if (!brokerSubmission?.needsRecipient) return [];
-  return [{
-    code: "broker_contact_required",
-    question: "Which broker email or contact should receive this certificate change request?",
-    reason: "Certificate requests that require policy changes are broker-mediated and need a broker recipient before Glass can draft or send one.",
-  }];
+  return [
+    {
+      code: "broker_contact_required",
+      question:
+        "Which broker email or contact should receive this certificate change request?",
+      reason:
+        "Certificate requests that require policy changes are broker-mediated and need a broker recipient before Glass can draft or send one.",
+    },
+  ];
 }
 
 function formatGateMessage(args: {
@@ -108,23 +150,29 @@ function formatGateMessage(args: {
 
 const certificateGateReviewSchema = z.object({
   status: z.enum(["allowed", "held"]),
-  reasonCode: z.enum([
-    "policy_change_required",
-    "missing_policy_evidence",
-    "ambiguous_policy_evidence",
-    "conflicting_policy_evidence",
-  ]).nullable(),
+  reasonCode: z
+    .enum([
+      "policy_change_required",
+      "missing_policy_evidence",
+      "ambiguous_policy_evidence",
+      "conflicting_policy_evidence",
+    ])
+    .nullable(),
   reasonMessage: z.string(),
-  requiredChanges: z.array(z.enum([
-    "additional_insured",
-    "named_insured",
-    "waiver_of_subrogation",
-    "primary_non_contributory",
-    "loss_payee",
-    "mortgagee",
-    "special_wording",
-    "policy_change",
-  ])).max(8),
+  requiredChanges: z
+    .array(
+      z.enum([
+        "additional_insured",
+        "named_insured",
+        "waiver_of_subrogation",
+        "primary_non_contributory",
+        "loss_payee",
+        "mortgagee",
+        "special_wording",
+        "policy_change",
+      ]),
+    )
+    .max(8),
   evidenceIds: z.array(z.string()).max(8),
 });
 
@@ -201,7 +249,9 @@ ${JSON.stringify(evidencePacket, null, 2).slice(0, 60000)}
 Return a gate verdict. If held, write a specific reason that explains whether the problem is missing endorsement evidence, an endorsement still needed, or ambiguity.`,
     });
     const review = result.object as z.infer<typeof certificateGateReviewSchema>;
-    const evidenceById = new Map(evidencePacket.map((item) => [item.evidenceId, item]));
+    const evidenceById = new Map(
+      evidencePacket.map((item) => [item.evidenceId, item]),
+    );
     const evidence: CertificateGateEvidence[] = review.evidenceIds
       .map((id) => evidenceById.get(id))
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
@@ -213,7 +263,7 @@ Return a gate verdict. If held, write a specific reason that explains whether th
         pageEnd: item.pageEnd,
       }));
     const reviewedChanges = review.requiredChanges.length
-      ? review.requiredChanges as CertificateEndorsementKind[]
+      ? (review.requiredChanges as CertificateEndorsementKind[])
       : requiredChanges;
     if (review.status === "allowed") {
       if (reviewedChanges.length > 0 && evidence.length === 0) {
@@ -241,7 +291,9 @@ Return a gate verdict. If held, write a specific reason that explains whether th
     return {
       status: "held",
       reasonCode: review.reasonCode ?? "ambiguous_policy_evidence",
-      reasonMessage: review.reasonMessage.trim() || "Broker review is needed before issuing this certificate.",
+      reasonMessage:
+        review.reasonMessage.trim() ||
+        "Broker review is needed before issuing this certificate.",
       requiredChanges: reviewedChanges,
       evidence,
     };
@@ -316,6 +368,159 @@ export const listActivityByPolicy = query({
   },
 });
 
+export const listWorkspace = query({
+  args: {},
+  handler: async (ctx) => {
+    const access = await getCurrentOrgAccess(ctx);
+    if (!access) return [];
+
+    const [certificates, holds] = await Promise.all([
+      ctx.db
+        .query("certificates")
+        .withIndex("by_orgId", (q) => q.eq("orgId", access.orgId))
+        .order("desc")
+        .collect(),
+      ctx.db
+        .query("certificateRequestHolds")
+        .withIndex("by_orgId", (q) => q.eq("orgId", access.orgId))
+        .order("desc")
+        .collect(),
+    ]);
+
+    const policyIds = Array.from(
+      new Set([
+        ...certificates.map((row) => row.policyId),
+        ...holds.map((row) => row.policyId),
+      ]),
+    );
+    const policies = new Map();
+    for (const policyId of policyIds) {
+      const policy = await ctx.db.get(policyId);
+      if (policy && policy.orgId === access.orgId && !policy.deletedAt) {
+        policies.set(policyId, policy);
+      }
+    }
+
+    const rows = await Promise.all(
+      certificates.map(async (row) => {
+        const policy = policies.get(row.policyId);
+        if (!policy) return null;
+        return {
+          ...row,
+          url: await ctx.storage.getUrl(row.fileId),
+          activityType: "certificate" as const,
+          policy: {
+            _id: policy._id,
+            displayName: policyDisplayName(policy),
+            policyNumber: policy.policyNumber,
+            carrier: policy.carrier,
+            mga: policy.mga,
+            security: policy.security,
+            insuredName: policy.insuredName,
+            effectiveDate: policy.effectiveDate,
+            expirationDate: policy.expirationDate,
+          },
+        };
+      }),
+    );
+
+    const holdRows = holds.map((row) => {
+      const policy = policies.get(row.policyId);
+      if (!policy) return null;
+      return {
+        ...row,
+        activityType: "hold" as const,
+        policy: {
+          _id: policy._id,
+          displayName: policyDisplayName(policy),
+          policyNumber: policy.policyNumber,
+          carrier: policy.carrier,
+          mga: policy.mga,
+          security: policy.security,
+          insuredName: policy.insuredName,
+          effectiveDate: policy.effectiveDate,
+          expirationDate: policy.expirationDate,
+        },
+      };
+    });
+
+    return [...rows, ...holdRows]
+      .filter(Boolean)
+      .sort(
+        (left: any, right: any) =>
+          Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
+      );
+  },
+});
+
+export const listHolderCandidatesForPolicy = query({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
+    if (!policyAccess) return [];
+    const [policyCertificates, orgCertificates, holds] = await Promise.all([
+      ctx.db
+        .query("certificates")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .order("desc")
+        .collect(),
+      ctx.db
+        .query("certificates")
+        .withIndex("by_orgId", (q) => q.eq("orgId", policyAccess.policy.orgId))
+        .order("desc")
+        .take(100),
+      ctx.db
+        .query("certificateRequestHolds")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .order("desc")
+        .collect(),
+    ]);
+
+    const byHolder = new Map<string, any>();
+    for (const row of [...policyCertificates, ...orgCertificates]) {
+      const key = holderKeyFromParts(
+        row.certificateHolderName,
+        row.certificateHolder,
+      );
+      if (!key || byHolder.has(key)) continue;
+      byHolder.set(key, {
+        holderKey: key,
+        holderName:
+          row.certificateHolderName ??
+          row.certificateHolder?.split(/\r?\n/)[0] ??
+          "Certificate holder",
+        certificateHolder: row.certificateHolder,
+        latestCertificateId: row._id,
+        latestCertificateUrl: await ctx.storage.getUrl(row.fileId),
+        latestIssuedAt: row.createdAt,
+        hasCertificateForPolicy: row.policyId === args.policyId,
+      });
+    }
+    for (const row of holds) {
+      const key = holderKeyFromParts(row.holderName, row.certificateHolder);
+      if (!key || byHolder.has(key)) continue;
+      byHolder.set(key, {
+        holderKey: key,
+        holderName: row.holderName,
+        certificateHolder: row.certificateHolder,
+        latestHoldId: row._id,
+        latestIssuedAt: row.createdAt,
+        hasCertificateForPolicy: false,
+        isHeld: true,
+      });
+    }
+
+    return Array.from(byHolder.values()).sort((left, right) => {
+      if (left.hasCertificateForPolicy !== right.hasCertificateForPolicy) {
+        return left.hasCertificateForPolicy ? -1 : 1;
+      }
+      return (
+        Number(right.latestIssuedAt ?? 0) - Number(left.latestIssuedAt ?? 0)
+      );
+    });
+  },
+});
+
 export const getGenerationContext = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
@@ -330,10 +535,14 @@ export const getGenerationContext = query({
     if (access.org.autoGenerateCoi === false) {
       const handling = access.org.coiHandling ?? "ignore";
       if (handling === "broker") {
-        throw new Error("COI auto-generation is off. Contact the broker to obtain this certificate.");
+        throw new Error(
+          "COI auto-generation is off. Contact the broker to obtain this certificate.",
+        );
       }
       if (handling === "member") {
-        throw new Error("COI auto-generation is off. Route this request to the primary insurance contact.");
+        throw new Error(
+          "COI auto-generation is off. Route this request to the primary insurance contact.",
+        );
       }
       throw new Error("COI auto-generation is disabled for this organization.");
     }
@@ -359,10 +568,14 @@ export const getGenerationContextForOrg = internalQuery({
     if (org.autoGenerateCoi === false) {
       const handling = org.coiHandling ?? "ignore";
       if (handling === "broker") {
-        throw new Error("COI auto-generation is off. Contact the broker to obtain this certificate.");
+        throw new Error(
+          "COI auto-generation is off. Contact the broker to obtain this certificate.",
+        );
       }
       if (handling === "member") {
-        throw new Error("COI auto-generation is off. Route this request to the primary insurance contact.");
+        throw new Error(
+          "COI auto-generation is off. Route this request to the primary insurance contact.",
+        );
       }
       throw new Error("COI auto-generation is disabled for this organization.");
     }
@@ -429,11 +642,19 @@ export const previewAuthorityForPolicy = action({
       policyId: args.policyId,
     });
 
-    const authority = await ctx.runAction(internal.partnerPrograms.resolveCertificateAuthority, {
-      policyId: args.policyId,
-    }) as {
+    const authority = (await ctx.runAction(
+      internal.partnerPrograms.resolveCertificateAuthority,
+      {
+        policyId: args.policyId,
+      },
+    )) as {
       authorityType: "non_binding" | "certified";
-      certificationStatus: "not_applicable" | "pending" | "certified" | "declined" | "needs_program_selection";
+      certificationStatus:
+        | "not_applicable"
+        | "pending"
+        | "certified"
+        | "declined"
+        | "needs_program_selection";
       partnerProgramId?: Id<"partnerPrograms">;
       approvalMode?: "auto_approve_all" | "require_approval_all" | "llm_review";
       matchCandidates?: unknown[];
@@ -441,8 +662,8 @@ export const previewAuthorityForPolicy = action({
 
     const selectedProgram = authority.partnerProgramId
       ? await ctx.runQuery(internal.partnerPrograms.getProgramInternal, {
-        programId: authority.partnerProgramId,
-      })
+          programId: authority.partnerProgramId,
+        })
       : null;
 
     return {
@@ -451,11 +672,11 @@ export const previewAuthorityForPolicy = action({
       approvalMode: authority.approvalMode,
       selectedProgram: selectedProgram
         ? {
-          programId: selectedProgram._id,
-          programName: selectedProgram.name,
-          categoryLabels: selectedProgram.categoryLabels,
-          approvalMode: selectedProgram.approvalMode,
-        }
+            programId: selectedProgram._id,
+            programName: selectedProgram.name,
+            categoryLabels: selectedProgram.categoryLabels,
+            approvalMode: selectedProgram.approvalMode,
+          }
         : null,
       matchCandidates: authority.matchCandidates ?? [],
     };
@@ -488,7 +709,9 @@ export const generateForOrg = internalAction({
       orgId: args.orgId,
       policyId: args.policyId,
     });
-    const certificateHolder = args.certificateHolder?.trim() || compactCertificateHolder({ ...args, holderName });
+    const certificateHolder =
+      args.certificateHolder?.trim() ||
+      compactCertificateHolder({ ...args, holderName });
 
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
@@ -496,33 +719,50 @@ export const generateForOrg = internalAction({
     const org = await ctx.runQuery(internal.orgs.getInternal, {
       id: args.orgId,
     });
-    const brokerOrg = org?.type === "client" && org.brokerOrgId
-      ? await ctx.runQuery(internal.orgs.getInternal, {
-          id: org.brokerOrgId as Id<"organizations">,
-        })
-      : null;
+    const brokerOrg =
+      org?.type === "client" && org.brokerOrgId
+        ? await ctx.runQuery(internal.orgs.getInternal, {
+            id: org.brokerOrgId as Id<"organizations">,
+          })
+        : null;
     const settingsOrg = brokerOrg ?? org;
     const policyChangeRequestsEnabled =
       settingsOrg?.policyChangeRequestsEnabled !== false;
     const certificateChangeRequestsEnabled =
       settingsOrg?.certificateChangeRequestsEnabled !== false &&
       policyChangeRequestsEnabled;
-    const hasSourceNodes = await ctx.runQuery(
-      (internal as any).sourceNodes.hasNodesForPolicy,
-      { policyId: args.policyId },
-    ).catch(() => false);
+    const hasSourceNodes = await ctx
+      .runQuery((internal as any).sourceNodes.hasNodesForPolicy, {
+        policyId: args.policyId,
+      })
+      .catch(() => false);
     const hasReadySourceTree =
-      (policy as { sourceTreeVersion?: string; sourceTreeStatus?: string } | null)?.sourceTreeVersion === "v3" &&
-      (policy as { sourceTreeVersion?: string; sourceTreeStatus?: string } | null)?.sourceTreeStatus === "ready" &&
+      (
+        policy as {
+          sourceTreeVersion?: string;
+          sourceTreeStatus?: string;
+        } | null
+      )?.sourceTreeVersion === "v3" &&
+      (
+        policy as {
+          sourceTreeVersion?: string;
+          sourceTreeStatus?: string;
+        } | null
+      )?.sourceTreeStatus === "ready" &&
       hasSourceNodes;
     if (!hasReadySourceTree) {
-      const rebuild = await ctx.runAction((internal as any).actions.policyExtraction.ensurePolicyV3SourceTree, {
-        policyId: args.policyId,
-        reason: "certificate_generation",
-      }).catch((error) => ({
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-      }));
+      const rebuild = await ctx
+        .runAction(
+          (internal as any).actions.policyExtraction.ensurePolicyV3SourceTree,
+          {
+            policyId: args.policyId,
+            reason: "certificate_generation",
+          },
+        )
+        .catch((error) => ({
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        }));
       return {
         status: "source_tree_rebuild_required",
         holderName,
@@ -556,12 +796,14 @@ export const generateForOrg = internalAction({
     if (gate.status === "held") {
       let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
       if (certificateChangeRequestsEnabled) {
-        const brokerIdentity = org?.type === "client"
-          ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-              clientOrgId: args.orgId,
-            })
-          : null;
-        const brokerSubmission = buildBrokerSubmissionFromIdentity(brokerIdentity);
+        const brokerIdentity =
+          org?.type === "client"
+            ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+                clientOrgId: args.orgId,
+              })
+            : null;
+        const brokerSubmission =
+          buildBrokerSubmissionFromIdentity(brokerIdentity);
         policyChangeCaseId = await ctx.runMutation(
           internal.policyChanges.createFromChatInternal,
           {
@@ -572,29 +814,36 @@ export const generateForOrg = internalAction({
               args.requestText ??
               `Certificate request for ${holderName} requires ${gate.requiredChanges.join(", ")} before the COI can be issued.`,
             sourceKind: sourceKindForPolicyChange(args.source),
-            evidenceSourceIds: gate.evidence.flatMap((item) => item.sourceSpanIds ?? []),
+            evidenceSourceIds: gate.evidence.flatMap(
+              (item) => item.sourceSpanIds ?? [],
+            ),
             missingInfoQuestions: missingBrokerRecipientInfo(brokerSubmission),
             brokerSubmission,
           },
         );
       }
 
-      const holdId = await ctx.runMutation(internal.certificates.recordHoldInternal, {
-        orgId: args.orgId,
-        policyId: args.policyId,
-        holderName,
-        certificateHolder,
-        requestText: args.requestText,
-        requestedEndorsements: args.requestedEndorsements,
-        source: args.source,
-        status: policyChangeCaseId ? "policy_change_opened" : "broker_handoff_offered",
-        reasonCode: gate.reasonCode,
-        reasonMessage: gate.reasonMessage,
-        requiredChanges: gate.requiredChanges,
-        evidence: gate.evidence,
-        policyChangeCaseId,
-        createdByUserId: args.createdByUserId,
-      });
+      const holdId = await ctx.runMutation(
+        internal.certificates.recordHoldInternal,
+        {
+          orgId: args.orgId,
+          policyId: args.policyId,
+          holderName,
+          certificateHolder,
+          requestText: args.requestText,
+          requestedEndorsements: args.requestedEndorsements,
+          source: args.source,
+          status: policyChangeCaseId
+            ? "policy_change_opened"
+            : "broker_handoff_offered",
+          reasonCode: gate.reasonCode,
+          reasonMessage: gate.reasonMessage,
+          requiredChanges: gate.requiredChanges,
+          evidence: gate.evidence,
+          policyChangeCaseId,
+          createdByUserId: args.createdByUserId,
+        },
+      );
 
       return {
         status: "held_policy_change_required",
@@ -617,12 +866,20 @@ export const generateForOrg = internalAction({
       };
     }
 
-    const authority = await ctx.runAction(internal.partnerPrograms.resolveCertificateAuthority, {
-      policyId: args.policyId,
-      selectedPartnerProgramId: args.selectedPartnerProgramId,
-    }) as {
+    const authority = (await ctx.runAction(
+      internal.partnerPrograms.resolveCertificateAuthority,
+      {
+        policyId: args.policyId,
+        selectedPartnerProgramId: args.selectedPartnerProgramId,
+      },
+    )) as {
       authorityType: "non_binding" | "certified";
-      certificationStatus: "not_applicable" | "pending" | "certified" | "declined" | "needs_program_selection";
+      certificationStatus:
+        | "not_applicable"
+        | "pending"
+        | "certified"
+        | "declined"
+        | "needs_program_selection";
       partnerOrgId?: Id<"organizations">;
       partnerProgramId?: Id<"partnerPrograms">;
       templateId?: Id<"coiTemplates">;
@@ -643,21 +900,28 @@ export const generateForOrg = internalAction({
       };
     }
 
-    if (authority.authorityType === "certified" && authority.certificationStatus === "pending" && authority.partnerOrgId) {
-      const requestId = await ctx.runMutation(internal.partnerPrograms.createCertificateRequestInternal, {
-        orgId: args.orgId,
-        policyId: args.policyId,
-        partnerOrgId: authority.partnerOrgId,
-        partnerProgramId: authority.partnerProgramId,
-        templateId: authority.templateId,
-        holderName,
-        certificateHolder,
-        source: args.source,
-        createdByUserId: args.createdByUserId,
-        matchCandidates: authority.matchCandidates,
-        approvalMode: authority.approvalMode,
-        approvalAudit: authority.approvalAudit,
-      });
+    if (
+      authority.authorityType === "certified" &&
+      authority.certificationStatus === "pending" &&
+      authority.partnerOrgId
+    ) {
+      const requestId = await ctx.runMutation(
+        internal.partnerPrograms.createCertificateRequestInternal,
+        {
+          orgId: args.orgId,
+          policyId: args.policyId,
+          partnerOrgId: authority.partnerOrgId,
+          partnerProgramId: authority.partnerProgramId,
+          templateId: authority.templateId,
+          holderName,
+          certificateHolder,
+          source: args.source,
+          createdByUserId: args.createdByUserId,
+          matchCandidates: authority.matchCandidates,
+          approvalMode: authority.approvalMode,
+          approvalAudit: authority.approvalAudit,
+        },
+      );
       return {
         status: "pending_approval",
         requestId,
@@ -689,25 +953,34 @@ export const generateForOrg = internalAction({
     if (!generated) throw new Error("COI generation failed.");
 
     const fileId = generated.storageId as Id<"_storage">;
-    if (authority.approvalType === "standing_authorization" && authority.partnerOrgId) {
-      const approvalId = await ctx.runMutation(internal.partnerPrograms.recordCertificateApprovalInternal, {
-        orgId: args.orgId,
-        policyId: args.policyId,
-        certificateId: generated.certificateId as Id<"certificates">,
-        partnerOrgId: authority.partnerOrgId,
-        partnerProgramId: authority.partnerProgramId,
-        templateId: authority.templateId,
-        standingAuthorizationId: authority.standingAuthorizationId,
-        approvalType: "standing_authorization",
-        status: "approved",
-        approvalMode: authority.approvalMode,
-        audit: authority.approvalAudit,
-        notes: authority.disclaimer,
-      });
-      await ctx.runMutation(internal.partnerPrograms.linkCertificateApprovalInternal, {
-        certificateId: generated.certificateId as Id<"certificates">,
-        approvalId,
-      });
+    if (
+      authority.approvalType === "standing_authorization" &&
+      authority.partnerOrgId
+    ) {
+      const approvalId = await ctx.runMutation(
+        internal.partnerPrograms.recordCertificateApprovalInternal,
+        {
+          orgId: args.orgId,
+          policyId: args.policyId,
+          certificateId: generated.certificateId as Id<"certificates">,
+          partnerOrgId: authority.partnerOrgId,
+          partnerProgramId: authority.partnerProgramId,
+          templateId: authority.templateId,
+          standingAuthorizationId: authority.standingAuthorizationId,
+          approvalType: "standing_authorization",
+          status: "approved",
+          approvalMode: authority.approvalMode,
+          audit: authority.approvalAudit,
+          notes: authority.disclaimer,
+        },
+      );
+      await ctx.runMutation(
+        internal.partnerPrograms.linkCertificateApprovalInternal,
+        {
+          certificateId: generated.certificateId as Id<"certificates">,
+          approvalId,
+        },
+      );
     }
     return {
       status: "generated",
@@ -732,7 +1005,9 @@ export const recordGenerated = internalMutation({
     certificateHolderName: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
     createdByUserId: v.optional(v.id("users")),
-    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    authorityType: v.optional(
+      v.union(v.literal("non_binding"), v.literal("certified")),
+    ),
     certificationStatus: v.optional(
       v.union(
         v.literal("not_applicable"),
@@ -745,11 +1020,13 @@ export const recordGenerated = internalMutation({
     partnerProgramId: v.optional(v.id("partnerPrograms")),
     templateId: v.optional(v.id("coiTemplates")),
     standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
-    approvalMode: v.optional(v.union(
-      v.literal("auto_approve_all"),
-      v.literal("require_approval_all"),
-      v.literal("llm_review"),
-    )),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
     approvalAudit: v.optional(v.any()),
     disclaimer: v.optional(v.string()),
   },

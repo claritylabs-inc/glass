@@ -1,5 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import {
+  mutation,
+  query,
+  internalQuery,
+  internalMutation,
+} from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
@@ -30,7 +35,12 @@ import {
 
 dayjs.extend(customParseFormat);
 
-type PolicyPipelineStatus = "idle" | "running" | "paused" | "complete" | "error";
+type PolicyPipelineStatus =
+  | "idle"
+  | "running"
+  | "paused"
+  | "complete"
+  | "error";
 type PolicyExtractionArtifactKind =
   | "cl_sdk_checkpoint"
   | "embedding_payload"
@@ -108,13 +118,22 @@ function policyYearFromInput(value: string | undefined): number | undefined {
 
 export function normalizeEditableFields(
   fields: Record<string, unknown>,
-  options: { deriveNumericAmounts?: boolean; normalizeMoneyText?: boolean } = {},
+  options: {
+    deriveNumericAmounts?: boolean;
+    normalizeMoneyText?: boolean;
+  } = {},
 ): Record<string, unknown> {
   const deriveNumericAmounts = options.deriveNumericAmounts ?? true;
   const normalizeMoneyText = options.normalizeMoneyText ?? true;
   const next = { ...fields };
-  for (const key of ["effectiveDate", "expirationDate", "retroactiveDate", "nextReviewDate"]) {
-    if (typeof next[key] === "string") next[key] = normalizeExtractedDate(next[key]) ?? next[key];
+  for (const key of [
+    "effectiveDate",
+    "expirationDate",
+    "retroactiveDate",
+    "nextReviewDate",
+  ]) {
+    if (typeof next[key] === "string")
+      next[key] = normalizeExtractedDate(next[key]) ?? next[key];
   }
 
   for (const [textKey, amountKey] of [
@@ -126,24 +145,29 @@ export function normalizeEditableFields(
     if (next[textKey] !== undefined) {
       if (!normalizeMoneyText && !deriveNumericAmounts) continue;
       const money = normalizeMoneyField(next[textKey]);
-      if (normalizeMoneyText && money.text !== undefined) next[textKey] = money.text;
-      if (deriveNumericAmounts && money.amount !== undefined) next[amountKey] = money.amount;
+      if (normalizeMoneyText && money.text !== undefined)
+        next[textKey] = money.text;
+      if (deriveNumericAmounts && money.amount !== undefined)
+        next[amountKey] = money.amount;
     }
   }
 
   if (Array.isArray(next.coverages)) {
     next.coverages = next.coverages.map((coverage) => {
       const row = { ...(coverage as Record<string, unknown>) };
-      const limitAmount = typeof row.limitAmount === "number"
-        ? row.limitAmount
-        : deriveNumericAmounts
-          ? parseExtractedNumber(row.limit) ?? parseExtractedNumber(row.originalContent)
-          : undefined;
-      const deductibleAmount = typeof row.deductibleAmount === "number"
-        ? row.deductibleAmount
-        : deriveNumericAmounts
-          ? parseExtractedNumber(row.deductible)
-          : undefined;
+      const limitAmount =
+        typeof row.limitAmount === "number"
+          ? row.limitAmount
+          : deriveNumericAmounts
+            ? (parseExtractedNumber(row.limit) ??
+              parseExtractedNumber(row.originalContent))
+            : undefined;
+      const deductibleAmount =
+        typeof row.deductibleAmount === "number"
+          ? row.deductibleAmount
+          : deriveNumericAmounts
+            ? parseExtractedNumber(row.deductible)
+            : undefined;
       if (normalizeMoneyText && row.limit !== undefined) {
         row.limit = normalizeMoneyString(row.limit) ?? row.limit;
       }
@@ -151,10 +175,12 @@ export function normalizeEditableFields(
         row.deductible = normalizeMoneyString(row.deductible) ?? row.deductible;
       }
       if (row.retroactiveDate !== undefined) {
-        row.retroactiveDate = normalizeExtractedDate(row.retroactiveDate) ?? row.retroactiveDate;
+        row.retroactiveDate =
+          normalizeExtractedDate(row.retroactiveDate) ?? row.retroactiveDate;
       }
       if (limitAmount !== undefined) row.limitAmount = limitAmount;
-      if (deductibleAmount !== undefined) row.deductibleAmount = deductibleAmount;
+      if (deductibleAmount !== undefined)
+        row.deductibleAmount = deductibleAmount;
       return row;
     });
   }
@@ -166,8 +192,12 @@ export function normalizeEditableFields(
       const money = normalizeMoneyField(row.amount);
       return {
         ...row,
-        ...(normalizeMoneyText && money.text !== undefined ? { amount: money.text } : {}),
-        ...(deriveNumericAmounts && money.amount !== undefined ? { amountValue: money.amount } : {}),
+        ...(normalizeMoneyText && money.text !== undefined
+          ? { amount: money.text }
+          : {}),
+        ...(deriveNumericAmounts && money.amount !== undefined
+          ? { amountValue: money.amount }
+          : {}),
       };
     });
   }
@@ -175,14 +205,20 @@ export function normalizeEditableFields(
   return next;
 }
 
-async function getPolicyExtractionRun(ctx: any, policyId: DataModelId<"policies">) {
+async function getPolicyExtractionRun(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+) {
   return await ctx.db
     .query("policyExtractionRuns")
     .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
     .first();
 }
 
-async function readPolicyPipelineState(ctx: any, policyId: DataModelId<"policies">) {
+async function readPolicyPipelineState(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+) {
   const run = await getPolicyExtractionRun(ctx, policyId);
   if (run) {
     return {
@@ -203,10 +239,9 @@ async function readPolicyPipelineState(ctx: any, policyId: DataModelId<"policies
   };
 }
 
-async function mergePolicyPipelineState<T extends { _id: DataModelId<"policies"> }>(
-  ctx: any,
-  policy: T,
-): Promise<T> {
+async function mergePolicyPipelineState<
+  T extends { _id: DataModelId<"policies"> },
+>(ctx: any, policy: T): Promise<T> {
   const state = await readPolicyPipelineState(ctx, policy._id);
   if (!state) return policy;
   return {
@@ -218,7 +253,10 @@ async function mergePolicyPipelineState<T extends { _id: DataModelId<"policies">
   };
 }
 
-async function ensurePolicyExtractionRun(ctx: any, policyId: DataModelId<"policies">) {
+async function ensurePolicyExtractionRun(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+) {
   const existing = await getPolicyExtractionRun(ctx, policyId);
   if (existing) return existing;
 
@@ -231,8 +269,10 @@ async function ensurePolicyExtractionRun(ctx: any, policyId: DataModelId<"polici
     updatedAt: now,
   };
   if (policy?.pipelineError) fields.pipelineError = policy.pipelineError;
-  if (policy?.pipelineCheckpoint) fields.pipelineCheckpoint = policy.pipelineCheckpoint;
-  if (Array.isArray(policy?.pipelineLog)) fields.pipelineLog = policy.pipelineLog;
+  if (policy?.pipelineCheckpoint)
+    fields.pipelineCheckpoint = policy.pipelineCheckpoint;
+  if (Array.isArray(policy?.pipelineLog))
+    fields.pipelineLog = policy.pipelineLog;
 
   const runId = await ctx.db.insert("policyExtractionRuns", fields as any);
   if (policy?.pipelineCheckpoint || policy?.pipelineLog) {
@@ -333,11 +373,13 @@ async function clearPolicyExtractionArtifacts(
 ) {
   const query = kind
     ? ctx.db
-      .query("policyExtractionArtifacts")
-      .withIndex("by_policyId_kind", (q: any) => q.eq("policyId", policyId).eq("kind", kind))
+        .query("policyExtractionArtifacts")
+        .withIndex("by_policyId_kind", (q: any) =>
+          q.eq("policyId", policyId).eq("kind", kind),
+        )
     : ctx.db
-      .query("policyExtractionArtifacts")
-      .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId));
+        .query("policyExtractionArtifacts")
+        .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId));
   const artifacts = await query.collect();
   for (const artifact of artifacts) {
     await ctx.storage.delete(artifact.storageId).catch(() => {});
@@ -397,14 +439,15 @@ export const get = query({
       : null;
     return {
       ...enrichedPolicy,
-      partnerProgram: partnerProgram && partnerProgram.status === "active"
-        ? {
-          programId: partnerProgram._id,
-          programName: partnerProgram.name,
-          categoryLabels: partnerProgram.categoryLabels,
-          approvalMode: partnerProgram.approvalMode,
-        }
-        : null,
+      partnerProgram:
+        partnerProgram && partnerProgram.status === "active"
+          ? {
+              programId: partnerProgram._id,
+              programName: partnerProgram.name,
+              categoryLabels: partnerProgram.categoryLabels,
+              approvalMode: partnerProgram.approvalMode,
+            }
+          : null,
     };
   },
 });
@@ -456,14 +499,15 @@ export const getSummary = query({
       pipelineError: enrichedPolicy.pipelineError,
       pipelineLog: enrichedPolicy.pipelineLog,
       extractionReview: enrichedPolicy.extractionReview,
-      partnerProgram: partnerProgram && partnerProgram.status === "active"
-        ? {
-          programId: partnerProgram._id,
-          programName: partnerProgram.name,
-          categoryLabels: partnerProgram.categoryLabels,
-          approvalMode: partnerProgram.approvalMode,
-        }
-        : null,
+      partnerProgram:
+        partnerProgram && partnerProgram.status === "active"
+          ? {
+              programId: partnerProgram._id,
+              programName: partnerProgram.name,
+              categoryLabels: partnerProgram.categoryLabels,
+              approvalMode: partnerProgram.approvalMode,
+            }
+          : null,
     };
   },
 });
@@ -477,6 +521,37 @@ export const getPolicyFileUrl = query({
   },
 });
 
+export const listHistoryByPolicy = query({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    const policyAccess = await getPolicyAccessForQuery(ctx, args.policyId);
+    if (!policyAccess) return { files: [], updateRuns: [] };
+
+    const [files, updateRuns] = await Promise.all([
+      ctx.db
+        .query("policyFiles")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .order("desc")
+        .collect(),
+      ctx.db
+        .query("policyUpdateRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .order("desc")
+        .collect(),
+    ]);
+
+    return {
+      files: await Promise.all(
+        files.map(async (file) => ({
+          ...file,
+          url: await ctx.storage.getUrl(file.fileId),
+        })),
+      ),
+      updateRuns,
+    };
+  },
+});
+
 // All complete, non-deleted policies for an org (used by agent action)
 export const listAllInternal = internalQuery({
   args: { orgId: v.id("organizations") },
@@ -485,9 +560,7 @@ export const listAllInternal = internalQuery({
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
       .collect();
-    return all.filter(
-      (p) => p.pipelineStatus === "complete" && !p.deletedAt
-    );
+    return all.filter((p) => p.pipelineStatus === "complete" && !p.deletedAt);
   },
 });
 
@@ -500,7 +573,10 @@ export const listAllQuotesInternal = internalQuery({
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
       .collect();
     return all.filter(
-      (p) => p.documentType === "quote" && p.pipelineStatus === "complete" && !p.deletedAt
+      (p) =>
+        p.documentType === "quote" &&
+        p.pipelineStatus === "complete" &&
+        !p.deletedAt,
     );
   },
 });
@@ -511,11 +587,11 @@ export const listAllInternalByUser = internalQuery({
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", args.userId as unknown as never))
+      .withIndex("by_userId", (idx) =>
+        idx.eq("userId", args.userId as unknown as never),
+      )
       .collect();
-    return all.filter(
-      (p) => p.pipelineStatus === "complete" && !p.deletedAt
-    );
+    return all.filter((p) => p.pipelineStatus === "complete" && !p.deletedAt);
   },
 });
 
@@ -556,8 +632,12 @@ const coverageValidator = v.object({
   included: v.optional(v.boolean()),
   coveragePremium: v.optional(v.string()),
   premium: v.optional(v.string()),
-  coverageOrigin: v.optional(v.union(v.literal("core"), v.literal("endorsement"))),
-  coverageOriginConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+  coverageOrigin: v.optional(
+    v.union(v.literal("core"), v.literal("endorsement")),
+  ),
+  coverageOriginConfidence: v.optional(
+    v.union(v.literal("low"), v.literal("medium"), v.literal("high")),
+  ),
   coverageOriginReason: v.optional(v.string()),
   pageNumber: v.optional(v.number()),
   resolvedFromPage: v.optional(v.number()),
@@ -607,22 +687,32 @@ const limitsValidator = v.object({
   umbrellaAggregate: v.optional(v.string()),
   umbrellaRetention: v.optional(v.string()),
   statutory: v.optional(v.boolean()),
-  employersLiability: v.optional(v.object({
-    eachAccident: v.string(),
-    diseasePolicyLimit: v.string(),
-    diseaseEachEmployee: v.string(),
-  })),
-  sublimits: v.optional(v.array(v.object({
-    name: v.string(),
-    limit: v.string(),
-    appliesTo: v.optional(v.string()),
-    deductible: v.optional(v.string()),
-  }))),
-  sharedLimits: v.optional(v.array(v.object({
-    description: v.string(),
-    limit: v.string(),
-    coverageParts: v.array(v.string()),
-  }))),
+  employersLiability: v.optional(
+    v.object({
+      eachAccident: v.string(),
+      diseasePolicyLimit: v.string(),
+      diseaseEachEmployee: v.string(),
+    }),
+  ),
+  sublimits: v.optional(
+    v.array(
+      v.object({
+        name: v.string(),
+        limit: v.string(),
+        appliesTo: v.optional(v.string()),
+        deductible: v.optional(v.string()),
+      }),
+    ),
+  ),
+  sharedLimits: v.optional(
+    v.array(
+      v.object({
+        description: v.string(),
+        limit: v.string(),
+        coverageParts: v.array(v.string()),
+      }),
+    ),
+  ),
   defenseCostTreatment: v.optional(v.string()),
 });
 
@@ -661,12 +751,16 @@ const vehicleValidator = v.object({
   costNew: v.optional(v.string()),
   statedValue: v.optional(v.string()),
   garageLocation: v.optional(v.number()),
-  coverages: v.optional(v.array(v.object({
-    type: v.string(),
-    limit: v.optional(v.string()),
-    deductible: v.optional(v.string()),
-    included: v.boolean(),
-  }))),
+  coverages: v.optional(
+    v.array(
+      v.object({
+        type: v.string(),
+        limit: v.optional(v.string()),
+        deductible: v.optional(v.string()),
+        included: v.boolean(),
+      }),
+    ),
+  ),
   radius: v.optional(v.string()),
   vehicleType: v.optional(v.string()),
 });
@@ -764,36 +858,48 @@ export const updateExtraction = mutation({
     brokerContactName: v.optional(v.string()),
     brokerLicenseNumber: v.optional(v.string()),
     // Structured entity objects (cl-sdk 0.11+)
-    insurer: v.optional(v.object({
-      legalName: v.string(),
-      naicNumber: v.optional(v.string()),
-      amBestRating: v.optional(v.string()),
-      amBestNumber: v.optional(v.string()),
-      admittedStatus: v.optional(v.string()),
-      stateOfDomicile: v.optional(v.string()),
-    })),
-    producer: v.optional(v.object({
-      agencyName: v.string(),
-      contactName: v.optional(v.string()),
-      licenseNumber: v.optional(v.string()),
-      phone: v.optional(v.string()),
-      email: v.optional(v.string()),
-      address: v.optional(addressValidator),
-    })),
-    lossPayees: v.optional(v.array(v.object({
-      name: v.string(),
-      role: v.string(),
-      address: v.optional(addressValidator),
-      relationship: v.optional(v.string()),
-      scope: v.optional(v.string()),
-    }))),
-    mortgageHolders: v.optional(v.array(v.object({
-      name: v.string(),
-      role: v.string(),
-      address: v.optional(addressValidator),
-      relationship: v.optional(v.string()),
-      scope: v.optional(v.string()),
-    }))),
+    insurer: v.optional(
+      v.object({
+        legalName: v.string(),
+        naicNumber: v.optional(v.string()),
+        amBestRating: v.optional(v.string()),
+        amBestNumber: v.optional(v.string()),
+        admittedStatus: v.optional(v.string()),
+        stateOfDomicile: v.optional(v.string()),
+      }),
+    ),
+    producer: v.optional(
+      v.object({
+        agencyName: v.string(),
+        contactName: v.optional(v.string()),
+        licenseNumber: v.optional(v.string()),
+        phone: v.optional(v.string()),
+        email: v.optional(v.string()),
+        address: v.optional(addressValidator),
+      }),
+    ),
+    lossPayees: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          role: v.string(),
+          address: v.optional(addressValidator),
+          relationship: v.optional(v.string()),
+          scope: v.optional(v.string()),
+        }),
+      ),
+    ),
+    mortgageHolders: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          role: v.string(),
+          address: v.optional(addressValidator),
+          relationship: v.optional(v.string()),
+          scope: v.optional(v.string()),
+        }),
+      ),
+    ),
     priorPolicyNumber: v.optional(v.string()),
     programName: v.optional(v.string()),
     isPackage: v.optional(v.boolean()),
@@ -802,11 +908,15 @@ export const updateExtraction = mutation({
     insuredAddress: v.optional(addressValidator),
     insuredEntityType: v.optional(v.string()),
     insuredFein: v.optional(v.string()),
-    additionalNamedInsureds: v.optional(v.array(v.object({
-      name: v.string(),
-      relationship: v.optional(v.string()),
-      address: v.optional(addressValidator),
-    }))),
+    additionalNamedInsureds: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          relationship: v.optional(v.string()),
+          address: v.optional(addressValidator),
+        }),
+      ),
+    ),
     // Coverage structure
     coverageForm: v.optional(v.string()),
     retroactiveDate: v.optional(v.string()),
@@ -869,15 +979,19 @@ export const updateExtraction = mutation({
     enrichedUnderwritingConditions: v.optional(v.any()),
     warrantyRequirements: v.optional(v.any()),
     // Supplementary extraction (cl-sdk 0.13+)
-    supplementaryFacts: v.optional(v.array(v.object({
-      key: v.string(),
-      value: v.string(),
-      subject: v.optional(v.string()),
-      context: v.optional(v.string()),
-      documentNodeId: v.optional(v.string()),
-      sourceSpanIds: v.optional(v.array(v.string())),
-      sourceTextHash: v.optional(v.string()),
-    }))),
+    supplementaryFacts: v.optional(
+      v.array(
+        v.object({
+          key: v.string(),
+          value: v.string(),
+          subject: v.optional(v.string()),
+          context: v.optional(v.string()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
+        }),
+      ),
+    ),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -888,9 +1002,13 @@ export const updateExtraction = mutation({
       const policy = await ctx.db.get(id);
       if (policy?.orgId) {
         const org = await ctx.db.get(policy.orgId);
-        if (org && (org as { brokerOrgId?: DataModelId<"organizations"> }).brokerOrgId) {
+        if (
+          org &&
+          (org as { brokerOrgId?: DataModelId<"organizations"> }).brokerOrgId
+        ) {
           await recordBrokerActivity(ctx, {
-            brokerOrgId: (org as { brokerOrgId: DataModelId<"organizations"> }).brokerOrgId,
+            brokerOrgId: (org as { brokerOrgId: DataModelId<"organizations"> })
+              .brokerOrgId,
             clientOrgId: policy.orgId,
             type: "policy_extraction_completed",
             actorSide: "system",
@@ -947,7 +1065,8 @@ export const updateExtractedFields = mutation({
     }
 
     const derivedYear =
-      args.fields.policyYear ?? policyYearFromInput(patch.effectiveDate as string | undefined);
+      args.fields.policyYear ??
+      policyYearFromInput(patch.effectiveDate as string | undefined);
     if (derivedYear !== undefined) patch.policyYear = derivedYear;
 
     if (Object.keys(patch).length === 0) return;
@@ -965,13 +1084,21 @@ export const updateExtractedFields = mutation({
 
 function normalizeReviewText(value: unknown): string {
   return typeof value === "string"
-    ? value.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ")
+    ? value
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ")
     : "";
 }
 
 function normalizeReviewCoverageName(value: unknown): string {
   return normalizeReviewText(value)
-    .replace(/\b(each|per|policy|general|annual|aggregate|occurrence|claim|claims|limit|limits|deductible|retention|coverage)\b/g, " ")
+    .replace(
+      /\b(each|per|policy|general|annual|aggregate|occurrence|claim|claims|limit|limits|deductible|retention|coverage)\b/g,
+      " ",
+    )
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -984,7 +1111,11 @@ function reviewLimitType(coverage: Record<string, unknown>): string {
   if (raw.includes("person")) return "per_person";
   if (raw.includes("accident")) return "per_accident";
   if (raw) return raw;
-  const text = normalizeReviewText([coverage.name, coverage.originalContent, coverage.sectionRef].filter(Boolean).join(" "));
+  const text = normalizeReviewText(
+    [coverage.name, coverage.originalContent, coverage.sectionRef]
+      .filter(Boolean)
+      .join(" "),
+  );
   if (text.includes("aggregate")) return "aggregate";
   if (text.includes("occurrence")) return "per_occurrence";
   if (text.includes("claim")) return "per_claim";
@@ -1011,35 +1142,45 @@ export const answerCoverageReviewQuestion = mutation({
       | { questions?: Array<Record<string, unknown>> }
       | undefined;
     const questions = Array.isArray(review?.questions) ? review.questions : [];
-    const questionIndex = questions.findIndex((question) => question.id === args.questionId);
+    const questionIndex = questions.findIndex(
+      (question) => question.id === args.questionId,
+    );
     if (questionIndex < 0) throw new Error("Question not found");
     const question = questions[questionIndex];
     const options = Array.isArray(question.options)
-      ? question.options as Array<Record<string, unknown>>
+      ? (question.options as Array<Record<string, unknown>>)
       : [];
     const option = args.selectedOptionId
       ? options.find((item) => item.id === args.selectedOptionId)
       : options.find((item) => item.value === args.selectedValue);
     if (!option) throw new Error("Selected option not found");
-    const optionCoverage = option.coverage as Record<string, unknown> | undefined;
-    if (!optionCoverage) throw new Error("Selected option is missing coverage data");
+    const optionCoverage = option.coverage as
+      | Record<string, unknown>
+      | undefined;
+    if (!optionCoverage)
+      throw new Error("Selected option is missing coverage data");
 
     const targetName = normalizeReviewCoverageName(question.coverageName);
-    const targetLimitType = typeof question.limitType === "string" ? question.limitType : undefined;
+    const targetLimitType =
+      typeof question.limitType === "string" ? question.limitType : undefined;
     const currentCoverages = Array.isArray(policy.coverages)
-      ? policy.coverages as Array<Record<string, unknown>>
+      ? (policy.coverages as Array<Record<string, unknown>>)
       : [];
     let replaced = false;
     const nextCoverages = currentCoverages.map((coverage) => {
-      const nameMatches = normalizeReviewCoverageName(coverage.name) === targetName;
-      const typeMatches = !targetLimitType || reviewLimitType(coverage) === targetLimitType;
+      const nameMatches =
+        normalizeReviewCoverageName(coverage.name) === targetName;
+      const typeMatches =
+        !targetLimitType || reviewLimitType(coverage) === targetLimitType;
       if (!replaced && nameMatches && typeMatches) {
         replaced = true;
         return {
           ...coverage,
           ...optionCoverage,
           extractionReviewStatus: "confirmed",
-          extractionReviewReason: args.note?.trim() || `Confirmed from extraction review: ${args.selectedValue}`,
+          extractionReviewReason:
+            args.note?.trim() ||
+            `Confirmed from extraction review: ${args.selectedValue}`,
         };
       }
       return coverage;
@@ -1048,7 +1189,9 @@ export const answerCoverageReviewQuestion = mutation({
       nextCoverages.push({
         ...optionCoverage,
         extractionReviewStatus: "confirmed",
-        extractionReviewReason: args.note?.trim() || `Confirmed from extraction review: ${args.selectedValue}`,
+        extractionReviewReason:
+          args.note?.trim() ||
+          `Confirmed from extraction review: ${args.selectedValue}`,
       });
     }
 
@@ -1063,13 +1206,16 @@ export const answerCoverageReviewQuestion = mutation({
       answeredByUserId: access.userId,
     };
 
-    await ctx.db.patch(args.id, normalizeEditableFields({
-      coverages: nextCoverages as any,
-      extractionReview: {
-        ...(review ?? {}),
-        questions: nextQuestions,
-      },
-    }));
+    await ctx.db.patch(
+      args.id,
+      normalizeEditableFields({
+        coverages: nextCoverages as any,
+        extractionReview: {
+          ...(review ?? {}),
+          questions: nextQuestions,
+        },
+      }),
+    );
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId: access.userId,
@@ -1104,7 +1250,9 @@ export const requestCoverageReviewBrokerHelp = mutation({
       | { questions?: Array<Record<string, unknown>> }
       | undefined;
     const questions = Array.isArray(review?.questions) ? review.questions : [];
-    const questionIndex = questions.findIndex((question) => question.id === args.questionId);
+    const questionIndex = questions.findIndex(
+      (question) => question.id === args.questionId,
+    );
     if (questionIndex < 0) throw new Error("Question not found");
     const question = questions[questionIndex];
     const now = nowMs();
@@ -1132,7 +1280,11 @@ export const requestCoverageReviewBrokerHelp = mutation({
       actionType: "view_policy",
       actionPayload: { policyId: args.id },
       sourceRef: { policyId: args.id, questionId: args.questionId },
-      coalesceKeyParts: ["coverage_review_help", String(args.id), args.questionId],
+      coalesceKeyParts: [
+        "coverage_review_help",
+        String(args.id),
+        args.questionId,
+      ],
     });
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
@@ -1152,38 +1304,42 @@ export const confirmPolicyFactFromSource = internalMutation({
     userId: v.id("users"),
     fact: v.string(),
     sourceSpanIds: v.array(v.string()),
-    source: v.optional(v.union(
-      v.literal("chat"),
-      v.literal("email"),
-      v.literal("imessage"),
-    )),
-    fieldUpdates: v.optional(v.object({
-      carrier: v.optional(v.string()),
-      security: v.optional(v.string()),
-      mga: v.optional(v.string()),
-      broker: v.optional(v.string()),
-      policyNumber: v.optional(v.string()),
-      effectiveDate: v.optional(v.string()),
-      expirationDate: v.optional(v.string()),
-      insuredName: v.optional(v.string()),
-      premium: v.optional(v.string()),
-      totalCost: v.optional(v.string()),
-      minPremium: v.optional(v.string()),
-      depositPremium: v.optional(v.string()),
-      summary: v.optional(v.string()),
-    })),
+    source: v.optional(
+      v.union(v.literal("chat"), v.literal("email"), v.literal("imessage")),
+    ),
+    fieldUpdates: v.optional(
+      v.object({
+        carrier: v.optional(v.string()),
+        security: v.optional(v.string()),
+        mga: v.optional(v.string()),
+        broker: v.optional(v.string()),
+        policyNumber: v.optional(v.string()),
+        effectiveDate: v.optional(v.string()),
+        expirationDate: v.optional(v.string()),
+        insuredName: v.optional(v.string()),
+        premium: v.optional(v.string()),
+        totalCost: v.optional(v.string()),
+        minPremium: v.optional(v.string()),
+        depositPremium: v.optional(v.string()),
+        summary: v.optional(v.string()),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== args.orgId) throw new Error("Policy not found");
-    if (args.sourceSpanIds.length === 0) throw new Error("Source evidence is required");
+    if (!policy || policy.orgId !== args.orgId)
+      throw new Error("Policy not found");
+    if (args.sourceSpanIds.length === 0)
+      throw new Error("Source evidence is required");
 
     const policySpans = await ctx.db
       .query("sourceSpans")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.id))
       .collect();
     const validSpanIds = new Set(policySpans.map((span) => span.spanId));
-    const invalidSpanIds = args.sourceSpanIds.filter((id) => !validSpanIds.has(id));
+    const invalidSpanIds = args.sourceSpanIds.filter(
+      (id) => !validSpanIds.has(id),
+    );
     if (invalidSpanIds.length > 0) {
       throw new Error("Source evidence was not found on this policy");
     }
@@ -1207,7 +1363,9 @@ export const confirmPolicyFactFromSource = internalMutation({
         q.eq("orgId", args.orgId).eq("type", "fact"),
       )
       .collect();
-    const duplicateFact = existingFacts.find((memory) => memory.content === memoryContent);
+    const duplicateFact = existingFacts.find(
+      (memory) => memory.content === memoryContent,
+    );
     if (duplicateFact) {
       await ctx.db.patch(duplicateFact._id, { updatedAt: now });
     } else {
@@ -1286,7 +1444,8 @@ export const createBrokerUpload = mutation({
     await recordBrokerActivity(ctx, {
       brokerOrgId: access.brokerOrgId,
       clientOrgId: args.clientOrgId,
-      type: args.documentType === "quote" ? "policy_uploaded" : "policy_uploaded",
+      type:
+        args.documentType === "quote" ? "policy_uploaded" : "policy_uploaded",
       actorUserId: access.userId,
       actorSide: "broker",
       payload: {
@@ -1342,7 +1501,9 @@ export const listForClient = query({
         !p.deletedAt &&
         (!args.documentType || p.documentType === args.documentType),
     );
-    return await Promise.all(filtered.map((p) => mergePolicyPipelineState(ctx, p)));
+    return await Promise.all(
+      filtered.map((p) => mergePolicyPipelineState(ctx, p)),
+    );
   },
 });
 
@@ -1452,10 +1613,13 @@ export const updateExtractionInternal = internalMutation({
     fields: v.any(), // Accept any policy fields from insuranceDocToPolicy
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, normalizeEditableFields(args.fields, {
-      deriveNumericAmounts: false,
-      normalizeMoneyText: false,
-    }));
+    await ctx.db.patch(
+      args.id,
+      normalizeEditableFields(args.fields, {
+        deriveNumericAmounts: false,
+        normalizeMoneyText: false,
+      }),
+    );
   },
 });
 
@@ -1483,17 +1647,23 @@ export const updateAnalysis = internalMutation({
 export const updateFiles = internalMutation({
   args: {
     id: v.id("policies"),
-    files: v.optional(v.array(v.object({
-      fileId: v.id("_storage"),
-      fileName: v.string(),
-      fileType: v.string(),
-      status: v.string(),
-    }))),
-    reconciliationStatus: v.optional(v.union(
-      v.literal("pending"),
-      v.literal("reconciled"),
-      v.literal("error"),
-    )),
+    files: v.optional(
+      v.array(
+        v.object({
+          fileId: v.id("_storage"),
+          fileName: v.string(),
+          fileType: v.string(),
+          status: v.string(),
+        }),
+      ),
+    ),
+    reconciliationStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("reconciled"),
+        v.literal("error"),
+      ),
+    ),
     primaryFileId: v.optional(v.id("_storage")),
     primaryFileName: v.optional(v.string()),
   },
@@ -1501,9 +1671,11 @@ export const updateFiles = internalMutation({
     const { id, ...fields } = args;
     const patch: Record<string, any> = {};
     if (fields.files !== undefined) patch.files = fields.files;
-    if (fields.reconciliationStatus !== undefined) patch.reconciliationStatus = fields.reconciliationStatus;
+    if (fields.reconciliationStatus !== undefined)
+      patch.reconciliationStatus = fields.reconciliationStatus;
     if (fields.primaryFileId !== undefined) patch.fileId = fields.primaryFileId;
-    if (fields.primaryFileName !== undefined) patch.fileName = fields.primaryFileName;
+    if (fields.primaryFileName !== undefined)
+      patch.fileName = fields.primaryFileName;
     await ctx.db.patch(id, patch);
   },
 });
@@ -1527,16 +1699,19 @@ export const appendReconciliationLog = internalMutation({
 export const updateReconciliation = internalMutation({
   args: {
     id: v.id("policies"),
-    reconciliationStatus: v.optional(v.union(
-      v.literal("pending"),
-      v.literal("reconciled"),
-      v.literal("error"),
-    )),
+    reconciliationStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("reconciled"),
+        v.literal("error"),
+      ),
+    ),
     fields: v.optional(v.any()), // Reconciled extraction fields to patch onto the policy
   },
   handler: async (ctx, args) => {
     const patch: Record<string, unknown> = {};
-    if (args.reconciliationStatus !== undefined) patch.reconciliationStatus = args.reconciliationStatus;
+    if (args.reconciliationStatus !== undefined)
+      patch.reconciliationStatus = args.reconciliationStatus;
     if (args.fields) Object.assign(patch, args.fields);
     await ctx.db.patch(args.id, patch);
   },
@@ -1630,11 +1805,13 @@ export const pipelineGetArtifact = internalQuery({
 export const pipelineClearArtifacts = internalMutation({
   args: {
     jobId: v.string(),
-    kind: v.optional(v.union(
-      v.literal("cl_sdk_checkpoint"),
-      v.literal("embedding_payload"),
-      v.literal("external_completion_payload"),
-    )),
+    kind: v.optional(
+      v.union(
+        v.literal("cl_sdk_checkpoint"),
+        v.literal("embedding_payload"),
+        v.literal("external_completion_payload"),
+      ),
+    ),
   },
   handler: async (ctx, { jobId, kind }) => {
     await clearPolicyExtractionArtifacts(
@@ -1651,7 +1828,10 @@ const PIPELINE_LEGACY_LEASE_STALE_MS = 5 * 60 * 1000;
 export const pipelineGetJob = internalQuery({
   args: { jobId: v.string() },
   handler: async (ctx, { jobId }) => {
-    const state = await readPolicyPipelineState(ctx, jobId as DataModelId<"policies">);
+    const state = await readPolicyPipelineState(
+      ctx,
+      jobId as DataModelId<"policies">,
+    );
     if (!state) return null;
     return {
       status: state.pipelineStatus,
@@ -1836,7 +2016,12 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
             nextPhase?: string;
             state?: { externalWorker?: boolean; fileId?: string };
             createdAt?: number;
-            lease?: { id?: string; phase?: string; expiresAt?: number; heartbeatAt?: number };
+            lease?: {
+              id?: string;
+              phase?: string;
+              expiresAt?: number;
+              heartbeatAt?: number;
+            };
           }
         | undefined;
       if (run.pipelineStatus !== "running") {
@@ -1853,15 +2038,16 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
       }
 
       const heartbeatAt = checkpoint.lease?.heartbeatAt;
-      const lastLogAt = run.pipelineLog?.at(-1)?.timestamp ?? checkpoint.createdAt ?? run.updatedAt;
+      const lastLogAt =
+        run.pipelineLog?.at(-1)?.timestamp ??
+        checkpoint.createdAt ??
+        run.updatedAt;
       const activeLease =
         checkpoint.lease?.expiresAt !== undefined &&
         checkpoint.lease.expiresAt > now &&
-        (
-          heartbeatAt === undefined
-            ? now - lastLogAt <= PIPELINE_STALE_REQUEUE_MS
-            : now - heartbeatAt <= PIPELINE_STALE_REQUEUE_MS
-        );
+        (heartbeatAt === undefined
+          ? now - lastLogAt <= PIPELINE_STALE_REQUEUE_MS
+          : now - heartbeatAt <= PIPELINE_STALE_REQUEUE_MS);
       if (activeLease) continue;
 
       const lease = {
@@ -1960,7 +2146,12 @@ export const pipelineRequeueStale = internalMutation({
             nextPhase?: string;
             state?: { externalWorker?: boolean };
             createdAt?: number;
-            lease?: { id?: string; phase?: string; expiresAt?: number; heartbeatAt?: number };
+            lease?: {
+              id?: string;
+              phase?: string;
+              expiresAt?: number;
+              heartbeatAt?: number;
+            };
           }
         | undefined;
 
@@ -1973,7 +2164,8 @@ export const pipelineRequeueStale = internalMutation({
         );
         await appendPolicyPipelineLog(ctx, run.policyId, {
           timestamp: now,
-          message: "Marked extraction failed because no resumable checkpoint was available",
+          message:
+            "Marked extraction failed because no resumable checkpoint was available",
           phase: "watchdog",
           level: "error",
         });
@@ -1981,7 +2173,10 @@ export const pipelineRequeueStale = internalMutation({
         continue;
       }
 
-      const lastLogAt = run.pipelineLog?.at(-1)?.timestamp ?? checkpoint.createdAt ?? run.updatedAt;
+      const lastLogAt =
+        run.pipelineLog?.at(-1)?.timestamp ??
+        checkpoint.createdAt ??
+        run.updatedAt;
       const heartbeatAt = checkpoint.lease?.heartbeatAt;
       const heartbeatStale =
         heartbeatAt === undefined
@@ -1992,10 +2187,14 @@ export const pipelineRequeueStale = internalMutation({
         continue;
       }
 
-      if (checkpoint.state?.externalWorker && checkpoint.nextPhase === "extract") {
+      if (
+        checkpoint.state?.externalWorker &&
+        checkpoint.nextPhase === "extract"
+      ) {
         await appendPolicyPipelineLog(ctx, run.policyId, {
           timestamp: now,
-          message: "Stale external extraction lease detected; clearing lease for worker reclaim",
+          message:
+            "Stale external extraction lease detected; clearing lease for worker reclaim",
           phase: "watchdog",
           level: "warn",
         });
@@ -2014,9 +2213,13 @@ export const pipelineRequeueStale = internalMutation({
           phase: "watchdog",
           level: "warn",
         });
-        await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.advance, {
-          jobId: String(run.policyId),
-        });
+        await ctx.scheduler.runAfter(
+          0,
+          (internal as any).actions.policyExtraction.advance,
+          {
+            jobId: String(run.policyId),
+          },
+        );
       }
       requeued.push(String(run.policyId));
     }
@@ -2091,7 +2294,10 @@ export const pipelineAcquireLease = internalMutation({
     leaseExpiresAt: v.number(),
   },
   handler: async (ctx, { jobId, leaseId, leaseExpiresAt }) => {
-    const run = await ensurePolicyExtractionRun(ctx, jobId as DataModelId<"policies">);
+    const run = await ensurePolicyExtractionRun(
+      ctx,
+      jobId as DataModelId<"policies">,
+    );
     if (!run || run.pipelineStatus !== "running" || !run.pipelineCheckpoint) {
       return null;
     }
@@ -2100,16 +2306,24 @@ export const pipelineAcquireLease = internalMutation({
       nextPhase: string;
       state: unknown;
       createdAt: number;
-      lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
+      lease?: {
+        id: string;
+        phase: string;
+        expiresAt: number;
+        heartbeatAt?: number;
+      };
     };
     const now = nowMs();
     if (checkpoint.lease && checkpoint.lease.expiresAt > now) {
-      const lastLogAt = run.pipelineLog?.at(-1)?.timestamp ?? checkpoint.createdAt;
+      const lastLogAt =
+        run.pipelineLog?.at(-1)?.timestamp ?? checkpoint.createdAt;
       const heartbeatAt = checkpoint.lease.heartbeatAt;
       const staleLegacyLease =
-        heartbeatAt === undefined && now - lastLogAt > PIPELINE_LEGACY_LEASE_STALE_MS;
+        heartbeatAt === undefined &&
+        now - lastLogAt > PIPELINE_LEGACY_LEASE_STALE_MS;
       const staleHeartbeatLease =
-        heartbeatAt !== undefined && now - heartbeatAt > PIPELINE_LEGACY_LEASE_STALE_MS;
+        heartbeatAt !== undefined &&
+        now - heartbeatAt > PIPELINE_LEGACY_LEASE_STALE_MS;
       if (!staleLegacyLease && !staleHeartbeatLease) {
         return null;
       }
@@ -2140,14 +2354,25 @@ export const pipelineSaveStateForLease = internalMutation({
     state: v.any(),
     leaseExpiresAt: v.number(),
   },
-  handler: async (ctx, { jobId, leaseId, nextPhase, state, leaseExpiresAt }) => {
-    const run = await ensurePolicyExtractionRun(ctx, jobId as DataModelId<"policies">);
+  handler: async (
+    ctx,
+    { jobId, leaseId, nextPhase, state, leaseExpiresAt },
+  ) => {
+    const run = await ensurePolicyExtractionRun(
+      ctx,
+      jobId as DataModelId<"policies">,
+    );
     const checkpoint = run?.pipelineCheckpoint as
       | {
           nextPhase: string;
           state: unknown;
-        createdAt: number;
-          lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
+          createdAt: number;
+          lease?: {
+            id: string;
+            phase: string;
+            expiresAt: number;
+            heartbeatAt?: number;
+          };
         }
       | undefined;
     if (!run || !checkpoint || checkpoint.lease?.id !== leaseId) {
@@ -2164,7 +2389,10 @@ export const pipelineSaveStateForLease = internalMutation({
         "leased",
       );
     } else {
-      await clearExternalPolicyExtractionQueue(ctx, jobId as DataModelId<"policies">);
+      await clearExternalPolicyExtractionQueue(
+        ctx,
+        jobId as DataModelId<"policies">,
+      );
     }
     await ctx.db.patch(run._id, {
       pipelineCheckpoint: {
@@ -2191,13 +2419,21 @@ export const pipelineExtendLease = internalMutation({
     leaseExpiresAt: v.number(),
   },
   handler: async (ctx, { jobId, leaseId, leaseExpiresAt }) => {
-    const run = await ensurePolicyExtractionRun(ctx, jobId as DataModelId<"policies">);
+    const run = await ensurePolicyExtractionRun(
+      ctx,
+      jobId as DataModelId<"policies">,
+    );
     const checkpoint = run?.pipelineCheckpoint as
       | {
           nextPhase: string;
           state: unknown;
           createdAt: number;
-          lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
+          lease?: {
+            id: string;
+            phase: string;
+            expiresAt: number;
+            heartbeatAt?: number;
+          };
         }
       | undefined;
     if (!run || !checkpoint || checkpoint.lease?.id !== leaseId) {
@@ -2205,7 +2441,9 @@ export const pipelineExtendLease = internalMutation({
     }
 
     const now = nowMs();
-    const stateRecord = checkpoint.state as { externalWorker?: boolean } | undefined;
+    const stateRecord = checkpoint.state as
+      | { externalWorker?: boolean }
+      | undefined;
     if (stateRecord?.externalWorker && checkpoint.nextPhase === "extract") {
       await patchExternalPolicyExtractionQueueLease(
         ctx,
@@ -2234,11 +2472,7 @@ export const pipelineCompleteLease = internalMutation({
     jobId: v.string(),
     leaseId: v.string(),
     status: v.optional(
-      v.union(
-        v.literal("running"),
-        v.literal("complete"),
-        v.literal("error"),
-      ),
+      v.union(v.literal("running"), v.literal("complete"), v.literal("error")),
     ),
     error: v.optional(v.union(v.string(), v.null())),
     checkpoint: v.optional(v.any()),
@@ -2251,7 +2485,12 @@ export const pipelineCompleteLease = internalMutation({
           nextPhase: string;
           state: unknown;
           createdAt: number;
-          lease?: { id: string; phase: string; expiresAt: number; heartbeatAt?: number };
+          lease?: {
+            id: string;
+            phase: string;
+            expiresAt: number;
+            heartbeatAt?: number;
+          };
         }
       | undefined;
     if (!run || !checkpoint || checkpoint.lease?.id !== args.leaseId) {

@@ -12,7 +12,7 @@ import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Plus, RotateCw, Trash2, X } from "lucide-react";
+import { FileClock, Loader2, Plus, RotateCw, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dayjs from "dayjs";
@@ -40,6 +40,7 @@ import {
   CertificateCreatePanel,
   CertificatesTab,
   ViewPdfButton,
+  type InitialCertificateHolder,
   type ProgramMatchCandidate,
 } from "./policy-certificates-tab";
 import {
@@ -58,10 +59,20 @@ type PolicyPipelineLogEntry = LogEntry & {
   level?: string;
 };
 
-type PolicyDetailTab = "details" | "review" | "certificates" | "changes";
+type PolicyDetailTab =
+  | "details"
+  | "review"
+  | "certificates"
+  | "history"
+  | "changes";
 
 function parsePolicyDetailTab(value: string | null): PolicyDetailTab {
-  if (value === "review" || value === "certificates" || value === "changes") {
+  if (
+    value === "review" ||
+    value === "certificates" ||
+    value === "history" ||
+    value === "changes"
+  ) {
     return value;
   }
   return "details";
@@ -78,6 +89,149 @@ function logPolicyActivityToBrowser(
 ) {
   if (!LOG_POLICY_ACTIVITY_IN_BROWSER) return;
   console.info(`[policy-activity] ${event}`, payload);
+}
+
+function formatHistoryDate(value?: number) {
+  return value ? dayjs(value).format("MMM D, YYYY h:mm A") : "Unknown time";
+}
+
+function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
+  const history = useCachedQuery(
+    "policies.listHistoryByPolicy",
+    api.policies.listHistoryByPolicy,
+    { policyId },
+  );
+
+  if (history === undefined) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className="h-20 rounded-lg bg-muted/40" />
+        ))}
+      </div>
+    );
+  }
+
+  const files = (history.files ?? []) as Array<Record<string, unknown>>;
+  const updateRuns = (history.updateRuns ?? []) as Array<
+    Record<string, unknown>
+  >;
+  const events = [
+    ...files.map((file) => ({
+      kind: "file" as const,
+      at: Number(file.createdAt ?? 0),
+      row: file,
+    })),
+    ...updateRuns.map((run) => ({
+      kind: "update" as const,
+      at: Number(run.createdAt ?? 0),
+      row: run,
+    })),
+  ].sort((left, right) => right.at - left.at);
+
+  if (events.length === 0) {
+    return (
+      <div className="rounded-lg border border-foreground/6 bg-card px-4 py-8 text-center">
+        <FileClock className="mx-auto mb-3 size-5 text-muted-foreground/50" />
+        <p className="text-base font-medium text-foreground">
+          No policy history yet
+        </p>
+        <p className="mt-1 text-label text-muted-foreground">
+          Document uploads, endorsements, and policy update runs will appear
+          here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {events.map((event) => {
+        const row = event.row;
+        const title =
+          event.kind === "file"
+            ? `${String(row.fileType ?? "document").replace("_", " ")} document`
+            : "Policy update run";
+        const fieldDiffs = Array.isArray(row.fieldDiffs) ? row.fieldDiffs : [];
+        return (
+          <div
+            key={`${event.kind}-${String(row._id)}`}
+            className="rounded-lg border border-foreground/6 bg-card px-4 py-3"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-base font-medium capitalize text-foreground">
+                  {title}
+                </p>
+                <p className="mt-1 text-label text-muted-foreground">
+                  {event.kind === "file"
+                    ? String(row.fileName ?? "Policy document")
+                    : String(
+                        row.summary ??
+                          row.status ??
+                          "Policy fields reconciled from document evidence",
+                      )}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2 text-label text-muted-foreground/75">
+                  <span>{formatHistoryDate(event.at)}</span>
+                  {event.kind === "file" && row.pipelineStatus ? (
+                    <span>{String(row.pipelineStatus)}</span>
+                  ) : null}
+                  {event.kind === "update" ? (
+                    <span>
+                      {fieldDiffs.length} field change
+                      {fieldDiffs.length === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              {event.kind === "file" && typeof row.url === "string" ? (
+                <PillButton
+                  variant="secondary"
+                  size="compact"
+                  onClick={() =>
+                    window.open(
+                      row.url as string,
+                      "_blank",
+                      "noopener,noreferrer",
+                    )
+                  }
+                >
+                  View source
+                </PillButton>
+              ) : null}
+            </div>
+            {fieldDiffs.length > 0 ? (
+              <div className="mt-3 border-t border-foreground/6 pt-3">
+                <p className="mb-2 text-label font-medium text-muted-foreground">
+                  Changed fields
+                </p>
+                <div className="grid gap-2">
+                  {fieldDiffs.slice(0, 6).map((diff, index: number) => {
+                    const typedDiff = diff as Record<string, unknown>;
+                    return (
+                      <div
+                        key={`${String(typedDiff.fieldPath ?? "field")}-${index}`}
+                        className="rounded-md bg-foreground/[0.03] px-3 py-2 text-label"
+                      >
+                        <span className="font-medium text-foreground">
+                          {String(typedDiff.fieldPath ?? "field")}
+                        </span>
+                        <span className="text-muted-foreground">
+                          : {String(typedDiff.before ?? "—")} →{" "}
+                          {String(typedDiff.after ?? "—")}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export interface PolicyDetailBodyProps {
@@ -105,6 +259,8 @@ export function PolicyDetailBody({
   const viewerOrg = useCachedViewerOrg();
   const searchParams = useSearchParams();
   const [showCertificateSheet, setShowCertificateSheet] = useState(false);
+  const [certificateInitialHolder, setCertificateInitialHolder] =
+    useState<InitialCertificateHolder | null>(null);
   const [showEditExtractedFields, setShowEditExtractedFields] = useState(false);
   const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
     parsePolicyDetailTab(searchParams.get("tab")),
@@ -344,7 +500,10 @@ export function PolicyDetailBody({
           <PillButton
             size="compact"
             disabled={isProcessingPolicy}
-            onClick={() => setShowCertificateSheet(true)}
+            onClick={() => {
+              setCertificateInitialHolder(null);
+              setShowCertificateSheet(true);
+            }}
           >
             <Plus className="w-3.5 h-3.5" />
             Generate COI
@@ -378,6 +537,7 @@ export function PolicyDetailBody({
     if (showCertificateSheet) {
       onRightPanel(
         <CertificateCreatePanel
+          key={`${policy._id}:${certificateInitialHolder?.holderName ?? "new"}:${certificateInitialHolder?.explicitReissue ? "reissue" : "issue"}`}
           open={showCertificateSheet}
           onOpenChange={setShowCertificateSheet}
           policyId={policy._id}
@@ -385,6 +545,7 @@ export function PolicyDetailBody({
             (policy as { partnerProgram?: ProgramMatchCandidate | null })
               .partnerProgram ?? null
           }
+          initialHolder={certificateInitialHolder}
         />,
       );
       return () => onRightPanel(null);
@@ -419,6 +580,7 @@ export function PolicyDetailBody({
     readOnly,
     showCertificateSheet,
     showEditExtractedFields,
+    certificateInitialHolder,
     canEditExtractedFields,
     isDeleted,
   ]);
@@ -561,6 +723,7 @@ export function PolicyDetailBody({
                 ? [{ id: "review" as const, label: "Review" }]
                 : []),
               { id: "certificates" as const, label: "Certificates" },
+              { id: "history" as const, label: "History" },
               { id: "changes" as const, label: "Changes" },
             ] as const
           ).map((tab) => (
@@ -605,12 +768,22 @@ export function PolicyDetailBody({
         </FadeIn>
       )}
 
+      {visibleActiveTab === "history" && (
+        <PolicyHistoryTab policyId={policy._id} />
+      )}
+
       {visibleActiveTab === "changes" && (
         <PolicyChangesTab policyId={id} canManage={canManagePolicyChanges} />
       )}
 
       {visibleActiveTab === "certificates" && (
-        <CertificatesTab policyId={policy._id} />
+        <CertificatesTab
+          policyId={policy._id}
+          onReissue={(holder) => {
+            setCertificateInitialHolder(holder);
+            setShowCertificateSheet(true);
+          }}
+        />
       )}
     </>
   );
