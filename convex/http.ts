@@ -558,6 +558,79 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       undefined,
     requestedEndorsements,
     selectedPartnerProgramId: selectedPartnerProgramId as Id<"partnerPrograms"> | undefined,
+    explicitReissue: body.explicitReissue === true || body.explicit_reissue === true || body.reissue === true,
+  };
+}
+
+function toHolderDto(holder: any) {
+  return {
+    id: holder._id,
+    org_id: holder.orgId,
+    name: holder.name,
+    normalized_name: holder.normalizedName,
+    certificate_holder: holder.certificateHolder ?? null,
+    address_line_1: holder.addressLine1 ?? null,
+    address_line_2: holder.addressLine2 ?? null,
+    city: holder.city ?? null,
+    state: holder.state ?? null,
+    postal_code: holder.postalCode ?? null,
+    status: holder.status,
+    source: holder.source ?? null,
+    source_policy_id: holder.sourcePolicyId ?? null,
+    source_certificate_id: holder.sourceCertificateId ?? null,
+    created_at: holder.createdAt,
+    updated_at: holder.updatedAt,
+  };
+}
+
+function toPolicyVersionDto(version: any) {
+  return {
+    id: version._id,
+    policy_id: version.policyId,
+    version_number: version.versionNumber,
+    status: version.status,
+    event_type: version.eventType,
+    policy_file_id: version.policyFileId ?? null,
+    source_file_id: version.sourceFileId ?? null,
+    summary: version.summary ?? null,
+    snapshot: version.snapshot ?? null,
+    effective_at: version.effectiveAt ?? null,
+    created_at: version.createdAt,
+    updated_at: version.updatedAt,
+  };
+}
+
+function toCertificateVersionDto(version: any) {
+  return {
+    id: version._id,
+    certificate_id: version.certificateId,
+    certificate_holder_id: version.certificateHolderId,
+    policy_id: version.policyId,
+    policy_version_id: version.policyVersionId ?? null,
+    version_number: version.versionNumber,
+    status: version.status,
+    issue_reason: version.issueReason,
+    file_id: version.fileId ?? null,
+    file_name: version.fileName ?? null,
+    source: version.source ?? null,
+    created_at: version.createdAt,
+    url: version.url ?? null,
+  };
+}
+
+function toReviewJobDto(job: any) {
+  return {
+    id: job._id,
+    policy_id: job.policyId,
+    certificate_id: job.certificateId ?? null,
+    certificate_holder_id: job.certificateHolderId ?? null,
+    previous_policy_version_id: job.previousPolicyVersionId ?? null,
+    target_policy_version_id: job.targetPolicyVersionId ?? null,
+    status: job.status,
+    reason: job.reason,
+    notes: job.notes ?? null,
+    created_at: job.createdAt,
+    updated_at: job.updatedAt,
   };
 }
 
@@ -703,6 +776,86 @@ http.route({
         policyId: policyId as Id<"policies">,
       });
       return jsonResponse(certificates.map(toCertificateDto));
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/certificates/holders/list
+http.route({
+  path: "/mcp/certificates/holders/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const holders = await ctx.runQuery(internal.certificates.listHoldersInternal, {
+        orgId: identity.orgId as Id<"organizations">,
+        query: getQueryParam(request, "query") ?? getQueryParam(request, "q") ?? undefined,
+      });
+      return jsonResponse(holders.map(toHolderDto));
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/policies/versions/list
+http.route({
+  path: "/mcp/policies/versions/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const policyId = getQueryParam(request, "policyId") ?? getQueryParam(request, "policy_id") ?? undefined;
+      const versions = await ctx.runQuery(internal.certificates.listPolicyVersionsInternal, {
+        orgId: identity.orgId as Id<"organizations">,
+        policyId: policyId as Id<"policies"> | undefined,
+      });
+      return jsonResponse(versions.map(toPolicyVersionDto));
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/policies/certificates/versions/list
+http.route({
+  path: "/mcp/policies/certificates/versions/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const versions = await ctx.runQuery(internal.certificates.listCertificateVersionsInternal, {
+        orgId: identity.orgId as Id<"organizations">,
+        policyId: (getQueryParam(request, "policyId") ?? getQueryParam(request, "policy_id") ?? undefined) as Id<"policies"> | undefined,
+        certificateId: (getQueryParam(request, "certificateId") ?? getQueryParam(request, "certificate_id") ?? undefined) as Id<"certificates"> | undefined,
+        certificateHolderId: (getQueryParam(request, "certificateHolderId") ?? getQueryParam(request, "certificate_holder_id") ?? undefined) as Id<"certificateHolders"> | undefined,
+      });
+      return jsonResponse(versions.map(toCertificateVersionDto));
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: String(e) }, 500);
+    }
+  }),
+});
+
+// GET /mcp/certificates/review-jobs/list
+http.route({
+  path: "/mcp/certificates/review-jobs/list",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireMcpAuth(ctx, request);
+      const jobs = await ctx.runQuery(internal.certificates.listReviewJobsInternal, {
+        orgId: identity.orgId as Id<"organizations">,
+        policyId: (getQueryParam(request, "policyId") ?? getQueryParam(request, "policy_id") ?? undefined) as Id<"policies"> | undefined,
+        status: getQueryParam(request, "status") ?? undefined,
+      });
+      return jsonResponse(jobs.map(toReviewJobDto));
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -926,6 +1079,46 @@ const MCP_TOOLS = [
       required: ["policyId"],
     },
   },
+
+  {
+    name: "list_certificate_holders",
+    description: "List/search the organization certificate holder registry.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { query: { type: "string", description: "Optional holder name or address search text" } },
+    },
+  },
+  {
+    name: "list_policy_versions",
+    description: "List policy document-event versions. Use this only when the user explicitly asks for policy history, renewals, endorsements, re-extractions, or prior versions; current policy answers should use get_policy/list_policies by default.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { policyId: { type: "string", description: "Optional policy ID" } },
+    },
+  },
+  {
+    name: "list_certificate_versions",
+    description: "List certificate issue/reissue versions by policy, certificate, or holder.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        policyId: { type: "string", description: "Optional policy ID" },
+        certificateId: { type: "string", description: "Optional certificate parent ID" },
+        certificateHolderId: { type: "string", description: "Optional holder ID" },
+      },
+    },
+  },
+  {
+    name: "list_certificate_review_jobs",
+    description: "List certificate renewal/post-endorsement/manual review jobs.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        policyId: { type: "string", description: "Optional policy ID" },
+        status: { type: "string", description: "Optional review job status" },
+      },
+    },
+  },
   {
     name: "generate_policy_certificate",
     description: "Generate a Certificate of Insurance PDF for a policy. Returns non-binding/certified authority metadata or a pending approval request. Requires write scope.",
@@ -939,6 +1132,7 @@ const MCP_TOOLS = [
         city: { type: "string", description: "Certificate holder city" },
         state: { type: "string", description: "Certificate holder state" },
         postalCode: { type: "string", description: "Certificate holder ZIP or postal code" },
+        explicitReissue: { type: "boolean", description: "Force a new certificate version even if an active certificate already exists for this holder and current policy version" },
       },
       required: ["policyId", "holderName"],
     },
@@ -1241,6 +1435,39 @@ async function handleToolCall(
         policyId: policyId as Id<"policies">,
       });
       return { content: [{ type: "text", text: JSON.stringify(certificates.map(toCertificateDto), null, 2) }] };
+    }
+    case "list_certificate_holders": {
+      const holders = await ctx.runQuery(internal.certificates.listHoldersInternal, {
+        orgId,
+        query: typeof args.query === "string" ? args.query : typeof args.q === "string" ? args.q : undefined,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(holders.map(toHolderDto), null, 2) }] };
+    }
+    case "list_policy_versions": {
+      const policyId = args.policyId ?? args.policy_id;
+      const versions = await ctx.runQuery(internal.certificates.listPolicyVersionsInternal, {
+        orgId,
+        policyId: typeof policyId === "string" && policyId ? policyId as Id<"policies"> : undefined,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(versions.map(toPolicyVersionDto), null, 2) }] };
+    }
+    case "list_certificate_versions": {
+      const versions = await ctx.runQuery(internal.certificates.listCertificateVersionsInternal, {
+        orgId,
+        policyId: (typeof (args.policyId ?? args.policy_id) === "string" ? (args.policyId ?? args.policy_id) : undefined) as Id<"policies"> | undefined,
+        certificateId: (typeof (args.certificateId ?? args.certificate_id) === "string" ? (args.certificateId ?? args.certificate_id) : undefined) as Id<"certificates"> | undefined,
+        certificateHolderId: (typeof (args.certificateHolderId ?? args.certificate_holder_id) === "string" ? (args.certificateHolderId ?? args.certificate_holder_id) : undefined) as Id<"certificateHolders"> | undefined,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(versions.map(toCertificateVersionDto), null, 2) }] };
+    }
+    case "list_certificate_review_jobs": {
+      const policyId = args.policyId ?? args.policy_id;
+      const jobs = await ctx.runQuery(internal.certificates.listReviewJobsInternal, {
+        orgId,
+        policyId: typeof policyId === "string" && policyId ? policyId as Id<"policies"> : undefined,
+        status: typeof args.status === "string" ? args.status : undefined,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(jobs.map(toReviewJobDto), null, 2) }] };
     }
     case "generate_policy_certificate": {
       requireMcpWriteScope(identity);
@@ -2109,6 +2336,78 @@ http.route({
   }),
 });
 
+// ── GET /api/v1/certificate-holders ──
+http.route({
+  path: "/api/v1/certificate-holders",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const holders = await ctx.runQuery(internal.certificates.listHoldersInternal, { orgId: identity.orgId, query: getQueryParam(request, "q") ?? undefined });
+      return jsonResponse({ data: holders.map(toHolderDto), next_cursor: null });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/policies/:id/versions ──
+http.route({
+  path: "/api/v1/policies/:id/versions",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const parts = new URL(request.url).pathname.split("/");
+      const policyId = parts[parts.length - 2] as Id<"policies">;
+      const versions = await ctx.runQuery(internal.certificates.listPolicyVersionsInternal, { orgId: identity.orgId, policyId });
+      return jsonResponse({ data: versions.map(toPolicyVersionDto), next_cursor: null });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/policies/:id/certificate-versions ──
+http.route({
+  path: "/api/v1/policies/:id/certificate-versions",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const parts = new URL(request.url).pathname.split("/");
+      const policyId = parts[parts.length - 2] as Id<"policies">;
+      const versions = await ctx.runQuery(internal.certificates.listCertificateVersionsInternal, { orgId: identity.orgId, policyId });
+      return jsonResponse({ data: versions.map(toCertificateVersionDto), next_cursor: null });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
+// ── GET /api/v1/certificate-review-jobs ──
+http.route({
+  path: "/api/v1/certificate-review-jobs",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      const jobs = await ctx.runQuery(internal.certificates.listReviewJobsInternal, {
+        orgId: identity.orgId,
+        policyId: (getQueryParam(request, "policy_id") ?? getQueryParam(request, "policyId") ?? undefined) as Id<"policies"> | undefined,
+        status: getQueryParam(request, "status") ?? undefined,
+      });
+      return jsonResponse({ data: jobs.map(toReviewJobDto), next_cursor: null });
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+    }
+  }),
+});
+
 // ── GET /api/v1/vendors ──
 http.route({
   path: "/api/v1/vendors",
@@ -2321,9 +2620,13 @@ http.route({
         "/api/v1/policies": { get: { tags: ["Policies"], summary: "List policies", responses: { "200": { description: "Policies" } } } },
         "/api/v1/policies/{id}": { get: { tags: ["Policies"], summary: "Get policy", responses: { "200": { description: "Policy" } } } },
         "/api/v1/policies/{id}/certificates": {
-          get: { tags: ["Certificates"], summary: "List generated Certificates of Insurance for a policy", responses: { "200": { description: "Certificates" } } },
-          post: { tags: ["Certificates"], summary: "Generate a Certificate of Insurance for a policy (write)", responses: { "201": { description: "Certificate generated" } } },
+          get: { tags: ["Certificates"], summary: "List active/generated Certificates of Insurance for a policy, including lifecycle IDs when available", responses: { "200": { description: "Certificates" } } },
+          post: { tags: ["Certificates"], summary: "Generate or retrieve a Certificate of Insurance for a policy (write). Same holder/current policy version returns existing unless explicit_reissue=true.", responses: { "201": { description: "Certificate generated, reissued, pending, held, or existing" } } },
         },
+        "/api/v1/certificate-holders": { get: { tags: ["Certificates"], summary: "List/search certificate holders", responses: { "200": { description: "Certificate holders" } } } },
+        "/api/v1/policies/{id}/versions": { get: { tags: ["Policies"], summary: "List policy document-event versions", responses: { "200": { description: "Policy versions" } } } },
+        "/api/v1/policies/{id}/certificate-versions": { get: { tags: ["Certificates"], summary: "List certificate issue/reissue versions for a policy", responses: { "200": { description: "Certificate versions" } } } },
+        "/api/v1/certificate-review-jobs": { get: { tags: ["Certificates"], summary: "List certificate renewal/post-endorsement review jobs", responses: { "200": { description: "Certificate review jobs" } } } },
         "/api/v1/vendors": { get: { tags: ["Vendors"], summary: "List connected vendors", responses: { "200": { description: "Connected vendors" } } } },
         "/api/v1/vendors/{id}": { get: { tags: ["Vendors"], summary: "Get connected vendor detail", responses: { "200": { description: "Connected vendor" } } } },
         "/api/v1/vendors/{id}/policies": { get: { tags: ["Vendors"], summary: "List connected vendor policies", responses: { "200": { description: "Vendor policies" } } } },

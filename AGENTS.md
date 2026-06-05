@@ -438,7 +438,7 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 
 ## UI
 
-- `/policies` — list, detail, upload, re-extract, and generated certificate history.
+- `/policies` — list, detail, upload, re-extract, and certificate lifecycle history. Programmatic certificate surfaces expose holder registry rows, current policy versions, certificate issue/reissue versions, and review jobs. Same-holder/current-policy certificate requests return the latest existing certificate unless callers pass an explicit reissue flag (`explicitReissue` / `explicit_reissue` / CLI `--reissue`). Agents should answer from the current policy version by default and use history tools only when the user explicitly asks for prior policy/certificate versions.
 - Policy detail **Breakdown** includes save-on-change editing for key extracted fields, premium breakdown rows, taxes/fees, and coverage limit/deductible rows. Direct org members and broker-of-client users can edit; connected-client/vendor access remains read-only. Edits write through `policies.updateExtractedFields` and record `manual_policy_update` audit entries.
 - `/chat` — threaded assistant.
 - `/agent/thread/:id` — renders unified `threads` records. Legacy `webChats`, `webChatMessages`, and `agentConversations` backend tables/functions have been removed after migration to `threads` + `threadMessages`.
@@ -458,7 +458,7 @@ Glass exposes MCP functionality for remote and local AI tools.
 
 ### Tools (trimmed in v0.2.0)
 
-- `list_policies`, `get_policy`, `list_policy_certificates`, `generate_policy_certificate`
+- `list_policies`, `get_policy`, `list_policy_certificates`, `generate_policy_certificate`, `list_certificate_holders`, `list_policy_versions`, `list_certificate_versions`, `list_certificate_review_jobs`
 - `list_quotes`, `get_quote`
 - `list_threads`, `get_thread_messages`
 - `list_email_drafts`, `draft_email`, `update_email_draft`, `send_email_draft`, `cancel_email_draft`
@@ -496,7 +496,11 @@ OpenAPI spec: `GET /api/v1/openapi.json`
 - `GET /api/v1/clients` / `GET /api/v1/clients/:id` (broker)
 - `POST /api/v1/clients/invitations` (write)
 - `GET /api/v1/policies` / `GET /api/v1/policies/:id`
-- `GET /api/v1/policies/:id/certificates` / `POST /api/v1/policies/:id/certificates` (write)
+- `GET /api/v1/policies/:id/certificates` / `POST /api/v1/policies/:id/certificates` (write; same holder/current policy returns existing unless `explicit_reissue=true`)
+- `GET /api/v1/certificate-holders`
+- `GET /api/v1/policies/:id/versions`
+- `GET /api/v1/policies/:id/certificate-versions`
+- `GET /api/v1/certificate-review-jobs`
 - `GET /api/v1/notifications`
 - `GET /api/v1/activity`
 

@@ -242,6 +242,9 @@ export const run = internalAction({
     )),
     approvalAudit: v.optional(v.any()),
     disclaimer: v.optional(v.string()),
+    certificateHolderId: v.optional(v.id("certificateHolders")),
+    policyVersionId: v.optional(v.id("policyVersions")),
+    existingCertificateId: v.optional(v.id("certificates")),
   },
   handler: async (ctx, args): Promise<{ storageId: string; size: number; fileName: string; certificateId: string }> => {
     try {
@@ -349,6 +352,9 @@ export const run = internalAction({
         approvalMode: args.approvalMode,
         approvalAudit: args.approvalAudit,
         disclaimer: args.disclaimer,
+        certificateHolderId: args.certificateHolderId,
+        policyVersionId: args.policyVersionId,
+        existingCertificateId: args.existingCertificateId,
       });
 
       return { storageId: storageId as string, size, fileName, certificateId: String(certificateId) };

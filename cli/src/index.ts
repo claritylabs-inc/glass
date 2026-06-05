@@ -106,9 +106,37 @@ program.command("coi:generate")
   .requiredOption("--policy-id <policyId>")
   .requiredOption("--holder-name <holderName>")
   .option("--holder-address <holderAddress>")
+  .option("--reissue", "force an explicit certificate reissue")
   .action(async (opts) => {
-    const res = await new GlassApi(await loadConfig()).generateCoi(opts.policyId, opts.holderName, opts.holderAddress);
+    const res = await new GlassApi(await loadConfig()).generateCoi(opts.policyId, opts.holderName, opts.holderAddress, Boolean(opts.reissue));
     print(res, getFormat(program.opts()));
+  });
+
+program.command("coi:holders")
+  .option("--query <query>")
+  .action(async (opts) => {
+    const res = await new GlassApi(await loadConfig()).certificateHolders(opts.query);
+    print(res.data, getFormat(program.opts()));
+  });
+
+program.command("policies:versions <policyId>")
+  .action(async (policyId) => {
+    const res = await new GlassApi(await loadConfig()).policyVersions(policyId);
+    print(res.data, getFormat(program.opts()));
+  });
+
+program.command("coi:versions <policyId>")
+  .action(async (policyId) => {
+    const res = await new GlassApi(await loadConfig()).certificateVersions(policyId);
+    print(res.data, getFormat(program.opts()));
+  });
+
+program.command("coi:review-jobs")
+  .option("--policy-id <policyId>")
+  .option("--status <status>")
+  .action(async (opts) => {
+    const res = await new GlassApi(await loadConfig()).certificateReviewJobs(opts.policyId, opts.status);
+    print(res.data, getFormat(program.opts()));
   });
 
 program.parseAsync().catch((error: unknown) => {

@@ -194,6 +194,10 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("Optional program administrator program ID to use when Glass asks the broker to choose a program"),
+    explicitReissue: z
+      .boolean()
+      .optional()
+      .describe("Set true only when the user explicitly asks to reissue/regenerate a new certificate version even if one already exists for this holder and current policy version"),
   }),
 });
 

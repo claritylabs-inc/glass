@@ -75,6 +75,54 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
     },
   );
 
+
+  server.tool(
+    "list_certificate_holders",
+    "List/search the organization certificate holder registry.",
+    { query: z.string().optional().describe("Optional holder search text") },
+    async ({ query }) => {
+      const result = await client.listCertificateHolders(query);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "list_policy_versions",
+    "List policy document-event versions. Use only when the user explicitly asks for history; current policy answers should use get_policy/list_policies by default.",
+    { policyId: z.string().optional().describe("Optional policy ID") },
+    async ({ policyId }) => {
+      const result = await client.listPolicyVersions(policyId);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "list_certificate_versions",
+    "List certificate issue/reissue versions by policy, certificate, or holder.",
+    {
+      policyId: z.string().optional().describe("Optional policy ID"),
+      certificateId: z.string().optional().describe("Optional certificate parent ID"),
+      certificateHolderId: z.string().optional().describe("Optional holder ID"),
+    },
+    async (filters) => {
+      const result = await client.listCertificateVersions(filters);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "list_certificate_review_jobs",
+    "List certificate renewal/post-endorsement/manual review jobs.",
+    {
+      policyId: z.string().optional().describe("Optional policy ID"),
+      status: z.string().optional().describe("Optional review job status"),
+    },
+    async (filters) => {
+      const result = await client.listCertificateReviewJobs(filters);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
   server.tool(
     "generate_policy_certificate",
     "Generate a Certificate of Insurance PDF for a policy. Returns non-binding/certified authority metadata or a pending approval request. Requires write scope.",
@@ -88,6 +136,7 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
       postalCode: z.string().optional().describe("Certificate holder ZIP or postal code"),
       requestText: z.string().optional().describe("Full certificate request, including endorsement or special wording language"),
       requestedEndorsements: z.array(z.string()).optional().describe("Requested certificate endorsements or special wording"),
+      explicitReissue: z.boolean().optional().describe("Force a new certificate version when an active one already exists for the current policy version"),
     },
     async (input) => {
       const result = await client.generatePolicyCertificate(input);

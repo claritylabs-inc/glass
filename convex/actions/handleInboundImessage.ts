@@ -1417,6 +1417,7 @@ export const processInbound = internalAction({
             requestText?: string;
             requestedEndorsements?: string[];
             partnerProgramId?: string;
+            explicitReissue?: boolean;
           }) => {
             if (!currentSenderIsLinked) {
               return "Only a linked Glass user in this group can generate a certificate.";
@@ -1459,12 +1460,20 @@ export const processInbound = internalAction({
                     params.partnerProgramId,
                   ),
                   source: "imessage",
+                  explicitReissue: params.explicitReissue,
                   createdByUserId: user._id,
                 },
               );
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
               if (generated.status === "held_policy_change_required") {
                 return generated.message ?? "This certificate is on hold because it requires broker review before a COI can be issued.";
+              }
+              if (generated.status === "existing") {
+                responseFileAttachments.push({
+                  storageId: generated.fileId as Id<"_storage">,
+                  filename: generated.fileName,
+                });
+                return "I found an existing COI for that holder and current policy version and will send it instead of generating a duplicate. Ask for an explicit reissue if you need a new certificate version.";
               }
               if (generated.status === "pending_approval") {
                 return "Certified COI approval requested from the program administrator. I will not send a certificate PDF until it is approved.";
