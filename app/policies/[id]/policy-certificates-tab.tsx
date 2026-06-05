@@ -549,7 +549,7 @@ export function CertificateCreatePanel({
             />
           </div>
 
-          <div className="grid grid-cols-[minmax(0,1fr)_72px_96px] gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_72px_96px] sm:gap-2">
             <div className="space-y-2">
               <Label htmlFor="certificate-city">City</Label>
               <Input
