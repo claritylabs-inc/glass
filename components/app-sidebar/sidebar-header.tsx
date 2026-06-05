@@ -24,6 +24,11 @@ export function SidebarHeader({
   backHref?: string;
   icon?: ReactNode;
 }) {
+  const hasBrandIcon = Boolean(headerOrgIcon || icon);
+  const iconContainerClass = hasBrandIcon
+    ? "rounded-md border border-foreground/30 bg-background text-foreground"
+    : "rounded-full bg-foreground/8 text-foreground";
+
   return (
     <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
       {!collapsed && backHref ? (
@@ -39,7 +44,7 @@ export function SidebarHeader({
       {!collapsed && !backHref ? (
         <>
           <div
-            className={`ml-0.5 w-7 h-7 bg-foreground/8 flex items-center justify-center text-label font-medium text-foreground shrink-0 overflow-hidden ${headerOrgIcon ? "rounded-md" : "rounded-full"}`}
+            className={`ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden text-label font-medium ${iconContainerClass}`}
           >
             {headerOrgIcon ? (
               <Image
@@ -48,7 +53,7 @@ export function SidebarHeader({
                 width={28}
                 height={28}
                 unoptimized
-                className="w-7 h-7 object-contain bg-white"
+                className="h-full w-full object-contain"
               />
             ) : viewerImage ? (
               <Image

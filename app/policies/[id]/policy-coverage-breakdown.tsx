@@ -52,14 +52,6 @@ function coverageTermRows(row: CoverageBreakdown["core"][number]) {
   return terms;
 }
 
-function coverageMetadata(row: CoverageBreakdown["core"][number]) {
-  const rowName = normalizedCoverageText(row.name);
-  return [row.formNumber, row.sectionRef, row.originReason]
-    .filter((item): item is string => Boolean(item))
-    .filter((item) => normalizedCoverageText(item) !== rowName)
-    .join("  ");
-}
-
 function CoverageLimitPanel({
   title,
   rows,
@@ -79,7 +71,6 @@ function CoverageLimitPanel({
       <div>
         {rows.map((row, rowIndex) => {
           const terms = coverageTermRows(row);
-          const metadata = coverageMetadata(row);
 
           return (
             <OperationalItem
@@ -90,11 +81,6 @@ function CoverageLimitPanel({
                 <p className="text-base font-medium leading-5 text-foreground wrap:anywhere">
                   {displayText(row.name)}
                 </p>
-                {metadata ? (
-                  <p className="mt-1 text-label-sm leading-4 text-muted-foreground wrap:anywhere">
-                    {displayText(metadata)}
-                  </p>
-                ) : null}
               </div>
               {terms.length > 0 ? (
                 <div className="mt-3 w-full divide-y divide-foreground/6">

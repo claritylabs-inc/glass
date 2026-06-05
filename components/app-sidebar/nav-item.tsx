@@ -90,7 +90,7 @@ export function ShortcutTooltipContent({
 }) {
   return (
     <>
-      <span>Go to {label}</span>
+      <span className="text-label">Go to {label}</span>
       <span className="ml-1 inline-flex items-center gap-1 text-label leading-none text-muted-foreground">
         <ShortcutKeycap>G</ShortcutKeycap>
         <span>then</span>
