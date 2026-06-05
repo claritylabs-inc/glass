@@ -1467,6 +1467,131 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_fileId", ["fileId"]),
 
+  policyVersions: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    versionNumber: v.number(),
+    status: v.union(v.literal("current"), v.literal("superseded"), v.literal("draft")),
+    sourceKind: v.union(
+      v.literal("initial_extraction"),
+      v.literal("endorsement"),
+      v.literal("renewal"),
+      v.literal("re_extraction"),
+      v.literal("legacy_backfill"),
+      v.literal("manual"),
+    ),
+    policyFileId: v.optional(v.id("policyFiles")),
+    storageFileId: v.optional(v.id("_storage")),
+    effectiveDate: v.optional(v.string()),
+    expirationDate: v.optional(v.string()),
+    policyNumber: v.optional(v.string()),
+    snapshot: v.optional(v.any()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_policyId_versionNumber", ["policyId", "versionNumber"])
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_status", ["orgId", "status"]),
+
+  certificateHolders: defineTable({
+    orgId: v.id("organizations"),
+    name: v.string(),
+    normalizedName: v.string(),
+    address: v.optional(v.string()),
+    normalizedAddress: v.optional(v.string()),
+    source: v.union(
+      v.literal("legacy_certificate"),
+      v.literal("policy_evidence"),
+      v.literal("manual"),
+      v.literal("agent"),
+    ),
+    legacyCertificateIds: v.optional(v.array(v.id("certificates"))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_normalizedName", ["orgId", "normalizedName"]),
+
+  certificateParents: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    certificateHolderId: v.id("certificateHolders"),
+    status: v.union(v.literal("active"), v.literal("inactive"), v.literal("legacy_ambiguous")),
+    latestVersionId: v.optional(v.id("certificateVersions")),
+    latestIssuedAt: v.optional(v.number()),
+    legacyCertificateIds: v.optional(v.array(v.id("certificates"))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_holderId", ["certificateHolderId"])
+    .index("by_orgId_policyId_holderId", ["orgId", "policyId", "certificateHolderId"]),
+
+  certificateVersions: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    policyVersionId: v.id("policyVersions"),
+    certificateParentId: v.id("certificateParents"),
+    certificateHolderId: v.id("certificateHolders"),
+    versionNumber: v.number(),
+    status: v.union(
+      v.literal("issued"),
+      v.literal("draft"),
+      v.literal("review_required"),
+      v.literal("superseded"),
+      v.literal("legacy_ambiguous"),
+    ),
+    fileId: v.id("_storage"),
+    fileName: v.string(),
+    legacyCertificateId: v.optional(v.id("certificates")),
+    source: v.optional(
+      v.union(
+        v.literal("policy_page"),
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("sms"),
+        v.literal("api"),
+        v.literal("mcp"),
+        v.literal("agent"),
+        v.literal("unknown"),
+        v.literal("legacy_backfill"),
+      ),
+    ),
+    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    certificationStatus: v.optional(
+      v.union(
+        v.literal("not_applicable"),
+        v.literal("pending"),
+        v.literal("certified"),
+        v.literal("declined"),
+      ),
+    ),
+    partnerOrgId: v.optional(v.id("organizations")),
+    partnerProgramId: v.optional(v.id("partnerPrograms")),
+    templateId: v.optional(v.id("coiTemplates")),
+    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
+    approvalId: v.optional(v.id("certificateApprovals")),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
+    approvalAudit: v.optional(v.any()),
+    disclaimer: v.optional(v.string()),
+    issuedAt: v.number(),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_parentId", ["certificateParentId"])
+    .index("by_legacyCertificateId", ["legacyCertificateId"]),
+
   certificates: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
@@ -1511,6 +1636,19 @@ export default defineSchema({
     ),
     approvalAudit: v.optional(v.any()),
     disclaimer: v.optional(v.string()),
+    certificateHolderId: v.optional(v.id("certificateHolders")),
+    certificateParentId: v.optional(v.id("certificateParents")),
+    certificateVersionId: v.optional(v.id("certificateVersions")),
+    lifecycleBackfilledAt: v.optional(v.number()),
+    lifecycleBackfillStatus: v.optional(
+      v.union(
+        v.literal("migrated"),
+        v.literal("ambiguous"),
+        v.literal("skipped"),
+        v.literal("error"),
+      ),
+    ),
+    lifecycleBackfillError: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_policyId", ["policyId"])
