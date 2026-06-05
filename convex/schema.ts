@@ -74,6 +74,18 @@ const policyDeliverySourceKindValidator = v.union(
   v.literal("endorsement"),
 );
 
+const certificateSourceValidator = v.union(
+  v.literal("policy_page"),
+  v.literal("chat"),
+  v.literal("email"),
+  v.literal("imessage"),
+  v.literal("sms"),
+  v.literal("api"),
+  v.literal("mcp"),
+  v.literal("agent"),
+  v.literal("unknown"),
+);
+
 const policyDeliveryRuleFiltersValidator = v.object({
   carriers: v.optional(v.array(v.string())),
   securities: v.optional(v.array(v.string())),
@@ -1223,6 +1235,9 @@ export default defineSchema({
     sourceTreeUpdatedAt: v.optional(v.number()),
     sourceTreeError: v.optional(v.string()),
     operationalProfile: v.optional(v.any()),
+    // Policy lineage/version lifecycle. The policies row remains the stable current/family record.
+    currentPolicyVersionId: v.optional(v.id("policyVersions")),
+    policyVersionUpdatedAt: v.optional(v.number()),
     // Extracted document structure (sections, endorsements, conditions, etc.)
     // Uses v.any() because the cl-sdk document schema evolves frequently
     document: v.optional(v.any()),
@@ -1310,6 +1325,35 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"])
     .index("by_partnerOrgId", ["partnerOrgId"]),
+
+  policyVersions: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    versionNumber: v.number(),
+    status: v.union(v.literal("current"), v.literal("historical")),
+    eventType: v.union(
+      v.literal("initial_extraction"),
+      v.literal("re_extraction"),
+      v.literal("endorsement"),
+      v.literal("renewal"),
+      v.literal("manual_update"),
+      v.literal("backfill"),
+    ),
+    sourcePolicyFileIds: v.optional(v.array(v.id("policyFiles"))),
+    sourceFileIds: v.optional(v.array(v.id("_storage"))),
+    policyNumber: v.optional(v.string()),
+    effectiveDate: v.optional(v.string()),
+    expirationDate: v.optional(v.string()),
+    carrier: v.optional(v.string()),
+    insuredName: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    snapshot: v.any(),
+    snapshotSignature: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_policy_status", ["policyId", "status"]),
 
   // Runtime state for policy extraction. Keep high-churn logs, leases, and
   // large resumable checkpoints off the policy document itself.
@@ -1467,9 +1511,39 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_fileId", ["fileId"]),
 
+  certificateHolders: defineTable({
+    orgId: v.id("organizations"),
+    name: v.string(),
+    normalizedName: v.string(),
+    certificateHolder: v.optional(v.string()),
+    source: v.optional(certificateSourceValidator),
+    sourcePolicyId: v.optional(v.id("policies")),
+    sourcePolicyVersionId: v.optional(v.id("policyVersions")),
+    sourceSpanIds: v.optional(v.array(v.string())),
+    evidence: v.optional(v.any()),
+    verificationStatus: v.union(
+      v.literal("source_backed"),
+      v.literal("manual"),
+      v.literal("legacy_backfill"),
+    ),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_org_normalizedName", ["orgId", "normalizedName"]),
+
   certificates: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
+    certificateHolderId: v.optional(v.id("certificateHolders")),
+    latestVersionId: v.optional(v.id("certificateVersions")),
+    latestPolicyVersionId: v.optional(v.id("policyVersions")),
+    lifecycleStatus: v.optional(v.union(v.literal("active"), v.literal("inactive"), v.literal("superseded"))),
+    holderKey: v.optional(v.string()),
+    issuedAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+    // Legacy/latest artifact fields retained during rollout for compatible reads.
     fileId: v.id("_storage"),
     fileName: v.string(),
     certificateHolder: v.optional(v.string()),
@@ -1516,7 +1590,79 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
     .index("by_fileId", ["fileId"])
-    .index("by_partnerOrgId", ["partnerOrgId"]),
+    .index("by_partnerOrgId", ["partnerOrgId"])
+    .index("by_policy_holderKey", ["policyId", "holderKey"])
+    .index("by_holder", ["certificateHolderId"]),
+
+  certificateVersions: defineTable({
+    orgId: v.id("organizations"),
+    certificateId: v.id("certificates"),
+    certificateHolderId: v.id("certificateHolders"),
+    policyId: v.id("policies"),
+    policyVersionId: v.optional(v.id("policyVersions")),
+    versionNumber: v.number(),
+    status: v.union(v.literal("draft_review"), v.literal("issued"), v.literal("void")),
+    issueReason: v.union(
+      v.literal("initial_issue"),
+      v.literal("explicit_reissue"),
+      v.literal("renewal_review"),
+      v.literal("legacy_backfill"),
+    ),
+    fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    source: v.optional(certificateSourceValidator),
+    createdByUserId: v.optional(v.id("users")),
+    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    certificationStatus: v.optional(
+      v.union(
+        v.literal("not_applicable"),
+        v.literal("pending"),
+        v.literal("certified"),
+        v.literal("declined"),
+      ),
+    ),
+    partnerOrgId: v.optional(v.id("organizations")),
+    partnerProgramId: v.optional(v.id("partnerPrograms")),
+    templateId: v.optional(v.id("coiTemplates")),
+    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
+    approvalId: v.optional(v.id("certificateApprovals")),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
+    approvalAudit: v.optional(v.any()),
+    disclaimer: v.optional(v.string()),
+    requestText: v.optional(v.string()),
+    requestedEndorsements: v.optional(v.array(v.string())),
+    gateEvidence: v.optional(v.any()),
+    createdAt: v.number(),
+    issuedAt: v.optional(v.number()),
+  })
+    .index("by_certificate", ["certificateId"])
+    .index("by_policyVersion", ["policyVersionId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_status", ["status"]),
+
+  certificateRenewalReviewJobs: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    certificateId: v.id("certificates"),
+    certificateHolderId: v.id("certificateHolders"),
+    fromPolicyVersionId: v.optional(v.id("policyVersions")),
+    toPolicyVersionId: v.optional(v.id("policyVersions")),
+    draftVersionId: v.optional(v.id("certificateVersions")),
+    status: v.union(v.literal("pending_review"), v.literal("approved"), v.literal("cancelled")),
+    reason: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_certificate", ["certificateId"])
+    .index("by_status", ["status"]),
 
   certificateRequestHolds: defineTable({
     orgId: v.id("organizations"),

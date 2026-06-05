@@ -557,6 +557,7 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       (typeof body.request_text === "string" && body.request_text.trim()) ||
       undefined,
     requestedEndorsements,
+    reissue: body.reissue === true || body.explicit_reissue === true,
     selectedPartnerProgramId: selectedPartnerProgramId as Id<"partnerPrograms"> | undefined,
   };
 }

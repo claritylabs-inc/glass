@@ -242,8 +242,19 @@ export const run = internalAction({
     )),
     approvalAudit: v.optional(v.any()),
     disclaimer: v.optional(v.string()),
+    policyVersionId: v.optional(v.id("policyVersions")),
+    holderKey: v.optional(v.string()),
+    requestText: v.optional(v.string()),
+    requestedEndorsements: v.optional(v.array(v.string())),
+    gateEvidence: v.optional(v.any()),
+    issueReason: v.optional(v.union(
+      v.literal("initial_issue"),
+      v.literal("explicit_reissue"),
+      v.literal("renewal_review"),
+      v.literal("legacy_backfill"),
+    )),
   },
-  handler: async (ctx, args): Promise<{ storageId: string; size: number; fileName: string; certificateId: string }> => {
+  handler: async (ctx, args): Promise<{ storageId: string; size: number; fileName: string; certificateId: string; certificateVersionId?: string; certificateHolderId?: string }> => {
     try {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
 
@@ -331,7 +342,7 @@ export const run = internalAction({
         outputFileName,
       );
 
-      const certificateId = await ctx.runMutation(internal.certificates.recordGenerated, {
+      const certificateRecord = await ctx.runMutation(internal.certificates.recordGenerated, {
         orgId: args.orgId,
         policyId: args.policyId,
         fileId: storageId,
@@ -349,9 +360,22 @@ export const run = internalAction({
         approvalMode: args.approvalMode,
         approvalAudit: args.approvalAudit,
         disclaimer: args.disclaimer,
-      });
+        policyVersionId: args.policyVersionId,
+        holderKey: args.holderKey,
+        requestText: args.requestText,
+        requestedEndorsements: args.requestedEndorsements,
+        gateEvidence: args.gateEvidence,
+        issueReason: args.issueReason,
+      }) as { certificateId: string; certificateVersionId?: string; certificateHolderId?: string };
 
-      return { storageId: storageId as string, size, fileName, certificateId: String(certificateId) };
+      return {
+        storageId: storageId as string,
+        size,
+        fileName,
+        certificateId: String(certificateRecord.certificateId),
+        certificateVersionId: certificateRecord.certificateVersionId ? String(certificateRecord.certificateVersionId) : undefined,
+        certificateHolderId: certificateRecord.certificateHolderId ? String(certificateRecord.certificateHolderId) : undefined,
+      };
     } catch (err) {
       logAiError("generateCoi", err, { policyId: args.policyId });
       throw err;

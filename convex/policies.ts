@@ -35,6 +35,56 @@ type PolicyExtractionArtifactKind =
   | "cl_sdk_checkpoint"
   | "embedding_payload"
   | "external_completion_payload";
+
+function stablePolicyVersionSnapshot(policy: Record<string, any>) {
+  return {
+    carrier: policy.carrier,
+    security: policy.security,
+    policyNumber: policy.policyNumber,
+    policyTypes: policy.policyTypes,
+    documentType: policy.documentType,
+    policyYear: policy.policyYear,
+    effectiveDate: policy.effectiveDate,
+    expirationDate: policy.expirationDate,
+    insuredName: policy.insuredName,
+    summary: policy.summary,
+    limits: policy.limits,
+    coverages: policy.coverages,
+    deductibles: policy.deductibles,
+    declarations: policy.declarations,
+    operationalProfile: policy.operationalProfile,
+    documentMetadata: policy.documentMetadata,
+    documentOutline: policy.documentOutline,
+    files: policy.files,
+  };
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, item]) => item !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(",")}}`;
+}
+
+function inferPolicyVersionEventType(args: { policy: Record<string, any>; current?: Record<string, any> | null }):
+  | "initial_extraction"
+  | "re_extraction"
+  | "endorsement"
+  | "renewal"
+  | "manual_update"
+  | "backfill" {
+  const files = Array.isArray(args.policy.files) ? args.policy.files : [];
+  if (!args.current) return "initial_extraction";
+  if (files.some((file: any) => file?.fileType === "endorsement")) return "endorsement";
+  if (files.some((file: any) => file?.fileType === "renewal")) return "renewal";
+  if (args.current.effectiveDate !== args.policy.effectiveDate || args.current.expirationDate !== args.policy.expirationDate) {
+    return "renewal";
+  }
+  return "re_extraction";
+}
+
 type PolicyPipelineLogEntry = {
   timestamp: number;
   message: string;
@@ -1422,6 +1472,94 @@ export const clearExtractionLog = internalMutation({
   handler: async (ctx, args) => {
     await patchPolicyExtractionRun(ctx, args.id, { pipelineLog: [] });
     await ctx.db.patch(args.id, { pipelineLog: undefined });
+  },
+});
+
+
+export const getCurrentVersionInternal = internalQuery({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy) return null;
+    if ((policy as any).currentPolicyVersionId) {
+      const version = await ctx.db.get((policy as any).currentPolicyVersionId);
+      if (version) return version;
+    }
+    const versions = await ctx.db
+      .query("policyVersions")
+      .withIndex("by_policy_status", (q) => q.eq("policyId", args.policyId).eq("status", "current"))
+      .collect();
+    return versions.sort((a: any, b: any) => (b.versionNumber ?? 0) - (a.versionNumber ?? 0))[0] ?? null;
+  },
+});
+
+export const snapshotCurrentVersionInternal = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+    eventType: v.optional(v.union(
+      v.literal("initial_extraction"),
+      v.literal("re_extraction"),
+      v.literal("endorsement"),
+      v.literal("renewal"),
+      v.literal("manual_update"),
+      v.literal("backfill"),
+    )),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy?.orgId) throw new Error("Policy not found");
+    const snapshot = stablePolicyVersionSnapshot(policy as any);
+    const snapshotSignature = stableStringify(snapshot);
+    const existing = await ctx.db
+      .query("policyVersions")
+      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .collect();
+    const current = existing.find((version: any) => version.status === "current") as any | undefined;
+    if (current?.snapshotSignature === snapshotSignature) {
+      if ((policy as any).currentPolicyVersionId !== current._id) {
+        await ctx.db.patch(args.policyId, {
+          currentPolicyVersionId: current._id,
+          policyVersionUpdatedAt: current.createdAt,
+        } as any);
+      }
+      return current._id;
+    }
+    const now = dayjs().valueOf();
+    for (const version of existing) {
+      if ((version as any).status === "current") {
+        await ctx.db.patch(version._id, { status: "historical" });
+      }
+    }
+    const sourcePolicyFileIds = await ctx.db
+      .query("policyFiles")
+      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .collect()
+      .then((files) => files.map((file) => file._id));
+    const versionId = await ctx.db.insert("policyVersions", {
+      orgId: policy.orgId,
+      policyId: args.policyId,
+      versionNumber: existing.length + 1,
+      status: "current",
+      eventType: args.eventType ?? inferPolicyVersionEventType({ policy: policy as any, current }),
+      sourcePolicyFileIds,
+      sourceFileIds: Array.isArray((policy as any).files)
+        ? (policy as any).files.map((file: any) => file.fileId).filter(Boolean)
+        : (policy as any).fileId ? [(policy as any).fileId] : [],
+      policyNumber: (policy as any).policyNumber,
+      effectiveDate: (policy as any).effectiveDate,
+      expirationDate: (policy as any).expirationDate,
+      carrier: (policy as any).carrier,
+      insuredName: (policy as any).insuredName,
+      summary: (policy as any).summary,
+      snapshot,
+      snapshotSignature,
+      createdAt: now,
+    });
+    await ctx.db.patch(args.policyId, {
+      currentPolicyVersionId: versionId,
+      policyVersionUpdatedAt: now,
+    } as any);
+    return versionId;
   },
 });
 

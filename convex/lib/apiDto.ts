@@ -275,6 +275,10 @@ export function toMcpQuoteSummaryDto(quote: McpQuoteSummarySource): McpQuoteSumm
 export interface CertificateDtoSource {
   _id: DtoId;
   policyId: DtoId;
+  certificateHolderId?: DtoId;
+  latestVersionId?: DtoId;
+  latestPolicyVersionId?: DtoId;
+  lifecycleStatus?: string;
   fileId: DtoId;
   fileName: string;
   certificateHolder?: string;
@@ -295,6 +299,10 @@ export interface CertificateDtoSource {
 export interface CertificateDto {
   id: string;
   policy_id: string;
+  certificate_holder_id: string | null;
+  latest_version_id: string | null;
+  latest_policy_version_id: string | null;
+  lifecycle_status: string | null;
   file_id: string;
   file_name: string;
   certificate_holder: string | null;
@@ -316,6 +324,10 @@ export function toCertificateDto(certificate: CertificateDtoSource): Certificate
   return {
     id: certificate._id,
     policy_id: certificate.policyId,
+    certificate_holder_id: certificate.certificateHolderId ?? null,
+    latest_version_id: certificate.latestVersionId ?? null,
+    latest_policy_version_id: certificate.latestPolicyVersionId ?? null,
+    lifecycle_status: certificate.lifecycleStatus ?? null,
     file_id: certificate.fileId,
     file_name: certificate.fileName,
     certificate_holder: certificate.certificateHolder ?? null,

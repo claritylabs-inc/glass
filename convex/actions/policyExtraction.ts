@@ -2016,6 +2016,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         }
         if (finalPolicy?.orgId) {
           await convexCtx.runMutation(
+            (internal as any).policies.snapshotCurrentVersionInternal,
+            { policyId },
+          );
+          await convexCtx.runMutation(
+            (internal as any).certificates.createRenewalReviewJobsForPolicyInternal,
+            { policyId, orgId: finalPolicy.orgId },
+          );
+          await convexCtx.runMutation(
             (internal as any).declarationFacts.syncPolicyInternal,
             { policyId },
           );
