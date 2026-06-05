@@ -102,6 +102,11 @@ const TABS: Array<{ value: CertificateWorkspaceTab; label: string }> = [
   { value: "history", label: "History" },
 ];
 
+const CERTIFICATE_ROW_GRID_CLASS =
+  "grid min-w-0 gap-3 @lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @lg:items-center";
+const CERTIFICATE_ROW_ACTIONS_CLASS =
+  "flex min-w-0 flex-wrap items-center gap-2 @lg:justify-end @lg:justify-self-end";
+
 function policyLabel(policy?: Policy | null) {
   return [
     policy?.policyNumber,
@@ -150,8 +155,8 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
   const badge = certificateBadge(row);
   const version = row.currentVersion;
   return (
-    <OperationalItem>
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] md:items-center">
+    <OperationalItem className="@container">
+      <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
           <p className="truncate text-base font-medium text-foreground">
             {row.holder?.displayName ?? "Certificate holder"}
@@ -171,7 +176,7 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
             Version {version?.versionNumber ?? "-"} · {formatTime(version?.issuedAt ?? row.lastIssuedAt)}
           </p>
         </div>
-        <div className="flex items-center gap-2 md:justify-end">
+        <div className={CERTIFICATE_ROW_ACTIONS_CLASS}>
           <Badge variant={badge.variant} className="text-label capitalize">
             {badge.label}
           </Badge>
@@ -193,8 +198,8 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
 
 function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
   return (
-    <OperationalItem>
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] md:items-center">
+    <OperationalItem className="@container">
+      <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
           <p className="truncate text-base font-medium text-foreground">
             {job.holder?.displayName ?? job.recipientName ?? "Certificate holder"}
@@ -214,7 +219,7 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
             {job.kind.replace(/_/g, " ")} · {formatTime(job.updatedAt)}
           </p>
         </div>
-        <div className="flex items-center gap-2 md:justify-end">
+        <div className={CERTIFICATE_ROW_ACTIONS_CLASS}>
           <Badge variant={jobBadge(job.status)} className="capitalize">
             {job.status.replace(/_/g, " ")}
           </Badge>
@@ -239,8 +244,8 @@ function HistoryRow({
 }) {
   const { openWithUrl } = usePdf();
   return (
-    <OperationalItem>
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] md:items-center">
+    <OperationalItem className="@container">
+      <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
           <p className="truncate text-base font-medium text-foreground">
             {row.holder?.displayName ?? "Certificate holder"}
@@ -260,7 +265,7 @@ function HistoryRow({
             {formatTime(version.issuedAt ?? version.createdAt)}
           </p>
         </div>
-        <div className="flex items-center gap-2 md:justify-self-end">
+        <div className={CERTIFICATE_ROW_ACTIONS_CLASS}>
           <Badge variant="outline" className="capitalize">
             {version.status}
           </Badge>
