@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -28,6 +28,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { usePageContext } from "@/hooks/use-page-context";
 
 type CertificateWorkspaceTab = "active" | "review";
 
@@ -113,6 +114,27 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
   );
 }
 
+function CertificatesPageContext({
+  activeCount,
+  reviewCount,
+}: {
+  activeCount: number;
+  reviewCount: number;
+}) {
+  const { setPageContext } = usePageContext();
+
+  useEffect(() => {
+    setPageContext({
+      pageType: "certificates",
+      summary: `${activeCount} active certificate${activeCount === 1 ? "" : "s"} · ${reviewCount} review job${reviewCount === 1 ? "" : "s"}`,
+    });
+
+    return () => setPageContext(null);
+  }, [activeCount, reviewCount, setPageContext]);
+
+  return null;
+}
+
 export default function CertificatesPage() {
   const [tab, setTab] = useState<CertificateWorkspaceTab>("active");
   const [selectedCertificateId, setSelectedCertificateId] = useState<Id<"policyCertificates"> | null>(null);
@@ -168,6 +190,10 @@ export default function CertificatesPage() {
         />
       ) : null}
     >
+      <CertificatesPageContext
+        activeCount={activeCertificates.length}
+        reviewCount={reviewJobs.length}
+      />
       <div className="space-y-4">
         <Tabs
           value={tab}

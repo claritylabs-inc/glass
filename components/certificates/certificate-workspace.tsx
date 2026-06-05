@@ -262,18 +262,18 @@ export function CertificateRow({
       role="button"
       tabIndex={0}
     >
-      <div className="flex min-w-0 flex-col gap-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <p className="min-w-0 truncate text-base font-medium text-foreground">
             {row.holder?.displayName ?? "Certificate holder"}
           </p>
-          <Badge variant={badge.variant} className="shrink-0 text-label capitalize">
-            {badge.label}
-          </Badge>
+          <p className="mt-1 whitespace-pre-line text-base text-muted-foreground">
+            {holderContact}
+          </p>
         </div>
-        <p className="whitespace-pre-line text-base text-muted-foreground">
-          {holderContact}
-        </p>
+        <Badge variant={badge.variant} className="shrink-0 self-start text-label capitalize">
+          {badge.label}
+        </Badge>
       </div>
     </OperationalItem>
   );
