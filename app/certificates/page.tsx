@@ -7,10 +7,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import {
   CertificateDetailPanel,
-  CertificateRow,
+  CertificatePolicyGroupCard,
   CERTIFICATE_PANEL_CONTAINER_CLASS,
   certificatePolicyLabel,
   formatCertificateTime,
+  groupCertificatesByPolicy,
   type CertificateHolderRecord,
   type CertificatePolicyRecord,
   type CertificateVersionRecord,
@@ -138,6 +139,10 @@ export default function CertificatesPage() {
         ),
     [certificates],
   );
+  const activeCertificateGroups = useMemo(
+    () => groupCertificatesByPolicy(activeCertificates),
+    [activeCertificates],
+  );
   const reviewJobs = useMemo(
     () =>
       (jobs ?? [])
@@ -194,17 +199,17 @@ export default function CertificatesPage() {
               </OperationalPanelBody>
             )}
           </OperationalPanel>
-        ) : activeCertificates.length > 0 ? (
-          <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
-            {activeCertificates.map((row) => (
-              <CertificateRow
-                key={row._id}
-                row={row}
-                selected={row._id === selectedCertificateId}
-                onSelect={() => setSelectedCertificateId(row._id)}
+        ) : activeCertificateGroups.length > 0 ? (
+          <div className="space-y-3">
+            {activeCertificateGroups.map((group) => (
+              <CertificatePolicyGroupCard
+                key={group.key}
+                group={group}
+                selectedCertificateId={selectedCertificateId}
+                onSelectCertificate={(row) => setSelectedCertificateId(row._id)}
               />
             ))}
-          </OperationalPanel>
+          </div>
         ) : (
           <OperationalPanel as="div">
             <OperationalPanelBody className="px-4 py-10 text-center">

@@ -74,8 +74,6 @@ export type PolicyCertificateRecord = {
 
 export const CERTIFICATE_PANEL_CONTAINER_CLASS = "@container/certificates-panel";
 
-const CERTIFICATE_ACTIVE_ROW_GRID_CLASS =
-  "grid min-w-0 gap-3 @xl/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] @xl/certificates-panel:items-center";
 const CERTIFICATE_ROW_CLICKABLE_CLASS =
   "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-inset";
 
@@ -128,6 +126,53 @@ function versionBadge(version?: CertificateVersionRecord | null) {
 function sortedVersions(row: PolicyCertificateRecord) {
   return [...(row.versions?.length ? row.versions : row.currentVersion ? [row.currentVersion] : [])]
     .sort((left, right) => right.versionNumber - left.versionNumber);
+}
+
+function certificateLastActivity(row: PolicyCertificateRecord) {
+  return Number(row.lastIssuedAt ?? row.currentVersion?.createdAt ?? row.createdAt ?? 0);
+}
+
+export type CertificatePolicyGroup = {
+  key: string;
+  policyId: Id<"policies">;
+  policy?: CertificatePolicyRecord | null;
+  rows: PolicyCertificateRecord[];
+  latestAt: number;
+};
+
+export function groupCertificatesByPolicy(rows: PolicyCertificateRecord[]) {
+  const groups = new Map<string, CertificatePolicyGroup>();
+
+  for (const row of rows) {
+    const key = String(row.policyId);
+    const existing = groups.get(key);
+
+    if (existing) {
+      existing.rows.push(row);
+      existing.latestAt = Math.max(existing.latestAt, certificateLastActivity(row));
+      if (!existing.policy && row.policy) existing.policy = row.policy;
+      continue;
+    }
+
+    groups.set(key, {
+      key,
+      policyId: row.policyId,
+      policy: row.policy,
+      rows: [row],
+      latestAt: certificateLastActivity(row),
+    });
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      rows: [...group.rows].sort((left, right) =>
+        (left.holder?.displayName ?? "").localeCompare(
+          right.holder?.displayName ?? "",
+        ),
+      ),
+    }))
+    .sort((left, right) => right.latestAt - left.latestAt);
 }
 
 function openOnKeyboard(
@@ -192,14 +237,6 @@ function CertificateDetailCard({
   );
 }
 
-function PolicyTitle({ policy }: { policy?: CertificatePolicyRecord | null }) {
-  return (
-    <p className="block max-w-full truncate text-base font-medium text-foreground">
-      {certificatePolicyLabel(policy)}
-    </p>
-  );
-}
-
 export function CertificateRow({
   row,
   selected,
@@ -210,7 +247,11 @@ export function CertificateRow({
   onSelect: () => void;
 }) {
   const badge = certificateBadge(row);
-  const version = row.currentVersion;
+  const holderContact =
+    row.holder?.email ??
+    row.holder?.phone ??
+    certificateHolderAddress(row.holder) ??
+    "No holder contact recorded";
   return (
     <OperationalItem
       aria-label={`Open certificate details for ${row.holder?.displayName ?? "certificate holder"}`}
@@ -221,28 +262,48 @@ export function CertificateRow({
       role="button"
       tabIndex={0}
     >
-      <div className={CERTIFICATE_ACTIVE_ROW_GRID_CLASS}>
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <p className="min-w-0 truncate text-base font-medium text-foreground">
-              {row.holder?.displayName ?? "Certificate holder"}
-            </p>
-            <Badge variant={badge.variant} className="shrink-0 text-label capitalize">
-              {badge.label}
-            </Badge>
-          </div>
-          <p className="mt-1 whitespace-pre-line text-base text-muted-foreground">
-            {certificateHolderAddress(row.holder) ?? row.holder?.email ?? "No holder contact recorded"}
+      <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="min-w-0 truncate text-base font-medium text-foreground">
+            {row.holder?.displayName ?? "Certificate holder"}
           </p>
+          <Badge variant={badge.variant} className="shrink-0 text-label capitalize">
+            {badge.label}
+          </Badge>
         </div>
-        <div className="min-w-0">
-          <PolicyTitle policy={row.policy} />
-          <p className="mt-1 text-base text-muted-foreground">
-            Version {version?.versionNumber ?? "-"} · {formatCertificateTime(version?.issuedAt ?? row.lastIssuedAt)}
-          </p>
-        </div>
+        <p className="whitespace-pre-line text-base text-muted-foreground">
+          {holderContact}
+        </p>
       </div>
     </OperationalItem>
+  );
+}
+
+export function CertificatePolicyGroupCard({
+  group,
+  selectedCertificateId,
+  showPolicyHeader = true,
+  onSelectCertificate,
+}: {
+  group: CertificatePolicyGroup;
+  selectedCertificateId?: Id<"policyCertificates"> | null;
+  showPolicyHeader?: boolean;
+  onSelectCertificate: (row: PolicyCertificateRecord) => void;
+}) {
+  return (
+    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
+      {showPolicyHeader ? (
+        <OperationalPanelHeader title={certificatePolicyLabel(group.policy)} />
+      ) : null}
+      {group.rows.map((row) => (
+        <CertificateRow
+          key={row._id}
+          row={row}
+          selected={row._id === selectedCertificateId}
+          onSelect={() => onSelectCertificate(row)}
+        />
+      ))}
+    </OperationalPanel>
   );
 }
 

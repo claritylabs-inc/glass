@@ -20,9 +20,10 @@ import { PillButton } from "@/components/ui/pill-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
-  CertificateRow,
+  CertificatePolicyGroupCard,
   CERTIFICATE_PANEL_CONTAINER_CLASS,
   formatCertificateTime,
+  groupCertificatesByPolicy,
   type PolicyCertificateRecord,
 } from "@/components/certificates/certificate-workspace";
 import { api } from "@/convex/_generated/api";
@@ -754,27 +755,12 @@ export function CertificatesTab({
         Number(right.lastIssuedAt ?? right.currentVersion?.createdAt ?? 0) -
         Number(left.lastIssuedAt ?? left.currentVersion?.createdAt ?? 0),
     );
+  const activeCertificateGroups = groupCertificatesByPolicy(activeCertificates);
   const holds = ((activity.holds ?? []) as CertificateHoldRow[]).sort(
     (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
   );
-  const rows = [
-    ...activeCertificates.map((row) => ({
-      type: "certificate" as const,
-      id: String(row._id),
-      sortAt: Number(row.lastIssuedAt ?? row.currentVersion?.createdAt ?? row.createdAt ?? 0),
-      row,
-    })),
-    ...holds.map((row) => ({
-      type: "hold" as const,
-      id: String(row._id),
-      sortAt: Number(row.createdAt ?? 0),
-      row,
-    })),
-  ].sort(
-    (left, right) => right.sortAt - left.sortAt,
-  );
 
-  if (rows.length === 0) {
+  if (activeCertificateGroups.length === 0 && holds.length === 0) {
     return (
       <OperationalPanel as="div">
         <OperationalPanelBody className="px-4 py-8 text-center">
@@ -791,19 +777,23 @@ export function CertificatesTab({
   }
 
   return (
-    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
-      {rows.map((entry) =>
-        entry.type === "certificate" ? (
-          <CertificateRow
-            key={entry.id}
-            row={entry.row}
-            selected={entry.row._id === selectedCertificateId}
-            onSelect={() => onSelectCertificate?.(entry.row)}
-          />
-        ) : (
-          <CertificateHoldActivityRow key={entry.id} row={entry.row} />
-        ),
-      )}
-    </OperationalPanel>
+    <div className="space-y-3">
+      {activeCertificateGroups.map((group) => (
+        <CertificatePolicyGroupCard
+          key={group.key}
+          group={group}
+          selectedCertificateId={selectedCertificateId}
+          showPolicyHeader={false}
+          onSelectCertificate={(row) => onSelectCertificate?.(row)}
+        />
+      ))}
+      {holds.length > 0 ? (
+        <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
+          {holds.map((row) => (
+            <CertificateHoldActivityRow key={row._id} row={row} />
+          ))}
+        </OperationalPanel>
+      ) : null}
+    </div>
   );
 }
