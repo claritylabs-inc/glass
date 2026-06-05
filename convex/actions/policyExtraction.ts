@@ -165,6 +165,7 @@ export type PolicyExtractionState = {
   orgId: string;
   userId: string;
   policyFileId?: string;
+  policyVersionKind?: "new_policy" | "re_extraction" | "renewal";
   traceId?: string;
   externalWorker?: boolean;
   /** Deprecated inline SDK checkpoint. Kept for legacy in-flight resumes. */
@@ -1973,6 +1974,33 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         return { kind: "error", error: CANCELLED_BY_USER };
       }
 
+      // Record the document-event policy version after the current policy row has
+      // been materialized and before downstream certificate workflows inspect it.
+      try {
+        if (state.policyVersionKind === "re_extraction" || state.policyVersionKind === "renewal") {
+          await convexCtx.runMutation(
+            (internal as any).policyVersions.createInternal,
+            {
+              policyId,
+              versionKind: state.policyVersionKind,
+              sourcePolicyFileIds: state.policyFileId ? [state.policyFileId as Id<"policyFiles">] : undefined,
+              sourceFileIds: state.fileId ? [state.fileId as Id<"_storage">] : undefined,
+              createdByUserId: state.userId as Id<"users">,
+            },
+          );
+        } else {
+          await convexCtx.runMutation(
+            (internal as any).policyVersions.ensureInitialInternal,
+            {
+              policyId,
+              createdByUserId: state.userId as Id<"users">,
+            },
+          );
+        }
+      } catch (error) {
+        console.warn("[policyExtraction] policy version creation failed", error);
+      }
+
       // Audit log
       try {
         await convexCtx.runMutation(
@@ -2023,6 +2051,16 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             (internal as any).declarationFacts.scanOrgInternal,
             { orgId: finalPolicy.orgId, notifyExternal: false },
           );
+          const certificateWorkflowSettings = await convexCtx.runQuery(
+            (internal as any).certificateWorkflowSettings.getEffectiveInternal,
+            { orgId: finalPolicy.orgId as Id<"organizations"> },
+          ).catch(() => null);
+          if (certificateWorkflowSettings?.populateHoldersFromEndorsements !== false) {
+            await convexCtx.runMutation(
+              (internal as any).certificateHolders.populateForPolicyInternal,
+              { policyId },
+            );
+          }
           await convexCtx.runAction(
             (internal as any).actions.declarationDiscrepancyCopy.phraseOpenInternal,
             { orgId: finalPolicy.orgId },
@@ -2923,8 +2961,13 @@ export const startPolicyExtractionFromUpload = internalAction({
     orgId: v.id("organizations"),
     userId: v.id("users"),
     policyFileId: v.optional(v.id("policyFiles")),
+    policyVersionKind: v.optional(v.union(
+      v.literal("new_policy"),
+      v.literal("re_extraction"),
+      v.literal("renewal"),
+    )),
   },
-  handler: async (ctx, { policyId, fileId, fileName, orgId, userId, policyFileId }) => {
+  handler: async (ctx, { policyId, fileId, fileName, orgId, userId, policyFileId, policyVersionKind }) => {
     const traceId = randomUUID();
     await startTraceSession(ctx, {
       traceId,
@@ -2949,6 +2992,7 @@ export const startPolicyExtractionFromUpload = internalAction({
           orgId: String(orgId),
           userId: String(userId),
           policyFileId: policyFileId ? String(policyFileId) : undefined,
+          policyVersionKind,
           traceId,
         },
       });
@@ -2981,6 +3025,7 @@ export const startPolicyExtractionFromUpload = internalAction({
         orgId: String(orgId),
         userId: String(userId),
         policyFileId: policyFileId ? String(policyFileId) : undefined,
+        policyVersionKind,
         traceId,
       },
     });
@@ -3054,6 +3099,7 @@ export const retryPolicyExtraction = internalAction({
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? policy.uploadedByUserId ?? ""),
         policyFileId: existingState?.policyFileId,
+        policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
         traceId,
         clSdkCheckpointFileId: mode === "resume" ? existingState?.clSdkCheckpointFileId : undefined,
         clSdkCheckpoint: mode === "resume" ? existingState?.clSdkCheckpoint : undefined,
@@ -3084,6 +3130,7 @@ export const retryPolicyExtraction = internalAction({
         fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? ""),
+        policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
         traceId,
       },
     });

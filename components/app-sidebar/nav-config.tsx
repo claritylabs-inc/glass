@@ -73,6 +73,12 @@ export const INSURANCE_ITEMS: NavItemConfig[] = [
     shortcut: navShortcut("p"),
   },
   {
+    href: "/certificates",
+    label: "Certificates",
+    icon: BadgeCheck,
+    shortcut: navShortcut("e"),
+  },
+  {
     href: "/broker",
     label: "Broker",
     icon: Briefcase,

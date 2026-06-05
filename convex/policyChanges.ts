@@ -218,7 +218,7 @@ export const createFromChat = mutation({
     requestText: v.string(),
     evidenceSourceIds: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<Id<"policyChangeCases">> => {
     const access = await requireCurrentOrgAccess(ctx);
     const { orgId, userId } = access;
     assertCanCreatePolicyChange(access);
@@ -934,7 +934,11 @@ export const completeFromEndorsement = internalMutation({
     summary: v.optional(v.string()),
     fieldUpdates: v.optional(v.any()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{
+    policyUpdateRunId: Id<"policyUpdateRuns">;
+    policyFileIds: Id<"policyFiles">[];
+    policyVersionId: Id<"policyVersions">;
+  }> => {
     const policy = await ctx.db.get(args.policyId);
     if (!policy?.orgId) throw new Error("Policy not found");
 
@@ -1030,6 +1034,16 @@ export const completeFromEndorsement = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
+    const policyVersionId = await ctx.runMutation((internal as any).policyVersions.createInternal, {
+      policyId: args.policyId,
+      versionKind: "policy_change",
+      sourcePolicyFileIds: policyFileIds,
+      sourceFileIds: args.files.map((file) => file.fileId),
+      caseId: args.caseId,
+      beforeSnapshot,
+      summary: args.summary ?? "Endorsement received and appended to the policy.",
+      createdByUserId: args.userId,
+    }) as Id<"policyVersions">;
 
     if (args.caseId) {
       await ctx.db.patch(args.caseId, {
@@ -1038,6 +1052,7 @@ export const completeFromEndorsement = internalMutation({
           summary: args.summary ?? "Endorsement received and appended to the policy.",
           policyId: args.policyId,
           policyUpdateRunId: runId,
+          policyVersionId,
           policyFileIds,
           completedAt: now,
           completedByUserId: args.userId,
@@ -1062,6 +1077,12 @@ export const completeFromEndorsement = internalMutation({
       for (const hold of holds) {
         await ctx.db.patch(hold._id, { status: "resolved", updatedAt: now });
       }
+      await ctx.runMutation((internal as any).certificateWorkflowJobs.createPostEndorsementJobsInternal, {
+        policyChangeCaseId: args.caseId,
+        policyUpdateRunId: runId,
+        policyVersionId,
+        createdByUserId: args.userId,
+      });
     }
 
     await ctx.db.insert("policyAuditLog", {
@@ -1073,6 +1094,7 @@ export const completeFromEndorsement = internalMutation({
       metadata: {
         caseId: args.caseId,
         policyUpdateRunId: runId,
+        policyVersionId,
         policyFileIds,
         fieldDiffs,
       },
@@ -1085,7 +1107,7 @@ export const completeFromEndorsement = internalMutation({
       body: args.summary ?? "An endorsement was added to the policy and the change request was marked complete.",
       actionType: "view_policy",
       actionPayload: { policyId: args.policyId, caseId: args.caseId },
-      sourceRef: { policyId: args.policyId, caseId: args.caseId, policyUpdateRunId: runId },
+      sourceRef: { policyId: args.policyId, caseId: args.caseId, policyUpdateRunId: runId, policyVersionId },
       coalesceKeyParts: ["policy_change_completed", String(policy.orgId), String(args.caseId ?? runId)],
     });
 
@@ -1097,7 +1119,7 @@ export const completeFromEndorsement = internalMutation({
       });
     }
 
-    return { policyUpdateRunId: runId, policyFileIds };
+    return { policyUpdateRunId: runId, policyFileIds, policyVersionId };
   },
 });
 

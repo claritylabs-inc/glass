@@ -373,6 +373,13 @@ export function CertificateCreatePanel({
         );
         return;
       }
+      if ((result as { status?: string }).status === "existing") {
+        toast.success("Existing certificate returned for this holder");
+        onOpenChange(false);
+        reset();
+        if (result.url) openWithUrl(result.url);
+        return;
+      }
       toast.success(
         (result as { authorityType?: string }).authorityType === "certified"
           ? "Certified certificate generated"
@@ -729,4 +736,3 @@ export function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
     </div>
   );
 }
-

@@ -12,13 +12,21 @@ import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Plus, RotateCw, Trash2, X } from "lucide-react";
+import { Clock3, Loader2, Plus, RotateCw, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dayjs from "dayjs";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  OperationalItem,
+  OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
+  OperationalSkeletonList,
+} from "@/components/ui/operational-panel";
 import {
   Dialog,
   DialogContent,
@@ -58,10 +66,20 @@ type PolicyPipelineLogEntry = LogEntry & {
   level?: string;
 };
 
-type PolicyDetailTab = "details" | "review" | "certificates" | "changes";
+type PolicyDetailTab =
+  | "details"
+  | "review"
+  | "certificates"
+  | "history"
+  | "changes";
 
 function parsePolicyDetailTab(value: string | null): PolicyDetailTab {
-  if (value === "review" || value === "certificates" || value === "changes") {
+  if (
+    value === "review" ||
+    value === "certificates" ||
+    value === "history" ||
+    value === "changes"
+  ) {
     return value;
   }
   return "details";
@@ -78,6 +96,111 @@ function logPolicyActivityToBrowser(
 ) {
   if (!LOG_POLICY_ACTIVITY_IN_BROWSER) return;
   console.info(`[policy-activity] ${event}`, payload);
+}
+
+type PolicyVersionRow = {
+  _id: Id<"policyVersions">;
+  versionNumber: number;
+  versionKind: "new_policy" | "policy_change" | "re_extraction" | "renewal";
+  effectiveDate?: string;
+  expirationDate?: string;
+  policyNumber?: string;
+  summary?: string;
+  fieldDiffs?: unknown[];
+  sourcePolicyFileIds?: Id<"policyFiles">[];
+  sourceFileIds?: Id<"_storage">[];
+  createdAt: number;
+};
+
+const POLICY_VERSION_LABELS: Record<PolicyVersionRow["versionKind"], string> = {
+  new_policy: "New policy",
+  policy_change: "Policy change",
+  re_extraction: "Re-extraction",
+  renewal: "Renewal",
+};
+
+function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
+  const versions = useCachedQuery(
+    "policyVersions.listByPolicy",
+    api.policyVersions.listByPolicy,
+    { policyId },
+  ) as PolicyVersionRow[] | undefined;
+
+  if (versions === undefined) {
+    return <OperationalSkeletonList rows={3} />;
+  }
+
+  if (versions.length === 0) {
+    return (
+      <OperationalPanel as="div">
+        <OperationalPanelBody className="px-4 py-8 text-center">
+          <Clock3 className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
+          <p className="text-base font-medium text-foreground">
+            No policy history yet
+          </p>
+          <p className="mt-1 text-base text-muted-foreground">
+            Policy versions will appear as renewals, endorsements, and
+            re-extractions are recorded.
+          </p>
+        </OperationalPanelBody>
+      </OperationalPanel>
+    );
+  }
+
+  return (
+    <OperationalPanel as="div">
+      <OperationalPanelHeader
+        title="Policy history"
+        description="Document-event versions for this policy. Current policy answers use the latest version by default."
+      />
+      {versions.map((version, index) => {
+        const diffCount = version.fieldDiffs?.length ?? 0;
+        const sourceFileCount =
+          (version.sourcePolicyFileIds?.length ?? 0) +
+          (version.sourceFileIds?.length ?? 0);
+        const dateRange = [version.effectiveDate, version.expirationDate]
+          .filter(Boolean)
+          .join(" - ");
+        return (
+          <OperationalItem key={version._id}>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-base font-medium text-foreground">
+                    Version {version.versionNumber}
+                  </p>
+                  {index === 0 ? (
+                    <Badge variant="secondary">Current</Badge>
+                  ) : null}
+                  <Badge variant="outline">
+                    {POLICY_VERSION_LABELS[version.versionKind]}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-base text-muted-foreground">
+                  {version.summary ?? "No summary recorded"}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2 text-label text-muted-foreground">
+                  <span>
+                    {dayjs(version.createdAt).format("MMM D, YYYY h:mm A")}
+                  </span>
+                  {dateRange ? <span>{dateRange}</span> : null}
+                  {version.policyNumber ? <span>{version.policyNumber}</span> : null}
+                  <span>
+                    {diffCount === 1
+                      ? "1 changed field"
+                      : `${diffCount} changed fields`}
+                  </span>
+                  {sourceFileCount > 0 ? (
+                    <span>{sourceFileCount} source files</span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </OperationalItem>
+        );
+      })}
+    </OperationalPanel>
+  );
 }
 
 export interface PolicyDetailBodyProps {
@@ -561,6 +684,7 @@ export function PolicyDetailBody({
                 ? [{ id: "review" as const, label: "Review" }]
                 : []),
               { id: "certificates" as const, label: "Certificates" },
+              { id: "history" as const, label: "History" },
               { id: "changes" as const, label: "Changes" },
             ] as const
           ).map((tab) => (
@@ -611,6 +735,10 @@ export function PolicyDetailBody({
 
       {visibleActiveTab === "certificates" && (
         <CertificatesTab policyId={policy._id} />
+      )}
+
+      {visibleActiveTab === "history" && (
+        <PolicyHistoryTab policyId={policy._id} />
       )}
     </>
   );

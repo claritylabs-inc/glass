@@ -29,6 +29,7 @@ import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { ModelsSection } from "@/components/settings/models-section";
 import { PolicyDeliverySection } from "@/components/settings/policy-delivery-section";
+import { CertificateWorkflowSection } from "@/components/settings/certificate-workflow-section";
 import NotificationPreferencesPage from "./notifications/page";
 
 const AGENT_SETTINGS_SECTION: SettingsSection = { id: "agent", label: "Agent", icon: GlassStarIcon };
@@ -150,6 +151,7 @@ function SectionContent({
          section === "agent" ? <BrokerAgentTab /> :
          section === "models" ? <ModelsSection /> :
          section === "delivery" ? <PolicyDeliverySection /> :
+         section === "certificates" ? <CertificateWorkflowSection /> :
          section === "email" ? <EmailConnectionsSection /> :
          section === "connections" ? <ConnectionsSection /> :
          section === "notifications" && currentOrg?.orgId ? (
@@ -168,6 +170,8 @@ function SectionContent({
         <BrokerAgentTab />
       ) : section === "memory" ? (
         <MemorySection />
+      ) : section === "certificates" ? (
+        <CertificateWorkflowSection />
       ) : section === "email" ? (
         <EmailConnectionsSection />
       ) : section === "connections" ? (

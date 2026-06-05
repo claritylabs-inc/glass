@@ -44,6 +44,7 @@ export const reExtractFromFile = action({
       fileId: args.fileId,
       orgId: orgId!,
       userId,
+      policyVersionKind: "re_extraction",
     });
 
     return { success: true };

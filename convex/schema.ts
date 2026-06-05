@@ -74,6 +74,70 @@ const policyDeliverySourceKindValidator = v.union(
   v.literal("endorsement"),
 );
 
+const certificateSourceValidator = v.union(
+  v.literal("policy_page"),
+  v.literal("chat"),
+  v.literal("email"),
+  v.literal("imessage"),
+  v.literal("sms"),
+  v.literal("api"),
+  v.literal("mcp"),
+  v.literal("agent"),
+  v.literal("unknown"),
+);
+
+const certificateHolderAddressValidator = v.object({
+  line1: v.optional(v.string()),
+  line2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  postalCode: v.optional(v.string()),
+  country: v.optional(v.string()),
+  formatted: v.optional(v.string()),
+});
+
+const policyVersionKindValidator = v.union(
+  v.literal("new_policy"),
+  v.literal("policy_change"),
+  v.literal("re_extraction"),
+  v.literal("renewal"),
+);
+
+const certificateParentStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("inactive"),
+  v.literal("archived"),
+);
+
+const certificateVersionStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("issued"),
+  v.literal("superseded"),
+  v.literal("void"),
+);
+
+const certificateWorkflowJobStatusValidator = v.union(
+  v.literal("review_required"),
+  v.literal("blocked_missing_contact"),
+  v.literal("sending"),
+  v.literal("sent"),
+  v.literal("cancelled"),
+  v.literal("failed"),
+);
+
+const certificateWorkflowJobKindValidator = v.union(
+  v.literal("renewal_reissue"),
+  v.literal("post_endorsement_reissue"),
+  v.literal("manual_review"),
+);
+
+const certificateHolderRelationshipKindValidator = v.union(
+  v.literal("additional_insured"),
+  v.literal("loss_payee"),
+  v.literal("mortgagee"),
+  v.literal("allowed_holder"),
+);
+
 const policyDeliveryRuleFiltersValidator = v.object({
   carriers: v.optional(v.array(v.string())),
   securities: v.optional(v.array(v.string())),
@@ -1304,6 +1368,7 @@ export default defineSchema({
         }),
       ),
     ),
+    currentPolicyVersionId: v.optional(v.id("policyVersions")),
   })
     .index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
@@ -1466,6 +1531,223 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
     .index("by_fileId", ["fileId"]),
+
+  policyVersions: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    versionNumber: v.number(),
+    versionKind: policyVersionKindValidator,
+    effectiveDate: v.optional(v.string()),
+    expirationDate: v.optional(v.string()),
+    policyNumber: v.optional(v.string()),
+    sourcePolicyFileIds: v.optional(v.array(v.id("policyFiles"))),
+    sourceFileIds: v.optional(v.array(v.id("_storage"))),
+    caseId: v.optional(v.id("policyChangeCases")),
+    extractionRunId: v.optional(v.id("policyExtractionRuns")),
+    snapshot: v.optional(v.any()),
+    fieldDiffs: v.optional(v.array(v.any())),
+    summary: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_policyId_versionNumber", ["policyId", "versionNumber"])
+    .index("by_policyId_createdAt", ["policyId", "createdAt"])
+    .index("by_caseId", ["caseId"]),
+
+  certificateHolders: defineTable({
+    orgId: v.id("organizations"),
+    displayName: v.string(),
+    normalizedName: v.string(),
+    email: v.optional(v.string()),
+    normalizedEmail: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    address: v.optional(certificateHolderAddressValidator),
+    normalizedAddressKey: v.optional(v.string()),
+    mapboxFeatureId: v.optional(v.string()),
+    mapboxMetadata: v.optional(v.any()),
+    source: v.optional(
+      v.union(
+        v.literal("manual"),
+        v.literal("extraction"),
+        v.literal("certificate_generation"),
+        v.literal("migration"),
+        v.literal("api"),
+        v.literal("mcp"),
+        v.literal("agent"),
+      ),
+    ),
+    sourceRef: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_normalizedName", ["orgId", "normalizedName"])
+    .index("by_orgId_normalizedEmail", ["orgId", "normalizedEmail"])
+    .index("by_orgId_normalizedAddressKey", ["orgId", "normalizedAddressKey"]),
+
+  certificateHolderPolicyLinks: defineTable({
+    orgId: v.id("organizations"),
+    holderId: v.id("certificateHolders"),
+    policyId: v.id("policies"),
+    policyVersionId: v.optional(v.id("policyVersions")),
+    relationshipKind: certificateHolderRelationshipKindValidator,
+    status: v.union(
+      v.literal("current"),
+      v.literal("historical"),
+      v.literal("review_required"),
+      v.literal("dismissed"),
+    ),
+    sourceNodeIds: v.optional(v.array(v.string())),
+    sourceSpanIds: v.optional(v.array(v.string())),
+    sourceSummary: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_holderId", ["holderId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_policyId_status", ["policyId", "status"])
+    .index("by_policyVersionId", ["policyVersionId"]),
+
+  policyCertificates: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    holderId: v.id("certificateHolders"),
+    status: certificateParentStatusValidator,
+    dedupeKey: v.string(),
+    currentVersionId: v.optional(v.id("certificateVersions")),
+    latestIssuedVersionId: v.optional(v.id("certificateVersions")),
+    lastIssuedAt: v.optional(v.number()),
+    source: v.optional(certificateSourceValidator),
+    createdByUserId: v.optional(v.id("users")),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_holderId", ["holderId"])
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_policyId_status", ["policyId", "status"])
+    .index("by_dedupeKey", ["dedupeKey"]),
+
+  certificateVersions: defineTable({
+    orgId: v.id("organizations"),
+    certificateId: v.id("policyCertificates"),
+    holderId: v.id("certificateHolders"),
+    policyId: v.id("policies"),
+    policyVersionId: v.optional(v.id("policyVersions")),
+    versionNumber: v.number(),
+    status: certificateVersionStatusValidator,
+    fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    fileSize: v.optional(v.number()),
+    certificateHolder: v.optional(v.string()),
+    certificateHolderName: v.optional(v.string()),
+    holderSnapshot: v.optional(v.any()),
+    policySnapshot: v.optional(v.any()),
+    policySnapshotHash: v.optional(v.string()),
+    source: v.optional(certificateSourceValidator),
+    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    certificationStatus: v.optional(
+      v.union(
+        v.literal("not_applicable"),
+        v.literal("pending"),
+        v.literal("certified"),
+        v.literal("declined"),
+      ),
+    ),
+    partnerOrgId: v.optional(v.id("organizations")),
+    partnerProgramId: v.optional(v.id("partnerPrograms")),
+    templateId: v.optional(v.id("coiTemplates")),
+    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
+    approvalId: v.optional(v.id("certificateApprovals")),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
+    approvalAudit: v.optional(v.any()),
+    disclaimer: v.optional(v.string()),
+    legacyCertificateId: v.optional(v.id("certificates")),
+    issuedAt: v.optional(v.number()),
+    supersededAt: v.optional(v.number()),
+    voidedAt: v.optional(v.number()),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_certificateId", ["certificateId"])
+    .index("by_certificateId_versionNumber", ["certificateId", "versionNumber"])
+    .index("by_policyId", ["policyId"])
+    .index("by_policyVersionId", ["policyVersionId"])
+    .index("by_holderId", ["holderId"])
+    .index("by_legacyCertificateId", ["legacyCertificateId"]),
+
+  certificateWorkflowSettings: defineTable({
+    brokerOrgId: v.optional(v.id("organizations")),
+    clientOrgId: v.optional(v.id("organizations")),
+    populateHoldersFromEndorsements: v.boolean(),
+    renewalReissueEnabled: v.boolean(),
+    renewalReissueMode: v.literal("review_queue"),
+    renewalReviewLeadDays: v.optional(v.number()),
+    policyChangeRequestsForHeldCertificatesEnabled: v.optional(v.boolean()),
+    channels: v.optional(v.array(policyDeliveryChannelValidator)),
+    copyInstructions: v.optional(v.string()),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_brokerOrgId", ["brokerOrgId"])
+    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"])
+    .index("by_clientOrgId", ["clientOrgId"]),
+
+  certificateWorkflowJobs: defineTable({
+    orgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    certificateId: v.id("policyCertificates"),
+    certificateVersionId: v.optional(v.id("certificateVersions")),
+    holderId: v.id("certificateHolders"),
+    policyId: v.id("policies"),
+    policyVersionId: v.optional(v.id("policyVersions")),
+    kind: certificateWorkflowJobKindValidator,
+    status: certificateWorkflowJobStatusValidator,
+    idempotencyKey: v.string(),
+    reason: v.optional(v.string()),
+    recipientName: v.optional(v.string()),
+    recipientEmail: v.optional(v.string()),
+    recipientPhone: v.optional(v.string()),
+    threadId: v.optional(v.id("threads")),
+    reviewNotes: v.optional(v.string()),
+    sendNotes: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+    sentByUserId: v.optional(v.id("users")),
+    cancelledAt: v.optional(v.number()),
+    cancelledByUserId: v.optional(v.id("users")),
+    cancelReason: v.optional(v.string()),
+    lastError: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    reviewedByUserId: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_policyId", ["policyId"])
+    .index("by_certificateId", ["certificateId"])
+    .index("by_holderId", ["holderId"])
+    .index("by_idempotencyKey", ["idempotencyKey"]),
 
   certificates: defineTable({
     orgId: v.id("organizations"),

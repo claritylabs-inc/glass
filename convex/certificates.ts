@@ -50,6 +50,28 @@ function compactCertificateHolder(args: {
   ].filter(Boolean).join("\n");
 }
 
+function cleanOptionalText(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function structuredCertificateHolderAddress(args: {
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+}) {
+  const address = {
+    line1: cleanOptionalText(args.addressLine1),
+    line2: cleanOptionalText(args.addressLine2),
+    city: cleanOptionalText(args.city),
+    state: cleanOptionalText(args.state),
+    postalCode: cleanOptionalText(args.postalCode),
+  };
+  return Object.values(address).some(Boolean) ? address : undefined;
+}
+
 function sourceKindForPolicyChange(source: string | undefined):
   | "manual"
   | "chat"
@@ -278,10 +300,21 @@ export const listByPolicyInternal = internalQuery({
       .collect();
 
     return await Promise.all(
-      rows.map(async (row) => ({
-        ...row,
-        url: await ctx.storage.getUrl(row.fileId),
-      })),
+      rows.map(async (row) => {
+        const version = await ctx.db
+          .query("certificateVersions")
+          .withIndex("by_legacyCertificateId", (q) => q.eq("legacyCertificateId", row._id))
+          .first();
+        return {
+          ...row,
+          holderId: version?.holderId,
+          policyCertificateId: version?.certificateId,
+          certificateVersionId: version?._id,
+          certificateVersionNumber: version?.versionNumber,
+          policyVersionId: version?.policyVersionId,
+          url: await ctx.storage.getUrl(row.fileId),
+        };
+      }),
     );
   },
 });
@@ -305,11 +338,22 @@ export const listActivityByPolicy = query({
     ]);
     return {
       certificates: await Promise.all(
-        certificates.map(async (row) => ({
-          ...row,
-          url: await ctx.storage.getUrl(row.fileId),
-          activityType: "certificate" as const,
-        })),
+        certificates.map(async (row) => {
+          const version = await ctx.db
+            .query("certificateVersions")
+            .withIndex("by_legacyCertificateId", (q) => q.eq("legacyCertificateId", row._id))
+            .first();
+          return {
+            ...row,
+            holderId: version?.holderId,
+            policyCertificateId: version?.certificateId,
+            certificateVersionId: version?._id,
+            certificateVersionNumber: version?.versionNumber,
+            policyVersionId: version?.policyVersionId,
+            url: await ctx.storage.getUrl(row.fileId),
+            activityType: "certificate" as const,
+          };
+        }),
       ),
       holds: holds.map((row) => ({ ...row, activityType: "hold" as const })),
     };
@@ -385,6 +429,7 @@ export const generateForPolicy = action({
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
     dryRun: v.optional(v.boolean()),
+    forceReissue: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
     const userId = await getAuthUserId(ctx);
@@ -411,6 +456,7 @@ export const generateForPolicy = action({
       requestText: args.requestText,
       requestedEndorsements: args.requestedEndorsements,
       dryRun: args.dryRun,
+      forceReissue: args.forceReissue,
       source: "policy_page",
       createdByUserId: context.userId,
     });
@@ -479,6 +525,7 @@ export const generateForOrg = internalAction({
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
     dryRun: v.optional(v.boolean()),
+    forceReissue: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
     const holderName = args.holderName.trim();
@@ -496,17 +543,12 @@ export const generateForOrg = internalAction({
     const org = await ctx.runQuery(internal.orgs.getInternal, {
       id: args.orgId,
     });
-    const brokerOrg = org?.type === "client" && org.brokerOrgId
-      ? await ctx.runQuery(internal.orgs.getInternal, {
-          id: org.brokerOrgId as Id<"organizations">,
-        })
-      : null;
-    const settingsOrg = brokerOrg ?? org;
-    const policyChangeRequestsEnabled =
-      settingsOrg?.policyChangeRequestsEnabled !== false;
+    const workflowSettings = await ctx.runQuery(
+      (internal as any).certificateWorkflowSettings.getEffectiveInternal,
+      { orgId: args.orgId },
+    );
     const certificateChangeRequestsEnabled =
-      settingsOrg?.certificateChangeRequestsEnabled !== false &&
-      policyChangeRequestsEnabled;
+      workflowSettings.policyChangeRequestsForHeldCertificatesEnabled !== false;
     const hasSourceNodes = await ctx.runQuery(
       (internal as any).sourceNodes.hasNodesForPolicy,
       { policyId: args.policyId },
@@ -643,6 +685,69 @@ export const generateForOrg = internalAction({
       };
     }
 
+    const holderAddress = structuredCertificateHolderAddress(args);
+    const holderId = await ctx.runMutation((internal as any).certificateHolders.upsertInternal, {
+      orgId: args.orgId,
+      displayName: holderName,
+      address: holderAddress,
+      source: "certificate_generation",
+      sourceRef: String(args.policyId),
+      createdByUserId: args.createdByUserId,
+      updatedByUserId: args.createdByUserId,
+    }) as Id<"certificateHolders">;
+    const policyVersionId = await ctx.runMutation(
+      (internal as any).policyVersions.ensureInitialInternal,
+      {
+        policyId: args.policyId,
+        createdByUserId: args.createdByUserId,
+      },
+    ) as Id<"policyVersions">;
+    const policyCertificateId = await ctx.runMutation(
+      (internal as any).certificateLifecycle.getOrCreateParentInternal,
+      {
+        orgId: args.orgId,
+        policyId: args.policyId,
+        holderId,
+        source: args.source ?? "unknown",
+        createdByUserId: args.createdByUserId,
+      },
+    ) as Id<"policyCertificates">;
+
+    const reusableCertificationStatus = authority.authorityType === "certified"
+      ? authority.certificationStatus === "pending"
+        ? "certified"
+        : authority.certificationStatus
+      : "not_applicable";
+    const reusableVersion = args.forceReissue
+      ? null
+      : await ctx.runQuery((internal as any).certificateLifecycle.findReusableIssuedVersionInternal, {
+          certificateId: policyCertificateId,
+          policyVersionId,
+          authorityType: authority.authorityType,
+          certificationStatus: reusableCertificationStatus,
+          partnerProgramId: authority.partnerProgramId,
+          templateId: authority.templateId,
+        });
+    if (reusableVersion?.fileId) {
+      return {
+        status: "existing",
+        reused: true,
+        fileId: reusableVersion.fileId,
+        url: reusableVersion.url,
+        fileName: reusableVersion.fileName ?? "certificate-of-insurance.pdf",
+        size: reusableVersion.fileSize ?? 0,
+        certificateId: reusableVersion.legacyCertificateId
+          ? String(reusableVersion.legacyCertificateId)
+          : undefined,
+        holderId: String(holderId),
+        policyCertificateId: String(policyCertificateId),
+        certificateVersionId: String(reusableVersion._id),
+        versionNumber: reusableVersion.versionNumber,
+        authorityType: reusableVersion.authorityType ?? authority.authorityType,
+        certificationStatus: reusableVersion.certificationStatus ?? reusableCertificationStatus,
+      };
+    }
+
     if (authority.authorityType === "certified" && authority.certificationStatus === "pending" && authority.partnerOrgId) {
       const requestId = await ctx.runMutation(internal.partnerPrograms.createCertificateRequestInternal, {
         orgId: args.orgId,
@@ -685,6 +790,10 @@ export const generateForOrg = internalAction({
       approvalMode: authority.approvalMode,
       approvalAudit: authority.approvalAudit,
       disclaimer: authority.disclaimer,
+      certificateHolderId: holderId,
+      policyCertificateId,
+      policyVersionId,
+      holderAddress,
     });
     if (!generated) throw new Error("COI generation failed.");
 
@@ -716,6 +825,10 @@ export const generateForOrg = internalAction({
       fileName: generated.fileName,
       size: generated.size,
       certificateId: generated.certificateId,
+      holderId: generated.holderId,
+      policyCertificateId: generated.policyCertificateId,
+      certificateVersionId: generated.certificateVersionId,
+      versionNumber: generated.versionNumber,
       authorityType: authority.authorityType,
       certificationStatus: authority.certificationStatus,
     };
