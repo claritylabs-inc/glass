@@ -2,8 +2,8 @@
 
 import dayjs from "dayjs";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { Clock, Eye, FileBadge2, RefreshCw } from "lucide-react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Clock, FileBadge2, RefreshCw } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -16,7 +16,6 @@ import {
   OperationalPanelHeader,
   OperationalSkeletonList,
 } from "@/components/ui/operational-panel";
-import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -107,6 +106,8 @@ const CERTIFICATE_ROW_GRID_CLASS =
   "grid min-w-0 gap-3 @lg/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @lg/certificates-panel:items-center";
 const CERTIFICATE_ROW_ACTIONS_CLASS =
   "flex min-w-0 flex-wrap items-center gap-2 @lg/certificates-panel:justify-end @lg/certificates-panel:justify-self-end";
+const CERTIFICATE_ROW_CLICKABLE_CLASS =
+  "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-inset";
 
 function policyLabel(policy?: Policy | null) {
   return [
@@ -151,12 +152,49 @@ function jobBadge(status: string) {
   return "outline" as const;
 }
 
-function CertificateRow({ row }: { row: PolicyCertificateRow }) {
+function CertificatePdfItem({
+  url,
+  ariaLabel,
+  children,
+}: {
+  url?: string | null;
+  ariaLabel: string;
+  children: ReactNode;
+}) {
   const { openWithUrl } = usePdf();
+  const canOpen = Boolean(url);
+  const openCertificate = () => {
+    if (url) openWithUrl(url);
+  };
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!canOpen || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    openCertificate();
+  };
+
+  return (
+    <OperationalItem
+      aria-disabled={canOpen ? undefined : true}
+      aria-label={canOpen ? ariaLabel : undefined}
+      className={canOpen ? CERTIFICATE_ROW_CLICKABLE_CLASS : undefined}
+      onClick={canOpen ? openCertificate : undefined}
+      onKeyDown={canOpen ? handleKeyDown : undefined}
+      role={canOpen ? "button" : undefined}
+      tabIndex={canOpen ? 0 : undefined}
+    >
+      {children}
+    </OperationalItem>
+  );
+}
+
+function CertificateRow({ row }: { row: PolicyCertificateRow }) {
   const badge = certificateBadge(row);
   const version = row.currentVersion;
   return (
-    <OperationalItem>
+    <CertificatePdfItem
+      url={row.url}
+      ariaLabel={`Open certificate PDF for ${row.holder?.displayName ?? "certificate holder"}`}
+    >
       <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
           <p className="truncate text-base font-medium text-foreground">
@@ -167,12 +205,9 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
           </p>
         </div>
         <div className="min-w-0">
-          <Link
-            href={`/policies/${row.policyId}?tab=certificates`}
-            className="block max-w-full truncate text-base font-medium text-foreground hover:underline"
-          >
+          <p className="block max-w-full truncate text-base font-medium text-foreground">
             {policyLabel(row.policy)}
-          </Link>
+          </p>
           <p className="mt-1 text-base text-muted-foreground">
             Version {version?.versionNumber ?? "-"} · {formatTime(version?.issuedAt ?? row.lastIssuedAt)}
           </p>
@@ -181,19 +216,9 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
           <Badge variant={badge.variant} className="text-label capitalize">
             {badge.label}
           </Badge>
-          <PillButton
-            type="button"
-            size="compact"
-            variant="secondary"
-            disabled={!row.url}
-            onClick={() => row.url && openWithUrl(row.url)}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            PDF
-          </PillButton>
         </div>
       </div>
-    </OperationalItem>
+    </CertificatePdfItem>
   );
 }
 
@@ -243,9 +268,11 @@ function HistoryRow({
   row: PolicyCertificateRow;
   version: CertificateVersion;
 }) {
-  const { openWithUrl } = usePdf();
   return (
-    <OperationalItem>
+    <CertificatePdfItem
+      url={version.url}
+      ariaLabel={`Open certificate version ${version.versionNumber} PDF`}
+    >
       <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
           <p className="truncate text-base font-medium text-foreground">
@@ -256,12 +283,9 @@ function HistoryRow({
           </p>
         </div>
         <div className="min-w-0">
-          <Link
-            href={`/policies/${row.policyId}?tab=certificates`}
-            className="block max-w-full truncate text-base font-medium text-foreground hover:underline"
-          >
+          <p className="block max-w-full truncate text-base font-medium text-foreground">
             {policyLabel(row.policy)}
-          </Link>
+          </p>
           <p className="mt-1 text-base text-muted-foreground">
             {formatTime(version.issuedAt ?? version.createdAt)}
           </p>
@@ -270,19 +294,9 @@ function HistoryRow({
           <Badge variant="outline" className="capitalize">
             {version.status}
           </Badge>
-          <PillButton
-            type="button"
-            size="compact"
-            variant="secondary"
-            disabled={!version.url}
-            onClick={() => version.url && openWithUrl(version.url)}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            PDF
-          </PillButton>
         </div>
       </div>
-    </OperationalItem>
+    </CertificatePdfItem>
   );
 }
 
