@@ -3,13 +3,15 @@
 import dayjs from "dayjs";
 import Link from "next/link";
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Clock, FileBadge2, RefreshCw } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { usePdf } from "@/components/pdf-context";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
 import {
+  OperationalDetailGroup,
+  OperationalDetailRow,
   OperationalItem,
   OperationalPanel,
   OperationalPanelBody,
@@ -68,6 +70,8 @@ type PolicyCertificateRow = {
   holderId: Id<"certificateHolders">;
   status: string;
   lastIssuedAt?: number;
+  createdAt?: number;
+  updatedAt?: number;
   holder?: Holder | null;
   policy?: Policy | null;
   currentVersion?: CertificateVersion | null;
@@ -103,9 +107,9 @@ const TABS: Array<{ value: CertificateWorkspaceTab; label: string }> = [
 
 const CERTIFICATE_PANEL_CONTAINER_CLASS = "@container/certificates-panel";
 const CERTIFICATE_ROW_GRID_CLASS =
-  "grid min-w-0 gap-3 @lg/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @lg/certificates-panel:items-center";
+  "grid min-w-0 gap-3 @xl/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @xl/certificates-panel:items-center";
 const CERTIFICATE_ROW_ACTIONS_CLASS =
-  "flex min-w-0 flex-wrap items-center gap-2 @lg/certificates-panel:justify-end @lg/certificates-panel:justify-self-end";
+  "flex min-w-0 flex-wrap items-center gap-2 @xl/certificates-panel:justify-end @xl/certificates-panel:justify-self-end";
 const CERTIFICATE_ROW_CLICKABLE_CLASS =
   "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-inset";
 
@@ -145,11 +149,40 @@ function certificateBadge(row: PolicyCertificateRow) {
   return { label: version.status.replace(/_/g, " "), variant: "outline" as const };
 }
 
+function versionBadge(version?: CertificateVersion | null) {
+  if (!version) return { label: "No version", variant: "outline" as const };
+  if (version.status === "issued") return { label: "Issued", variant: "secondary" as const };
+  if (version.status === "void") return { label: "Void", variant: "destructive" as const };
+  return {
+    label: version.status.replace(/_/g, " "),
+    variant: "outline" as const,
+  };
+}
+
 function jobBadge(status: string) {
   if (status === "failed" || status === "blocked_missing_contact") return "destructive" as const;
   if (status === "review_required") return "secondary" as const;
   if (status === "sent") return "default" as const;
   return "outline" as const;
+}
+
+function sortedVersions(row: PolicyCertificateRow) {
+  return [...(row.versions?.length ? row.versions : row.currentVersion ? [row.currentVersion] : [])]
+    .sort((left, right) => right.versionNumber - left.versionNumber);
+}
+
+function latestVersionActivityAt(row: PolicyCertificateRow) {
+  const latestVersion = sortedVersions(row)[0];
+  return latestVersion?.issuedAt ?? latestVersion?.createdAt ?? row.lastIssuedAt ?? row.updatedAt ?? row.createdAt;
+}
+
+function openOnKeyboard(
+  event: KeyboardEvent<HTMLDivElement>,
+  action: () => void,
+) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  action();
 }
 
 function CertificatePdfItem({
@@ -166,11 +199,6 @@ function CertificatePdfItem({
   const openCertificate = () => {
     if (url) openWithUrl(url);
   };
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!canOpen || (event.key !== "Enter" && event.key !== " ")) return;
-    event.preventDefault();
-    openCertificate();
-  };
 
   return (
     <OperationalItem
@@ -178,12 +206,31 @@ function CertificatePdfItem({
       aria-label={canOpen ? ariaLabel : undefined}
       className={canOpen ? CERTIFICATE_ROW_CLICKABLE_CLASS : undefined}
       onClick={canOpen ? openCertificate : undefined}
-      onKeyDown={canOpen ? handleKeyDown : undefined}
+      onKeyDown={canOpen ? (event) => openOnKeyboard(event, openCertificate) : undefined}
       role={canOpen ? "button" : undefined}
       tabIndex={canOpen ? 0 : undefined}
     >
       {children}
     </OperationalItem>
+  );
+}
+
+function PolicyTitle({ policy }: { policy?: Policy | null }) {
+  return (
+    <p className="block max-w-full truncate text-base font-medium text-foreground">
+      {policyLabel(policy)}
+    </p>
+  );
+}
+
+function PolicyLink({ policyId, policy }: { policyId: Id<"policies">; policy?: Policy | null }) {
+  return (
+    <Link
+      href={`/policies/${policyId}?tab=certificates`}
+      className="block max-w-full truncate text-base font-medium text-foreground hover:underline"
+    >
+      {policyLabel(policy)}
+    </Link>
   );
 }
 
@@ -205,9 +252,7 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
           </p>
         </div>
         <div className="min-w-0">
-          <p className="block max-w-full truncate text-base font-medium text-foreground">
-            {policyLabel(row.policy)}
-          </p>
+          <PolicyTitle policy={row.policy} />
           <p className="mt-1 text-base text-muted-foreground">
             Version {version?.versionNumber ?? "-"} · {formatTime(version?.issuedAt ?? row.lastIssuedAt)}
           </p>
@@ -235,18 +280,13 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
           </p>
         </div>
         <div className="min-w-0">
-          <Link
-            href={`/policies/${job.policyId}?tab=certificates`}
-            className="block max-w-full truncate text-base font-medium text-foreground hover:underline"
-          >
-            {policyLabel(job.policy)}
-          </Link>
+          <PolicyLink policyId={job.policyId} policy={job.policy} />
           <p className="mt-1 text-base text-muted-foreground">
             {job.kind.replace(/_/g, " ")} · {formatTime(job.updatedAt)}
           </p>
         </div>
         <div className={CERTIFICATE_ROW_ACTIONS_CLASS}>
-          <Badge variant={jobBadge(job.status)} className="capitalize">
+          <Badge variant={jobBadge(job.status)} className="text-label capitalize">
             {job.status.replace(/_/g, " ")}
           </Badge>
           <Link
@@ -261,17 +301,30 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
   );
 }
 
-function HistoryRow({
+function CertificateHistorySummaryRow({
   row,
-  version,
+  selected,
+  onSelect,
 }: {
   row: PolicyCertificateRow;
-  version: CertificateVersion;
+  selected: boolean;
+  onSelect: () => void;
 }) {
+  const versions = sortedVersions(row);
+  const latestVersion = versions[0] ?? row.currentVersion;
+  const badge = certificateBadge(row);
+  const latestLabel = latestVersion
+    ? `Latest v${latestVersion.versionNumber} · ${formatTime(latestVersion.issuedAt ?? latestVersion.createdAt)}`
+    : "No versions recorded";
   return (
-    <CertificatePdfItem
-      url={version.url}
-      ariaLabel={`Open certificate version ${version.versionNumber} PDF`}
+    <OperationalItem
+      aria-label={`View certificate history for ${row.holder?.displayName ?? "certificate holder"}`}
+      aria-pressed={selected}
+      className={`${CERTIFICATE_ROW_CLICKABLE_CLASS} ${selected ? "bg-muted/40" : ""}`}
+      onClick={onSelect}
+      onKeyDown={(event) => openOnKeyboard(event, onSelect)}
+      role="button"
+      tabIndex={0}
     >
       <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
@@ -279,20 +332,44 @@ function HistoryRow({
             {row.holder?.displayName ?? "Certificate holder"}
           </p>
           <p className="mt-1 text-base text-muted-foreground">
-            Certificate version {version.versionNumber} for this holder/policy pair.
+            {row.holder?.email ?? holderAddress(row.holder) ?? "No holder contact recorded"}
           </p>
         </div>
         <div className="min-w-0">
-          <p className="block max-w-full truncate text-base font-medium text-foreground">
-            {policyLabel(row.policy)}
+          <PolicyTitle policy={row.policy} />
+          <p className="mt-1 text-base text-muted-foreground">
+            {versions.length} {versions.length === 1 ? "version" : "versions"} · {latestLabel}
+          </p>
+        </div>
+        <div className={CERTIFICATE_ROW_ACTIONS_CLASS}>
+          <Badge variant={badge.variant} className="text-label capitalize">
+            {badge.label}
+          </Badge>
+        </div>
+      </div>
+    </OperationalItem>
+  );
+}
+
+function CertificateVersionRow({ version }: { version: CertificateVersion }) {
+  const badge = versionBadge(version);
+  return (
+    <CertificatePdfItem
+      url={version.url}
+      ariaLabel={`Open certificate version ${version.versionNumber} PDF`}
+    >
+      <div className="grid min-w-0 gap-3 @md/certificates-panel:grid-cols-[minmax(0,1fr)_auto] @md/certificates-panel:items-center">
+        <div className="min-w-0">
+          <p className="truncate text-base font-medium text-foreground">
+            Version {version.versionNumber}
           </p>
           <p className="mt-1 text-base text-muted-foreground">
             {formatTime(version.issuedAt ?? version.createdAt)}
           </p>
         </div>
         <div className={CERTIFICATE_ROW_ACTIONS_CLASS}>
-          <Badge variant="outline" className="capitalize">
-            {version.status}
+          <Badge variant={badge.variant} className="text-label capitalize">
+            {badge.label}
           </Badge>
         </div>
       </div>
@@ -300,8 +377,88 @@ function HistoryRow({
   );
 }
 
+function CertificateDetailPanel({
+  row,
+  onClose,
+}: {
+  row: PolicyCertificateRow | null;
+  onClose: () => void;
+}) {
+  const versions = row ? sortedVersions(row) : [];
+  const currentVersion = row?.currentVersion;
+  const badge = row ? certificateBadge(row) : null;
+
+  return (
+    <SettingsDrawer
+      open={Boolean(row)}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Certificate"
+    >
+      {row ? (
+        <div className="flex flex-col gap-5">
+          <section className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {badge ? (
+                <Badge variant={badge.variant} className="text-label capitalize">
+                  {badge.label}
+                </Badge>
+              ) : null}
+              {currentVersion ? (
+                <Badge variant="outline" className="text-label">
+                  Version {currentVersion.versionNumber}
+                </Badge>
+              ) : null}
+            </div>
+            <h2 className="truncate text-base font-medium text-foreground">
+              {row.holder?.displayName ?? "Certificate holder"}
+            </h2>
+            <p className="mt-1 text-base text-muted-foreground">
+              {policyLabel(row.policy)}
+            </p>
+          </section>
+
+          <OperationalDetailGroup title="Holder">
+            <OperationalDetailRow label="Name" value={row.holder?.displayName} />
+            <OperationalDetailRow label="Email" value={row.holder?.email} />
+            <OperationalDetailRow label="Phone" value={row.holder?.phone} />
+            <OperationalDetailRow label="Address" value={holderAddress(row.holder)} />
+          </OperationalDetailGroup>
+
+          <OperationalDetailGroup title="Policy">
+            <OperationalDetailRow label="Policy no." value={row.policy?.policyNumber} />
+            <OperationalDetailRow label="Carrier" value={row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga} />
+            <OperationalDetailRow label="Insured" value={row.policy?.insuredName} />
+          </OperationalDetailGroup>
+
+          <section>
+            <h3 className="mb-2 text-label font-medium text-muted-foreground">
+              Versions
+            </h3>
+            <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
+              {versions.length > 0 ? (
+                versions.map((version) => (
+                  <CertificateVersionRow key={version._id} version={version} />
+                ))
+              ) : (
+                <OperationalPanelBody className="px-4 py-6">
+                  <p className="text-base text-muted-foreground">
+                    No versions recorded.
+                  </p>
+                </OperationalPanelBody>
+              )}
+            </OperationalPanel>
+          </section>
+        </div>
+      ) : null}
+    </SettingsDrawer>
+  );
+}
+
 export default function CertificatesPage() {
   const [tab, setTab] = useState<CertificateWorkspaceTab>("active");
+  const [selectedCertificateId, setSelectedCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const viewerOrg = useCachedViewerOrg();
   const orgId = viewerOrg?.org?._id as Id<"organizations"> | undefined;
   const certificates = useCachedQuery(
@@ -332,28 +489,42 @@ export default function CertificatesPage() {
         .sort((left, right) => right.updatedAt - left.updatedAt),
     [jobs],
   );
-  const certificateVersions = useMemo(
+  const historyCertificates = useMemo(
     () =>
       (certificates ?? [])
-        .flatMap((row) =>
-          (row.versions?.length ? row.versions : row.currentVersion ? [row.currentVersion] : [])
-            .map((version) => ({ row, version })),
-        )
+        .filter((row) => sortedVersions(row).length > 0)
         .sort((left, right) =>
-          Number(right.version.issuedAt ?? right.version.createdAt ?? 0) -
-          Number(left.version.issuedAt ?? left.version.createdAt ?? 0),
+          Number(latestVersionActivityAt(right) ?? 0) -
+          Number(latestVersionActivityAt(left) ?? 0),
         ),
     [certificates],
+  );
+  const selectedCertificate = useMemo(
+    () =>
+      (certificates ?? []).find((row) => row._id === selectedCertificateId) ??
+      null,
+    [certificates, selectedCertificateId],
   );
 
   const isLoading =
     viewerOrg === undefined || certificates === undefined || jobs === undefined;
   return (
-    <AppShell>
+    <AppShell
+      rightPanel={
+        <CertificateDetailPanel
+          row={selectedCertificate}
+          onClose={() => setSelectedCertificateId(null)}
+        />
+      }
+    >
       <div className="space-y-4">
         <Tabs
           value={tab}
-          onValueChange={(value) => setTab(value as CertificateWorkspaceTab)}
+          onValueChange={(value) => {
+            const nextTab = value as CertificateWorkspaceTab;
+            setTab(nextTab);
+            if (nextTab !== "history") setSelectedCertificateId(null);
+          }}
         >
           <TabsList variant="pill">
             {TABS.map((item) => (
@@ -368,46 +539,35 @@ export default function CertificatesPage() {
           <OperationalSkeletonList rows={4} />
         ) : tab === "review" ? (
           <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
-            <OperationalPanelHeader
-              title="Certificate review jobs"
-              description="Renewal and post-endorsement certificate work that needs review before sending."
-              action={<RefreshCw className="h-4 w-4 text-muted-foreground" />}
-            />
+            <OperationalPanelHeader title="Certificate review jobs" />
             {reviewJobs.length > 0 ? (
               reviewJobs.map((job) => (
                 <ReviewJobRow key={job._id} job={job} />
               ))
             ) : (
               <OperationalPanelBody className="px-4 py-10 text-center">
-                <Clock className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
                 <p className="text-base font-medium text-foreground">
                   No review jobs
-                </p>
-                <p className="mt-1 text-base text-muted-foreground">
-                  Renewal and endorsement-driven certificate reviews will appear here.
                 </p>
               </OperationalPanelBody>
             )}
           </OperationalPanel>
         ) : tab === "history" ? (
           <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
-            <OperationalPanelHeader
-              title="Certificate history"
-              description="All issued, superseded, draft, and void certificate versions."
-              action={<FileBadge2 className="h-4 w-4 text-muted-foreground" />}
-            />
-            {certificateVersions.length > 0 ? (
-              certificateVersions.map(({ row, version }) => (
-                <HistoryRow key={version._id} row={row} version={version} />
+            <OperationalPanelHeader title="Certificate history" />
+            {historyCertificates.length > 0 ? (
+              historyCertificates.map((row) => (
+                <CertificateHistorySummaryRow
+                  key={row._id}
+                  row={row}
+                  selected={row._id === selectedCertificateId}
+                  onSelect={() => setSelectedCertificateId(row._id)}
+                />
               ))
             ) : (
               <OperationalPanelBody className="px-4 py-10 text-center">
-                <FileBadge2 className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
                 <p className="text-base font-medium text-foreground">
                   No certificate history
-                </p>
-                <p className="mt-1 text-base text-muted-foreground">
-                  Issued certificates will be grouped by holder and policy.
                 </p>
               </OperationalPanelBody>
             )}
