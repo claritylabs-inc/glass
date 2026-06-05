@@ -7,8 +7,9 @@ import { usePdf } from "@/components/pdf-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
 import {
-  OperationalDetailRow,
   OperationalItem,
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
   OperationalPanel,
   OperationalPanelBody,
   OperationalPanelHeader,
@@ -170,16 +171,24 @@ function CertificatePdfItem({
 
 function CertificateDetailCard({
   title,
-  children,
+  rows,
 }: {
   title: string;
-  children: ReactNode;
+  rows: Array<{
+    label: string;
+    value?: ReactNode;
+  }>;
 }) {
   return (
-    <OperationalPanel as="div">
-      <OperationalPanelHeader title={title} />
-      <div className="px-3 py-0.5">{children}</div>
-    </OperationalPanel>
+    <OperationalLabelValueList title={title}>
+      {rows.map((row) => (
+        <OperationalLabelValueRow
+          key={row.label}
+          label={row.label}
+          value={row.value}
+        />
+      ))}
+    </OperationalLabelValueList>
   );
 }
 
@@ -287,6 +296,7 @@ export function CertificateDetailPanel({
   const badge = row ? certificateBadge(row) : null;
   const currentUrl = row?.url ?? currentVersion?.url;
   const holderName = row?.holder?.displayName ?? "Certificate holder";
+  const holderAddressText = row ? certificateHolderAddress(row.holder) : null;
 
   return (
     <SettingsDrawer
@@ -325,18 +335,34 @@ export function CertificateDetailPanel({
     >
       {row ? (
         <div className="flex flex-col gap-5">
-          <CertificateDetailCard title="Holder">
-            <OperationalDetailRow label="Name" value={row.holder?.displayName} />
-            <OperationalDetailRow label="Email" value={row.holder?.email} />
-            <OperationalDetailRow label="Phone" value={row.holder?.phone} />
-            <OperationalDetailRow label="Address" value={certificateHolderAddress(row.holder)} />
-          </CertificateDetailCard>
+          <CertificateDetailCard
+            title="Holder"
+            rows={[
+              { label: "Name", value: row.holder?.displayName },
+              { label: "Email", value: row.holder?.email },
+              { label: "Phone", value: row.holder?.phone },
+              {
+                label: "Address",
+                value: holderAddressText ? (
+                  <span className="whitespace-pre-line">
+                    {holderAddressText}
+                  </span>
+                ) : undefined,
+              },
+            ]}
+          />
 
-          <CertificateDetailCard title="Policy">
-            <OperationalDetailRow label="Policy no." value={row.policy?.policyNumber} />
-            <OperationalDetailRow label="Carrier" value={row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga} />
-            <OperationalDetailRow label="Insured" value={row.policy?.insuredName} />
-          </CertificateDetailCard>
+          <CertificateDetailCard
+            title="Policy"
+            rows={[
+              { label: "Policy no.", value: row.policy?.policyNumber },
+              {
+                label: "Carrier",
+                value: row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga,
+              },
+              { label: "Insured", value: row.policy?.insuredName },
+            ]}
+          />
 
           <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
             <OperationalPanelHeader title="Versions" />
