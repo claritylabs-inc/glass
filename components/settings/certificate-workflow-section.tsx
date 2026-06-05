@@ -134,6 +134,9 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
   const lastSavedRef = useRef(signature(initialDraft));
   const canEdit = isAdmin && (isBroker || isClient);
   const isInheritedClient = isClient && !result.clientOverride;
+  const inheritedClientCopy = result.brokerDefault
+    ? "This client currently inherits the broker certificate workflow."
+    : "This client currently uses the platform certificate workflow defaults.";
   const editable = canEdit && !isInheritedClient;
 
   useEffect(() => {
@@ -223,7 +226,7 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
           {isInheritedClient && canEdit ? (
             <div className="flex items-center justify-between gap-4 border-t border-foreground/6 pt-3">
               <p className="text-base text-muted-foreground">
-                This client currently inherits the broker certificate workflow.
+                {inheritedClientCopy}
               </p>
               <PillButton type="button" size="compact" variant="secondary" onClick={() => void addOverride()}>
                 Add override

@@ -1591,6 +1591,8 @@ If the broker attached an endorsement or confirmation for this change, use compl
           execute: async (params: {
             policyId: string;
             certificateHolder?: string;
+            holderEmail?: string;
+            holderPhone?: string;
             requestText?: string;
             requestedEndorsements?: string[];
             partnerProgramId?: string;
@@ -1623,6 +1625,8 @@ If the broker attached an endorsement or confirmation for this change, use compl
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",
                   certificateHolder: params.certificateHolder,
+                  holderEmail: params.holderEmail,
+                  holderPhone: params.holderPhone,
                   requestText: params.requestText,
                   requestedEndorsements: params.requestedEndorsements,
                   selectedPartnerProgramId: normalizeSelectedPartnerProgramId(

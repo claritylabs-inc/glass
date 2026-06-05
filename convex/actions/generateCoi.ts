@@ -85,10 +85,15 @@ async function ensureCertificateLifecycleContext(
       createdByUserId: args.createdByUserId,
     },
   );
-  const policyVersion = await ctx.runQuery(
-    (internal as any).policyVersions.getCurrentInternal,
-    { policyId: args.policyId },
-  ).catch(() => null);
+  const policyVersion = args.policyVersionId
+    ? await ctx.runQuery(
+        (internal as any).policyVersions.getByIdInternal,
+        { id: args.policyVersionId },
+      ).catch(() => null)
+    : await ctx.runQuery(
+        (internal as any).policyVersions.getCurrentInternal,
+        { policyId: args.policyId },
+      ).catch(() => null);
   const policyCertificateId = args.policyCertificateId ?? await ctx.runMutation(
     (internal as any).certificateLifecycle.getOrCreateParentInternal,
     {

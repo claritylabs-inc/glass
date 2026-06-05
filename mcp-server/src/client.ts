@@ -78,6 +78,8 @@ export class GlassClient {
   async generatePolicyCertificate(input: {
     policyId: string;
     holderName: string;
+    holderEmail?: string;
+    holderPhone?: string;
     addressLine1?: string;
     addressLine2?: string;
     city?: string;

@@ -14,9 +14,18 @@ export class GlassApi {
     return this.askGlass(prompt);
   }
 
-  async generateCoi(policyId: string, holderName: string, holderAddress?: string, explicitReissue = false) {
+  async generateCoi(
+    policyId: string,
+    holderName: string,
+    holderAddress?: string,
+    explicitReissue = false,
+    holderEmail?: string,
+    holderPhone?: string,
+  ) {
     return this.post<{ data: Record<string, unknown> }>(`/api/v1/policies/${policyId}/certificates`, {
       certificate_holder_name: holderName,
+      certificate_holder_email: holderEmail,
+      certificate_holder_phone: holderPhone,
       certificate_holder: [holderName, holderAddress].filter(Boolean).join("\n"),
       explicit_reissue: explicitReissue,
     });

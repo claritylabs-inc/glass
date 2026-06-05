@@ -11,10 +11,15 @@ describe("certificate API surfaces", () => {
     const mcpPolicies = readFileSync(join(ROOT, "mcp-server/src/tools/policies.ts"), "utf-8");
     const mcpClient = readFileSync(join(ROOT, "mcp-server/src/client.ts"), "utf-8");
 
-    expect(http).toContain('/api/v1/policies/:id/certificates');
+    expect(http).toContain('pathPrefix: "/api/v1/policies/"');
+    expect(http).toContain("handlePolicyRestGet");
+    expect(http).toContain("handlePolicyRestPost");
+    expect(http).toContain("parts.length > 5");
+    expect(http).toContain("parts.length !== 5");
     expect(http).toContain('/api/v1/certificate-holders');
-    expect(http).toContain('/api/v1/policies/:id/versions');
-    expect(http).toContain('/api/v1/policies/:id/certificate-versions');
+    expect(http).toContain('"/api/v1/policies/{id}/certificates"');
+    expect(http).toContain('"/api/v1/policies/{id}/versions"');
+    expect(http).toContain('"/api/v1/policies/{id}/certificate-versions"');
     expect(http).toContain('/api/v1/certificate-review-jobs');
     expect(http).toContain('/mcp/policies/certificates/list');
     expect(http).toContain('/mcp/policies/certificates/generate');
@@ -38,6 +43,8 @@ describe("certificate API surfaces", () => {
     expect(apiDto).toContain("recipient_email");
     expect(http).toContain("requestedEndorsements");
     expect(http).toContain("requestText");
+    expect(http).toContain("holderEmail");
+    expect(http).toContain("certificate_holder_email");
 
     expect(mcpPolicies).toContain('"list_policy_certificates"');
     expect(mcpPolicies).toContain('"generate_policy_certificate"');
@@ -48,6 +55,7 @@ describe("certificate API surfaces", () => {
     expect(mcpPolicies).toContain("requestedEndorsements");
     expect(mcpPolicies).toContain("requestText");
     expect(mcpPolicies).toContain("explicitReissue");
+    expect(mcpPolicies).toContain("holderEmail");
     expect(mcpClient).toContain('/mcp/policies/certificates/list');
     expect(mcpClient).toContain('/mcp/policies/certificates/generate');
     expect(mcpClient).toContain('/mcp/certificates/holders/list');
@@ -55,5 +63,6 @@ describe("certificate API surfaces", () => {
     expect(mcpClient).toContain('/mcp/policies/certificates/versions/list');
     expect(mcpClient).toContain('/mcp/certificates/review-jobs/list');
     expect(mcpClient).toContain("requestedEndorsements");
+    expect(mcpClient).toContain("holderEmail");
   });
 });

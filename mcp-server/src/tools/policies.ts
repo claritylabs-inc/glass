@@ -81,6 +81,8 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
     {
       policyId: z.string().describe("The policy ID"),
       holderName: z.string().describe("Certificate holder name"),
+      holderEmail: z.string().optional().describe("Certificate holder email for renewal delivery"),
+      holderPhone: z.string().optional().describe("Certificate holder phone for renewal delivery"),
       addressLine1: z.string().optional().describe("Certificate holder street address"),
       addressLine2: z.string().optional().describe("Suite, floor, or attention line"),
       city: z.string().optional().describe("Certificate holder city"),

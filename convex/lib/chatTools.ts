@@ -182,6 +182,14 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("Name/address of the certificate holder"),
+    holderEmail: z
+      .string()
+      .optional()
+      .describe("Certificate holder email address for renewal delivery when the user provides one"),
+    holderPhone: z
+      .string()
+      .optional()
+      .describe("Certificate holder phone number for renewal delivery when the user provides one"),
     requestText: z
       .string()
       .optional()

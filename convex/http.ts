@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
+import type { ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
@@ -536,6 +537,18 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
 
   return {
     holderName,
+    holderEmail:
+      (typeof body.holderEmail === "string" && body.holderEmail.trim()) ||
+      (typeof body.holder_email === "string" && body.holder_email.trim()) ||
+      (typeof body.certificate_holder_email === "string" && body.certificate_holder_email.trim()) ||
+      (typeof body.recipient_email === "string" && body.recipient_email.trim()) ||
+      undefined,
+    holderPhone:
+      (typeof body.holderPhone === "string" && body.holderPhone.trim()) ||
+      (typeof body.holder_phone === "string" && body.holder_phone.trim()) ||
+      (typeof body.certificate_holder_phone === "string" && body.certificate_holder_phone.trim()) ||
+      (typeof body.recipient_phone === "string" && body.recipient_phone.trim()) ||
+      undefined,
     addressLine1:
       (typeof body.addressLine1 === "string" && body.addressLine1.trim()) ||
       (typeof body.address_line_1 === "string" && body.address_line_1.trim()) ||
@@ -1080,11 +1093,15 @@ const MCP_TOOLS = [
       properties: {
         policyId: { type: "string", description: "The policy ID" },
         holderName: { type: "string", description: "Certificate holder name" },
+        holderEmail: { type: "string", description: "Certificate holder email for renewal delivery" },
+        holderPhone: { type: "string", description: "Certificate holder phone for renewal delivery" },
         addressLine1: { type: "string", description: "Certificate holder street address" },
         addressLine2: { type: "string", description: "Suite, floor, or attention line" },
         city: { type: "string", description: "Certificate holder city" },
         state: { type: "string", description: "Certificate holder state" },
         postalCode: { type: "string", description: "Certificate holder ZIP or postal code" },
+        requestText: { type: "string", description: "Full certificate request text, especially endorsement or special wording language" },
+        requestedEndorsements: { type: "array", items: { type: "string" }, description: "Requested endorsements or special wording" },
         explicitReissue: { type: "boolean", description: "Force a new certificate version even if an issued certificate already exists for this holder and current policy version" },
       },
       required: ["policyId", "holderName"],
@@ -2188,61 +2205,34 @@ http.route({
   }),
 });
 
-// ── GET /api/v1/policies/:id ──
-http.route({
-  path: "/api/v1/policies/:id",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const policyId = new URL(request.url).pathname.split("/").pop() as Id<"policies">;
-      const policy = await ctx.runQuery((internal as any).policies.getInternal, { id: policyId }).catch(() =>
-        ctx.runQuery(internal.policies.listAllInternal, { orgId: identity.orgId }).then((ps: any[]) => ps.find((p: any) => p._id === policyId))
-      );
+async function handlePolicyRestGet(ctx: ActionCtx, request: Request) {
+  try {
+    const identity = await requireApiAuth(ctx, request);
+    const parts = new URL(request.url).pathname.split("/").filter(Boolean);
+    const policyId = parts[3] as Id<"policies"> | undefined;
+    const child = parts[4];
+    if (!policyId || parts[0] !== "api" || parts[1] !== "v1" || parts[2] !== "policies" || parts.length > 5) {
+      return jsonResponse({ error: { code: "not_found", message: "Policy route not found" } }, 404);
+    }
+
+    if (!child) {
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: identity.orgId });
+      const policy = policies.find((p: any) => p._id === policyId);
       if (!policy) return jsonResponse({ error: { code: "not_found", message: "Policy not found" } }, 404);
       return jsonResponse(toPolicyDto(policy));
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
     }
-  }),
-});
 
-
-// ── GET /api/v1/policies/:id/file ──
-http.route({
-  path: "/api/v1/policies/:id/file",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const parts = new URL(request.url).pathname.split("/");
-      const policyId = parts[parts.length - 2] as Id<"policies">;
+    if (child === "file") {
       const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: identity.orgId });
       const policy = policies.find((p: any) => p._id === policyId);
       if (!policy) return jsonResponse({ error: { code: "not_found", message: "Policy not found" } }, 404);
       if (!policy.fileId) return jsonResponse({ error: { code: "not_found", message: "Original policy PDF is not available" } }, 404);
       const url = await ctx.storage.getUrl(policy.fileId as Id<"_storage">);
       if (!url) return jsonResponse({ error: { code: "not_found", message: "Original policy PDF is not available" } }, 404);
-      return jsonResponse({
-        data: toPolicyFileDto(policy, url),
-      });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+      return jsonResponse({ data: toPolicyFileDto(policy, url) });
     }
-  }),
-});
 
-// ── GET /api/v1/policies/:id/certificates ──
-http.route({
-  path: "/api/v1/policies/:id/certificates",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const parts = new URL(request.url).pathname.split("/");
-      const policyId = parts[parts.length - 2] as Id<"policies">;
+    if (child === "certificates") {
       const certificates = await ctx.runQuery(internal.certificates.listByPolicyInternal, {
         orgId: identity.orgId,
         policyId,
@@ -2251,45 +2241,81 @@ http.route({
         data: certificates.map(toCertificateDto),
         next_cursor: null,
       });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
     }
-  }),
-});
 
-// ── POST /api/v1/policies/:id/certificates ──
-http.route({
-  path: "/api/v1/policies/:id/certificates",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      if (!identity.scopes.includes("write")) {
-        return jsonResponse({ error: { code: "insufficient_scope", message: "Write scope required", request_id: identity.requestId } }, 403);
-      }
-
-      const parts = new URL(request.url).pathname.split("/");
-      const policyId = parts[parts.length - 2] as Id<"policies">;
-      const body = await request.json() as Record<string, unknown>;
-      const certificate = normalizeCertificateRequest(body);
-      if (!certificate.holderName) {
-        return jsonResponse({ error: { code: "bad_request", message: "Missing certificate_holder_name" } }, 400);
-      }
-
-      const result = await ctx.runAction(internal.certificates.generateForOrg, {
+    if (child === "versions") {
+      const versions = await ctx.runQuery(internal.policyVersions.listForOrgInternal, {
         orgId: identity.orgId,
         policyId,
-        ...certificate,
-        source: "api",
-        createdByUserId: identity.userId,
       });
-      return jsonResponse({ data: result }, 201);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+      return jsonResponse({
+        data: versions.map(toPolicyVersionDto),
+        next_cursor: null,
+      });
     }
-  }),
+
+    if (child === "certificate-versions") {
+      const versions = await ctx.runQuery(internal.certificateLifecycle.listVersionsInternal, {
+        orgId: identity.orgId,
+        policyId,
+      });
+      return jsonResponse({
+        data: versions.map(toCertificateVersionDto),
+        next_cursor: null,
+      });
+    }
+
+    return jsonResponse({ error: { code: "not_found", message: "Policy route not found" } }, 404);
+  } catch (e) {
+    if (e instanceof Response) return e;
+    return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+  }
+}
+
+async function handlePolicyRestPost(ctx: ActionCtx, request: Request) {
+  try {
+    const identity = await requireApiAuth(ctx, request);
+    if (!identity.scopes.includes("write")) {
+      return jsonResponse({ error: { code: "insufficient_scope", message: "Write scope required", request_id: identity.requestId } }, 403);
+    }
+
+    const parts = new URL(request.url).pathname.split("/").filter(Boolean);
+    const policyId = parts[3] as Id<"policies"> | undefined;
+    const child = parts[4];
+    if (!policyId || parts[0] !== "api" || parts[1] !== "v1" || parts[2] !== "policies" || child !== "certificates" || parts.length !== 5) {
+      return jsonResponse({ error: { code: "not_found", message: "Policy route not found" } }, 404);
+    }
+
+    const body = await request.json() as Record<string, unknown>;
+    const certificate = normalizeCertificateRequest(body);
+    if (!certificate.holderName) {
+      return jsonResponse({ error: { code: "bad_request", message: "Missing certificate_holder_name" } }, 400);
+    }
+
+    const result = await ctx.runAction(internal.certificates.generateForOrg, {
+      orgId: identity.orgId,
+      policyId,
+      ...certificate,
+      source: "api",
+      createdByUserId: identity.userId,
+    });
+    return jsonResponse({ data: result }, 201);
+  } catch (e) {
+    if (e instanceof Response) return e;
+    return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
+  }
+}
+
+http.route({
+  pathPrefix: "/api/v1/policies/",
+  method: "GET",
+  handler: httpAction(handlePolicyRestGet),
+});
+
+http.route({
+  pathPrefix: "/api/v1/policies/",
+  method: "POST",
+  handler: httpAction(handlePolicyRestPost),
 });
 
 // ── GET /api/v1/certificate-holders ──
@@ -2305,54 +2331,6 @@ http.route({
       });
       return jsonResponse({
         data: holders.map(toCertificateHolderDto),
-        next_cursor: null,
-      });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
-    }
-  }),
-});
-
-// ── GET /api/v1/policies/:id/versions ──
-http.route({
-  path: "/api/v1/policies/:id/versions",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const parts = new URL(request.url).pathname.split("/");
-      const policyId = parts[parts.length - 2] as Id<"policies">;
-      const versions = await ctx.runQuery(internal.policyVersions.listForOrgInternal, {
-        orgId: identity.orgId,
-        policyId,
-      });
-      return jsonResponse({
-        data: versions.map(toPolicyVersionDto),
-        next_cursor: null,
-      });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: { code: "internal_error", message: String(e) } }, 500);
-    }
-  }),
-});
-
-// ── GET /api/v1/policies/:id/certificate-versions ──
-http.route({
-  path: "/api/v1/policies/:id/certificate-versions",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const parts = new URL(request.url).pathname.split("/");
-      const policyId = parts[parts.length - 2] as Id<"policies">;
-      const versions = await ctx.runQuery(internal.certificateLifecycle.listVersionsInternal, {
-        orgId: identity.orgId,
-        policyId,
-      });
-      return jsonResponse({
-        data: versions.map(toCertificateVersionDto),
         next_cursor: null,
       });
     } catch (e) {

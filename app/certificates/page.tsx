@@ -60,6 +60,7 @@ type CertificateVersion = {
   certificationStatus?: string;
   issuedAt?: number;
   createdAt: number;
+  url?: string | null;
 };
 
 type PolicyCertificateRow = {
@@ -71,6 +72,7 @@ type PolicyCertificateRow = {
   holder?: Holder | null;
   policy?: Policy | null;
   currentVersion?: CertificateVersion | null;
+  versions?: CertificateVersion[];
   url?: string | null;
 };
 
@@ -161,7 +163,7 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
         <div className="min-w-0">
           <Link
             href={`/policies/${row.policyId}?tab=certificates`}
-            className="truncate text-base font-medium text-foreground hover:underline"
+            className="block max-w-full truncate text-base font-medium text-foreground hover:underline"
           >
             {policyLabel(row.policy)}
           </Link>
@@ -204,7 +206,7 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
         <div className="min-w-0">
           <Link
             href={`/policies/${job.policyId}?tab=certificates`}
-            className="truncate text-base font-medium text-foreground hover:underline"
+            className="block max-w-full truncate text-base font-medium text-foreground hover:underline"
           >
             {policyLabel(job.policy)}
           </Link>
@@ -228,8 +230,14 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
   );
 }
 
-function HistoryRow({ row }: { row: PolicyCertificateRow }) {
-  const version = row.currentVersion;
+function HistoryRow({
+  row,
+  version,
+}: {
+  row: PolicyCertificateRow;
+  version: CertificateVersion;
+}) {
+  const { openWithUrl } = usePdf();
   return (
     <OperationalItem>
       <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] md:items-center">
@@ -238,23 +246,35 @@ function HistoryRow({ row }: { row: PolicyCertificateRow }) {
             {row.holder?.displayName ?? "Certificate holder"}
           </p>
           <p className="mt-1 text-base text-muted-foreground">
-            Latest issued certificate version for this holder/policy pair.
+            Certificate version {version.versionNumber} for this holder/policy pair.
           </p>
         </div>
         <div className="min-w-0">
           <Link
             href={`/policies/${row.policyId}?tab=certificates`}
-            className="truncate text-base font-medium text-foreground hover:underline"
+            className="block max-w-full truncate text-base font-medium text-foreground hover:underline"
           >
             {policyLabel(row.policy)}
           </Link>
           <p className="mt-1 text-base text-muted-foreground">
-            Version {version?.versionNumber ?? "-"} · {formatTime(version?.issuedAt ?? row.lastIssuedAt)}
+            {formatTime(version.issuedAt ?? version.createdAt)}
           </p>
         </div>
-        <Badge variant="outline" className="capitalize md:justify-self-end">
-          {version?.status ?? row.status}
-        </Badge>
+        <div className="flex items-center gap-2 md:justify-self-end">
+          <Badge variant="outline" className="capitalize">
+            {version.status}
+          </Badge>
+          <PillButton
+            type="button"
+            size="compact"
+            variant="secondary"
+            disabled={!version.url}
+            onClick={() => version.url && openWithUrl(version.url)}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            PDF
+          </PillButton>
+        </div>
       </div>
     </OperationalItem>
   );
@@ -291,6 +311,19 @@ export default function CertificatesPage() {
         .filter((job) => !["sent", "cancelled"].includes(job.status))
         .sort((left, right) => right.updatedAt - left.updatedAt),
     [jobs],
+  );
+  const certificateVersions = useMemo(
+    () =>
+      (certificates ?? [])
+        .flatMap((row) =>
+          (row.versions?.length ? row.versions : row.currentVersion ? [row.currentVersion] : [])
+            .map((version) => ({ row, version })),
+        )
+        .sort((left, right) =>
+          Number(right.version.issuedAt ?? right.version.createdAt ?? 0) -
+          Number(left.version.issuedAt ?? left.version.createdAt ?? 0),
+        ),
+    [certificates],
   );
 
   const isLoading =
@@ -373,12 +406,12 @@ export default function CertificatesPage() {
           <OperationalPanel as="div">
             <OperationalPanelHeader
               title="Certificate history"
-              description="Latest lifecycle record for each holder and policy pair."
+              description="All issued, superseded, draft, and void certificate versions."
               action={<FileBadge2 className="h-4 w-4 text-muted-foreground" />}
             />
-            {activeCertificates.length > 0 ? (
-              activeCertificates.map((row) => (
-                <HistoryRow key={row._id} row={row} />
+            {certificateVersions.length > 0 ? (
+              certificateVersions.map(({ row, version }) => (
+                <HistoryRow key={version._id} row={row} version={version} />
               ))
             ) : (
               <OperationalPanelBody className="px-4 py-10 text-center">

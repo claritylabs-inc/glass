@@ -205,6 +205,8 @@ export function CertificateCreatePanel({
     [initialProgram],
   );
   const [holderName, setHolderName] = useState("");
+  const [holderEmail, setHolderEmail] = useState("");
+  const [holderPhone, setHolderPhone] = useState("");
   const [addressLine1, setAddressLine1] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
   const [city, setCity] = useState("");
@@ -224,6 +226,8 @@ export function CertificateCreatePanel({
 
   const reset = () => {
     setHolderName("");
+    setHolderEmail("");
+    setHolderPhone("");
     setAddressLine1("");
     setAddressLine2("");
     setCity("");
@@ -322,6 +326,8 @@ export function CertificateCreatePanel({
       const result = await generateCertificate({
         policyId,
         holderName: holderName.trim(),
+        holderEmail: holderEmail.trim() || undefined,
+        holderPhone: holderPhone.trim() || undefined,
         addressLine1: addressLine1.trim() || undefined,
         addressLine2: addressLine2.trim() || undefined,
         city: city.trim() || undefined,
@@ -507,6 +513,33 @@ export function CertificateCreatePanel({
               autoFocus
               disabled={generating}
             />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="certificate-holder-email">Holder email</Label>
+              <Input
+                id="certificate-holder-email"
+                type="email"
+                value={holderEmail}
+                onChange={(event) => setHolderEmail(event.target.value)}
+                placeholder="certificates@example.com"
+                autoComplete="email"
+                disabled={generating}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="certificate-holder-phone">Holder phone</Label>
+              <Input
+                id="certificate-holder-phone"
+                type="tel"
+                value={holderPhone}
+                onChange={(event) => setHolderPhone(event.target.value)}
+                placeholder="Optional"
+                autoComplete="tel"
+                disabled={generating}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -703,6 +736,9 @@ export function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
                   <span>on hold</span>
                 ) : (
                   <span>
+                    {typeof row.certificateVersionNumber === "number"
+                      ? `version ${row.certificateVersionNumber} · `
+                      : ""}
                     {row.authorityType === "certified"
                       ? "certified"
                       : "non-binding"}

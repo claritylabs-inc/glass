@@ -904,6 +904,8 @@ function buildTools(
       execute: async (input: {
         policyId: string;
         certificateHolder?: string;
+        holderEmail?: string;
+        holderPhone?: string;
         requestText?: string;
         requestedEndorsements?: string[];
         partnerProgramId?: string;
@@ -945,6 +947,8 @@ function buildTools(
               holderName:
                 input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
               certificateHolder: input.certificateHolder,
+              holderEmail: input.holderEmail,
+              holderPhone: input.holderPhone,
               requestText: input.requestText,
               requestedEndorsements: input.requestedEndorsements,
               selectedPartnerProgramId: normalizeSelectedPartnerProgramId(

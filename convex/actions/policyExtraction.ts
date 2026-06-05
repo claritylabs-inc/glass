@@ -1976,9 +1976,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       // Record the document-event policy version after the current policy row has
       // been materialized and before downstream certificate workflows inspect it.
+      let policyVersionId: Id<"policyVersions"> | undefined;
       try {
         if (state.policyVersionKind === "re_extraction" || state.policyVersionKind === "renewal") {
-          await convexCtx.runMutation(
+          policyVersionId = await convexCtx.runMutation(
             (internal as any).policyVersions.createInternal,
             {
               policyId,
@@ -1989,7 +1990,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             },
           );
         } else {
-          await convexCtx.runMutation(
+          policyVersionId = await convexCtx.runMutation(
             (internal as any).policyVersions.ensureInitialInternal,
             {
               policyId,
@@ -1999,6 +2000,22 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         }
       } catch (error) {
         console.warn("[policyExtraction] policy version creation failed", error);
+      }
+
+      if (state.policyVersionKind === "renewal" && policyVersionId) {
+        try {
+          await convexCtx.runMutation(
+            (internal as any).certificateWorkflowJobs.createRenewalJobsForPolicyInternal,
+            {
+              orgId: state.orgId as Id<"organizations">,
+              policyId,
+              policyVersionId,
+              createdByUserId: state.userId as Id<"users">,
+            },
+          );
+        } catch (error) {
+          console.warn("[policyExtraction] renewal certificate job creation failed", error);
+        }
       }
 
       // Audit log

@@ -105,6 +105,8 @@ program.command("policies:upload <filePath>")
 program.command("coi:generate")
   .requiredOption("--policy-id <policyId>")
   .requiredOption("--holder-name <holderName>")
+  .option("--holder-email <holderEmail>")
+  .option("--holder-phone <holderPhone>")
   .option("--holder-address <holderAddress>")
   .option("--reissue", "force a new certificate version for this holder/current policy version")
   .action(async (opts) => {
@@ -113,6 +115,8 @@ program.command("coi:generate")
       opts.holderName,
       opts.holderAddress,
       Boolean(opts.reissue),
+      opts.holderEmail,
+      opts.holderPhone,
     );
     print(res, getFormat(program.opts()));
   });

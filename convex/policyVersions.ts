@@ -89,6 +89,13 @@ export const getCurrentInternal = internalQuery({
   },
 });
 
+export const getByIdInternal = internalQuery({
+  args: { id: v.id("policyVersions") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
 export const createInternal = internalMutation({
   args: {
     policyId: v.id("policies"),
@@ -139,14 +146,23 @@ export const ensureInitialInternal = internalMutation({
     createdByUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("policyVersions")
-      .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", args.policyId))
-      .first();
-    if (existing) return existing._id;
-
     const policy = await ctx.db.get(args.policyId);
     if (!policy?.orgId) throw new Error("Policy not found");
+    if (policy.currentPolicyVersionId) {
+      const current = await ctx.db.get(policy.currentPolicyVersionId);
+      if (current) return current._id;
+    }
+
+    const latest = await ctx.db
+      .query("policyVersions")
+      .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", args.policyId))
+      .order("desc")
+      .first();
+    if (latest) {
+      await ctx.db.patch(args.policyId, { currentPolicyVersionId: latest._id });
+      return latest._id;
+    }
+
     const now = dayjs().valueOf();
     const snapshot = buildPolicyVersionSnapshot(policy as unknown as Record<string, unknown>);
     const versionId = await ctx.db.insert("policyVersions", {

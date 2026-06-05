@@ -1414,6 +1414,8 @@ export const processInbound = internalAction({
           execute: async (params: {
             policyId: string;
             certificateHolder?: string;
+            holderEmail?: string;
+            holderPhone?: string;
             requestText?: string;
             requestedEndorsements?: string[];
             partnerProgramId?: string;
@@ -1454,6 +1456,8 @@ export const processInbound = internalAction({
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",
                   certificateHolder: params.certificateHolder,
+                  holderEmail: params.holderEmail,
+                  holderPhone: params.holderPhone,
                   requestText: params.requestText,
                   requestedEndorsements: params.requestedEndorsements,
                   selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
