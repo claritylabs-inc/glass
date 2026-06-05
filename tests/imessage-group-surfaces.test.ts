@@ -78,6 +78,19 @@ describe("iMessage group chat surfaces", () => {
     expect(agents).toContain("mirrors the web user message and Glass reply back");
   });
 
+  it("uses non-committal timeout copy for late Convex iMessage responses", () => {
+    const worker = read("imessage-worker/src/index.ts");
+    const fallbackBlock = worker.slice(
+      worker.indexOf("export function imessageProcessingFallbackMessage"),
+      worker.indexOf("function pruneSendIdempotencyKeys"),
+    );
+
+    expect(fallbackBlock).toContain("Convex responded 408");
+    expect(fallbackBlock).toContain("I'm still working on that");
+    expect(fallbackBlock).toContain("Sorry, something went wrong");
+    expect(worker).toContain("space.send(imessageProcessingFallbackMessage(err))");
+  });
+
   it("waits for policy-aware empty state context before rendering suggestions", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
     const emptyState = read("components/new-chat-empty-state.tsx");
@@ -124,11 +137,12 @@ describe("iMessage group chat surfaces", () => {
 
   it("fails closed for mixed-org write actions", () => {
     const inbound = read("convex/actions/handleInboundImessage.ts");
+    const executors = read("convex/lib/agentToolExecutors.ts");
 
     expect(inbound).toContain("currentSenderIsLinked");
-    expect(inbound).toContain("Only a linked Glass user in this group can create a policy change request.");
-    expect(inbound).toContain("Only a linked Glass user in this group can save durable notes.");
-    expect(inbound).toContain("Only a linked Glass user in this group can generate a certificate.");
-    expect(inbound).toContain("Please have a linked user from that policy's organization");
+    expect(inbound).toContain("buildAgentToolExecutors");
+    expect(inbound).toContain("Only a linked Glass user in this chat can do that.");
+    expect(executors).toContain("writeUnavailableMessage");
+    expect(executors).toContain("resolveWritablePolicy");
   });
 });

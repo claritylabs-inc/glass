@@ -10,9 +10,10 @@ import { getModelForOrg, getProviderOptionsForTask } from "./models";
 import { sendResendEmail, getAgentDomain } from "./resend";
 import { markdownToHtml, stripMarkdown } from "./aiUtils";
 import { isWhiteLabelingEnabled } from "./branding";
-import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
 import { buildGlassEmailIconHtml } from "./emailTemplate";
 import { getClientPortalUrl } from "./domains";
+import { buildAgentToolExecutors } from "./agentToolExecutors";
+import type { AgentScope } from "./agentScope";
 import {
   extractEmailAddress,
   normalizeEmailAddress,
@@ -25,11 +26,8 @@ import {
   type RequestedEmailAttachment,
 } from "./coiAttachmentGuards";
 import {
-  buildCertificateProgramSelection,
   formatCertificateProgramSelectionForUser,
-  normalizeSelectedPartnerProgramId,
 } from "./certificateProgramSelection";
-import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
 const GLASS_PUBLIC_URL = getClientPortalUrl();
@@ -64,6 +62,7 @@ export type BrokerBranding = {
 
 type EmailExpertContext = {
   orgId: Id<"organizations">;
+  userId?: Id<"users">;
   threadId?: Id<"threads">;
   chatMessageId?: Id<"threadMessages">;
   channel: "web" | "email" | "imessage" | "mcp";
@@ -263,7 +262,7 @@ export async function upsertEmailDraftArtifact(
     policyChangeCaseId?: Id<"policyChangeCases">;
   },
 ): Promise<Id<"pendingEmails"> | undefined> {
-  if (!["web", "mcp"].includes(context.channel) || !context.threadId) return undefined;
+  if (!["web", "imessage", "mcp"].includes(context.channel) || !context.threadId) return undefined;
 
   const signature = buildEmailSignature(context.agentAddress, context.brokerBranding);
   const emailPayload = buildEmailPayload({
@@ -499,26 +498,56 @@ async function runEmailSubagent(
   };
 
   const attachOriginalPolicy = async (policyId: string): Promise<string> => {
-    sourcePolicyIds.add(policyId);
+    if (!context.userId) {
+      return "Cannot attach a policy document without an authenticated user context.";
+    }
     if (suppressOriginalPolicyForCoiRequest) {
       return "Skipped original policy attachment because this request only asks for the generated COI.";
     }
-    if (attachedOriginalPolicyIds.has(policyId)) {
+    const requestPolicyKey = normalizeAttachmentText(policyId);
+    if (attachedOriginalPolicyIds.has(requestPolicyKey)) {
       return "Original policy is already attached.";
     }
-    const policy = await ctx.runQuery(internal.policies.getInternal, {
-      id: policyId as Id<"policies">,
+    let resolvedPolicyId: Id<"policies"> | undefined;
+    let policyAttachment: EmailAttachmentMeta | undefined;
+    const singleOrgScope: AgentScope = {
+      mode: "client",
+      surface: context.channel,
+      primaryOrgId: context.orgId,
+      readOrgIds: [context.orgId],
+      writableOrgIds: [context.orgId],
+      orgs: [],
+      brokerInternal: false,
+    };
+    const executors = buildAgentToolExecutors(ctx, {
+      surface: context.channel,
+      orgId: context.orgId,
+      userId: context.userId,
+      scope: singleOrgScope,
+      onPolicyReferenced: (referencedPolicyId) => {
+        resolvedPolicyId = referencedPolicyId;
+        sourcePolicyIds.add(String(referencedPolicyId));
+      },
+      onResponseAttachment: (attachment) => {
+        if (!attachment.fileId) return;
+        policyAttachment = {
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          size: attachment.size,
+          fileId: attachment.fileId,
+        };
+      },
     });
-    if (!policy || policy.orgId !== context.orgId) return "Policy not found.";
-    if (!policy.fileId) return "That policy does not have an original file available.";
-    attachedOriginalPolicyIds.add(policyId);
-    addAttachment({
-      filename: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
-      contentType: "application/pdf",
-      size: 0,
-      fileId: policy.fileId as Id<"_storage">,
-    });
-    return `Attached original policy document: ${policy.fileName ?? policy.policyNumber ?? policy._id}`;
+    const result = await executors.attach_policy_document.execute({ policyId });
+    if (!policyAttachment) {
+      return typeof result === "string"
+        ? result
+        : "That policy does not have an original file available.";
+    }
+    attachedOriginalPolicyIds.add(requestPolicyKey);
+    if (resolvedPolicyId) attachedOriginalPolicyIds.add(String(resolvedPolicyId));
+    addAttachment(policyAttachment);
+    return `Attached original policy document: ${policyAttachment.filename}`;
   };
 
   const attachUploadedFile = (fileId: string, filename?: string): string => {
@@ -550,72 +579,90 @@ async function runEmailSubagent(
     requestedEndorsements?: string[],
     partnerProgramId?: string,
   ): Promise<string> => {
-    const resolved = await resolvePolicyReferenceForOrg(ctx, {
-      orgIds: [context.orgId],
-      reference: policyId,
-    });
-    if (!resolved.ok) return resolved.message;
-    const resolvedPolicyId = resolved.policy._id;
-    sourcePolicyIds.add(String(resolvedPolicyId));
-    const coiKey = `${resolvedPolicyId}:${normalizeAttachmentText(certificateHolder)}`;
-    if (attachedCoiKeys.has(coiKey)) {
+    if (!context.userId) {
+      return "Cannot generate a COI without an authenticated user context.";
+    }
+    const holderKey = normalizeAttachmentText(certificateHolder);
+    const requestCoiKey = `${normalizeAttachmentText(policyId)}:${holderKey}`;
+    if (attachedCoiKeys.has(requestCoiKey)) {
       return "Generated COI is already attached.";
     }
-    if (context.autoGenerateCoi === false) {
-      if (context.coiHandling === "broker") return "COI auto-generation is off. Contact the broker before attaching a COI.";
-      if (context.coiHandling === "member") return "COI auto-generation is off. Confirm the org's insurance contact should handle this COI.";
-      return "COI auto-generation is disabled.";
-    }
-    let generated: any;
-    try {
-      generated = await ctx.runAction(internal.certificates.generateForOrg, {
-        policyId: resolvedPolicyId,
-        orgId: context.orgId,
-        holderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
-        certificateHolder,
-        holderEmail,
-        holderPhone,
-        requestText,
-        requestedEndorsements,
-        selectedPartnerProgramId: normalizeSelectedPartnerProgramId(partnerProgramId),
-        source: context.channel === "web" ? "chat" : context.channel,
-      });
-    } catch (err) {
-      console.error("[emailSubagent] COI generation failed:", err);
-      return COI_GENERATION_FAILED_MESSAGE;
-    }
-    if (!generated) return COI_GENERATION_FAILED_MESSAGE;
-    if (generated.status === "held_policy_change_required") {
-      return generated.message ?? "This certificate is on hold because it requires broker review before a COI can be issued.";
-    }
-    if (generated.status === "pending_approval") {
-      return "Certified COI approval has been requested from the program administrator; no certificate PDF is attached yet.";
-    }
-    if (generated.status === "needs_program_selection") {
-      const selection = buildCertificateProgramSelection({
-        policyId,
-        holderName:
-          certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-          "Certificate holder",
-        certificateHolder,
-        candidates: generated.matchCandidates,
-        source: context.channel === "imessage" ? "imessage" : "agent",
-      });
-      return selection
-        ? formatCertificateProgramSelectionForUser(selection)
-        : "I found multiple possible program administrator programs. Choose the correct program before I attach the certified COI.";
-    }
-    attachedCoiKeys.add(coiKey);
-    addAttachment({
-      filename: generated.fileName,
-      contentType: "application/pdf",
-      size: generated.size,
-      fileId: generated.fileId as Id<"_storage">,
+    let resolvedPolicyId: Id<"policies"> | undefined;
+    let generatedAttachment: EmailAttachmentMeta | undefined;
+    const singleOrgScope: AgentScope = {
+      mode: "client",
+      surface: context.channel,
+      primaryOrgId: context.orgId,
+      readOrgIds: [context.orgId],
+      writableOrgIds: [context.orgId],
+      orgs: [],
+      brokerInternal: false,
+    };
+    const executors = buildAgentToolExecutors(ctx, {
+      surface: context.channel,
+      orgId: context.orgId,
+      userId: context.userId,
+      scope: singleOrgScope,
+      org: {
+        autoGenerateCoi: context.autoGenerateCoi,
+        coiHandling: context.coiHandling,
+      },
+      onPolicyReferenced: (referencedPolicyId) => {
+        resolvedPolicyId = referencedPolicyId;
+        sourcePolicyIds.add(String(referencedPolicyId));
+      },
+      onResponseAttachment: (attachment) => {
+        if (!attachment.fileId) return;
+        generatedAttachment = {
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          size: attachment.size,
+          fileId: attachment.fileId,
+        };
+      },
     });
-    generatedCoiAttachmentIds.add(String(generated.fileId));
-    return generated.authorityType === "certified"
-      ? "Attached certified COI."
-      : "Attached non-binding COI.";
+    const result = await executors.generate_coi.execute({
+      policyId,
+      certificateHolder,
+      holderEmail,
+      holderPhone,
+      requestText,
+      requestedEndorsements,
+      partnerProgramId,
+    });
+
+    if (generatedAttachment) {
+      const resolvedCoiKey = `${resolvedPolicyId ?? policyId}:${holderKey}`;
+      attachedCoiKeys.add(requestCoiKey);
+      attachedCoiKeys.add(resolvedCoiKey);
+      addAttachment(generatedAttachment);
+      generatedCoiAttachmentIds.add(String(generatedAttachment.fileId));
+      return "Attached COI.";
+    }
+
+    if (typeof result === "string") return result;
+    if (result && typeof result === "object") {
+      const output = result as {
+        message?: string;
+        programSelection?: unknown;
+        attachment?: EmailAttachmentMeta;
+      };
+      if (output.attachment?.fileId) {
+        const resolvedCoiKey = `${resolvedPolicyId ?? policyId}:${holderKey}`;
+        attachedCoiKeys.add(requestCoiKey);
+        attachedCoiKeys.add(resolvedCoiKey);
+        addAttachment(output.attachment);
+        generatedCoiAttachmentIds.add(String(output.attachment.fileId));
+        return "Attached COI.";
+      }
+      if (output.programSelection) {
+        return formatCertificateProgramSelectionForUser(
+          output.programSelection as Parameters<typeof formatCertificateProgramSelectionForUser>[0],
+        );
+      }
+      if (output.message) return output.message;
+    }
+    return "COI request completed.";
   };
 
   if (safeRequestedAttachments.warning && safeRequestedAttachments.attachments.length === 0) {

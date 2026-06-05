@@ -7,18 +7,7 @@ import { generateText, stepCountIs, type ModelMessage } from "ai";
 import { haikuModel } from "../lib/ai";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import {
-  lookupPolicy,
-  lookupPolicySection,
-  compareCoverages,
-  lookupComplianceRequirements,
-  saveNote,
-  confirmPolicyFact,
-  generateCoi as generateCoiTool,
   extractPolicyAttachment,
-  createPolicyChangeRequest,
-  addPolicyChangeInfo,
-  draftPolicyChangeSubmission,
-  completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   searchConnectedEmail,
   readConnectedEmail,
@@ -29,6 +18,7 @@ import {
   coordinateMailboxTask,
   webResearch,
 } from "../lib/chatTools";
+import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import { Webhook } from "svix";
 import {
   buildConversationMemoryContext,
@@ -37,7 +27,7 @@ import {
   buildScopedRequirementsContext,
 } from "../lib/agentPrompts";
 import type { Doc, Id } from "../_generated/dataModel";
-import { isOrgReadableByScope, orgLabelForScope, type AgentScope } from "../lib/agentScope";
+import type { AgentScope } from "../lib/agentScope";
 import {
   sendResendEmail,
   getAgentDomain,
@@ -54,10 +44,8 @@ import {
   buildBrokerPortfolioSystemPrompt,
   buildChannelInstructions,
   buildPolicyToolInstructions,
-  policySearchScore,
 } from "../lib/aiUtils";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
-import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import {
   classifyPromptInjection,
   collectAllowedRecipients,
@@ -73,26 +61,12 @@ import {
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
 import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
+import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 import {
-  COI_GENERATION_FAILED_MESSAGE,
-  FATAL_ACTION_FAILED_MESSAGE,
-} from "../lib/actionFailures";
-import {
-  buildCertificateProgramSelection,
   formatCertificateProgramSelectionForModel,
-  formatCertificateProgramSelectionForUser,
-  normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
-import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
-import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
-import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
-import {
-  filterComplianceRequirements,
-  formatComplianceRequirement,
-} from "../lib/complianceAgent";
-import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 import {
   buildEmailDraftTextSummary,
   isSendAllEmailDraftsIntent,
@@ -1193,7 +1167,22 @@ If the broker attached an endorsement or confirmation for this change, use compl
       };
       let toolSentEmail: ToolSentEmail | null = null;
       const generatedCoiAttachments: EmailAttachmentMeta[] = [];
+      const emailToolArtifacts: Array<{ type: string; data: unknown }> = [];
       const certificateProgramSelectionArtifacts: CertificateProgramSelection[] = [];
+      const availableEmailAttachments = attachmentRecords
+        .filter(
+          (rec): rec is typeof rec & { fileId: Id<"_storage"> } =>
+            !!rec.fileId,
+        )
+        .map((rec) => ({
+          filename: rec.filename,
+          contentType: rec.contentType,
+          size: rec.size,
+          fileId: rec.fileId,
+        }));
+      const availableFileIds = new Set(
+        availableEmailAttachments.map((attachment) => String(attachment.fileId)),
+      );
       const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
         [subject ?? "", body].join("\n\n"),
       );
@@ -1205,229 +1194,39 @@ If the broker attached an endorsement or confirmation for this change, use compl
         : undefined;
 
       const emailTools = {
-        lookup_policy: {
-          ...lookupPolicy,
-          execute: async (params: {
-            query: string;
-            policyType?: string;
-            carrier?: string;
-          }) => {
-            const scored = (policies as any[])
-              .map((p) => ({
-                policy: p,
-                score: policySearchScore(
-                  p,
-                  params.query,
-                  params.policyType,
-                  params.carrier,
-                ),
-              }))
-              .filter((p) => p.score > 0)
-              .sort((a, b) => b.score - a.score);
-            const matches =
-              scored.length > 0
-                ? scored.map((s) => s.policy)
-                : (policies as any[]).slice(0, 5);
-            if (matches.length === 0)
-              return "No policies found for this organization.";
-            for (const policy of matches.slice(0, 5)) {
-              if (policy?._id)
-                referencedPolicySourceIds.add(String(policy._id));
+        ...buildAgentToolExecutors(ctx, {
+          surface: "email",
+          orgId,
+          userId: primaryUserId,
+          scope,
+          org,
+          availableFileIds,
+          onPolicyReferenced: (policyId) => {
+            referencedPolicySourceIds.add(String(policyId));
+          },
+          onResponseAttachment: (attachment) => {
+            if (!attachment.fileId) return;
+            generatedCoiAttachments.push({
+              filename: attachment.filename,
+              contentType: attachment.contentType,
+              size: attachment.size,
+              fileId: attachment.fileId,
+            });
+          },
+          onToolArtifact: (artifact) => {
+            emailToolArtifacts.push(artifact);
+            if (artifact.type === "certificate_program_selection") {
+              certificateProgramSelectionArtifacts.push(
+                artifact.data as CertificateProgramSelection,
+              );
             }
-            return matches.slice(0, 5).map((p: any) => ({
-              id: p._id,
-              client: scope.mode === "broker_portfolio" ? orgLabelForScope(scope, p.orgId) : undefined,
-              orgId: p.orgId,
-              insured: p.insuredName,
-              carrier: p.security,
-              type: p.policyTypes?.join(", "),
-              number: p.policyNumber,
-              effective: p.effectiveDate,
-              expiration: p.expirationDate,
-              premium: p.premium,
-              coverages: (p.coverages ?? []).map((c: any) => ({
-                name: c.name,
-                limit: c.limit,
-                deductible: c.deductible,
-                origin: c.coverageOrigin,
-              })),
-              coverageBreakdown: coverageBreakdownForTool(p),
-            }));
           },
-        },
-        lookup_policy_section: {
-          ...lookupPolicySection,
-          execute: async (params: { policyId: string; query: string }) => {
-            const policy: any = await ctx.runQuery(
-              internal.policies.getInternal,
-              { id: params.policyId as Id<"policies"> },
-            );
-            if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
-            referencedPolicySourceIds.add(String(policy._id));
-            return searchPolicyDocumentWithSourceSpans(
-              ctx,
-              policy,
-              params.query,
-              8,
-            );
-          },
-        },
-        create_policy_change_request: {
-          ...createPolicyChangeRequest,
-          execute: async (params: {
-            requestKind?: PceRequestKind;
-            requestText: string;
-            policyId?: string;
-            evidenceSourceIds?: string[];
-          }) => {
-            if (params.policyId)
-              referencedPolicySourceIds.add(String(params.policyId));
-            const intake = evaluatePceIntake({
-              requestKind: params.requestKind,
-              requestText: params.requestText,
-            });
-            if (!intake.allowed) return intake.message;
-            const result = await ctx.runAction(
-              internal.actions.policyChangeRequests.createFromEmailForThread,
-              {
-                orgId,
-                userId: primaryUserId,
-                policyId: params.policyId as Id<"policies"> | undefined,
-                requestText: params.requestText,
-                evidenceSourceIds: params.evidenceSourceIds,
-              },
-            );
-            if (result?.error) return result.error;
-            return {
-              status: "created",
-              caseId: result?.caseId,
-              requestKind: intake.kind,
-              usedSdkPce: Boolean(result?.usedSdkPce),
-            };
-          },
-        },
-        add_policy_change_info: {
-          ...addPolicyChangeInfo,
-          execute: async (params: {
-            caseId: string;
-            infoText: string;
-            sourceSpanIds?: string[];
-          }) => {
-            await ctx.runMutation(internal.policyChanges.addInfo, {
-              caseId: params.caseId as Id<"policyChangeCases">,
-              userId: primaryUserId,
-              infoText: params.infoText,
-              sourceSpanIds: params.sourceSpanIds,
-            });
-            return { status: "updated", caseId: params.caseId };
-          },
-        },
-        draft_policy_change_email: {
-          ...draftPolicyChangeSubmission,
-          execute: async (params: {
-            caseId: string;
-            recipientEmail?: string;
-            recipientName?: string;
-            instructions?: string;
-          }) => {
-            const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
-              caseId: params.caseId as Id<"policyChangeCases">,
-              userId: primaryUserId,
-              recipientEmail: params.recipientEmail,
-              recipientName: params.recipientName,
-              instructions: params.instructions,
-            });
-            return {
-              status: draft.needsRecipient ? "needs_recipient" : "drafted",
-              caseId: params.caseId,
-              readyToSend: !draft.needsRecipient,
-              nextAction: draft.needsRecipient
-                ? "Ask for the broker email address."
-                : "Show the email details and ask for approval before sending.",
-              emailDraft: {
-                recipientEmail: draft.recipientEmail,
-                recipientName: draft.recipientName,
-                subject: draft.subject,
-                body: draft.body,
-              },
-            };
-          },
-        },
-        complete_policy_change_from_endorsement: {
-          ...completePolicyChangeFromEndorsement,
-          execute: async (params: {
-            caseId?: string;
-            policyId: string;
-            files: Array<{ fileId: string; fileName: string }>;
-            summary?: string;
-            fieldUpdates?: Record<string, unknown>;
-          }) => {
-            const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
-              caseId: params.caseId as Id<"policyChangeCases"> | undefined,
-              userId: primaryUserId,
-              policyId: params.policyId as Id<"policies">,
-              files: params.files.map((file) => ({
-                fileId: file.fileId as Id<"_storage">,
-                fileName: file.fileName,
-              })),
-              summary: params.summary,
-              fieldUpdates: params.fieldUpdates,
-            });
-            return { status: "completed", ...result };
-          },
-        },
-        compare_coverages: {
-          ...compareCoverages,
-          execute: async (params: { policyId1: string; policyId2: string }) => {
-            const p1 = (policies as any[]).find(
-              (p) => p._id === params.policyId1,
-            );
-            const p2 = (policies as any[]).find(
-              (p) => p._id === params.policyId2,
-            );
-            if (!p1 || !p2) return "One or both policies not found.";
-            referencedPolicySourceIds.add(String(p1._id));
-            referencedPolicySourceIds.add(String(p2._id));
-            const mapP = (p: any) => ({
-              id: p._id,
-              carrier: p.security,
-              type: p.policyTypes,
-              limits: p.limits,
-              deductibles: p.deductibles,
-              premium: p.premium,
-              coverages: (p.coverages ?? []).map((c: any) => ({
-                name: c.name,
-                limit: c.limit,
-                deductible: c.deductible,
-                origin: c.coverageOrigin,
-              })),
-              coverageBreakdown: coverageBreakdownForTool(p),
-            });
-            return { policy1: mapP(p1), policy2: mapP(p2) };
-          },
-        },
-        lookup_compliance_requirements: {
-          ...lookupComplianceRequirements,
-          execute: async (params: {
-            query?: string;
-            appliesTo?: "vendors" | "own_org" | "both" | "all";
-          }) => {
-            const requirements = await ctx.runQuery(
-              internal.compliance.listRequirementsInternal,
-              { orgId },
-            );
-            const matches = filterComplianceRequirements(requirements, params);
-            if (matches.length === 0) {
-              return "No matching compliance requirements found. Vendor/contractor requirements and internal requirements are stored separately.";
-            }
-            return matches.map(formatComplianceRequirement).join("\n");
-          },
-        },
-        ...buildVendorComplianceTools(ctx, [orgId]),
+        }),
         ...(isInternal && effectiveMode === "direct"
           ? {
               email_expert: buildEmailExpertTool(ctx, {
                 orgId,
+                userId: primaryUserId,
                 threadId: unifiedThreadId,
                 channel: "email",
                 fromHeader,
@@ -1477,17 +1276,7 @@ If the broker attached an endorsement or confirmation for this change, use compl
                       .map((email) => String(email).toLowerCase()),
                   ),
                 ],
-                availableAttachments: attachmentRecords
-                  .filter(
-                    (rec): rec is typeof rec & { fileId: Id<"_storage"> } =>
-                      !!rec.fileId,
-                  )
-                  .map((rec) => ({
-                    filename: rec.filename,
-                    contentType: rec.contentType,
-                    size: rec.size,
-                    fileId: rec.fileId,
-                  })),
+                availableAttachments: availableEmailAttachments,
                 referencedPolicyIds:
                   referencedPolicySourceIds.size > 0
                     ? ([...referencedPolicySourceIds] as Id<"policies">[])
@@ -1520,170 +1309,6 @@ If the broker attached an endorsement or confirmation for this change, use compl
               }),
             }
           : {}),
-        save_note: {
-          ...saveNote,
-          execute: async (params: {
-            content: string;
-            type: string;
-            policyId?: string;
-          }) => {
-            const typeMap: Record<
-              string,
-              "fact" | "preference" | "risk_note" | "observation"
-            > = {
-              fact: "fact",
-              preference: "preference",
-              risk_note: "risk_note",
-              observation: "observation",
-            };
-            await ctx.runMutation(internal.orgMemory.upsert, {
-              orgId,
-              type: typeMap[params.type] ?? "observation",
-              content: params.content,
-              source: "email" as const,
-              policyId: params.policyId as Id<"policies"> | undefined,
-            });
-            return "Note saved.";
-          },
-        },
-        confirm_policy_fact: {
-          ...confirmPolicyFact,
-          execute: async (params: {
-            policyId: string;
-            fact: string;
-            sourceSpanIds: string[];
-            fieldUpdates?: Record<string, string | undefined>;
-          }) => {
-            const policy: any = await ctx.runQuery(
-              internal.policies.getInternal,
-              { id: params.policyId as Id<"policies"> },
-            );
-            if (!policy || policy.orgId !== orgId) return "Policy not found.";
-            referencedPolicySourceIds.add(String(policy._id));
-            try {
-              const result = await ctx.runMutation(
-                internal.policies.confirmPolicyFactFromSource,
-                {
-                  id: params.policyId as Id<"policies">,
-                  orgId,
-                  userId: primaryUserId,
-                  fact: params.fact,
-                  sourceSpanIds: params.sourceSpanIds,
-                  source: "email",
-                  fieldUpdates: params.fieldUpdates,
-                },
-              );
-              return {
-                status: "confirmed",
-                fact: params.fact,
-                updatedFields: result.updatedFields,
-                sourceSpanIds: result.sourceSpanIds,
-              };
-            } catch (err) {
-              return err instanceof Error
-                ? err.message
-                : "Unable to confirm that fact from source evidence.";
-            }
-          },
-        },
-        generate_coi: {
-          ...generateCoiTool,
-          execute: async (params: {
-            policyId: string;
-            certificateHolder?: string;
-            holderEmail?: string;
-            holderPhone?: string;
-            requestText?: string;
-            requestedEndorsements?: string[];
-            partnerProgramId?: string;
-            explicitReissue?: boolean;
-          }) => {
-            const autoGenerate = org.autoGenerateCoi !== false;
-            if (!autoGenerate) {
-              const handling = org.coiHandling ?? "ignore";
-              if (handling === "broker") {
-                return `COI auto-generation is off. Please contact your broker to obtain this certificate.`;
-              }
-              if (handling === "member") {
-                return `COI auto-generation is off. Please route this COI request to your primary insurance contact.`;
-              }
-              return `COI auto-generation is disabled for this organization.`;
-            }
-            try {
-              const resolvedPolicy = await resolvePolicyReferenceForOrg(ctx, {
-                orgIds: [orgId],
-                reference: params.policyId,
-              });
-              if (!resolvedPolicy.ok) return resolvedPolicy.message;
-              referencedPolicySourceIds.add(String(resolvedPolicy.policy._id));
-              const generated = await ctx.runAction(
-                internal.certificates.generateForOrg,
-                {
-                  policyId: resolvedPolicy.policy._id,
-                  orgId,
-                  holderName:
-                    params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                    "Certificate holder",
-                  certificateHolder: params.certificateHolder,
-                  holderEmail: params.holderEmail,
-                  holderPhone: params.holderPhone,
-                  requestText: params.requestText,
-                  requestedEndorsements: params.requestedEndorsements,
-                  selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
-                    params.partnerProgramId,
-                  ),
-                  forceReissue: params.explicitReissue,
-                  source: "email",
-                  createdByUserId: primaryUserId,
-                },
-              );
-              if (!generated) return COI_GENERATION_FAILED_MESSAGE;
-              if (generated.status === "held_policy_change_required") {
-                return generated.message ?? "This certificate is on hold because it requires broker review before a COI can be issued.";
-              }
-              if (generated.status === "existing") {
-                generatedCoiAttachments.push({
-                  filename: generated.fileName,
-                  contentType: "application/pdf",
-                  size: generated.size,
-                  fileId: generated.fileId as Id<"_storage">,
-                });
-                return "I found an existing COI for that holder and current policy version and will attach it instead of generating a duplicate. Ask for an explicit reissue if you need a new certificate version.";
-              }
-              if (generated.status === "pending_approval") {
-                return "Certified COI approval has been requested from the program administrator. No certificate PDF is attached yet.";
-              }
-              if (generated.status === "needs_program_selection") {
-                const selection = buildCertificateProgramSelection({
-                  policyId: String(resolvedPolicy.policy._id),
-                  holderName:
-                    params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                    "Certificate holder",
-                  certificateHolder: params.certificateHolder,
-                  candidates: generated.matchCandidates,
-                  source: "email",
-                });
-                if (selection) {
-                  certificateProgramSelectionArtifacts.push(selection);
-                  return formatCertificateProgramSelectionForUser(selection);
-                }
-                return "I found multiple possible program administrator programs. Reply with the correct program name before I generate the certified COI.";
-              }
-              generatedCoiAttachments.push({
-                filename: generated.fileName,
-                contentType: "application/pdf",
-                size: generated.size,
-                fileId: generated.fileId as Id<"_storage">,
-              });
-              return generated.authorityType === "certified"
-                ? "Certified COI generated successfully and will be attached to this email reply."
-                : "Non-binding COI generated successfully and will be attached to this email reply.";
-            } catch (err) {
-              console.error("[email] COI generation failed:", err);
-              return COI_GENERATION_FAILED_MESSAGE;
-            }
-          },
-        },
         ...(isInternal && effectiveMode === "direct"
           ? {
               create_imessage_group_chat: {
@@ -2289,12 +1914,14 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             ? generatedCoiAttachments
             : undefined,
         toolArtifacts:
-          certificateProgramSelectionArtifacts.length > 0
-            ? certificateProgramSelectionArtifacts.map((selection) => ({
-                type: "certificate_program_selection",
-                data: selection,
-              }))
-            : undefined,
+          emailToolArtifacts.length > 0
+            ? emailToolArtifacts
+            : certificateProgramSelectionArtifacts.length > 0
+              ? certificateProgramSelectionArtifacts.map((selection) => ({
+                  type: "certificate_program_selection",
+                  data: selection,
+                }))
+              : undefined,
       });
 
       // ── Phase E: extract durable facts from this email exchange into orgMemory ──

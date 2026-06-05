@@ -38,6 +38,7 @@ describe("source spans and PCE backend surfaces", () => {
   it("wires the create_policy_change_request agent tool", () => {
     const chatTools = read("convex/lib/chatTools.ts");
     const threadChat = read("convex/actions/processThreadChat.ts");
+    const agentToolExecutors = read("convex/lib/agentToolExecutors.ts");
     const aiUtils = read("convex/lib/aiUtils.ts");
 
     expect(chatTools).toContain("createPolicyChangeRequest");
@@ -50,12 +51,13 @@ describe("source spans and PCE backend surfaces", () => {
     expect(threadChat).toContain("add_policy_change_info");
     expect(threadChat).toContain("draft_policy_change_email");
     expect(threadChat).toContain("complete_policy_change_from_endorsement");
-    expect(threadChat).toContain("evaluatePceIntake");
-    expect(threadChat).toContain("internal.actions.policyChangeRequests.createFromChatForThread");
+    expect(threadChat).toContain("buildAgentToolExecutors");
+    expect(agentToolExecutors).toContain("evaluatePceIntake");
+    expect(agentToolExecutors).toContain("internal.actions.policyChangeRequests.createFromChatForThread");
+    expect(agentToolExecutors).toContain("internal.actions.policyChangeRequests.createFromEmailForThread");
     expect(threadChat).toContain("policyChangeCaseId");
-    expect(read("convex/actions/handleInboundEmail.ts")).toContain("create_policy_change_request");
-    expect(read("convex/actions/handleInboundEmail.ts")).toContain("createFromEmailForThread");
-    expect(read("convex/actions/handleInboundImessage.ts")).toContain("create_policy_change_request");
+    expect(read("convex/actions/handleInboundEmail.ts")).toContain("buildAgentToolExecutors");
+    expect(read("convex/actions/handleInboundImessage.ts")).toContain("buildAgentToolExecutors");
   });
 
   it("renders policy change request artifacts in chat", () => {
@@ -96,15 +98,17 @@ describe("source spans and PCE backend surfaces", () => {
   it("returns source span IDs from policy section lookup tools", () => {
     const policyLookup = read("convex/lib/policyLookup.ts");
     const threadChat = read("convex/actions/processThreadChat.ts");
+    const agentToolExecutors = read("convex/lib/agentToolExecutors.ts");
     const inboundEmail = read("convex/actions/handleInboundEmail.ts");
     const inboundImessage = read("convex/actions/handleInboundImessage.ts");
 
     expect(policyLookup).toContain("searchPolicyDocumentWithSourceSpans");
     expect(policyLookup).toContain("sourceSpanIds");
     expect(threadChat).toContain("citedSourceSpanIds");
-    expect(threadChat).toContain("searchPolicyDocumentWithSourceSpans");
-    expect(inboundEmail).toContain("searchPolicyDocumentWithSourceSpans");
-    expect(inboundImessage).toContain("searchPolicyDocumentWithSourceSpans");
+    expect(threadChat).toContain("buildAgentToolExecutors");
+    expect(agentToolExecutors).toContain("searchPolicyDocumentWithSourceSpans");
+    expect(inboundEmail).toContain("buildAgentToolExecutors");
+    expect(inboundImessage).toContain("buildAgentToolExecutors");
   });
 
   it("renders chat sources and tool calls as compact footer controls", () => {

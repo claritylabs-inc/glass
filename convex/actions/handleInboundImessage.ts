@@ -8,22 +8,11 @@ import { generateText, stepCountIs, type ModelMessage } from "ai";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import { haikuModel } from "../lib/ai";
 import {
-  lookupPolicy,
-  lookupPolicySection,
-  compareCoverages,
-  lookupComplianceRequirements,
-  saveNote,
-  attachPolicyDocument,
-  confirmPolicyFact,
-  generateCoi as generateCoiTool,
-  createPolicyChangeRequest,
-  addPolicyChangeInfo,
-  draftPolicyChangeSubmission,
-  completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   coordinateMailboxTask,
   webResearch,
 } from "../lib/chatTools";
+import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import {
   buildComplianceRequirementsContext,
   buildDocumentContext,
@@ -34,9 +23,7 @@ import {
   buildSystemPromptForContext,
   buildChannelInstructions,
   buildPolicyToolInstructions,
-  policySearchScore,
 } from "../lib/aiUtils";
-import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -58,25 +45,11 @@ import {
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
 import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
+import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 import {
-  COI_GENERATION_FAILED_MESSAGE,
-  FATAL_ACTION_FAILED_MESSAGE,
-} from "../lib/actionFailures";
-import {
-  buildCertificateProgramSelection,
   formatCertificateProgramSelectionForModel,
-  formatCertificateProgramSelectionForUser,
-  normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
-import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
-import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
-import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
-import {
-  filterComplianceRequirements,
-  formatComplianceRequirement,
-} from "../lib/complianceAgent";
-import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 import {
   isPendingEmailCancelConfirmation,
   isPendingEmailCancelConfirmationPrompt,
@@ -185,52 +158,49 @@ async function sendImmediateImessage(params: {
   });
 }
 
-async function generateImessageStatusCue(params: {
+function normalizeStatusCueText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isShortImessageConfirmation(text: string): boolean {
+  const normalized = normalizeStatusCueText(text);
+  if (!normalized) return true;
+  if (normalized.length > 80) return false;
+  return /^(y|yes|yep|yeah|correct|right|ok|okay|sure|confirmed?|approved?|approve|go ahead|do it|please do|that works|sounds good|no additional wording|no addl wording|standard only|no special wording|no extra wording)$/.test(
+    normalized,
+  );
+}
+
+function generateImessageStatusCue(params: {
   messageText: string;
   hasAttachments: boolean;
-  userName?: string;
-  recentContext?: string;
-}): Promise<string | null> {
-  try {
-    const result = await generateText({
-      model: haikuModel,
-      maxOutputTokens: 120,
-      system: `You decide whether an insurance SMS assistant should send a quick status cue before doing retrieval or tool work.
-Return strict JSON only: {"send": boolean, "message": string | null}.
-
-Use recent conversation context to resolve short follow-ups like "yes", "that", "it", or "what about this".
-Send only when the user's latest text is a substantive insurance question, document/attachment request, COI request, comparison, lookup, or task likely to require checking policy data/tools.
-Do not send for greetings, thanks, acknowledgements, corrections, jokes, spam, or messages that can be answered immediately without checking anything.
-
-If sending, write one warm, natural SMS sentence under 70 characters. Use casual texting language.
-Avoid formal punctuation: no em dashes, semicolons, colons, or parentheses.
-Do not use stiff phrases like "policy details on that for you".
-No markdown, no emoji, no greeting, no sign-off.`,
-      messages: [
-        {
-          role: "user",
-          content: JSON.stringify({
-            userName: params.userName ?? null,
-            messageText: params.messageText,
-            hasAttachments: params.hasAttachments,
-            recentContext: params.recentContext ?? null,
-          }),
-        },
-      ],
-    });
-
-    const parsed = JSON.parse(cleanJsonText(result.text)) as {
-      send?: unknown;
-      message?: unknown;
-    };
-    if (parsed.send !== true || typeof parsed.message !== "string") return null;
-    const message = parsed.message.trim().replace(/\s+/g, " ");
-    if (message.length === 0 || message.length > 90) return null;
-    return message;
-  } catch (err) {
-    console.warn("[imessage] Status cue generation failed:", err);
+}): string | null {
+  if (isShortImessageConfirmation(params.messageText)) return null;
+  const normalized = normalizeStatusCueText(params.messageText);
+  if (!normalized) return null;
+  if (/^(hi|hello|hey|thanks|thank you|thx|ok thanks|got it)$/.test(normalized)) {
     return null;
   }
+  if (
+    /\b(coi|certificate|cert|holder|additional insured|waiver|subrogation|endorsement)\b/.test(
+      normalized,
+    )
+  ) {
+    return "I'll check the policy and certificate details.";
+  }
+  if (
+    /\b(policy|coverage|coverages|limit|limits|deductible|premium|carrier|insured|expiration|section|change request|broker|requirement|compliance|vendor)\b/.test(
+      normalized,
+    )
+  ) {
+    return "I'll check the policy record.";
+  }
+  if (params.hasAttachments) return "I'll check the attachment.";
+  return null;
 }
 
 function isImessageStatusCue(message: { responseMessageId?: string }): boolean {
@@ -283,6 +253,118 @@ export function shouldSkipImessageStatusCueForEmailApproval(params: {
   return /\b(yes|yep|yeah|ok|okay|good|approved|approve|send|go ahead)\b/.test(
     normalized,
   );
+}
+
+function hasCoiRequestIntent(messageText: string, recentContext?: string): boolean {
+  const normalized = normalizeStatusCueText(
+    `${messageText}\n${recentContext ?? ""}`,
+  );
+  return /\b(coi|certificate of insurance|certificate holder|cert holder|generate (a )?certificate|issue (a )?certificate)\b/.test(
+    normalized,
+  );
+}
+
+function claimsCoiCompletion(messageText: string): boolean {
+  const normalized = normalizeStatusCueText(messageText);
+  if (!/\b(coi|certificate|cert)\b/.test(normalized)) return false;
+  return /\b(generated|created|issued|attached|sent|ready|completed|done|found an existing)\b/.test(
+    normalized,
+  );
+}
+
+function asksForInternalPolicyRecordId(messageText: string): boolean {
+  return /\b(internal policy id|policy record id|internal record id|convex id|string of characters)\b/i.test(
+    messageText,
+  );
+}
+
+function serializeToolAuditValue(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.stringify(value).slice(0, 500);
+  } catch {
+    return String(value).slice(0, 500);
+  }
+}
+
+function collectToolAudit(result: unknown): {
+  usedTools: string[];
+  toolCalls: Array<{ name: string; input?: string; output?: string }>;
+} {
+  const usedTools: string[] = [];
+  const toolCalls: Array<{ name: string; input?: string; output?: string }> = [];
+  const seen = new Set<string>();
+
+  const addUsedTool = (name: string) => {
+    if (!seen.has(name)) {
+      seen.add(name);
+      usedTools.push(name);
+    }
+  };
+
+  const addToolCall = (call: Record<string, unknown>) => {
+    const name = call.toolName ?? call.name;
+    if (typeof name !== "string" || !name) return;
+    addUsedTool(name);
+    const input = call.input ?? call.args ?? call.parameters;
+    toolCalls.push({
+      name,
+      input: serializeToolAuditValue(input),
+    });
+  };
+
+  const addToolResult = (resultPart: Record<string, unknown>) => {
+    const name = resultPart.toolName ?? resultPart.name;
+    if (typeof name !== "string" || !name) return;
+    addUsedTool(name);
+    const output =
+      resultPart.output ?? resultPart.result ?? resultPart.value ?? undefined;
+    const target = [...toolCalls]
+      .reverse()
+      .find((candidate) => candidate.name === name && !candidate.output);
+    if (target) {
+      target.output = serializeToolAuditValue(output);
+    }
+  };
+
+  const root = result as Record<string, unknown>;
+  const rootCalls = Array.isArray(root.toolCalls) ? root.toolCalls : [];
+  for (const call of rootCalls) {
+    if (call && typeof call === "object") {
+      addToolCall(call as Record<string, unknown>);
+    }
+  }
+
+  const rootResults = Array.isArray(root.toolResults) ? root.toolResults : [];
+  for (const toolResult of rootResults) {
+    if (toolResult && typeof toolResult === "object") {
+      addToolResult(toolResult as Record<string, unknown>);
+    }
+  }
+
+  const steps = Array.isArray(root.steps) ? root.steps : [];
+  for (const step of steps) {
+    if (!step || typeof step !== "object") continue;
+    const stepRecord = step as Record<string, unknown>;
+    const calls = Array.isArray(stepRecord.toolCalls)
+      ? stepRecord.toolCalls
+      : [];
+    for (const call of calls) {
+      if (call && typeof call === "object") {
+        addToolCall(call as Record<string, unknown>);
+      }
+    }
+    const results = Array.isArray(stepRecord.toolResults)
+      ? stepRecord.toolResults
+      : [];
+    for (const toolResult of results) {
+      if (toolResult && typeof toolResult === "object") {
+        addToolResult(toolResult as Record<string, unknown>);
+      }
+    }
+  }
+
+  return { usedTools, toolCalls };
 }
 
 export const processInbound = internalAction({
@@ -768,11 +850,9 @@ export const processInbound = internalAction({
         recentContext: recentConversationContext || undefined,
       })
         ? null
-        : await generateImessageStatusCue({
+        : generateImessageStatusCue({
             messageText: args.messageText,
             hasAttachments: attachmentRecords.length > 0,
-            userName,
-            recentContext: recentConversationContext || undefined,
           });
       if (statusCue) {
         const sent = await sendImmediateImessage({
@@ -1042,475 +1122,52 @@ export const processInbound = internalAction({
       const emailToolResult: { current: EmailSubagentResult | null } = {
         current: null,
       };
+      const imessageToolArtifacts: Array<{ type: string; data: unknown }> = [];
+      const availableFileIds = new Set(
+        availableEmailAttachments.map((attachment) => String(attachment.fileId)),
+      );
+      const imessageWritableOrgIds =
+        agentScope.mode === "broker_portfolio"
+          ? agentScope.writableOrgIds
+          : currentParticipant?.orgId
+            ? [currentParticipant.orgId]
+            : [];
 
       const imessageTools = {
-        lookup_policy: {
-          ...lookupPolicy,
-          execute: async (params: {
-            query: string;
-            policyType?: string;
-            carrier?: string;
-          }) => {
-            const scored = (policies as any[])
-              .map((p) => ({
-                policy: p,
-                score: policySearchScore(
-                  p,
-                  params.query,
-                  params.policyType,
-                  params.carrier,
-                ),
-              }))
-              .filter((p) => p.score > 0)
-              .sort((a, b) => b.score - a.score);
-            const matches =
-              scored.length > 0
-                ? scored.map((s) => s.policy)
-                : (policies as any[]).slice(0, 5);
-            if (matches.length === 0) return "No policies found.";
-            return matches.slice(0, 5).map((p: any) => ({
-              id: p._id,
-              client: orgNamesById[String(p.orgId)] ?? p.orgId,
-              orgId: p.orgId,
-              insured: p.insuredName,
-              carrier: p.security,
-              type: p.policyTypes?.join(", "),
-              number: p.policyNumber,
-              effective: p.effectiveDate,
-              expiration: p.expirationDate,
-              premium: p.premium,
-              coverages: (p.coverages ?? []).map((c: any) => ({
-                name: c.name,
-                limit: c.limit,
-                deductible: c.deductible,
-                origin: c.coverageOrigin,
-              })),
-              coverageBreakdown: coverageBreakdownForTool(p),
-            }));
-          },
-        },
-        lookup_policy_section: {
-          ...lookupPolicySection,
-          execute: async (params: { policyId: string; query: string }) => {
-            const policy: any = await ctx.runQuery(
-              internal.policies.getInternal,
-              {
-                id: params.policyId as Id<"policies">,
-              },
-            );
-            if (
-              !policy ||
-              !readOrgIds.map(String).includes(String(policy.orgId))
-            )
-              return "Policy not found.";
-            return searchPolicyDocumentWithSourceSpans(
-              ctx,
-              policy,
-              params.query,
-              8,
-            );
-          },
-        },
-        create_policy_change_request: {
-          ...createPolicyChangeRequest,
-          execute: async (params: {
-            requestKind?: PceRequestKind;
-            requestText: string;
-            policyId?: string;
-            evidenceSourceIds?: string[];
-          }) => {
-            if (!currentSenderIsLinked) {
-              return "Only a linked Glass user in this group can create a policy change request.";
-            }
-            const intake = evaluatePceIntake({
-              requestKind: params.requestKind,
-              requestText: params.requestText,
-            });
-            if (!intake.allowed) return intake.message;
-            if (scope.kind === "multi_org" && !params.policyId) {
-              return "Please specify which organization's policy this change request is for.";
-            }
-            if (params.policyId) {
-              const policy: any = await ctx.runQuery(
-                internal.policies.getInternal,
-                {
-                  id: params.policyId as Id<"policies">,
-                },
-              );
-              if (!policy || String(policy.orgId) !== String(orgId)) {
-                return "Please have a linked user from that policy's organization create this change request.";
-              }
-            }
-            const result = await ctx.runAction(
-              internal.actions.policyChangeRequests.createFromChatForThread,
-              {
-                orgId,
-                userId: user._id,
-                policyId: params.policyId as Id<"policies"> | undefined,
-                requestText: params.requestText,
-                evidenceSourceIds: params.evidenceSourceIds,
-              },
-            );
-            if (result?.error) return result.error;
-            return {
-              status: "created",
-              caseId: result?.caseId,
-              requestKind: intake.kind,
-              usedSdkPce: Boolean(result?.usedSdkPce),
-            };
-          },
-        },
-        add_policy_change_info: {
-          ...addPolicyChangeInfo,
-          execute: async (params: {
-            caseId: string;
-            infoText: string;
-            sourceSpanIds?: string[];
-          }) => {
-            if (!currentSenderIsLinked) {
-              return "Only a linked Glass user in this group can update a policy change request.";
-            }
-            await ctx.runMutation(internal.policyChanges.addInfo, {
-              caseId: params.caseId as Id<"policyChangeCases">,
-              userId: user._id,
-              infoText: params.infoText,
-              sourceSpanIds: params.sourceSpanIds,
-            });
-            return { status: "updated", caseId: params.caseId };
-          },
-        },
-        draft_policy_change_email: {
-          ...draftPolicyChangeSubmission,
-          execute: async (params: {
-            caseId: string;
-            recipientEmail?: string;
-            recipientName?: string;
-            instructions?: string;
-          }) => {
-            if (!currentSenderIsLinked) {
-              return "Only a linked Glass user in this group can draft a policy change email.";
-            }
-            const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
-              caseId: params.caseId as Id<"policyChangeCases">,
-              userId: user._id,
-              recipientEmail: params.recipientEmail,
-              recipientName: params.recipientName,
-              instructions: params.instructions,
-            });
-            return {
-              status: draft.needsRecipient ? "needs_recipient" : "drafted",
-              caseId: params.caseId,
-              readyToSend: !draft.needsRecipient,
-              nextAction: draft.needsRecipient
-                ? "Ask for the broker email address."
-                : "Summarize the email briefly and ask for approval before sending.",
-              emailDraft: {
-                recipientEmail: draft.recipientEmail,
-                recipientName: draft.recipientName,
-                subject: draft.subject,
-                body: draft.body,
-              },
-            };
-          },
-        },
-        complete_policy_change_from_endorsement: {
-          ...completePolicyChangeFromEndorsement,
-          execute: async (params: {
-            caseId?: string;
-            policyId: string;
-            files: Array<{ fileId: string; fileName: string }>;
-            summary?: string;
-            fieldUpdates?: Record<string, unknown>;
-          }) => {
-            if (!currentSenderIsLinked) {
-              return "Only a linked Glass user in this group can complete a policy change request.";
-            }
-            for (const file of params.files) {
-              const matched = availableEmailAttachments.some(
-                (attachment) => String(attachment.fileId) === file.fileId,
-              );
-              if (!matched) {
-                return `Storage ID ${file.fileId} does not match any attachment on this message.`;
-              }
-            }
-            const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
-              caseId: params.caseId as Id<"policyChangeCases"> | undefined,
-              userId: user._id,
-              policyId: params.policyId as Id<"policies">,
-              files: params.files.map((file) => ({
-                fileId: file.fileId as Id<"_storage">,
-                fileName: file.fileName,
-              })),
-              summary: params.summary,
-              fieldUpdates: params.fieldUpdates,
-            });
-            return { status: "completed", ...result };
-          },
-        },
-        compare_coverages: {
-          ...compareCoverages,
-          execute: async (params: { policyId1: string; policyId2: string }) => {
-            const p1 = (policies as any[]).find(
-              (p) => p._id === params.policyId1,
-            );
-            const p2 = (policies as any[]).find(
-              (p) => p._id === params.policyId2,
-            );
-            if (!p1 || !p2) return "One or both policies not found.";
-            const mapP = (p: any) => ({
-              id: p._id,
-              carrier: p.security,
-              type: p.policyTypes,
-              limits: p.limits,
-              coverages: (p.coverages ?? []).map((c: any) => ({
-                name: c.name,
-                limit: c.limit,
-                origin: c.coverageOrigin,
-              })),
-              coverageBreakdown: coverageBreakdownForTool(p),
-            });
-            return { policy1: mapP(p1), policy2: mapP(p2) };
-          },
-        },
-        lookup_compliance_requirements: {
-          ...lookupComplianceRequirements,
-          execute: async (params: {
-            query?: string;
-            appliesTo?: "vendors" | "own_org" | "both" | "all";
-          }) => {
-            const allRequirements = (
-              await Promise.all(
-                readOrgIds.map((scopedOrgId) =>
-                  ctx
-                    .runQuery(internal.compliance.listRequirementsInternal, {
-                      orgId: scopedOrgId,
-                    })
-                    .catch(() => []),
-                ),
-              )
-            ).flat();
-            const matches = filterComplianceRequirements(
-              allRequirements,
-              params,
-            );
-            if (matches.length === 0) {
-              return "No matching compliance requirements found. Vendor/contractor requirements and internal requirements are stored separately.";
-            }
-            return matches.map(formatComplianceRequirement).join("\n");
-          },
-        },
-        ...buildVendorComplianceTools(
-          ctx,
-          readOrgIds.map((scopedOrgId) => String(scopedOrgId)),
-        ),
-        save_note: {
-          ...saveNote,
-          execute: async (params: {
-            content: string;
-            type: string;
-            policyId?: string;
-          }) => {
-            if (!currentSenderIsLinked) {
-              return "Only a linked Glass user in this group can save durable notes.";
-            }
-            const typeMap: Record<
-              string,
-              "fact" | "preference" | "risk_note" | "observation"
-            > = {
-              fact: "fact",
-              preference: "preference",
-              risk_note: "risk_note",
-              observation: "observation",
-            };
-            await ctx.runMutation(internal.orgMemory.upsert, {
-              orgId: currentParticipant?.orgId ?? orgId,
-              type: typeMap[params.type] ?? "observation",
-              content: params.content,
-              source: "imessage" as const,
-              policyId: params.policyId as Id<"policies"> | undefined,
-            });
-            return "Note saved.";
-          },
-        },
-        attach_policy_document: {
-          ...attachPolicyDocument,
-          execute: async (params: { policyId: string }) => {
-            if (!currentSenderIsLinked) {
-              return "Only a linked Glass user in this chat can request the original policy PDF.";
-            }
-            const resolvedPolicy = await resolvePolicyReferenceForOrg(ctx, {
-              orgIds: [orgId],
-              reference: params.policyId,
-            });
-            if (!resolvedPolicy.ok) return resolvedPolicy.message;
-            const requestedPolicy: any = resolvedPolicy.policy;
-            if (
-              !requestedPolicy ||
-              String(requestedPolicy.orgId) !== String(orgId)
-            ) {
-              return "Please have a linked user from that policy's organization request this policy document.";
-            }
-            if (!requestedPolicy.fileId) {
-              return "That policy does not have an original PDF file available.";
-            }
-            responseFileAttachments.push({
-              storageId: requestedPolicy.fileId as Id<"_storage">,
-              filename:
-                requestedPolicy.fileName ??
-                `${requestedPolicy.policyNumber ?? "policy"}.pdf`,
-            });
-            return "Original policy PDF will be sent as an attachment.";
-          },
-        },
-        confirm_policy_fact: {
-          ...confirmPolicyFact,
-          execute: async (params: {
-            policyId: string;
-            fact: string;
-            sourceSpanIds: string[];
-            fieldUpdates?: Record<string, string | undefined>;
-          }) => {
-            if (!currentSenderIsLinked || !currentParticipant?.orgId) {
-              return "Only a linked Glass user in this group can confirm policy facts.";
-            }
-            const policy: any = await ctx.runQuery(
-              internal.policies.getInternal,
-              { id: params.policyId as Id<"policies"> },
-            );
-            if (
-              !policy ||
-              String(policy.orgId) !== String(currentParticipant.orgId)
-            ) {
-              return "Please have a linked user from that policy's organization confirm this fact.";
-            }
-            try {
-              const result = await ctx.runMutation(
-                internal.policies.confirmPolicyFactFromSource,
-                {
-                  id: params.policyId as Id<"policies">,
-                  orgId: currentParticipant.orgId,
-                  userId: user._id,
-                  fact: params.fact,
-                  sourceSpanIds: params.sourceSpanIds,
-                  source: "imessage",
-                  fieldUpdates: params.fieldUpdates,
-                },
-              );
-              return {
-                status: "confirmed",
-                fact: params.fact,
-                updatedFields: result.updatedFields,
-                sourceSpanIds: result.sourceSpanIds,
-              };
-            } catch (err) {
-              return err instanceof Error
-                ? err.message
-                : "Unable to confirm that fact from source evidence.";
+        ...buildAgentToolExecutors(ctx, {
+          surface: "imessage",
+          orgId,
+          userId: user._id,
+          scope: agentScope,
+          readOrgIds,
+          writableOrgIds: imessageWritableOrgIds,
+          org,
+          canWrite: currentSenderIsLinked,
+          writeUnavailableMessage:
+            "Only a linked Glass user in this chat can do that.",
+          availableFileIds,
+          onPolicyReferenced: (policyId) => {
+            if (!relevantPolicyIds.some((id) => String(id) === String(policyId))) {
+              relevantPolicyIds.push(policyId);
             }
           },
-        },
-        generate_coi: {
-          ...generateCoiTool,
-          execute: async (params: {
-            policyId: string;
-            certificateHolder?: string;
-            holderEmail?: string;
-            holderPhone?: string;
-            requestText?: string;
-            requestedEndorsements?: string[];
-            partnerProgramId?: string;
-            explicitReissue?: boolean;
-          }) => {
-            if (!currentSenderIsLinked) {
-              return "Only a linked Glass user in this group can generate a certificate.";
-            }
-            const requestedPolicy: any = await ctx.runQuery(
-              internal.policies.getInternal,
-              {
-                id: params.policyId as Id<"policies">,
-              },
-            );
-            if (
-              !requestedPolicy ||
-              String(requestedPolicy.orgId) !== String(orgId)
-            ) {
-              return "Please have a linked user from that policy's organization generate this certificate.";
-            }
-            const autoGenerate = org.autoGenerateCoi !== false;
-            if (!autoGenerate) {
-              const handling = org.coiHandling ?? "ignore";
-              if (handling === "broker")
-                return "COI auto-generation is off. Contact your broker.";
-              if (handling === "member")
-                return "COI auto-generation is off. Contact your insurance contact.";
-              return "COI auto-generation is disabled for this organization.";
-            }
-            try {
-              // Run COI generation inline so we can attach the PDF to the iMessage reply
-              const generated = await ctx.runAction(
-                internal.certificates.generateForOrg,
-                {
-                  policyId: requestedPolicy._id,
-                  orgId,
-                  holderName:
-                    params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                    "Certificate holder",
-                  certificateHolder: params.certificateHolder,
-                  holderEmail: params.holderEmail,
-                  holderPhone: params.holderPhone,
-                  requestText: params.requestText,
-                  requestedEndorsements: params.requestedEndorsements,
-                  selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
-                    params.partnerProgramId,
-                  ),
-                  forceReissue: params.explicitReissue,
-                  source: "imessage",
-                  createdByUserId: user._id,
-                },
-              );
-              if (!generated) return COI_GENERATION_FAILED_MESSAGE;
-              if (generated.status === "held_policy_change_required") {
-                return generated.message ?? "This certificate is on hold because it requires broker review before a COI can be issued.";
-              }
-              if (generated.status === "existing") {
-                responseFileAttachments.push({
-                  storageId: generated.fileId as Id<"_storage">,
-                  filename: generated.fileName,
-                });
-                return "I found an existing COI for that holder and current policy version and will send it instead of generating a duplicate. Ask for an explicit reissue if you need a new certificate version.";
-              }
-              if (generated.status === "pending_approval") {
-                return "Certified COI approval requested from the program administrator. I will not send a certificate PDF until it is approved.";
-              }
-              if (generated.status === "needs_program_selection") {
-                const selection = buildCertificateProgramSelection({
-                  policyId: String(requestedPolicy._id),
-                  holderName:
-                    params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                    "Certificate holder",
-                  certificateHolder: params.certificateHolder,
-                  candidates: generated.matchCandidates,
-                  source: "imessage",
-                });
-                if (selection) {
-                  certificateProgramSelectionArtifacts.push(selection);
-                  return formatCertificateProgramSelectionForUser(selection);
-                }
-                return "I found multiple possible program administrator programs. Reply with the correct program name before I generate the certified COI.";
-              }
+          onResponseAttachment: (attachment) => {
+            if (attachment.fileId) {
               responseFileAttachments.push({
-                storageId: generated.fileId as Id<"_storage">,
-                filename: generated.fileName,
+                storageId: attachment.fileId,
+                filename: attachment.filename,
               });
-              return generated.authorityType === "certified"
-                ? "Certified COI generated and will be sent as an attachment."
-                : "Non-binding COI generated and will be sent as an attachment.";
-            } catch (err) {
-              console.error("[imessage] COI generation failed:", err);
-              return COI_GENERATION_FAILED_MESSAGE;
             }
           },
-        },
+          onToolArtifact: (artifact) => {
+            imessageToolArtifacts.push(artifact);
+            if (artifact.type === "certificate_program_selection") {
+              certificateProgramSelectionArtifacts.push(
+                artifact.data as CertificateProgramSelection,
+              );
+            }
+          },
+        }),
         create_imessage_group_chat: {
           ...createImessageGroupChat,
           execute: async (params: {
@@ -1579,6 +1236,7 @@ export const processInbound = internalAction({
           ? {
               email_expert: buildEmailExpertTool(ctx, {
                 orgId,
+                userId: user._id,
                 threadId,
                 channel: "imessage",
                 fromHeader: emailIdentity.fromHeader,
@@ -1635,11 +1293,14 @@ export const processInbound = internalAction({
         stopWhen: stepCountIs(8),
       });
 
+      const { usedTools, toolCalls } = collectToolAudit(result);
       let responseText = result.text;
       let responseAlreadySent = false;
+      let pendingEmailIdForResponse: Id<"pendingEmails"> | undefined;
       const emailResult = emailToolResult.current;
       if (emailResult) {
         responseText = emailResult.responseBody;
+        pendingEmailIdForResponse = emailResult.pendingEmailId;
         if (
           emailResult.status === "draft" ||
           emailResult.status === "needs_confirmation"
@@ -1649,6 +1310,8 @@ export const processInbound = internalAction({
             { threadId, orgId },
           ) as Array<Doc<"pendingEmails">>;
           if (draftsAfterEmailTool.length > 0) {
+            pendingEmailIdForResponse =
+              pendingEmailIdForResponse ?? draftsAfterEmailTool[0]._id;
             responseText = buildEmailDraftTextSummary(draftsAfterEmailTool, {
               sampleSize: Math.min(3, draftsAfterEmailTool.length),
               commands: "chat",
@@ -1674,9 +1337,31 @@ export const processInbound = internalAction({
                 relevantPolicyIds.length > 0
                   ? (relevantPolicyIds as Id<"policies">[])
                   : undefined,
+              usedTools: usedTools.length > 0 ? usedTools : undefined,
+              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             });
           }
         }
+      }
+
+      const completedCoiSideEffect =
+        usedTools.includes("generate_coi") ||
+        responseFileAttachments.some((attachment) =>
+          /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(
+            attachment.filename,
+          ),
+        );
+      if (
+        hasCoiRequestIntent(args.messageText, recentConversationContext) &&
+        claimsCoiCompletion(responseText) &&
+        !completedCoiSideEffect
+      ) {
+        responseText =
+          "I haven't generated that COI yet. I need to resolve the policy and create the certificate first.";
+      }
+      if (asksForInternalPolicyRecordId(responseText)) {
+        responseText =
+          "I can use the policy number, named insured, carrier, or a policy list result instead.";
       }
 
       // ── 15. Resolve response attachment URLs ─────────────────────────────
@@ -1718,15 +1403,20 @@ export const processInbound = internalAction({
             relevantPolicyIds.length > 0
               ? (relevantPolicyIds as Id<"policies">[])
               : undefined,
+          pendingEmailId: pendingEmailIdForResponse,
           attachments:
             agentAttachments.length > 0 ? agentAttachments : undefined,
+          usedTools: usedTools.length > 0 ? usedTools : undefined,
+          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
           toolArtifacts:
-            certificateProgramSelectionArtifacts.length > 0
-              ? certificateProgramSelectionArtifacts.map((selection) => ({
-                  type: "certificate_program_selection",
-                  data: selection,
-                }))
-              : undefined,
+            imessageToolArtifacts.length > 0
+              ? imessageToolArtifacts
+              : certificateProgramSelectionArtifacts.length > 0
+                ? certificateProgramSelectionArtifacts.map((selection) => ({
+                    type: "certificate_program_selection",
+                    data: selection,
+                  }))
+                : undefined,
         });
       }
 

@@ -1128,6 +1128,12 @@ export const insertImessageMessage = internalMutation({
         })
       )
     ),
+    usedTools: v.optional(v.array(v.string())),
+    toolCalls: v.optional(v.array(v.object({
+      name: v.string(),
+      input: v.optional(v.string()),
+      output: v.optional(v.string()),
+    }))),
     toolArtifacts: v.optional(v.array(v.object({
       type: v.string(),
       data: v.any(),
@@ -1151,6 +1157,8 @@ export const insertImessageMessage = internalMutation({
       messageId: args.messageId,
       responseMessageId: args.responseMessageId,
       attachments: args.attachments,
+      usedTools: args.usedTools,
+      toolCalls: args.toolCalls,
       toolArtifacts: args.toolArtifacts,
       referencedPolicyIds: args.referencedPolicyIds,
       pendingEmailId: args.pendingEmailId,

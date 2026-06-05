@@ -17,16 +17,8 @@ import {
   buildBrokerPortfolioSystemPrompt,
   buildMessageHistory,
   buildPolicyToolInstructions,
-  policySearchScore,
 } from "../lib/aiUtils";
 import {
-  lookupPolicy,
-  lookupPolicySection,
-  confirmPolicyFact,
-  createPolicyChangeRequest,
-  addPolicyChangeInfo,
-  draftPolicyChangeSubmission,
-  completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   searchConnectedEmail,
   readConnectedEmail,
@@ -37,12 +29,10 @@ import {
   coordinateMailboxTask,
   webResearch,
 } from "../lib/chatTools";
-import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
-import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
-import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
+import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
-import { isOrgReadableByScope, orgLabelForScope, type AgentScope } from "../lib/agentScope";
+import type { AgentScope } from "../lib/agentScope";
 import {
   buildTitlePromptContent,
   fallbackTitle,
@@ -51,7 +41,6 @@ import {
 } from "./threadTitle";
 import { getClientPortalUrl } from "../lib/domains";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
-import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
 
 /**
  * Simplified chat action for MCP — no streaming. Programmatic email draft/send
@@ -195,232 +184,34 @@ MCP MODE:
 - Do not create iMessage group chats or send vendor invites unless the caller explicitly asked for that action or confirmed it.
 - Do NOT include email-style sign-offs or greetings.`;
 
-    const policyTools = {
-      lookup_policy: {
-        ...lookupPolicy,
-        execute: async (params: {
-          query: string;
-          policyType?: string;
-          carrier?: string;
-        }) => {
-          const scored = policies
-            .map((p: Record<string, unknown>) => ({
-              policy: p,
-              score: policySearchScore(
-                p,
-                params.query,
-                params.policyType,
-                params.carrier,
-              ),
-            }))
-            .filter((p: { score: number }) => p.score > 0)
-            .sort(
-              (a: { score: number }, b: { score: number }) =>
-                b.score - a.score,
-            );
-          const matches =
-            scored.length > 0
-              ? scored.map((s: { policy: Record<string, unknown> }) => s.policy)
-              : policies.slice(0, 5);
-          if (matches.length === 0)
-            return "No policies found for this organization.";
-          return matches.slice(0, 5).map((p: any) => ({
-            id: p._id,
-            client: scope.mode === "broker_portfolio" ? orgLabelForScope(scope, p.orgId) : undefined,
-            orgId: p.orgId,
-            insured: p.insuredName,
-            carrier: p.security,
-            type: p.policyTypes?.join(", "),
-            number: p.policyNumber,
-            effective: p.effectiveDate,
-            expiration: p.expirationDate,
-            premium: p.premium,
-            coverages: (p.coverages ?? []).map((c: any) => ({
-              name: c.name,
-              limit: c.limit,
-              deductible: c.deductible,
-              origin: c.coverageOrigin,
-            })),
-            coverageBreakdown: coverageBreakdownForTool(p),
-          }));
-        },
-      },
-      lookup_policy_section: {
-        ...lookupPolicySection,
-        execute: async (params: { policyId: string; query: string }) => {
-          const policy: any = await ctx.runQuery(
-            internal.policies.getInternal,
-            { id: params.policyId as Id<"policies"> },
-          );
-          if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
-          return searchPolicyDocumentWithSourceSpans(
-            ctx,
-            policy,
-            params.query,
-            8,
-          );
-        },
-      },
-      confirm_policy_fact: {
-        ...confirmPolicyFact,
-        execute: async (params: {
-          policyId: string;
-          fact: string;
-          sourceSpanIds: string[];
-          fieldUpdates?: Record<string, string | undefined>;
-        }) => {
-          const policy: any = await ctx.runQuery(
-            internal.policies.getInternal,
-            { id: params.policyId as Id<"policies"> },
-          );
-          if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
-          try {
-            const result = await ctx.runMutation(
-              internal.policies.confirmPolicyFactFromSource,
-              {
-                id: params.policyId as Id<"policies">,
-                orgId: (policy.orgId ?? args.orgId) as Id<"organizations">,
-                userId: args.userId,
-                fact: params.fact,
-                sourceSpanIds: params.sourceSpanIds,
-                source: "chat",
-                fieldUpdates: params.fieldUpdates,
-              },
-            );
-            return {
-              status: "confirmed",
-              fact: params.fact,
-              updatedFields: result.updatedFields,
-              sourceSpanIds: result.sourceSpanIds,
-            };
-          } catch (err) {
-            return err instanceof Error
-              ? err.message
-              : "Unable to confirm that fact from source evidence.";
-          }
-        },
-      },
-    };
+    const referencedPolicySourceIds = new Set<string>(
+      relevantPolicyIds.map((id: unknown) => String(id)),
+    );
+    const responseAttachments: Array<{
+      filename: string;
+      contentType: string;
+      size: number;
+      fileId?: Id<"_storage">;
+    }> = [];
+    const mcpToolArtifacts: Array<{ type: string; data: unknown }> = [];
 
     const tools = {
-      ...policyTools,
-      ...buildVendorComplianceTools(ctx, scope.mode === "broker_portfolio" ? scope.readOrgIds : [args.orgId]),
-      create_policy_change_request: {
-        ...createPolicyChangeRequest,
-        execute: async (params: {
-          requestKind?: PceRequestKind;
-          requestText: string;
-          policyId?: string;
-          evidenceSourceIds?: string[];
-        }) => {
-          const intake = evaluatePceIntake({
-            requestKind: params.requestKind,
-            requestText: params.requestText,
-          });
-          if (!intake.allowed) return intake.message;
-          let targetOrgId = args.orgId;
-          if (params.policyId) {
-            const policy: any = await ctx.runQuery(
-              internal.policies.getInternal,
-              { id: params.policyId as Id<"policies"> },
-            );
-            if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
-            targetOrgId = policy.orgId as Id<"organizations">;
-          }
-          const result = await ctx.runAction(
-            internal.actions.policyChangeRequests.createFromChatForThread,
-            {
-              orgId: targetOrgId,
-              userId: args.userId,
-              policyId: params.policyId as Id<"policies"> | undefined,
-              requestText: params.requestText,
-              evidenceSourceIds: params.evidenceSourceIds,
-            },
-          );
-          if (result?.error) return result.error;
-          return {
-            status: "created",
-            caseId: result?.caseId,
-            requestKind: intake.kind,
-            usedSdkPce: Boolean(result?.usedSdkPce),
-          };
+      ...buildAgentToolExecutors(ctx, {
+        surface: "mcp",
+        orgId: args.orgId,
+        userId: args.userId,
+        scope,
+        org,
+        onPolicyReferenced: (policyId) => {
+          referencedPolicySourceIds.add(String(policyId));
         },
-      },
-      add_policy_change_info: {
-        ...addPolicyChangeInfo,
-        execute: async (params: {
-          caseId: string;
-          infoText: string;
-          sourceSpanIds?: string[];
-        }) => {
-          await ctx.runMutation(internal.policyChanges.addInfo, {
-            caseId: params.caseId as Id<"policyChangeCases">,
-            userId: args.userId,
-            infoText: params.infoText,
-            sourceSpanIds: params.sourceSpanIds,
-          });
-          return { status: "updated", caseId: params.caseId };
+        onResponseAttachment: (attachment) => {
+          responseAttachments.push(attachment);
         },
-      },
-      draft_policy_change_email: {
-        ...draftPolicyChangeSubmission,
-        execute: async (params: {
-          caseId: string;
-          recipientEmail?: string;
-          recipientName?: string;
-          instructions?: string;
-        }) => {
-          const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
-            caseId: params.caseId as Id<"policyChangeCases">,
-            userId: args.userId,
-            recipientEmail: params.recipientEmail,
-            recipientName: params.recipientName,
-            instructions: params.instructions,
-          });
-          return {
-            status: draft.needsRecipient ? "needs_recipient" : "drafted",
-            caseId: params.caseId,
-            readyToSend: !draft.needsRecipient,
-            nextAction: draft.needsRecipient
-              ? "Ask for the broker email address."
-              : "Show the email details and ask for approval before sending.",
-            emailDraft: {
-              recipientEmail: draft.recipientEmail,
-              recipientName: draft.recipientName,
-              subject: draft.subject,
-              body: draft.body,
-            },
-          };
+        onToolArtifact: (artifact) => {
+          mcpToolArtifacts.push(artifact);
         },
-      },
-      complete_policy_change_from_endorsement: {
-        ...completePolicyChangeFromEndorsement,
-        execute: async (params: {
-          caseId?: string;
-          policyId: string;
-          files: Array<{ fileId: string; fileName: string }>;
-          summary?: string;
-          fieldUpdates?: Record<string, unknown>;
-        }) => {
-          const policy: any = await ctx.runQuery(
-            internal.policies.getInternal,
-            { id: params.policyId as Id<"policies"> },
-          );
-          if (!policy || !isOrgReadableByScope(scope, policy.orgId)) return "Policy not found.";
-          const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
-            caseId: params.caseId as Id<"policyChangeCases"> | undefined,
-            userId: args.userId,
-            policyId: params.policyId as Id<"policies">,
-            files: params.files.map((file) => ({
-              fileId: file.fileId as Id<"_storage">,
-              fileName: file.fileName,
-            })),
-            summary: params.summary,
-            fieldUpdates: params.fieldUpdates,
-          });
-          return { status: "completed", ...result };
-        },
-      },
+      }),
       create_imessage_group_chat: {
         ...createImessageGroupChat,
         execute: async (params: {
@@ -601,9 +392,15 @@ MCP MODE:
       id: agentMsgId,
       content,
       referencedPolicyIds:
-        relevantPolicyIds.length > 0 ? relevantPolicyIds : undefined,
+        referencedPolicySourceIds.size > 0
+          ? ([...referencedPolicySourceIds] as Id<"policies">[])
+          : undefined,
       referencedQuoteIds:
         relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
+      attachments:
+        responseAttachments.length > 0 ? responseAttachments : undefined,
+      toolArtifacts:
+        mcpToolArtifacts.length > 0 ? mcpToolArtifacts : undefined,
     });
     await ctx.runMutation(internal.threads.touchThread, { threadId });
 

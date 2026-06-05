@@ -1,0 +1,650 @@
+"use node";
+
+import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
+import {
+  addPolicyChangeInfo,
+  attachPolicyDocument,
+  compareCoverages,
+  completePolicyChangeFromEndorsement,
+  confirmPolicyFact,
+  createPolicyChangeRequest,
+  draftPolicyChangeSubmission,
+  generateCoi,
+  lookupComplianceRequirements,
+  lookupPolicy,
+  lookupPolicySection,
+  saveNote,
+} from "./chatTools";
+import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
+import {
+  buildCertificateProgramSelection,
+  normalizeSelectedPartnerProgramId,
+} from "./certificateProgramSelection";
+import {
+  filterComplianceRequirements,
+  formatComplianceRequirement,
+} from "./complianceAgent";
+import { coverageBreakdownForTool } from "./coverageBreakdown";
+import { orgLabelForScope, type AgentScope } from "./agentScope";
+import { evaluatePceIntake, type PceRequestKind } from "./pceIntake";
+import { searchPolicyDocumentWithSourceSpans } from "./policyLookup";
+import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
+import { buildVendorComplianceTools } from "./vendorComplianceTools";
+
+type AgentToolSurface = "web" | "email" | "imessage" | "mcp";
+
+type ToolAttachment = {
+  filename: string;
+  contentType: string;
+  size: number;
+  fileId?: Id<"_storage">;
+};
+
+type ToolArtifact = {
+  type: string;
+  data: unknown;
+};
+
+type PolicyChangeDraftResult = {
+  needsRecipient?: boolean;
+  recipientEmail?: string;
+  recipientName?: string;
+  subject?: string;
+  body?: string;
+  ccAddresses?: string[];
+  bccAddresses?: string[];
+};
+
+type ToolPolicy = Record<string, any> & {
+  _id: Id<"policies">;
+  orgId: Id<"organizations">;
+};
+
+type PolicyResolutionResult =
+  | { ok: true; policy: ToolPolicy }
+  | { ok: false; message: string };
+
+type ListedPolicyForTool = Record<string, any> & {
+  _id?: Id<"policies">;
+  orgId?: Id<"organizations">;
+  _scopeOrgName?: string;
+};
+
+export type BuildAgentToolExecutorsOptions = {
+  surface: AgentToolSurface;
+  orgId: Id<"organizations">;
+  userId: Id<"users">;
+  scope: AgentScope;
+  readOrgIds?: Id<"organizations">[];
+  writableOrgIds?: Id<"organizations">[];
+  org?: Record<string, unknown> | null;
+  canWrite?: boolean;
+  writeUnavailableMessage?: string;
+  availableFileIds?: Set<string>;
+  onPolicyReferenced?: (policyId: Id<"policies">) => void | Promise<void>;
+  onResponseAttachment?: (attachment: ToolAttachment) => void | Promise<void>;
+  onToolArtifact?: (artifact: ToolArtifact) => void | Promise<void>;
+  onPolicyChangeCase?: (caseId: Id<"policyChangeCases">) => void | Promise<void>;
+  onPolicyChangeEmailDraft?: (args: {
+    caseId: Id<"policyChangeCases">;
+    draft: PolicyChangeDraftResult;
+  }) => void | { pendingEmailId?: Id<"pendingEmails"> } | Promise<void | { pendingEmailId?: Id<"pendingEmails"> }>;
+};
+
+function certificateSourceForSurface(surface: AgentToolSurface) {
+  if (surface === "web") return "chat" as const;
+  if (surface === "mcp") return "mcp" as const;
+  return surface;
+}
+
+function orgMemorySourceForSurface(surface: AgentToolSurface) {
+  if (surface === "email" || surface === "imessage") return surface;
+  return "chat" as const;
+}
+
+function programSelectionSourceForSurface(surface: AgentToolSurface) {
+  if (surface === "email" || surface === "imessage") return surface;
+  if (surface === "web") return "chat" as const;
+  return "agent" as const;
+}
+
+function policyChangeCreateAction(surface: AgentToolSurface) {
+  return surface === "email"
+    ? internal.actions.policyChangeRequests.createFromEmailForThread
+    : internal.actions.policyChangeRequests.createFromChatForThread;
+}
+
+function typeMap(value: string): "fact" | "preference" | "risk_note" | "observation" {
+  if (value === "fact" || value === "preference" || value === "risk_note") return value;
+  return "observation";
+}
+
+function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
+  return {
+    id: policy._id,
+    client: scope.mode === "broker_portfolio"
+      ? orgLabelForScope(scope, policy.orgId)
+      : policy._scopeOrgName,
+    orgId: policy.orgId,
+    insured: policy.insuredName,
+    carrier: policy.security,
+    type: policy.policyTypes?.join(", "),
+    number: policy.policyNumber,
+    effective: policy.effectiveDate,
+    expiration: policy.expirationDate,
+    premium: policy.premium,
+    coverages: (policy.coverages ?? []).map((coverage: any) => ({
+      name: coverage.name,
+      limit: coverage.limit,
+      deductible: coverage.deductible,
+      origin: coverage.coverageOrigin,
+    })),
+    coverageBreakdown: coverageBreakdownForTool(policy),
+  };
+}
+
+function canWriteOrg(options: BuildAgentToolExecutorsOptions, orgId: Id<"organizations"> | string) {
+  if (options.canWrite === false) return false;
+  const writableOrgIds = options.writableOrgIds ?? options.scope.writableOrgIds;
+  return writableOrgIds.some((id) => String(id) === String(orgId));
+}
+
+function canReadOrg(options: BuildAgentToolExecutorsOptions, orgId: Id<"organizations"> | string) {
+  const readOrgIds = options.readOrgIds ?? options.scope.readOrgIds;
+  return readOrgIds.some((id) => String(id) === String(orgId));
+}
+
+function writeUnavailable(options: BuildAgentToolExecutorsOptions, action: string) {
+  return options.writeUnavailableMessage ?? `You do not have permission to ${action}.`;
+}
+
+async function listPoliciesForReadableOrgs(
+  ctx: ActionCtx,
+  options: BuildAgentToolExecutorsOptions,
+): Promise<ListedPolicyForTool[]> {
+  const readOrgIds = options.readOrgIds ?? options.scope.readOrgIds;
+  const rows = await Promise.all(
+    readOrgIds.map(async (orgId) => {
+      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
+      return (policies as Array<Record<string, unknown>>).map((policy) => ({
+        ...policy,
+        _scopeOrgName: orgLabelForScope(options.scope, orgId),
+      }));
+    }),
+  );
+  return rows.flat() as ListedPolicyForTool[];
+}
+
+async function resolveReadablePolicy(
+  ctx: ActionCtx,
+  options: BuildAgentToolExecutorsOptions,
+  reference: string,
+): Promise<PolicyResolutionResult> {
+  const resolved = await resolvePolicyReferenceForOrg(ctx, {
+    orgIds: options.readOrgIds ?? options.scope.readOrgIds,
+    reference,
+  });
+  if (!resolved.ok) return { ok: false, message: resolved.message };
+  const policy = resolved.policy as ToolPolicy;
+  if (!policy.orgId || !canReadOrg(options, policy.orgId)) {
+    return { ok: false as const, message: "Policy not found." };
+  }
+  await options.onPolicyReferenced?.(policy._id);
+  return { ok: true, policy };
+}
+
+async function resolveWritablePolicy(
+  ctx: ActionCtx,
+  options: BuildAgentToolExecutorsOptions,
+  reference: string,
+  action: string,
+) {
+  const resolved = await resolveReadablePolicy(ctx, options, reference);
+  if (!resolved.ok) return resolved;
+  if (!canWriteOrg(options, resolved.policy.orgId)) {
+    return { ok: false as const, message: writeUnavailable(options, action) };
+  }
+  return resolved;
+}
+
+export function buildAgentToolExecutors(
+  ctx: ActionCtx,
+  options: BuildAgentToolExecutorsOptions,
+) {
+  return {
+    lookup_policy: {
+      ...lookupPolicy,
+      execute: async (params: {
+        query: string;
+        policyType?: string;
+        carrier?: string;
+      }) => {
+        const policies = await listPoliciesForReadableOrgs(ctx, options);
+        const { policySearchScore } = await import("./aiUtils");
+        const scored = policies
+          .map((policy) => ({
+            policy,
+            score: policySearchScore(
+              policy,
+              params.query,
+              params.policyType,
+              params.carrier,
+            ),
+          }))
+          .filter((match) => match.score > 0)
+          .sort((left, right) => right.score - left.score);
+        const matches = scored.length > 0
+          ? scored.map((match) => match.policy)
+          : policies.slice(0, 5);
+        if (matches.length === 0) return "No policies found for this organization.";
+        for (const policy of matches.slice(0, 5)) {
+          if (policy._id) await options.onPolicyReferenced?.(policy._id as Id<"policies">);
+        }
+        return matches.slice(0, 5).map((policy) =>
+          formatPolicyForTool(policy as Record<string, any>, options.scope),
+        );
+      },
+    },
+    compare_coverages: {
+      ...compareCoverages,
+      execute: async (params: { policyId1: string; policyId2: string }) => {
+        const first = await resolveReadablePolicy(ctx, options, params.policyId1);
+        if (!first.ok) return first.message;
+        const second = await resolveReadablePolicy(ctx, options, params.policyId2);
+        if (!second.ok) return second.message;
+        return {
+          policy1: formatPolicyForTool(first.policy as any, options.scope),
+          policy2: formatPolicyForTool(second.policy as any, options.scope),
+        };
+      },
+    },
+    lookup_compliance_requirements: {
+      ...lookupComplianceRequirements,
+      execute: async (params: {
+        query?: string;
+        appliesTo?: "vendors" | "own_org" | "both" | "all";
+      }) => {
+        const blocks: string[] = [];
+        for (const readOrgId of options.readOrgIds ?? options.scope.readOrgIds) {
+          const requirements = await ctx.runQuery(
+            internal.compliance.listRequirementsInternal,
+            { orgId: readOrgId },
+          );
+          const matches = filterComplianceRequirements(requirements, params);
+          if (matches.length > 0) {
+            const label = orgLabelForScope(options.scope, readOrgId);
+            blocks.push(
+              `Requirements for ${label} (orgId: ${readOrgId}):\n${matches.map(formatComplianceRequirement).join("\n")}`,
+            );
+          }
+        }
+        return blocks.length > 0
+          ? blocks.join("\n\n")
+          : "No matching compliance requirements found. Vendor/contractor requirements and internal requirements are stored separately.";
+      },
+    },
+    ...buildVendorComplianceTools(
+      ctx,
+      (options.readOrgIds ?? options.scope.readOrgIds).map((orgId) => String(orgId)),
+    ),
+    lookup_policy_section: {
+      ...lookupPolicySection,
+      execute: async (params: { policyId: string; query: string }) => {
+        const resolved = await resolveReadablePolicy(ctx, options, params.policyId);
+        if (!resolved.ok) return resolved.message;
+        return searchPolicyDocumentWithSourceSpans(
+          ctx,
+          resolved.policy,
+          params.query,
+          8,
+        );
+      },
+    },
+    save_note: {
+      ...saveNote,
+      execute: async (params: {
+        content: string;
+        type: string;
+        policyId?: string;
+      }) => {
+        if (options.canWrite === false) return writeUnavailable(options, "save durable notes");
+        let policyId: Id<"policies"> | undefined;
+        let targetOrgId = options.orgId;
+        if (params.policyId) {
+          const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "save notes for that policy");
+          if (!resolved.ok) return resolved.message;
+          policyId = resolved.policy._id;
+          targetOrgId = resolved.policy.orgId;
+        }
+        await ctx.runMutation(internal.orgMemory.upsert, {
+          orgId: targetOrgId,
+          type: typeMap(params.type),
+          content: params.content,
+          source: orgMemorySourceForSurface(options.surface),
+          policyId,
+        });
+        return "Note saved.";
+      },
+    },
+    attach_policy_document: {
+      ...attachPolicyDocument,
+      execute: async (params: { policyId: string }) => {
+        const resolved = await resolveReadablePolicy(ctx, options, params.policyId);
+        if (!resolved.ok) return resolved.message;
+        const policy = resolved.policy;
+        if (!policy.fileId) return "That policy does not have an original PDF file available.";
+        const attachment = {
+          filename: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
+          contentType: "application/pdf",
+          size: 0,
+          fileId: policy.fileId as Id<"_storage">,
+        };
+        await options.onResponseAttachment?.(attachment);
+        return {
+          message: "Original policy PDF attached to this response.",
+          policyId: policy._id,
+          attachment,
+        };
+      },
+    },
+    confirm_policy_fact: {
+      ...confirmPolicyFact,
+      execute: async (params: {
+        policyId: string;
+        fact: string;
+        sourceSpanIds: string[];
+        fieldUpdates?: Record<string, string | undefined>;
+      }) => {
+        const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "confirm policy facts");
+        if (!resolved.ok) return resolved.message;
+        try {
+          const result = await ctx.runMutation(
+            internal.policies.confirmPolicyFactFromSource,
+            {
+              id: resolved.policy._id,
+              orgId: resolved.policy.orgId,
+              userId: options.userId,
+              fact: params.fact,
+              source: orgMemorySourceForSurface(options.surface),
+              sourceSpanIds: params.sourceSpanIds,
+              fieldUpdates: params.fieldUpdates,
+            },
+          );
+          return {
+            status: "confirmed",
+            fact: params.fact,
+            updatedFields: result.updatedFields,
+            sourceSpanIds: result.sourceSpanIds,
+          };
+        } catch (err) {
+          return err instanceof Error
+            ? err.message
+            : "Unable to confirm that fact from source evidence.";
+        }
+      },
+    },
+    generate_coi: {
+      ...generateCoi,
+      execute: async (params: {
+        policyId: string;
+        certificateHolder?: string;
+        holderEmail?: string;
+        holderPhone?: string;
+        requestText?: string;
+        requestedEndorsements?: string[];
+        partnerProgramId?: string;
+        explicitReissue?: boolean;
+      }) => {
+        const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "generate a certificate");
+        if (!resolved.ok) return resolved.message;
+        const autoGenerate = options.org?.autoGenerateCoi !== false;
+        if (!autoGenerate) {
+          const handling = options.org?.coiHandling ?? "ignore";
+          if (handling === "broker") return "COI auto-generation is off. Please contact your broker to obtain this certificate.";
+          if (handling === "member") return "COI auto-generation is off. Please route this COI request to your primary insurance contact.";
+          return "COI auto-generation is disabled for this organization.";
+        }
+        try {
+          const policy = resolved.policy;
+          const generated = await ctx.runAction(
+            internal.certificates.generateForOrg,
+            {
+              policyId: policy._id,
+              orgId: policy.orgId,
+              holderName:
+                params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+                "Certificate holder",
+              certificateHolder: params.certificateHolder,
+              holderEmail: params.holderEmail,
+              holderPhone: params.holderPhone,
+              requestText: params.requestText,
+              requestedEndorsements: params.requestedEndorsements,
+              selectedPartnerProgramId: normalizeSelectedPartnerProgramId(params.partnerProgramId),
+              forceReissue: params.explicitReissue,
+              source: certificateSourceForSurface(options.surface),
+              createdByUserId: options.userId,
+            },
+          );
+          if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+          if (generated.status === "held_policy_change_required") {
+            const output = {
+              message: generated.message,
+              holdId: generated.holdId,
+              policyChangeCaseId: generated.policyChangeCaseId,
+              requiredChanges: generated.requiredChanges,
+              reasonCode: generated.reasonCode,
+              evidence: generated.evidence,
+              brokerHandoffOffered: generated.brokerHandoffOffered,
+            };
+            await options.onToolArtifact?.({ type: "certificate_hold", data: output });
+            if (generated.policyChangeCaseId) {
+              await options.onPolicyChangeCase?.(generated.policyChangeCaseId as Id<"policyChangeCases">);
+            }
+            return output;
+          }
+          if (generated.status === "pending_approval") {
+            return {
+              message: "Certified COI request created and sent to the program administrator for approval.",
+              requestId: generated.requestId,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            };
+          }
+          if (generated.status === "needs_program_selection") {
+            const selection = buildCertificateProgramSelection({
+              policyId: String(policy._id),
+              holderName:
+                params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+                "Certificate holder",
+              certificateHolder: params.certificateHolder,
+              candidates: generated.matchCandidates,
+              source: programSelectionSourceForSurface(options.surface),
+            });
+            const output = {
+              message: "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
+              candidates: generated.matchCandidates,
+              programSelection: selection,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            };
+            if (selection) {
+              await options.onToolArtifact?.({
+                type: "certificate_program_selection",
+                data: selection,
+              });
+            }
+            return output;
+          }
+          const attachment = {
+            filename: generated.fileName,
+            contentType: "application/pdf",
+            size: generated.size,
+            fileId: generated.fileId as Id<"_storage">,
+          };
+          await options.onResponseAttachment?.(attachment);
+          if (generated.status === "existing") {
+            return {
+              message: generated.authorityType === "certified"
+                ? "I found an existing certified COI for this holder and current policy version and attached it to this response."
+                : "I found an existing non-binding COI for this holder and current policy version and attached it to this response.",
+              attachment,
+              holderId: generated.holderId,
+              policyCertificateId: generated.policyCertificateId,
+              certificateVersionId: generated.certificateVersionId,
+              policyVersionId: generated.policyVersionId,
+              versionNumber: generated.versionNumber,
+            };
+          }
+          return {
+            message: generated.authorityType === "certified"
+              ? "Certified COI generated and attached to this response."
+              : "Non-binding COI generated and attached to this response.",
+            attachment,
+          };
+        } catch (err) {
+          console.error("[agentToolExecutors] COI generation failed:", err);
+          return COI_GENERATION_FAILED_MESSAGE;
+        }
+      },
+    },
+    create_policy_change_request: {
+      ...createPolicyChangeRequest,
+      execute: async (params: {
+        requestKind?: PceRequestKind;
+        requestText: string;
+        policyId?: string;
+        evidenceSourceIds?: string[];
+      }) => {
+        if (options.canWrite === false) return writeUnavailable(options, "create a policy change request");
+        const intake = evaluatePceIntake({
+          requestKind: params.requestKind,
+          requestText: params.requestText,
+        });
+        if (!intake.allowed) return intake.message;
+        let targetOrgId = options.orgId;
+        let policyId: Id<"policies"> | undefined;
+        if (params.policyId) {
+          const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "create this policy change request");
+          if (!resolved.ok) return resolved.message;
+          targetOrgId = resolved.policy.orgId;
+          policyId = resolved.policy._id;
+        }
+        const result = await ctx.runAction(
+          policyChangeCreateAction(options.surface),
+          {
+            orgId: targetOrgId,
+            userId: options.userId,
+            policyId,
+            requestText: params.requestText,
+            evidenceSourceIds: params.evidenceSourceIds,
+          },
+        );
+        if (result?.error) return result.error;
+        const caseId = result?.caseId as Id<"policyChangeCases"> | undefined;
+        if (caseId) await options.onPolicyChangeCase?.(caseId);
+        return {
+          message: "Policy change request created.",
+          status: "created",
+          caseId,
+          requestKind: intake.kind,
+          usedSdkPce: Boolean(result?.usedSdkPce),
+        };
+      },
+    },
+    add_policy_change_info: {
+      ...addPolicyChangeInfo,
+      execute: async (params: {
+        caseId: string;
+        infoText: string;
+        sourceSpanIds?: string[];
+      }) => {
+        if (options.canWrite === false) return writeUnavailable(options, "update a policy change request");
+        await ctx.runMutation(internal.policyChanges.addInfo, {
+          caseId: params.caseId as Id<"policyChangeCases">,
+          userId: options.userId,
+          infoText: params.infoText,
+          sourceSpanIds: params.sourceSpanIds,
+        });
+        return { status: "updated", caseId: params.caseId };
+      },
+    },
+    draft_policy_change_email: {
+      ...draftPolicyChangeSubmission,
+      execute: async (params: {
+        caseId: string;
+        recipientEmail?: string;
+        recipientName?: string;
+        instructions?: string;
+      }) => {
+        if (options.canWrite === false) return writeUnavailable(options, "draft a policy change email");
+        const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
+          caseId: params.caseId as Id<"policyChangeCases">,
+          userId: options.userId,
+          recipientEmail: params.recipientEmail,
+          recipientName: params.recipientName,
+          instructions: params.instructions,
+        });
+        const callbackResult = await options.onPolicyChangeEmailDraft?.({
+          caseId: params.caseId as Id<"policyChangeCases">,
+          draft,
+        });
+        const pendingEmailId =
+          callbackResult && typeof callbackResult === "object"
+            ? callbackResult.pendingEmailId
+            : undefined;
+        const draftWithOptionalAddresses = draft as PolicyChangeDraftResult;
+        return {
+          status: draft.needsRecipient ? "needs_recipient" : "drafted",
+          caseId: params.caseId,
+          readyToSend: !draft.needsRecipient,
+          nextAction: draft.needsRecipient
+            ? "Ask for the broker email address."
+            : "Show the email details and ask for approval before sending.",
+          pendingEmailId,
+          emailDraft: {
+            recipientEmail: draft.recipientEmail,
+            recipientName: draft.recipientName,
+            ccAddresses: draftWithOptionalAddresses.ccAddresses,
+            bccAddresses: draftWithOptionalAddresses.bccAddresses,
+            subject: draft.subject,
+            body: draft.body,
+          },
+        };
+      },
+    },
+    complete_policy_change_from_endorsement: {
+      ...completePolicyChangeFromEndorsement,
+      execute: async (params: {
+        caseId?: string;
+        policyId: string;
+        files: Array<{ fileId: string; fileName: string }>;
+        summary?: string;
+        fieldUpdates?: Record<string, unknown>;
+      }) => {
+        const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "complete a policy change request");
+        if (!resolved.ok) return resolved.message;
+        if (options.availableFileIds) {
+          for (const file of params.files) {
+            if (!options.availableFileIds.has(file.fileId)) {
+              return `Storage ID ${file.fileId} does not match any attachment on this message.`;
+            }
+          }
+        }
+        const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
+          caseId: params.caseId as Id<"policyChangeCases"> | undefined,
+          userId: options.userId,
+          policyId: resolved.policy._id,
+          files: params.files.map((file) => ({
+            fileId: file.fileId as Id<"_storage">,
+            fileName: file.fileName,
+          })),
+          summary: params.summary,
+          fieldUpdates: params.fieldUpdates,
+        });
+        return { status: "completed", ...result };
+      },
+    },
+  };
+}

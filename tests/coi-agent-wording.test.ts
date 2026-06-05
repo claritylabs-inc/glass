@@ -5,7 +5,7 @@ describe("COI agent wording", () => {
   it("tells agents to describe COIs as generated certificates, not wording pulls", () => {
     const instructions = buildPolicyToolInstructions(8);
 
-    expect(instructions).toContain("generating a new COI or certificate");
+    expect(instructions).toContain("generating or retrieving a COI/certificate");
     expect(instructions).toContain("COIs are generated artifacts");
     expect(instructions).toContain('Do not offer to "pull COI wording"');
     expect(instructions).toContain("use the email expert tool when email is available");
