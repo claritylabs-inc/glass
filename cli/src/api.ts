@@ -14,9 +14,42 @@ export class GlassApi {
     return this.askGlass(prompt);
   }
 
-  async generateCoi(policyId: string, holderName: string, holderAddress?: string) {
-    const prompt = `Generate a COI for policy ${policyId} for certificate holder ${holderName}${holderAddress ? ` at ${holderAddress}` : ""}. Use the policy's authority route: certified only if a program administrator approval or standing authorization exists; otherwise generate a non-binding COI.`;
-    return this.askGlass(prompt);
+  async generateCoi(
+    policyId: string,
+    holderName: string,
+    holderAddress?: string,
+    explicitReissue = false,
+    holderEmail?: string,
+    holderPhone?: string,
+  ) {
+    return this.post<{ data: Record<string, unknown> }>(`/api/v1/policies/${policyId}/certificates`, {
+      certificate_holder_name: holderName,
+      certificate_holder_email: holderEmail,
+      certificate_holder_phone: holderPhone,
+      certificate_holder: [holderName, holderAddress].filter(Boolean).join("\n"),
+      explicit_reissue: explicitReissue,
+    });
+  }
+
+  async certificateHolders(query?: string) {
+    const params = query ? `?q=${encodeURIComponent(query)}` : "";
+    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/certificate-holders${params}`);
+  }
+
+  async policyVersions(policyId: string) {
+    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/policies/${policyId}/versions`);
+  }
+
+  async certificateVersions(policyId: string) {
+    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/policies/${policyId}/certificate-versions`);
+  }
+
+  async certificateReviewJobs(policyId?: string, status?: string) {
+    const params = new URLSearchParams();
+    if (policyId) params.set("policy_id", policyId);
+    if (status) params.set("status", status);
+    const query = params.toString();
+    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/certificate-review-jobs${query ? `?${query}` : ""}`);
   }
 
   async runUploadPipeline(filePath: string) {

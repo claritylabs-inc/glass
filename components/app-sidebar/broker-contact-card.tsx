@@ -1,6 +1,7 @@
 "use client";
 
 import { Mail, MessageSquare, UserPlus } from "lucide-react";
+import { BrandIcon } from "@/components/ui/brand-icon";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { PillButton } from "@/components/ui/pill-button";
 import {
@@ -50,7 +51,7 @@ export function SidebarBrokerContact({
           className={`h-8 w-8 shrink-0 overflow-hidden rounded-md flex items-center justify-center ${
             isGlassFallback
               ? "bg-white ring-1 ring-inset ring-foreground/10"
-              : "ring-1 ring-inset ring-white/10"
+              : ""
           }`}
           style={
             isGlassFallback
@@ -65,11 +66,11 @@ export function SidebarBrokerContact({
             // because that's how the brand mark is meant to read.
             <LogoIcon size={14} static color="#000000" />
           ) : iconUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <BrandIcon
               src={iconUrl}
-              alt=""
-              className="h-full w-full object-contain bg-white"
+              name={name}
+              size="lg"
+              className="h-full w-full rounded-[inherit]"
             />
           ) : (
             <span className="text-base font-semibold text-white">

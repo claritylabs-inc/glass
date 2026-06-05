@@ -71,12 +71,14 @@ function OperationalPanelBody({
 function OperationalItem({
   className,
   children,
+  ...props
 }: {
   className?: string;
   children: ReactNode;
-}) {
+} & ComponentPropsWithoutRef<"div">) {
   return (
     <div
+      {...props}
       className={cn(
         "border-t border-foreground/6 px-4 py-3 first:border-t-0",
         className,

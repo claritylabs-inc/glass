@@ -182,6 +182,14 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("Name/address of the certificate holder"),
+    holderEmail: z
+      .string()
+      .optional()
+      .describe("Certificate holder email address for renewal delivery when the user provides one"),
+    holderPhone: z
+      .string()
+      .optional()
+      .describe("Certificate holder phone number for renewal delivery when the user provides one"),
     requestText: z
       .string()
       .optional()
@@ -194,6 +202,10 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("Optional program administrator program ID to use when Glass asks the broker to choose a program"),
+    explicitReissue: z
+      .boolean()
+      .optional()
+      .describe("Set true only when the user explicitly asks to reissue/regenerate a new certificate version even if one already exists for this holder and current policy version"),
   }),
 });
 

@@ -123,6 +123,8 @@ function ResizableRightPanelSlot({
 
   const onPointerDown = useCallback((event: React.PointerEvent) => {
     event.preventDefault();
+    const resizeHandle = event.currentTarget;
+    resizeHandle.setPointerCapture?.(event.pointerId);
     const measuredWidth =
       slotRef.current?.getBoundingClientRect().width ?? widthRef.current;
     const startWidth = Math.min(
@@ -148,6 +150,7 @@ function ResizableRightPanelSlot({
     const onUp = () => {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
+      resizeHandle.releasePointerCapture?.(event.pointerId);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
@@ -169,8 +172,11 @@ function ResizableRightPanelSlot({
       style={isFixedWidth ? { width } : undefined}
     >
       <div
+        aria-label="Resize panel"
+        aria-orientation="vertical"
         onPointerDown={onPointerDown}
-        className="absolute left-0 top-0 bottom-0 z-10 hidden w-1 cursor-col-resize hover:bg-foreground/8 active:bg-foreground/12 lg:block"
+        role="separator"
+        className="absolute left-0 top-0 bottom-0 z-20 hidden w-3 -translate-x-1.5 cursor-col-resize touch-none lg:block after:absolute after:left-1/2 after:top-0 after:bottom-0 after:w-px after:-translate-x-1/2 after:bg-transparent hover:after:bg-foreground/10 active:after:bg-foreground/16"
       />
       <div className="contents lg:flex lg:h-full lg:min-w-0 lg:w-full lg:max-w-full lg:flex-1 lg:overflow-hidden">
         {children}

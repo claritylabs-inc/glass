@@ -1591,9 +1591,12 @@ If the broker attached an endorsement or confirmation for this change, use compl
           execute: async (params: {
             policyId: string;
             certificateHolder?: string;
+            holderEmail?: string;
+            holderPhone?: string;
             requestText?: string;
             requestedEndorsements?: string[];
             partnerProgramId?: string;
+            explicitReissue?: boolean;
           }) => {
             const autoGenerate = org.autoGenerateCoi !== false;
             if (!autoGenerate) {
@@ -1622,11 +1625,14 @@ If the broker attached an endorsement or confirmation for this change, use compl
                     params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                     "Certificate holder",
                   certificateHolder: params.certificateHolder,
+                  holderEmail: params.holderEmail,
+                  holderPhone: params.holderPhone,
                   requestText: params.requestText,
                   requestedEndorsements: params.requestedEndorsements,
                   selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
                     params.partnerProgramId,
                   ),
+                  forceReissue: params.explicitReissue,
                   source: "email",
                   createdByUserId: primaryUserId,
                 },
@@ -1634,6 +1640,15 @@ If the broker attached an endorsement or confirmation for this change, use compl
               if (!generated) return COI_GENERATION_FAILED_MESSAGE;
               if (generated.status === "held_policy_change_required") {
                 return generated.message ?? "This certificate is on hold because it requires broker review before a COI can be issued.";
+              }
+              if (generated.status === "existing") {
+                generatedCoiAttachments.push({
+                  filename: generated.fileName,
+                  contentType: "application/pdf",
+                  size: generated.size,
+                  fileId: generated.fileId as Id<"_storage">,
+                });
+                return "I found an existing COI for that holder and current policy version and will attach it instead of generating a duplicate. Ask for an explicit reissue if you need a new certificate version.";
               }
               if (generated.status === "pending_approval") {
                 return "Certified COI approval has been requested from the program administrator. No certificate PDF is attached yet.";

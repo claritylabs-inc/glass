@@ -3,13 +3,17 @@ import {
   policyMatchesMcpFilters,
   policyMatchesSearch,
   quoteMatchesMcpFilters,
+  toCertificateHolderDto,
   toCertificateDto,
+  toCertificateVersionDto,
+  toCertificateWorkflowJobDto,
   toMcpPolicySummaryDto,
   toMcpQuoteSummaryDto,
   toNotificationDto,
   toOrgDto,
   toPolicyDto,
   toPolicyStatsDto,
+  toPolicyVersionDto,
 } from "../../convex/lib/apiDto";
 
 describe("toPolicyDto", () => {
@@ -132,7 +136,145 @@ describe("toCertificateDto", () => {
       file_id: "f1",
       authority_type: "non_binding",
       certification_status: "not_applicable",
+      holder_id: null,
+      policy_certificate_id: null,
+      certificate_version_id: null,
+      certificate_version_number: null,
+      policy_version_id: null,
       url: null,
+    });
+  });
+
+  it("maps lifecycle IDs without breaking legacy certificate metadata", () => {
+    const dto = toCertificateDto({
+      _id: "legacy-c1",
+      policyId: "p1",
+      fileId: "f1",
+      fileName: "coi.pdf",
+      createdAt: 123,
+      holderId: "holder-1",
+      policyCertificateId: "pc-1",
+      certificateVersionId: "cv-2",
+      certificateVersionNumber: 2,
+      policyVersionId: "pv-3",
+      url: "https://example.com/coi.pdf",
+    });
+
+    expect(dto).toMatchObject({
+      holder_id: "holder-1",
+      policy_certificate_id: "pc-1",
+      certificate_version_id: "cv-2",
+      certificate_version_number: 2,
+      policy_version_id: "pv-3",
+      url: "https://example.com/coi.pdf",
+    });
+  });
+});
+
+describe("certificate lifecycle DTOs", () => {
+  it("maps certificate holder records", () => {
+    expect(toCertificateHolderDto({
+      _id: "holder-1",
+      orgId: "org-1",
+      displayName: "Acme PM",
+      email: "ops@example.com",
+      address: { line1: "1 Main", city: "Austin", state: "TX" },
+      normalizedName: "acme pm",
+      source: "extraction",
+      createdAt: 100,
+      updatedAt: 200,
+    })).toMatchObject({
+      id: "holder-1",
+      display_name: "Acme PM",
+      email: "ops@example.com",
+      address: { line1: "1 Main", city: "Austin", state: "TX" },
+      source: "extraction",
+      created_at: 100,
+      updated_at: 200,
+    });
+  });
+
+  it("maps policy versions with current version fields", () => {
+    expect(toPolicyVersionDto({
+      _id: "pv-1",
+      orgId: "org-1",
+      policyId: "p1",
+      versionNumber: 2,
+      versionKind: "renewal",
+      effectiveDate: "2026-01-01",
+      expirationDate: "2027-01-01",
+      policyNumber: "POL-2",
+      fieldDiffs: [{ field: "expirationDate" }],
+      summary: "Renewal version",
+      createdAt: 300,
+    })).toMatchObject({
+      id: "pv-1",
+      policy_id: "p1",
+      version_number: 2,
+      version_kind: "renewal",
+      field_diffs: [{ field: "expirationDate" }],
+      summary: "Renewal version",
+    });
+  });
+
+  it("maps certificate versions and workflow jobs", () => {
+    const holder = {
+      _id: "holder-1",
+      orgId: "org-1",
+      displayName: "Acme PM",
+      createdAt: 100,
+      updatedAt: 200,
+    };
+    const version = {
+      _id: "cv-1",
+      orgId: "org-1",
+      certificateId: "pc-1",
+      holderId: "holder-1",
+      policyId: "p1",
+      policyVersionId: "pv-1",
+      versionNumber: 3,
+      status: "issued",
+      fileId: "file-1",
+      fileName: "coi.pdf",
+      source: "api",
+      createdAt: 300,
+      updatedAt: 400,
+      holder,
+      url: "https://example.com/coi.pdf",
+    };
+
+    expect(toCertificateVersionDto(version)).toMatchObject({
+      id: "cv-1",
+      certificate_id: "pc-1",
+      holder_id: "holder-1",
+      policy_version_id: "pv-1",
+      version_number: 3,
+      holder: { id: "holder-1", display_name: "Acme PM" },
+      url: "https://example.com/coi.pdf",
+    });
+
+    expect(toCertificateWorkflowJobDto({
+      _id: "job-1",
+      orgId: "org-1",
+      certificateId: "pc-1",
+      certificateVersionId: "cv-1",
+      holderId: "holder-1",
+      policyId: "p1",
+      policyVersionId: "pv-1",
+      kind: "renewal_reissue",
+      status: "review_required",
+      recipientEmail: "ops@example.com",
+      createdAt: 500,
+      updatedAt: 600,
+      holder,
+      certificateVersion: version,
+    })).toMatchObject({
+      id: "job-1",
+      kind: "renewal_reissue",
+      status: "review_required",
+      recipient_email: "ops@example.com",
+      holder: { id: "holder-1", display_name: "Acme PM" },
+      certificate_version: { id: "cv-1", version_number: 3 },
     });
   });
 });

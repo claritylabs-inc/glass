@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { generateCoiPdf, policyToCoiData, formatSecurityPanel } from "../lib/coiGenerator";
 import { renderCoiPdfOverlay, type CoiOverlayMapping } from "../lib/coiTemplateOverlay";
 import { logAiError } from "../lib/aiUtils";
@@ -23,6 +24,94 @@ import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
 type OverlayFieldMapping = {
   fields?: Array<Record<string, unknown>>;
 };
+
+const holderAddressValidator = v.object({
+  line1: v.optional(v.string()),
+  line2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  postalCode: v.optional(v.string()),
+  country: v.optional(v.string()),
+  formatted: v.optional(v.string()),
+});
+
+function firstCertificateHolderLine(certificateHolder?: string, fallback = "Certificate holder") {
+  return certificateHolder?.split(/\r?\n/)[0]?.trim() || fallback;
+}
+
+async function ensureCertificateLifecycleContext(
+  ctx: any,
+  args: {
+    orgId: Id<"organizations">;
+    policyId: Id<"policies">;
+    certificateHolder?: string;
+    certificateHolderName?: string;
+    certificateHolderId?: Id<"certificateHolders">;
+    policyCertificateId?: Id<"policyCertificates">;
+    policyVersionId?: Id<"policyVersions">;
+    holderEmail?: string;
+    holderPhone?: string;
+    holderAddress?: {
+      line1?: string;
+      line2?: string;
+      city?: string;
+      state?: string;
+      postalCode?: string;
+      country?: string;
+      formatted?: string;
+    };
+    source?: string;
+    createdByUserId?: Id<"users">;
+  },
+) {
+  const holderId = args.certificateHolderId ?? await ctx.runMutation(
+    (internal as any).certificateHolders.upsertInternal,
+    {
+      orgId: args.orgId,
+      displayName: args.certificateHolderName?.trim() || firstCertificateHolderLine(args.certificateHolder),
+      email: args.holderEmail,
+      phone: args.holderPhone,
+      address: args.holderAddress,
+      source: "certificate_generation",
+      sourceRef: String(args.policyId),
+      createdByUserId: args.createdByUserId,
+      updatedByUserId: args.createdByUserId,
+    },
+  );
+  const policyVersionId = args.policyVersionId ?? await ctx.runMutation(
+    (internal as any).policyVersions.ensureInitialInternal,
+    {
+      policyId: args.policyId,
+      createdByUserId: args.createdByUserId,
+    },
+  );
+  const policyVersion = args.policyVersionId
+    ? await ctx.runQuery(
+        (internal as any).policyVersions.getByIdInternal,
+        { id: args.policyVersionId },
+      ).catch(() => null)
+    : await ctx.runQuery(
+        (internal as any).policyVersions.getCurrentInternal,
+        { policyId: args.policyId },
+      ).catch(() => null);
+  const policyCertificateId = args.policyCertificateId ?? await ctx.runMutation(
+    (internal as any).certificateLifecycle.getOrCreateParentInternal,
+    {
+      orgId: args.orgId,
+      policyId: args.policyId,
+      holderId,
+      source: args.source ?? "unknown",
+      createdByUserId: args.createdByUserId,
+    },
+  );
+
+  return {
+    holderId: holderId as Id<"certificateHolders">,
+    policyCertificateId: policyCertificateId as Id<"policyCertificates">,
+    policyVersionId: policyVersionId as Id<"policyVersions">,
+    policySnapshot: policyVersion?.snapshot,
+  };
+}
 
 function cleanFilenamePart(value: unknown, fallback: string): string {
   const text = String(value ?? "")
@@ -242,8 +331,23 @@ export const run = internalAction({
     )),
     approvalAudit: v.optional(v.any()),
     disclaimer: v.optional(v.string()),
+    certificateHolderId: v.optional(v.id("certificateHolders")),
+    policyCertificateId: v.optional(v.id("policyCertificates")),
+    policyVersionId: v.optional(v.id("policyVersions")),
+    holderEmail: v.optional(v.string()),
+    holderPhone: v.optional(v.string()),
+    holderAddress: v.optional(holderAddressValidator),
   },
-  handler: async (ctx, args): Promise<{ storageId: string; size: number; fileName: string; certificateId: string }> => {
+  handler: async (ctx, args): Promise<{
+    storageId: string;
+    size: number;
+    fileName: string;
+    certificateId: string;
+    holderId?: string;
+    policyCertificateId?: string;
+    certificateVersionId?: string;
+    versionNumber?: number;
+  }> => {
     try {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
 
@@ -350,8 +454,49 @@ export const run = internalAction({
         approvalAudit: args.approvalAudit,
         disclaimer: args.disclaimer,
       });
+      const lifecycle = await ensureCertificateLifecycleContext(ctx, args);
+      const issuedVersion = await ctx.runMutation(
+        (internal as any).certificateLifecycle.recordIssuedVersionInternal,
+        {
+          orgId: args.orgId,
+          certificateId: lifecycle.policyCertificateId,
+          holderId: lifecycle.holderId,
+          policyId: args.policyId,
+          policyVersionId: lifecycle.policyVersionId,
+          fileId: storageId,
+          fileName,
+          fileSize: size,
+          certificateHolder: args.certificateHolder,
+          certificateHolderName: args.certificateHolderName,
+          holderEmail: args.holderEmail,
+          holderPhone: args.holderPhone,
+          holderAddress: args.holderAddress,
+          policySnapshot: lifecycle.policySnapshot,
+          source: args.source,
+          authorityType: args.authorityType,
+          certificationStatus: args.certificationStatus,
+          partnerOrgId: args.partnerOrgId,
+          partnerProgramId: args.partnerProgramId,
+          templateId: args.templateId,
+          standingAuthorizationId: args.standingAuthorizationId,
+          approvalMode: args.approvalMode,
+          approvalAudit: args.approvalAudit,
+          disclaimer: args.disclaimer,
+          legacyCertificateId: certificateId,
+          createdByUserId: args.createdByUserId,
+        },
+      );
 
-      return { storageId: storageId as string, size, fileName, certificateId: String(certificateId) };
+      return {
+        storageId: storageId as string,
+        size,
+        fileName,
+        certificateId: String(certificateId),
+        holderId: String(lifecycle.holderId),
+        policyCertificateId: String(lifecycle.policyCertificateId),
+        certificateVersionId: String(issuedVersion.versionId),
+        versionNumber: issuedVersion.versionNumber,
+      };
     } catch (err) {
       logAiError("generateCoi", err, { policyId: args.policyId });
       throw err;

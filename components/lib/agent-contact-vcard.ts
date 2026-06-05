@@ -85,7 +85,11 @@ function drawContainedImage(
   );
 }
 
-async function buildSquirclePhoto(iconUrl: string, padding: number) {
+async function buildSquirclePhoto(
+  iconUrl: string,
+  padding: number,
+  backgroundColor: string,
+) {
   const canvas = document.createElement("canvas");
   canvas.width = CONTACT_PHOTO_SIZE;
   canvas.height = CONTACT_PHOTO_SIZE;
@@ -107,7 +111,7 @@ async function buildSquirclePhoto(iconUrl: string, padding: number) {
       CONTACT_PHOTO_SIZE - inset * 2,
       radius,
     );
-    ctx.fillStyle = "#FFFFFF";
+    ctx.fillStyle = backgroundColor;
     ctx.fill();
 
     ctx.save();
@@ -142,9 +146,13 @@ async function buildSquirclePhoto(iconUrl: string, padding: number) {
   }
 }
 
-async function buildPhotoEntry(iconUrl: string, padding: number) {
+async function buildPhotoEntry(
+  iconUrl: string,
+  padding: number,
+  backgroundColor: string,
+) {
   try {
-    const photo = await buildSquirclePhoto(iconUrl, padding);
+    const photo = await buildSquirclePhoto(iconUrl, padding, backgroundColor);
     if (!photo?.base64) return "";
     return `\nPHOTO;ENCODING=b;TYPE=${photo.type}:${photo.base64}`;
   } catch {
@@ -165,7 +173,11 @@ export async function buildAgentContactVCard({
     ? "powered by Clarity Labs"
     : "from Clarity Labs";
   const iconUrl = whiteLabeledBroker?.iconUrl ?? GLASS_ICON_URL;
-  const photoEntry = await buildPhotoEntry(iconUrl, whiteLabeledBroker ? 18 : 44);
+  const photoEntry = await buildPhotoEntry(
+    iconUrl,
+    whiteLabeledBroker ? 18 : 44,
+    whiteLabeledBroker ? "#000000" : "#FFFFFF",
+  );
 
   const vcard =
     "BEGIN:VCARD\n" +

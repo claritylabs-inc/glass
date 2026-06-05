@@ -55,6 +55,7 @@ import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { BrandIcon } from "@/components/ui/brand-icon";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
 import { scientistSurnameFor } from "@/components/agent-thread/scientist-surnames";
 import type {
@@ -1215,11 +1216,11 @@ export function UnifiedMessageBubble({
       <div className="flex items-start gap-2.5 max-w-lg">
         <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0 overflow-hidden">
           {agentBranding?.iconUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <BrandIcon
               src={agentBranding.iconUrl}
-              alt=""
-              className="w-7 h-7 object-cover"
+              name={agentBranding.name}
+              size="md"
+              className="rounded-full"
             />
           ) : (
             <LogoIcon size={14} static className="text-primary-light" />
@@ -1345,11 +1346,11 @@ export function UnifiedMessageBubble({
         >
           <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0 overflow-hidden">
             {agentBranding?.iconUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <BrandIcon
                 src={agentBranding.iconUrl}
-                alt=""
-                className="w-7 h-7 object-cover"
+                name={agentBranding.name}
+                size="md"
+                className="rounded-full"
               />
             ) : (
               <LogoIcon size={14} static className="text-primary-light" />

@@ -40,7 +40,7 @@ export const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1500;
 export const SHORTCUT_TOOLTIP_DELAY_MS = 1500;
 export const SHORTCUT_TOOLTIP_SIDE_OFFSET = 4;
 export const SHORTCUT_TOOLTIP_CLASS =
-  "border border-foreground/10 bg-background text-foreground has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden";
+  "border border-foreground/10 bg-background text-label text-foreground has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden";
 
 export function navShortcut(key: string): NavShortcut {
   return { key };
@@ -71,6 +71,12 @@ export const INSURANCE_ITEMS: NavItemConfig[] = [
     label: "Policies",
     icon: FileText,
     shortcut: navShortcut("p"),
+  },
+  {
+    href: "/certificates",
+    label: "Certificates",
+    icon: BadgeCheck,
+    shortcut: navShortcut("e"),
   },
   {
     href: "/broker",

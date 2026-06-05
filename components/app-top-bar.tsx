@@ -15,6 +15,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/compliance": { label: "Compliance" },
   "/broker": { label: "Broker" },
   "/clients": { label: "Clients" },
+  "/certificates": { label: "Certificates" },
   "/deliveries": { label: "Document deliveries" },
   "/activity": { label: "Activity" },
   "/connections": { label: "Context" },
@@ -79,12 +80,14 @@ export function AppTopBar({
   showBrokerShare?: boolean;
 }) {
   const pathname = usePathname();
+  const normalizedPathname =
+    pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
 
   // Find matching breadcrumb — walk up path segments until we find a match
-  let matchedPath = pathname;
-  let crumb = BREADCRUMB_MAP[pathname];
+  let matchedPath = normalizedPathname;
+  let crumb = BREADCRUMB_MAP[normalizedPathname];
   if (!crumb) {
-    const segments = pathname.split("/").filter(Boolean);
+    const segments = normalizedPathname.split("/").filter(Boolean);
     // Try progressively shorter paths (e.g. /agent/thread/[id] -> /agent/thread -> /agent)
     for (let i = segments.length - 1; i >= 1; i--) {
       const candidate = "/" + segments.slice(0, i).join("/");

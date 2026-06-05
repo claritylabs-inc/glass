@@ -431,6 +431,8 @@ export function buildEmailExpertTool(
         fileId: z.string().optional(),
         filename: z.string().optional(),
         certificateHolder: z.string().optional(),
+        holderEmail: z.string().optional(),
+        holderPhone: z.string().optional(),
         requestText: z.string().optional(),
         requestedEndorsements: z.array(z.string()).optional(),
       })).optional().describe(
@@ -542,6 +544,8 @@ async function runEmailSubagent(
   const generateCoiAttachment = async (
     policyId: string,
     certificateHolder?: string,
+    holderEmail?: string,
+    holderPhone?: string,
     requestText?: string,
     requestedEndorsements?: string[],
     partnerProgramId?: string,
@@ -569,6 +573,8 @@ async function runEmailSubagent(
         orgId: context.orgId,
         holderName: certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
         certificateHolder,
+        holderEmail,
+        holderPhone,
         requestText,
         requestedEndorsements,
         selectedPartnerProgramId: normalizeSelectedPartnerProgramId(partnerProgramId),
@@ -627,6 +633,8 @@ async function runEmailSubagent(
       await generateCoiAttachment(
         requested.policyId,
         requested.certificateHolder,
+        requested.holderEmail,
+        requested.holderPhone,
         requested.requestText,
         requested.requestedEndorsements,
       );
@@ -928,12 +936,30 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
         inputSchema: z.object({
           policyId: z.string(),
           certificateHolder: z.string().optional(),
+          holderEmail: z.string().optional(),
+          holderPhone: z.string().optional(),
           requestText: z.string().optional(),
           requestedEndorsements: z.array(z.string()).optional(),
           partnerProgramId: z.string().optional(),
         }),
-        execute: async ({ policyId, certificateHolder, requestText, requestedEndorsements, partnerProgramId }) =>
-          generateCoiAttachment(policyId, certificateHolder, requestText, requestedEndorsements, partnerProgramId),
+        execute: async ({
+          policyId,
+          certificateHolder,
+          holderEmail,
+          holderPhone,
+          requestText,
+          requestedEndorsements,
+          partnerProgramId,
+        }) =>
+          generateCoiAttachment(
+            policyId,
+            certificateHolder,
+            holderEmail,
+            holderPhone,
+            requestText,
+            requestedEndorsements,
+            partnerProgramId,
+          ),
       }),
       send_or_draft_email: tool({
         description: "Finalize the email. This either sends, queues, or returns a confirmation draft based on safety and org settings.",

@@ -328,124 +328,145 @@ export function AppSidebar({
   const clientDetailBase = clientDetailId ? `/clients/${clientDetailId}` : "";
   const activeSettingsSection = searchParams.get("section") ?? "organization";
 
-  const settingsSidebarContent = (
-    <SettingsSidebarContent
-      collapsed={collapsed}
-      isBroker={isBroker}
-      isStandaloneClient={isStandaloneClient}
-      activeSettingsSection={activeSettingsSection}
-      broker={brokerContact}
-      fallbackAgentHandle={fallbackAgentHandle}
-      showBrokerContact={!isBroker && !!viewerOrg}
-      onToggleCollapse={toggleCollapse}
-    />
-  );
+  function renderSettingsSidebarContent(contentCollapsed: boolean) {
+    return (
+      <SettingsSidebarContent
+        collapsed={contentCollapsed}
+        isBroker={isBroker}
+        isStandaloneClient={isStandaloneClient}
+        activeSettingsSection={activeSettingsSection}
+        broker={brokerContact}
+        fallbackAgentHandle={fallbackAgentHandle}
+        showBrokerContact={!isBroker && !!viewerOrg}
+        onToggleCollapse={toggleCollapse}
+      />
+    );
+  }
 
-  const sidebarContent = (
-    <MainSidebarContent
-      collapsed={collapsed}
-      isBroker={isBroker}
-      canManageSettings={canManageSettings}
-      pathname={pathname}
-      headerOrgIcon={headerOrgIcon}
-      viewerImage={viewer?.image}
-      initials={initials}
-      headerOrgName={headerOrgName}
-      navItems={navItems}
-      connectItems={connectItems}
-      notificationsPanelOpen={notificationsPanelOpen}
-      unreadCount={unreadCount}
-      isDesktop={isDesktop}
-      orgId={currentOrg?.orgId}
-      conversations={conversations}
-      archivedThreadCount={archivedThreads?.length ?? 0}
-      broker={brokerContact}
-      fallbackAgentHandle={fallbackAgentHandle}
-      onToggleCollapse={toggleCollapse}
-      onToggleNotifications={() => setNotificationsPanelOpen((v) => !v)}
-      onCloseNotifications={() => setNotificationsPanelOpen(false)}
-      onMergeSuggestion={handleMergeSuggestion}
-      onNewChat={handleNewChat}
-      onArchiveThread={handleArchiveThread}
-      onSignOut={() => {
-        clearOnboardingCache();
-        signOut();
-      }}
-    />
-  );
+  function renderSidebarContent(contentCollapsed: boolean) {
+    return (
+      <MainSidebarContent
+        collapsed={contentCollapsed}
+        isBroker={isBroker}
+        canManageSettings={canManageSettings}
+        pathname={pathname}
+        headerOrgIcon={headerOrgIcon}
+        viewerImage={viewer?.image}
+        initials={initials}
+        headerOrgName={headerOrgName}
+        navItems={navItems}
+        connectItems={connectItems}
+        notificationsPanelOpen={notificationsPanelOpen}
+        unreadCount={unreadCount}
+        isDesktop={isDesktop}
+        orgId={currentOrg?.orgId}
+        conversations={conversations}
+        archivedThreadCount={archivedThreads?.length ?? 0}
+        broker={brokerContact}
+        fallbackAgentHandle={fallbackAgentHandle}
+        onToggleCollapse={toggleCollapse}
+        onToggleNotifications={() => setNotificationsPanelOpen((v) => !v)}
+        onCloseNotifications={() => setNotificationsPanelOpen(false)}
+        onMergeSuggestion={handleMergeSuggestion}
+        onNewChat={handleNewChat}
+        onArchiveThread={handleArchiveThread}
+        onSignOut={() => {
+          clearOnboardingCache();
+          signOut();
+        }}
+      />
+    );
+  }
 
-  const clientDetailSidebarContent = (
-    <ClientDetailSidebarContent
-      collapsed={collapsed}
-      clientDetailBase={clientDetailBase}
-      clientDetailId={clientDetailId}
-      pathname={pathname}
-      headerOrgIcon={headerOrgIcon}
-      viewerImage={viewer?.image}
-      initials={initials}
-      headerOrgName={headerOrgName}
-      clientThreads={clientThreads}
-      onToggleCollapse={toggleCollapse}
-    />
-  );
+  function renderClientDetailSidebarContent(contentCollapsed: boolean) {
+    return (
+      <ClientDetailSidebarContent
+        collapsed={contentCollapsed}
+        clientDetailBase={clientDetailBase}
+        clientDetailId={clientDetailId}
+        pathname={pathname}
+        headerOrgIcon={headerOrgIcon}
+        viewerImage={viewer?.image}
+        initials={initials}
+        headerOrgName={headerOrgName}
+        clientThreads={clientThreads}
+        onToggleCollapse={toggleCollapse}
+      />
+    );
+  }
 
-  const baseActiveContent = isClientDetailMode
-    ? clientDetailSidebarContent
-    : isSettingsMode
-      ? settingsSidebarContent
-      : sidebarContent;
+  function renderBaseActiveContent(contentCollapsed: boolean) {
+    if (isClientDetailMode) {
+      return renderClientDetailSidebarContent(contentCollapsed);
+    }
 
-  const activeContent = isOperatorImpersonating ? (
-    <div className="flex h-full min-h-0 flex-col">
-      <div
-        className={`shrink-0 border-b text-amber-950 dark:text-amber-100 ${
-          collapsed
-            ? "flex h-12 items-center justify-center border-foreground/6 bg-amber-100 dark:bg-amber-400/10"
-            : "border-amber-300/70 bg-amber-100 px-2 py-2 dark:border-amber-400/25 dark:bg-amber-400/10"
-        }`}
-      >
-        {collapsed ? (
-          <button
-            type="button"
-            onClick={async () => {
-              await stopOperatorImpersonation();
-            }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-amber-950 transition-colors hover:bg-amber-200 dark:text-amber-100 dark:hover:bg-amber-300/20"
-            title={`Stop viewing ${impersonation?.targetOrgName ?? "organization"}`}
-            aria-label="Stop operator mode"
-          >
-            <LogoIcon size={17} static />
-          </button>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-row gap-3 items-center pl-2">
-              <LogoIcon static />
-              <div className="min-w-0">
-                <p className="truncate text-base font-medium">Operator mode</p>
-                <p className="mt-0.5 truncate text-label text-amber-950/70 dark:text-amber-100/65">
-                  {operatorContext?.user?.email}
-                </p>
-              </div>
-            </div>
-            <PillButton
+    if (isSettingsMode) {
+      return renderSettingsSidebarContent(contentCollapsed);
+    }
+
+    return renderSidebarContent(contentCollapsed);
+  }
+
+  function renderActiveContent(contentCollapsed: boolean) {
+    const baseContent = renderBaseActiveContent(contentCollapsed);
+
+    if (!isOperatorImpersonating) {
+      return baseContent;
+    }
+
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div
+          className={`shrink-0 border-b text-amber-950 dark:text-amber-100 ${
+            contentCollapsed
+              ? "flex h-12 items-center justify-center border-foreground/6 bg-amber-100 dark:bg-amber-400/10"
+              : "border-amber-300/70 bg-amber-100 px-2 py-2 dark:border-amber-400/25 dark:bg-amber-400/10"
+          }`}
+        >
+          {contentCollapsed ? (
+            <button
               type="button"
-              variant="secondary"
-              size="compact"
               onClick={async () => {
                 await stopOperatorImpersonation();
               }}
-              className="w-full"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-amber-950 transition-colors hover:bg-amber-200 dark:text-amber-100 dark:hover:bg-amber-300/20"
+              title={`Stop viewing ${impersonation?.targetOrgName ?? "organization"}`}
+              aria-label="Stop operator mode"
             >
-              Stop
-            </PillButton>
-          </div>
-        )}
+              <LogoIcon size={17} static />
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-row gap-3 items-center pl-2">
+                <LogoIcon static />
+                <div className="min-w-0">
+                  <p className="truncate text-base font-medium">Operator mode</p>
+                  <p className="mt-0.5 truncate text-label text-amber-950/70 dark:text-amber-100/65">
+                    {operatorContext?.user?.email}
+                  </p>
+                </div>
+              </div>
+              <PillButton
+                type="button"
+                variant="secondary"
+                size="compact"
+                onClick={async () => {
+                  await stopOperatorImpersonation();
+                }}
+                className="w-full"
+              >
+                Stop
+              </PillButton>
+            </div>
+          )}
+        </div>
+        <div className="min-h-0 flex-1">{baseContent}</div>
       </div>
-      <div className="min-h-0 flex-1">{baseActiveContent}</div>
-    </div>
-  ) : (
-    baseActiveContent
-  );
+    );
+  }
+
+  const activeContent = renderActiveContent(collapsed);
+  const mobileActiveContent = renderActiveContent(false);
 
   return (
     <>
@@ -494,7 +515,7 @@ export function AppSidebar({
                   : "border-foreground/6 bg-background"
               }`}
             >
-              {activeContent}
+              {mobileActiveContent}
             </motion.aside>
           </>
         )}

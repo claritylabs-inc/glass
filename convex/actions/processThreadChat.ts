@@ -904,9 +904,12 @@ function buildTools(
       execute: async (input: {
         policyId: string;
         certificateHolder?: string;
+        holderEmail?: string;
+        holderPhone?: string;
         requestText?: string;
         requestedEndorsements?: string[];
         partnerProgramId?: string;
+        explicitReissue?: boolean;
       }) => {
         // Check org settings — autoGenerateCoi defaults to true if not set
         const autoGenerate = org?.autoGenerateCoi !== false;
@@ -944,11 +947,14 @@ function buildTools(
               holderName:
                 input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
               certificateHolder: input.certificateHolder,
+              holderEmail: input.holderEmail,
+              holderPhone: input.holderPhone,
               requestText: input.requestText,
               requestedEndorsements: input.requestedEndorsements,
               selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
                 input.partnerProgramId,
               ),
+              forceReissue: input.explicitReissue,
               source: "chat",
               createdByUserId: args.userId as Id<"users">,
             },
@@ -963,6 +969,24 @@ function buildTools(
               reasonCode: generated.reasonCode,
               evidence: generated.evidence,
               brokerHandoffOffered: generated.brokerHandoffOffered,
+            };
+          }
+          if (generated.status === "existing") {
+            return {
+              message: generated.authorityType === "certified"
+                ? "I found an existing certified COI for this holder and current policy version and attached it to this response."
+                : "I found an existing non-binding COI for this holder and current policy version and attached it to this response.",
+              attachment: {
+                filename: generated.fileName,
+                contentType: "application/pdf",
+                size: generated.size,
+                fileId: generated.fileId as Id<"_storage">,
+              },
+              holderId: generated.holderId,
+              policyCertificateId: generated.policyCertificateId,
+              certificateVersionId: generated.certificateVersionId,
+              policyVersionId: generated.policyVersionId,
+              versionNumber: generated.versionNumber,
             };
           }
           if (generated.status === "pending_approval") {

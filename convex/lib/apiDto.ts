@@ -289,6 +289,11 @@ export interface CertificateDtoSource {
   standingAuthorizationId?: DtoId;
   disclaimer?: string;
   createdAt: number;
+  holderId?: DtoId;
+  policyCertificateId?: DtoId;
+  certificateVersionId?: DtoId;
+  certificateVersionNumber?: number;
+  policyVersionId?: DtoId;
   url?: string | null;
 }
 
@@ -308,6 +313,11 @@ export interface CertificateDto {
   approval_id: string | null;
   standing_authorization_id: string | null;
   disclaimer: string | null;
+  holder_id: string | null;
+  policy_certificate_id: string | null;
+  certificate_version_id: string | null;
+  certificate_version_number: number | null;
+  policy_version_id: string | null;
   created_at: number;
   url: string | null;
 }
@@ -329,8 +339,229 @@ export function toCertificateDto(certificate: CertificateDtoSource): Certificate
     approval_id: certificate.approvalId ?? null,
     standing_authorization_id: certificate.standingAuthorizationId ?? null,
     disclaimer: certificate.disclaimer ?? null,
+    holder_id: certificate.holderId ?? null,
+    policy_certificate_id: certificate.policyCertificateId ?? null,
+    certificate_version_id: certificate.certificateVersionId ?? null,
+    certificate_version_number: certificate.certificateVersionNumber ?? null,
+    policy_version_id: certificate.policyVersionId ?? null,
     created_at: certificate.createdAt,
     url: certificate.url ?? null,
+  };
+}
+
+export interface CertificateHolderDtoSource {
+  _id: DtoId;
+  orgId: DtoId;
+  displayName: string;
+  email?: string;
+  phone?: string;
+  address?: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    formatted?: string;
+  };
+  normalizedName?: string;
+  normalizedEmail?: string;
+  normalizedAddressKey?: string;
+  mapboxFeatureId?: string;
+  source?: string;
+  sourceRef?: string;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export function toCertificateHolderDto(holder: CertificateHolderDtoSource) {
+  return {
+    id: holder._id,
+    org_id: holder.orgId,
+    display_name: holder.displayName,
+    email: holder.email ?? null,
+    phone: holder.phone ?? null,
+    address: holder.address ?? null,
+    normalized_name: holder.normalizedName ?? null,
+    normalized_email: holder.normalizedEmail ?? null,
+    normalized_address_key: holder.normalizedAddressKey ?? null,
+    mapbox_feature_id: holder.mapboxFeatureId ?? null,
+    source: holder.source ?? null,
+    source_ref: holder.sourceRef ?? null,
+    notes: holder.notes ?? null,
+    created_at: holder.createdAt,
+    updated_at: holder.updatedAt,
+  };
+}
+
+export interface PolicyVersionDtoSource {
+  _id: DtoId;
+  orgId: DtoId;
+  policyId: DtoId;
+  versionNumber: number;
+  versionKind: string;
+  effectiveDate?: string;
+  expirationDate?: string;
+  policyNumber?: string;
+  sourcePolicyFileIds?: DtoId[];
+  sourceFileIds?: DtoId[];
+  caseId?: DtoId;
+  extractionRunId?: DtoId;
+  snapshot?: Jsonish;
+  fieldDiffs?: Jsonish[];
+  summary?: string;
+  createdAt: number;
+}
+
+export function toPolicyVersionDto(version: PolicyVersionDtoSource) {
+  return {
+    id: version._id,
+    org_id: version.orgId,
+    policy_id: version.policyId,
+    version_number: version.versionNumber,
+    version_kind: version.versionKind,
+    effective_date: version.effectiveDate ?? null,
+    expiration_date: version.expirationDate ?? null,
+    policy_number: version.policyNumber ?? null,
+    source_policy_file_ids: version.sourcePolicyFileIds ?? [],
+    source_file_ids: version.sourceFileIds ?? [],
+    case_id: version.caseId ?? null,
+    extraction_run_id: version.extractionRunId ?? null,
+    snapshot: version.snapshot ?? null,
+    field_diffs: version.fieldDiffs ?? [],
+    summary: version.summary ?? null,
+    created_at: version.createdAt,
+  };
+}
+
+export interface CertificateVersionDtoSource {
+  _id: DtoId;
+  orgId: DtoId;
+  certificateId: DtoId;
+  holderId: DtoId;
+  policyId: DtoId;
+  policyVersionId?: DtoId;
+  versionNumber: number;
+  status: string;
+  fileId?: DtoId;
+  fileName?: string;
+  fileSize?: number;
+  certificateHolder?: string;
+  certificateHolderName?: string;
+  holderSnapshot?: Jsonish;
+  source?: string;
+  authorityType?: string;
+  certificationStatus?: string;
+  partnerOrgId?: DtoId;
+  partnerProgramId?: DtoId;
+  templateId?: DtoId;
+  standingAuthorizationId?: DtoId;
+  approvalId?: DtoId;
+  legacyCertificateId?: DtoId;
+  issuedAt?: number;
+  supersededAt?: number;
+  voidedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  holder?: CertificateHolderDtoSource | null;
+  url?: string | null;
+}
+
+export function toCertificateVersionDto(version: CertificateVersionDtoSource) {
+  return {
+    id: version._id,
+    org_id: version.orgId,
+    certificate_id: version.certificateId,
+    holder_id: version.holderId,
+    policy_id: version.policyId,
+    policy_version_id: version.policyVersionId ?? null,
+    version_number: version.versionNumber,
+    status: version.status,
+    file_id: version.fileId ?? null,
+    file_name: version.fileName ?? null,
+    file_size: version.fileSize ?? null,
+    certificate_holder: version.certificateHolder ?? null,
+    certificate_holder_name: version.certificateHolderName ?? null,
+    holder_snapshot: version.holderSnapshot ?? null,
+    holder: version.holder ? toCertificateHolderDto(version.holder) : null,
+    source: version.source ?? null,
+    authority_type: version.authorityType ?? "non_binding",
+    certification_status: version.certificationStatus ?? "not_applicable",
+    partner_org_id: version.partnerOrgId ?? null,
+    partner_program_id: version.partnerProgramId ?? null,
+    template_id: version.templateId ?? null,
+    standing_authorization_id: version.standingAuthorizationId ?? null,
+    approval_id: version.approvalId ?? null,
+    legacy_certificate_id: version.legacyCertificateId ?? null,
+    issued_at: version.issuedAt ?? null,
+    superseded_at: version.supersededAt ?? null,
+    voided_at: version.voidedAt ?? null,
+    created_at: version.createdAt,
+    updated_at: version.updatedAt,
+    url: version.url ?? null,
+  };
+}
+
+export interface CertificateWorkflowJobDtoSource {
+  _id: DtoId;
+  orgId: DtoId;
+  brokerOrgId?: DtoId;
+  certificateId: DtoId;
+  certificateVersionId?: DtoId;
+  holderId: DtoId;
+  policyId: DtoId;
+  policyVersionId?: DtoId;
+  kind: string;
+  status: string;
+  reason?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
+  reviewNotes?: string;
+  sendNotes?: string;
+  sentAt?: number;
+  cancelledAt?: number;
+  cancelReason?: string;
+  lastError?: string;
+  reviewedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  holder?: CertificateHolderDtoSource | null;
+  policy?: PolicyDtoSource | null;
+  certificateVersion?: CertificateVersionDtoSource | null;
+}
+
+export function toCertificateWorkflowJobDto(job: CertificateWorkflowJobDtoSource) {
+  return {
+    id: job._id,
+    org_id: job.orgId,
+    broker_org_id: job.brokerOrgId ?? null,
+    certificate_id: job.certificateId,
+    certificate_version_id: job.certificateVersionId ?? null,
+    holder_id: job.holderId,
+    policy_id: job.policyId,
+    policy_version_id: job.policyVersionId ?? null,
+    kind: job.kind,
+    status: job.status,
+    reason: job.reason ?? null,
+    recipient_name: job.recipientName ?? null,
+    recipient_email: job.recipientEmail ?? null,
+    recipient_phone: job.recipientPhone ?? null,
+    review_notes: job.reviewNotes ?? null,
+    send_notes: job.sendNotes ?? null,
+    sent_at: job.sentAt ?? null,
+    cancelled_at: job.cancelledAt ?? null,
+    cancel_reason: job.cancelReason ?? null,
+    last_error: job.lastError ?? null,
+    reviewed_at: job.reviewedAt ?? null,
+    created_at: job.createdAt,
+    updated_at: job.updatedAt,
+    holder: job.holder ? toCertificateHolderDto(job.holder) : null,
+    policy: job.policy ? toPolicyDto(job.policy) : null,
+    certificate_version: job.certificateVersion
+      ? toCertificateVersionDto(job.certificateVersion)
+      : null,
   };
 }
 

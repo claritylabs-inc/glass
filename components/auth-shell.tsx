@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { BrandIcon } from "@/components/ui/brand-icon";
 import { LogoIcon } from "@/components/ui/logo-icon";
 
 const BRAND_BLUE = "#A0D2FA";
@@ -41,10 +42,9 @@ export function PartnerWordmark({
 
   return (
     <div className="flex items-center gap-2.5 text-foreground">
-      <div className="h-6 w-6 overflow-hidden rounded-md bg-white/90">
+      <div className="h-6 w-6 overflow-hidden rounded-md">
         {source ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={source} alt="" className="h-full w-full object-contain" />
+          <BrandIcon src={source} name={name} size="sm" />
         ) : (
           <LogoIcon size={24} color={BRAND_BLUE} static />
         )}
