@@ -330,21 +330,16 @@ export function PolicyDetailBody({
   const hasExtractionReviews = reviewQuestions.length > 0;
   const visibleActiveTab =
     activeTab === "review" && !hasExtractionReviews ? "details" : activeTab;
+  const selectedCertificateForPanel =
+    visibleActiveTab === "certificates" &&
+    selectedCertificate?.policyId === policy?._id
+      ? selectedCertificate
+      : null;
 
   useEffect(() => {
     loggedPipelineEntries.current.clear();
     loggedStatus.current = null;
   }, [id]);
-
-  useEffect(() => {
-    setSelectedCertificate(null);
-  }, [id]);
-
-  useEffect(() => {
-    if (visibleActiveTab !== "certificates") {
-      setSelectedCertificate(null);
-    }
-  }, [visibleActiveTab]);
 
   useEffect(() => {
     if (!LOG_POLICY_ACTIVITY_IN_BROWSER || !policy) return;
@@ -552,10 +547,10 @@ export function PolicyDetailBody({
       );
       return () => onRightPanel(null);
     }
-    if (selectedCertificate) {
+    if (selectedCertificateForPanel) {
       onRightPanel(
         <CertificateDetailPanel
-          row={selectedCertificate}
+          row={selectedCertificateForPanel}
           onClose={() => setSelectedCertificate(null)}
         />,
       );
@@ -570,7 +565,7 @@ export function PolicyDetailBody({
     readOnly,
     showCertificateSheet,
     showEditExtractedFields,
-    selectedCertificate,
+    selectedCertificateForPanel,
     canEditExtractedFields,
     isDeleted,
   ]);
@@ -765,7 +760,7 @@ export function PolicyDetailBody({
       {visibleActiveTab === "certificates" && (
         <CertificatesTab
           policyId={policy._id}
-          selectedCertificateId={selectedCertificate?._id ?? null}
+          selectedCertificateId={selectedCertificateForPanel?._id ?? null}
           onSelectCertificate={setSelectedCertificate}
         />
       )}
