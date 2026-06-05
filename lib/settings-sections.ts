@@ -1,4 +1,4 @@
-import { Bell, Brain, Building2, Mail, Network, Send, Users } from "lucide-react";
+import { Bell, Brain, Building2, FileBadge2, Mail, Network, Send, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type SettingsSectionId =
@@ -8,6 +8,7 @@ export type SettingsSectionId =
   | "memory"
   | "models"
   | "delivery"
+  | "certificates"
   | "email"
   | "connections"
   | "notifications";
@@ -24,6 +25,7 @@ export const CLIENT_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "memory", label: "Memory", icon: Brain },
   { id: "email", label: "Email", icon: Mail },
   { id: "connections", label: "Connections", icon: Network },
+  { id: "certificates", label: "Certificates", icon: FileBadge2 },
   { id: "notifications", label: "Notifications", icon: Bell },
 ];
 
@@ -32,6 +34,7 @@ export const BROKER_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "team", label: "Team", icon: Users },
   { id: "models", label: "Models", icon: Brain },
   { id: "delivery", label: "Delivery", icon: Send },
+  { id: "certificates", label: "Certificates", icon: FileBadge2 },
   { id: "email", label: "Email", icon: Mail },
   { id: "connections", label: "Connections", icon: Network },
   { id: "notifications", label: "Notifications", icon: Bell },
