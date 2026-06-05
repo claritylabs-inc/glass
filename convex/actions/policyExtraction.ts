@@ -165,6 +165,7 @@ export type PolicyExtractionState = {
   orgId: string;
   userId: string;
   policyFileId?: string;
+  policyVersionEvent?: "initial_extraction" | "re_extraction" | "renewal";
   traceId?: string;
   externalWorker?: boolean;
   /** Deprecated inline SDK checkpoint. Kept for legacy in-flight resumes. */
@@ -1973,6 +1974,18 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         return { kind: "error", error: CANCELLED_BY_USER };
       }
 
+      // Create a queryable document-event version before downstream certificate work.
+      await convexCtx.runMutation(
+        (internal as any).policyVersions.createForPolicyEvent,
+        {
+          policyId,
+          eventType: state.policyVersionEvent as any,
+          sourcePolicyFileIds: state.policyFileId ? [state.policyFileId as Id<"policyFiles">] : undefined,
+          sourceFileIds: state.fileId ? [state.fileId as Id<"_storage">] : undefined,
+          createdByUserId: state.userId as Id<"users">,
+        },
+      );
+
       // Audit log
       try {
         await convexCtx.runMutation(
@@ -2923,8 +2936,13 @@ export const startPolicyExtractionFromUpload = internalAction({
     orgId: v.id("organizations"),
     userId: v.id("users"),
     policyFileId: v.optional(v.id("policyFiles")),
+    policyVersionEvent: v.optional(v.union(
+      v.literal("initial_extraction"),
+      v.literal("re_extraction"),
+      v.literal("renewal"),
+    )),
   },
-  handler: async (ctx, { policyId, fileId, fileName, orgId, userId, policyFileId }) => {
+  handler: async (ctx, { policyId, fileId, fileName, orgId, userId, policyFileId, policyVersionEvent }) => {
     const traceId = randomUUID();
     await startTraceSession(ctx, {
       traceId,
@@ -2949,6 +2967,7 @@ export const startPolicyExtractionFromUpload = internalAction({
           orgId: String(orgId),
           userId: String(userId),
           policyFileId: policyFileId ? String(policyFileId) : undefined,
+          policyVersionEvent,
           traceId,
         },
       });
@@ -2981,6 +3000,7 @@ export const startPolicyExtractionFromUpload = internalAction({
         orgId: String(orgId),
         userId: String(userId),
         policyFileId: policyFileId ? String(policyFileId) : undefined,
+        policyVersionEvent,
         traceId,
       },
     });
@@ -3054,6 +3074,7 @@ export const retryPolicyExtraction = internalAction({
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? policy.uploadedByUserId ?? ""),
         policyFileId: existingState?.policyFileId,
+        policyVersionEvent: mode === "full" ? "re_extraction" : existingState?.policyVersionEvent,
         traceId,
         clSdkCheckpointFileId: mode === "resume" ? existingState?.clSdkCheckpointFileId : undefined,
         clSdkCheckpoint: mode === "resume" ? existingState?.clSdkCheckpoint : undefined,
@@ -3084,6 +3105,7 @@ export const retryPolicyExtraction = internalAction({
         fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? ""),
+        policyVersionEvent: mode === "full" ? "re_extraction" : existingState?.policyVersionEvent,
         traceId,
       },
     });

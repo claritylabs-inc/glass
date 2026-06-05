@@ -13,6 +13,7 @@ import {
   requireCurrentOrgAccess,
 } from "./lib/access";
 import { notify } from "./lib/notify";
+import { createPolicyVersionForPolicyEvent } from "./policyVersions";
 import { declarationFactHash, extractDeclarationFactsFromPolicy } from "./lib/declarationFacts";
 import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -1031,6 +1032,17 @@ export const completeFromEndorsement = internalMutation({
       updatedAt: now,
     });
 
+    const policyVersionId = await createPolicyVersionForPolicyEvent(ctx, {
+      policyId: args.policyId,
+      eventType: "policy_change",
+      sourcePolicyFileIds: policyFileIds,
+      sourceFileIds: args.files.map((file) => file.fileId),
+      policyUpdateRunId: runId,
+      policyChangeCaseId: args.caseId,
+      createdByUserId: args.userId,
+      summary: args.summary,
+    });
+
     if (args.caseId) {
       await ctx.db.patch(args.caseId, {
         status: "completed",
@@ -1073,6 +1085,7 @@ export const completeFromEndorsement = internalMutation({
       metadata: {
         caseId: args.caseId,
         policyUpdateRunId: runId,
+        policyVersionId,
         policyFileIds,
         fieldDiffs,
       },
@@ -1097,7 +1110,7 @@ export const completeFromEndorsement = internalMutation({
       });
     }
 
-    return { policyUpdateRunId: runId, policyFileIds };
+    return { policyUpdateRunId: runId, policyVersionId, policyFileIds };
   },
 });
 
