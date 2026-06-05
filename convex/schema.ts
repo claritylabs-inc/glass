@@ -824,6 +824,7 @@ export default defineSchema({
     orgId: v.optional(v.id("organizations")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
+    currentPolicyVersionId: v.optional(v.id("policyVersions")),
     // Provenance — who uploaded and from which side
     uploadedBySide: v.optional(
       v.union(
@@ -1310,6 +1311,32 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"])
     .index("by_partnerOrgId", ["partnerOrgId"]),
+
+  policyVersions: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    versionNumber: v.number(),
+    eventType: v.union(
+      v.literal("initial_extraction"),
+      v.literal("re_extraction"),
+      v.literal("policy_change"),
+      v.literal("renewal"),
+    ),
+    sourcePolicyFileIds: v.array(v.id("policyFiles")),
+    sourceFileIds: v.array(v.id("_storage")),
+    primaryFileId: v.optional(v.id("_storage")),
+    policyUpdateRunId: v.optional(v.id("policyUpdateRuns")),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
+    createdByUserId: v.optional(v.id("users")),
+    summary: v.optional(v.string()),
+    snapshot: v.any(),
+    isCurrent: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_policyId_versionNumber", ["policyId", "versionNumber"])
+    .index("by_policyId_current", ["policyId", "isCurrent"])
+    .index("by_orgId", ["orgId"])
+    .index("by_eventType", ["eventType"]),
 
   // Runtime state for policy extraction. Keep high-churn logs, leases, and
   // large resumable checkpoints off the policy document itself.
