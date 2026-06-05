@@ -1467,6 +1467,122 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_fileId", ["fileId"]),
 
+
+  policyVersions: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    versionNumber: v.number(),
+    label: v.optional(v.string()),
+    currentFingerprint: v.string(),
+    isCurrent: v.boolean(),
+    sourcePolicyUpdatedAt: v.optional(v.number()),
+    sourceTreeUpdatedAt: v.optional(v.number()),
+    fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_policy_current", ["policyId", "isCurrent"])
+    .index("by_orgId", ["orgId"]),
+
+  certificateHolders: defineTable({
+    orgId: v.id("organizations"),
+    name: v.string(),
+    normalizedName: v.string(),
+    address: v.optional(v.string()),
+    source: v.optional(
+      v.union(
+        v.literal("policy_page"),
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("sms"),
+        v.literal("api"),
+        v.literal("mcp"),
+        v.literal("agent"),
+        v.literal("unknown"),
+      ),
+    ),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_org_normalizedName", ["orgId", "normalizedName"])
+    .index("by_orgId", ["orgId"]),
+
+  policyCertificates: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    certificateHolderId: v.id("certificateHolders"),
+    status: v.union(v.literal("active"), v.literal("revoked"), v.literal("archived")),
+    latestVersionId: v.optional(v.id("certificateVersions")),
+    latestCertificateId: v.optional(v.id("certificates")),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_policy_holder", ["policyId", "certificateHolderId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"]),
+
+  certificateVersions: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    policyVersionId: v.id("policyVersions"),
+    policyCertificateId: v.id("policyCertificates"),
+    certificateHolderId: v.id("certificateHolders"),
+    certificateId: v.id("certificates"),
+    fileId: v.id("_storage"),
+    fileName: v.string(),
+    versionNumber: v.number(),
+    status: v.union(v.literal("issued"), v.literal("draft"), v.literal("void")),
+    issueKind: v.union(v.literal("initial"), v.literal("reissue"), v.literal("renewal_review")),
+    source: v.optional(
+      v.union(
+        v.literal("policy_page"),
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("sms"),
+        v.literal("api"),
+        v.literal("mcp"),
+        v.literal("agent"),
+        v.literal("unknown"),
+      ),
+    ),
+    createdByUserId: v.optional(v.id("users")),
+    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    certificationStatus: v.optional(
+      v.union(
+        v.literal("not_applicable"),
+        v.literal("pending"),
+        v.literal("certified"),
+        v.literal("declined"),
+      ),
+    ),
+    partnerOrgId: v.optional(v.id("organizations")),
+    partnerProgramId: v.optional(v.id("partnerPrograms")),
+    templateId: v.optional(v.id("coiTemplates")),
+    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
+    approvalId: v.optional(v.id("certificateApprovals")),
+    approvalMode: v.optional(
+      v.union(
+        v.literal("auto_approve_all"),
+        v.literal("require_approval_all"),
+        v.literal("llm_review"),
+      ),
+    ),
+    approvalAudit: v.optional(v.any()),
+    disclaimer: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_policy_certificate", ["policyCertificateId"])
+    .index("by_policy_certificate_version", ["policyCertificateId", "policyVersionId"])
+    .index("by_policy_version", ["policyId", "policyVersionId"])
+    .index("by_certificateId", ["certificateId"])
+    .index("by_orgId", ["orgId"]),
+
   certificates: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
@@ -1474,6 +1590,10 @@ export default defineSchema({
     fileName: v.string(),
     certificateHolder: v.optional(v.string()),
     certificateHolderName: v.optional(v.string()),
+    certificateHolderId: v.optional(v.id("certificateHolders")),
+    policyCertificateId: v.optional(v.id("policyCertificates")),
+    policyVersionId: v.optional(v.id("policyVersions")),
+    certificateVersionId: v.optional(v.id("certificateVersions")),
     source: v.optional(
       v.union(
         v.literal("policy_page"),

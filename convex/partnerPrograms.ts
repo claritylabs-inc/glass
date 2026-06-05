@@ -1118,7 +1118,48 @@ export const approveCertificateRequest = action({
       approvalId,
       requestId: args.requestId,
     });
-    return generated;
+    const lifecycleTarget = await ctx.runMutation(internal.certificates.resolveLifecycleTargetInternal, {
+      orgId: request.orgId,
+      policyId: request.policyId,
+      holderName: request.holderName,
+      certificateHolder: request.certificateHolder,
+      source: request.source,
+      createdByUserId: viewerOrg.membership.userId,
+      forceReissue: true,
+    }) as any;
+    const fileId = generated.storageId as Id<"_storage">;
+    const recordedVersion = await ctx.runMutation(internal.certificates.recordCertificateVersionInternal, {
+      orgId: request.orgId,
+      policyId: request.policyId,
+      certificateId: generated.certificateId as Id<"certificates">,
+      policyVersionId: lifecycleTarget.policyVersion._id,
+      policyCertificateId: lifecycleTarget.policyCertificate._id,
+      certificateHolderId: lifecycleTarget.holder._id,
+      fileId,
+      fileName: generated.fileName,
+      issueKind: lifecycleTarget.nextIssueKind ?? "reissue",
+      source: request.source,
+      createdByUserId: viewerOrg.membership.userId,
+      authorityType: "certified",
+      certificationStatus: "certified",
+      partnerOrgId: request.partnerOrgId,
+      partnerProgramId,
+      templateId,
+      approvalId,
+      approvalMode: request.approvalMode,
+      approvalAudit: request.approvalAudit,
+      disclaimer: args.notes
+        ? `Certified by program administrator. Notes: ${args.notes}`
+        : "Certified by program administrator.",
+    });
+    return {
+      ...generated,
+      certificateVersionId: recordedVersion.certificateVersionId,
+      policyCertificateId: lifecycleTarget.policyCertificate._id,
+      certificateHolderId: lifecycleTarget.holder._id,
+      policyVersionId: lifecycleTarget.policyVersion._id,
+      versionNumber: recordedVersion.versionNumber,
+    };
   },
 });
 

@@ -29,6 +29,25 @@ const certificateSourceValidator = v.union(
 
 const requestedEndorsementValidator = v.array(v.string());
 
+
+function normalizeCertificateHolderName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function buildPolicyVersionFingerprint(policy: Record<string, unknown>) {
+  return JSON.stringify({
+    policyId: String(policy._id ?? ""),
+    updatedAt: typeof policy.updatedAt === "number" ? policy.updatedAt : undefined,
+    fileId: policy.fileId ? String(policy.fileId) : undefined,
+    fileName: typeof policy.fileName === "string" ? policy.fileName : undefined,
+    policyNumber: typeof policy.policyNumber === "string" ? policy.policyNumber : undefined,
+    effectiveDate: typeof policy.effectiveDate === "string" ? policy.effectiveDate : undefined,
+    expirationDate: typeof policy.expirationDate === "string" ? policy.expirationDate : undefined,
+    sourceTreeUpdatedAt: typeof policy.sourceTreeUpdatedAt === "number" ? policy.sourceTreeUpdatedAt : undefined,
+    reconciliationStatus: typeof policy.reconciliationStatus === "string" ? policy.reconciliationStatus : undefined,
+  });
+}
+
 function compactCertificateHolder(args: {
   holderName: string;
   addressLine1?: string;
@@ -385,6 +404,7 @@ export const generateForPolicy = action({
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
     dryRun: v.optional(v.boolean()),
+    forceReissue: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
     const userId = await getAuthUserId(ctx);
@@ -411,6 +431,7 @@ export const generateForPolicy = action({
       requestText: args.requestText,
       requestedEndorsements: args.requestedEndorsements,
       dryRun: args.dryRun,
+      forceReissue: args.forceReissue,
       source: "policy_page",
       createdByUserId: context.userId,
     });
@@ -462,6 +483,316 @@ export const previewAuthorityForPolicy = action({
   },
 });
 
+
+export const resolveLifecycleTargetInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    holderName: v.string(),
+    certificateHolder: v.optional(v.string()),
+    source: v.optional(certificateSourceValidator),
+    createdByUserId: v.optional(v.id("users")),
+    forceReissue: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy || policy.orgId !== args.orgId) {
+      throw new Error("Policy not found for certificate lifecycle.");
+    }
+
+    const now = dayjs().valueOf();
+    const holderName = args.holderName.trim();
+    const normalizedName = normalizeCertificateHolderName(holderName);
+    if (!normalizedName) throw new Error("Certificate holder is required.");
+
+    const existingHolders = await ctx.db
+      .query("certificateHolders")
+      .withIndex("by_org_normalizedName", (q) =>
+        q.eq("orgId", args.orgId).eq("normalizedName", normalizedName),
+      )
+      .collect();
+    let holder: any = existingHolders[0] ?? null;
+    if (!holder) {
+      const holderId = await ctx.db.insert("certificateHolders", {
+        orgId: args.orgId,
+        name: holderName,
+        normalizedName,
+        address: args.certificateHolder,
+        source: args.source ?? "agent",
+        createdByUserId: args.createdByUserId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      holder = await ctx.db.get(holderId);
+    } else {
+      const patch: Record<string, unknown> = { updatedAt: now };
+      if (holder.name !== holderName) patch.name = holderName;
+      if (args.certificateHolder && holder.address !== args.certificateHolder) {
+        patch.address = args.certificateHolder;
+      }
+      await ctx.db.patch(holder._id, patch);
+      holder = await ctx.db.get(holder._id);
+    }
+    if (!holder) throw new Error("Could not resolve certificate holder.");
+
+    const fingerprint = buildPolicyVersionFingerprint(policy as Record<string, unknown>);
+    const policyVersions = await ctx.db
+      .query("policyVersions")
+      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .order("desc")
+      .collect();
+    let policyVersion: any = policyVersions.find((version) =>
+      version.isCurrent && version.currentFingerprint === fingerprint,
+    ) ?? null;
+    if (!policyVersion) {
+      for (const version of policyVersions.filter((item) => item.isCurrent)) {
+        await ctx.db.patch(version._id, { isCurrent: false, updatedAt: now });
+      }
+      const highestVersionNumber = policyVersions.reduce(
+        (max, version) => Math.max(max, version.versionNumber ?? 0),
+        0,
+      );
+      const policyVersionId = await ctx.db.insert("policyVersions", {
+        orgId: args.orgId,
+        policyId: args.policyId,
+        versionNumber: highestVersionNumber + 1,
+        label: `Current policy version ${highestVersionNumber + 1}`,
+        currentFingerprint: fingerprint,
+        isCurrent: true,
+        sourcePolicyUpdatedAt: typeof (policy as any).updatedAt === "number" ? (policy as any).updatedAt : undefined,
+        sourceTreeUpdatedAt: typeof (policy as any).sourceTreeUpdatedAt === "number" ? (policy as any).sourceTreeUpdatedAt : undefined,
+        fileId: (policy as any).fileId,
+        fileName: (policy as any).fileName,
+        createdAt: now,
+        updatedAt: now,
+      });
+      policyVersion = await ctx.db.get(policyVersionId);
+    }
+    if (!policyVersion) throw new Error("Could not resolve policy version.");
+
+    const policyCertificates = await ctx.db
+      .query("policyCertificates")
+      .withIndex("by_policy_holder", (q) =>
+        q.eq("policyId", args.policyId).eq("certificateHolderId", holder._id),
+      )
+      .collect();
+    let policyCertificate: any = policyCertificates.find((item) => item.status === "active") ?? null;
+    if (!policyCertificate) {
+      const policyCertificateId = await ctx.db.insert("policyCertificates", {
+        orgId: args.orgId,
+        policyId: args.policyId,
+        certificateHolderId: holder._id,
+        status: "active",
+        createdByUserId: args.createdByUserId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      policyCertificate = await ctx.db.get(policyCertificateId);
+    }
+    if (!policyCertificate) throw new Error("Could not resolve policy certificate.");
+
+    let versionsForCurrentPolicy = await ctx.db
+      .query("certificateVersions")
+      .withIndex("by_policy_certificate_version", (q) =>
+        q.eq("policyCertificateId", policyCertificate._id).eq("policyVersionId", policyVersion._id),
+      )
+      .collect();
+    let latestExisting = versionsForCurrentPolicy
+      .filter((version) => version.status === "issued")
+      .sort((a, b) => (b.versionNumber ?? 0) - (a.versionNumber ?? 0) || b.createdAt - a.createdAt)[0];
+
+    if (!latestExisting) {
+      const legacyCertificates = await ctx.db
+        .query("certificates")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .collect();
+      const legacyMatch = legacyCertificates
+        .filter((certificate) => {
+          const legacyName = certificate.certificateHolderName?.trim() || certificate.certificateHolder?.split(/\r?\n/)[0]?.trim() || "";
+          return normalizeCertificateHolderName(legacyName) === normalizedName;
+        })
+        .sort((a, b) => b._creationTime - a._creationTime)[0];
+      if (legacyMatch) {
+        const allParentVersions = await ctx.db
+          .query("certificateVersions")
+          .withIndex("by_policy_certificate", (q) => q.eq("policyCertificateId", policyCertificate._id))
+          .collect();
+        const versionNumber = allParentVersions.reduce(
+          (max, version) => Math.max(max, version.versionNumber ?? 0),
+          0,
+        ) + 1;
+        const certificateVersionId = await ctx.db.insert("certificateVersions", {
+          orgId: args.orgId,
+          policyId: args.policyId,
+          policyVersionId: policyVersion._id,
+          policyCertificateId: policyCertificate._id,
+          certificateHolderId: holder._id,
+          certificateId: legacyMatch._id,
+          fileId: legacyMatch.fileId,
+          fileName: legacyMatch.fileName,
+          versionNumber,
+          status: "issued",
+          issueKind: "initial",
+          source: legacyMatch.source ?? args.source ?? "agent",
+          createdByUserId: legacyMatch.createdByUserId ?? args.createdByUserId,
+          authorityType: legacyMatch.authorityType ?? "non_binding",
+          certificationStatus: legacyMatch.certificationStatus ?? "not_applicable",
+          partnerOrgId: legacyMatch.partnerOrgId,
+          partnerProgramId: legacyMatch.partnerProgramId,
+          templateId: legacyMatch.templateId,
+          standingAuthorizationId: legacyMatch.standingAuthorizationId,
+          approvalId: legacyMatch.approvalId,
+          approvalMode: legacyMatch.approvalMode,
+          approvalAudit: legacyMatch.approvalAudit,
+          disclaimer: legacyMatch.disclaimer,
+          createdAt: legacyMatch.createdAt ?? now,
+        });
+        await ctx.db.patch(legacyMatch._id, {
+          certificateHolderId: holder._id,
+          policyCertificateId: policyCertificate._id,
+          policyVersionId: policyVersion._id,
+          certificateVersionId,
+        });
+        await ctx.db.patch(policyCertificate._id, {
+          latestVersionId: certificateVersionId,
+          latestCertificateId: legacyMatch._id,
+          updatedAt: now,
+        });
+        latestExisting = await ctx.db.get(certificateVersionId) as any;
+        policyCertificate = await ctx.db.get(policyCertificate._id);
+        versionsForCurrentPolicy = latestExisting ? [latestExisting] : versionsForCurrentPolicy;
+      }
+    }
+
+    if (latestExisting && !args.forceReissue) {
+      return {
+        status: "existing" as const,
+        holder,
+        policyVersion,
+        policyCertificate,
+        latestVersion: latestExisting,
+        fileId: latestExisting.fileId,
+        fileName: latestExisting.fileName,
+        certificateId: latestExisting.certificateId,
+        certificateVersionId: latestExisting._id,
+      };
+    }
+
+    return {
+      status: "ready" as const,
+      holder,
+      policyVersion,
+      policyCertificate,
+      nextIssueKind: policyCertificate.latestVersionId ? "reissue" as const : "initial" as const,
+    };
+  },
+});
+
+export const recordCertificateVersionInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    certificateId: v.id("certificates"),
+    policyVersionId: v.id("policyVersions"),
+    policyCertificateId: v.id("policyCertificates"),
+    certificateHolderId: v.id("certificateHolders"),
+    fileId: v.id("_storage"),
+    fileName: v.string(),
+    issueKind: v.union(v.literal("initial"), v.literal("reissue"), v.literal("renewal_review")),
+    source: v.optional(certificateSourceValidator),
+    createdByUserId: v.optional(v.id("users")),
+    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    certificationStatus: v.optional(
+      v.union(
+        v.literal("not_applicable"),
+        v.literal("pending"),
+        v.literal("certified"),
+        v.literal("declined"),
+      ),
+    ),
+    partnerOrgId: v.optional(v.id("organizations")),
+    partnerProgramId: v.optional(v.id("partnerPrograms")),
+    templateId: v.optional(v.id("coiTemplates")),
+    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
+    approvalId: v.optional(v.id("certificateApprovals")),
+    approvalMode: v.optional(v.union(
+      v.literal("auto_approve_all"),
+      v.literal("require_approval_all"),
+      v.literal("llm_review"),
+    )),
+    approvalAudit: v.optional(v.any()),
+    disclaimer: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const [certificate, policyVersion, policyCertificate, holder] = await Promise.all([
+      ctx.db.get(args.certificateId),
+      ctx.db.get(args.policyVersionId),
+      ctx.db.get(args.policyCertificateId),
+      ctx.db.get(args.certificateHolderId),
+    ]);
+    if (!certificate || certificate.orgId !== args.orgId || certificate.policyId !== args.policyId) {
+      throw new Error("Certificate artifact not found for lifecycle version.");
+    }
+    if (!policyVersion || policyVersion.policyId !== args.policyId) {
+      throw new Error("Policy version not found for certificate lifecycle.");
+    }
+    if (!policyCertificate || policyCertificate.policyId !== args.policyId || policyCertificate.certificateHolderId !== args.certificateHolderId) {
+      throw new Error("Policy certificate parent not found for lifecycle version.");
+    }
+    if (!holder || holder.orgId !== args.orgId) {
+      throw new Error("Certificate holder not found for lifecycle version.");
+    }
+
+    const now = dayjs().valueOf();
+    const existingVersions = await ctx.db
+      .query("certificateVersions")
+      .withIndex("by_policy_certificate", (q) => q.eq("policyCertificateId", args.policyCertificateId))
+      .collect();
+    const versionNumber = existingVersions.reduce(
+      (max, version) => Math.max(max, version.versionNumber ?? 0),
+      0,
+    ) + 1;
+    const certificateVersionId = await ctx.db.insert("certificateVersions", {
+      orgId: args.orgId,
+      policyId: args.policyId,
+      policyVersionId: args.policyVersionId,
+      policyCertificateId: args.policyCertificateId,
+      certificateHolderId: args.certificateHolderId,
+      certificateId: args.certificateId,
+      fileId: args.fileId,
+      fileName: args.fileName,
+      versionNumber,
+      status: "issued",
+      issueKind: args.issueKind,
+      source: args.source ?? "agent",
+      createdByUserId: args.createdByUserId,
+      authorityType: args.authorityType ?? "non_binding",
+      certificationStatus: args.certificationStatus ?? "not_applicable",
+      partnerOrgId: args.partnerOrgId,
+      partnerProgramId: args.partnerProgramId,
+      templateId: args.templateId,
+      standingAuthorizationId: args.standingAuthorizationId,
+      approvalId: args.approvalId,
+      approvalMode: args.approvalMode,
+      approvalAudit: args.approvalAudit,
+      disclaimer: args.disclaimer,
+      createdAt: now,
+    });
+    await ctx.db.patch(args.certificateId, {
+      certificateHolderId: args.certificateHolderId,
+      policyCertificateId: args.policyCertificateId,
+      policyVersionId: args.policyVersionId,
+      certificateVersionId,
+    });
+    await ctx.db.patch(args.policyCertificateId, {
+      latestVersionId: certificateVersionId,
+      latestCertificateId: args.certificateId,
+      updatedAt: now,
+    });
+    return { certificateVersionId, versionNumber };
+  },
+});
+
 export const generateForOrg = internalAction({
   args: {
     orgId: v.id("organizations"),
@@ -479,6 +810,7 @@ export const generateForOrg = internalAction({
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
     dryRun: v.optional(v.boolean()),
+    forceReissue: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
     const holderName = args.holderName.trim();
@@ -617,6 +949,33 @@ export const generateForOrg = internalAction({
       };
     }
 
+    const lifecycleTarget = await ctx.runMutation(internal.certificates.resolveLifecycleTargetInternal, {
+      orgId: args.orgId,
+      policyId: args.policyId,
+      holderName,
+      certificateHolder,
+      source: args.source,
+      createdByUserId: args.createdByUserId,
+      forceReissue: args.forceReissue,
+    }) as any;
+    if (lifecycleTarget.status === "existing") {
+      const existingFileId = lifecycleTarget.fileId as Id<"_storage">;
+      return {
+        status: "existing",
+        fileId: existingFileId,
+        url: await ctx.storage.getUrl(existingFileId),
+        fileName: lifecycleTarget.fileName,
+        certificateId: lifecycleTarget.certificateId,
+        certificateVersionId: lifecycleTarget.certificateVersionId,
+        policyCertificateId: lifecycleTarget.policyCertificate?._id,
+        certificateHolderId: lifecycleTarget.holder?._id,
+        policyVersionId: lifecycleTarget.policyVersion?._id,
+        versionNumber: lifecycleTarget.latestVersion?.versionNumber,
+        holderName,
+        certificateHolder,
+      };
+    }
+
     const authority = await ctx.runAction(internal.partnerPrograms.resolveCertificateAuthority, {
       policyId: args.policyId,
       selectedPartnerProgramId: args.selectedPartnerProgramId,
@@ -689,8 +1048,9 @@ export const generateForOrg = internalAction({
     if (!generated) throw new Error("COI generation failed.");
 
     const fileId = generated.storageId as Id<"_storage">;
+    let approvalId: Id<"certificateApprovals"> | undefined;
     if (authority.approvalType === "standing_authorization" && authority.partnerOrgId) {
-      const approvalId = await ctx.runMutation(internal.partnerPrograms.recordCertificateApprovalInternal, {
+      approvalId = await ctx.runMutation(internal.partnerPrograms.recordCertificateApprovalInternal, {
         orgId: args.orgId,
         policyId: args.policyId,
         certificateId: generated.certificateId as Id<"certificates">,
@@ -709,6 +1069,29 @@ export const generateForOrg = internalAction({
         approvalId,
       });
     }
+    const recordedVersion = await ctx.runMutation(internal.certificates.recordCertificateVersionInternal, {
+      orgId: args.orgId,
+      policyId: args.policyId,
+      certificateId: generated.certificateId as Id<"certificates">,
+      policyVersionId: lifecycleTarget.policyVersion._id,
+      policyCertificateId: lifecycleTarget.policyCertificate._id,
+      certificateHolderId: lifecycleTarget.holder._id,
+      fileId,
+      fileName: generated.fileName,
+      issueKind: lifecycleTarget.nextIssueKind ?? (args.forceReissue ? "reissue" : "initial"),
+      source: args.source,
+      createdByUserId: args.createdByUserId,
+      authorityType: authority.authorityType,
+      certificationStatus: authority.certificationStatus,
+      partnerOrgId: authority.partnerOrgId,
+      partnerProgramId: authority.partnerProgramId,
+      templateId: authority.templateId,
+      standingAuthorizationId: authority.standingAuthorizationId,
+      approvalId,
+      approvalMode: authority.approvalMode,
+      approvalAudit: authority.approvalAudit,
+      disclaimer: authority.disclaimer,
+    });
     return {
       status: "generated",
       fileId,
@@ -716,6 +1099,11 @@ export const generateForOrg = internalAction({
       fileName: generated.fileName,
       size: generated.size,
       certificateId: generated.certificateId,
+      certificateVersionId: recordedVersion.certificateVersionId,
+      policyCertificateId: lifecycleTarget.policyCertificate._id,
+      certificateHolderId: lifecycleTarget.holder._id,
+      policyVersionId: lifecycleTarget.policyVersion._id,
+      versionNumber: recordedVersion.versionNumber,
       authorityType: authority.authorityType,
       certificationStatus: authority.certificationStatus,
     };
