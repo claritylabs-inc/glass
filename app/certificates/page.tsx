@@ -3,7 +3,6 @@
 import dayjs from "dayjs";
 import Link from "next/link";
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Eye } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -106,6 +105,8 @@ const TABS: Array<{ value: CertificateWorkspaceTab; label: string }> = [
 ];
 
 const CERTIFICATE_PANEL_CONTAINER_CLASS = "@container/certificates-panel";
+const CERTIFICATE_ACTIVE_ROW_GRID_CLASS =
+  "grid min-w-0 gap-3 @xl/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] @xl/certificates-panel:items-center";
 const CERTIFICATE_ROW_GRID_CLASS =
   "grid min-w-0 gap-3 @xl/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @xl/certificates-panel:items-center";
 const CERTIFICATE_ROW_ACTIONS_CLASS =
@@ -265,11 +266,16 @@ function CertificateRow({
       role="button"
       tabIndex={0}
     >
-      <div className={CERTIFICATE_ROW_GRID_CLASS}>
+      <div className={CERTIFICATE_ACTIVE_ROW_GRID_CLASS}>
         <div className="min-w-0">
-          <p className="truncate text-base font-medium text-foreground">
-            {row.holder?.displayName ?? "Certificate holder"}
-          </p>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="min-w-0 truncate text-base font-medium text-foreground">
+              {row.holder?.displayName ?? "Certificate holder"}
+            </p>
+            <Badge variant={badge.variant} className="shrink-0 text-label capitalize">
+              {badge.label}
+            </Badge>
+          </div>
           <p className="mt-1 whitespace-pre-line text-base text-muted-foreground">
             {holderAddress(row.holder) ?? row.holder?.email ?? "No holder contact recorded"}
           </p>
@@ -279,11 +285,6 @@ function CertificateRow({
           <p className="mt-1 text-base text-muted-foreground">
             Version {version?.versionNumber ?? "-"} · {formatTime(version?.issuedAt ?? row.lastIssuedAt)}
           </p>
-        </div>
-        <div className={CERTIFICATE_ROW_ACTIONS_CLASS}>
-          <Badge variant={badge.variant} className="text-label capitalize">
-            {badge.label}
-          </Badge>
         </div>
       </div>
     </OperationalItem>
@@ -382,16 +383,14 @@ function CertificateDetailPanel({
         if (!open) onClose();
       }}
       title={holderName}
-      actions={
+      footer={
         currentUrl ? (
           <PillButton
             type="button"
-            variant="secondary"
-            size="compact"
+            variant="primary"
             onClick={() => openWithUrl(currentUrl)}
           >
-            <Eye className="size-3.5" />
-            PDF
+            View PDF
           </PillButton>
         ) : null
       }
