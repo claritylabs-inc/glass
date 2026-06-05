@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getPolicyAccessForQuery } from "./lib/access";
 import {
@@ -16,10 +17,10 @@ const policyVersionKindValidator = v.union(
   v.literal("renewal"),
 );
 
-async function nextVersionNumber(ctx: any, policyId: Id<"policies">) {
+async function nextVersionNumber(ctx: MutationCtx, policyId: Id<"policies">) {
   const latest = await ctx.db
     .query("policyVersions")
-    .withIndex("by_policyId_versionNumber", (q: any) => q.eq("policyId", policyId))
+    .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", policyId))
     .order("desc")
     .first();
   return (latest?.versionNumber ?? 0) + 1;

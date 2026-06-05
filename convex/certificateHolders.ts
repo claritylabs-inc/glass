@@ -1,7 +1,8 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess, requireCurrentOrgAccess } from "./lib/access";
 import {
   certificateHolderDedupeKey,
@@ -38,12 +39,14 @@ const relationshipKindValidator = v.union(
   v.literal("allowed_holder"),
 );
 
+type ReadCtx = QueryCtx | MutationCtx;
+
 function cleanOptional(value?: string) {
   const trimmed = value?.trim();
   return trimmed || undefined;
 }
 
-async function findExistingHolder(ctx: any, args: {
+async function findExistingHolder(ctx: ReadCtx, args: {
   orgId: Id<"organizations">;
   normalizedName: string;
   normalizedEmail?: string;
@@ -52,7 +55,7 @@ async function findExistingHolder(ctx: any, args: {
   if (args.normalizedEmail) {
     const byEmail = await ctx.db
       .query("certificateHolders")
-      .withIndex("by_orgId_normalizedEmail", (q: any) =>
+      .withIndex("by_orgId_normalizedEmail", (q) =>
         q.eq("orgId", args.orgId).eq("normalizedEmail", args.normalizedEmail),
       )
       .first();
@@ -61,16 +64,16 @@ async function findExistingHolder(ctx: any, args: {
 
   const named = await ctx.db
     .query("certificateHolders")
-    .withIndex("by_orgId_normalizedName", (q: any) =>
+    .withIndex("by_orgId_normalizedName", (q) =>
       q.eq("orgId", args.orgId).eq("normalizedName", args.normalizedName),
     )
     .collect();
   if (args.normalizedAddressKey) {
-    return named.find((holder: any) =>
+    return named.find((holder: Doc<"certificateHolders">) =>
       holder.normalizedAddressKey === args.normalizedAddressKey,
     ) ?? null;
   }
-  return named.find((holder: any) => !holder.normalizedAddressKey)
+  return named.find((holder: Doc<"certificateHolders">) => !holder.normalizedAddressKey)
     ?? (named.length === 1 ? named[0] : null);
 }
 
@@ -141,7 +144,7 @@ export const upsertForCurrentOrg = mutation({
   },
 });
 
-async function upsertHolder(ctx: any, args: {
+async function upsertHolder(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   displayName: string;
   email?: string;
@@ -249,7 +252,7 @@ export const linkPolicyInternal = internalMutation({
   },
 });
 
-async function upsertPolicyLink(ctx: any, args: {
+async function upsertPolicyLink(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   holderId: Id<"certificateHolders">;
   policyId: Id<"policies">;
@@ -264,9 +267,9 @@ async function upsertPolicyLink(ctx: any, args: {
 }) {
   const existing = await ctx.db
     .query("certificateHolderPolicyLinks")
-    .withIndex("by_policyId", (q: any) => q.eq("policyId", args.policyId))
+    .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
     .collect();
-  const match = existing.find((link: any) =>
+  const match = existing.find((link) =>
     link.holderId === args.holderId
     && link.relationshipKind === args.relationshipKind
     && link.policyVersionId === args.policyVersionId,

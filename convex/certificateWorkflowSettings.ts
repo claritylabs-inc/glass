@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalQuery, mutation, query } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   requireCurrentOrgAccess,
@@ -17,6 +18,8 @@ export const DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS = {
   channels: ["email"] as Array<"email" | "imessage">,
   copyInstructions: undefined as string | undefined,
 };
+
+type ReadCtx = QueryCtx | MutationCtx;
 
 const settingsArgs = {
   populateHoldersFromEndorsements: v.boolean(),
@@ -58,25 +61,25 @@ function valuesFromRow(row?: Doc<"certificateWorkflowSettings"> | null, legacyOr
   };
 }
 
-async function getBrokerDefault(ctx: any, brokerOrgId?: Id<"organizations"> | null) {
+async function getBrokerDefault(ctx: ReadCtx, brokerOrgId?: Id<"organizations"> | null) {
   if (!brokerOrgId) return null;
   return await ctx.db
     .query("certificateWorkflowSettings")
-    .withIndex("by_brokerOrgId_clientOrgId", (q: any) =>
+    .withIndex("by_brokerOrgId_clientOrgId", (q) =>
       q.eq("brokerOrgId", brokerOrgId).eq("clientOrgId", undefined),
     )
     .first();
 }
 
-async function getClientOverride(ctx: any, clientOrgId?: Id<"organizations"> | null) {
+async function getClientOverride(ctx: ReadCtx, clientOrgId?: Id<"organizations"> | null) {
   if (!clientOrgId) return null;
   return await ctx.db
     .query("certificateWorkflowSettings")
-    .withIndex("by_clientOrgId", (q: any) => q.eq("clientOrgId", clientOrgId))
+    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrgId))
     .first();
 }
 
-async function resolveEffectiveForOrg(ctx: any, orgId: Id<"organizations">) {
+async function resolveEffectiveForOrg(ctx: ReadCtx, orgId: Id<"organizations">) {
   const org = await ctx.db.get(orgId);
   if (!org) throw new Error("Organization not found");
   const orgType = (org.type ?? "client") as "broker" | "client" | "partner";

@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   holderSnapshot,
@@ -61,18 +62,19 @@ function parseLegacyHolder(certificate: Doc<"certificates">) {
   return { displayName, address };
 }
 
-async function ensurePolicyVersion(ctx: any, policy: Doc<"policies">, now: number, dryRun: boolean) {
+async function ensurePolicyVersion(ctx: MutationCtx, policy: Doc<"policies">, now: number, dryRun: boolean) {
   if (policy.currentPolicyVersionId) {
     const current = await ctx.db.get(policy.currentPolicyVersionId);
     if (current) return { id: current._id as Id<"policyVersions">, created: false };
   }
   const existing = await ctx.db
     .query("policyVersions")
-    .withIndex("by_policyId_versionNumber", (q: any) => q.eq("policyId", policy._id))
+    .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", policy._id))
     .order("desc")
     .first();
   if (existing) return { id: existing._id as Id<"policyVersions">, created: false };
   if (dryRun) return { id: undefined, created: true };
+  if (!policy.orgId) throw new Error("Policy is missing orgId");
 
   const snapshot = buildPolicyVersionSnapshot(policy as unknown as Record<string, unknown>);
   const id = await ctx.db.insert("policyVersions", {
@@ -93,7 +95,7 @@ async function ensurePolicyVersion(ctx: any, policy: Doc<"policies">, now: numbe
   return { id: id as Id<"policyVersions">, created: true };
 }
 
-async function ensureHolder(ctx: any, args: {
+async function ensureHolder(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   displayName: string;
   address?: CertificateHolderAddressInput;
@@ -104,7 +106,7 @@ async function ensureHolder(ctx: any, args: {
   const normalizedAddressKey = normalizeCertificateHolderAddress(args.address);
   const existing = await ctx.db
     .query("certificateHolders")
-    .withIndex("by_orgId_normalizedName", (q: any) =>
+    .withIndex("by_orgId_normalizedName", (q) =>
       q.eq("orgId", args.orgId).eq("normalizedName", normalizedName),
     )
     .collect()
@@ -126,7 +128,7 @@ async function ensureHolder(ctx: any, args: {
   return { id: id as Id<"certificateHolders">, created: true };
 }
 
-async function ensureParent(ctx: any, args: {
+async function ensureParent(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   policyId: Id<"policies">;
   holderId?: Id<"certificateHolders">;
@@ -141,7 +143,7 @@ async function ensureParent(ctx: any, args: {
   });
   const existing = await ctx.db
     .query("policyCertificates")
-    .withIndex("by_dedupeKey", (q: any) => q.eq("dedupeKey", dedupeKey))
+    .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", dedupeKey))
     .first();
   if (existing) return { id: existing._id as Id<"policyCertificates">, created: false, parent: existing };
   if (args.dryRun) return { id: undefined, created: true, parent: null };
@@ -236,8 +238,8 @@ export const backfillLegacyCertificates = mutation({
         if (willBeLatest) {
           const issuedVersions = await ctx.db
             .query("certificateVersions")
-            .withIndex("by_certificateId", (q: any) => q.eq("certificateId", parent.id))
-            .filter((q: any) => q.eq(q.field("status"), "issued"))
+            .withIndex("by_certificateId", (q) => q.eq("certificateId", parent.id))
+            .filter((q) => q.eq(q.field("status"), "issued"))
             .collect();
           for (const version of issuedVersions) {
             await ctx.db.patch(version._id, {
@@ -249,7 +251,7 @@ export const backfillLegacyCertificates = mutation({
         }
         const latestVersion = await ctx.db
           .query("certificateVersions")
-          .withIndex("by_certificateId_versionNumber", (q: any) => q.eq("certificateId", parent.id))
+          .withIndex("by_certificateId_versionNumber", (q) => q.eq("certificateId", parent.id))
           .order("desc")
           .first();
         const versionId = await ctx.db.insert("certificateVersions", {

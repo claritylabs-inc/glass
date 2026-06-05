@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
 import {
@@ -27,10 +28,12 @@ const certificationStatusValidator = v.union(
   v.literal("declined"),
 );
 
-async function nextCertificateVersionNumber(ctx: any, certificateId: Id<"policyCertificates">) {
+type ReadCtx = QueryCtx | MutationCtx;
+
+async function nextCertificateVersionNumber(ctx: ReadCtx, certificateId: Id<"policyCertificates">) {
   const latest = await ctx.db
     .query("certificateVersions")
-    .withIndex("by_certificateId_versionNumber", (q: any) => q.eq("certificateId", certificateId))
+    .withIndex("by_certificateId_versionNumber", (q) => q.eq("certificateId", certificateId))
     .order("desc")
     .first();
   return (latest?.versionNumber ?? 0) + 1;

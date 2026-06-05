@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess } from "./lib/access";
 import {
@@ -48,7 +49,7 @@ function holderAddressBlock(holder: Pick<Doc<"certificateHolders">, "displayName
   ].filter(Boolean).join("\n");
 }
 
-async function ensureHolder(ctx: any, args: {
+async function ensureHolder(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   displayName: string;
   address?: CertificateHolderAddressInput;
@@ -58,7 +59,7 @@ async function ensureHolder(ctx: any, args: {
   const normalizedAddressKey = normalizeCertificateHolderAddress(args.address);
   const candidates = await ctx.db
     .query("certificateHolders")
-    .withIndex("by_orgId_normalizedName", (q: any) =>
+    .withIndex("by_orgId_normalizedName", (q) =>
       q.eq("orgId", args.orgId).eq("normalizedName", normalizedName),
     )
     .collect();
@@ -78,7 +79,7 @@ async function ensureHolder(ctx: any, args: {
   }) as Id<"certificateHolders">;
 }
 
-async function ensureParent(ctx: any, args: {
+async function ensureParent(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   policyId: Id<"policies">;
   holderId: Id<"certificateHolders">;
@@ -91,7 +92,7 @@ async function ensureParent(ctx: any, args: {
   });
   const existing = await ctx.db
     .query("policyCertificates")
-    .withIndex("by_dedupeKey", (q: any) => q.eq("dedupeKey", dedupeKey))
+    .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", dedupeKey))
     .first();
   if (existing) return existing._id as Id<"policyCertificates">;
   return await ctx.db.insert("policyCertificates", {
@@ -106,16 +107,16 @@ async function ensureParent(ctx: any, args: {
   }) as Id<"policyCertificates">;
 }
 
-async function nextVersionNumber(ctx: any, certificateId: Id<"policyCertificates">) {
+async function nextVersionNumber(ctx: MutationCtx, certificateId: Id<"policyCertificates">) {
   const latest = await ctx.db
     .query("certificateVersions")
-    .withIndex("by_certificateId_versionNumber", (q: any) => q.eq("certificateId", certificateId))
+    .withIndex("by_certificateId_versionNumber", (q) => q.eq("certificateId", certificateId))
     .order("desc")
     .first();
   return (latest?.versionNumber ?? 0) + 1;
 }
 
-async function createWorkflowJob(ctx: any, args: {
+async function createWorkflowJob(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   brokerOrgId?: Id<"organizations">;
   certificateId: Id<"policyCertificates">;
@@ -132,7 +133,7 @@ async function createWorkflowJob(ctx: any, args: {
 }) {
   const existing = await ctx.db
     .query("certificateWorkflowJobs")
-    .withIndex("by_idempotencyKey", (q: any) => q.eq("idempotencyKey", args.idempotencyKey))
+    .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", args.idempotencyKey))
     .first();
   if (existing) return { jobId: existing._id, created: false, status: existing.status };
   const now = dayjs().valueOf();
@@ -201,13 +202,13 @@ export const createRenewalJobsForPolicyInternal = internalMutation({
     const clientOverride = org.type === "client"
       ? await ctx.db
           .query("certificateWorkflowSettings")
-          .withIndex("by_clientOrgId", (q: any) => q.eq("clientOrgId", args.orgId))
+          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.orgId))
           .first()
       : null;
     const brokerDefault = brokerOrgId
       ? await ctx.db
           .query("certificateWorkflowSettings")
-          .withIndex("by_brokerOrgId_clientOrgId", (q: any) =>
+          .withIndex("by_brokerOrgId_clientOrgId", (q) =>
             q.eq("brokerOrgId", brokerOrgId).eq("clientOrgId", undefined),
           )
           .first()
