@@ -1565,6 +1565,64 @@ export default defineSchema({
     .index("by_policyChangeCaseId", ["policyChangeCaseId"])
     .index("by_status", ["status"]),
 
+  certificateHolders: defineTable({
+    orgId: v.id("organizations"),
+    displayName: v.string(),
+    normalizedName: v.string(),
+    address: v.optional(
+      v.object({
+        formatted: v.optional(v.string()),
+        street1: v.optional(v.string()),
+        street2: v.optional(v.string()),
+        city: v.optional(v.string()),
+        state: v.optional(v.string()),
+        zip: v.optional(v.string()),
+        country: v.optional(v.string()),
+      }),
+    ),
+    normalizedAddress: v.string(),
+    email: v.optional(v.string()),
+    normalizedEmail: v.string(),
+    phone: v.optional(v.string()),
+    normalizedPhone: v.optional(v.string()),
+    mapbox: v.optional(v.any()),
+    source: v.optional(
+      v.union(
+        v.literal("policy_extraction"),
+        v.literal("manual"),
+        v.literal("api"),
+        v.literal("agent"),
+      ),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_org_normalized_identity", ["orgId", "normalizedName", "normalizedAddress", "normalizedEmail"]),
+
+  certificateHolderPolicyLinks: defineTable({
+    orgId: v.id("organizations"),
+    holderId: v.id("certificateHolders"),
+    policyId: v.id("policies"),
+    relationshipKind: v.union(
+      v.literal("additional_insured"),
+      v.literal("loss_payee"),
+      v.literal("mortgagee"),
+      v.literal("certificate_holder"),
+    ),
+    status: v.union(v.literal("active"), v.literal("inactive")),
+    sourceNodeIds: v.array(v.string()),
+    sourceSpanIds: v.array(v.string()),
+    sourceSummary: v.string(),
+    sourceProfilePath: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_holderId", ["holderId"])
+    .index("by_holder_policy_kind", ["holderId", "policyId", "relationshipKind"]),
+
   certificateRequests: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),

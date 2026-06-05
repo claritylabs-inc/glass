@@ -2041,6 +2041,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             );
           }
           await convexCtx.runMutation(
+            (internal as any).certificateHolders.populateForPolicyInternal,
+            { policyId },
+          );
+          await convexCtx.runMutation(
             (internal as any).policyDelivery.enqueueInternal,
             { policyId, sourceKind: "policy" },
           );
