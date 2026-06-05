@@ -497,12 +497,12 @@ export default function CertificatesPage() {
     viewerOrg === undefined || certificates === undefined || jobs === undefined;
   return (
     <AppShell
-      rightPanel={
+      rightPanel={selectedCertificate ? (
         <CertificateDetailPanel
           row={selectedCertificate}
           onClose={() => setSelectedCertificateId(null)}
         />
-      }
+      ) : null}
     >
       <div className="space-y-4">
         <Tabs
