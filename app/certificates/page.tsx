@@ -102,10 +102,11 @@ const TABS: Array<{ value: CertificateWorkspaceTab; label: string }> = [
   { value: "history", label: "History" },
 ];
 
+const CERTIFICATE_PANEL_CONTAINER_CLASS = "@container/certificates-panel";
 const CERTIFICATE_ROW_GRID_CLASS =
-  "grid min-w-0 gap-3 @lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @lg:items-center";
+  "grid min-w-0 gap-3 @lg/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @lg/certificates-panel:items-center";
 const CERTIFICATE_ROW_ACTIONS_CLASS =
-  "flex min-w-0 flex-wrap items-center gap-2 @lg:justify-end @lg:justify-self-end";
+  "flex min-w-0 flex-wrap items-center gap-2 @lg/certificates-panel:justify-end @lg/certificates-panel:justify-self-end";
 
 function policyLabel(policy?: Policy | null) {
   return [
@@ -155,7 +156,7 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
   const badge = certificateBadge(row);
   const version = row.currentVersion;
   return (
-    <OperationalItem className="@container">
+    <OperationalItem>
       <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
           <p className="truncate text-base font-medium text-foreground">
@@ -198,7 +199,7 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
 
 function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
   return (
-    <OperationalItem className="@container">
+    <OperationalItem>
       <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
           <p className="truncate text-base font-medium text-foreground">
@@ -244,7 +245,7 @@ function HistoryRow({
 }) {
   const { openWithUrl } = usePdf();
   return (
-    <OperationalItem className="@container">
+    <OperationalItem>
       <div className={CERTIFICATE_ROW_GRID_CLASS}>
         <div className="min-w-0">
           <p className="truncate text-base font-medium text-foreground">
@@ -352,7 +353,7 @@ export default function CertificatesPage() {
         {isLoading ? (
           <OperationalSkeletonList rows={4} />
         ) : tab === "review" ? (
-          <OperationalPanel as="div">
+          <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
             <OperationalPanelHeader
               title="Certificate review jobs"
               description="Renewal and post-endorsement certificate work that needs review before sending."
@@ -375,7 +376,7 @@ export default function CertificatesPage() {
             )}
           </OperationalPanel>
         ) : tab === "history" ? (
-          <OperationalPanel as="div">
+          <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
             <OperationalPanelHeader
               title="Certificate history"
               description="All issued, superseded, draft, and void certificate versions."
@@ -398,7 +399,7 @@ export default function CertificatesPage() {
             )}
           </OperationalPanel>
         ) : activeCertificates.length > 0 ? (
-          <OperationalPanel as="div">
+          <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
             <OperationalPanelHeader title="Active certificates" />
             {activeCertificates.map((row) => (
               <CertificateRow key={row._id} row={row} />
