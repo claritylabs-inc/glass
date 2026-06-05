@@ -801,11 +801,6 @@ export function CompliancePage() {
                   <p className="line-clamp-2 max-w-5xl text-base leading-5 text-muted-foreground">
                     {requirement.requirementText}
                   </p>
-                  {requirement.sourceExcerpt ? (
-                    <p className="line-clamp-1 max-w-5xl text-label text-muted-foreground/70">
-                      Source language: {requirement.sourceExcerpt}
-                    </p>
-                  ) : null}
                   {activeRequirementScope === "own_org" &&
                   requirement.complianceCheck?.notes ? (
                     <p className="line-clamp-1 max-w-5xl text-label text-muted-foreground/70">
