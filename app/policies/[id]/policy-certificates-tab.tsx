@@ -5,17 +5,26 @@ import dynamic from "next/dynamic";
 import { useAction } from "convex/react";
 import type { AddressAutofillRetrieveResponse } from "@mapbox/search-js-core";
 import type { Theme as MapboxSearchTheme } from "@mapbox/search-js-web";
-import dayjs from "dayjs";
 import { BadgeCheck, Eye, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { OperationalPanel, OperationalPanelBody } from "@/components/ui/operational-panel";
+import {
+  OperationalItem,
+  OperationalPanel,
+  OperationalPanelBody,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import {
+  CertificateRow,
+  CERTIFICATE_PANEL_CONTAINER_CLASS,
+  formatCertificateTime,
+  type PolicyCertificateRecord,
+} from "@/components/certificates/certificate-workspace";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -152,9 +161,15 @@ export function ViewPdfButton({
   );
 }
 
-function formatCertificateTimestamp(value: number) {
-  return dayjs(value).format("MMM D, YYYY h:mm A");
-}
+type CertificateHoldRow = Record<string, unknown> & {
+  _id: Id<"certificateRequestHolds">;
+  createdAt: number;
+  holderName?: string;
+  certificateHolderName?: string;
+  certificateHolder?: string;
+  reasonMessage?: string;
+  source?: string;
+};
 
 export type ProgramMatchCandidate = {
   programId?: Id<"partnerPrograms">;
@@ -662,15 +677,67 @@ export function CertificateCreatePanel({
   );
 }
 
-export function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
+function CertificateHoldActivityRow({ row }: { row: CertificateHoldRow }) {
+  const holderName = String(
+    row.certificateHolderName ??
+      row.holderName ??
+      "Certificate holder",
+  );
+  const reason = String(
+    row.reasonMessage ??
+      row.certificateHolder ??
+      "Certificate request is on hold",
+  );
+  return (
+    <OperationalItem>
+      <div className="grid min-w-0 gap-3 @xl/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @xl/certificates-panel:items-center">
+        <div className="min-w-0">
+          <p className="truncate text-base font-medium text-foreground">
+            {holderName}
+          </p>
+          <p className="mt-1 text-base text-muted-foreground">
+            {reason}
+          </p>
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-base font-medium text-foreground">
+            Certificate review
+          </p>
+          <p className="mt-1 text-base text-muted-foreground">
+            {formatCertificateTime(row.createdAt)}
+          </p>
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 @xl/certificates-panel:justify-end @xl/certificates-panel:justify-self-end">
+          <Badge variant="outline" className="text-label">
+            Held
+          </Badge>
+        </div>
+      </div>
+    </OperationalItem>
+  );
+}
+
+export function CertificatesTab({
+  policyId,
+  selectedCertificateId,
+  onSelectCertificate,
+}: {
+  policyId: Id<"policies">;
+  selectedCertificateId?: Id<"policyCertificates"> | null;
+  onSelectCertificate?: (certificate: PolicyCertificateRecord | null) => void;
+}) {
+  const certificates = useCachedQuery(
+    "certificateLifecycle.listByPolicy",
+    api.certificateLifecycle.listByPolicy,
+    { policyId },
+  ) as PolicyCertificateRecord[] | undefined;
   const activity = useCachedQuery(
     "certificates.listActivityByPolicy",
     api.certificates.listActivityByPolicy,
     { policyId },
   );
-  const { openWithUrl } = usePdf();
 
-  if (activity === undefined) {
+  if (certificates === undefined || activity === undefined) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -680,11 +747,31 @@ export function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
     );
   }
 
-  const rows = [
-    ...((activity.certificates ?? []) as Array<Record<string, unknown>>),
-    ...((activity.holds ?? []) as Array<Record<string, unknown>>),
-  ].sort(
+  const activeCertificates = certificates
+    .filter((row) => row.status === "active")
+    .sort(
+      (left, right) =>
+        Number(right.lastIssuedAt ?? right.currentVersion?.createdAt ?? 0) -
+        Number(left.lastIssuedAt ?? left.currentVersion?.createdAt ?? 0),
+    );
+  const holds = ((activity.holds ?? []) as CertificateHoldRow[]).sort(
     (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
+  );
+  const rows = [
+    ...activeCertificates.map((row) => ({
+      type: "certificate" as const,
+      id: String(row._id),
+      sortAt: Number(row.lastIssuedAt ?? row.currentVersion?.createdAt ?? row.createdAt ?? 0),
+      row,
+    })),
+    ...holds.map((row) => ({
+      type: "hold" as const,
+      id: String(row._id),
+      sortAt: Number(row.createdAt ?? 0),
+      row,
+    })),
+  ].sort(
+    (left, right) => right.sortAt - left.sortAt,
   );
 
   if (rows.length === 0) {
@@ -704,71 +791,19 @@ export function CertificatesTab({ policyId }: { policyId: Id<"policies"> }) {
   }
 
   return (
-    <div className="space-y-2">
-      {rows.map((row) => (
-        <OperationalPanel
-          key={String(row._id)}
-          as="div"
-          className="px-4 py-3"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-base font-medium text-foreground truncate">
-                {String(
-                  row.certificateHolderName ??
-                    row.holderName ??
-                    "Certificate of Insurance",
-                )}
-              </p>
-              <p className="mt-1 whitespace-pre-line text-label text-muted-foreground">
-                {String(
-                  row.certificateHolder ??
-                    row.reasonMessage ??
-                    "No certificate holder recorded",
-                )}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2 text-label text-muted-foreground">
-                <span>{formatCertificateTimestamp(Number(row.createdAt))}</span>
-                {typeof row.source === "string" && row.source ? (
-                  <span>{String(row.source).replace("_", " ")}</span>
-                ) : null}
-                {row.activityType === "hold" ? (
-                  <span>on hold</span>
-                ) : (
-                  <span>
-                    {typeof row.certificateVersionNumber === "number"
-                      ? `version ${row.certificateVersionNumber} · `
-                      : ""}
-                    {row.authorityType === "certified"
-                      ? "certified"
-                      : "non-binding"}
-                  </span>
-                )}
-                {row.certificationStatus === "pending" && (
-                  <span>pending approval</span>
-                )}
-              </div>
-            </div>
-            {row.activityType === "hold" ? (
-              <Badge variant="outline" className="h-6 shrink-0 capitalize">
-                Held
-              </Badge>
-            ) : (
-              <PillButton
-                variant="secondary"
-                size="compact"
-                disabled={!row.url}
-                onClick={() =>
-                  typeof row.url === "string" && openWithUrl(row.url)
-                }
-              >
-                <Eye className="w-3.5 h-3.5" />
-                PDF
-              </PillButton>
-            )}
-          </div>
-        </OperationalPanel>
-      ))}
-    </div>
+    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
+      {rows.map((entry) =>
+        entry.type === "certificate" ? (
+          <CertificateRow
+            key={entry.id}
+            row={entry.row}
+            selected={entry.row._id === selectedCertificateId}
+            onSelect={() => onSelectCertificate?.(entry.row)}
+          />
+        ) : (
+          <CertificateHoldActivityRow key={entry.id} row={entry.row} />
+        ),
+      )}
+    </OperationalPanel>
   );
 }

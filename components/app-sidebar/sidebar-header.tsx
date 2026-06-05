@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
+import { BrandIcon } from "@/components/ui/brand-icon";
 
 export function SidebarHeader({
   collapsed,
@@ -26,7 +27,7 @@ export function SidebarHeader({
 }) {
   const hasBrandIcon = Boolean(headerOrgIcon || icon);
   const iconContainerClass = hasBrandIcon
-    ? "rounded-md border border-foreground/30 bg-background text-foreground"
+    ? "rounded-md bg-black text-white"
     : "rounded-full bg-foreground/8 text-foreground";
 
   return (
@@ -47,13 +48,11 @@ export function SidebarHeader({
             className={`ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden text-label font-medium ${iconContainerClass}`}
           >
             {headerOrgIcon ? (
-              <Image
+              <BrandIcon
                 src={headerOrgIcon}
-                alt=""
-                width={28}
-                height={28}
-                unoptimized
-                className="h-full w-full object-contain"
+                name={headerOrgName}
+                size="md"
+                className="h-full w-full rounded-[inherit]"
               />
             ) : viewerImage ? (
               <Image

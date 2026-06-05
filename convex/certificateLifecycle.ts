@@ -50,17 +50,33 @@ export const listByPolicy = query({
       .collect();
     return await Promise.all(
       certificates.map(async (certificate) => {
-        const [holder, currentVersion, latestIssuedVersion] = await Promise.all([
+        const [holder, policy, currentVersion, latestIssuedVersion, versions] = await Promise.all([
           ctx.db.get(certificate.holderId),
+          ctx.db.get(certificate.policyId),
           certificate.currentVersionId ? ctx.db.get(certificate.currentVersionId) : null,
           certificate.latestIssuedVersionId ? ctx.db.get(certificate.latestIssuedVersionId) : null,
+          ctx.db
+            .query("certificateVersions")
+            .withIndex("by_certificateId_versionNumber", (q) =>
+              q.eq("certificateId", certificate._id),
+            )
+            .order("desc")
+            .collect(),
         ]);
+        const versionsWithUrls = await Promise.all(
+          versions.map(async (version) => ({
+            ...version,
+            url: version.fileId ? await ctx.storage.getUrl(version.fileId) : null,
+          })),
+        );
         return {
           ...certificate,
           holder,
+          policy,
           currentVersion,
           latestIssuedVersion,
           url: currentVersion?.fileId ? await ctx.storage.getUrl(currentVersion.fileId) : null,
+          versions: versionsWithUrls,
         };
       }),
     );

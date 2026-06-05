@@ -32,6 +32,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { BrandIcon } from "@/components/ui/brand-icon";
 import type { ChatStatus } from "ai";
 import { useCachedAgentTargets } from "@/lib/sync/glass-cached-queries";
 
@@ -583,11 +584,11 @@ export const GlassPromptInput = forwardRef<
               }
             >
               {agentBranding?.iconUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <BrandIcon
                   src={agentBranding.iconUrl}
-                  alt=""
-                  className="w-3.5 h-3.5 rounded-sm object-cover"
+                  name={agentBranding.name}
+                  size="xs"
+                  className="rounded-sm"
                 />
               ) : (
                 <LogoIcon

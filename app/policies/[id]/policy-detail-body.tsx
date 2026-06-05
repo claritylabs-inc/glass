@@ -36,6 +36,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { usePdf } from "@/components/pdf-context";
+import {
+  CertificateDetailPanel,
+  type PolicyCertificateRecord,
+} from "@/components/certificates/certificate-workspace";
 import { usePageContext } from "@/hooks/use-page-context";
 import { PolicyDetailsTab } from "./policy-details-tab";
 import {
@@ -229,6 +233,8 @@ export function PolicyDetailBody({
   const searchParams = useSearchParams();
   const [showCertificateSheet, setShowCertificateSheet] = useState(false);
   const [showEditExtractedFields, setShowEditExtractedFields] = useState(false);
+  const [selectedCertificate, setSelectedCertificate] =
+    useState<PolicyCertificateRecord | null>(null);
   const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
     parsePolicyDetailTab(searchParams.get("tab")),
   );
@@ -329,6 +335,16 @@ export function PolicyDetailBody({
     loggedPipelineEntries.current.clear();
     loggedStatus.current = null;
   }, [id]);
+
+  useEffect(() => {
+    setSelectedCertificate(null);
+  }, [id]);
+
+  useEffect(() => {
+    if (visibleActiveTab !== "certificates") {
+      setSelectedCertificate(null);
+    }
+  }, [visibleActiveTab]);
 
   useEffect(() => {
     if (!LOG_POLICY_ACTIVITY_IN_BROWSER || !policy) return;
@@ -467,7 +483,10 @@ export function PolicyDetailBody({
           <PillButton
             size="compact"
             disabled={isProcessingPolicy}
-            onClick={() => setShowCertificateSheet(true)}
+            onClick={() => {
+              setSelectedCertificate(null);
+              setShowCertificateSheet(true);
+            }}
           >
             <Plus className="w-3.5 h-3.5" />
             Generate COI
@@ -494,11 +513,11 @@ export function PolicyDetailBody({
 
   useEffect(() => {
     if (!onRightPanel) return;
-    if (!policy || readOnly) {
+    if (!policy) {
       onRightPanel(null);
       return;
     }
-    if (showCertificateSheet) {
+    if (showCertificateSheet && !readOnly) {
       onRightPanel(
         <CertificateCreatePanel
           open={showCertificateSheet}
@@ -533,6 +552,15 @@ export function PolicyDetailBody({
       );
       return () => onRightPanel(null);
     }
+    if (selectedCertificate) {
+      onRightPanel(
+        <CertificateDetailPanel
+          row={selectedCertificate}
+          onClose={() => setSelectedCertificate(null)}
+        />,
+      );
+      return () => onRightPanel(null);
+    }
     onRightPanel(null);
     return () => onRightPanel(null);
   }, [
@@ -542,6 +570,7 @@ export function PolicyDetailBody({
     readOnly,
     showCertificateSheet,
     showEditExtractedFields,
+    selectedCertificate,
     canEditExtractedFields,
     isDeleted,
   ]);
@@ -734,7 +763,11 @@ export function PolicyDetailBody({
       )}
 
       {visibleActiveTab === "certificates" && (
-        <CertificatesTab policyId={policy._id} />
+        <CertificatesTab
+          policyId={policy._id}
+          selectedCertificateId={selectedCertificate?._id ?? null}
+          onSelectCertificate={setSelectedCertificate}
+        />
       )}
 
       {visibleActiveTab === "history" && (
