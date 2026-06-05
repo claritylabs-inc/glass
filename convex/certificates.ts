@@ -496,17 +496,12 @@ export const generateForOrg = internalAction({
     const org = await ctx.runQuery(internal.orgs.getInternal, {
       id: args.orgId,
     });
-    const brokerOrg = org?.type === "client" && org.brokerOrgId
-      ? await ctx.runQuery(internal.orgs.getInternal, {
-          id: org.brokerOrgId as Id<"organizations">,
-        })
-      : null;
-    const settingsOrg = brokerOrg ?? org;
-    const policyChangeRequestsEnabled =
-      settingsOrg?.policyChangeRequestsEnabled !== false;
+    const workflowSettings = await ctx.runQuery(
+      internal.certificateWorkflowSettings.getEffectiveInternal,
+      { orgId: args.orgId },
+    );
     const certificateChangeRequestsEnabled =
-      settingsOrg?.certificateChangeRequestsEnabled !== false &&
-      policyChangeRequestsEnabled;
+      workflowSettings.policyChangeRequestsForHeldCertificatesEnabled !== false;
     const hasSourceNodes = await ctx.runQuery(
       (internal as any).sourceNodes.hasNodesForPolicy,
       { policyId: args.policyId },

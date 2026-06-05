@@ -74,6 +74,11 @@ const policyDeliverySourceKindValidator = v.union(
   v.literal("endorsement"),
 );
 
+const certificateWorkflowScopeValidator = v.union(
+  v.literal("broker_default"),
+  v.literal("client_override"),
+);
+
 const policyDeliveryRuleFiltersValidator = v.object({
   carriers: v.optional(v.array(v.string())),
   securities: v.optional(v.array(v.string())),
@@ -525,6 +530,24 @@ export default defineSchema({
   })
     .index("by_orgId_clientOrgId", ["orgId", "clientOrgId"])
     .index("by_orgId_producerId", ["orgId", "producerId"])
+    .index("by_clientOrgId", ["clientOrgId"]),
+
+
+  certificateWorkflowSettings: defineTable({
+    scope: certificateWorkflowScopeValidator,
+    ownerOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    clientOrgId: v.optional(v.id("organizations")),
+    sourceBackedHolderPopulationEnabled: v.boolean(),
+    renewalReviewJobsEnabled: v.boolean(),
+    renewalReviewLeadDays: v.number(),
+    policyChangeRequestsForHeldCertificatesEnabled: v.boolean(),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_ownerOrgId_scope", ["ownerOrgId", "scope"])
+    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"])
     .index("by_clientOrgId", ["clientOrgId"]),
 
   policyDeliverySettings: defineTable({

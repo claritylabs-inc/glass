@@ -48,6 +48,7 @@ import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as brokerActivity from "../brokerActivity.js";
 import type * as certificates from "../certificates.js";
+import type * as certificateWorkflowSettings from "../certificateWorkflowSettings.js";
 import type * as clientInvitations from "../clientInvitations.js";
 import type * as clientInvitationsTest from "../clientInvitationsTest.js";
 import type * as clients from "../clients.js";
@@ -215,6 +216,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   brokerActivity: typeof brokerActivity;
   certificates: typeof certificates;
+  certificateWorkflowSettings: typeof certificateWorkflowSettings;
   clientInvitations: typeof clientInvitations;
   clientInvitationsTest: typeof clientInvitationsTest;
   clients: typeof clients;
