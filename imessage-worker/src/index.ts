@@ -95,6 +95,14 @@ if (TRANSPORT === "terminal" && !TERMINAL_FROM_PHONE) {
   process.exit(1);
 }
 
+export function imessageProcessingFallbackMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/Convex responded 408|Client disconnected|timed?\s*out|timeout/i.test(message)) {
+    return "I'm still working on that. If I don't follow up here, check Glass for the draft.";
+  }
+  return "Sorry, something went wrong. Please try again.";
+}
+
 function pruneSendIdempotencyKeys() {
   const now = Date.now();
   for (const [key, value] of sendIdempotencyKeys.entries()) {
@@ -672,7 +680,7 @@ async function main() {
         console.error("[glass-imessage] Error processing message:", err);
         // Attempt to send a fallback message
         try {
-          await space.send("Sorry, something went wrong. Please try again.");
+          await space.send(imessageProcessingFallbackMessage(err));
         } catch {
           // Ignore secondary errors
         }

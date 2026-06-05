@@ -155,13 +155,13 @@ describe("chat duplicate prevention and COI preview UI", () => {
 
   it("names generated COI files by holder and policy and keeps unrelated uploads out of COI emails", () => {
     const generateCoi = read("convex/actions/generateCoi.ts");
-    const processThreadChat = read("convex/actions/processThreadChat.ts");
+    const agentToolExecutors = read("convex/lib/agentToolExecutors.ts");
     const emailSubagent = read("convex/lib/emailSubagent.ts");
 
     expect(generateCoi).toContain("function buildCoiFileName");
     expect(generateCoi).toContain("COI - ${holder} - ${policyRef}.pdf");
-    expect(processThreadChat).toContain("filename: generated.fileName");
-    expect(emailSubagent).toContain("filename: generated.fileName");
+    expect(agentToolExecutors).toContain("filename: generated.fileName");
+    expect(emailSubagent).toContain("buildAgentToolExecutors");
     expect(emailSubagent).toContain("Skipped uploaded file because COI delivery requests should attach only the generated COI");
   });
 

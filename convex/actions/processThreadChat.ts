@@ -16,23 +16,12 @@ import {
   getProviderOptionsForRoute,
 } from "../lib/models";
 import {
-  lookupPolicy,
-  lookupPolicySection,
-  compareCoverages,
-  lookupComplianceRequirements,
-  saveNote,
-  attachPolicyDocument,
-  confirmPolicyFact,
-  generateCoi,
-  createPolicyChangeRequest,
-  addPolicyChangeInfo,
-  draftPolicyChangeSubmission,
-  completePolicyChangeFromEndorsement,
   createImessageGroupChat,
   coordinateMailboxTask,
   webResearch,
   renderEmailPreview,
 } from "../lib/chatTools";
+import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import {
   buildConversationMemoryContext,
   buildScopedDocumentContext,
@@ -47,10 +36,8 @@ import {
   markdownToHtml,
   buildChannelInstructions,
   buildPolicyToolInstructions,
-  policySearchScore,
   logAiError,
 } from "../lib/aiUtils";
-import { searchPolicyDocumentWithSourceSpans } from "../lib/policyLookup";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import { getNotificationFromAddress, sendResendEmail } from "../lib/resend";
 import { buildEmailShell, escapeHtml } from "../lib/emailTemplate";
@@ -71,32 +58,20 @@ import {
 } from "../lib/emailSubagent";
 import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
 import { isCoiAttachmentFilename } from "../lib/coiAttachmentGuards";
-import { isOrgReadableByScope, orgLabelForScope, type AgentScope } from "../lib/agentScope";
+import { type AgentScope } from "../lib/agentScope";
 import {
   classifyPromptInjection,
   collectAllowedRecipients,
-  assertOrgOwnership,
   enforceInputLimits,
 } from "../lib/security";
 import {
-  COI_GENERATION_FAILED_MESSAGE,
   FATAL_ACTION_FAILED_MESSAGE,
 } from "../lib/actionFailures";
 import {
-  buildCertificateProgramSelection,
   formatCertificateProgramSelectionForModel,
-  normalizeSelectedPartnerProgramId,
   type CertificateProgramSelection,
 } from "../lib/certificateProgramSelection";
-import { coverageBreakdownForTool } from "../lib/coverageBreakdown";
-import { resolvePolicyReferenceForOrg } from "../lib/policyToolResolution";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
-import { evaluatePceIntake, type PceRequestKind } from "../lib/pceIntake";
-import {
-  filterComplianceRequirements,
-  formatComplianceRequirement,
-} from "../lib/complianceAgent";
-import { buildVendorComplianceTools } from "../lib/vendorComplianceTools";
 import {
   isPendingEmailCancelConfirmation,
   isPendingEmailCancelConfirmationPrompt,
@@ -633,624 +608,6 @@ function claimsCoiEmailCompletion(text: string): boolean {
 
 function claimsEmailDraftCompletion(text: string): boolean {
   return /\b(drafted|prepared)\b[\s\S]{0,80}\bemail\b/i.test(text);
-}
-
-/** Build executable tools with Convex context wired in. */
-
-async function listPoliciesForToolScope(ctx: any, orgId: string, scope?: AgentScope) {
-  const readOrgIds = scope?.mode === "broker_portfolio" ? scope.readOrgIds : [orgId as Id<"organizations">];
-  const rows = await Promise.all(
-    readOrgIds.map(async (readOrgId) => {
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId: readOrgId });
-      return (policies as Array<Record<string, unknown>>).map((policy) => ({
-        ...policy,
-        _scopeOrgName: scope ? orgLabelForScope(scope, readOrgId) : undefined,
-      }));
-    }),
-  );
-  return rows.flat();
-}
-
-function buildTools(
-  ctx: any,
-  args: {
-    orgId: string;
-    threadId: string;
-    userId: string;
-    chatMessageId?: Id<"threadMessages">;
-    referencedMailboxIds?: Id<"connectedEmailAccounts">[];
-    scope?: AgentScope;
-  },
-  org?: Record<string, unknown>,
-) {
-  return {
-    lookup_policy: {
-      ...lookupPolicy,
-      execute: async (params: {
-        query: string;
-        policyType?: string;
-        carrier?: string;
-      }) => {
-        const policies = await listPoliciesForToolScope(ctx, args.orgId, args.scope);
-        const scored = policies
-          .map((p: Record<string, unknown>) => ({
-            policy: p,
-            score: policySearchScore(
-              p,
-              params.query,
-              params.policyType,
-              params.carrier,
-            ),
-          }))
-          .filter((p: { score: number }) => p.score > 0)
-          .sort(
-            (a: { score: number }, b: { score: number }) => b.score - a.score,
-          );
-        const matches =
-          scored.length > 0
-            ? scored.map((s: { policy: Record<string, unknown> }) => s.policy)
-            : policies.slice(0, 5);
-        if (matches.length === 0)
-          return "No policies found for this organization.";
-
-        return matches.slice(0, 5).map((p: any) => ({
-          id: p._id,
-          client: p._scopeOrgName,
-          orgId: p.orgId,
-          insured: p.insuredName,
-          carrier: p.security,
-          type: p.policyTypes?.join(", "),
-          number: p.policyNumber,
-          effective: p.effectiveDate,
-          expiration: p.expirationDate,
-          premium: p.premium,
-          coverages: (p.coverages ?? []).map((c: any) => ({
-            name: c.name,
-            limit: c.limit,
-            deductible: c.deductible,
-            origin: c.coverageOrigin,
-          })),
-          coverageBreakdown: coverageBreakdownForTool(p),
-        }));
-      },
-    },
-    compare_coverages: {
-      ...compareCoverages,
-      execute: async (params: { policyId1: string; policyId2: string }) => {
-        const policies = await listPoliciesForToolScope(ctx, args.orgId, args.scope);
-        const p1 = policies.find(
-          (p: Record<string, unknown>) => p._id === params.policyId1,
-        );
-        const p2 = policies.find(
-          (p: Record<string, unknown>) => p._id === params.policyId2,
-        );
-        if (!p1 || !p2) return "One or both policies not found.";
-        const mapPolicy = (p: any) => ({
-          id: p._id,
-          client: p._scopeOrgName,
-          orgId: p.orgId,
-          carrier: p.security,
-          type: p.policyTypes,
-          limits: p.limits,
-          deductibles: p.deductibles,
-          premium: p.premium,
-          coverages: (p.coverages ?? []).map((c: any) => ({
-            name: c.name,
-            limit: c.limit,
-            deductible: c.deductible,
-            origin: c.coverageOrigin,
-          })),
-          coverageBreakdown: coverageBreakdownForTool(p),
-        });
-        return { policy1: mapPolicy(p1), policy2: mapPolicy(p2) };
-      },
-    },
-    lookup_compliance_requirements: {
-      ...lookupComplianceRequirements,
-      execute: async (params: {
-        query?: string;
-        appliesTo?: "vendors" | "own_org" | "both" | "all";
-      }) => {
-        const readOrgIds = args.scope?.mode === "broker_portfolio" ? args.scope.readOrgIds : [args.orgId as Id<"organizations">];
-        const blocks: string[] = [];
-        for (const readOrgId of readOrgIds) {
-          const requirements = await ctx.runQuery(
-            internal.compliance.listRequirementsInternal,
-            { orgId: readOrgId },
-          );
-          const matches = filterComplianceRequirements(requirements, params);
-          if (matches.length > 0) {
-            const label = args.scope ? orgLabelForScope(args.scope, readOrgId) : "Organization";
-            blocks.push(`Requirements for ${label} (orgId: ${readOrgId}):\n${matches.map(formatComplianceRequirement).join("\n")}`);
-          }
-        }
-        if (blocks.length === 0) {
-          return "No matching compliance requirements found. Vendor/contractor requirements and internal requirements are stored separately.";
-        }
-        return blocks.join("\n\n");
-      },
-    },
-    ...buildVendorComplianceTools(ctx, args.scope?.mode === "broker_portfolio" ? args.scope.readOrgIds : [args.orgId]),
-    lookup_policy_section: {
-      ...lookupPolicySection,
-      execute: async (params: { policyId: string; query: string }) => {
-        const policy: any = await ctx.runQuery(internal.policies.getInternal, {
-          id: params.policyId,
-        });
-        // Enforce org ownership — prevent cross-org policy access
-        try {
-          if (args.scope) {
-            if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) throw new Error("Policy not found");
-          } else {
-            assertOrgOwnership(policy, args.orgId, "Policy");
-          }
-        } catch {
-          return "Policy not found.";
-        }
-        return searchPolicyDocumentWithSourceSpans(
-          ctx,
-          policy,
-          params.query,
-          8,
-        );
-      },
-    },
-    save_note: {
-      ...saveNote,
-      execute: async (params: {
-        content: string;
-        type: string;
-        policyId?: string;
-      }) => {
-        const typeMap: Record<
-          string,
-          "fact" | "preference" | "risk_note" | "observation"
-        > = {
-          fact: "fact",
-          preference: "preference",
-          risk_note: "risk_note",
-          observation: "observation",
-        };
-        const memoryType = typeMap[params.type] ?? "observation";
-        await ctx.runMutation(internal.orgMemory.upsert, {
-          orgId: args.orgId,
-          type: memoryType,
-          content: params.content,
-          source: "chat" as const,
-          policyId: params.policyId as Id<"policies"> | undefined,
-        });
-        return "Note saved to organization memory.";
-      },
-    },
-    attach_policy_document: {
-      ...attachPolicyDocument,
-      execute: async (input: { policyId: string }) => {
-        const policy: any = await ctx.runQuery(internal.policies.getInternal, {
-          id: input.policyId as Id<"policies">,
-        });
-        try {
-          if (args.scope) {
-            if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) throw new Error("Policy not found");
-          } else {
-            assertOrgOwnership(policy, args.orgId, "Policy");
-          }
-        } catch {
-          return "Policy not found.";
-        }
-        if (!policy.fileId) {
-          return "That policy does not have an original PDF file available.";
-        }
-        return {
-          message: "Original policy PDF attached to this response.",
-          policyId: policy._id,
-          attachment: {
-            filename: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
-            contentType: "application/pdf",
-            size: 0,
-            fileId: policy.fileId as Id<"_storage">,
-          },
-        };
-      },
-    },
-    confirm_policy_fact: {
-      ...confirmPolicyFact,
-      execute: async (params: {
-        policyId: string;
-        fact: string;
-        sourceSpanIds: string[];
-        fieldUpdates?: Record<string, string | undefined>;
-      }) => {
-        const policy: any = await ctx.runQuery(internal.policies.getInternal, {
-          id: params.policyId as Id<"policies">,
-        });
-        try {
-          if (args.scope) {
-            if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) throw new Error("Policy not found");
-          } else {
-            assertOrgOwnership(policy, args.orgId, "Policy");
-          }
-        } catch {
-          return "Policy not found.";
-        }
-        try {
-          const targetOrgId = (policy.orgId ?? args.orgId) as Id<"organizations">;
-          const result = await ctx.runMutation(
-            internal.policies.confirmPolicyFactFromSource,
-            {
-              id: params.policyId as Id<"policies">,
-              orgId: targetOrgId,
-              userId: args.userId as Id<"users">,
-              fact: params.fact,
-              sourceSpanIds: params.sourceSpanIds,
-              source: "chat",
-              fieldUpdates: params.fieldUpdates,
-            },
-          );
-          return {
-            status: "confirmed",
-            fact: params.fact,
-            updatedFields: result.updatedFields,
-            sourceSpanIds: result.sourceSpanIds,
-          };
-        } catch (err) {
-          return err instanceof Error
-            ? err.message
-            : "Unable to confirm that fact from source evidence.";
-        }
-      },
-    },
-    generate_coi: {
-      ...generateCoi,
-      execute: async (input: {
-        policyId: string;
-        certificateHolder?: string;
-        holderEmail?: string;
-        holderPhone?: string;
-        requestText?: string;
-        requestedEndorsements?: string[];
-        partnerProgramId?: string;
-        explicitReissue?: boolean;
-      }) => {
-        // Check org settings — autoGenerateCoi defaults to true if not set
-        const autoGenerate = org?.autoGenerateCoi !== false;
-        if (!autoGenerate) {
-          const handling = org?.coiHandling ?? "ignore";
-          if (handling === "broker") {
-            return `COI auto-generation is off. Please contact your broker to obtain this certificate.`;
-          }
-          if (handling === "member") {
-            return `COI auto-generation is off. Please route this COI request to your primary insurance contact.`;
-          }
-          return `COI auto-generation is disabled for this organization.`;
-        }
-        try {
-          const orgIds = args.scope?.mode === "broker_portfolio"
-            ? args.scope.readOrgIds
-            : [args.orgId as Id<"organizations">];
-          const resolved = await resolvePolicyReferenceForOrg(ctx, {
-            orgIds: orgIds as Id<"organizations">[],
-            reference: input.policyId,
-          });
-          if (!resolved.ok) return resolved.message;
-          const policy: any = resolved.policy;
-          if (args.scope) {
-            if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) return "Policy not found.";
-          } else {
-            try { assertOrgOwnership(policy, args.orgId, "Policy"); } catch { return "Policy not found."; }
-          }
-          const targetOrgId = (policy.orgId ?? args.orgId) as Id<"organizations">;
-          const generated = await ctx.runAction(
-            internal.certificates.generateForOrg,
-            {
-              policyId: policy._id,
-              orgId: targetOrgId,
-              holderName:
-                input.certificateHolder?.split(/\r?\n/)[0]?.trim() || "Certificate holder",
-              certificateHolder: input.certificateHolder,
-              holderEmail: input.holderEmail,
-              holderPhone: input.holderPhone,
-              requestText: input.requestText,
-              requestedEndorsements: input.requestedEndorsements,
-              selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
-                input.partnerProgramId,
-              ),
-              forceReissue: input.explicitReissue,
-              source: "chat",
-              createdByUserId: args.userId as Id<"users">,
-            },
-          );
-          if (!generated) return COI_GENERATION_FAILED_MESSAGE;
-          if (generated.status === "held_policy_change_required") {
-            return {
-              message: generated.message,
-              holdId: generated.holdId,
-              policyChangeCaseId: generated.policyChangeCaseId,
-              requiredChanges: generated.requiredChanges,
-              reasonCode: generated.reasonCode,
-              evidence: generated.evidence,
-              brokerHandoffOffered: generated.brokerHandoffOffered,
-            };
-          }
-          if (generated.status === "existing") {
-            return {
-              message: generated.authorityType === "certified"
-                ? "I found an existing certified COI for this holder and current policy version and attached it to this response."
-                : "I found an existing non-binding COI for this holder and current policy version and attached it to this response.",
-              attachment: {
-                filename: generated.fileName,
-                contentType: "application/pdf",
-                size: generated.size,
-                fileId: generated.fileId as Id<"_storage">,
-              },
-              holderId: generated.holderId,
-              policyCertificateId: generated.policyCertificateId,
-              certificateVersionId: generated.certificateVersionId,
-              policyVersionId: generated.policyVersionId,
-              versionNumber: generated.versionNumber,
-            };
-          }
-          if (generated.status === "pending_approval") {
-            return {
-              message: "Certified COI request created and sent to the program administrator for approval.",
-              requestId: generated.requestId,
-              authorityType: generated.authorityType,
-              certificationStatus: generated.certificationStatus,
-            };
-          }
-          if (generated.status === "needs_program_selection") {
-            const selection = buildCertificateProgramSelection({
-              policyId: input.policyId,
-              holderName:
-                input.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                "Certificate holder",
-              certificateHolder: input.certificateHolder,
-              candidates: generated.matchCandidates,
-              source: "chat",
-            });
-            return {
-              message: "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
-              candidates: generated.matchCandidates,
-              programSelection: selection,
-              authorityType: generated.authorityType,
-              certificationStatus: generated.certificationStatus,
-            };
-          }
-          return {
-            message: generated.authorityType === "certified"
-              ? "Certified COI generated and attached to this response."
-              : "Non-binding COI generated and attached to this response.",
-            attachment: {
-              filename: generated.fileName,
-              contentType: "application/pdf",
-              size: generated.size,
-              fileId: generated.fileId as Id<"_storage">,
-            },
-          };
-        } catch (err) {
-          logAiError("processThreadChat.generateCoi", err, {
-            threadId: args.threadId,
-            orgId: args.orgId,
-            policyId: input.policyId,
-          });
-          return COI_GENERATION_FAILED_MESSAGE;
-        }
-      },
-    },
-    create_policy_change_request: {
-      ...createPolicyChangeRequest,
-      execute: async (input: {
-        requestKind?: PceRequestKind;
-        requestText: string;
-        policyId?: string;
-        evidenceSourceIds?: string[];
-      }) => {
-        try {
-          const intake = evaluatePceIntake({
-            requestKind: input.requestKind,
-            requestText: input.requestText,
-          });
-          if (!intake.allowed) return intake.message;
-
-          let targetOrgId = args.orgId as Id<"organizations">;
-          if (input.policyId) {
-            const policy: any = await ctx.runQuery(internal.policies.getInternal, { id: input.policyId as Id<"policies"> });
-            if (args.scope) {
-              if (!policy || !isOrgReadableByScope(args.scope, policy.orgId)) return "Policy not found.";
-            } else {
-              try { assertOrgOwnership(policy, args.orgId, "Policy"); } catch { return "Policy not found."; }
-            }
-            targetOrgId = (policy.orgId ?? args.orgId) as Id<"organizations">;
-          }
-
-          const result = await ctx.runAction(
-            internal.actions.policyChangeRequests.createFromChatForThread,
-            {
-              orgId: targetOrgId,
-              userId: args.userId as Id<"users">,
-              policyId: input.policyId as Id<"policies"> | undefined,
-              requestText: input.requestText,
-              evidenceSourceIds: input.evidenceSourceIds,
-            },
-          );
-          if (result?.error) return result.error;
-          return {
-            message: "Policy change request created.",
-            caseId: result.caseId,
-            requestKind: intake.kind,
-            usedSdkPce: result.usedSdkPce,
-          };
-        } catch (err) {
-          return `Failed to create policy change request: ${err instanceof Error ? err.message : String(err)}`;
-        }
-      },
-    },
-    add_policy_change_info: {
-      ...addPolicyChangeInfo,
-      execute: async (input: {
-        caseId: string;
-        infoText: string;
-        sourceSpanIds?: string[];
-      }) => {
-        await ctx.runMutation(internal.policyChanges.addInfo, {
-          caseId: input.caseId as Id<"policyChangeCases">,
-          userId: args.userId as Id<"users">,
-          infoText: input.infoText,
-          sourceSpanIds: input.sourceSpanIds,
-        });
-        return { status: "updated", caseId: input.caseId };
-      },
-    },
-    draft_policy_change_email: {
-      ...draftPolicyChangeSubmission,
-      execute: async (input: {
-        caseId: string;
-        recipientEmail?: string;
-        recipientName?: string;
-        instructions?: string;
-      }) => {
-        const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
-          caseId: input.caseId as Id<"policyChangeCases">,
-          userId: args.userId as Id<"users">,
-          recipientEmail: input.recipientEmail,
-          recipientName: input.recipientName,
-          instructions: input.instructions,
-        });
-        let pendingEmailId: Id<"pendingEmails"> | undefined;
-        if (!draft.needsRecipient && draft.recipientEmail && draft.subject && draft.body) {
-          const toolOrg = org ?? await ctx.runQuery(internal.orgs.getInternal, {
-            id: args.orgId as Id<"organizations">,
-          });
-          const emailIdentity = toolOrg ? await resolveEmailAgentIdentity(ctx, toolOrg) : null;
-          if (emailIdentity?.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader) {
-            pendingEmailId = await upsertEmailDraftArtifact(ctx, {
-              orgId: args.orgId as Id<"organizations">,
-              threadId: args.threadId as Id<"threads">,
-              chatMessageId: args.chatMessageId,
-              channel: "web",
-              fromHeader: emailIdentity.fromHeader,
-              agentAddress: emailIdentity.agentAddress,
-              brokerBranding: emailIdentity.brokerBranding,
-            }, {
-              to: draft.recipientEmail,
-              cc: [],
-              bcc: [],
-              subject: draft.subject,
-              body: draft.body,
-              attachments: [],
-              policyChangeCaseId: input.caseId as Id<"policyChangeCases">,
-            });
-          }
-        }
-        return {
-          status: draft.needsRecipient ? "needs_recipient" : "drafted",
-          caseId: input.caseId,
-          pendingEmailId,
-          readyToSend: !draft.needsRecipient,
-          nextAction: draft.needsRecipient
-            ? "Ask the user for the broker email address."
-            : "Show the email draft and ask the user to approve sending it.",
-          emailDraft: {
-            recipientEmail: draft.recipientEmail,
-            recipientName: draft.recipientName,
-            subject: draft.subject,
-            body: draft.body,
-            pendingEmailId,
-          },
-        };
-      },
-    },
-    complete_policy_change_from_endorsement: {
-      ...completePolicyChangeFromEndorsement,
-      execute: async (input: {
-        caseId?: string;
-        policyId: string;
-        files: Array<{ fileId: string; fileName: string }>;
-        summary?: string;
-        fieldUpdates?: Record<string, unknown>;
-      }) => {
-        const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
-          caseId: input.caseId as Id<"policyChangeCases"> | undefined,
-          userId: args.userId as Id<"users">,
-          policyId: input.policyId as Id<"policies">,
-          files: input.files.map((file) => ({
-            fileId: file.fileId as Id<"_storage">,
-            fileName: file.fileName,
-          })),
-          summary: input.summary,
-          fieldUpdates: input.fieldUpdates,
-        });
-        return { status: "completed", ...result };
-      },
-    },
-    create_imessage_group_chat: {
-      ...createImessageGroupChat,
-      execute: async (input: {
-        recipients: string[];
-        openingMessage: string;
-        title?: string;
-        confirmed: boolean;
-      }) => {
-        if (!input.confirmed) {
-          return "Ask the user to confirm before creating a new iMessage group chat.";
-        }
-        return await ctx.runAction(
-          internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
-          {
-            orgId: args.orgId as Id<"organizations">,
-            userId: args.userId as Id<"users">,
-            recipients: input.recipients,
-            openingMessage: input.openingMessage,
-            title: input.title,
-          },
-        );
-      },
-    },
-    coordinate_mailbox_task: {
-      ...coordinateMailboxTask,
-      execute: async (input: { task: string }) => {
-        return await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
-          orgId: args.orgId as Id<"organizations">,
-          userId: args.userId as Id<"users">,
-          task: input.task,
-          accountIds: args.referencedMailboxIds,
-          chatMessageId: args.chatMessageId,
-          threadId: args.threadId as Id<"threads">,
-        });
-      },
-    },
-    web_research: {
-      ...webResearch,
-      execute: async (input: WebRetrievalInput) => {
-        const result = await runWebRetrieval(ctx, args.orgId as Id<"organizations">, input);
-        if (!result.text) {
-          return {
-            status: "unavailable",
-            attempts: result.attempts,
-            warnings: result.warnings,
-          };
-        }
-        return {
-          status: "ok",
-          provider: result.provider,
-          text: result.text,
-          sources: result.sources,
-          warnings: result.warnings,
-        };
-      },
-    },
-    render_email_preview: {
-      ...renderEmailPreview,
-      execute: async (input: { draftId?: string; format?: "png" | "pdf" }) => {
-        return await ctx.runAction(internal.actions.renderEmailPreview.run, {
-          orgId: args.orgId as Id<"organizations">,
-          threadId: args.threadId as Id<"threads">,
-          userId: args.userId as Id<"users">,
-          draftId: input.draftId as Id<"pendingEmails"> | undefined,
-          format: input.format,
-        });
-      },
-    },
-  };
 }
 
 export const run = internalAction({
@@ -1864,27 +1221,157 @@ export const run = internalAction({
       const emailToolResult: { current: EmailSubagentResult | null } = {
         current: null,
       };
+      let content = "";
+      let lastFlush = dayjs().valueOf();
+      const FLUSH_INTERVAL = 150;
+      let reasoning = "";
+      let hasStartedReasoning = false;
+      let lastReasoningFlush = dayjs().valueOf();
+      const citedSections = new Set<string>(); // source/outline titles from lookup_policy_section results
+      const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
+      const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
+      const citedPolicyIds = new Set<string>(); // policy IDs actually looked up or acted on by tools
+      const usedTools: string[] = [];
+      const toolCalls: Array<{ name: string; input?: string; output?: string }> = [];
+      const toolArtifacts: Array<{ type: string; data: unknown }> = [];
+      const responseAttachments: Array<{
+        filename: string;
+        contentType: string;
+        size: number;
+        fileId?: Id<"_storage">;
+      }> = [];
+      let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
+      let lastToolName = "";
+      let lastToolPolicyId = "";
 
       // streamText with tools — supports both streaming Q&A and tool calls
       const tools = {
-        ...buildTools(
-          ctx,
-          {
-            orgId: args.orgId,
-            threadId: args.threadId,
-            userId: args.userId,
-            chatMessageId: agentMsgId,
-            referencedMailboxIds,
-            scope,
-          },
+        ...buildAgentToolExecutors(ctx, {
+          surface: "web",
+          orgId: args.orgId,
+          userId: args.userId,
+          scope,
           org,
-        ),
+          onPolicyReferenced: (policyId) => {
+            citedPolicyIds.add(String(policyId));
+          },
+          onResponseAttachment: (attachment) => {
+            responseAttachments.push(attachment);
+          },
+          onToolArtifact: (artifact) => {
+            toolArtifacts.push(artifact);
+          },
+          onPolicyChangeCase: (caseId) => {
+            policyChangeCaseId = caseId;
+          },
+          onPolicyChangeEmailDraft: async ({ caseId, draft }) => {
+            if (!draft.needsRecipient && draft.recipientEmail && draft.subject && draft.body) {
+              const emailIdentityForDraft =
+                emailIdentity.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader
+                  ? emailIdentity
+                  : await resolveEmailAgentIdentity(ctx, org);
+              if (
+                emailIdentityForDraft.canSend &&
+                emailIdentityForDraft.agentAddress &&
+                emailIdentityForDraft.fromHeader
+              ) {
+                const pendingEmailId = await upsertEmailDraftArtifact(ctx, {
+                  orgId: args.orgId,
+                  threadId: args.threadId,
+                  chatMessageId: agentMsgId,
+                  channel: "web",
+                  fromHeader: emailIdentityForDraft.fromHeader,
+                  agentAddress: emailIdentityForDraft.agentAddress,
+                  brokerBranding: emailIdentityForDraft.brokerBranding,
+                }, {
+                  to: draft.recipientEmail,
+                  cc: [],
+                  bcc: [],
+                  subject: draft.subject,
+                  body: draft.body,
+                  attachments: [],
+                  policyChangeCaseId: caseId,
+                });
+                return { pendingEmailId };
+              }
+            }
+          },
+        }),
+        create_imessage_group_chat: {
+          ...createImessageGroupChat,
+          execute: async (input: {
+            recipients: string[];
+            openingMessage: string;
+            title?: string;
+            confirmed: boolean;
+          }) => {
+            if (!input.confirmed) {
+              return "Ask the user to confirm before creating a new iMessage group chat.";
+            }
+            return await ctx.runAction(
+              internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                recipients: input.recipients,
+                openingMessage: input.openingMessage,
+                title: input.title,
+              },
+            );
+          },
+        },
+        coordinate_mailbox_task: {
+          ...coordinateMailboxTask,
+          execute: async (input: { task: string }) => {
+            return await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
+              orgId: args.orgId,
+              userId: args.userId,
+              task: input.task,
+              accountIds: referencedMailboxIds,
+              chatMessageId: agentMsgId,
+              threadId: args.threadId,
+            });
+          },
+        },
+        web_research: {
+          ...webResearch,
+          execute: async (input: WebRetrievalInput) => {
+            const result = await runWebRetrieval(ctx, args.orgId, input);
+            if (!result.text) {
+              return {
+                status: "unavailable",
+                attempts: result.attempts,
+                warnings: result.warnings,
+              };
+            }
+            return {
+              status: "ok",
+              provider: result.provider,
+              text: result.text,
+              sources: result.sources,
+              warnings: result.warnings,
+            };
+          },
+        },
+        render_email_preview: {
+          ...renderEmailPreview,
+          execute: async (input: { draftId?: string; format?: "png" | "pdf" }) => {
+            return await ctx.runAction(internal.actions.renderEmailPreview.run, {
+              orgId: args.orgId,
+              threadId: args.threadId,
+              userId: args.userId,
+              draftId: input.draftId as Id<"pendingEmails"> | undefined,
+              format: input.format,
+            });
+          },
+        },
         ...(emailIdentity.canSend &&
         emailIdentity.agentAddress &&
         emailIdentity.fromHeader
           ? {
               email_expert: buildEmailExpertTool(ctx, {
                 orgId: args.orgId,
+                userId: args.userId,
                 threadId: args.threadId,
                 chatMessageId: agentMsgId,
                 channel: "web",
@@ -1941,9 +1428,6 @@ export const run = internalAction({
             }
           : {}),
       };
-      let content = "";
-      let lastFlush = dayjs().valueOf();
-      const FLUSH_INTERVAL = 150;
 
       // Immediately show "Thinking..." by ensuring processing message is visible
       await ctx.runMutation(internal.threads.streamAgentMessage, {
@@ -1992,26 +1476,6 @@ export const run = internalAction({
           tools,
           stopWhen: stepCountIs(25),
         });
-
-      let reasoning = "";
-      let hasStartedReasoning = false;
-      let lastReasoningFlush = dayjs().valueOf();
-      const citedSections = new Set<string>(); // source/outline titles from lookup_policy_section results
-      const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
-      const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
-      const citedPolicyIds = new Set<string>(); // policy IDs actually looked up via lookup_policy_section
-      const usedTools: string[] = [];
-      const toolCalls: Array<{ name: string; input?: string; output?: string }> = [];
-      const toolArtifacts: Array<{ type: string; data: unknown }> = [];
-      const responseAttachments: Array<{
-        filename: string;
-        contentType: string;
-        size: number;
-        fileId?: Id<"_storage">;
-      }> = [];
-      let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
-      let lastToolName = "";
-      let lastToolPolicyId = "";
 
       const resetStreamStateForRetry = async () => {
         content = "";
@@ -2107,12 +1571,7 @@ export const run = internalAction({
             if (lastToolCall && SUBAGENT_TOOL_NAMES.has(lastToolName)) {
               lastToolCall.output = serializeToolOutput(output);
             }
-            if (
-              (lastToolName === "generate_coi" ||
-                lastToolName === "attach_policy_document" ||
-                lastToolName === "render_email_preview") &&
-              output
-            ) {
+            if (lastToolName === "render_email_preview" && output) {
               if (
                 output &&
                 typeof output === "object" &&
@@ -2140,41 +1599,6 @@ export const run = internalAction({
                 const caseId = (output as Record<string, unknown>).caseId;
                 if (typeof caseId === "string" && caseId) {
                   policyChangeCaseId = caseId as Id<"policyChangeCases">;
-                }
-              }
-            }
-            if (
-              lastToolName === "generate_coi" &&
-              (part as Record<string, unknown>).output
-            ) {
-              const output = (part as Record<string, unknown>).output;
-              if (
-                output &&
-                typeof output === "object" &&
-                "holdId" in output
-              ) {
-                toolArtifacts.push({
-                  type: "certificate_hold",
-                  data: output,
-                });
-                const caseId = (output as Record<string, unknown>).policyChangeCaseId;
-                if (typeof caseId === "string" && caseId) {
-                  policyChangeCaseId = caseId as Id<"policyChangeCases">;
-                }
-              }
-              if (
-                output &&
-                typeof output === "object" &&
-                "programSelection" in output
-              ) {
-                const programSelection = (
-                  output as Record<string, unknown>
-                ).programSelection;
-                if (programSelection) {
-                  toolArtifacts.push({
-                    type: "certificate_program_selection",
-                    data: programSelection,
-                  });
                 }
               }
             }

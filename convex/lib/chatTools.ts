@@ -29,8 +29,8 @@ export const compareCoverages = tool({
   description:
     "Compare two policies side by side — coverage types, limits, deductibles, and premium.",
   inputSchema: z.object({
-    policyId1: z.string().describe("ID of the first policy to compare"),
-    policyId2: z.string().describe("ID of the second policy to compare"),
+    policyId1: z.string().describe("Policy reference for the first policy to compare"),
+    policyId2: z.string().describe("Policy reference for the second policy to compare"),
   }),
 });
 
@@ -113,7 +113,7 @@ export const saveNote = tool({
     type: z
       .enum(["fact", "preference", "risk_note", "observation"])
       .describe("Type of note"),
-    policyId: z.string().optional().describe("Related policy ID if applicable"),
+    policyId: z.string().optional().describe("Related policy reference if applicable"),
   }),
 });
 
@@ -121,7 +121,7 @@ export const confirmPolicyFact = tool({
   description:
     "Persist a policy fact that was confirmed from original PDF source evidence. Use only after lookup_policy_section returns original-PDF sourceSpanIds that directly support the fact. This can also update a small set of top-level extracted policy fields when the PDF evidence is clear.",
   inputSchema: z.object({
-    policyId: z.string().describe("Policy ID for the fact being confirmed"),
+    policyId: z.string().describe("Policy reference for the fact being confirmed"),
     fact: z
       .string()
       .describe("Concise policy fact confirmed from the original PDF"),
@@ -156,7 +156,7 @@ export const lookupPolicySection = tool({
   description:
     "Search within a specific policy's source-native document outline and original PDF evidence for detailed content about a topic. Use this for coverage wording, declarations, forms, endorsements, exclusions, conditions, definitions, certificate wording, or any exact policy language that is not answered by summary data. Returns matching outline entries, source evidence, and sourceSpanIds for original-PDF evidence when available.",
   inputSchema: z.object({
-    policyId: z.string().describe("The policy ID to search within"),
+    policyId: z.string().describe("The policy reference to search within. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     query: z
       .string()
       .describe(
@@ -169,7 +169,7 @@ export const attachPolicyDocument = tool({
   description:
     "Attach or send the original full policy PDF document for a specific policy. Use this when the user asks for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document in chat/iMessage/SMS. For email delivery, prefer the email_expert tool so it can attach the original policy PDF to the email.",
   inputSchema: z.object({
-    policyId: z.string().describe("The policy ID whose original PDF should be attached"),
+    policyId: z.string().describe("The policy reference whose original PDF should be attached. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
   }),
 });
 
@@ -177,7 +177,7 @@ export const generateCoi = tool({
   description:
     "Generate a Certificate of Insurance (COI) PDF for a specific policy. Include requestedEndorsements/requestText when the user asks for additional insured, waiver of subrogation, primary and non-contributory, loss payee, mortgagee, special wording, or another endorsement-bearing certificate.",
   inputSchema: z.object({
-    policyId: z.string().describe("The policy ID to generate the COI for"),
+    policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     certificateHolder: z
       .string()
       .optional()
@@ -223,7 +223,7 @@ export const createPolicyChangeRequest = tool({
       .describe(
         "The user's policy change or endorsement request, including requested values and effective date if provided",
       ),
-    policyId: z.string().optional().describe("Related policy ID, if known"),
+    policyId: z.string().optional().describe("Related policy reference, if known. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     evidenceSourceIds: z
       .array(z.string())
       .optional()
@@ -259,7 +259,7 @@ export const completePolicyChangeFromEndorsement = tool({
     "Complete a policy change after the updated endorsement has been received. Use only with actual endorsement files already stored in the current thread or inbound message. This appends the endorsement to the existing policy and marks the case complete.",
   inputSchema: z.object({
     caseId: z.string().optional().describe("Policy change case ID, if known"),
-    policyId: z.string().describe("Existing policy ID to append the endorsement to"),
+    policyId: z.string().describe("Existing policy reference to append the endorsement to. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     files: z
       .array(z.object({
         fileId: z.string().describe("Stored Convex file ID for the endorsement attachment"),
