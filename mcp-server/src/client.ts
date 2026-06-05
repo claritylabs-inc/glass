@@ -85,8 +85,25 @@ export class GlassClient {
     postalCode?: string;
     requestText?: string;
     requestedEndorsements?: string[];
+    explicitReissue?: boolean;
   }) {
     return this.post("/mcp/policies/certificates/generate", input);
+  }
+
+  async listCertificateHolders(query?: string) {
+    return this.get("/mcp/certificates/holders/list", { query });
+  }
+
+  async listPolicyVersions(policyId?: string) {
+    return this.get("/mcp/policies/versions/list", { policyId });
+  }
+
+  async listCertificateVersions(filters?: { policyId?: string; certificateId?: string; certificateHolderId?: string }) {
+    return this.get("/mcp/policies/certificates/versions/list", filters);
+  }
+
+  async listCertificateReviewJobs(filters?: { policyId?: string; status?: string }) {
+    return this.get("/mcp/certificates/review-jobs/list", filters);
   }
 
   // ── Quotes ──

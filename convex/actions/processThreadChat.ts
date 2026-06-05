@@ -907,6 +907,7 @@ function buildTools(
         requestText?: string;
         requestedEndorsements?: string[];
         partnerProgramId?: string;
+        explicitReissue?: boolean;
       }) => {
         // Check org settings — autoGenerateCoi defaults to true if not set
         const autoGenerate = org?.autoGenerateCoi !== false;
@@ -950,6 +951,7 @@ function buildTools(
                 input.partnerProgramId,
               ),
               source: "chat",
+              explicitReissue: input.explicitReissue,
               createdByUserId: args.userId as Id<"users">,
             },
           );
@@ -963,6 +965,20 @@ function buildTools(
               reasonCode: generated.reasonCode,
               evidence: generated.evidence,
               brokerHandoffOffered: generated.brokerHandoffOffered,
+            };
+          }
+          if (generated.status === "existing") {
+            return {
+              message: generated.message ?? "I found an existing certificate for this holder and current policy version instead of generating a duplicate.",
+              attachment: {
+                filename: generated.fileName,
+                contentType: "application/pdf",
+                size: generated.size,
+                fileId: generated.fileId as Id<"_storage">,
+              },
+              certificateId: generated.certificateId,
+              certificateVersionId: generated.certificateVersionId,
+              policyVersionId: generated.policyVersionId,
             };
           }
           if (generated.status === "pending_approval") {

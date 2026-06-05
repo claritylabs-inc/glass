@@ -286,6 +286,11 @@ export interface CertificateDtoSource {
   partnerProgramId?: DtoId;
   templateId?: DtoId;
   approvalId?: DtoId;
+  certificateHolderId?: DtoId;
+  policyVersionId?: DtoId;
+  certificateVersionId?: DtoId;
+  lifecycleStatus?: string;
+  latestVersionNumber?: number;
   standingAuthorizationId?: DtoId;
   disclaimer?: string;
   createdAt: number;
@@ -307,6 +312,11 @@ export interface CertificateDto {
   template_id: string | null;
   approval_id: string | null;
   standing_authorization_id: string | null;
+  certificate_holder_id: string | null;
+  policy_version_id: string | null;
+  certificate_version_id: string | null;
+  lifecycle_status: string | null;
+  latest_version_number: number | null;
   disclaimer: string | null;
   created_at: number;
   url: string | null;
@@ -328,6 +338,11 @@ export function toCertificateDto(certificate: CertificateDtoSource): Certificate
     template_id: certificate.templateId ?? null,
     approval_id: certificate.approvalId ?? null,
     standing_authorization_id: certificate.standingAuthorizationId ?? null,
+    certificate_holder_id: certificate.certificateHolderId ?? null,
+    policy_version_id: certificate.policyVersionId ?? null,
+    certificate_version_id: certificate.certificateVersionId ?? null,
+    lifecycle_status: certificate.lifecycleStatus ?? null,
+    latest_version_number: certificate.latestVersionNumber ?? null,
     disclaimer: certificate.disclaimer ?? null,
     created_at: certificate.createdAt,
     url: certificate.url ?? null,
