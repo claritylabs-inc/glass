@@ -10,12 +10,14 @@ export function SettingsDrawer({
   open,
   onOpenChange,
   title,
+  actions,
   children,
   footer,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   title: ReactNode;
+  actions?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
 }) {
@@ -40,6 +42,7 @@ export function SettingsDrawer({
               <span className="text-base font-medium text-foreground truncate flex-1">
                 {title}
               </span>
+              {actions ? <div className="shrink-0">{actions}</div> : null}
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
