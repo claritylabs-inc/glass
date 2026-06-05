@@ -24,6 +24,8 @@ const TABLES: TableNames[] = [
   "clientInvitations",
   "policies",
   "policyFiles",
+  "certificateHolders",
+  "certificateHolderPolicyLinks",
   "notifications",
   "notificationPreferences",
   "brokerActivity",
