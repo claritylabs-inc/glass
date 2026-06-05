@@ -132,7 +132,38 @@ describe("toCertificateDto", () => {
       file_id: "f1",
       authority_type: "non_binding",
       certification_status: "not_applicable",
+      certificate_parent_id: null,
+      certificate_version_id: null,
+      policy_version_id: null,
+      lifecycle_status: null,
+      version_number: null,
+      reissue_reason: null,
       url: null,
+    });
+  });
+
+  it("maps certificate lifecycle metadata when newer surfaces provide it", () => {
+    const dto = toCertificateDto({
+      _id: "c1",
+      policyId: "p1",
+      fileId: "f1",
+      fileName: "coi.pdf",
+      createdAt: 123,
+      certificateParentId: "cp1",
+      certificateVersionId: "cv2",
+      policyVersionId: "pv3",
+      lifecycleStatus: "issued",
+      versionNumber: 2,
+      reissueReason: "renewal",
+    });
+
+    expect(dto).toMatchObject({
+      certificate_parent_id: "cp1",
+      certificate_version_id: "cv2",
+      policy_version_id: "pv3",
+      lifecycle_status: "issued",
+      version_number: 2,
+      reissue_reason: "renewal",
     });
   });
 });

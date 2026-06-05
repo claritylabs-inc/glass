@@ -288,6 +288,12 @@ export interface CertificateDtoSource {
   approvalId?: DtoId;
   standingAuthorizationId?: DtoId;
   disclaimer?: string;
+  certificateParentId?: DtoId;
+  certificateVersionId?: DtoId;
+  policyVersionId?: DtoId;
+  lifecycleStatus?: string;
+  versionNumber?: number;
+  reissueReason?: string;
   createdAt: number;
   url?: string | null;
 }
@@ -308,6 +314,12 @@ export interface CertificateDto {
   approval_id: string | null;
   standing_authorization_id: string | null;
   disclaimer: string | null;
+  certificate_parent_id: string | null;
+  certificate_version_id: string | null;
+  policy_version_id: string | null;
+  lifecycle_status: string | null;
+  version_number: number | null;
+  reissue_reason: string | null;
   created_at: number;
   url: string | null;
 }
@@ -329,6 +341,12 @@ export function toCertificateDto(certificate: CertificateDtoSource): Certificate
     approval_id: certificate.approvalId ?? null,
     standing_authorization_id: certificate.standingAuthorizationId ?? null,
     disclaimer: certificate.disclaimer ?? null,
+    certificate_parent_id: certificate.certificateParentId ?? null,
+    certificate_version_id: certificate.certificateVersionId ?? null,
+    policy_version_id: certificate.policyVersionId ?? null,
+    lifecycle_status: certificate.lifecycleStatus ?? null,
+    version_number: certificate.versionNumber ?? null,
+    reissue_reason: certificate.reissueReason ?? null,
     created_at: certificate.createdAt,
     url: certificate.url ?? null,
   };
