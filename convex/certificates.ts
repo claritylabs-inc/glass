@@ -1,10 +1,10 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { action, internalAction, internalMutation, internalQuery, query } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
+import { assertCanCreatePolicyChange, getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
 import {
   buildCertificateGateEvidencePacket,
   inferCertificateEndorsements,
@@ -759,7 +759,8 @@ export const recordGenerated = internalMutation({
       throw new Error("Policy not found for certificate record.");
     }
 
-    return await ctx.db.insert("certificates", {
+    const now = dayjs().valueOf();
+    const certificateId = await ctx.db.insert("certificates", {
       orgId: args.orgId,
       policyId: args.policyId,
       fileId: args.fileId,
@@ -777,8 +778,29 @@ export const recordGenerated = internalMutation({
       approvalMode: args.approvalMode,
       approvalAudit: args.approvalAudit,
       disclaimer: args.disclaimer,
-      createdAt: dayjs().valueOf(),
+      createdAt: now,
     });
+
+    await ctx.db.insert("certificateVersions", {
+      orgId: args.orgId,
+      policyId: args.policyId,
+      certificateId,
+      sourceCertificateId: certificateId,
+      versionNumber: 1,
+      status: "issued",
+      reason: "initial_issue",
+      fileId: args.fileId,
+      fileName: args.fileName ?? "certificate-of-insurance.pdf",
+      certificateHolder: args.certificateHolder,
+      certificateHolderName: args.certificateHolderName,
+      createdByUserId: args.createdByUserId,
+      issuedByUserId: args.createdByUserId,
+      issuedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return certificateId;
   },
 });
 
@@ -836,5 +858,448 @@ export const markHoldResolvedInternal = internalMutation({
     for (const hold of holds) {
       await ctx.db.patch(hold._id, { status: "resolved", updatedAt: now });
     }
+  },
+});
+
+const certificateReviewJobStatusValidator = v.union(
+  v.literal("ready_for_review"),
+  v.literal("blocked_missing_holder_contact"),
+  v.literal("sent"),
+  v.literal("cancelled"),
+);
+
+const certificateReviewJobTypeValidator = v.union(
+  v.literal("renewal_reissue"),
+  v.literal("post_endorsement"),
+);
+
+function normalizeEmail(value: string | undefined): string | undefined {
+  const trimmed = value?.trim().toLowerCase();
+  return trimmed || undefined;
+}
+
+function holderNameForCertificate(certificate: { certificateHolderName?: string; certificateHolder?: string }) {
+  const holderName = certificate.certificateHolderName?.trim();
+  if (holderName) return holderName;
+  const firstLine = certificate.certificateHolder?.split("\n")[0]?.trim();
+  return firstLine || "Certificate holder";
+}
+
+async function nextCertificateVersionNumber(ctx: any, certificateId: Id<"certificates"> | undefined) {
+  if (!certificateId) return 1;
+  const latest = await ctx.db
+    .query("certificateVersions")
+    .withIndex("by_certificateId", (q: any) => q.eq("certificateId", certificateId))
+    .order("desc")
+    .first();
+  return latest ? (latest.versionNumber ?? 0) + 1 : 1;
+}
+
+async function insertCertificateReviewJobAudit(ctx: any, args: {
+  orgId: Id<"organizations">;
+  policyId: Id<"policies">;
+  jobId: Id<"certificateReviewJobs">;
+  action: "created" | "reviewed" | "sent" | "cancelled" | "blocked_missing_holder_contact";
+  previousStatus?: string;
+  nextStatus: string;
+  userId?: Id<"users">;
+  notes?: string;
+  metadata?: unknown;
+}) {
+  await ctx.db.insert("certificateReviewJobAudit", {
+    orgId: args.orgId,
+    policyId: args.policyId,
+    jobId: args.jobId,
+    action: args.action,
+    previousStatus: args.previousStatus,
+    nextStatus: args.nextStatus,
+    userId: args.userId,
+    notes: args.notes,
+    metadata: args.metadata,
+    createdAt: dayjs().valueOf(),
+  });
+}
+
+async function createCertificateReviewJob(ctx: any, args: {
+  orgId: Id<"organizations">;
+  policyId: Id<"policies">;
+  certificateId?: Id<"certificates">;
+  sourceCertificateId?: Id<"certificates">;
+  sourceHoldId?: Id<"certificateRequestHolds">;
+  policyChangeCaseId?: Id<"policyChangeCases">;
+  policyUpdateRunId?: Id<"policyUpdateRuns">;
+  jobType: "renewal_reissue" | "post_endorsement";
+  holderName: string;
+  certificateHolder?: string;
+  holderContactEmail?: string;
+  createdByUserId?: Id<"users">;
+  metadata?: unknown;
+}) {
+  const holderContactEmail = normalizeEmail(args.holderContactEmail);
+  const now = dayjs().valueOf();
+  const versionId = await ctx.db.insert("certificateVersions", {
+    orgId: args.orgId,
+    policyId: args.policyId,
+    certificateId: args.certificateId,
+    sourceCertificateId: args.sourceCertificateId,
+    sourceHoldId: args.sourceHoldId,
+    policyUpdateRunId: args.policyUpdateRunId,
+    versionNumber: await nextCertificateVersionNumber(ctx, args.certificateId),
+    status: "draft",
+    reason: args.jobType,
+    certificateHolder: args.certificateHolder,
+    certificateHolderName: args.holderName,
+    holderContactEmail,
+    createdByUserId: args.createdByUserId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const status = holderContactEmail ? "ready_for_review" : "blocked_missing_holder_contact";
+  const missingContactReason = holderContactEmail
+    ? undefined
+    : "Holder contact email is required before this certificate can be sent.";
+  const jobId = await ctx.db.insert("certificateReviewJobs", {
+    orgId: args.orgId,
+    policyId: args.policyId,
+    certificateId: args.certificateId,
+    sourceCertificateId: args.sourceCertificateId,
+    draftCertificateVersionId: versionId,
+    sourceHoldId: args.sourceHoldId,
+    policyChangeCaseId: args.policyChangeCaseId,
+    policyUpdateRunId: args.policyUpdateRunId,
+    jobType: args.jobType,
+    status,
+    holderName: args.holderName,
+    certificateHolder: args.certificateHolder,
+    holderContactEmail,
+    missingContactReason,
+    createdByUserId: args.createdByUserId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await insertCertificateReviewJobAudit(ctx, {
+    orgId: args.orgId,
+    policyId: args.policyId,
+    jobId,
+    action: status === "blocked_missing_holder_contact" ? "blocked_missing_holder_contact" : "created",
+    nextStatus: status,
+    userId: args.createdByUserId,
+    notes: missingContactReason,
+    metadata: args.metadata,
+  });
+  return { jobId, draftCertificateVersionId: versionId, status };
+}
+
+async function createRenewalReviewJobsForPolicyImpl(ctx: any, args: {
+  orgId: Id<"organizations">;
+  policyId: Id<"policies">;
+  createdByUserId?: Id<"users">;
+  holderContacts?: Array<{ certificateId: Id<"certificates">; email: string }>;
+}) {
+  const policy = await ctx.db.get(args.policyId);
+  if (!policy || policy.orgId !== args.orgId) throw new Error("Policy not found");
+  const contacts = new Map((args.holderContacts ?? []).map((item) => [item.certificateId, item.email]));
+  const certificates = await ctx.db
+    .query("certificates")
+    .withIndex("by_policyId", (q: any) => q.eq("policyId", args.policyId))
+    .collect();
+  const jobs = [];
+  for (const certificate of certificates) {
+    const existingActiveJob = await ctx.db
+      .query("certificateReviewJobs")
+      .withIndex("by_sourceCertificateId_jobType", (q: any) =>
+        q.eq("sourceCertificateId", certificate._id).eq("jobType", "renewal_reissue"),
+      )
+      .filter((q: any) =>
+        q.or(
+          q.eq(q.field("status"), "ready_for_review"),
+          q.eq(q.field("status"), "blocked_missing_holder_contact"),
+        ),
+      )
+      .first();
+    if (existingActiveJob) continue;
+    const latestVersion = await ctx.db
+      .query("certificateVersions")
+      .withIndex("by_certificateId", (q: any) => q.eq("certificateId", certificate._id))
+      .order("desc")
+      .first();
+    if (latestVersion && latestVersion.status !== "issued") continue;
+    const job = await createCertificateReviewJob(ctx, {
+      orgId: args.orgId,
+      policyId: args.policyId,
+      certificateId: certificate._id,
+      sourceCertificateId: certificate._id,
+      jobType: "renewal_reissue",
+      holderName: holderNameForCertificate(certificate),
+      certificateHolder: certificate.certificateHolder,
+      holderContactEmail: contacts.get(certificate._id),
+      createdByUserId: args.createdByUserId,
+      metadata: { latestVersionId: latestVersion?._id, legacyIssuedCertificate: !latestVersion },
+    });
+    jobs.push(job);
+  }
+  return { created: jobs.length, jobs };
+}
+
+export const createRenewalReviewJobsForPolicyInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    createdByUserId: v.optional(v.id("users")),
+    holderContacts: v.optional(v.array(v.object({
+      certificateId: v.id("certificates"),
+      email: v.string(),
+    }))),
+  },
+  handler: async (ctx, args) => {
+    return await createRenewalReviewJobsForPolicyImpl(ctx, args);
+  },
+});
+
+export const createRenewalReviewJobsForPolicy = mutation({
+  args: {
+    policyId: v.id("policies"),
+    holderContacts: v.optional(v.array(v.object({
+      certificateId: v.id("certificates"),
+      email: v.string(),
+    }))),
+  },
+  handler: async (ctx, args): Promise<any> => {
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy?.orgId) throw new Error("Policy not found");
+    const access = await getOrgAccess(ctx, policy.orgId);
+    assertCanCreatePolicyChange(access);
+    return await createRenewalReviewJobsForPolicyImpl(ctx, {
+      orgId: policy.orgId,
+      policyId: args.policyId,
+      createdByUserId: access.userId,
+      holderContacts: args.holderContacts,
+    });
+  },
+});
+
+export const createPostEndorsementReviewJobsInternal = internalMutation({
+  args: {
+    policyChangeCaseId: v.id("policyChangeCases"),
+    policyUpdateRunId: v.optional(v.id("policyUpdateRuns")),
+    createdByUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const changeCase = await ctx.db.get(args.policyChangeCaseId);
+    if (!changeCase?.orgId || !changeCase.policyId) throw new Error("Policy change case not found");
+    const holds = await ctx.db
+      .query("certificateRequestHolds")
+      .withIndex("by_policyChangeCaseId", (q) => q.eq("policyChangeCaseId", args.policyChangeCaseId))
+      .collect();
+    const jobs = [];
+    for (const hold of holds) {
+      if (hold.status !== "resolved") continue;
+      const existingJob = await ctx.db
+        .query("certificateReviewJobs")
+        .withIndex("by_sourceHoldId", (q: any) => q.eq("sourceHoldId", hold._id))
+        .first();
+      if (existingJob) continue;
+      const certificates = await ctx.db
+        .query("certificates")
+        .withIndex("by_policyId", (q) => q.eq("policyId", hold.policyId))
+        .collect();
+      const matchingCertificate = certificates.find((certificate) =>
+        certificate.certificateHolderName?.trim().toLowerCase() === hold.holderName.trim().toLowerCase() ||
+        certificate.certificateHolder?.trim().toLowerCase() === hold.certificateHolder?.trim().toLowerCase(),
+      );
+      const job = await createCertificateReviewJob(ctx, {
+        orgId: hold.orgId,
+        policyId: hold.policyId,
+        certificateId: matchingCertificate?._id,
+        sourceCertificateId: matchingCertificate?._id,
+        sourceHoldId: hold._id,
+        policyChangeCaseId: args.policyChangeCaseId,
+        policyUpdateRunId: args.policyUpdateRunId,
+        jobType: "post_endorsement",
+        holderName: hold.holderName,
+        certificateHolder: hold.certificateHolder,
+        createdByUserId: args.createdByUserId,
+        metadata: { requiredChanges: hold.requiredChanges, reasonCode: hold.reasonCode },
+      });
+      jobs.push(job);
+    }
+    return { created: jobs.length, jobs };
+  },
+});
+
+export const listReviewJobs = query({
+  args: {
+    orgId: v.id("organizations"),
+    policyId: v.optional(v.id("policies")),
+    status: v.optional(certificateReviewJobStatusValidator),
+    jobType: v.optional(certificateReviewJobTypeValidator),
+  },
+  handler: async (ctx, args) => {
+    await getOrgAccess(ctx, args.orgId);
+    const rows = args.policyId
+      ? await ctx.db
+        .query("certificateReviewJobs")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId!))
+        .order("desc")
+        .collect()
+      : await ctx.db
+        .query("certificateReviewJobs")
+        .withIndex("by_orgId_status", (q) =>
+          args.status ? q.eq("orgId", args.orgId).eq("status", args.status) : q.eq("orgId", args.orgId),
+        )
+        .order("desc")
+        .collect();
+    return rows.filter((row) =>
+      row.orgId === args.orgId &&
+      (!args.status || row.status === args.status) &&
+      (!args.jobType || row.jobType === args.jobType),
+    );
+  },
+});
+
+export const listReviewJobAudit = query({
+  args: { jobId: v.id("certificateReviewJobs") },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) return [];
+    await getOrgAccess(ctx, job.orgId);
+    return await ctx.db
+      .query("certificateReviewJobAudit")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .collect();
+  },
+});
+
+export const reviewJob = mutation({
+  args: {
+    jobId: v.id("certificateReviewJobs"),
+    holderContactEmail: v.optional(v.string()),
+    reviewNotes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) throw new Error("Certificate review job not found");
+    const access = await getOrgAccess(ctx, job.orgId);
+    assertCanCreatePolicyChange(access);
+    if (job.status === "sent" || job.status === "cancelled") {
+      throw new Error("Completed certificate review jobs cannot be reviewed.");
+    }
+    const holderContactEmail = normalizeEmail(args.holderContactEmail) ?? job.holderContactEmail;
+    const nextStatus = holderContactEmail ? "ready_for_review" : "blocked_missing_holder_contact";
+    const now = dayjs().valueOf();
+    await ctx.db.patch(args.jobId, {
+      status: nextStatus,
+      holderContactEmail,
+      missingContactReason: holderContactEmail ? undefined : job.missingContactReason ?? "Holder contact email is required before this certificate can be sent.",
+      reviewNotes: args.reviewNotes,
+      reviewedByUserId: access.userId,
+      reviewedAt: now,
+      updatedAt: now,
+    });
+    if (job.draftCertificateVersionId) {
+      await ctx.db.patch(job.draftCertificateVersionId, {
+        holderContactEmail,
+        updatedAt: now,
+      });
+    }
+    await insertCertificateReviewJobAudit(ctx, {
+      orgId: job.orgId,
+      policyId: job.policyId,
+      jobId: args.jobId,
+      action: "reviewed",
+      previousStatus: job.status,
+      nextStatus,
+      userId: access.userId,
+      notes: args.reviewNotes,
+    });
+    return { status: nextStatus };
+  },
+});
+
+export const sendReviewJob = mutation({
+  args: {
+    jobId: v.id("certificateReviewJobs"),
+    sendNotes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) throw new Error("Certificate review job not found");
+    const access = await getOrgAccess(ctx, job.orgId);
+    assertCanCreatePolicyChange(access);
+    if (job.status !== "ready_for_review") {
+      throw new Error("Certificate review job must be ready for review before it can be sent.");
+    }
+    if (!job.holderContactEmail) {
+      throw new Error("Holder contact email is required before sending this certificate.");
+    }
+    const now = dayjs().valueOf();
+    await ctx.db.patch(args.jobId, {
+      status: "sent",
+      sendNotes: args.sendNotes,
+      sentByUserId: access.userId,
+      sentAt: now,
+      updatedAt: now,
+    });
+    if (job.draftCertificateVersionId) {
+      await ctx.db.patch(job.draftCertificateVersionId, {
+        status: "issued",
+        issuedByUserId: access.userId,
+        issuedAt: now,
+        updatedAt: now,
+      });
+    }
+    await insertCertificateReviewJobAudit(ctx, {
+      orgId: job.orgId,
+      policyId: job.policyId,
+      jobId: args.jobId,
+      action: "sent",
+      previousStatus: job.status,
+      nextStatus: "sent",
+      userId: access.userId,
+      notes: args.sendNotes,
+    });
+    return { status: "sent" };
+  },
+});
+
+export const cancelReviewJob = mutation({
+  args: {
+    jobId: v.id("certificateReviewJobs"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) throw new Error("Certificate review job not found");
+    const access = await getOrgAccess(ctx, job.orgId);
+    assertCanCreatePolicyChange(access);
+    if (job.status === "sent") throw new Error("Sent certificate review jobs cannot be cancelled.");
+    if (job.status === "cancelled") return { status: "cancelled" };
+    const now = dayjs().valueOf();
+    await ctx.db.patch(args.jobId, {
+      status: "cancelled",
+      cancelReason: args.reason,
+      cancelledByUserId: access.userId,
+      cancelledAt: now,
+      updatedAt: now,
+    });
+    if (job.draftCertificateVersionId) {
+      await ctx.db.patch(job.draftCertificateVersionId, {
+        status: "cancelled",
+        cancelledByUserId: access.userId,
+        cancelledAt: now,
+        updatedAt: now,
+      });
+    }
+    await insertCertificateReviewJobAudit(ctx, {
+      orgId: job.orgId,
+      policyId: job.policyId,
+      jobId: args.jobId,
+      action: "cancelled",
+      previousStatus: job.status,
+      nextStatus: "cancelled",
+      userId: access.userId,
+      notes: args.reason,
+    });
+    return { status: "cancelled" };
   },
 });

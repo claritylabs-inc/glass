@@ -1613,6 +1613,104 @@ export default defineSchema({
     .index("by_partnerOrgId_status", ["partnerOrgId", "status"])
     .index("by_status", ["status"]),
 
+  certificateVersions: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    certificateId: v.optional(v.id("certificates")),
+    sourceCertificateId: v.optional(v.id("certificates")),
+    sourceHoldId: v.optional(v.id("certificateRequestHolds")),
+    policyUpdateRunId: v.optional(v.id("policyUpdateRuns")),
+    versionNumber: v.number(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("issued"),
+      v.literal("cancelled"),
+    ),
+    reason: v.union(
+      v.literal("initial_issue"),
+      v.literal("renewal_reissue"),
+      v.literal("post_endorsement"),
+      v.literal("manual_reissue"),
+    ),
+    fileId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    certificateHolder: v.optional(v.string()),
+    certificateHolderName: v.optional(v.string()),
+    holderContactEmail: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    issuedByUserId: v.optional(v.id("users")),
+    issuedAt: v.optional(v.number()),
+    cancelledByUserId: v.optional(v.id("users")),
+    cancelledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_certificateId", ["certificateId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_sourceHoldId", ["sourceHoldId"]),
+
+  certificateReviewJobs: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    certificateId: v.optional(v.id("certificates")),
+    sourceCertificateId: v.optional(v.id("certificates")),
+    draftCertificateVersionId: v.optional(v.id("certificateVersions")),
+    sourceHoldId: v.optional(v.id("certificateRequestHolds")),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
+    policyUpdateRunId: v.optional(v.id("policyUpdateRuns")),
+    jobType: v.union(v.literal("renewal_reissue"), v.literal("post_endorsement")),
+    status: v.union(
+      v.literal("ready_for_review"),
+      v.literal("blocked_missing_holder_contact"),
+      v.literal("sent"),
+      v.literal("cancelled"),
+    ),
+    holderName: v.string(),
+    certificateHolder: v.optional(v.string()),
+    holderContactEmail: v.optional(v.string()),
+    missingContactReason: v.optional(v.string()),
+    reviewNotes: v.optional(v.string()),
+    sendNotes: v.optional(v.string()),
+    cancelReason: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    reviewedByUserId: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.number()),
+    sentByUserId: v.optional(v.id("users")),
+    sentAt: v.optional(v.number()),
+    cancelledByUserId: v.optional(v.id("users")),
+    cancelledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_policyId", ["policyId"])
+    .index("by_certificateId", ["certificateId"])
+    .index("by_sourceCertificateId_jobType", ["sourceCertificateId", "jobType"])
+    .index("by_sourceHoldId", ["sourceHoldId"]),
+
+  certificateReviewJobAudit: defineTable({
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    jobId: v.id("certificateReviewJobs"),
+    action: v.union(
+      v.literal("created"),
+      v.literal("reviewed"),
+      v.literal("sent"),
+      v.literal("cancelled"),
+      v.literal("blocked_missing_holder_contact"),
+    ),
+    previousStatus: v.optional(v.string()),
+    nextStatus: v.string(),
+    userId: v.optional(v.id("users")),
+    notes: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index("by_jobId", ["jobId"])
+    .index("by_orgId_createdAt", ["orgId", "createdAt"])
+    .index("by_policyId_createdAt", ["policyId", "createdAt"]),
+
   certificateApprovals: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
