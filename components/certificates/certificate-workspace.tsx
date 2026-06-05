@@ -295,6 +295,22 @@ export function CertificateDetailPanel({
         if (!open) onClose();
       }}
       title={holderName}
+      actions={
+        row ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {badge ? (
+              <Badge variant={badge.variant} className="text-label capitalize">
+                {badge.label}
+              </Badge>
+            ) : null}
+            {currentVersion ? (
+              <Badge variant="outline" className="text-label">
+                Version {currentVersion.versionNumber}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null
+      }
       footer={
         currentUrl ? (
           <PillButton
@@ -309,24 +325,6 @@ export function CertificateDetailPanel({
     >
       {row ? (
         <div className="flex flex-col gap-5">
-          <section className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {badge ? (
-                <Badge variant={badge.variant} className="text-label capitalize">
-                  {badge.label}
-                </Badge>
-              ) : null}
-              {currentVersion ? (
-                <Badge variant="outline" className="text-label">
-                  Version {currentVersion.versionNumber}
-                </Badge>
-              ) : null}
-            </div>
-            <p className="text-base text-muted-foreground">
-              {certificatePolicyLabel(row.policy)}
-            </p>
-          </section>
-
           <CertificateDetailCard title="Holder">
             <OperationalDetailRow label="Name" value={row.holder?.displayName} />
             <OperationalDetailRow label="Email" value={row.holder?.email} />
