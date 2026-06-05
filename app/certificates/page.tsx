@@ -3,7 +3,7 @@
 import dayjs from "dayjs";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { BadgeCheck, Clock, Eye, FileBadge2, RefreshCw } from "lucide-react";
+import { Clock, Eye, FileBadge2, RefreshCw } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -172,7 +172,7 @@ function CertificateRow({ row }: { row: PolicyCertificateRow }) {
           </p>
         </div>
         <div className="flex items-center gap-2 md:justify-end">
-          <Badge variant={badge.variant} className="capitalize">
+          <Badge variant={badge.variant} className="text-label capitalize">
             {badge.label}
           </Badge>
           <PillButton
@@ -328,42 +328,9 @@ export default function CertificatesPage() {
 
   const isLoading =
     viewerOrg === undefined || certificates === undefined || jobs === undefined;
-  const issuedCount = activeCertificates.filter(
-    (row) => row.currentVersion?.status === "issued",
-  ).length;
-
   return (
     <AppShell>
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-lg font-medium text-foreground">Certificates</h1>
-            <p className="mt-1 text-base text-muted-foreground">
-              Holder-based certificates, current versions, and review work.
-            </p>
-          </div>
-          <div className="grid grid-cols-3 gap-2 sm:flex">
-            <div className="rounded-lg border border-foreground/6 px-3 py-2">
-              <p className="text-label text-muted-foreground">Active</p>
-              <p className="text-base font-medium text-foreground">
-                {activeCertificates.length}
-              </p>
-            </div>
-            <div className="rounded-lg border border-foreground/6 px-3 py-2">
-              <p className="text-label text-muted-foreground">Review</p>
-              <p className="text-base font-medium text-foreground">
-                {reviewJobs.length}
-              </p>
-            </div>
-            <div className="rounded-lg border border-foreground/6 px-3 py-2">
-              <p className="text-label text-muted-foreground">Issued</p>
-              <p className="text-base font-medium text-foreground">
-                {issuedCount}
-              </p>
-            </div>
-          </div>
-        </div>
-
         <Tabs
           value={tab}
           onValueChange={(value) => setTab(value as CertificateWorkspaceTab)}
@@ -427,11 +394,7 @@ export default function CertificatesPage() {
           </OperationalPanel>
         ) : activeCertificates.length > 0 ? (
           <OperationalPanel as="div">
-            <OperationalPanelHeader
-              title="Active certificates"
-              description="One active certificate parent per holder and policy."
-              action={<BadgeCheck className="h-4 w-4 text-muted-foreground" />}
-            />
+            <OperationalPanelHeader title="Active certificates" />
             {activeCertificates.map((row) => (
               <CertificateRow key={row._id} row={row} />
             ))}
@@ -439,7 +402,6 @@ export default function CertificatesPage() {
         ) : (
           <OperationalPanel as="div">
             <OperationalPanelBody className="px-4 py-10 text-center">
-              <BadgeCheck className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
               <p className="text-base font-medium text-foreground">
                 No active certificates
               </p>

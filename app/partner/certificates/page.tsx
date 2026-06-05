@@ -151,7 +151,7 @@ function CertificateDetailPanel({
             <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant={certificate.authorityType === "certified" ? "secondary" : "outline"}
-                className="font-normal text-muted-foreground"
+                className="text-label font-normal text-muted-foreground"
               >
                 {authorityLabel(certificate)}
               </Badge>
@@ -293,7 +293,7 @@ function CertificateList({
                     <TableCell>
                       <Badge
                         variant={certificate.authorityType === "certified" ? "secondary" : "outline"}
-                        className="font-normal text-muted-foreground"
+                        className="text-label font-normal text-muted-foreground"
                       >
                         {authorityLabel(certificate)}
                       </Badge>
