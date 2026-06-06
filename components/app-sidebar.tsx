@@ -51,6 +51,41 @@ type OperatorImpersonationContext = {
   } | null;
 };
 
+function sidebarHeaderBranding({
+  viewerOrg,
+  viewerName,
+  viewerEmail,
+}: {
+  viewerOrg:
+    | {
+        org?: {
+          name?: string;
+          iconUrl?: string | null;
+        } | null;
+        brokerOrg?: {
+          name: string;
+          iconUrl?: string | null;
+          whiteLabelingEnabled?: boolean;
+        } | null;
+      }
+    | null
+    | undefined;
+  viewerName?: string | null;
+  viewerEmail?: string | null;
+}) {
+  const brokerBrandingEnabled =
+    viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
+  const brandedOrg =
+    brokerBrandingEnabled && viewerOrg?.brokerOrg
+      ? viewerOrg.brokerOrg
+      : viewerOrg?.org;
+
+  return {
+    name: brandedOrg?.name ?? viewerName ?? viewerEmail ?? "",
+    iconUrl: brandedOrg?.iconUrl ?? null,
+  };
+}
+
 export function AppSidebar({
   mobileOpen,
   onMobileClose,
@@ -311,16 +346,13 @@ export function AppSidebar({
     };
   }, [router, conversations, pageShortcutMap]);
 
-  const partnerWhiteLabelingEnabled =
-    viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
-  const headerOrgName =
-    partnerWhiteLabelingEnabled && viewerOrg?.brokerOrg
-      ? viewerOrg.brokerOrg.name
-      : (viewerOrg?.org?.name ?? viewer?.name ?? viewer?.email ?? "");
-  const headerOrgIcon =
-    partnerWhiteLabelingEnabled && viewerOrg?.brokerOrg
-      ? viewerOrg.brokerOrg.iconUrl
-      : (viewerOrg?.org?.iconUrl ?? null);
+  const headerBranding = sidebarHeaderBranding({
+    viewerOrg,
+    viewerName: viewer?.name,
+    viewerEmail: viewer?.email,
+  });
+  const headerOrgName = headerBranding.name;
+  const headerOrgIcon = headerBranding.iconUrl;
   const initials = getInitials(headerOrgName, viewer?.email);
   const brokerContact = viewerOrg?.brokerOrg ?? null;
   const fallbackAgentHandle = viewerOrg?.org?.agentHandle;
