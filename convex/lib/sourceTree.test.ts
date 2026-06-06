@@ -483,6 +483,48 @@ describe("normalizeSourceTree", () => {
 });
 
 describe("sourceTreePolicyFields", () => {
+  it("preserves SDK multi-policy types when materializing stored policy fields", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability", "cyber"],
+        coverages: [
+          {
+            name: "A. Technology Errors & Omissions Liability",
+            limit: "$5,000,000",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+          {
+            name: "B. Network Security & Privacy Liability (\"Cyber\")",
+            limit: "$3,000,000",
+            sourceNodeIds: ["policy-number-row"],
+            sourceSpanIds: ["span-policy-number"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+    });
+
+    expect(operationalProfile.policyTypes).toEqual([
+      "professional_liability",
+      "cyber",
+    ]);
+    expect(operationalProfile.coverageTypes).toEqual([
+      "Professional Liability",
+      "Cyber",
+    ]);
+    expect(fields.policyTypes).toEqual(["professional_liability", "cyber"]);
+    expect(
+      (fields.operationalProfile as PolicyOperationalProfile).policyTypes,
+    ).toEqual(["professional_liability", "cyber"]);
+  });
+
   it("repairs polluted declaration fields from source-backed operational profile values", () => {
     const operationalProfile = normalizeOperationalProfile(
       {

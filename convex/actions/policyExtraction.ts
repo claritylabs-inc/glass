@@ -31,12 +31,10 @@ import {
   normalizeSourceTree,
   operationalProfilePolicyFields,
   sourceTreePolicyFields,
-  withControlledPolicyTypes,
   type DocumentSourceNode,
   type PolicyOperationalProfile,
   type SourceSpanLike,
 } from "../lib/sourceTree";
-import { POLICY_TYPE_LABELS } from "../lib/policyTypes";
 import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
@@ -710,12 +708,6 @@ const extractionGateSchema = z.object({
 
 type ExtractionGateDecision = z.infer<typeof extractionGateSchema>;
 
-const policyTypeClassificationSchema = z.object({
-  policyTypes: z.array(z.string()).max(6),
-  confidence: z.number().min(0).max(1),
-  reason: z.string(),
-});
-
 const additionalInsuredEligibilityTermSchema = z.object({
   category: z.string(),
   condition: z.string(),
@@ -764,103 +756,6 @@ type OperationalProfileWithEligibility = PolicyOperationalProfile & {
   additionalInsuredEligibility?: AdditionalInsuredEligibility;
   additionalInsureds?: AdditionalInsuredEligibility["additionalInsureds"];
 };
-
-const POLICY_TYPE_KEYS = Object.keys(POLICY_TYPE_LABELS);
-const POLICY_TYPE_KEY_SET = new Set(POLICY_TYPE_KEYS);
-
-function controlledPolicyTypes(values: unknown): string[] {
-  const types = Array.isArray(values)
-    ? values.filter((value): value is string => typeof value === "string")
-    : [];
-  const controlled = types
-    .map((type) => type.trim().toLowerCase())
-    .filter((type) => POLICY_TYPE_KEY_SET.has(type));
-  const unique = [...new Set(controlled)].slice(0, 6);
-  return unique.length ? unique : ["other"];
-}
-
-function policyTypeClassificationExcerpt(
-  sourceTree: DocumentSourceNode[],
-  profile: PolicyOperationalProfile,
-): string {
-  const profileSummary = {
-    currentPolicyTypes: profile.policyTypes,
-    documentType: profile.documentType,
-    insurer: profile.insurer?.value,
-    policyNumber: profile.policyNumber?.value,
-    coverages: profile.coverages.slice(0, 20).map((coverage: PolicyOperationalProfile["coverages"][number]) => ({
-      name: coverage.name,
-      limit: coverage.limit,
-      formNumber: coverage.formNumber,
-      sectionRef: coverage.sectionRef,
-    })),
-  };
-  const nodeLines = sourceTree
-    .filter((node) => node.kind !== "document")
-    .filter((node) =>
-      ["form", "schedule", "section", "table", "table_row", "page"].includes(node.kind)
-      || /\b(policy|coverage|liability|property|auto|workers|cyber|professional|errors|omissions|umbrella|excess|crime|fidelity|directors|officers|epli)\b/i.test(
-        [node.title, node.description, node.textExcerpt].filter(Boolean).join(" "),
-      )
-    )
-    .slice(0, 80)
-    .map((node) => [
-      node.kind,
-      node.pageStart ? `p.${node.pageStart}` : undefined,
-      node.title,
-      node.description,
-      node.textExcerpt,
-    ].filter(Boolean).join(" | ").slice(0, 600));
-  return [
-    `Current profile:\n${JSON.stringify(profileSummary, null, 2)}`,
-    `Source tree evidence:\n${nodeLines.join("\n")}`,
-  ].join("\n\n").slice(0, 18000);
-}
-
-async function classifyControlledPolicyTypes(params: {
-  ctx: ActionCtx;
-  orgId: Id<"organizations">;
-  traceId?: string;
-  policyId: string;
-  sourceTree: DocumentSourceNode[];
-  profile: PolicyOperationalProfile;
-}): Promise<string[]> {
-  const fallback = controlledPolicyTypes(params.profile.policyTypes);
-  const generateClassifierObject = makeGenerateObject("classification", {
-    ctx: params.ctx,
-    orgId: params.orgId,
-    traceId: params.traceId,
-    tracePolicyId: params.policyId,
-  });
-  const allowed = POLICY_TYPE_KEYS
-    .map((key) => `${key}: ${POLICY_TYPE_LABELS[key]}`)
-    .join("\n");
-  try {
-    const result = await generateClassifierObject({
-      schema: policyTypeClassificationSchema,
-      maxTokens: 900,
-      system: `You classify insurance policy documents into Glass's controlled policy type enum.
-
-Rules:
-- Return only keys from the allowed list.
-- Choose the smallest accurate set of high-level policy types.
-- Do not use coverage row names, sublimits, deductible labels, form names, or endorsements as policy types.
-- Prefer the main policy form, declarations title, insuring agreement title, and coverage grant over incidental wording.
-- Use "other" only when no allowed type is a reasonable fit.`,
-      prompt: `Allowed policy type keys:
-${allowed}
-
-Classify this policy.
-
-${policyTypeClassificationExcerpt(params.sourceTree, params.profile)}`,
-    });
-    const classification = result.object as z.infer<typeof policyTypeClassificationSchema>;
-    const controlled = controlledPolicyTypes(classification.policyTypes);
-    return controlled.length ? controlled : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 function fallbackCoverageOrigin(
   coverage: PolicyOperationalProfile["coverages"][number],
@@ -1688,24 +1583,13 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         profile: normalizedOperationalProfile,
         log: async (message, level) => { await pCtx.log(message, level); },
       });
-      const classifiedOperationalProfile = withControlledPolicyTypes(
-        validatedOperationalProfile,
-        await classifyControlledPolicyTypes({
-          ctx: convexCtx,
-          orgId: state.orgId as Id<"organizations">,
-          traceId: state.traceId,
-          policyId,
-          sourceTree: sourceNodes,
-          profile: validatedOperationalProfile,
-        }),
-      );
       const operationalProfile = await extractAdditionalInsuredEligibility({
         ctx: convexCtx,
         orgId: state.orgId as Id<"organizations">,
         traceId: state.traceId,
         policyId,
         sourceTree: sourceNodes,
-        profile: classifiedOperationalProfile,
+        profile: validatedOperationalProfile,
         log: async (message, level) => { await pCtx.log(message, level); },
       });
       const fields = processed.fields;
@@ -2542,24 +2426,13 @@ export const completeExternalExtract = action({
         });
       },
     });
-    const classifiedOperationalProfile = withControlledPolicyTypes(
-      validatedOperationalProfile,
-      await classifyControlledPolicyTypes({
-        ctx,
-        orgId: state.orgId as Id<"organizations">,
-        traceId: state.traceId,
-        policyId,
-        sourceTree: sourceNodes,
-        profile: validatedOperationalProfile,
-      }),
-    );
     const operationalProfile = await extractAdditionalInsuredEligibility({
       ctx,
       orgId: state.orgId as Id<"organizations">,
       traceId: state.traceId,
       policyId,
       sourceTree: sourceNodes,
-      profile: classifiedOperationalProfile,
+      profile: validatedOperationalProfile,
       log: async (message, level = "info") => {
         await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
           jobId: policyId,
