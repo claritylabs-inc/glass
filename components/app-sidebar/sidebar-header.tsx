@@ -25,9 +25,10 @@ export function SidebarHeader({
   backHref?: string;
   icon?: ReactNode;
 }) {
-  const hasBrandIcon = Boolean(headerOrgIcon || icon);
-  const iconContainerClass = hasBrandIcon
+  const iconContainerClass = icon
     ? "rounded-md bg-black text-white"
+    : headerOrgIcon
+      ? "rounded-md bg-transparent text-foreground"
     : "rounded-full bg-foreground/8 text-foreground";
 
   return (
@@ -52,7 +53,7 @@ export function SidebarHeader({
                 src={headerOrgIcon}
                 name={headerOrgName}
                 size="md"
-                className="h-full w-full rounded-[inherit]"
+                className="h-full w-full rounded-[inherit] border border-foreground/12"
               />
             ) : viewerImage ? (
               <Image
