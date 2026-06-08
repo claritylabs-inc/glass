@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 
 const DEFAULT_IMAGE_BACKGROUND = "#FFFFFF";
 const SAMPLE_SIZE = 48;
-const EDGE_WIDTH = 6;
-const MIN_OPAQUE_EDGE_RATIO = 0.18;
+const CORNER_SIZE = 10;
+const MIN_OPAQUE_CORNER_RATIO = 0.9;
 const backgroundColorCache = new Map<string, Promise<string>>();
 
 const sizeClasses = {
@@ -52,24 +52,25 @@ function sampleImageElementBackground(img: HTMLImageElement) {
     string,
     { r: number; g: number; b: number; count: number }
   >();
-  let edgePixels = 0;
-  let opaqueEdgePixels = 0;
+  let cornerPixels = 0;
+  let opaqueCornerPixels = 0;
 
   for (let y = 0; y < SAMPLE_SIZE; y += 1) {
     for (let x = 0; x < SAMPLE_SIZE; x += 1) {
-      const isEdge =
-        x < EDGE_WIDTH ||
-        y < EDGE_WIDTH ||
-        x >= SAMPLE_SIZE - EDGE_WIDTH ||
-        y >= SAMPLE_SIZE - EDGE_WIDTH;
-      if (!isEdge) continue;
+      const isCorner =
+        (x < CORNER_SIZE && y < CORNER_SIZE) ||
+        (x >= SAMPLE_SIZE - CORNER_SIZE && y < CORNER_SIZE) ||
+        (x < CORNER_SIZE && y >= SAMPLE_SIZE - CORNER_SIZE) ||
+        (x >= SAMPLE_SIZE - CORNER_SIZE &&
+          y >= SAMPLE_SIZE - CORNER_SIZE);
+      if (!isCorner) continue;
 
-      edgePixels += 1;
+      cornerPixels += 1;
       const index = (y * SAMPLE_SIZE + x) * 4;
       const alpha = data[index + 3];
-      if (alpha < 180) continue;
+      if (alpha < 220) continue;
 
-      opaqueEdgePixels += 1;
+      opaqueCornerPixels += 1;
       const r = data[index];
       const g = data[index + 1];
       const b = data[index + 2];
@@ -86,8 +87,8 @@ function sampleImageElementBackground(img: HTMLImageElement) {
   }
 
   if (
-    edgePixels === 0 ||
-    opaqueEdgePixels / edgePixels < MIN_OPAQUE_EDGE_RATIO ||
+    cornerPixels === 0 ||
+    opaqueCornerPixels / cornerPixels < MIN_OPAQUE_CORNER_RATIO ||
     buckets.size === 0
   ) {
     return DEFAULT_IMAGE_BACKGROUND;
