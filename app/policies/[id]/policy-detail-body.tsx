@@ -556,6 +556,9 @@ export function PolicyDetailBody({
       );
       return () => onRightPanel(null);
     }
+    if (visibleActiveTab === "changes") {
+      return;
+    }
     onRightPanel(null);
     return () => onRightPanel(null);
   }, [
@@ -568,6 +571,7 @@ export function PolicyDetailBody({
     selectedCertificateForPanel,
     canEditExtractedFields,
     isDeleted,
+    visibleActiveTab,
   ]);
 
   if (policy === undefined) {
@@ -709,7 +713,7 @@ export function PolicyDetailBody({
                 : []),
               { id: "certificates" as const, label: "Certificates" },
               { id: "history" as const, label: "History" },
-              { id: "changes" as const, label: "Changes" },
+              { id: "changes" as const, label: "Tasks" },
             ] as const
           ).map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id}>
@@ -754,7 +758,11 @@ export function PolicyDetailBody({
       )}
 
       {visibleActiveTab === "changes" && (
-        <PolicyChangesTab policyId={id} canManage={canManagePolicyChanges} />
+        <PolicyChangesTab
+          policyId={id}
+          canManage={canManagePolicyChanges}
+          onRightPanel={onRightPanel}
+        />
       )}
 
       {visibleActiveTab === "certificates" && (

@@ -1,13 +1,13 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
   declarationFactHash,
   extractDeclarationFactsFromPolicy,
   findDeclarationDiscrepancies,
   shouldNotifyForDeclarationDiscrepancy,
 } from "./lib/declarationFacts";
-import { getPolicyAccessForQuery } from "./lib/access";
+import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
 import { notify } from "./lib/notify";
 
 function formatDiscrepancyFieldGroup(fieldGroup: string) {
@@ -193,6 +193,37 @@ export const syncPolicyInternal = internalMutation({
     }
 
     return { inserted };
+  },
+});
+
+export const confirmValue = mutation({
+  args: {
+    discrepancyId: v.id("declarationDiscrepancies"),
+    selectedValue: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const discrepancy = await ctx.db.get(args.discrepancyId);
+    if (!discrepancy) throw new Error("Review item not found");
+    await getOrgAccess(ctx, discrepancy.orgId);
+
+    const selectedValue = args.selectedValue.trim();
+    if (!selectedValue) throw new Error("Select a value first");
+
+    const allowedValues = discrepancy.conflictingValues
+      .map((value: { displayValue?: string; normalizedValue?: string }) =>
+        (value.displayValue ?? value.normalizedValue ?? "").trim(),
+      )
+      .filter(Boolean);
+    if (!allowedValues.includes(selectedValue)) {
+      throw new Error("Selected value is not part of this review item");
+    }
+
+    await ctx.db.patch(args.discrepancyId, {
+      likelyCurrentValue: selectedValue,
+      status: "confirmed",
+      updatedAt: dayjs().valueOf(),
+    });
+    return { ok: true };
   },
 });
 
