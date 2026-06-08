@@ -1,6 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+
+const DEFAULT_IMAGE_BACKGROUND = "#FFFFFF";
+const SAMPLE_SIZE = 48;
+const EDGE_WIDTH = 6;
+const MIN_OPAQUE_EDGE_RATIO = 0.18;
+const backgroundColorCache = new Map<string, Promise<string>>();
 
 const sizeClasses = {
   xs: "h-3.5 w-3.5",
@@ -10,11 +17,112 @@ const sizeClasses = {
 } as const;
 
 const imagePaddingClasses = {
-  xs: "p-0",
-  sm: "p-0",
-  md: "p-0",
-  lg: "p-0",
+  xs: "p-px",
+  sm: "p-0.5",
+  md: "p-0.5",
+  lg: "p-0.5",
 } as const;
+
+function toHex(value: number) {
+  return Math.max(0, Math.min(255, Math.round(value)))
+    .toString(16)
+    .padStart(2, "0");
+}
+
+function sampleImageElementBackground(img: HTMLImageElement) {
+  const canvas = document.createElement("canvas");
+  canvas.width = SAMPLE_SIZE;
+  canvas.height = SAMPLE_SIZE;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return DEFAULT_IMAGE_BACKGROUND;
+
+  const width = img.naturalWidth || SAMPLE_SIZE;
+  const height = img.naturalHeight || SAMPLE_SIZE;
+  const scale = Math.min(SAMPLE_SIZE / width, SAMPLE_SIZE / height);
+  const drawWidth = Math.max(1, Math.round(width * scale));
+  const drawHeight = Math.max(1, Math.round(height * scale));
+  const xOffset = Math.round((SAMPLE_SIZE - drawWidth) / 2);
+  const yOffset = Math.round((SAMPLE_SIZE - drawHeight) / 2);
+
+  ctx.clearRect(0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+  ctx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
+
+  const { data } = ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+  const buckets = new Map<
+    string,
+    { r: number; g: number; b: number; count: number }
+  >();
+  let edgePixels = 0;
+  let opaqueEdgePixels = 0;
+
+  for (let y = 0; y < SAMPLE_SIZE; y += 1) {
+    for (let x = 0; x < SAMPLE_SIZE; x += 1) {
+      const isEdge =
+        x < EDGE_WIDTH ||
+        y < EDGE_WIDTH ||
+        x >= SAMPLE_SIZE - EDGE_WIDTH ||
+        y >= SAMPLE_SIZE - EDGE_WIDTH;
+      if (!isEdge) continue;
+
+      edgePixels += 1;
+      const index = (y * SAMPLE_SIZE + x) * 4;
+      const alpha = data[index + 3];
+      if (alpha < 180) continue;
+
+      opaqueEdgePixels += 1;
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const key = `${Math.round(r / 24)}-${Math.round(g / 24)}-${Math.round(
+        b / 24,
+      )}`;
+      const bucket = buckets.get(key) ?? { r: 0, g: 0, b: 0, count: 0 };
+      bucket.r += r;
+      bucket.g += g;
+      bucket.b += b;
+      bucket.count += 1;
+      buckets.set(key, bucket);
+    }
+  }
+
+  if (
+    edgePixels === 0 ||
+    opaqueEdgePixels / edgePixels < MIN_OPAQUE_EDGE_RATIO ||
+    buckets.size === 0
+  ) {
+    return DEFAULT_IMAGE_BACKGROUND;
+  }
+
+  const dominant = Array.from(buckets.values()).sort(
+    (a, b) => b.count - a.count,
+  )[0];
+  return `#${toHex(dominant.r / dominant.count)}${toHex(
+    dominant.g / dominant.count,
+  )}${toHex(dominant.b / dominant.count)}`;
+}
+
+function sampleImageBackground(src: string) {
+  const cached = backgroundColorCache.get(src);
+  if (cached) return cached;
+
+  const promise = new Promise<string>((resolve) => {
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.decoding = "async";
+    img.onload = () => {
+      try {
+        resolve(sampleImageElementBackground(img));
+      } catch {
+        resolve(DEFAULT_IMAGE_BACKGROUND);
+      }
+    };
+    img.onerror = () => resolve(DEFAULT_IMAGE_BACKGROUND);
+    img.src = src;
+  });
+
+  backgroundColorCache.set(src, promise);
+  return promise;
+}
 
 type BrandIconProps = {
   src?: string | null;
@@ -34,6 +142,30 @@ export function BrandIcon({
   imageClassName,
 }: BrandIconProps) {
   const initial = name?.trim().charAt(0).toUpperCase();
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [sampledBackground, setSampledBackground] = useState<{
+    src: string;
+    color: string;
+  } | null>(null);
+  const imageSrc = src && failedSrc !== src ? src : null;
+  const showImage = imageSrc !== null;
+  const imageBackgroundColor =
+    sampledBackground !== null && sampledBackground.src === imageSrc
+      ? sampledBackground.color
+      : DEFAULT_IMAGE_BACKGROUND;
+
+  useEffect(() => {
+    if (!src) return;
+
+    let cancelled = false;
+    void sampleImageBackground(src).then((color) => {
+      if (!cancelled) setSampledBackground({ src, color });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
 
   return (
     <span
@@ -42,17 +174,21 @@ export function BrandIcon({
         sizeClasses[size],
         className,
       )}
+      style={showImage ? { backgroundColor: imageBackgroundColor } : undefined}
     >
-      {src ? (
+      {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={src}
+          src={imageSrc}
           alt={alt}
           className={cn(
             "h-full w-full object-contain",
             imagePaddingClasses[size],
             imageClassName,
           )}
+          onError={() => {
+            if (src) setFailedSrc(src);
+          }}
         />
       ) : initial ? (
         <span className="text-label font-semibold leading-none">{initial}</span>
