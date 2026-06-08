@@ -218,20 +218,36 @@ export const scanOrgInternal = internalMutation({
     const activeFacts = candidateFacts.filter((fact) =>
       activePolicyIds.has(String(fact.policyId)),
     );
-    const discrepancies = findDeclarationDiscrepancies(activeFacts.map((fact) => ({
-      orgId: String(fact.orgId),
-      policyId: String(fact.policyId),
-      policyFileId: fact.policyFileId ? String(fact.policyFileId) : undefined,
-      fieldPath: fact.fieldPath,
-      fieldGroup: fact.fieldGroup,
-      displayValue: fact.displayValue,
-      normalizedValue: fact.normalizedValue,
-      valueKind: fact.valueKind,
-      sourceSpanIds: fact.sourceSpanIds,
-      effectiveDate: fact.effectiveDate,
-      expirationDate: fact.expirationDate,
-      observedAt: fact.observedAt,
-    })));
+    const policyContexts = policies.flatMap((policy) =>
+      policy
+        ? [{
+            _id: String(policy._id),
+            policyNumber: policy.policyNumber,
+            carrier: policy.carrier,
+            insuredName: policy.insuredName,
+            effectiveDate: policy.effectiveDate,
+            expirationDate: policy.expirationDate,
+            policyTypes: policy.policyTypes,
+          }]
+        : [],
+    );
+    const discrepancies = findDeclarationDiscrepancies(
+      activeFacts.map((fact) => ({
+        orgId: String(fact.orgId),
+        policyId: String(fact.policyId),
+        policyFileId: fact.policyFileId ? String(fact.policyFileId) : undefined,
+        fieldPath: fact.fieldPath,
+        fieldGroup: fact.fieldGroup,
+        displayValue: fact.displayValue,
+        normalizedValue: fact.normalizedValue,
+        valueKind: fact.valueKind,
+        sourceSpanIds: fact.sourceSpanIds,
+        effectiveDate: fact.effectiveDate,
+        expirationDate: fact.expirationDate,
+        observedAt: fact.observedAt,
+      })),
+      policyContexts,
+    );
 
     let upserted = 0;
     let notified = 0;

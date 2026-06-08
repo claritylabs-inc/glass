@@ -1,3 +1,8 @@
+import {
+  nearDuplicatePolicyIds,
+  type PolicyDuplicateCandidate,
+} from "./policyDuplicateDetection";
+
 export type DeclarationFactInput = {
   orgId: string;
   policyId: string;
@@ -223,10 +228,15 @@ export function declarationFactHash(fact: Pick<DeclarationFactInput, "policyId" 
 
 export function findDeclarationDiscrepancies(
   facts: Array<DeclarationFactInput & { policyId: string; observedAt?: number }>,
+  policies: PolicyDuplicateCandidate[] = [],
 ): DeclarationDiscrepancyInput[] {
+  const duplicatePolicyIds = nearDuplicatePolicyIds(policies);
+  if (duplicatePolicyIds.size === 0) return [];
+
   const byGroup = new Map<string, typeof facts>();
   for (const fact of facts) {
     if (!fact.normalizedValue) continue;
+    if (!duplicatePolicyIds.has(fact.policyId)) continue;
     const rows = byGroup.get(fact.fieldGroup) ?? [];
     rows.push(fact);
     byGroup.set(fact.fieldGroup, rows);

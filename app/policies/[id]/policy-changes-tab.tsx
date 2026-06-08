@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useMutation } from "convex/react";
 import dayjs from "dayjs";
-import { CheckCircle2, FileText, Loader2, Send, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, Loader2, Send, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -81,6 +81,16 @@ function displayDeclarationValue(value: string | undefined) {
     .replace(/: null$/i, ": no value found")
     .replace(/\bnull\b/gi, "no value found")
     .replace(/\bunknown\b/gi, "Unknown");
+}
+
+function declarationPolicyLabels(discrepancy: DeclarationDiscrepancy) {
+  const labels = new Map<string, string>();
+  for (const value of discrepancy.conflictingValues) {
+    for (const policy of value.policyLabels ?? []) {
+      labels.set(policy.policyId, policy.label);
+    }
+  }
+  return Array.from(labels, ([policyId, label]) => ({ policyId, label }));
 }
 
 function humanizeSnake(value: unknown) {
@@ -175,104 +185,151 @@ function nextCaseAfterReply<
   };
 }
 
-function DeclarationDiscrepancyList({
+function DeclarationDiscrepancyListItems({
   discrepancies,
+  activeDiscrepancyId,
+  onSelect,
 }: {
   discrepancies: DeclarationDiscrepancy[];
+  activeDiscrepancyId: Id<"declarationDiscrepancies"> | null;
+  onSelect: (id: Id<"declarationDiscrepancies">) => void;
 }) {
   if (discrepancies.length === 0) return null;
 
   return (
-    <section className="rounded-lg border border-amber-500/20 bg-amber-500/[0.035] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-medium text-foreground">
-            Policy details need confirmation
-          </h3>
-          <p className="mt-1 max-w-3xl text-label leading-5 text-muted-foreground">
-            Different active policies show different values. Confirm the correct
-            detail before using it on certificates, renewals, or policy changes.
-          </p>
-        </div>
-        <span className="rounded-full border border-amber-500/20 px-2 py-0.5 text-label font-medium text-amber-700 dark:text-amber-300">
-          {discrepancies.length} to check
-        </span>
-      </div>
-
-      <div className="mt-4 divide-y divide-foreground/6 border-t border-foreground/6">
-        {discrepancies.map((discrepancy) => (
-          <div key={discrepancy._id} className="py-3 first:pt-3 last:pb-0">
-            <div className="grid gap-3 md:grid-cols-[minmax(160px,0.8fr)_minmax(220px,1fr)_minmax(220px,1.4fr)_auto] md:items-start">
-              <div className="min-w-0 flex-1">
-                <p className="text-label font-medium uppercase tracking-normal text-muted-foreground">
-                  Detail
-                </p>
-                <p className="mt-1 text-label font-medium text-foreground">
-                  {discrepancy.question ??
-                    formatDeclarationFieldGroup(discrepancy.fieldGroup)}
-                </p>
-                {discrepancy.plainLanguageSummary && (
-                  <p className="mt-1 text-label leading-5 text-muted-foreground">
-                    {discrepancy.plainLanguageSummary}
+    <>
+      {discrepancies.map((discrepancy) => {
+        const policyCount = declarationPolicyLabels(discrepancy).length;
+        const isActive = activeDiscrepancyId === discrepancy._id;
+        return (
+          <button
+            key={discrepancy._id}
+            type="button"
+            onClick={() => onSelect(discrepancy._id)}
+            className={`block w-full border-b border-foreground/[0.04] px-4 py-3 text-left transition-colors last:border-b-0 ${
+              isActive ? "bg-foreground/[0.035]" : "hover:bg-foreground/[0.02]"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                  <p className="truncate text-base font-medium text-foreground">
+                    {formatDeclarationFieldGroup(discrepancy.fieldGroup)}
                   </p>
-                )}
-              </div>
-
-              <div className="min-w-0">
-                <p className="text-label font-medium uppercase tracking-normal text-muted-foreground">
-                  Best guess
-                </p>
-                <p className="mt-1 text-label font-medium text-foreground">
-                  {displayDeclarationValue(discrepancy.likelyCurrentValue)}
-                </p>
-              </div>
-
-              <div className="min-w-0">
-                <p className="text-label font-medium uppercase tracking-normal text-muted-foreground">
-                  Values found
-                </p>
-                <div className="mt-1 space-y-2">
-                  {discrepancy.conflictingValues.map((value, index) => (
-                    <div
-                      key={`${value.normalizedValue ?? value.displayValue ?? "value"}-${index}`}
-                      className="min-w-0"
-                    >
-                      <p className="break-words text-label font-medium text-foreground">
-                        {displayDeclarationValue(
-                          value.displayValue ?? value.normalizedValue,
-                        )}
-                      </p>
-                      {value.policyLabels && value.policyLabels.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          {value.policyLabels.map((policy) => (
-                            <Link
-                              key={policy.policyId}
-                              href={`/policies/${policy.policyId}`}
-                              className="rounded-full border border-foreground/8 bg-background/60 px-2 py-0.5 text-label text-muted-foreground transition-colors hover:text-foreground"
-                            >
-                              {policy.label}
-                            </Link>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
                 </div>
+                <p className="mt-1 line-clamp-2 text-label text-muted-foreground">
+                  {discrepancy.question ??
+                    discrepancy.plainLanguageSummary ??
+                    "Confirm the value before using this policy."}
+                </p>
               </div>
-
-              <span className="justify-self-start rounded-full border border-foreground/8 bg-background/60 px-2 py-0.5 text-label font-medium text-muted-foreground md:justify-self-end">
-                Updated {dayjs(discrepancy.updatedAt).format("MMM D")}
+              <span className="shrink-0 rounded-full border border-amber-500/20 px-2 py-0.5 text-label font-medium text-amber-700 dark:text-amber-300">
+                {discrepancy.conflictingValues.length} values
               </span>
             </div>
-            {discrepancy.recommendedAction && (
-              <p className="mt-2 text-label leading-5 text-muted-foreground">
-                {discrepancy.recommendedAction}
-              </p>
-            )}
+            <div className="mt-2 flex flex-wrap gap-2 text-label text-muted-foreground">
+              <span>{policyCount} policies</span>
+              <span>Updated {dayjs(discrepancy.updatedAt).format("MMM D, YYYY")}</span>
+            </div>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+function DeclarationDiscrepancyDetail({
+  discrepancy,
+}: {
+  discrepancy: DeclarationDiscrepancy;
+}) {
+  const policyLabels = declarationPolicyLabels(discrepancy);
+
+  return (
+    <div className="divide-y divide-foreground/[0.06]">
+      <div className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-base font-medium text-foreground">
+              {discrepancy.question ??
+                formatDeclarationFieldGroup(discrepancy.fieldGroup)}
+            </p>
+            <p className="mt-1 text-label leading-5 text-muted-foreground">
+              {discrepancy.plainLanguageSummary ??
+                "A near-duplicate active policy has a conflicting declaration value."}
+            </p>
           </div>
-        ))}
+          <span className="shrink-0 rounded-full border border-amber-500/20 px-2 py-0.5 text-label font-medium text-amber-700 dark:text-amber-300">
+            Review
+          </span>
+        </div>
       </div>
-    </section>
+
+      <div className="p-4 grid gap-4 xl:grid-cols-2">
+        <section>
+          <h3 className="text-label font-medium text-foreground">Best guess</h3>
+          <p className="mt-2 text-base text-foreground">
+            {displayDeclarationValue(discrepancy.likelyCurrentValue)}
+          </p>
+        </section>
+
+        <section>
+          <h3 className="text-label font-medium text-foreground">Policies</h3>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {policyLabels.map((policy) => (
+              <Link
+                key={policy.policyId}
+                href={`/policies/${policy.policyId}`}
+                className="rounded-full border border-foreground/8 bg-background/60 px-2 py-0.5 text-label text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {policy.label}
+              </Link>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="p-4">
+        <h3 className="text-label font-medium text-foreground">Values found</h3>
+        <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
+          {discrepancy.conflictingValues.map((value, index) => (
+            <div
+              key={`${value.normalizedValue ?? value.displayValue ?? "value"}-${index}`}
+              className="py-3"
+            >
+              <p className="break-words text-label font-medium text-foreground">
+                {displayDeclarationValue(value.displayValue ?? value.normalizedValue)}
+              </p>
+              {value.policyLabels && value.policyLabels.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {value.policyLabels.map((policy) => (
+                    <Link
+                      key={policy.policyId}
+                      href={`/policies/${policy.policyId}`}
+                      className="rounded-full border border-foreground/8 bg-background/60 px-2 py-0.5 text-label text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {policy.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {discrepancy.recommendedAction && (
+        <div className="p-4">
+          <h3 className="text-label font-medium text-foreground">
+            Suggested action
+          </h3>
+          <p className="mt-2 text-label leading-5 text-muted-foreground">
+            {discrepancy.recommendedAction}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -290,6 +347,8 @@ export function PolicyChangesTab({
   const [cancelLoading, setCancelLoading] = useState<string | null>(null);
   const [replyLoading, setReplyLoading] =
     useState<Id<"policyChangeCases"> | null>(null);
+  const [selectedDiscrepancyId, setSelectedDiscrepancyId] =
+    useState<Id<"declarationDiscrepancies"> | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const cases = useCachedQuery(
     "policyChanges.listByPolicy",
@@ -305,7 +364,16 @@ export function PolicyChangesTab({
       policyId: policyId as Id<"policies">,
     },
   );
-  const activeCaseId = selectedCaseId ?? cases?.[0]?._id ?? null;
+  const selectedDiscrepancy =
+    declarationDiscrepancies?.find(
+      (discrepancy) => discrepancy._id === selectedDiscrepancyId,
+    ) ?? null;
+  const activeDiscrepancy =
+    selectedDiscrepancy ??
+    (cases?.length === 0 ? (declarationDiscrepancies?.[0] ?? null) : null);
+  const activeCaseId = activeDiscrepancy
+    ? null
+    : selectedCaseId ?? cases?.[0]?._id ?? null;
   const detail = useCachedQuery(
     "policyChanges.getCaseDetail.policy",
     api.policyChanges.getCaseDetail,
@@ -330,21 +398,6 @@ export function PolicyChangesTab({
         {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-16 w-full rounded-lg" />
         ))}
-      </div>
-    );
-  }
-
-  if (cases.length === 0) {
-    return (
-      <div className="space-y-3">
-        <DeclarationDiscrepancyList discrepancies={declarationDiscrepancies} />
-        <OperationalPanel as="div">
-          <OperationalPanelBody className="px-4 py-6 text-center">
-            <p className="text-base text-muted-foreground">
-              No policy change requests recorded yet.
-            </p>
-          </OperationalPanelBody>
-        </OperationalPanel>
       </div>
     );
   }
@@ -512,15 +565,15 @@ export function PolicyChangesTab({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.4fr)]">
-      {declarationDiscrepancies.length > 0 && (
-        <div className="lg:col-span-2">
-          <DeclarationDiscrepancyList
-            discrepancies={declarationDiscrepancies}
-          />
-        </div>
-      )}
-
       <OperationalPanel as="div">
+        <DeclarationDiscrepancyListItems
+          discrepancies={declarationDiscrepancies}
+          activeDiscrepancyId={activeDiscrepancy?._id ?? null}
+          onSelect={(id) => {
+            setSelectedDiscrepancyId(id);
+            setSelectedCaseId(null);
+          }}
+        />
         {cases.map((change) => {
           const missingInfoCount = Array.isArray(change.missingInfoQuestions)
             ? change.missingInfoQuestions.length
@@ -533,7 +586,10 @@ export function PolicyChangesTab({
             <button
               key={change._id}
               type="button"
-              onClick={() => setSelectedCaseId(change._id)}
+              onClick={() => {
+                setSelectedCaseId(change._id);
+                setSelectedDiscrepancyId(null);
+              }}
               className={`block w-full text-left px-4 py-3 border-b border-foreground/[0.04] last:border-b-0 transition-colors ${
                 isActive
                   ? "bg-foreground/[0.035]"
@@ -572,10 +628,25 @@ export function PolicyChangesTab({
             </button>
           );
         })}
+        {cases.length === 0 && declarationDiscrepancies.length === 0 && (
+          <OperationalPanelBody className="px-4 py-6 text-center">
+            <p className="text-base text-muted-foreground">
+              No policy change requests recorded yet.
+            </p>
+          </OperationalPanelBody>
+        )}
       </OperationalPanel>
 
       <OperationalPanel as="div">
-        {detail === undefined ? (
+        {activeDiscrepancy ? (
+          <DeclarationDiscrepancyDetail discrepancy={activeDiscrepancy} />
+        ) : !activeCaseId ? (
+          <OperationalPanelBody className="px-4 py-6 text-center">
+            <p className="text-base text-muted-foreground">
+              No open policy review item.
+            </p>
+          </OperationalPanelBody>
+        ) : detail === undefined ? (
           <div className="p-4 space-y-3">
             <Skeleton className="h-5 w-48 rounded" />
             <Skeleton className="h-24 w-full rounded-lg" />
