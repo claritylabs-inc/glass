@@ -17,10 +17,10 @@ const sizeClasses = {
 } as const;
 
 const imagePaddingClasses = {
-  xs: "p-px",
-  sm: "p-0.5",
-  md: "p-0.5",
-  lg: "p-0.5",
+  xs: "p-0.5",
+  sm: "p-1",
+  md: "p-1",
+  lg: "p-1.5",
 } as const;
 
 function toHex(value: number) {
@@ -171,8 +171,9 @@ export function BrandIcon({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-black text-white",
+        "inline-flex shrink-0 items-center justify-center rounded-md bg-black text-white",
         sizeClasses[size],
+        showImage && imagePaddingClasses[size],
         className,
       )}
       style={showImage ? { backgroundColor: imageBackgroundColor } : undefined}
@@ -184,7 +185,6 @@ export function BrandIcon({
           alt={alt}
           className={cn(
             "h-full w-full object-contain",
-            imagePaddingClasses[size],
             imageClassName,
           )}
           onError={() => {
