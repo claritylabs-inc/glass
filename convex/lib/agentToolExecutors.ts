@@ -77,6 +77,7 @@ export type BuildAgentToolExecutorsOptions = {
   orgId: Id<"organizations">;
   userId: Id<"users">;
   scope: AgentScope;
+  operatorInitiatedUserMessageId?: Id<"threadMessages">;
   readOrgIds?: Id<"organizations">[];
   writableOrgIds?: Id<"organizations">[];
   org?: Record<string, unknown> | null;
@@ -108,12 +109,6 @@ function programSelectionSourceForSurface(surface: AgentToolSurface) {
   if (surface === "email" || surface === "imessage") return surface;
   if (surface === "web") return "chat" as const;
   return "agent" as const;
-}
-
-function policyChangeCreateAction(surface: AgentToolSurface) {
-  return surface === "email"
-    ? internal.actions.policyChangeRequests.createFromEmailForThread
-    : internal.actions.policyChangeRequests.createFromChatForThread;
 }
 
 function typeMap(value: string): "fact" | "preference" | "risk_note" | "observation" {
@@ -531,16 +526,33 @@ export function buildAgentToolExecutors(
           targetOrgId = resolved.policy.orgId;
           policyId = resolved.policy._id;
         }
-        const result = await ctx.runAction(
-          policyChangeCreateAction(options.surface),
-          {
-            orgId: targetOrgId,
-            userId: options.userId,
-            policyId,
-            requestText: params.requestText,
-            evidenceSourceIds: params.evidenceSourceIds,
-          },
-        );
+        const createArgsBase: {
+          orgId: Id<"organizations">;
+          userId: Id<"users">;
+          policyId?: Id<"policies">;
+          requestText: string;
+          evidenceSourceIds?: string[];
+        } = {
+          orgId: targetOrgId,
+          userId: options.userId,
+          policyId,
+          requestText: params.requestText,
+          evidenceSourceIds: params.evidenceSourceIds,
+        };
+        const result = options.surface === "email"
+          ? await ctx.runAction(
+              internal.actions.policyChangeRequests.createFromEmailForThread,
+              createArgsBase,
+            )
+          : await ctx.runAction(
+              internal.actions.policyChangeRequests.createFromChatForThread,
+              {
+                ...createArgsBase,
+                operatorInitiatedUserMessageId: options.surface === "web"
+                  ? options.operatorInitiatedUserMessageId
+                  : undefined,
+              },
+            );
         if (result?.error) return result.error;
         const caseId = result?.caseId as Id<"policyChangeCases"> | undefined;
         if (caseId) await options.onPolicyChangeCase?.(caseId);

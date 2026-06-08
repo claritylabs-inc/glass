@@ -28,10 +28,71 @@ export type AgentScope = {
   orgs: AgentScopeOrg[];
   focusedOrgId?: Id<"organizations">;
   brokerInternal: boolean;
+  operatorInitiated?: {
+    operatorUserId: Id<"users">;
+    operatorEmail?: string;
+    operatorName?: string;
+    impersonationSessionId: Id<"operatorImpersonationSessions">;
+    targetOrgId: Id<"organizations">;
+    targetOrgName: string;
+    targetRole: "admin" | "member";
+    displayLabel: string;
+    initiatedAt: number;
+  };
+};
+
+const operatorInitiatedMessageIdArgs = {
+  orgId: v.id("organizations"),
+  userId: v.id("users"),
+  userMessageId: v.id("threadMessages"),
 };
 
 function orgName(org: Doc<"organizations">): string {
   return org.name?.trim() || String(org._id);
+}
+
+async function validateOperatorInitiatedMessage(
+  ctx: any,
+  args: {
+    orgId: Id<"organizations">;
+    userId: Id<"users">;
+    userMessageId: Id<"threadMessages">;
+  },
+): Promise<AgentScope["operatorInitiated"] | null> {
+  const message = await ctx.db.get(args.userMessageId);
+  const operatorInitiated = message?.operatorInitiated;
+  if (
+    !message ||
+    message.role !== "user" ||
+    message.orgId !== args.orgId ||
+    message.userId !== args.userId ||
+    !operatorInitiated ||
+    operatorInitiated.operatorUserId !== args.userId ||
+    operatorInitiated.targetOrgId !== args.orgId
+  ) {
+    return null;
+  }
+
+  const [operatorUser, operatorProfile, impersonationSession] = await Promise.all([
+    ctx.db.get(args.userId),
+    ctx.db
+      .query("operatorProfiles")
+      .withIndex("by_userId", (q: any) => q.eq("userId", args.userId))
+      .first(),
+    ctx.db.get(operatorInitiated.impersonationSessionId),
+  ]);
+
+  if (
+    operatorUser?.accountKind !== "operator" ||
+    !operatorProfile ||
+    operatorProfile.status !== "active" ||
+    impersonationSession?.operatorUserId !== args.userId ||
+    impersonationSession.targetOrgId !== args.orgId
+  ) {
+    return null;
+  }
+
+  return operatorInitiated;
 }
 
 async function summarizeOrg(ctx: any, org: Doc<"organizations">, args: {
@@ -101,6 +162,7 @@ export const resolveForAction = internalQuery({
     ),
     focusedOrgId: v.optional(v.id("organizations")),
     allowBrokerPortfolio: v.optional(v.boolean()),
+    operatorInitiatedUserMessageId: v.optional(v.id("threadMessages")),
   },
   handler: async (ctx, args): Promise<AgentScope> => {
     const primaryOrg = await ctx.db.get(args.orgId);
@@ -110,7 +172,16 @@ export const resolveForAction = internalQuery({
       .query("orgMemberships")
       .withIndex("by_orgId_userId", (q) => q.eq("orgId", args.orgId).eq("userId", args.userId))
       .first();
-    if (!membership) throw new Error("Unauthorized");
+    const operatorInitiated = membership
+      ? null
+      : args.operatorInitiatedUserMessageId
+        ? await validateOperatorInitiatedMessage(ctx, {
+            orgId: args.orgId,
+            userId: args.userId,
+            userMessageId: args.operatorInitiatedUserMessageId,
+          })
+        : null;
+    if (!membership && !operatorInitiated) throw new Error("Unauthorized");
 
     const primaryType = (primaryOrg.type as "broker" | "client") ?? "client";
     const allowBrokerPortfolio = args.allowBrokerPortfolio ?? true;
@@ -125,6 +196,7 @@ export const resolveForAction = internalQuery({
         orgs: [await summarizeOrg(ctx, primaryOrg, { primaryOrgId: primaryOrg._id, canWrite: true })],
         focusedOrgId: args.focusedOrgId,
         brokerInternal: false,
+        operatorInitiated: operatorInitiated ?? undefined,
       };
     }
 
@@ -158,7 +230,18 @@ export const resolveForAction = internalQuery({
       orgs,
       focusedOrgId,
       brokerInternal: true,
+      operatorInitiated: operatorInitiated ?? undefined,
     };
+  },
+});
+
+export const validateOperatorInitiatedForAction = internalQuery({
+  args: operatorInitiatedMessageIdArgs,
+  handler: async (ctx, args) => {
+    const operatorInitiated = await validateOperatorInitiatedMessage(ctx, args);
+    return operatorInitiated
+      ? { allowed: true, operatorInitiated }
+      : { allowed: false };
   },
 });
 

@@ -91,6 +91,7 @@ export async function writeOperatorAudit(
       | "mga_launch_email_sent"
       | "impersonation_started"
       | "impersonation_stopped"
+      | "impersonation_chat_message"
       | "setup_write";
     targetOrgId?: Id<"organizations">;
     targetUserId?: Id<"users">;

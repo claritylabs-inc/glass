@@ -855,6 +855,7 @@ export const run = internalAction({
         orgId: args.orgId,
         userId: args.userId,
         surface: "web",
+        operatorInitiatedUserMessageId: args.userMessageId,
       })) as AgentScope;
 
       // Build system prompt. Broker orgs use an internal portfolio prompt.
@@ -1028,6 +1029,9 @@ export const run = internalAction({
       }
 
       const toolInstructions = buildPolicyToolInstructions(25);
+      const operatorInitiatedBlock = scope.operatorInitiated
+        ? `\n\nOPERATOR IMPERSONATION CONTEXT: This web chat message was initiated by ${scope.operatorInitiated.displayLabel} under an audited operator support/testing session. Treat the request as coming from that operator on behalf of the organization; do not imply that an end customer personally sent it.`
+        : "";
 
       // Attachment context note
       let attachmentNote = "";
@@ -1048,6 +1052,7 @@ export const run = internalAction({
         "\n\n" +
         docContext +
         toolInstructions +
+        operatorInitiatedBlock +
         memoryContext +
         orgMemoryBlock +
         requirementsBlock +
@@ -1251,6 +1256,7 @@ export const run = internalAction({
           orgId: args.orgId,
           userId: args.userId,
           scope,
+          operatorInitiatedUserMessageId: scope.operatorInitiated ? args.userMessageId : undefined,
           org,
           onPolicyReferenced: (policyId) => {
             citedPolicyIds.add(String(policyId));

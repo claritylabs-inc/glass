@@ -154,6 +154,21 @@ function uniqueZipFilename(filename: string, usedNames: Set<string>) {
   return candidate;
 }
 
+function messageSenderName(message: ThreadMessage) {
+  if (message.operatorInitiated) {
+    return message.operatorInitiated.displayLabel;
+  }
+  if (message.channel === "imessage") {
+    return (
+      message.imessageParticipantLabel ??
+      message.userName ??
+      message.imessageSenderAddress ??
+      "iMessage participant"
+    );
+  }
+  return message.userName ?? message.fromName ?? message.fromEmail ?? "User";
+}
+
 const SUBAGENT_TOOL_NAMES = new Set([
   "email_expert",
   "coordinate_mailbox_task",
@@ -908,7 +923,7 @@ function UnifiedThreadActions({
       const sender =
         msg.role === "agent"
           ? "Glass"
-          : (msg.userName ?? msg.fromName ?? msg.fromEmail ?? "User");
+          : messageSenderName(msg);
       const channel =
         msg.channel === "email"
           ? " [Email]"
@@ -917,6 +932,9 @@ function UnifiedThreadActions({
             : " [Chat]";
       lines.push("");
       lines.push(`${sender}${channel} — ${time}`);
+      if (msg.operatorInitiated?.operatorEmail) {
+        lines.push(`Operator: ${msg.operatorInitiated.operatorEmail}`);
+      }
       if (msg.fromEmail) lines.push(`From: ${msg.fromEmail}`);
       if (msg.toAddresses?.length)
         lines.push(`To: ${msg.toAddresses.join(", ")}`);
@@ -1491,13 +1509,7 @@ export function UnifiedMessageBubble({
     (viewerId && msg.userId === viewerId) ||
     (viewerEmail && msg.fromEmail?.toLowerCase() === viewerEmail.toLowerCase());
 
-  const displayName =
-    msg.channel === "imessage"
-      ? (msg.imessageParticipantLabel ??
-        msg.userName ??
-        msg.imessageSenderAddress ??
-        "iMessage participant")
-      : (msg.userName ?? msg.fromName ?? msg.fromEmail ?? "User");
+  const displayName = messageSenderName(msg);
 
   // For email messages, strip quoted reply text
   const isEmail = msg.channel === "email";
@@ -1525,7 +1537,14 @@ export function UnifiedMessageBubble({
         <div
           className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "justify-end" : ""}`}
         >
-          <p className="shrink-0 text-label font-medium text-muted-foreground/50">
+          <p
+            className="min-w-0 max-w-[min(24rem,70vw)] truncate text-label font-medium text-muted-foreground/50"
+            title={
+              msg.operatorInitiated?.operatorEmail
+                ? `${displayName} (${msg.operatorInitiated.operatorEmail})`
+                : displayName
+            }
+          >
             {displayName}
           </p>
           {isEmail && !collapseEmailMessages ? (

@@ -32,6 +32,20 @@ const webRetrievalValidator = v.object({
   route: v.optional(modelRouteValidator),
 });
 
+const orgRoleValidator = v.union(v.literal("admin"), v.literal("member"));
+
+const operatorInitiatedMessageValidator = v.object({
+  operatorUserId: v.id("users"),
+  operatorEmail: v.optional(v.string()),
+  operatorName: v.optional(v.string()),
+  impersonationSessionId: v.id("operatorImpersonationSessions"),
+  targetOrgId: v.id("organizations"),
+  targetOrgName: v.string(),
+  targetRole: orgRoleValidator,
+  displayLabel: v.string(),
+  initiatedAt: v.number(),
+});
+
 const pipelineStatusValidator = v.union(
   v.literal("idle"),
   v.literal("running"),
@@ -434,6 +448,7 @@ export default defineSchema({
       v.literal("mga_launch_email_sent"),
       v.literal("impersonation_started"),
       v.literal("impersonation_stopped"),
+      v.literal("impersonation_chat_message"),
       v.literal("setup_write"),
     ),
     targetOrgId: v.optional(v.id("organizations")),
@@ -2453,6 +2468,7 @@ export default defineSchema({
     // User messages
     userId: v.optional(v.id("users")),
     userName: v.optional(v.string()),
+    operatorInitiated: v.optional(operatorInitiatedMessageValidator),
     imessageSenderAddress: v.optional(v.string()),
     imessageParticipantLabel: v.optional(v.string()),
     // Email messages

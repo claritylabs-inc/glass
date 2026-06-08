@@ -10,6 +10,17 @@ export type ThreadMessage = {
   role: "user" | "agent" | "system";
   userId?: Id<"users">;
   userName?: string;
+  operatorInitiated?: {
+    operatorUserId: Id<"users">;
+    operatorEmail?: string;
+    operatorName?: string;
+    impersonationSessionId: Id<"operatorImpersonationSessions">;
+    targetOrgId: Id<"organizations">;
+    targetOrgName: string;
+    targetRole: "admin" | "member";
+    displayLabel: string;
+    initiatedAt: number;
+  };
   imessageSenderAddress?: string;
   imessageParticipantLabel?: string;
   fromEmail?: string;

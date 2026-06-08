@@ -73,6 +73,7 @@ export const createFromChatForThread = internalAction({
   args: {
     orgId: v.id("organizations"),
     userId: v.id("users"),
+    operatorInitiatedUserMessageId: v.optional(v.id("threadMessages")),
     policyId: v.optional(v.id("policies")),
     requestText: v.string(),
     evidenceSourceIds: v.optional(v.array(v.string())),
@@ -102,27 +103,53 @@ async function createPolicyChangeCase(
   args: {
     orgId: Id<"organizations">;
     userId: Id<"users">;
+    operatorInitiatedUserMessageId?: Id<"threadMessages">;
     policyId?: Id<"policies">;
     requestText: string;
     evidenceSourceIds?: string[];
     sourceKind?: "chat" | "email";
   },
 ): Promise<{ caseId?: string; usedSdkPce: boolean; error?: string }> {
-    const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
-    if (!org) return { usedSdkPce: false, error: "Organization not found" };
-    const createAccess = await ctx.runQuery(
-      internal.policyChanges.canCreatePolicyChangeForUserInternal,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-      },
-    );
-    if (!createAccess?.allowed) {
-      return {
-        usedSdkPce: false,
-        error: createAccess?.error ?? "Policy change requests require direct org membership or broker access",
-      };
+  const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
+  if (!org) return { usedSdkPce: false, error: "Organization not found" };
+  const createAccess = await ctx.runQuery(
+    internal.policyChanges.canCreatePolicyChangeForUserInternal,
+    {
+      orgId: args.orgId,
+      userId: args.userId,
+    },
+  );
+  if (!createAccess?.allowed) {
+    const operatorAccess = args.operatorInitiatedUserMessageId
+      ? await ctx.runQuery((internal as any).lib.agentScope.validateOperatorInitiatedForAction, {
+          orgId: args.orgId,
+          userId: args.userId,
+          userMessageId: args.operatorInitiatedUserMessageId,
+        })
+      : null;
+    if (operatorAccess?.allowed) {
+      return await createPolicyChangeCaseAfterAccess(ctx, args, org);
     }
+    return {
+      usedSdkPce: false,
+      error: createAccess?.error ?? "Policy change requests require direct org membership or broker access",
+    };
+  }
+  return await createPolicyChangeCaseAfterAccess(ctx, args, org);
+}
+
+async function createPolicyChangeCaseAfterAccess(
+  ctx: any,
+  args: {
+    orgId: Id<"organizations">;
+    userId: Id<"users">;
+    policyId?: Id<"policies">;
+    requestText: string;
+    evidenceSourceIds?: string[];
+    sourceKind?: "chat" | "email";
+  },
+  org: any,
+): Promise<{ caseId?: string; usedSdkPce: boolean; error?: string }> {
     const brokerIdentity = (org.type ?? "client") === "client"
       ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
           clientOrgId: args.orgId,

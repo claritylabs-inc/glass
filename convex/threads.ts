@@ -1,11 +1,12 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { query, mutation, internalQuery, internalMutation, type QueryCtx } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
 import { getBrokerAccessToClientForQuery } from "./lib/access";
 import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
+import { getActiveOperatorImpersonation, writeOperatorAudit } from "./lib/operatorIdentity";
 
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
@@ -18,6 +19,42 @@ const EMAIL_MODE_VALIDATOR = v.union(
 );
 const IMESSAGE_GROUP_TITLE_PREFIX = "iMessage group - ";
 const IMESSAGE_DIRECT_TITLE_PREFIX = "iMessage - ";
+
+type OperatorInitiatedMessage = {
+  operatorUserId: Id<"users">;
+  operatorEmail?: string;
+  operatorName?: string;
+  impersonationSessionId: Id<"operatorImpersonationSessions">;
+  targetOrgId: Id<"organizations">;
+  targetOrgName: string;
+  targetRole: "admin" | "member";
+  displayLabel: string;
+  initiatedAt: number;
+};
+
+function orgName(org: Doc<"organizations">): string {
+  return org.name?.trim() || String(org._id);
+}
+
+async function buildOperatorInitiatedMessage(
+  ctx: MutationCtx,
+  orgId: Id<"organizations">,
+): Promise<OperatorInitiatedMessage | undefined> {
+  const impersonation = await getActiveOperatorImpersonation(ctx);
+  if (!impersonation || impersonation.session.targetOrgId !== orgId) return undefined;
+  const operatorName = impersonation.operator.user.name?.trim();
+  return {
+    operatorUserId: impersonation.operator.userId,
+    ...(impersonation.operator.user.email ? { operatorEmail: impersonation.operator.user.email } : {}),
+    ...(operatorName ? { operatorName } : {}),
+    impersonationSessionId: impersonation.session._id,
+    targetOrgId: impersonation.session.targetOrgId,
+    targetOrgName: orgName(impersonation.targetOrg),
+    targetRole: impersonation.session.targetRole,
+    displayLabel: `Clarity Labs on behalf of ${orgName(impersonation.targetOrg)}`,
+    initiatedAt: dayjs().valueOf(),
+  };
+}
 
 /** Generate a short alphanumeric ID for thread email addresses */
 function shortId(): string {
@@ -341,6 +378,7 @@ export const sendMessage = mutation({
 
     const user = await ctx.db.get(userId);
     const userName = user?.name ?? user?.email ?? "User";
+    const operatorInitiated = await buildOperatorInitiatedMessage(ctx, orgId);
     const messages = await ctx.db
       .query("threadMessages")
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
@@ -368,6 +406,7 @@ export const sendMessage = mutation({
       role: "user",
       userId,
       userName,
+      operatorInitiated,
       content: args.content,
       attachments: args.attachments,
       referencedPolicyIds: args.referencedPolicyIds,
@@ -408,6 +447,21 @@ export const sendMessage = mutation({
         userId,
         userMessageId: messageId,
         agentMessageId,
+      });
+    }
+
+    if (operatorInitiated) {
+      await writeOperatorAudit(ctx, {
+        operatorUserId: operatorInitiated.operatorUserId,
+        type: "impersonation_chat_message",
+        targetOrgId: orgId,
+        summary: `Started chat as ${operatorInitiated.displayLabel}`,
+        metadata: {
+          threadId: args.threadId,
+          messageId,
+          impersonationSessionId: operatorInitiated.impersonationSessionId,
+          targetRole: operatorInitiated.targetRole,
+        },
       });
     }
 
