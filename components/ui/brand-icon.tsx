@@ -171,7 +171,7 @@ export function BrandIcon({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-md bg-black text-white",
+        "inline-flex shrink-0 items-center justify-center rounded-md border border-foreground/12 bg-transparent text-foreground",
         sizeClasses[size],
         showImage && imagePaddingClasses[size],
         className,

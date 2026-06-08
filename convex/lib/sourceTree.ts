@@ -655,7 +655,14 @@ function isBadOperationalIdentityValue(value: string | undefined): boolean {
   const text = normalizeWhitespace(value ?? "");
   if (!text) return true;
   if (text.length > 180) return true;
-  return /(__{3,}|claims-made|please read|all monetary amounts|page\s+\d+\s+of\s+\d+|in consideration of the payment|subject to the declarations|policy title|signature blocks?|errors?\s+and\s+omissions\s+liability\s+policy)/i.test(text);
+  if (/^[a-z]/.test(text)) return true;
+  if (/[•]/.test(text)) return true;
+  if (/^[^A-Za-z0-9]+|[^A-Za-z0-9.)]$/.test(text)) return true;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > 10 && /\b(the|a|an|and|or|of|to|for|with|when|if|we|you|your|our|us|by)\b/i.test(text)) {
+    return true;
+  }
+  return /(__{3,}|claims-made|please read|all monetary amounts|page\s+\d+\s+of\s+\d+|in consideration of the payment|subject to the declarations|policy title|signature blocks?|errors?\s+and\s+omissions\s+liability\s+policy|insured person dies|death benefit|grace period|collateral assignee|hypothecary creditor|for a loan|preced\b|\bCanad\b)/i.test(text);
 }
 
 function isBadBrokerValue(value: string | undefined): boolean {
@@ -663,7 +670,7 @@ function isBadBrokerValue(value: string | undefined): boolean {
   if (isBadOperationalIdentityValue(text)) return true;
   if (text.length > 140) return true;
   if (/^[\\/]/.test(text)) return true;
-  return /\b(forms?\/endorsements?|endorsements?\s+at\s+inception|bilateral\s+discovery|discovery\/erp|erp\s+options?|list\s+of\s+forms?|coverage\s+parts?|declarations?|sublimits?|deductibles?|premium|truncated)\b/i.test(text);
+  return /\b(forms?\/endorsements?|endorsements?\s+at\s+inception|bilateral\s+discovery|discovery\/erp|erp\s+options?|list\s+of\s+forms?|coverage\s+parts?|declarations?|sublimits?|deductibles?|premium|truncated|immunosuppressive|agents)\b/i.test(text);
 }
 
 function isLikelyNamedInsuredValue(value: string): boolean {
@@ -845,7 +852,19 @@ function cleanOperationalCoverages(
       endorsementNumber?: unknown;
     };
     const limits = cleanCoverageTerms(record.limits);
-    if (!coverage.limit && !coverage.deductible && !coverage.premium && !record.retroactiveDate && limits.length === 0) continue;
+    if (
+      !coverage.limit &&
+      !coverage.deductible &&
+      !coverage.premium &&
+      !record.retroactiveDate &&
+      limits.length === 0 &&
+      !coverage.formNumber &&
+      !coverage.sectionRef &&
+      record.coverageOrigin !== "core" &&
+      record.coverageOrigin !== "endorsement"
+    ) {
+      continue;
+    }
     if (coverage.sourceNodeIds.length === 0 && coverage.sourceSpanIds.length === 0 && limits.every((term) => term.sourceNodeIds.length === 0 && term.sourceSpanIds.length === 0)) {
       continue;
     }
@@ -1141,21 +1160,21 @@ export function normalizeOperationalProfile(
     validNodeIds,
     validSpanIds,
   );
-  const withRaw = rawProfile && typeof rawProfile === "object" && !Array.isArray(rawProfile)
-    ? mergeOperationalProfile(
-      withDocument,
-      sanitizeOperationalProfileCandidate(rawProfile as Partial<PolicyOperationalProfile>),
-      validNodeIds,
-      validSpanIds,
-    )
-    : withDocument;
   const withDeclarations = mergeOperationalProfile(
-    withRaw,
+    withDocument,
     declarationProfileCandidate(sourceTree),
     validNodeIds,
     validSpanIds,
   );
-  return preserveOperationalProfileExtensions(finalizeOperationalProfile(withDeclarations), rawProfile);
+  const withRaw = rawProfile && typeof rawProfile === "object" && !Array.isArray(rawProfile)
+    ? mergeOperationalProfile(
+      withDeclarations,
+      sanitizeOperationalProfileCandidate(rawProfile as Partial<PolicyOperationalProfile>),
+      validNodeIds,
+      validSpanIds,
+    )
+    : withDeclarations;
+  return preserveOperationalProfileExtensions(finalizeOperationalProfile(withRaw), rawProfile);
 }
 
 export function normalizeStoredOperationalProfile(

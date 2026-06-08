@@ -53,7 +53,7 @@ export function SidebarHeader({
                 src={headerOrgIcon}
                 name={headerOrgName}
                 size="md"
-                className="h-full w-full rounded-[inherit] border border-foreground/12"
+                className="h-full w-full rounded-[inherit]"
               />
             ) : viewerImage ? (
               <Image

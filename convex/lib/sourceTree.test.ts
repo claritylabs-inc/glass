@@ -238,6 +238,200 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.coverageTypes).toEqual(["General Liability"]);
   });
 
+  it("keeps model-backed life policy fields above weaker document and declaration candidates", () => {
+    const lifeSpans: SourceSpanLike[] = [
+      { id: "life-insurer-good", text: "Sun Life Assurance Company of Canada", pageStart: 1 },
+      { id: "life-insurer-bad", text: "This phrase can mean Sun Life Assurance Company of Canad in context.", pageStart: 2 },
+      { id: "life-policy-short", text: "Column 1: Policy Number | Column 2: LI-1234", pageStart: 3 },
+      { id: "life-policy-full", text: "Policy number LI-1234,567-8", pageStart: 3 },
+      { id: "life-insured", text: "Column 1: Owner | Column 2: Jim Doe", pageStart: 3 },
+      { id: "life-coverage", text: "Sun Permanent Life Basic insurance coverage $X,XXX,XXX", pageStart: 4 },
+    ];
+    const lifeTree: DocumentSourceNode[] = [
+      {
+        id: "life-document",
+        documentId: "life-policy",
+        kind: "document",
+        title: "Sun Permanent Life",
+        description: "Sun Permanent Life",
+        sourceSpanIds: [],
+        order: 0,
+        path: "Policy",
+      },
+      ...lifeSpans.map((span, index): DocumentSourceNode => ({
+        id: span.id?.replace("life-", "node-") ?? `node-${index}`,
+        documentId: "life-policy",
+        parentId: "life-document",
+        kind: index >= 2 && index <= 4 ? "table_row" : "text",
+        title: `Life source ${index + 1}`,
+        description: span.text ?? "",
+        textExcerpt: span.text,
+        sourceSpanIds: [span.id ?? ""],
+        pageStart: span.pageStart,
+        pageEnd: span.pageStart,
+        order: index + 1,
+        path: `Policy > Life source ${index + 1}`,
+      })),
+    ];
+
+    const profile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        policyTypes: ["life"],
+        policyNumber: {
+          value: "LI-1234,567-8",
+          confidence: "high",
+          sourceNodeIds: ["node-policy-full"],
+          sourceSpanIds: ["life-policy-full"],
+        },
+        namedInsured: {
+          value: "Jim Doe",
+          confidence: "high",
+          sourceNodeIds: ["node-insured"],
+          sourceSpanIds: ["life-insured"],
+        },
+        insurer: {
+          value: "Sun Life Assurance Company of Canada",
+          confidence: "high",
+          sourceNodeIds: ["node-insurer-good"],
+          sourceSpanIds: ["life-insurer-good"],
+        },
+        broker: {
+          value: "s • immunosuppressive agents •",
+          confidence: "high",
+          sourceNodeIds: ["node-insurer-bad"],
+          sourceSpanIds: ["life-insurer-bad"],
+        },
+        coverages: [
+          {
+            name: "Sun Permanent Life - Basic insurance coverage",
+            limit: "$X,XXX,XXX",
+            coverageOrigin: "core",
+            sourceNodeIds: ["node-coverage"],
+            sourceSpanIds: ["life-coverage"],
+          },
+        ],
+      },
+      lifeTree,
+      lifeSpans,
+      {
+        policyTypes: ["other"],
+        policyNumber: "LI-1234",
+        security: "mean Sun Life Assurance Company of Canad",
+        carrier: "mean Sun Life Assurance Company of Canad",
+        broker: "s • immunosuppressive agents •",
+      },
+    );
+
+    expect(profile.policyTypes).toEqual(["life"]);
+    expect(profile.coverageTypes).toEqual(["Life"]);
+    expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
+    expect(profile.namedInsured?.value).toBe("Jim Doe");
+    expect(profile.insurer?.value).toBe("Sun Life Assurance Company of Canada");
+    expect(profile.broker).toBeUndefined();
+    expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name)).toEqual([
+      "Sun Permanent Life - Basic insurance coverage",
+    ]);
+  });
+
+  it("preserves descriptive source-backed life benefit rows", () => {
+    const benefitSpans: SourceSpanLike[] = [
+      { id: "benefit-product", text: "Manulife Par with VitalityPlusTM", pageStart: 1 },
+      { id: "benefit-death", text: "The death benefit is the amount we pay when the insured person dies.", pageStart: 3 },
+      { id: "benefit-disability", text: "If the insured person becomes disabled, you can ask us to pay a disability benefit.", pageStart: 6 },
+    ];
+    const benefitTree: DocumentSourceNode[] = [
+      {
+        id: "benefit-document",
+        documentId: "benefit-policy",
+        kind: "document",
+        title: "Manulife Par",
+        description: "Manulife Par",
+        sourceSpanIds: [],
+        order: 0,
+        path: "Policy",
+      },
+      ...benefitSpans.map((span, index): DocumentSourceNode => ({
+        id: `benefit-node-${index + 1}`,
+        documentId: "benefit-policy",
+        parentId: "benefit-document",
+        kind: "text",
+        title: span.text ?? "",
+        description: span.text ?? "",
+        textExcerpt: span.text,
+        sourceSpanIds: [span.id ?? ""],
+        pageStart: span.pageStart,
+        pageEnd: span.pageStart,
+        order: index + 1,
+        path: `Policy > Benefit ${index + 1}`,
+      })),
+    ];
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["life", "disability"],
+        coverages: [
+          {
+            name: "Manulife Par with VitalityPlusTM",
+            formNumber: "1118-995",
+            coverageOrigin: "core",
+            sourceNodeIds: ["benefit-node-1"],
+            sourceSpanIds: ["benefit-product"],
+          },
+          {
+            name: "Death benefit",
+            coverageOrigin: "core",
+            limits: [
+              {
+                kind: "other",
+                label: "Benefit description",
+                value: "The death benefit is the amount we pay when the insured person dies.",
+                appliesTo: "Death benefit",
+                sourceNodeIds: ["benefit-node-2"],
+                sourceSpanIds: ["benefit-death"],
+              },
+            ],
+            sourceNodeIds: ["benefit-node-2"],
+            sourceSpanIds: ["benefit-death"],
+          },
+          {
+            name: "Disability benefit",
+            coverageOrigin: "core",
+            limits: [
+              {
+                kind: "other",
+                label: "Benefit description",
+                value: "If the insured person becomes disabled, you can ask us to pay a disability benefit.",
+                appliesTo: "Disability benefit",
+                sourceNodeIds: ["benefit-node-3"],
+                sourceSpanIds: ["benefit-disability"],
+              },
+            ],
+            sourceNodeIds: ["benefit-node-3"],
+            sourceSpanIds: ["benefit-disability"],
+          },
+          {
+            name: "Unsupported benefit shell",
+            sourceNodeIds: ["benefit-node-3"],
+            sourceSpanIds: ["benefit-disability"],
+          },
+        ],
+      },
+      benefitTree,
+      benefitSpans,
+    );
+
+    expect(profile.policyTypes).toEqual(["life", "disability"]);
+    expect(profile.coverageTypes).toEqual(["Life", "Disability"]);
+    expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name)).toEqual([
+      "Manulife Par with VitalityPlusTM",
+      "Death benefit",
+      "Disability benefit",
+    ]);
+    expect(profile.coverages.find((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name === "Death benefit")?.limits?.[0]?.value)
+      .toBe("The death benefit is the amount we pay when the insured person dies");
+  });
+
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
     const profile = normalizeOperationalProfile(
       {

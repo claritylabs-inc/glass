@@ -33,6 +33,7 @@ export function SidebarBrokerContact({
     ? `${handle}@${AGENT_DOMAIN}`
     : `agent@${AGENT_DOMAIN}`;
   const initial = name.charAt(0).toUpperCase();
+  const hasBrokerIcon = !isGlassFallback && Boolean(iconUrl);
 
   const handleSaveContact = async () => {
     if (!agentEmail) return;
@@ -51,10 +52,12 @@ export function SidebarBrokerContact({
           className={`h-8 w-8 shrink-0 overflow-hidden rounded-md flex items-center justify-center ${
             isGlassFallback
               ? "bg-white ring-1 ring-inset ring-foreground/10"
+              : hasBrokerIcon
+                ? "bg-transparent"
               : ""
           }`}
           style={
-            isGlassFallback
+            isGlassFallback || hasBrokerIcon
               ? undefined
               : {
                   background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}cc 60%, ${brandColor}88 100%)`,

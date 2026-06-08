@@ -1311,7 +1311,11 @@ export function UnifiedMessageBubble({
 
     return (
       <div className="flex items-start gap-2.5 max-w-lg">
-        <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0 overflow-hidden">
+        <div
+          className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${
+            agentBranding?.iconUrl ? "bg-transparent" : "bg-primary-light/15"
+          }`}
+        >
           {agentBranding?.iconUrl ? (
             <BrandIcon
               src={agentBranding.iconUrl}
@@ -1448,7 +1452,11 @@ export function UnifiedMessageBubble({
         <div
           className={`flex items-start gap-2.5 max-w-lg w-fit ${brokerPerspective ? "ml-auto flex-row-reverse" : ""}`}
         >
-          <div className="w-7 h-7 rounded-full bg-primary-light/15 flex items-center justify-center shrink-0 overflow-hidden">
+          <div
+            className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${
+              agentBranding?.iconUrl ? "bg-transparent" : "bg-primary-light/15"
+            }`}
+          >
             {agentBranding?.iconUrl ? (
               <BrandIcon
                 src={agentBranding.iconUrl}
