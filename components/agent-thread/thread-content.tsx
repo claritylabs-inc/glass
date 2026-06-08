@@ -10,7 +10,9 @@ import {
   Archive,
   ArchiveRestore,
   Check,
+  ChevronDown,
   ClipboardList,
+  Brain,
   Mail as MailIcon,
   MessageCircle,
   Copy,
@@ -51,7 +53,6 @@ import {
   type GlassPromptInputHandle,
 } from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
-import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
@@ -576,6 +577,68 @@ function ToolCallPanel({
   );
 }
 
+function reasoningLines(reasoning?: string | null) {
+  return (reasoning ?? "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function ReasoningPanel({ reasoning }: { reasoning: string }) {
+  const lines = reasoningLines(reasoning);
+  if (lines.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-foreground/8 bg-foreground/2.5 px-3 py-2 shadow-sm shadow-black/2">
+      <div className="max-h-64 space-y-1.5 overflow-y-auto text-[length:var(--text-label)] leading-5 text-muted-foreground/70">
+        {lines.map((line, index) => (
+          <p
+            key={`${index}-${line.slice(0, 16)}`}
+            className="whitespace-pre-wrap wrap-break-word wrap-anywhere"
+          >
+            {line}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReasoningFooterButton({
+  reasoning,
+  isStreaming,
+  isOpen,
+  onToggle,
+}: {
+  reasoning: string;
+  isStreaming?: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  const stepCount = reasoningLines(reasoning).length;
+  if (stepCount === 0) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={isOpen}
+      className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+    >
+      <Brain className="h-3 w-3" />
+      Reasoning
+      <span className="text-muted-foreground/35">
+        {isStreaming ? <Loader2 className="h-3 w-3 animate-spin" /> : stepCount}
+      </span>
+      <ChevronDown
+        className={`h-3 w-3 transition-transform duration-150 ${
+          isOpen ? "rotate-180" : ""
+        }`}
+      />
+    </button>
+  );
+}
+
 function EmailRecipientMeta({
   toAddresses,
   ccAddresses,
@@ -602,6 +665,7 @@ function MessageFooterActions({
   citedSections,
   citedCoverageNames,
   citedSourceSpanIds,
+  reasoning,
   attachments,
   threadId,
   toolCalls,
@@ -612,6 +676,8 @@ function MessageFooterActions({
   openMailboxArtifactRef,
   copyContent,
   retryMessageId,
+  showReasoning,
+  onToggleReasoning,
   showToolCalls,
   onToggleToolCalls,
   showSubagentActivity,
@@ -622,6 +688,7 @@ function MessageFooterActions({
   citedSections?: string[];
   citedCoverageNames?: string[];
   citedSourceSpanIds?: string[];
+  reasoning?: string;
   attachments?: ThreadAttachment[];
   threadId: Id<"threads">;
   toolCalls: { name: string; input?: string; output?: string }[];
@@ -632,6 +699,8 @@ function MessageFooterActions({
   openMailboxArtifactRef?: MailboxArtifactRef | null;
   copyContent?: string;
   retryMessageId?: Id<"threadMessages">;
+  showReasoning: boolean;
+  onToggleReasoning: () => void;
   showToolCalls: boolean;
   onToggleToolCalls: () => void;
   showSubagentActivity?: boolean;
@@ -643,6 +712,7 @@ function MessageFooterActions({
   const [isDownloadingAttachments, setIsDownloadingAttachments] =
     useState(false);
   const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
+  const hasReasoning = reasoningLines(reasoning).length > 0;
   const attachmentList = useMemo(() => attachments ?? [], [attachments]);
   const hasAttachments = attachmentList.length > 0;
   const attachmentFileIds = useMemo(
@@ -669,6 +739,7 @@ function MessageFooterActions({
       : null;
   if (
     refs.length === 0 &&
+    !hasReasoning &&
     toolCalls.length === 0 &&
     !hasSubagentActivity &&
     !hasAttachments &&
@@ -755,6 +826,13 @@ function MessageFooterActions({
               rightAligned={rightAligned}
             />
           )}
+          {hasReasoning && reasoning ? (
+            <ReasoningFooterButton
+              reasoning={reasoning}
+              isOpen={showReasoning}
+              onToggle={onToggleReasoning}
+            />
+          ) : null}
           {toolCalls.length > 0 && (
             <button
               type="button"
@@ -836,6 +914,9 @@ function MessageFooterActions({
           ) : null}
         </div>
       </div>
+      {hasReasoning && reasoning && showReasoning ? (
+        <ReasoningPanel reasoning={reasoning} />
+      ) : null}
       {attachmentList.length > 1 && isAttachmentExpanded ? (
         <div
           className={`mt-1.5 flex w-full min-w-0 flex-wrap items-start gap-1.5 ${
@@ -920,10 +1001,7 @@ function UnifiedThreadActions({
     for (const msg of messages) {
       if (msg.status === "processing") continue;
       const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
-      const sender =
-        msg.role === "agent"
-          ? "Glass"
-          : messageSenderName(msg);
+      const sender = msg.role === "agent" ? "Glass" : messageSenderName(msg);
       const channel =
         msg.channel === "email"
           ? " [Email]"
@@ -1127,7 +1205,7 @@ function AgentProcessingActivity({
 
   return (
     <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
-      <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-label font-medium text-muted-foreground/60">
+      <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[length:var(--text-label)] font-medium text-muted-foreground/60">
         <LogoIcon
           size={12}
           static
@@ -1139,12 +1217,12 @@ function AgentProcessingActivity({
         <button
           type="button"
           onClick={onOpenBackgroundProcess}
-          className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04]"
+          className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[length:var(--text-label)] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04]"
         >
           {backgroundProcessContent}
         </button>
       ) : backgroundProcessCount > 0 ? (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-label font-medium text-muted-foreground/55">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[length:var(--text-label)] font-medium text-muted-foreground/55">
           {backgroundProcessContent}
         </span>
       ) : null}
@@ -1195,6 +1273,7 @@ export function UnifiedMessageBubble({
   openMailboxArtifactRef?: MailboxArtifactRef | null;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
   const [showSubagentActivity, setShowSubagentActivity] = useState(false);
   const [now] = useState(() => dayjs().valueOf());
@@ -1253,14 +1332,6 @@ export function UnifiedMessageBubble({
             <CancelButton messageId={msg._id} show />
           </div>
 
-          {/* Reasoning toggle — appears above content */}
-          {hasReasoning && (
-            <CollapsibleReasoning
-              reasoning={msg.reasoning ?? ""}
-              isStreaming={true}
-            />
-          )}
-
           {displayContent ? (
             <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 mt-1">
               <ProseMarkdown
@@ -1284,6 +1355,21 @@ export function UnifiedMessageBubble({
                 : undefined
             }
           />
+          {hasReasoning ? (
+            <div className="mt-1.5">
+              <div className="flex min-w-0 flex-wrap items-start gap-1.5">
+                <ReasoningFooterButton
+                  reasoning={msg.reasoning ?? ""}
+                  isStreaming
+                  isOpen={showReasoning}
+                  onToggle={() => setShowReasoning((value) => !value)}
+                />
+              </div>
+              {showReasoning ? (
+                <ReasoningPanel reasoning={msg.reasoning ?? ""} />
+              ) : null}
+            </div>
+          ) : null}
           {relatedEmailMessages.length > 0 ? (
             <div className="mt-3">
               <EmailStackCard
@@ -1403,13 +1489,8 @@ export function UnifiedMessageBubble({
               />
             ) : (
               <>
-                {/* Reasoning — collapsed above the response */}
-                <CollapsibleReasoning
-                  reasoning={msg.reasoning ?? ""}
-                  isStreaming={false}
-                />
                 <div
-                  className={`rounded-lg border px-3.5 py-2.5 ${msg.reasoning ? "mt-1" : ""} ${
+                  className={`rounded-lg border px-3.5 py-2.5 ${
                     isError
                       ? "border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400"
                       : "border-foreground/6 bg-popover"
@@ -1429,6 +1510,7 @@ export function UnifiedMessageBubble({
                   citedSections={citedSections}
                   citedCoverageNames={citedCoverageNames}
                   citedSourceSpanIds={citedSourceSpanIds}
+                  reasoning={msg.reasoning}
                   attachments={msg.attachments}
                   threadId={msg.threadId}
                   toolCalls={regularToolCalls}
@@ -1443,6 +1525,8 @@ export function UnifiedMessageBubble({
                       ? msg._id
                       : undefined
                   }
+                  showReasoning={showReasoning}
+                  onToggleReasoning={() => setShowReasoning((value) => !value)}
                   showToolCalls={showToolCalls}
                   onToggleToolCalls={() => setShowToolCalls((value) => !value)}
                   showSubagentActivity={showSubagentActivity}
@@ -1510,6 +1594,7 @@ export function UnifiedMessageBubble({
     (viewerEmail && msg.fromEmail?.toLowerCase() === viewerEmail.toLowerCase());
 
   const displayName = messageSenderName(msg);
+  const isOperatorInitiated = Boolean(msg.operatorInitiated);
 
   // For email messages, strip quoted reply text
   const isEmail = msg.channel === "email";
@@ -1528,10 +1613,26 @@ export function UnifiedMessageBubble({
     <div
       className={`flex items-start gap-2.5 max-w-lg w-fit ${isOwnMessage ? "ml-auto flex-row-reverse" : ""}`}
     >
-      <div className="w-7 h-7 rounded-full bg-foreground/8 flex items-center justify-center shrink-0">
-        <span className="text-label font-semibold text-foreground/60">
-          {initials}
-        </span>
+      <div
+        className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+          isOperatorInitiated
+            ? "border border-foreground/10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+            : "bg-foreground/8"
+        }`}
+        title={isOperatorInitiated ? "Clarity Labs" : undefined}
+      >
+        {isOperatorInitiated ? (
+          <LogoIcon
+            size={15}
+            color="#A0D2FA"
+            static
+            className="h-[15px] w-[15px]"
+          />
+        ) : (
+          <span className="text-label font-semibold text-foreground/60">
+            {initials}
+          </span>
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div

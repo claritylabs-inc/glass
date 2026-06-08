@@ -8,8 +8,18 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
+import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+  OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
-import { PolicyChangeProgress, formatPolicyChangeStatus, isPolicyChangeTerminal } from "@/components/policy-change-progress";
+import {
+  formatPolicyChangeStatus,
+  isPolicyChangeTerminal,
+} from "@/components/policy-change-progress";
 import {
   useCachedQuery,
   useUpdateCachedQuery,
@@ -24,8 +34,114 @@ type CachedPolicyChangeStatus = NonNullable<
 
 function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          !!item && typeof item === "object" && !Array.isArray(item),
+      )
     : [];
+}
+
+function humanize(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\w/, (char) => char.toUpperCase());
+}
+
+function displayPolicyChangeValue(value: unknown) {
+  if (value === undefined || value === null || value === "")
+    return "Not listed";
+  return String(value)
+    .replace(/\bnull\b/gi, "not listed")
+    .replace(/\bunknown\b/gi, "Unknown");
+}
+
+function compactText(value: unknown) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function formatPolicyLabel(policy: Record<string, unknown> | undefined) {
+  if (!policy) return "";
+  const number = compactText(policy.policyNumber);
+  const carrier = compactText(policy.security) || compactText(policy.carrier);
+  const insured = compactText(policy.insuredName);
+  const parenthetical = [carrier, insured].filter(Boolean).join(" - ");
+  if (number && parenthetical) return `${number} (${parenthetical})`;
+  return number || parenthetical;
+}
+
+const REQUEST_DETAIL_LABELS: Record<string, string> = {
+  entityName: "Entity",
+  address: "Address",
+  contact: "Contact",
+  effectiveDate: "Effective date",
+};
+
+const REQUEST_DETAIL_ORDER = [
+  "entityName",
+  "address",
+  "contact",
+  "effectiveDate",
+];
+
+function humanizeDetailKey(key: string) {
+  return (
+    REQUEST_DETAIL_LABELS[key] ??
+    key
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^\w/, (char) => char.toUpperCase())
+  );
+}
+
+function displayRequestDetailValue(value: unknown) {
+  if (typeof value === "string") return compactText(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  if (Array.isArray(value)) {
+    const scalarValues = value
+      .map((item) =>
+        typeof item === "string" ||
+        typeof item === "number" ||
+        typeof item === "boolean"
+          ? String(item)
+          : "",
+      )
+      .filter(Boolean);
+    return scalarValues.length === value.length
+      ? scalarValues.join(", ")
+      : JSON.stringify(value);
+  }
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return "";
+}
+
+function requestDetailRows(value: unknown) {
+  const details =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const keys = Object.keys(details).sort((a, b) => {
+    const aIndex = REQUEST_DETAIL_ORDER.indexOf(a);
+    const bIndex = REQUEST_DETAIL_ORDER.indexOf(b);
+    if (aIndex !== -1 || bIndex !== -1) {
+      return (
+        (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) -
+        (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex)
+      );
+    }
+    return a.localeCompare(b);
+  });
+  return keys
+    .map((key) => ({
+      label: humanizeDetailKey(key),
+      value: displayRequestDetailValue(details[key]),
+    }))
+    .filter((row) => row.value);
 }
 
 export function PolicyChangeSummaryCard({
@@ -49,9 +165,13 @@ export function PolicyChangeSummaryCard({
   const validationIssues = asRecordArray(changeCase?.validationIssues).length;
 
   return (
-    <div className={`w-fit min-w-md max-w-xl overflow-hidden rounded-md border bg-card transition-colors ${
-      isOpen ? "border-foreground/18" : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.025]"
-    }`}>
+    <div
+      className={`w-full max-w-md overflow-hidden rounded-md border bg-card transition-colors ${
+        isOpen
+          ? "border-foreground/18"
+          : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.025]"
+      }`}
+    >
       <button
         type="button"
         onClick={() => onOpen?.(caseId)}
@@ -65,8 +185,17 @@ export function PolicyChangeSummaryCard({
         </span>
         <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-label leading-4 text-muted-foreground/40">
           <span className="capitalize">{status}</span>
-          {missingInfo > 0 ? <span>{missingInfo} question{missingInfo === 1 ? "" : "s"}</span> : null}
-          {validationIssues > 0 ? <span>{validationIssues} validation issue{validationIssues === 1 ? "" : "s"}</span> : null}
+          {missingInfo > 0 ? (
+            <span>
+              {missingInfo} question{missingInfo === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {validationIssues > 0 ? (
+            <span>
+              {validationIssues} validation issue
+              {validationIssues === 1 ? "" : "s"}
+            </span>
+          ) : null}
         </span>
       </button>
       {!isOpen ? (
@@ -74,12 +203,11 @@ export function PolicyChangeSummaryCard({
           <PillButton
             type="button"
             size="compact"
-            variant="ghost"
+            variant="secondary"
             onClick={(event) => {
               event.stopPropagation();
               onOpen?.(caseId);
             }}
-            className="text-muted-foreground/60"
           >
             Review request
           </PillButton>
@@ -113,11 +241,15 @@ export function PolicyChangeThreadSidebar({
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
   const changeCase = detail?.case;
+  const policy = detail?.policy as Record<string, unknown> | null | undefined;
   const packet = detail?.latestPacket;
   const items = asRecordArray(changeCase?.items);
   const missingInfo = asRecordArray(changeCase?.missingInfoQuestions);
   const validationIssues = asRecordArray(changeCase?.validationIssues);
   const artifacts = asRecordArray(packet?.artifacts);
+  const caseNumber = String(caseId);
+  const detailRows = requestDetailRows(changeCase?.requestDetails);
+  const policyLabel = formatPolicyLabel(policy ?? undefined);
 
   async function runAction(
     name: string,
@@ -143,7 +275,11 @@ export function PolicyChangeThreadSidebar({
       }
       toast.success(success);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not update policy change request");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Could not update policy change request",
+      );
     } finally {
       setLoadingAction(null);
     }
@@ -154,13 +290,21 @@ export function PolicyChangeThreadSidebar({
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="truncate text-base font-semibold text-foreground">
-            {changeCase?.summary ?? "Policy change request"}
+            Policy Change {caseNumber}
           </h2>
-          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium capitalize text-muted-foreground/55">
+          <Badge
+            variant="outline"
+            className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium capitalize text-muted-foreground/55"
+          >
             {formatPolicyChangeStatus(changeCase?.status)}
           </Badge>
         </div>
-        <PillButton size="compact" variant="icon" onClick={onClose} label="Close policy change request">
+        <PillButton
+          size="compact"
+          variant="icon"
+          onClick={onClose}
+          label="Close policy change request"
+        >
           <X className="h-4 w-4" />
         </PillButton>
       </div>
@@ -174,95 +318,147 @@ export function PolicyChangeThreadSidebar({
           </div>
         ) : changeCase ? (
           <div className="space-y-5">
-            <section>
-              <h3 className="text-label font-medium text-muted-foreground/50">Request</h3>
-              <p className="mt-2 whitespace-pre-wrap text-base leading-6 text-foreground/85">
-                {changeCase.requestText}
-              </p>
-            </section>
-
-            <PolicyChangeProgress status={changeCase.status} />
+            <OperationalLabelValueList title="Policy Change Details">
+              {policyLabel ? (
+                <OperationalLabelValueRow label="Policy" value={policyLabel} />
+              ) : null}
+              <OperationalLabelValueRow
+                label="Request"
+                value={changeCase.summary ?? changeCase.requestText}
+              />
+              {detailRows.length > 0
+                ? detailRows.map((item) => (
+                    <OperationalLabelValueRow
+                      key={item.label}
+                      label={item.label}
+                      value={item.value}
+                    />
+                  ))
+                : null}
+            </OperationalLabelValueList>
 
             {access.canManage ? (
               <>
-                <section>
-                  <h3 className="text-label font-medium text-muted-foreground/50">Affected values</h3>
-                  <div className="mt-2 space-y-2">
-                    {items.length > 0 ? items.map((item, index) => (
-                      <div key={String(item.id ?? index)} className="rounded-md border border-foreground/6 p-3">
-                        <p className="text-label font-medium text-foreground">
-                          {String(item.label ?? item.fieldPath ?? "Change item")}
-                        </p>
-                        <p className="mt-1 text-label text-muted-foreground/45">
-                          {String(item.action ?? "update")} · {String(item.kind ?? "general")}
-                        </p>
-                        <p className="mt-2 text-label text-muted-foreground/70">
-                          {String(item.beforeValue ?? "(not cited)")} → {String(item.requestedValue ?? item.afterValue ?? "(pending)")}
-                        </p>
-                      </div>
-                    )) : (
-                      <p className="text-label text-muted-foreground/45">No structured change items yet.</p>
-                    )}
-                  </div>
-                </section>
+                <OperationalLabelValueList title="Affected values">
+                  {items.length > 0 ? (
+                    items.map((item, index) => (
+                      <OperationalLabelValueRow
+                        key={String(item.id ?? index)}
+                        label={String(
+                          item.label ?? item.fieldPath ?? "Change item",
+                        )}
+                        value={
+                          <div className="space-y-1">
+                            <p>
+                              {displayPolicyChangeValue(item.beforeValue)}{" "}
+                              <span className="text-muted-foreground/45">
+                                to
+                              </span>{" "}
+                              {displayPolicyChangeValue(
+                                item.requestedValue ?? item.afterValue,
+                              )}
+                            </p>
+                            <p className="text-label text-muted-foreground">
+                              {[
+                                humanize(item.action) || "Update",
+                                humanize(item.kind) || "General",
+                              ].join(" · ")}
+                            </p>
+                          </div>
+                        }
+                      />
+                    ))
+                  ) : (
+                    <OperationalLabelValueRow
+                      label="Changes"
+                      value="No structured change items yet."
+                    />
+                  )}
+                </OperationalLabelValueList>
 
-                <section>
-                  <h3 className="text-label font-medium text-muted-foreground/50">Validation</h3>
-                  <div className="mt-2 space-y-2">
-                    {validationIssues.length > 0 ? validationIssues.map((issue, index) => (
-                      <div key={`${String(issue.code ?? "issue")}-${index}`} className="rounded-md border border-foreground/6 p-3">
-                        <p className="text-label font-medium text-foreground">
-                          {String(issue.message ?? issue.code ?? "Validation issue")}
-                        </p>
-                        <p className="mt-1 text-label capitalize text-muted-foreground/45">
-                          {String(issue.severity ?? "warning")}
-                        </p>
-                      </div>
-                    )) : (
-                      <p className="text-label text-muted-foreground/45">No validation issues recorded.</p>
-                    )}
-                  </div>
-                </section>
+                <OperationalLabelValueList title="Validation">
+                  {validationIssues.length > 0 ? (
+                    validationIssues.map((issue, index) => (
+                      <OperationalLabelValueRow
+                        key={`${String(issue.code ?? "issue")}-${index}`}
+                        label={humanize(issue.severity) || "Warning"}
+                        value={String(
+                          issue.message ?? issue.code ?? "Validation issue",
+                        )}
+                      />
+                    ))
+                  ) : (
+                    <OperationalLabelValueRow
+                      label="Status"
+                      value="No validation issues recorded."
+                    />
+                  )}
+                </OperationalLabelValueList>
               </>
             ) : null}
 
-            <section>
-              <h3 className="text-label font-medium text-muted-foreground/50">Missing info</h3>
-              <div className="mt-2 space-y-2">
-                {missingInfo.length > 0 ? missingInfo.map((question, index) => (
-                  <div key={String(question.id ?? index)} className="rounded-md border border-foreground/6 p-3">
-                    <p className="text-label text-foreground">
-                      {String(question.question ?? "Missing information")}
-                    </p>
-                  </div>
-                )) : (
-                  <p className="text-label text-muted-foreground/45">No open questions.</p>
+            <OperationalPanel as="section">
+              <OperationalPanelHeader title="Missing info" />
+              <OperationalPanelBody className="px-4 py-0">
+                {missingInfo.length > 0 ? (
+                  missingInfo.map((question, index) => (
+                    <div
+                      key={String(question.id ?? index)}
+                      className="border-t border-foreground/6 py-3 first:border-t-0"
+                    >
+                      <p className="text-base leading-5 text-foreground">
+                        {String(question.question ?? "Missing information")}
+                      </p>
+                      {question.reason ? (
+                        <p className="mt-1 text-label leading-5 text-muted-foreground">
+                          {String(question.reason)}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <p className="py-3 text-base text-muted-foreground">
+                    No open questions.
+                  </p>
                 )}
-              </div>
-            </section>
+              </OperationalPanelBody>
+            </OperationalPanel>
 
             {access.canManage ? (
-              <section>
-                <h3 className="text-label font-medium text-muted-foreground/50">Packet preview</h3>
-                <div className="mt-2 space-y-2">
-                  {artifacts.length > 0 ? artifacts.map((artifact, index) => (
-                    <details key={`${String(artifact.kind ?? "artifact")}-${index}`} className="rounded-md border border-foreground/6 p-3">
-                      <summary className="text-label font-medium text-foreground transition-colors hover:text-muted-foreground">
-                        {String(artifact.title ?? artifact.kind ?? "Packet artifact")}
-                      </summary>
-                      <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-label leading-5 text-muted-foreground">
-                        {String(artifact.content ?? "")}
-                      </pre>
-                    </details>
-                  )) : (
-                    <p className="text-label text-muted-foreground/45">No generated packet yet.</p>
+              <OperationalPanel as="section">
+                <OperationalPanelHeader title="Packet preview" />
+                <OperationalPanelBody className="space-y-2">
+                  {artifacts.length > 0 ? (
+                    artifacts.map((artifact, index) => (
+                      <details
+                        key={`${String(artifact.kind ?? "artifact")}-${index}`}
+                        className="rounded-md border border-foreground/6 p-3"
+                      >
+                        <summary className="text-label font-medium text-foreground transition-colors hover:text-muted-foreground">
+                          {String(
+                            artifact.title ??
+                              artifact.kind ??
+                              "Packet artifact",
+                          )}
+                        </summary>
+                        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-label leading-5 text-muted-foreground">
+                          {String(artifact.content ?? "")}
+                        </pre>
+                      </details>
+                    ))
+                  ) : (
+                    <p className="text-base text-muted-foreground">
+                      No generated packet yet.
+                    </p>
                   )}
-                </div>
-              </section>
+                </OperationalPanelBody>
+              </OperationalPanel>
             ) : null}
           </div>
         ) : (
-          <p className="text-base text-muted-foreground/45">Policy change request not found.</p>
+          <p className="text-base text-muted-foreground/45">
+            Policy change request not found.
+          </p>
         )}
       </div>
 
@@ -272,10 +468,20 @@ export function PolicyChangeThreadSidebar({
             type="button"
             variant="secondary"
             size="compact"
-            onClick={() => runAction("packet", () => generatePacket({ caseId }), "Policy change packet generated")}
+            onClick={() =>
+              runAction(
+                "packet",
+                () => generatePacket({ caseId }),
+                "Policy change packet generated",
+              )
+            }
             disabled={loadingAction !== null}
           >
-            {loadingAction === "packet" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            {loadingAction === "packet" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileText className="h-3.5 w-3.5" />
+            )}
             Packet
           </PillButton>
           {!isPolicyChangeTerminal(changeCase.status) ? (
@@ -283,10 +489,21 @@ export function PolicyChangeThreadSidebar({
               type="button"
               variant="secondary"
               size="compact"
-              onClick={() => runAction("cancel", () => cancelRequest({ caseId }), "Policy change request cancelled", "cancelled")}
+              onClick={() =>
+                runAction(
+                  "cancel",
+                  () => cancelRequest({ caseId }),
+                  "Policy change request cancelled",
+                  "cancelled",
+                )
+              }
               disabled={loadingAction !== null}
             >
-              {loadingAction === "cancel" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+              {loadingAction === "cancel" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <X className="h-3.5 w-3.5" />
+              )}
               Cancel
             </PillButton>
           ) : null}
@@ -306,8 +523,12 @@ export function PolicyChangeThreadSidebar({
               }
               disabled={loadingAction !== null}
             >
-              {loadingAction === status ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              <span className="capitalize">{status === "submitted" ? "sent" : status}</span>
+              {loadingAction === status ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              <span className="capitalize">
+                {status === "submitted" ? "sent" : status}
+              </span>
             </PillButton>
           ))}
         </div>
@@ -317,10 +538,20 @@ export function PolicyChangeThreadSidebar({
             type="button"
             variant="secondary"
             size="compact"
-            onClick={() => runAction("cancel", () => cancelRequest({ caseId }), "Policy change request cancelled")}
+            onClick={() =>
+              runAction(
+                "cancel",
+                () => cancelRequest({ caseId }),
+                "Policy change request cancelled",
+              )
+            }
             disabled={loadingAction !== null}
           >
-            {loadingAction === "cancel" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+            {loadingAction === "cancel" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <X className="h-3.5 w-3.5" />
+            )}
             Cancel
           </PillButton>
         </div>

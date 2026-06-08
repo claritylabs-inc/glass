@@ -61,7 +61,7 @@ export const seedUsers = mutation({
       v.object({
         email: v.string(),
         name: v.optional(v.string()),
-      })
+      }),
     ),
   },
   handler: async (ctx, args) => {
@@ -96,7 +96,8 @@ export const updateProfile = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
-    const patch: { name?: string; title?: string; phone?: string | undefined } = {};
+    const patch: { name?: string; title?: string; phone?: string | undefined } =
+      {};
     if (args.name !== undefined) patch.name = args.name;
     if (args.title !== undefined) patch.title = args.title;
     if (args.phone !== undefined) {
@@ -211,6 +212,34 @@ export const listByOrgInternal = internalQuery({
   },
 });
 
+export const getPrimaryOrgAdminInternal = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const org = await ctx.db.get(args.orgId);
+    if (!org) return null;
+
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .collect();
+    const firstAdmin = memberships.find(
+      (membership) => membership.role === "admin",
+    );
+    const preferredUserId = org.primaryInsuranceContactId ?? firstAdmin?.userId;
+    if (!preferredUserId) return null;
+
+    const preferredUser = await ctx.db.get(preferredUserId);
+    if (preferredUser?.email) return preferredUser;
+
+    if (firstAdmin && firstAdmin.userId !== preferredUserId) {
+      const adminUser = await ctx.db.get(firstAdmin.userId);
+      if (adminUser?.email) return adminUser;
+    }
+
+    return preferredUser;
+  },
+});
+
 export const requireCustomerUserInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
@@ -237,8 +266,14 @@ export const resetAccount = mutation({
 
     // Delete all policies + their stored files (by org or user)
     const policies = orgId
-      ? await ctx.db.query("policies").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
-      : await ctx.db.query("policies").withIndex("by_userId", (q) => q.eq("userId", userId)).collect();
+      ? await ctx.db
+          .query("policies")
+          .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+          .collect()
+      : await ctx.db
+          .query("policies")
+          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .collect();
     for (const policy of policies) {
       if (policy.fileId) {
         await ctx.storage.delete(policy.fileId);
@@ -248,7 +283,10 @@ export const resetAccount = mutation({
 
     // Delete all threads and messages
     const threads = orgId
-      ? await ctx.db.query("threads").withIndex("by_orgId", (q) => q.eq("orgId", orgId)).collect()
+      ? await ctx.db
+          .query("threads")
+          .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+          .collect()
       : [];
     for (const thread of threads) {
       const messages = await ctx.db

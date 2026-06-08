@@ -306,12 +306,11 @@ export function EmailSummaryCard({
           <PillButton
             type="button"
             size="compact"
-            variant="ghost"
+            variant="secondary"
             onClick={(event) => {
               event.stopPropagation();
               onOpen?.(message);
             }}
-            className="text-muted-foreground/60"
           >
             {reviewLabel}
           </PillButton>

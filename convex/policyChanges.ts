@@ -1,6 +1,11 @@
 import { v } from "convex/values";
 import dayjs from "dayjs";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
   assertCanCreatePolicyChange,
@@ -13,9 +18,13 @@ import {
   requireCurrentOrgAccess,
 } from "./lib/access";
 import { notify } from "./lib/notify";
-import { declarationFactHash, extractDeclarationFactsFromPolicy } from "./lib/declarationFacts";
+import {
+  declarationFactHash,
+  extractDeclarationFactsFromPolicy,
+} from "./lib/declarationFacts";
 import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 
 const caseSourceKindValidator = v.union(
   v.literal("chat"),
@@ -56,11 +65,21 @@ type PolicyChangeStatus =
   | "waiting_for_endorsement"
   | "completed";
 
+type PolicyChangeRequestDetails = {
+  entityName?: string;
+  address?: string;
+  contact?: string;
+  effectiveDate?: string;
+  notes?: string[];
+};
+
 function nowMs(): number {
   return dayjs().valueOf();
 }
 
-function normalizeCaseStatus(status: PolicyChangeStatus | undefined): PolicyChangeStatus {
+function normalizeCaseStatus(
+  status: PolicyChangeStatus | undefined,
+): PolicyChangeStatus {
   if (status === "draft") return "intake";
   if (status === "ready") return "ready_to_submit";
   if (status === "accepted") return "completed";
@@ -96,6 +115,110 @@ function normalizeMissingInfoQuestions(missingInfo: unknown): unknown[] {
   return Array.isArray(missingInfo) ? missingInfo : [];
 }
 
+function getRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function cleanDetailValue(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const cleaned = value
+    .replace(/\s+/g, " ")
+    .replace(/^[:"'\s-]+|[.)\]"'\s]+$/g, "")
+    .trim();
+  return cleaned || undefined;
+}
+
+function pickDetailValue(text: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const value = cleanDetailValue(text.match(pattern)?.[1]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function normalizeEffectiveDateDetail(
+  raw: string | undefined,
+  sourceText: string,
+) {
+  const cleaned = cleanDetailValue(raw);
+  if (!cleaned) return undefined;
+  const hadRetroactive =
+    /\bretroactive(?:ly)?\b/i.test(cleaned) ||
+    /\bretroactive(?:ly)?\b/i.test(sourceText);
+  const withoutRetroactive = cleaned
+    .replace(/\(?\bretroactive(?:ly)?\b\)?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parsed = dayjs(withoutRetroactive);
+  const formatted = parsed.isValid()
+    ? parsed.format("MMMM D, YYYY")
+    : withoutRetroactive;
+  return hadRetroactive ? `${formatted} (retroactive)` : formatted;
+}
+
+function requestDetailsFromText(text: string): PolicyChangeRequestDetails {
+  const entityName = pickDetailValue(text, [
+    /\b(?:full\s+)?entity(?:\s+name)?\s*(?:is|:)\s*"([^"]+)"/i,
+    /\b(?:full\s+)?entity(?:\s+name)?\s*(?:is|:)\s*([^\n.]+)/i,
+    /\bEntity:\s*([^\n.]+)/i,
+  ]);
+  const address = pickDetailValue(text, [
+    /\baddress\s+(?:at|is)\s*"([^"]+)"/i,
+    /\baddress\s+(?:at|is)\s*([^\n.]+)/i,
+    /\bAddress:\s*([^\n.]+)/i,
+  ]);
+  const contact = pickDetailValue(text, [
+    /\bContact:\s*([^\n.]+)/i,
+    /\bI meant\s+([^\n.]+)/i,
+    /\bwith contact\s+([^,\n.]+)/i,
+  ]);
+  const effectiveDate = normalizeEffectiveDateDetail(
+    pickDetailValue(text, [
+      /\bEffective date:\s*([^\n.]+)/i,
+      /\btake effect(?:\s+retroactively)?\s+for\s+([^\n.]+)/i,
+      /\beffective(?:\s+date)?\s*(?:is|:)?\s*([A-Z][a-z]+\s+\d{1,2},?\s+\d{4}(?:\s*\([^)]+\))?)/i,
+    ]),
+    text,
+  );
+
+  return {
+    ...(entityName ? { entityName } : {}),
+    ...(address ? { address } : {}),
+    ...(contact ? { contact } : {}),
+    ...(effectiveDate ? { effectiveDate } : {}),
+  };
+}
+
+function mergeRequestDetails(
+  existing: unknown,
+  next: PolicyChangeRequestDetails,
+): PolicyChangeRequestDetails | undefined {
+  const current = getRecord(existing);
+  const merged: PolicyChangeRequestDetails = {
+    entityName: cleanDetailValue(current.entityName),
+    address: cleanDetailValue(current.address),
+    contact: cleanDetailValue(current.contact),
+    effectiveDate: cleanDetailValue(current.effectiveDate),
+    notes: Array.isArray(current.notes)
+      ? current.notes
+          .map(cleanDetailValue)
+          .filter((note): note is string => Boolean(note))
+      : undefined,
+    ...next,
+  };
+  const notes = merged.notes?.filter(Boolean);
+  const compact = {
+    ...(merged.entityName ? { entityName: merged.entityName } : {}),
+    ...(merged.address ? { address: merged.address } : {}),
+    ...(merged.contact ? { contact: merged.contact } : {}),
+    ...(merged.effectiveDate ? { effectiveDate: merged.effectiveDate } : {}),
+    ...(notes?.length ? { notes } : {}),
+  };
+  return Object.keys(compact).length > 0 ? compact : undefined;
+}
+
 function hasMissingBrokerRecipient(missingInfo: unknown[]): boolean {
   return missingInfo.some((item) => {
     if (item && typeof item === "object" && "code" in item) {
@@ -108,21 +231,124 @@ function hasMissingBrokerRecipient(missingInfo: unknown[]): boolean {
 function brokerRecipientQuestion(): MissingInfoQuestion {
   return {
     code: "broker_contact_required",
-    question: "Which broker email or contact should receive this policy change request?",
-    reason: "Policy change emails are broker-mediated and need an explicit broker recipient before Glass can draft or send one.",
+    question:
+      "Which broker email or contact should receive this policy change request?",
+    reason:
+      "Policy change emails are broker-mediated and need an explicit broker recipient before Glass can draft or send one.",
   };
 }
 
-function withBrokerRecipientQuestion(missingInfo: unknown[], brokerSubmission: unknown): unknown[] {
+function withBrokerRecipientQuestion(
+  missingInfo: unknown[],
+  brokerSubmission: unknown,
+): unknown[] {
   if (
     brokerSubmission &&
     typeof brokerSubmission === "object" &&
-    (brokerSubmission as { needsRecipient?: unknown }).needsRecipient === true &&
+    (brokerSubmission as { needsRecipient?: unknown }).needsRecipient ===
+      true &&
     !hasMissingBrokerRecipient(missingInfo)
   ) {
     return [...missingInfo, brokerRecipientQuestion()];
   }
   return missingInfo;
+}
+
+function isBrokerRecipientQuestion(question: unknown): boolean {
+  if (question && typeof question === "object") {
+    const record = question as { code?: unknown; question?: unknown };
+    if (record.code === "broker_contact_required") return true;
+    return (
+      typeof record.question === "string" &&
+      /broker email|broker contact/i.test(record.question)
+    );
+  }
+  return (
+    typeof question === "string" &&
+    /broker email|broker contact/i.test(question)
+  );
+}
+
+function extractEmail(text: string): string | undefined {
+  return text
+    .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]
+    ?.toLowerCase();
+}
+
+async function addPolicyChangeInfo(
+  ctx: MutationCtx,
+  args: {
+    caseId: Id<"policyChangeCases">;
+    userId?: Id<"users">;
+    infoText: string;
+    sourceSpanIds?: string[];
+  },
+) {
+  const infoText = args.infoText.trim();
+  if (!infoText) throw new Error("Enter a response before submitting.");
+
+  const existing = await ctx.db.get(args.caseId);
+  if (!existing) throw new Error("Policy change case not found");
+
+  const now = nowMs();
+  await insertCaseMessage(ctx, {
+    orgId: existing.orgId,
+    caseId: args.caseId,
+    direction: "inbound",
+    channel: "manual",
+    content: infoText,
+    sourceSpanIds: args.sourceSpanIds,
+    createdByUserId: args.userId,
+    createdAt: now,
+  });
+
+  const pendingQuestions = Array.isArray(existing.pendingQuestions)
+    ? existing.pendingQuestions
+    : [];
+  const missingInfo = normalizeMissingInfoQuestions(
+    existing.missingInfoQuestions,
+  );
+  const answeredQuestion = missingInfo[0] ?? pendingQuestions[0];
+  const nextPendingQuestions = pendingQuestions.slice(1);
+  const nextMissingInfo = missingInfo.slice(1);
+  const patch: Partial<Doc<"policyChangeCases">> = {
+    pendingQuestions: nextPendingQuestions,
+    missingInfoQuestions: nextMissingInfo,
+    status:
+      nextPendingQuestions.length > 0 || nextMissingInfo.length > 0
+        ? "needs_info"
+        : normalizeCaseStatus(existing.status as PolicyChangeStatus) ===
+            "needs_info"
+          ? "ready_to_submit"
+          : normalizeCaseStatus(existing.status as PolicyChangeStatus),
+    updatedAt: now,
+  };
+  const requestDetails = mergeRequestDetails(
+    existing.requestDetails,
+    requestDetailsFromText(infoText),
+  );
+  if (requestDetails) patch.requestDetails = requestDetails;
+
+  if (isBrokerRecipientQuestion(answeredQuestion)) {
+    const existingSubmission = getRecord(existing.brokerSubmission);
+    const recipientEmail = extractEmail(infoText);
+    patch.brokerSubmission = {
+      ...existingSubmission,
+      recipientEmail: recipientEmail ?? existingSubmission.recipientEmail,
+      recipientName: recipientEmail
+        ? existingSubmission.recipientName
+        : infoText,
+      recipientContact: infoText,
+      needsRecipient: recipientEmail
+        ? false
+        : existingSubmission.needsRecipient,
+      routingStatus: recipientEmail
+        ? "recipient_ready"
+        : "broker_contact_provided",
+    };
+  }
+
+  await ctx.db.patch(args.caseId, patch);
 }
 
 async function buildInitialBrokerSubmission(
@@ -151,23 +377,34 @@ async function buildInitialBrokerSubmission(
   };
 }
 
-async function notifyIfNeedsInfo(ctx: any, args: {
-  orgId: any;
-  caseId: any;
-  policyId?: any;
-  summary?: string;
-  pendingQuestions?: string[];
-}) {
+async function notifyIfNeedsInfo(
+  ctx: any,
+  args: {
+    orgId: any;
+    caseId: any;
+    policyId?: any;
+    summary?: string;
+    pendingQuestions?: string[];
+  },
+) {
   if (!args.pendingQuestions || args.pendingQuestions.length === 0) return;
   await notify(ctx, {
     orgId: args.orgId,
     type: "policy_change_needs_info",
     title: "Policy change needs more information",
-    body: args.pendingQuestions[0] ?? "Glass needs more information to continue this policy change request.",
+    body:
+      args.pendingQuestions[0] ??
+      "Glass needs more information to continue this policy change request.",
     actionType: args.policyId ? "view_policy" : undefined,
-    actionPayload: args.policyId ? { policyId: args.policyId, tab: "changes" } : undefined,
+    actionPayload: args.policyId
+      ? { policyId: args.policyId, tab: "changes" }
+      : undefined,
     sourceRef: { caseId: args.caseId, policyId: args.policyId },
-    coalesceKeyParts: ["policy_change_needs_info", String(args.orgId), String(args.caseId)],
+    coalesceKeyParts: [
+      "policy_change_needs_info",
+      String(args.orgId),
+      String(args.caseId),
+    ],
   });
 }
 
@@ -183,32 +420,47 @@ function buildInitialValidation(args: {
       message: "Policy change request text is required.",
     });
   }
-  if (/"[^"]+"/.test(args.requestText) && (args.evidenceSourceIds?.length ?? 0) === 0) {
+  if (
+    /"[^"]+"/.test(args.requestText) &&
+    (args.evidenceSourceIds?.length ?? 0) === 0
+  ) {
     issues.push({
       code: "quoted_value_missing_source_span",
       severity: "blocking",
-      message: "Quoted policy values need linked source-span evidence before the email is sent.",
+      message:
+        "Quoted policy values need linked source-span evidence before the email is sent.",
     });
   }
   return issues;
 }
 
 function validationStatus(issues: Array<{ severity?: string }>) {
-  if (issues.some((issue) => issue.severity === "blocking")) return "failed" as const;
+  if (issues.some((issue) => issue.severity === "blocking"))
+    return "failed" as const;
   if (issues.length > 0) return "warning" as const;
   return "passed" as const;
 }
 
-async function insertCaseMessage(ctx: any, args: {
-  orgId: any;
-  caseId: any;
-  direction: "inbound" | "outbound" | "system";
-  channel?: "chat" | "email" | "imessage" | "mcp" | "cli" | "uploaded_document" | "manual";
-  content: string;
-  sourceSpanIds?: string[];
-  createdByUserId?: Id<"users">;
-  createdAt: number;
-}) {
+async function insertCaseMessage(
+  ctx: any,
+  args: {
+    orgId: any;
+    caseId: any;
+    direction: "inbound" | "outbound" | "system";
+    channel?:
+      | "chat"
+      | "email"
+      | "imessage"
+      | "mcp"
+      | "cli"
+      | "uploaded_document"
+      | "manual";
+    content: string;
+    sourceSpanIds?: string[];
+    createdByUserId?: Id<"users">;
+    createdAt: number;
+  },
+) {
   await ctx.db.insert("caseMessages", args);
 }
 
@@ -224,14 +476,21 @@ export const createFromChat = mutation({
     assertCanCreatePolicyChange(access);
     if (args.policyId) {
       const policy = await ctx.db.get(args.policyId);
-      if (!policy || policy.orgId !== orgId) throw new Error("Policy not found");
+      if (!policy || policy.orgId !== orgId)
+        throw new Error("Policy not found");
     }
     const now = nowMs();
-    const brokerSubmission = await buildInitialBrokerSubmission(ctx, access.org);
+    const brokerSubmission = await buildInitialBrokerSubmission(
+      ctx,
+      access.org,
+    );
     const validationIssues = buildInitialValidation(args);
     const missingInfo = withBrokerRecipientQuestion([], brokerSubmission);
     const pendingQuestions = pendingQuestionsFromMissingInfo(missingInfo);
-    const status = validationIssues.length > 0 || pendingQuestions.length > 0 ? "needs_info" : "intake";
+    const status =
+      validationIssues.length > 0 || pendingQuestions.length > 0
+        ? "needs_info"
+        : "intake";
     const caseId = await ctx.db.insert("policyChangeCases", {
       orgId,
       policyId: args.policyId,
@@ -242,6 +501,10 @@ export const createFromChat = mutation({
       summary: summarizeRequest(args.requestText),
       pendingQuestions,
       brokerSubmission,
+      requestDetails: mergeRequestDetails(
+        undefined,
+        requestDetailsFromText(args.requestText),
+      ),
       missingInfoQuestions: missingInfo,
       validationIssues,
       evidenceSourceIds: args.evidenceSourceIds ?? [],
@@ -285,7 +548,8 @@ export const canCreatePolicyChangeForUserInternal = internalQuery({
     const org = await ctx.db.get(args.orgId);
     if (!org) return { allowed: false, error: "Organization not found" };
 
-    const orgType = (org.type as "broker" | "client" | "partner" | undefined) ?? "client";
+    const orgType =
+      (org.type as "broker" | "client" | "partner" | undefined) ?? "client";
     const directMembership = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId_userId", (q) =>
@@ -308,7 +572,8 @@ export const canCreatePolicyChangeForUserInternal = internalQuery({
 
     return {
       allowed: false,
-      error: "Policy change requests require direct org membership or broker access",
+      error:
+        "Policy change requests require direct org membership or broker access",
     };
   },
 });
@@ -339,7 +604,10 @@ export const createFromChatInternal = internalMutation({
       args.brokerSubmission,
     );
     const pendingQuestions = pendingQuestionsFromMissingInfo(missingInfo);
-    const status = validationIssues.length > 0 || pendingQuestions.length > 0 ? "needs_info" : "intake";
+    const status =
+      validationIssues.length > 0 || pendingQuestions.length > 0
+        ? "needs_info"
+        : "intake";
     const caseId = await ctx.db.insert("policyChangeCases", {
       orgId: args.orgId,
       policyId: args.policyId,
@@ -350,6 +618,10 @@ export const createFromChatInternal = internalMutation({
       summary: summarizeRequest(args.requestText),
       pendingQuestions,
       brokerSubmission: args.brokerSubmission,
+      requestDetails: mergeRequestDetails(
+        undefined,
+        requestDetailsFromText(args.requestText),
+      ),
       missingInfoQuestions: missingInfo,
       validationIssues,
       evidenceSourceIds: args.evidenceSourceIds ?? [],
@@ -409,9 +681,12 @@ export const createAnalyzedInternal = internalMutation({
       normalizeMissingInfoQuestions(args.missingInfoQuestions),
       args.brokerSubmission,
     );
-    const status = validationIssues.some((issue: { severity?: string }) => issue.severity === "blocking") || missingInfo.length > 0
-      ? "needs_info"
-      : "ready_to_submit";
+    const status =
+      validationIssues.some(
+        (issue: { severity?: string }) => issue.severity === "blocking",
+      ) || missingInfo.length > 0
+        ? "needs_info"
+        : "ready_to_submit";
     const pendingQuestions = pendingQuestionsFromMissingInfo(missingInfo);
     const caseId = await ctx.db.insert("policyChangeCases", {
       orgId: args.orgId,
@@ -423,6 +698,10 @@ export const createAnalyzedInternal = internalMutation({
       summary: args.summary ?? summarizeRequest(args.requestText),
       pendingQuestions,
       brokerSubmission: args.brokerSubmission,
+      requestDetails: mergeRequestDetails(
+        undefined,
+        requestDetailsFromText(args.requestText),
+      ),
       internalPceAnalysis: {
         items: args.items,
         impacts: args.impacts,
@@ -451,7 +730,9 @@ export const createAnalyzedInternal = internalMutation({
     });
 
     for (const item of Array.isArray(args.items) ? args.items : []) {
-      for (const sourceSpanId of Array.isArray(item.sourceSpanIds) ? item.sourceSpanIds : []) {
+      for (const sourceSpanId of Array.isArray(item.sourceSpanIds)
+        ? item.sourceSpanIds
+        : []) {
         await ctx.db.insert("caseEvidenceLinks", {
           orgId: args.orgId,
           caseId,
@@ -506,10 +787,14 @@ export const createFromEmail = mutation({
     assertCanCreatePolicyChange(access);
     if (args.policyId) {
       const policy = await ctx.db.get(args.policyId);
-      if (!policy || policy.orgId !== orgId) throw new Error("Policy not found");
+      if (!policy || policy.orgId !== orgId)
+        throw new Error("Policy not found");
     }
     const now = nowMs();
-    const brokerSubmission = await buildInitialBrokerSubmission(ctx, access.org);
+    const brokerSubmission = await buildInitialBrokerSubmission(
+      ctx,
+      access.org,
+    );
     const validationIssues = buildInitialValidation(args);
     const missingInfo = withBrokerRecipientQuestion([], brokerSubmission);
     const pendingQuestions = pendingQuestionsFromMissingInfo(missingInfo);
@@ -519,10 +804,17 @@ export const createFromEmail = mutation({
       affectedPolicyIds: args.policyId ? [args.policyId] : [],
       requestText: args.requestText,
       sourceKind: "email",
-      status: validationIssues.length > 0 || pendingQuestions.length > 0 ? "needs_info" : "intake",
+      status:
+        validationIssues.length > 0 || pendingQuestions.length > 0
+          ? "needs_info"
+          : "intake",
       summary: summarizeRequest(args.requestText),
       pendingQuestions,
       brokerSubmission,
+      requestDetails: mergeRequestDetails(
+        undefined,
+        requestDetailsFromText(args.requestText),
+      ),
       missingInfoQuestions: missingInfo,
       validationIssues,
       evidenceSourceIds: args.evidenceSourceIds ?? [],
@@ -562,10 +854,14 @@ export const createFromUploadedDocument = mutation({
     assertCanCreatePolicyChange(access);
     if (args.policyId) {
       const policy = await ctx.db.get(args.policyId);
-      if (!policy || policy.orgId !== orgId) throw new Error("Policy not found");
+      if (!policy || policy.orgId !== orgId)
+        throw new Error("Policy not found");
     }
     const now = nowMs();
-    const brokerSubmission = await buildInitialBrokerSubmission(ctx, access.org);
+    const brokerSubmission = await buildInitialBrokerSubmission(
+      ctx,
+      access.org,
+    );
     const validationIssues = buildInitialValidation(args);
     const missingInfo = withBrokerRecipientQuestion([], brokerSubmission);
     const pendingQuestions = pendingQuestionsFromMissingInfo(missingInfo);
@@ -575,10 +871,17 @@ export const createFromUploadedDocument = mutation({
       affectedPolicyIds: args.policyId ? [args.policyId] : [],
       requestText: args.requestText,
       sourceKind: "uploaded_document",
-      status: validationIssues.length > 0 || pendingQuestions.length > 0 ? "needs_info" : "intake",
+      status:
+        validationIssues.length > 0 || pendingQuestions.length > 0
+          ? "needs_info"
+          : "intake",
       summary: summarizeRequest(args.requestText),
       pendingQuestions,
       brokerSubmission,
+      requestDetails: mergeRequestDetails(
+        undefined,
+        requestDetailsFromText(args.requestText),
+      ),
       missingInfoQuestions: missingInfo,
       validationIssues,
       evidenceSourceIds: args.evidenceSourceIds ?? [],
@@ -617,20 +920,11 @@ export const processReply = mutation({
     if (!existing) throw new Error("Policy change case not found");
     const access = await getOrgAccess(ctx, existing.orgId);
     assertCanReadPolicyChange(access);
-    const now = nowMs();
-    await insertCaseMessage(ctx, {
-      orgId: existing.orgId,
+    await addPolicyChangeInfo(ctx, {
       caseId: args.caseId,
-      direction: "inbound",
-      channel: "manual",
-      content: args.replyText,
+      userId: access.userId,
+      infoText: args.replyText,
       sourceSpanIds: args.sourceSpanIds,
-      createdByUserId: access.userId,
-      createdAt: now,
-    });
-    await ctx.db.patch(args.caseId, {
-      status: "ready_to_submit",
-      updatedAt: now,
     });
   },
 });
@@ -665,7 +959,9 @@ export const generateCarrierPacket = mutation({
     });
     await ctx.db.patch(args.caseId, {
       packetId,
-      status: (existing.validationIssues as Array<{ severity?: string }> | undefined)?.some((issue) => issue.severity === "blocking")
+      status: (
+        existing.validationIssues as Array<{ severity?: string }> | undefined
+      )?.some((issue) => issue.severity === "blocking")
         ? "needs_info"
         : "ready_to_submit",
       updatedAt: now,
@@ -699,7 +995,9 @@ export const cancelRequest = mutation({
     const access = await getOrgAccess(ctx, existing.orgId);
     assertCanReadPolicyChange(access);
 
-    const normalizedStatus = normalizeCaseStatus(existing.status as PolicyChangeStatus);
+    const normalizedStatus = normalizeCaseStatus(
+      existing.status as PolicyChangeStatus,
+    );
     if (normalizedStatus === "completed" || normalizedStatus === "declined") {
       throw new Error("Completed policy change requests cannot be cancelled");
     }
@@ -727,36 +1025,7 @@ export const addInfo = internalMutation({
     sourceSpanIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db.get(args.caseId);
-    if (!existing) throw new Error("Policy change case not found");
-
-    const now = nowMs();
-    await insertCaseMessage(ctx, {
-      orgId: existing.orgId,
-      caseId: args.caseId,
-      direction: "inbound",
-      channel: "manual",
-      content: args.infoText,
-      sourceSpanIds: args.sourceSpanIds,
-      createdByUserId: args.userId,
-      createdAt: now,
-    });
-
-    const nextPendingQuestions = Array.isArray(existing.pendingQuestions)
-      ? existing.pendingQuestions.slice(1)
-      : [];
-    const nextStatus =
-      nextPendingQuestions.length > 0
-        ? "needs_info"
-        : normalizeCaseStatus(existing.status as PolicyChangeStatus) === "needs_info"
-          ? "ready_to_submit"
-          : normalizeCaseStatus(existing.status as PolicyChangeStatus);
-
-    await ctx.db.patch(args.caseId, {
-      pendingQuestions: nextPendingQuestions,
-      status: nextStatus,
-      updatedAt: now,
-    });
+    await addPolicyChangeInfo(ctx, args);
   },
 });
 
@@ -796,7 +1065,9 @@ export const draftSubmission = internalMutation({
       "",
       existing.requestText,
       args.instructions?.trim() ? `\nNotes:\n${args.instructions.trim()}` : "",
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
     const brokerSubmission = {
       ...existingSubmission,
       recipientEmail: recipientEmail || undefined,
@@ -806,12 +1077,15 @@ export const draftSubmission = internalMutation({
       draftedAt: now,
       draftedByUserId: args.userId,
       needsRecipient: !recipientEmail,
-      routingStatus: recipientEmail ? "recipient_ready" : "needs_broker_contact",
+      routingStatus: recipientEmail
+        ? "recipient_ready"
+        : "needs_broker_contact",
     };
     const existingQuestions = Array.isArray(existing.pendingQuestions)
       ? existing.pendingQuestions
       : [];
-    const recipientQuestion = "Which broker email or contact should receive this policy change request?";
+    const recipientQuestion =
+      "Which broker email or contact should receive this policy change request?";
 
     await ctx.db.patch(args.caseId, {
       brokerSubmission,
@@ -912,7 +1186,10 @@ function snapshotPolicy(policy: Record<string, unknown>) {
   return Object.fromEntries(keys.map((key) => [key, policy[key]]));
 }
 
-function buildFieldDiffs(before: Record<string, unknown>, updates: Record<string, unknown>) {
+function buildFieldDiffs(
+  before: Record<string, unknown>,
+  updates: Record<string, unknown>,
+) {
   return Object.entries(updates)
     .filter(([, after]) => after !== undefined)
     .map(([fieldPath, after]) => ({
@@ -927,14 +1204,19 @@ export const completeFromEndorsement = internalMutation({
     caseId: v.optional(v.id("policyChangeCases")),
     userId: v.id("users"),
     policyId: v.id("policies"),
-    files: v.array(v.object({
-      fileId: v.id("_storage"),
-      fileName: v.string(),
-    })),
+    files: v.array(
+      v.object({
+        fileId: v.id("_storage"),
+        fileName: v.string(),
+      }),
+    ),
     summary: v.optional(v.string()),
     fieldUpdates: v.optional(v.any()),
   },
-  handler: async (ctx, args): Promise<{
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
     policyUpdateRunId: Id<"policyUpdateRuns">;
     policyFileIds: Id<"policyFiles">[];
     policyVersionId: Id<"policyVersions">;
@@ -964,10 +1246,13 @@ export const completeFromEndorsement = internalMutation({
       policyFileIds.push(policyFileId);
     }
 
-    const fieldUpdates = args.fieldUpdates && typeof args.fieldUpdates === "object"
-      ? args.fieldUpdates as Record<string, unknown>
-      : {};
-    const beforeSnapshot = snapshotPolicy(policy as unknown as Record<string, unknown>);
+    const fieldUpdates =
+      args.fieldUpdates && typeof args.fieldUpdates === "object"
+        ? (args.fieldUpdates as Record<string, unknown>)
+        : {};
+    const beforeSnapshot = snapshotPolicy(
+      policy as unknown as Record<string, unknown>,
+    );
     const fieldDiffs = buildFieldDiffs(beforeSnapshot, fieldUpdates);
     const existingFiles = Array.isArray(policy.files) ? policy.files : [];
     const appendedFiles = args.files.map((file) => ({
@@ -980,7 +1265,8 @@ export const completeFromEndorsement = internalMutation({
     await ctx.db.patch(args.policyId, {
       ...fieldUpdates,
       files: [...existingFiles, ...appendedFiles],
-      reconciliationStatus: fieldDiffs.length > 0 ? "reconciled" : policy.reconciliationStatus,
+      reconciliationStatus:
+        fieldDiffs.length > 0 ? "reconciled" : policy.reconciliationStatus,
     });
     const updatedPolicy = await ctx.db.get(args.policyId);
     const afterSnapshot = updatedPolicy
@@ -989,12 +1275,16 @@ export const completeFromEndorsement = internalMutation({
     if (updatedPolicy) {
       const existingFacts = await ctx.db
         .query("policyDeclarationFacts")
-        .withIndex("by_policyId_active", (q) => q.eq("policyId", args.policyId).eq("active", true))
+        .withIndex("by_policyId_active", (q) =>
+          q.eq("policyId", args.policyId).eq("active", true),
+        )
         .collect();
       for (const fact of existingFacts) {
         await ctx.db.patch(fact._id, { active: false });
       }
-      const facts = extractDeclarationFactsFromPolicy(updatedPolicy as unknown as Record<string, unknown>);
+      const facts = extractDeclarationFactsFromPolicy(
+        updatedPolicy as unknown as Record<string, unknown>,
+      );
       for (const fact of facts) {
         await ctx.db.insert("policyDeclarationFacts", {
           orgId: policy.orgId,
@@ -1034,22 +1324,27 @@ export const completeFromEndorsement = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
-    const policyVersionId = await ctx.runMutation((internal as any).policyVersions.createInternal, {
-      policyId: args.policyId,
-      versionKind: "policy_change",
-      sourcePolicyFileIds: policyFileIds,
-      sourceFileIds: args.files.map((file) => file.fileId),
-      caseId: args.caseId,
-      beforeSnapshot,
-      summary: args.summary ?? "Endorsement received and appended to the policy.",
-      createdByUserId: args.userId,
-    }) as Id<"policyVersions">;
+    const policyVersionId = (await ctx.runMutation(
+      (internal as any).policyVersions.createInternal,
+      {
+        policyId: args.policyId,
+        versionKind: "policy_change",
+        sourcePolicyFileIds: policyFileIds,
+        sourceFileIds: args.files.map((file) => file.fileId),
+        caseId: args.caseId,
+        beforeSnapshot,
+        summary:
+          args.summary ?? "Endorsement received and appended to the policy.",
+        createdByUserId: args.userId,
+      },
+    )) as Id<"policyVersions">;
 
     if (args.caseId) {
       await ctx.db.patch(args.caseId, {
         status: "completed",
         completion: {
-          summary: args.summary ?? "Endorsement received and appended to the policy.",
+          summary:
+            args.summary ?? "Endorsement received and appended to the policy.",
           policyId: args.policyId,
           policyUpdateRunId: runId,
           policyVersionId,
@@ -1064,7 +1359,8 @@ export const completeFromEndorsement = internalMutation({
         caseId: args.caseId,
         direction: "system",
         channel: "manual",
-        content: args.summary ?? "Endorsement received and appended to the policy.",
+        content:
+          args.summary ?? "Endorsement received and appended to the policy.",
         createdByUserId: args.userId,
         createdAt: now,
       });
@@ -1077,12 +1373,16 @@ export const completeFromEndorsement = internalMutation({
       for (const hold of holds) {
         await ctx.db.patch(hold._id, { status: "resolved", updatedAt: now });
       }
-      await ctx.runMutation((internal as any).certificateWorkflowJobs.createPostEndorsementJobsInternal, {
-        policyChangeCaseId: args.caseId,
-        policyUpdateRunId: runId,
-        policyVersionId,
-        createdByUserId: args.userId,
-      });
+      await ctx.runMutation(
+        (internal as any).certificateWorkflowJobs
+          .createPostEndorsementJobsInternal,
+        {
+          policyChangeCaseId: args.caseId,
+          policyUpdateRunId: runId,
+          policyVersionId,
+          createdByUserId: args.userId,
+        },
+      );
     }
 
     await ctx.db.insert("policyAuditLog", {
@@ -1104,11 +1404,22 @@ export const completeFromEndorsement = internalMutation({
       orgId: policy.orgId,
       type: "policy_change_completed",
       title: "Policy change completed",
-      body: args.summary ?? "An endorsement was added to the policy and the change request was marked complete.",
+      body:
+        args.summary ??
+        "An endorsement was added to the policy and the change request was marked complete.",
       actionType: "view_policy",
       actionPayload: { policyId: args.policyId, caseId: args.caseId },
-      sourceRef: { policyId: args.policyId, caseId: args.caseId, policyUpdateRunId: runId, policyVersionId },
-      coalesceKeyParts: ["policy_change_completed", String(policy.orgId), String(args.caseId ?? runId)],
+      sourceRef: {
+        policyId: args.policyId,
+        caseId: args.caseId,
+        policyUpdateRunId: runId,
+        policyVersionId,
+      },
+      coalesceKeyParts: [
+        "policy_change_completed",
+        String(policy.orgId),
+        String(args.caseId ?? runId),
+      ],
     });
 
     for (const policyFileId of policyFileIds) {
@@ -1126,7 +1437,10 @@ export const completeFromEndorsement = internalMutation({
 export const listByPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
-    const policyAccess = await getPolicyChangeAccessForQuery(ctx, args.policyId);
+    const policyAccess = await getPolicyChangeAccessForQuery(
+      ctx,
+      args.policyId,
+    );
     if (!policyAccess) return [];
     return ctx.db
       .query("policyChangeCases")
@@ -1139,34 +1453,62 @@ export const listByPolicy = query({
 export const getCaseDetail = query({
   args: { caseId: v.id("policyChangeCases") },
   handler: async (ctx, args) => {
-    const caseAccess = await getPolicyChangeCaseAccessForQuery(ctx, args.caseId);
+    const caseAccess = await getPolicyChangeCaseAccessForQuery(
+      ctx,
+      args.caseId,
+    );
     if (!caseAccess) return null;
     const { changeCase } = caseAccess;
 
-    const [packets, messages, evidenceLinks, validationReports] = await Promise.all([
-      ctx.db
-        .query("pcePackets")
-        .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
-        .order("desc")
-        .collect(),
-      ctx.db
-        .query("caseMessages")
-        .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
-        .order("desc")
-        .collect(),
-      ctx.db
-        .query("caseEvidenceLinks")
-        .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
-        .collect(),
-      ctx.db
-        .query("caseValidationReports")
-        .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
-        .order("desc")
-        .collect(),
-    ]);
+    const [packets, messages, evidenceLinks, validationReports] =
+      await Promise.all([
+        ctx.db
+          .query("pcePackets")
+          .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
+          .order("desc")
+          .collect(),
+        ctx.db
+          .query("caseMessages")
+          .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
+          .order("desc")
+          .collect(),
+        ctx.db
+          .query("caseEvidenceLinks")
+          .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
+          .collect(),
+        ctx.db
+          .query("caseValidationReports")
+          .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
+          .order("desc")
+          .collect(),
+      ]);
+    const policy = changeCase.policyId
+      ? await ctx.db.get(changeCase.policyId)
+      : null;
+    const legacyRequestDetails = [
+      changeCase.requestText,
+      ...messages
+        .filter((message) => message.direction === "inbound")
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .map((message) => message.content),
+    ].reduce<PolicyChangeRequestDetails | undefined>(
+      (details, text) =>
+        mergeRequestDetails(details, requestDetailsFromText(text)),
+      undefined,
+    );
+    const requestDetails = mergeRequestDetails(
+      legacyRequestDetails,
+      getRecord(changeCase.requestDetails) as PolicyChangeRequestDetails,
+    );
 
     return {
-      case: changeCase,
+      case: requestDetails
+        ? {
+            ...changeCase,
+            requestDetails,
+          }
+        : changeCase,
+      policy,
       latestPacket: packets[0] ?? null,
       packets,
       messages,

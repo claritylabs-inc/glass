@@ -189,7 +189,9 @@ export default defineSchema({
     phone: v.optional(v.string()),
     phoneVerificationTime: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()),
-    accountKind: v.optional(v.union(v.literal("customer"), v.literal("operator"))),
+    accountKind: v.optional(
+      v.union(v.literal("customer"), v.literal("operator")),
+    ),
     // Personal profile fields
     title: v.optional(v.string()),
     // Onboarding & admin
@@ -266,11 +268,15 @@ export default defineSchema({
     // Onboarding
     onboardingComplete: v.optional(v.boolean()),
     // Internal operator lifecycle for operator-provisioned tenants. Missing legacy value means live.
-    operatorStatus: v.optional(v.union(v.literal("onboarding"), v.literal("live"))),
+    operatorStatus: v.optional(
+      v.union(v.literal("onboarding"), v.literal("live")),
+    ),
     // Branding
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
-    type: v.optional(v.union(v.literal("broker"), v.literal("client"), v.literal("partner"))),
+    type: v.optional(
+      v.union(v.literal("broker"), v.literal("client"), v.literal("partner")),
+    ),
     partnerKind: v.optional(v.literal("program_admin")),
     // Partner type — only meaningful when type === "broker"
     partnerType: v.optional(
@@ -315,10 +321,14 @@ export default defineSchema({
     aliases: v.array(v.string()),
     description: v.optional(v.string()),
     categoryLabels: v.optional(v.array(v.string())),
-    securityPanel: v.optional(v.array(v.object({
-      name: v.string(),
-      participationPercent: v.number(),
-    }))),
+    securityPanel: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          participationPercent: v.number(),
+        }),
+      ),
+    ),
     defaultTemplateId: v.optional(v.id("coiTemplates")),
     approvalMode: v.optional(
       v.union(
@@ -380,7 +390,11 @@ export default defineSchema({
     partnerOrgId: v.id("organizations"),
     programId: v.id("partnerPrograms"),
     templateId: v.id("coiTemplates"),
-    status: v.union(v.literal("active"), v.literal("paused"), v.literal("revoked")),
+    status: v.union(
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("revoked"),
+    ),
     allowedPolicyTypes: v.optional(v.array(v.string())),
     allowedCoverageCodes: v.optional(v.array(v.string())),
     authorizationText: v.optional(v.string()),
@@ -666,9 +680,17 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_brokerOrgId_status_updatedAt", ["brokerOrgId", "status", "updatedAt"])
+    .index("by_brokerOrgId_status_updatedAt", [
+      "brokerOrgId",
+      "status",
+      "updatedAt",
+    ])
     .index("by_clientOrgId_updatedAt", ["clientOrgId", "updatedAt"])
-    .index("by_clientOrgId_status_updatedAt", ["clientOrgId", "status", "updatedAt"])
+    .index("by_clientOrgId_status_updatedAt", [
+      "clientOrgId",
+      "status",
+      "updatedAt",
+    ])
     .index("by_policyId", ["policyId"])
     .index("by_idempotencyKey", ["idempotencyKey"]),
 
@@ -678,7 +700,11 @@ export default defineSchema({
     clientOrgId: v.id("organizations"),
     policyId: v.id("policies"),
     channel: policyDeliveryChannelValidator,
-    status: v.union(v.literal("sent"), v.literal("failed"), v.literal("skipped")),
+    status: v.union(
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
     messageId: v.optional(v.string()),
     error: v.optional(v.string()),
     createdAt: v.number(),
@@ -1254,8 +1280,12 @@ export default defineSchema({
         included: v.optional(v.boolean()),
         coveragePremium: v.optional(v.string()),
         premium: v.optional(v.string()),
-        coverageOrigin: v.optional(v.union(v.literal("core"), v.literal("endorsement"))),
-        coverageOriginConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+        coverageOrigin: v.optional(
+          v.union(v.literal("core"), v.literal("endorsement")),
+        ),
+        coverageOriginConfidence: v.optional(
+          v.union(v.literal("low"), v.literal("medium"), v.literal("high")),
+        ),
         coverageOriginReason: v.optional(v.string()),
         pageNumber: v.optional(v.number()),
         resolvedFromPage: v.optional(v.number()),
@@ -1670,7 +1700,9 @@ export default defineSchema({
     policySnapshot: v.optional(v.any()),
     policySnapshotHash: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
-    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    authorityType: v.optional(
+      v.union(v.literal("non_binding"), v.literal("certified")),
+    ),
     certificationStatus: v.optional(
       v.union(
         v.literal("not_applicable"),
@@ -1785,7 +1817,9 @@ export default defineSchema({
       ),
     ),
     createdByUserId: v.optional(v.id("users")),
-    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
+    authorityType: v.optional(
+      v.union(v.literal("non_binding"), v.literal("certified")),
+    ),
     certificationStatus: v.optional(
       v.union(
         v.literal("not_applicable"),
@@ -1919,7 +1953,10 @@ export default defineSchema({
     partnerProgramId: v.optional(v.id("partnerPrograms")),
     templateId: v.optional(v.id("coiTemplates")),
     standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
-    approvalType: v.union(v.literal("human"), v.literal("standing_authorization")),
+    approvalType: v.union(
+      v.literal("human"),
+      v.literal("standing_authorization"),
+    ),
     status: v.union(v.literal("approved"), v.literal("declined")),
     approvedByUserId: v.optional(v.id("users")),
     approvalMode: v.optional(
@@ -2199,6 +2236,7 @@ export default defineSchema({
     internalPceAnalysis: v.optional(v.any()),
     brokerSubmission: v.optional(v.any()),
     completion: v.optional(v.any()),
+    requestDetails: v.optional(v.any()),
     items: v.optional(v.any()),
     impacts: v.optional(v.any()),
     missingInfoQuestions: v.optional(v.any()),
@@ -2225,7 +2263,10 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_policyId", ["policyId"])
     .index("by_orgId_status", ["orgId", "status"])
-    .index("by_partnerOrgId_approval", ["partnerOrgId", "partnerApprovalStatus"]),
+    .index("by_partnerOrgId_approval", [
+      "partnerOrgId",
+      "partnerApprovalStatus",
+    ]),
 
   policyUpdateRuns: defineTable({
     orgId: v.id("organizations"),
@@ -2293,7 +2334,11 @@ export default defineSchema({
     recommendedAction: v.optional(v.string()),
     conflictingValues: v.array(v.any()),
     affectedPolicyIds: v.array(v.id("policies")),
-    severity: v.union(v.literal("info"), v.literal("warning"), v.literal("critical")),
+    severity: v.union(
+      v.literal("info"),
+      v.literal("warning"),
+      v.literal("critical"),
+    ),
     status: v.union(
       v.literal("open"),
       v.literal("notified"),
@@ -2501,7 +2546,9 @@ export default defineSchema({
     replyToMessageId: v.optional(v.id("threadMessages")),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedQuoteIds: v.optional(v.array(v.id("policies"))),
-    referencedRequirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    referencedRequirementIds: v.optional(
+      v.array(v.id("insuranceRequirements")),
+    ),
     referencedMailboxIds: v.optional(v.array(v.id("connectedEmailAccounts"))),
     // Sections cited by the agent (titles captured from lookup_policy_section tool results)
     citedSections: v.optional(v.array(v.string())),

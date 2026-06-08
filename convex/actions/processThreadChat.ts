@@ -64,9 +64,7 @@ import {
   collectAllowedRecipients,
   enforceInputLimits,
 } from "../lib/security";
-import {
-  FATAL_ACTION_FAILED_MESSAGE,
-} from "../lib/actionFailures";
+import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 import {
   formatCertificateProgramSelectionForModel,
   type CertificateProgramSelection,
@@ -157,7 +155,9 @@ function parseCoiAttachmentName(filename: string): {
   holder?: string;
   policyRef?: string;
 } {
-  const match = filename.match(/^COI\s+-\s+(.+?)\s+-\s+([A-Z0-9][A-Z0-9-]{5,})\.pdf$/i);
+  const match = filename.match(
+    /^COI\s+-\s+(.+?)\s+-\s+([A-Z0-9][A-Z0-9-]{5,})\.pdf$/i,
+  );
   if (!match) return {};
   return {
     holder: match[1]?.trim(),
@@ -168,7 +168,9 @@ function parseCoiAttachmentName(filename: string): {
 function draftRecipientTokens(recipientEmail: string): string[] {
   const normalized = recipientEmail.toLowerCase().trim();
   const localPart = normalized.split("@")[0] ?? "";
-  const plusTag = localPart.includes("+") ? localPart.split("+").at(-1) : localPart;
+  const plusTag = localPart.includes("+")
+    ? localPart.split("+").at(-1)
+    : localPart;
   return [normalized, localPart, plusTag ?? ""]
     .map((token) => normalizeDraftMatchText(token).replace(/\d+$/g, ""))
     .filter((token) => token.length >= 4);
@@ -189,7 +191,9 @@ function selectSafeDraftAttachments(
   ].filter((token) => token.length >= 4);
   const matches = coiAttachments.filter((attachment) => {
     const { holder } = parseCoiAttachmentName(attachment.filename);
-    const searchable = normalizeDraftMatchText(`${attachment.filename} ${holder ?? ""}`);
+    const searchable = normalizeDraftMatchText(
+      `${attachment.filename} ${holder ?? ""}`,
+    );
     return tokens.some((token) => searchable.includes(token));
   });
 
@@ -207,7 +211,9 @@ function buildElaboratedCoiDraftBody(params: {
   const parsed = attachment ? parseCoiAttachmentName(attachment.filename) : {};
   const holder =
     parsed.holder ??
-    params.draft.emailBody.match(/for\s+(.+?)\s+for\s+Sentinel/i)?.[1]?.trim() ??
+    params.draft.emailBody
+      .match(/for\s+(.+?)\s+for\s+Sentinel/i)?.[1]
+      ?.trim() ??
     "the listed certificate holder";
   const policyRef =
     parsed.policyRef ??
@@ -224,7 +230,9 @@ function buildElaboratedCoiDraftBody(params: {
 function isMultiDraftElaborationRequest(text: string): boolean {
   return (
     /\b(email|draft)s?\b/i.test(text) &&
-    /\b(elaborate|revise|update|edit|change|mention|include|add)\b/i.test(text) &&
+    /\b(elaborate|revise|update|edit|change|mention|include|add)\b/i.test(
+      text,
+    ) &&
     /\b(holder|certificate|coi|covering|covers|policy)\b/i.test(text) &&
     !/\b(send|cancel|delete|remove)\b/i.test(text)
   );
@@ -283,19 +291,13 @@ function isSpreadsheetAttachment(filename: string, contentType: string) {
 function isDocxAttachment(filename: string, contentType: string) {
   const lowerName = filename.toLowerCase();
   const type = contentType.toLowerCase();
-  return (
-    type.includes("wordprocessingml") ||
-    lowerName.endsWith(".docx")
-  );
+  return type.includes("wordprocessingml") || lowerName.endsWith(".docx");
 }
 
 function isPresentationAttachment(filename: string, contentType: string) {
   const lowerName = filename.toLowerCase();
   const type = contentType.toLowerCase();
-  return (
-    type.includes("presentationml") ||
-    lowerName.endsWith(".pptx")
-  );
+  return type.includes("presentationml") || lowerName.endsWith(".pptx");
 }
 
 function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
@@ -315,11 +317,13 @@ function spreadsheetBufferToText(buffer: Buffer): string {
   for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName];
     if (!worksheet) continue;
-    const csv = XLSX.utils.sheet_to_csv(worksheet, {
-      blankrows: false,
-      FS: ",",
-      RS: "\n",
-    }).trim();
+    const csv = XLSX.utils
+      .sheet_to_csv(worksheet, {
+        blankrows: false,
+        FS: ",",
+        RS: "\n",
+      })
+      .trim();
     if (!csv) continue;
     sections.push(`Sheet: ${sheetName}\n${csv}`);
   }
@@ -360,7 +364,8 @@ async function pptxBufferToText(buffer: Buffer): Promise<string> {
       .map((match) => decodeXmlEntities(match[1] ?? "").trim())
       .filter(Boolean);
     if (!texts.length) continue;
-    const slideNumber = path.match(/slide(\d+)\.xml$/i)?.[1] ?? String(slides.length + 1);
+    const slideNumber =
+      path.match(/slide(\d+)\.xml$/i)?.[1] ?? String(slides.length + 1);
     slides.push(`Slide ${slideNumber}\n${texts.join("\n")}`);
   }
   return slides.join("\n\n");
@@ -568,7 +573,9 @@ async function buildMessageHistoryWithAttachmentContext(
     } else if (msg.role === "agent" && content) {
       const pendingSelections = Array.isArray(msg.toolArtifacts)
         ? (msg.toolArtifacts as Array<{ type?: string; data?: unknown }>)
-            .filter((artifact) => artifact.type === "certificate_program_selection")
+            .filter(
+              (artifact) => artifact.type === "certificate_program_selection",
+            )
             .map((artifact) => artifact.data)
         : [];
       const selectionContext = pendingSelections
@@ -600,9 +607,7 @@ function hasCoiEmailIntent(text: string): boolean {
 function claimsCoiEmailCompletion(text: string): boolean {
   return (
     /\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text) &&
-    /\b(done|sent|sending|emailing|delivering|generated|attached)\b/i.test(
-      text,
-    )
+    /\b(done|sent|sending|emailing|delivering|generated|attached)\b/i.test(text)
   );
 }
 
@@ -626,7 +631,8 @@ export const run = internalAction({
     const latestUserMessage = startingMessages
       .filter((message: Record<string, unknown>) => message.role === "user")
       .at(-1);
-    if (String(latestUserMessage?._id ?? "") !== String(args.userMessageId)) return;
+    if (String(latestUserMessage?._id ?? "") !== String(args.userMessageId))
+      return;
 
     // Claim one agent response for this user message before any model calls.
     // This prevents duplicate scheduled actions from producing two assistant replies.
@@ -643,9 +649,12 @@ export const run = internalAction({
       const now = dayjs().valueOf();
       if (!force && now - lastCancellationCheck < 500) return false;
       lastCancellationCheck = now;
-      const agentMessage = await ctx.runQuery(internal.threads.getMessageInternal, {
-        id: agentMsgId,
-      });
+      const agentMessage = await ctx.runQuery(
+        internal.threads.getMessageInternal,
+        {
+          id: agentMsgId,
+        },
+      );
       return agentMessage?.status === "cancelled";
     };
 
@@ -656,10 +665,10 @@ export const run = internalAction({
         internal.pendingEmails.findPendingByThread,
         { threadId: args.threadId },
       );
-      const draftEmails = await ctx.runQuery(
+      const draftEmails = (await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId: args.threadId, orgId: args.orgId },
-      ) as Array<{ _id: Id<"pendingEmails"> }>;
+      )) as Array<{ _id: Id<"pendingEmails"> }>;
       const latestCancelledEmail = await ctx.runQuery(
         internal.pendingEmails.findLatestCancelledByThread,
         { threadId: args.threadId, orgId: args.orgId },
@@ -668,17 +677,24 @@ export const run = internalAction({
         id: args.userMessageId,
       });
       const text = userMsg?.content.trim() ?? "";
-      const threadMessagesForIntent = await ctx.runQuery(
+      const threadMessagesForIntent = (await ctx.runQuery(
         internal.threads.messagesInternal,
         { threadId: args.threadId },
-      ) as Array<{ _id: Id<"threadMessages">; role: string; content: string; status?: string }>;
+      )) as Array<{
+        _id: Id<"threadMessages">;
+        role: string;
+        content: string;
+        status?: string;
+      }>;
       const previousAgentMessage = threadMessagesForIntent
-        .filter((message) => message._id !== agentMsgId && message._id !== args.userMessageId)
+        .filter(
+          (message) =>
+            message._id !== agentMsgId && message._id !== args.userMessageId,
+        )
         .filter((message) => message.role === "agent" && message.content)
         .at(-1);
-      const isCancelConfirmationContext = isPendingEmailCancelConfirmationPrompt(
-        previousAgentMessage?.content,
-      );
+      const isCancelConfirmationContext =
+        isPendingEmailCancelConfirmationPrompt(previousAgentMessage?.content);
       const approvalWords =
         /^(yes|yep|yeah|ok|okay|approved|approve|confirmed|confirm|send|send it|looks good|this is good|go ahead|do it|please send)\.?!?$/i;
 
@@ -718,15 +734,26 @@ export const run = internalAction({
         return;
       }
 
-      if (draftEmails.length > 0 && text.length < 100 && isPendingEmailCancelIntent(text)) {
+      if (
+        draftEmails.length > 0 &&
+        text.length < 100 &&
+        isPendingEmailCancelIntent(text)
+      ) {
         await ctx.runMutation(internal.threads.updateAgentMessage, {
           id: agentMsgId,
-          content: pendingEmailCancelConfirmationMessage("draft", draftEmails.length),
+          content: pendingEmailCancelConfirmationMessage(
+            "draft",
+            draftEmails.length,
+          ),
         });
         return;
       }
 
-      if (draftEmails.length > 0 && text.length < 100 && approvalWords.test(text)) {
+      if (
+        draftEmails.length > 0 &&
+        text.length < 100 &&
+        approvalWords.test(text)
+      ) {
         try {
           for (const draftEmail of draftEmails) {
             await ctx.runAction(
@@ -742,9 +769,10 @@ export const run = internalAction({
           await ctx.runMutation(internal.threads.updateAgentError, {
             id: agentMsgId,
             error: err instanceof Error ? err.message : String(err),
-            content: draftEmails.length === 1
-              ? "Failed to send the draft email."
-              : "Failed to send one or more draft emails.",
+            content:
+              draftEmails.length === 1
+                ? "Failed to send the draft email."
+                : "Failed to send one or more draft emails.",
           });
           return;
         }
@@ -818,17 +846,19 @@ export const run = internalAction({
       }
 
       const selectedPolicyIds = new Set<string>(
-        ((userMsgForGuard?.referencedPolicyIds as string[] | undefined) ?? []),
+        (userMsgForGuard?.referencedPolicyIds as string[] | undefined) ?? [],
       );
       const selectedQuoteIds = new Set<string>(
-        ((userMsgForGuard?.referencedQuoteIds as string[] | undefined) ?? []),
+        (userMsgForGuard?.referencedQuoteIds as string[] | undefined) ?? [],
       );
       const selectedRequirementIds = new Set<string>(
-        ((userMsgForGuard?.referencedRequirementIds as string[] | undefined) ?? []),
+        (userMsgForGuard?.referencedRequirementIds as string[] | undefined) ??
+          [],
       );
-      const referencedMailboxIds = ((userMsgForGuard?.referencedMailboxIds as
-        | Id<"connectedEmailAccounts">[]
-        | undefined) ?? []);
+      const referencedMailboxIds =
+        (userMsgForGuard?.referencedMailboxIds as
+          | Id<"connectedEmailAccounts">[]
+          | undefined) ?? [];
 
       // Get sender name
       const user = await ctx.runQuery(internal.users.getInternal, {
@@ -837,11 +867,12 @@ export const run = internalAction({
       const userName = user?.name?.split(/\s+/)[0];
 
       const siteUrl = getPortalUrlForOrg(org);
-      const brokerIdentity = org.type === "client"
-        ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-            clientOrgId: args.orgId,
-          })
-        : null;
+      const brokerIdentity =
+        org.type === "client"
+          ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+              clientOrgId: args.orgId,
+            })
+          : null;
       const brokerContext = brokerIdentity?.brokerCompanyName
         ? {
             name: brokerIdentity.brokerCompanyName,
@@ -851,39 +882,71 @@ export const run = internalAction({
           }
         : undefined;
 
-      const scope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
-        orgId: args.orgId,
-        userId: args.userId,
-        surface: "web",
-        operatorInitiatedUserMessageId: args.userMessageId,
-      })) as AgentScope;
+      const scope = (await ctx.runQuery(
+        (internal as any).lib.agentScope.resolveForAction,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          surface: "web",
+          operatorInitiatedUserMessageId: args.userMessageId,
+        },
+      )) as AgentScope;
+      const operatorCopyUser = scope.operatorInitiated
+        ? await ctx.runQuery(internal.users.getPrimaryOrgAdminInternal, {
+            orgId: args.orgId,
+          })
+        : null;
+      const requesterCopyEmail = scope.operatorInitiated
+        ? operatorCopyUser?.email
+        : user?.email;
+      const requesterCopyName = scope.operatorInitiated
+        ? operatorCopyUser?.name
+        : user?.name;
+      const requesterCopyLabel = requesterCopyEmail
+        ? requesterCopyName
+          ? `${requesterCopyName} <${requesterCopyEmail}>`
+          : requesterCopyEmail
+        : undefined;
 
       // Build system prompt. Broker orgs use an internal portfolio prompt.
-      const systemPrompt = scope.mode === "broker_portfolio"
-        ? buildBrokerPortfolioSystemPrompt({
-            brokerName: typeof org.name === "string" ? org.name : undefined,
-            brokerContext: typeof org.context === "string" ? org.context : undefined,
-            userName,
-            siteUrl,
-          })
-        : buildSystemPromptForContext({
-            org: {
-              ...org,
-              broker: brokerContext,
-            },
-            mode: "direct",
-            userName,
-            siteUrl,
-          });
+      const systemPrompt =
+        scope.mode === "broker_portfolio"
+          ? buildBrokerPortfolioSystemPrompt({
+              brokerName: typeof org.name === "string" ? org.name : undefined,
+              brokerContext:
+                typeof org.context === "string" ? org.context : undefined,
+              userName,
+              siteUrl,
+            })
+          : buildSystemPromptForContext({
+              org: {
+                ...org,
+                broker: brokerContext,
+              },
+              mode: "direct",
+              userName,
+              siteUrl,
+            });
 
-      const policiesByOrg = new Map<string, { policies: any[]; quotes: any[] }>();
-      await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
-        const docs = await ctx.runQuery(internal.policies.listAllInternal, { orgId: readOrgId });
-        policiesByOrg.set(String(readOrgId), {
-          policies: (docs as any[]).filter((policy) => policy.documentType !== "quote"),
-          quotes: (docs as any[]).filter((policy) => policy.documentType === "quote"),
-        });
-      }));
+      const policiesByOrg = new Map<
+        string,
+        { policies: any[]; quotes: any[] }
+      >();
+      await Promise.all(
+        scope.readOrgIds.map(async (readOrgId) => {
+          const docs = await ctx.runQuery(internal.policies.listAllInternal, {
+            orgId: readOrgId,
+          });
+          policiesByOrg.set(String(readOrgId), {
+            policies: (docs as any[]).filter(
+              (policy) => policy.documentType !== "quote",
+            ),
+            quotes: (docs as any[]).filter(
+              (policy) => policy.documentType === "quote",
+            ),
+          });
+        }),
+      );
 
       // Load thread messages for history
       const allMessages = await ctx.runQuery(
@@ -896,15 +959,27 @@ export const run = internalAction({
         .filter((m: Record<string, unknown>) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
-      const primaryDocs = policiesByOrg.get(String(args.orgId)) ?? { policies: [], quotes: [] };
-      const focusedPolicyDocs = selectedPolicyIds.size > 0
-        ? Array.from(policiesByOrg.values()).flatMap((entry) => entry.policies).filter((policy) => selectedPolicyIds.has(String(policy._id)))
-        : primaryDocs.policies;
-      const focusedQuoteDocs = selectedQuoteIds.size > 0
-        ? Array.from(policiesByOrg.values()).flatMap((entry) => entry.quotes).filter((quote) => selectedQuoteIds.has(String(quote._id)))
-        : primaryDocs.quotes;
+      const primaryDocs = policiesByOrg.get(String(args.orgId)) ?? {
+        policies: [],
+        quotes: [],
+      };
+      const focusedPolicyDocs =
+        selectedPolicyIds.size > 0
+          ? Array.from(policiesByOrg.values())
+              .flatMap((entry) => entry.policies)
+              .filter((policy) => selectedPolicyIds.has(String(policy._id)))
+          : primaryDocs.policies;
+      const focusedQuoteDocs =
+        selectedQuoteIds.size > 0
+          ? Array.from(policiesByOrg.values())
+              .flatMap((entry) => entry.quotes)
+              .filter((quote) => selectedQuoteIds.has(String(quote._id)))
+          : primaryDocs.quotes;
       if (selectedPolicyIds.size > 0 || selectedQuoteIds.size > 0) {
-        policiesByOrg.set(String(args.orgId), { policies: focusedPolicyDocs, quotes: focusedQuoteDocs });
+        policiesByOrg.set(String(args.orgId), {
+          policies: focusedPolicyDocs,
+          quotes: focusedQuoteDocs,
+        });
       }
 
       // Build document context (isolated per org in broker portfolio mode)
@@ -933,27 +1008,37 @@ export const run = internalAction({
         latestUserContent,
         relevantPolicyIds.map((id: string) => id),
       );
-      const requirementsBlock = await buildScopedRequirementsContext(ctx, scope);
-      const selectedRequirements = selectedRequirementIds.size > 0
-        ? (await ctx.runQuery(internal.compliance.listRequirementsInternal, {
-            orgId: args.orgId,
-          }) as Array<Record<string, unknown>>).filter((requirement) =>
-            selectedRequirementIds.has(String(requirement._id)),
-          )
-        : [];
-      const selectedMailboxes = referencedMailboxIds.length > 0
-        ? (
-            await Promise.all(
-              referencedMailboxIds.map((accountId) =>
-                ctx.runQuery(internal.connectedEmail.getAccessibleInternal, {
-                  accountId,
+      const requirementsBlock = await buildScopedRequirementsContext(
+        ctx,
+        scope,
+      );
+      const selectedRequirements =
+        selectedRequirementIds.size > 0
+          ? (
+              (await ctx.runQuery(
+                internal.compliance.listRequirementsInternal,
+                {
                   orgId: args.orgId,
-                  userId: args.userId,
-                }),
-              ),
+                },
+              )) as Array<Record<string, unknown>>
+            ).filter((requirement) =>
+              selectedRequirementIds.has(String(requirement._id)),
             )
-          ).filter(Boolean) as Array<Record<string, unknown>>
-        : [];
+          : [];
+      const selectedMailboxes =
+        referencedMailboxIds.length > 0
+          ? ((
+              await Promise.all(
+                referencedMailboxIds.map((accountId) =>
+                  ctx.runQuery(internal.connectedEmail.getAccessibleInternal, {
+                    accountId,
+                    orgId: args.orgId,
+                    userId: args.userId,
+                  }),
+                ),
+              )
+            ).filter(Boolean) as Array<Record<string, unknown>>)
+          : [];
       const selectedSteeringBlock =
         selectedPolicyIds.size > 0 ||
         selectedQuoteIds.size > 0 ||
@@ -962,39 +1047,54 @@ export const run = internalAction({
           ? `\n\nUSER-SELECTED CONTEXT TARGETS:\n${[
               focusedPolicyDocs.length
                 ? `Policies:\n${focusedPolicyDocs
-                    .map((policy: any) => `- ${policy.carrier || policy.security || "Unknown carrier"} #${policy.policyNumber} (ID:${policy._id})`)
+                    .map(
+                      (policy: any) =>
+                        `- ${policy.carrier || policy.security || "Unknown carrier"} #${policy.policyNumber} (ID:${policy._id})`,
+                    )
                     .join("\n")}`
                 : "",
               focusedQuoteDocs.length
                 ? `Quotes:\n${focusedQuoteDocs
-                    .map((quote: any) => `- ${quote.carrier || quote.security || "Unknown carrier"} #${quote.quoteNumber || quote.policyNumber} (ID:${quote._id})`)
+                    .map(
+                      (quote: any) =>
+                        `- ${quote.carrier || quote.security || "Unknown carrier"} #${quote.quoteNumber || quote.policyNumber} (ID:${quote._id})`,
+                    )
                     .join("\n")}`
                 : "",
               selectedRequirements.length
                 ? `Requirements:\n${selectedRequirements
-                    .map((requirement: any) => `- ${requirement.title} (${requirement.appliesTo ?? "vendors"}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`)
+                    .map(
+                      (requirement: any) =>
+                        `- ${requirement.title} (${requirement.appliesTo ?? "vendors"}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`,
+                    )
                     .join("\n")}`
                 : "",
               selectedMailboxes.length
                 ? `Mailboxes:\n${selectedMailboxes
-                    .map((mailbox: any) => `- ${mailbox.label || mailbox.emailAddress} (${mailbox.emailAddress}, ID:${mailbox._id})`)
+                    .map(
+                      (mailbox: any) =>
+                        `- ${mailbox.label || mailbox.emailAddress} (${mailbox.emailAddress}, ID:${mailbox._id})`,
+                    )
                     .join("\n")}`
                 : "",
             ]
               .filter(Boolean)
-              .join("\n\n")}\nTreat these as explicit user steering. Prioritize them over generic retrieval. If mailbox work is needed and mailboxes are selected, keep the mailbox coordinator scoped to those accounts unless the user asks to broaden the search.`
+              .join(
+                "\n\n",
+              )}\nTreat these as explicit user steering. Prioritize them over generic retrieval. If mailbox work is needed and mailboxes are selected, keep the mailbox coordinator scoped to those accounts unless the user asks to broaden the search.`
           : "";
 
-      const complianceBlock = await buildScopedVendorComplianceContext(ctx, scope);
-
-      const {
-        history: messageHistory,
-        latestAttachmentNames,
-      } = await buildMessageHistoryWithAttachmentContext(
+      const complianceBlock = await buildScopedVendorComplianceContext(
         ctx,
-        allMessages as Array<Record<string, unknown>>,
-        latestUserMsg?._id ? String(latestUserMsg._id) : undefined,
+        scope,
       );
+
+      const { history: messageHistory, latestAttachmentNames } =
+        await buildMessageHistoryWithAttachmentContext(
+          ctx,
+          allMessages as Array<Record<string, unknown>>,
+          latestUserMsg?._id ? String(latestUserMsg._id) : undefined,
+        );
 
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, {
@@ -1030,18 +1130,19 @@ export const run = internalAction({
 
       const toolInstructions = buildPolicyToolInstructions(25);
       const operatorInitiatedBlock = scope.operatorInitiated
-        ? `\n\nOPERATOR IMPERSONATION CONTEXT: This web chat message was initiated by ${scope.operatorInitiated.displayLabel} under an audited operator support/testing session. Treat the request as coming from that operator on behalf of the organization; do not imply that an end customer personally sent it.`
+        ? `\n\nOPERATOR IMPERSONATION CONTEXT: This web chat message was initiated by ${scope.operatorInitiated.displayLabel} under an audited operator support/testing session. Treat the request as coming from that operator on behalf of the organization; do not imply that an end customer personally sent it. When drafting or sending email from this chat, copy the primary org admin${requesterCopyLabel ? ` (${requesterCopyLabel})` : ""}; do not CC or BCC the operator email unless the user explicitly asks for it.`
         : "";
 
       // Attachment context note
       let attachmentNote = "";
       if (latestUserMsg?.attachments?.length) {
-        const filenames = (latestAttachmentNames.length > 0
-          ? latestAttachmentNames
-          : (latestUserMsg.attachments as Array<{ filename: string }>)
-          .map((a) => a.filename)
-        )
-          .join(", ");
+        const filenames = (
+          latestAttachmentNames.length > 0
+            ? latestAttachmentNames
+            : (latestUserMsg.attachments as Array<{ filename: string }>).map(
+                (a) => a.filename,
+              )
+        ).join(", ");
         attachmentNote = `\n\nATTACHMENTS: The user's message includes ${latestUserMsg.attachments.length} attachment(s): ${filenames}. The content has been provided to you as file, image, or text content parts. Reference relevant information from attachments in your response when applicable.`;
       }
 
@@ -1080,7 +1181,7 @@ export const run = internalAction({
         ? brokerIdentity?.contactEmail
         : undefined;
       const brokerRecipientName = brokerDirectedEmailRequest
-        ? brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName
+        ? (brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName)
         : undefined;
       const availableAttachments = allMessages.flatMap(
         (m: Record<string, unknown>) =>
@@ -1097,8 +1198,7 @@ export const run = internalAction({
             .filter((att) => att.fileId)
             .filter(
               (att) =>
-                m.role !== "agent" ||
-                !isCoiAttachmentFilename(att.filename),
+                m.role !== "agent" || !isCoiAttachmentFilename(att.filename),
             )
             .map((att) => ({
               filename: att.filename,
@@ -1107,10 +1207,10 @@ export const run = internalAction({
               fileId: att.fileId!,
             })),
       );
-      const currentDraftEmails = await ctx.runQuery(
+      const currentDraftEmails = (await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId: args.threadId, orgId: args.orgId },
-      ) as Array<{
+      )) as Array<{
         recipientEmail?: string;
         ccAddresses?: string[];
         bccAddresses?: string[];
@@ -1119,31 +1219,36 @@ export const run = internalAction({
         emailBody?: string;
         attachments?: Array<{ filename: string }>;
       }>;
-      const currentDraftContext = currentDraftEmails.length > 0
-        ? [
-            currentDraftEmails.length === 1
-              ? "CURRENT EMAIL DRAFT ARTIFACT:"
-              : `CURRENT EMAIL DRAFT ARTIFACTS (${currentDraftEmails.length}):`,
-            ...currentDraftEmails.map((draft, index) => [
-              currentDraftEmails.length === 1 ? null : `Draft ${index + 1}:`,
-              `To: ${draft.recipientEmail}`,
-              draft.ccAddresses?.length
-                ? `Cc: ${draft.ccAddresses.join(", ")}`
-                : null,
-              draft.bccAddresses?.length
-                ? `Bcc: ${draft.bccAddresses.join(", ")}`
-                : null,
-              `Subject: ${draft.subject}`,
-              draft.attachments?.length
-                ? `Attachments: ${draft.attachments.map((a: { filename: string }) => a.filename).join(", ")}`
-                : null,
-              "",
-              draft.emailBody,
-            ]
-              .filter((line) => line !== null)
-              .join("\n")),
-          ].join("\n\n")
-        : "";
+      const currentDraftContext =
+        currentDraftEmails.length > 0
+          ? [
+              currentDraftEmails.length === 1
+                ? "CURRENT EMAIL DRAFT ARTIFACT:"
+                : `CURRENT EMAIL DRAFT ARTIFACTS (${currentDraftEmails.length}):`,
+              ...currentDraftEmails.map((draft, index) =>
+                [
+                  currentDraftEmails.length === 1
+                    ? null
+                    : `Draft ${index + 1}:`,
+                  `To: ${draft.recipientEmail}`,
+                  draft.ccAddresses?.length
+                    ? `Cc: ${draft.ccAddresses.join(", ")}`
+                    : null,
+                  draft.bccAddresses?.length
+                    ? `Bcc: ${draft.bccAddresses.join(", ")}`
+                    : null,
+                  `Subject: ${draft.subject}`,
+                  draft.attachments?.length
+                    ? `Attachments: ${draft.attachments.map((a: { filename: string }) => a.filename).join(", ")}`
+                    : null,
+                  "",
+                  draft.emailBody,
+                ]
+                  .filter((line) => line !== null)
+                  .join("\n"),
+              ),
+            ].join("\n\n")
+          : "";
       if (
         currentDraftEmails.length > 1 &&
         isMultiDraftElaborationRequest(text) &&
@@ -1153,7 +1258,10 @@ export const run = internalAction({
       ) {
         const agentAddress = emailIdentity.agentAddress;
         const fromHeader = emailIdentity.fromHeader;
-        const signature = buildEmailSignature(agentAddress, emailIdentity.brokerBranding);
+        const signature = buildEmailSignature(
+          agentAddress,
+          emailIdentity.brokerBranding,
+        );
         let revisedCount = 0;
         let repairedAttachmentCount = 0;
 
@@ -1166,9 +1274,7 @@ export const run = internalAction({
             draft,
             attachments,
             coveredName:
-              typeof org.name === "string" && org.name.trim()
-                ? org.name
-                : "us",
+              typeof org.name === "string" && org.name.trim() ? org.name : "us",
           });
           const emailPayload = buildEmailPayload({
             fromHeader,
@@ -1188,7 +1294,8 @@ export const run = internalAction({
             bccAddresses: draft.bccAddresses,
             subject: draft.subject,
             emailBody: body,
-            attachments: attachments && attachments.length > 0 ? attachments : undefined,
+            attachments:
+              attachments && attachments.length > 0 ? attachments : undefined,
             referencedPolicyIds: draft.referencedPolicyIds,
             referencedQuoteIds: draft.referencedQuoteIds,
             chatMessageId: agentMsgId,
@@ -1202,7 +1309,8 @@ export const run = internalAction({
               ccAddresses: draft.ccAddresses,
               bccAddresses: draft.bccAddresses,
               subject: draft.subject,
-              attachments: attachments && attachments.length > 0 ? attachments : undefined,
+              attachments:
+                attachments && attachments.length > 0 ? attachments : undefined,
               referencedPolicyIds: draft.referencedPolicyIds,
               referencedQuoteIds: draft.referencedQuoteIds,
               pendingEmailId: draft._id,
@@ -1219,7 +1327,9 @@ export const run = internalAction({
             repairedAttachmentCount > 0
               ? `I also repaired ${repairedAttachmentCount} draft${repairedAttachmentCount === 1 ? "" : "s"} so each email only has that recipient's COI attached.`
               : null,
-          ].filter(Boolean).join("\n\n"),
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
         });
         return;
       }
@@ -1237,7 +1347,11 @@ export const run = internalAction({
       const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up or acted on by tools
       const usedTools: string[] = [];
-      const toolCalls: Array<{ name: string; input?: string; output?: string }> = [];
+      const toolCalls: Array<{
+        name: string;
+        input?: string;
+        output?: string;
+      }> = [];
       const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
         filename: string;
@@ -1256,7 +1370,9 @@ export const run = internalAction({
           orgId: args.orgId,
           userId: args.userId,
           scope,
-          operatorInitiatedUserMessageId: scope.operatorInitiated ? args.userMessageId : undefined,
+          operatorInitiatedUserMessageId: scope.operatorInitiated
+            ? args.userMessageId
+            : undefined,
           org,
           onPolicyReferenced: (policyId) => {
             citedPolicyIds.add(String(policyId));
@@ -1271,9 +1387,16 @@ export const run = internalAction({
             policyChangeCaseId = caseId;
           },
           onPolicyChangeEmailDraft: async ({ caseId, draft }) => {
-            if (!draft.needsRecipient && draft.recipientEmail && draft.subject && draft.body) {
+            if (
+              !draft.needsRecipient &&
+              draft.recipientEmail &&
+              draft.subject &&
+              draft.body
+            ) {
               const emailIdentityForDraft =
-                emailIdentity.canSend && emailIdentity.agentAddress && emailIdentity.fromHeader
+                emailIdentity.canSend &&
+                emailIdentity.agentAddress &&
+                emailIdentity.fromHeader
                   ? emailIdentity
                   : await resolveEmailAgentIdentity(ctx, org);
               if (
@@ -1281,23 +1404,31 @@ export const run = internalAction({
                 emailIdentityForDraft.agentAddress &&
                 emailIdentityForDraft.fromHeader
               ) {
-                const pendingEmailId = await upsertEmailDraftArtifact(ctx, {
-                  orgId: args.orgId,
-                  threadId: args.threadId,
-                  chatMessageId: agentMsgId,
-                  channel: "web",
-                  fromHeader: emailIdentityForDraft.fromHeader,
-                  agentAddress: emailIdentityForDraft.agentAddress,
-                  brokerBranding: emailIdentityForDraft.brokerBranding,
-                }, {
-                  to: draft.recipientEmail,
-                  cc: [],
-                  bcc: [],
-                  subject: draft.subject,
-                  body: draft.body,
-                  attachments: [],
-                  policyChangeCaseId: caseId,
-                });
+                const pendingEmailId = await upsertEmailDraftArtifact(
+                  ctx,
+                  {
+                    orgId: args.orgId,
+                    threadId: args.threadId,
+                    chatMessageId: agentMsgId,
+                    channel: "web",
+                    fromHeader: emailIdentityForDraft.fromHeader,
+                    agentAddress: emailIdentityForDraft.agentAddress,
+                    brokerBranding: emailIdentityForDraft.brokerBranding,
+                  },
+                  {
+                    to: draft.recipientEmail,
+                    cc: [],
+                    bcc:
+                      org.bccRequesterOnAgentEmails !== false &&
+                      requesterCopyEmail
+                        ? [requesterCopyEmail]
+                        : [],
+                    subject: draft.subject,
+                    body: draft.body,
+                    attachments: [],
+                    policyChangeCaseId: caseId,
+                  },
+                );
                 return { pendingEmailId };
               }
             }
@@ -1315,7 +1446,8 @@ export const run = internalAction({
               return "Ask the user to confirm before creating a new iMessage group chat.";
             }
             return await ctx.runAction(
-              internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
+              internal.actions.createOutboundImessageGroup
+                .createOutboundImessageGroupInternal,
               {
                 orgId: args.orgId,
                 userId: args.userId,
@@ -1329,14 +1461,17 @@ export const run = internalAction({
         coordinate_mailbox_task: {
           ...coordinateMailboxTask,
           execute: async (input: { task: string }) => {
-            return await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
-              orgId: args.orgId,
-              userId: args.userId,
-              task: input.task,
-              accountIds: referencedMailboxIds,
-              chatMessageId: agentMsgId,
-              threadId: args.threadId,
-            });
+            return await ctx.runAction(
+              internal.actions.mailboxCoordinator.runInternal,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                task: input.task,
+                accountIds: referencedMailboxIds,
+                chatMessageId: agentMsgId,
+                threadId: args.threadId,
+              },
+            );
           },
         },
         web_research: {
@@ -1361,14 +1496,20 @@ export const run = internalAction({
         },
         render_email_preview: {
           ...renderEmailPreview,
-          execute: async (input: { draftId?: string; format?: "png" | "pdf" }) => {
-            return await ctx.runAction(internal.actions.renderEmailPreview.run, {
-              orgId: args.orgId,
-              threadId: args.threadId,
-              userId: args.userId,
-              draftId: input.draftId as Id<"pendingEmails"> | undefined,
-              format: input.format,
-            });
+          execute: async (input: {
+            draftId?: string;
+            format?: "png" | "pdf";
+          }) => {
+            return await ctx.runAction(
+              internal.actions.renderEmailPreview.run,
+              {
+                orgId: args.orgId,
+                threadId: args.threadId,
+                userId: args.userId,
+                draftId: input.draftId as Id<"pendingEmails"> | undefined,
+                format: input.format,
+              },
+            );
           },
         },
         ...(emailIdentity.canSend &&
@@ -1397,9 +1538,12 @@ export const run = internalAction({
                 unknownRecipientMessage:
                   "I cannot use that broker recipient because it is not the configured broker contact in Glass. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
                 defaultBcc:
-                  org.bccRequesterOnAgentEmails !== false && user?.email
-                    ? [user.email]
+                  org.bccRequesterOnAgentEmails !== false && requesterCopyEmail
+                    ? [requesterCopyEmail]
                     : undefined,
+                blockedCopyEmails: scope.operatorInitiated?.operatorEmail
+                  ? [scope.operatorInitiated.operatorEmail]
+                  : undefined,
                 subjectHint:
                   thread?.title && thread.title !== "New chat"
                     ? thread.title
@@ -1418,8 +1562,7 @@ export const run = internalAction({
                   allMessages
                     .filter(
                       (m: Record<string, unknown>) =>
-                        m.status !== "processing" &&
-                        m.status !== "cancelled",
+                        m.status !== "processing" && m.status !== "cancelled",
                     )
                     .slice(-12)
                     .map(
@@ -1460,13 +1603,17 @@ export const run = internalAction({
         create_policy_change_request: "Creating policy change request...",
         add_policy_change_info: "Updating policy change request...",
         draft_policy_change_email: "Drafting policy change email...",
-        complete_policy_change_from_endorsement: "Completing policy change request...",
+        complete_policy_change_from_endorsement:
+          "Completing policy change request...",
         create_imessage_group_chat: "Starting iMessage group...",
         coordinate_mailbox_task: "Coordinating mailbox task...",
         web_research: "Searching the web...",
         render_email_preview: "Rendering email preview...",
       };
-      const SUBAGENT_TOOL_NAMES = new Set(["email_expert", "coordinate_mailbox_task"]);
+      const SUBAGENT_TOOL_NAMES = new Set([
+        "email_expert",
+        "coordinate_mailbox_task",
+      ]);
 
       const chatModel = await getModelAndRouteForOrg(ctx, args.orgId, "chat");
       const startChatStream = (
@@ -1583,7 +1730,8 @@ export const run = internalAction({
                 typeof output === "object" &&
                 "attachment" in output
               ) {
-                const attachment = (output as Record<string, unknown>).attachment;
+                const attachment = (output as Record<string, unknown>)
+                  .attachment;
                 if (attachment && typeof attachment === "object") {
                   responseAttachments.push(
                     attachment as {
@@ -1608,15 +1756,15 @@ export const run = internalAction({
                 }
               }
             }
-          if (
-            lastToolName === "lookup_vendor_compliance" &&
-            (part as Record<string, unknown>).output
-          ) {
-            toolArtifacts.push({
-              type: "vendor_compliance",
-              data: (part as Record<string, unknown>).output,
-            });
-          }
+            if (
+              lastToolName === "lookup_vendor_compliance" &&
+              (part as Record<string, unknown>).output
+            ) {
+              toolArtifacts.push({
+                type: "vendor_compliance",
+                data: (part as Record<string, unknown>).output,
+              });
+            }
             if (
               lastToolName === "coordinate_mailbox_task" &&
               (part as Record<string, unknown>).output
@@ -1700,7 +1848,9 @@ export const run = internalAction({
           `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
         );
         await resetStreamStateForRetry();
-        const completed = await consumeChatStream(startChatStream(retryModel, retryRoute).fullStream);
+        const completed = await consumeChatStream(
+          startChatStream(retryModel, retryRoute).fullStream,
+        );
         if (!completed) return;
       }
 
@@ -1711,9 +1861,7 @@ export const run = internalAction({
         usedTools.includes("email_expert") ||
         usedTools.includes("generate_coi") ||
         responseAttachments.some((attachment) =>
-          /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(
-            attachment.filename,
-          ),
+          /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(attachment.filename),
         );
       if (
         hasCoiEmailIntent(latestUserContent) &&

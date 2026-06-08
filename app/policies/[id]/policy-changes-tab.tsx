@@ -7,13 +7,23 @@ import dayjs from "dayjs";
 import { CheckCircle2, FileText, Loader2, Send, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { OperationalPanel, OperationalPanelBody } from "@/components/ui/operational-panel";
+import {
+  OperationalPanel,
+  OperationalPanelBody,
+} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PolicyChangeProgress, formatPolicyChangeStatus, isPolicyChangeTerminal } from "@/components/policy-change-progress";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  PolicyChangeProgress,
+  formatPolicyChangeStatus,
+} from "@/components/policy-change-progress";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
+import {
+  useCachedQuery,
+  useUpdateCachedQuery,
+} from "@/lib/sync/use-cached-query";
 
 type DeclarationDiscrepancy = {
   _id: Id<"declarationDiscrepancies">;
@@ -106,6 +116,63 @@ function displayValidationMessage(issue: Record<string, unknown>) {
   }
   const code = humanizeSnake(issue.code);
   return code || "Review this item before sending.";
+}
+
+function policyChangeQuestions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item, index) => {
+    if (typeof item === "string") {
+      return {
+        key: `${item}-${index}`,
+        question: item,
+      };
+    }
+    if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      return {
+        key: String(record.id ?? record.code ?? index),
+        question: String(record.question ?? "Missing information"),
+        reason:
+          typeof record.reason === "string" && record.reason.trim()
+            ? record.reason
+            : undefined,
+      };
+    }
+    return {
+      key: `question-${index}`,
+      question: "Missing information",
+    };
+  });
+}
+
+function nextCaseAfterReply<
+  T extends {
+    status?: string;
+    pendingQuestions?: string[];
+    missingInfoQuestions?: unknown;
+    updatedAt?: number;
+  },
+>(changeCase: T): T {
+  const pendingQuestions = Array.isArray(changeCase.pendingQuestions)
+    ? changeCase.pendingQuestions.slice(1)
+    : [];
+  const missingInfoQuestions = Array.isArray(changeCase.missingInfoQuestions)
+    ? changeCase.missingInfoQuestions.slice(1)
+    : [];
+  const stillNeedsInfo =
+    pendingQuestions.length > 0 || missingInfoQuestions.length > 0;
+
+  return {
+    ...changeCase,
+    pendingQuestions,
+    missingInfoQuestions,
+    status: stillNeedsInfo
+      ? "needs_info"
+      : changeCase.status === "needs_info"
+        ? "ready_to_submit"
+        : changeCase.status,
+    updatedAt: dayjs().valueOf(),
+  };
 }
 
 function DeclarationDiscrepancyList({
@@ -221,6 +288,9 @@ export function PolicyChangesTab({
   const [packetLoading, setPacketLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState<string | null>(null);
   const [cancelLoading, setCancelLoading] = useState<string | null>(null);
+  const [replyLoading, setReplyLoading] =
+    useState<Id<"policyChangeCases"> | null>(null);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const cases = useCachedQuery(
     "policyChanges.listByPolicy",
     api.policyChanges.listByPolicy,
@@ -239,7 +309,7 @@ export function PolicyChangesTab({
   const detail = useCachedQuery(
     "policyChanges.getCaseDetail.policy",
     api.policyChanges.getCaseDetail,
-    canManage && activeCaseId ? { caseId: activeCaseId } : "skip",
+    activeCaseId ? { caseId: activeCaseId } : "skip",
   );
   const updateCases = useUpdateCachedQuery<
     typeof cases,
@@ -252,6 +322,7 @@ export function PolicyChangesTab({
   const generatePacket = useMutation(api.policyChanges.generateCarrierPacket);
   const markStatus = useMutation(api.policyChanges.markStatus);
   const cancelRequest = useMutation(api.policyChanges.cancelRequest);
+  const processReply = useMutation(api.policyChanges.processReply);
 
   if (cases === undefined || declarationDiscrepancies === undefined) {
     return (
@@ -366,80 +437,54 @@ export function PolicyChangesTab({
     }
   };
 
-  if (!canManage) {
-    return (
-      <div className="space-y-3">
-        <DeclarationDiscrepancyList discrepancies={declarationDiscrepancies} />
-        {cases.map((change) => {
-          const missingInfoCount = Array.isArray(change.missingInfoQuestions)
-            ? change.missingInfoQuestions.length
-            : 0;
-          const issueCount = Array.isArray(change.validationIssues)
-            ? change.validationIssues.length
-            : 0;
-          const terminal = isPolicyChangeTerminal(change.status);
+  const handleReplyDraftChange = (
+    caseId: Id<"policyChangeCases">,
+    value: string,
+  ) => {
+    setReplyDrafts((current) => ({ ...current, [caseId]: value }));
+  };
 
-          return (
-            <OperationalPanel
-              key={change._id}
-              as="div"
-              className="p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-base font-medium text-foreground">
-                      {change.summary ?? "Policy change request"}
-                    </p>
-                    <span className="rounded-full border border-foreground/8 px-2 py-0.5 text-label font-medium text-muted-foreground">
-                      {formatPolicyChangeStatus(change.status)}
-                    </span>
-                  </div>
-                  <p className="mt-2 max-w-3xl text-label leading-5 text-muted-foreground">
-                    {change.requestText}
-                  </p>
-                </div>
-                {!terminal && (
-                  <PillButton
-                    variant="secondary"
-                    size="compact"
-                    onClick={() => handleCancel(change._id)}
-                    disabled={cancelLoading !== null}
-                  >
-                    {cancelLoading === change._id ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <X className="w-3.5 h-3.5" />
-                    )}
-                    Cancel
-                  </PillButton>
-                )}
-              </div>
+  const handleReplySubmit = async (caseId: Id<"policyChangeCases">) => {
+    const replyText = replyDrafts[caseId]?.trim();
+    if (!replyText) {
+      toast.error("Enter a response before submitting");
+      return;
+    }
 
-              <PolicyChangeProgress status={change.status} className="mt-4" />
-
-              <div className="mt-3 flex flex-wrap gap-3 text-label text-muted-foreground">
-                <span>
-                  Updated {dayjs(change.updatedAt).format("MMM D, YYYY")}
-                </span>
-                {missingInfoCount > 0 && (
-                  <span>
-                    {missingInfoCount} question
-                    {missingInfoCount === 1 ? "" : "s"} open
-                  </span>
-                )}
-                {issueCount > 0 && (
-                  <span>
-                    {issueCount} issue{issueCount === 1 ? "" : "s"} to review
-                  </span>
-                )}
-              </div>
-            </OperationalPanel>
-          );
-        })}
-      </div>
-    );
-  }
+    setReplyLoading(caseId);
+    try {
+      await processReply({ caseId, replyText });
+      await Promise.all([
+        updateCases({ policyId: policyId as Id<"policies"> }, (current) =>
+          current?.map((changeCase) =>
+            changeCase._id === caseId
+              ? nextCaseAfterReply(changeCase)
+              : changeCase,
+          ),
+        ),
+        updateDetail({ caseId }, (current) =>
+          current?.case
+            ? {
+                ...current,
+                case: nextCaseAfterReply(current.case),
+              }
+            : current,
+        ),
+      ]);
+      setReplyDrafts((current) => {
+        const next = { ...current };
+        delete next[caseId];
+        return next;
+      });
+      toast.success("Response added");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not submit response",
+      );
+    } finally {
+      setReplyLoading(null);
+    }
+  };
 
   const activeCase = detail?.case;
   const packet = detail?.latestPacket;
@@ -449,6 +494,15 @@ export function PolicyChangesTab({
   const missingInfo = Array.isArray(activeCase?.missingInfoQuestions)
     ? (activeCase.missingInfoQuestions as Record<string, unknown>[])
     : [];
+  const activeQuestions = policyChangeQuestions(
+    activeCase?.missingInfoQuestions,
+  );
+  const activeReplyDraft = activeCase
+    ? (replyDrafts[activeCase._id] ?? "")
+    : "";
+  const activeReplyLoading = activeCase
+    ? replyLoading === activeCase._id
+    : false;
   const validationIssues = Array.isArray(activeCase?.validationIssues)
     ? (activeCase.validationIssues as Record<string, unknown>[])
     : [];
@@ -540,71 +594,75 @@ export function PolicyChangesTab({
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <PillButton
-                    variant="secondary"
-                    size="compact"
-                    onClick={handleGeneratePacket}
-                    disabled={packetLoading}
-                  >
-                    {packetLoading ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <FileText className="w-3.5 h-3.5" />
-                    )}
-                    Packet
-                  </PillButton>
-                  <PillButton
-                    variant="secondary"
-                    size="compact"
-                    onClick={() => handleStatus("submitted")}
-                    disabled={statusLoading !== null}
-                  >
-                    {statusLoading === "submitted" ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5" />
-                    )}
-                    Sent
-                  </PillButton>
-                  <PillButton
-                    variant="secondary"
-                    size="compact"
-                    onClick={() => handleStatus("waiting_for_endorsement")}
-                    disabled={statusLoading !== null}
-                  >
-                    {statusLoading === "waiting_for_endorsement" ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    )}
-                    Waiting
-                  </PillButton>
-                  <PillButton
-                    variant="secondary"
-                    size="compact"
-                    onClick={() => handleStatus("completed")}
-                    disabled={statusLoading !== null}
-                  >
-                    {statusLoading === "completed" ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    )}
-                    Complete
-                  </PillButton>
-                  <PillButton
-                    variant="secondary"
-                    size="compact"
-                    onClick={() => handleStatus("declined")}
-                    disabled={statusLoading !== null}
-                  >
-                    {statusLoading === "declined" ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <X className="w-3.5 h-3.5" />
-                    )}
-                    Declined
-                  </PillButton>
+                  {canManage ? (
+                    <>
+                      <PillButton
+                        variant="secondary"
+                        size="compact"
+                        onClick={handleGeneratePacket}
+                        disabled={packetLoading}
+                      >
+                        {packetLoading ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <FileText className="w-3.5 h-3.5" />
+                        )}
+                        Packet
+                      </PillButton>
+                      <PillButton
+                        variant="secondary"
+                        size="compact"
+                        onClick={() => handleStatus("submitted")}
+                        disabled={statusLoading !== null}
+                      >
+                        {statusLoading === "submitted" ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" />
+                        )}
+                        Sent
+                      </PillButton>
+                      <PillButton
+                        variant="secondary"
+                        size="compact"
+                        onClick={() => handleStatus("waiting_for_endorsement")}
+                        disabled={statusLoading !== null}
+                      >
+                        {statusLoading === "waiting_for_endorsement" ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        Waiting
+                      </PillButton>
+                      <PillButton
+                        variant="secondary"
+                        size="compact"
+                        onClick={() => handleStatus("completed")}
+                        disabled={statusLoading !== null}
+                      >
+                        {statusLoading === "completed" ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        Complete
+                      </PillButton>
+                      <PillButton
+                        variant="secondary"
+                        size="compact"
+                        onClick={() => handleStatus("declined")}
+                        disabled={statusLoading !== null}
+                      >
+                        {statusLoading === "declined" ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <X className="w-3.5 h-3.5" />
+                        )}
+                        Declined
+                      </PillButton>
+                    </>
+                  ) : null}
                   {activeCase.status !== "cancelled" &&
                     activeCase.status !== "accepted" &&
                     activeCase.status !== "completed" &&
@@ -625,6 +683,10 @@ export function PolicyChangesTab({
                     )}
                 </div>
               </div>
+            </div>
+
+            <div className="p-4">
+              <PolicyChangeProgress status={activeCase.status} />
             </div>
 
             <div className="p-4 grid gap-4 xl:grid-cols-2">
@@ -701,44 +763,94 @@ export function PolicyChangesTab({
               </section>
             </div>
 
-            <div className="p-4 grid gap-4 xl:grid-cols-2">
-              <section>
-                <h3 className="text-label font-medium text-foreground">
-                  Packet preview
-                </h3>
-                <div className="mt-2 space-y-2">
-                  {artifacts.length > 0 ? (
-                    artifacts.map((artifact, i) => (
-                      <details
-                        key={`${String(artifact.kind ?? "artifact")}-${i}`}
-                        className="border-y border-foreground/6 py-3"
-                      >
-                        <summary className="text-label font-medium text-foreground transition-colors hover:text-muted-foreground">
-                          {String(
-                            artifact.title ??
-                              humanizeSnake(artifact.kind) ??
-                              "Packet draft",
-                          )}
-                        </summary>
-                        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-label leading-5 text-muted-foreground">
-                          {String(artifact.content ?? "")}
-                        </pre>
-                      </details>
-                    ))
-                  ) : (
-                    <p className="text-label text-muted-foreground">
-                      No generated packet yet.
-                    </p>
-                  )}
-                </div>
-              </section>
+            <div
+              className={`p-4 grid gap-4 ${canManage ? "xl:grid-cols-2" : ""}`}
+            >
+              {canManage ? (
+                <section>
+                  <h3 className="text-label font-medium text-foreground">
+                    Packet preview
+                  </h3>
+                  <div className="mt-2 space-y-2">
+                    {artifacts.length > 0 ? (
+                      artifacts.map((artifact, i) => (
+                        <details
+                          key={`${String(artifact.kind ?? "artifact")}-${i}`}
+                          className="border-y border-foreground/6 py-3"
+                        >
+                          <summary className="text-label font-medium text-foreground transition-colors hover:text-muted-foreground">
+                            {String(
+                              artifact.title ??
+                                humanizeSnake(artifact.kind) ??
+                                "Packet draft",
+                            )}
+                          </summary>
+                          <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-label leading-5 text-muted-foreground">
+                            {String(artifact.content ?? "")}
+                          </pre>
+                        </details>
+                      ))
+                    ) : (
+                      <p className="text-label text-muted-foreground">
+                        No generated packet yet.
+                      </p>
+                    )}
+                  </div>
+                </section>
+              ) : null}
 
               <section>
                 <h3 className="text-label font-medium text-foreground">
                   Information needed
                 </h3>
                 <div className="mt-2 space-y-3">
-                  {missingInfo.length > 0 ? (
+                  {activeCase && activeQuestions.length > 0 ? (
+                    <div className="rounded-lg border border-foreground/8 bg-foreground/[0.025] p-3">
+                      <div className="space-y-3">
+                        {activeQuestions.map((question) => (
+                          <div key={question.key} className="space-y-2">
+                            <p className="text-base text-foreground">
+                              {question.question}
+                            </p>
+                            {question.reason ? (
+                              <p className="text-label leading-5 text-muted-foreground">
+                                {question.reason}
+                              </p>
+                            ) : null}
+                          </div>
+                        ))}
+                        <Textarea
+                          value={activeReplyDraft}
+                          onChange={(event) =>
+                            handleReplyDraftChange(
+                              activeCase._id,
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Enter the broker contact or email..."
+                          disabled={activeReplyLoading}
+                          className="min-h-20 bg-background"
+                        />
+                        <div className="flex justify-end">
+                          <PillButton
+                            type="button"
+                            size="compact"
+                            onClick={() => handleReplySubmit(activeCase._id)}
+                            disabled={
+                              activeReplyLoading || !activeReplyDraft.trim()
+                            }
+                          >
+                            {activeReplyLoading ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Send className="h-3.5 w-3.5" />
+                            )}
+                            Submit response
+                          </PillButton>
+                        </div>
+                      </div>
+                    </div>
+                  ) : missingInfo.length > 0 ? (
                     <div className="divide-y divide-foreground/6 border-y border-foreground/6">
                       {missingInfo.map((question, i) => (
                         <div
@@ -775,5 +887,3 @@ export function PolicyChangesTab({
     </div>
   );
 }
-
-
