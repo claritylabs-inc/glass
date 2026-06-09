@@ -746,10 +746,50 @@ function valueOfSourceBackedValue(value: unknown): string | undefined {
     : undefined;
 }
 
+function normalizedPolicyNumberValue(value: string | undefined): string | undefined {
+  const text = normalizeWhitespace(value ?? "").replace(/^[\s:;#-]+|[\s;,.]+$/g, "");
+  if (!text) return undefined;
+  const extracted = policyNumberCandidateFromText(text);
+  if (extracted) return extracted;
+  if (/^[A-Z0-9][A-Z0-9,.-]{4,}[A-Z0-9]$/i.test(text) && /[0-9]/.test(text)) {
+    return text;
+  }
+  return undefined;
+}
+
+function isBadPolicyNumberValue(value: string | undefined): boolean {
+  return !normalizedPolicyNumberValue(value);
+}
+
+function isValidPremiumValue(value: string | undefined): boolean {
+  const text = normalizeWhitespace(value ?? "");
+  if (!text) return false;
+  if (/^\d{1,3}$/.test(text)) return false;
+  return /\$[A-Z0-9]/i.test(text)
+    || (/\b(?:CAD|USD)\b/i.test(text) && /(?:\d|X{2,})/i.test(text))
+    || /\b\d{1,3}(?:,\d{3})+\.\d{2}\b/.test(text)
+    || /\b\d+\.\d{2}\b/.test(text)
+    || /\bX{2,}(?:,X{3})*(?:\.X{2})\b/i.test(text);
+}
+
 function sanitizeOperationalProfileCandidate(
   candidate: Partial<PolicyOperationalProfile>,
 ): Partial<PolicyOperationalProfile> {
   const clean = { ...candidate };
+  const policyNumber = valueOfSourceBackedValue(clean.policyNumber);
+  const normalizedPolicyNumber = normalizedPolicyNumberValue(policyNumber);
+  if (policyNumber && normalizedPolicyNumber) {
+    clean.policyNumber = {
+      ...(clean.policyNumber as SourceBackedValue),
+      value: normalizedPolicyNumber,
+    };
+  } else if (policyNumber) {
+    delete clean.policyNumber;
+  }
+  const premium = valueOfSourceBackedValue(clean.premium);
+  if (premium && !isValidPremiumValue(premium)) {
+    delete clean.premium;
+  }
   for (const key of ["namedInsured", "insurer", "broker"] as const) {
     const value = valueOfSourceBackedValue(clean[key]);
     const invalid = key === "broker"
@@ -893,7 +933,7 @@ function repairPolicyNumberFromSourceTree(
   const candidateNode = candidateNodes[0];
   if (!candidateNode?.value) return profile;
   if (current && candidateNode.value === current) return profile;
-  if (current && !candidateNode.value.startsWith(current) && candidateNode.score < 80) {
+  if (current && !isBadPolicyNumberValue(current) && !candidateNode.value.startsWith(current) && candidateNode.score < 80) {
     return profile;
   }
   return {
@@ -1284,6 +1324,15 @@ function finalizeSourceBackedIdentity(
   return { ...value, value: restoreLegalSuffixPunctuation(value.value) };
 }
 
+function finalizeSourceBackedPolicyNumber(value: SourceBackedValue | undefined): SourceBackedValue | undefined {
+  const normalized = normalizedPolicyNumberValue(value?.value);
+  return value && normalized ? { ...value, value: normalized } : undefined;
+}
+
+function finalizeSourceBackedPremium(value: SourceBackedValue | undefined): SourceBackedValue | undefined {
+  return value && isValidPremiumValue(value.value) ? value : undefined;
+}
+
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
   const policyTypes = controlledPolicyTypes(profile.policyTypes);
   const coverages = cleanOperationalCoverages(profile.coverages);
@@ -1292,9 +1341,11 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
     policyTypes,
     coverageTypes: controlledCoverageTypes(policyTypes),
     coverages,
+    policyNumber: finalizeSourceBackedPolicyNumber(profile.policyNumber),
     namedInsured: finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
     insurer: finalizeSourceBackedIdentity(profile.insurer, "insurer"),
     broker: finalizeSourceBackedIdentity(profile.broker, "broker"),
+    premium: finalizeSourceBackedPremium(profile.premium),
     parties: [],
   };
   finalized.parties = partiesFromProfile(finalized);

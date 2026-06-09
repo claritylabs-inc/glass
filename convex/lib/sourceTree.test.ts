@@ -503,6 +503,31 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.policyNumber?.sourceSpanIds).toContain("summary-page");
   });
 
+  it("repairs label-only policy numbers from source evidence", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "cover-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
+      { id: "summary", text: "Policy summary Sun Par Protector II Policy number: LI-1234,567-8 Insured persons: John Doe Mary Doe", pageStart: 4 },
+    ];
+    const tree = normalizeSourceTree([], spans, "sunpar-policy");
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["life"],
+        policyNumber: {
+          value: "Policy number:",
+          confidence: "medium",
+          sourceNodeIds: ["sunpar-policy:source_node:text:cover-number"],
+          sourceSpanIds: ["cover-number"],
+        },
+      },
+      tree,
+      spans,
+    );
+
+    expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
+    expect(profile.policyNumber?.sourceSpanIds).toContain("summary");
+  });
+
   it("repairs placeholder premiums from cited source-node text", () => {
     const spans: SourceSpanLike[] = [
       { id: "annual-premium", text: "If paying annually, the total initial annual premium for this policy is $XXX.XX.", pageStart: 5 },
@@ -918,6 +943,12 @@ describe("sourceTreePolicyFields", () => {
           sourceNodeIds: ["manulife-policy:source_node:text:manulife-death"],
           sourceSpanIds: ["manulife-death"],
         },
+        premium: {
+          value: "2",
+          confidence: "high",
+          sourceNodeIds: ["manulife-policy:source_node:text:manulife-death"],
+          sourceSpanIds: ["manulife-death"],
+        },
       },
       tree,
       spans,
@@ -933,6 +964,8 @@ describe("sourceTreePolicyFields", () => {
     expect(fields.insuredName).toBe("Unknown");
     expect(fields.carrier).toBe("Manulife");
     expect(fields.security).toBe("Manulife");
+    expect(fields.premium).toBeUndefined();
+    expect(operationalProfile.premium).toBeUndefined();
   });
 
   it("repairs polluted declaration fields from source-backed operational profile values", () => {
