@@ -339,6 +339,9 @@ describe("normalizeOperationalProfile", () => {
       { id: "benefit-product", text: "Manulife Par with VitalityPlusTM", pageStart: 1 },
       { id: "benefit-death", text: "The death benefit is the amount we pay when the insured person dies.", pageStart: 3 },
       { id: "benefit-disability", text: "If the insured person becomes disabled, you can ask us to pay a disability benefit.", pageStart: 6 },
+      { id: "benefit-catastrophic-heading", text: "Catastrophic disability", pageStart: 7 },
+      { id: "benefit-catastrophic-age", text: "Any catastrophic disability must occur on or after the policy anniversary nearest the insured person’s 18th birthday.", pageStart: 7 },
+      { id: "benefit-catastrophic-categories", text: "The 4 categories of catastrophic disability are:", pageStart: 7 },
     ];
     const benefitTree: DocumentSourceNode[] = [
       {
@@ -430,6 +433,13 @@ describe("normalizeOperationalProfile", () => {
     ]);
     expect(profile.coverages.find((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name === "Death benefit")?.limits?.[0]?.value)
       .toBe("The death benefit is the amount we pay when the insured person dies");
+    expect(profile.coverages.find((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name === "Disability benefit")?.limits)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          label: "Catastrophic disability",
+          value: "Any catastrophic disability must occur on or after the policy anniversary nearest the insured person's 18th birthday; the policy lists 4 categories of catastrophic disability.",
+        }),
+      ]));
   });
 
   it("repairs life policy type and full policy number from source evidence when model output is generic", () => {
@@ -466,6 +476,68 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.policyTypes).toEqual(["life"]);
     expect(profile.coverageTypes).toEqual(["Life"]);
     expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
+  });
+
+  it("prefers policy summary policy numbers over jacket cover numbers", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "cover-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
+      { id: "summary-page", text: "Policy summary Plan: Sun Critical Illness Insurance - Term 75 Policy number: LI-1234,567-9 Policy date: October 2, 2017 Insured person: John Doe", pageStart: 4 },
+    ];
+    const tree = normalizeSourceTree([], spans, "term-policy");
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["critical_illness"],
+        policyNumber: {
+          value: "LI-1234,567-8",
+          confidence: "high",
+          sourceNodeIds: ["term-policy:source_node:text:cover-number"],
+          sourceSpanIds: ["cover-number"],
+        },
+      },
+      tree,
+      spans,
+    );
+
+    expect(profile.policyNumber?.value).toBe("LI-1234,567-9");
+    expect(profile.policyNumber?.sourceSpanIds).toContain("summary-page");
+  });
+
+  it("repairs placeholder premiums from cited source-node text", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "annual-premium", text: "If paying annually, the total initial annual premium for this policy is $XXX.XX.", pageStart: 5 },
+    ];
+    const tree = normalizeSourceTree([], spans, "sunpar-policy");
+    const annualNodeId = tree.find((node) => node.kind === "text" && node.sourceSpanIds.includes("annual-premium"))?.id;
+    expect(annualNodeId).toBeTruthy();
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["life"],
+        coverages: [
+          {
+            name: "Joint last-to-die basic insurance coverage",
+            coverageOrigin: "core",
+            limits: [
+              {
+                kind: "premium",
+                label: "Total initial annual premium for this policy, if paying annually",
+                value: "$XXX",
+                appliesTo: "policy",
+                sourceNodeIds: [annualNodeId],
+                sourceSpanIds: ["annual-premium"],
+              },
+            ],
+            sourceNodeIds: [annualNodeId],
+            sourceSpanIds: ["annual-premium"],
+          },
+        ],
+      },
+      tree,
+      spans,
+    );
+
+    expect(profile.coverages[0].limits?.[0]?.value).toBe("$XXX.XX");
   });
 
   it("infers critical illness benefit policy types from source evidence", () => {

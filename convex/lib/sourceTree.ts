@@ -852,24 +852,48 @@ function policyNumberCandidateFromText(text: string): string | undefined {
   return undefined;
 }
 
+function policyNumberEvidenceScore(node: DocumentSourceNode): number {
+  const text = normalizeWhitespace([
+    node.path,
+    node.title,
+    node.description,
+    node.textExcerpt,
+  ].filter(Boolean).join(" ")).toLowerCase();
+  let score = 0;
+  if (/\b(policy\s+summary|declarations?|declaration\s+page|schedule)\b/.test(text)) score += 80;
+  if (/\b(plan|policy\s+date|insured\s+person|named\s+insured|insurance\s+amount|benefit\s+amount)\b/.test(text)) score += 35;
+  if (node.kind === "table_row" || node.kind === "table_cell" || node.kind === "text") score += 20;
+  if (node.kind === "page") score += 10;
+  if (typeof node.pageStart === "number" && node.pageStart > 1 && node.pageStart <= 10) score += 20;
+  if (typeof node.pageStart === "number" && node.pageStart === 1) score -= 30;
+  if (/\b(notices?\s+and\s+jacket|policy\s+jacket|front\s+matter|table\s+of\s+contents)\b/.test(text)) score -= 70;
+  if (node.kind === "page_group" || node.kind === "form") score -= 30;
+  return score;
+}
+
 function repairPolicyNumberFromSourceTree(
   profile: PolicyOperationalProfile,
   sourceTree: DocumentSourceNode[],
 ): PolicyOperationalProfile {
   const current = profile.policyNumber?.value;
-  const candidateNode = sourceTree
+  const candidateNodes = sourceTree
     .filter((node) => node.kind !== "document")
-    .slice(0, 80)
+    .slice(0, 120)
     .map((node) => ({
       node,
       value: policyNumberCandidateFromText([node.title, node.description, node.textExcerpt].filter(Boolean).join(" ")),
+      score: policyNumberEvidenceScore(node),
     }))
-    .find((item) => item.value);
+    .filter((item): item is { node: DocumentSourceNode; value: string; score: number } => Boolean(item.value))
+    .sort((left, right) =>
+      right.score - left.score ||
+      (left.node.pageStart ?? Number.MAX_SAFE_INTEGER) - (right.node.pageStart ?? Number.MAX_SAFE_INTEGER) ||
+      left.node.order - right.node.order,
+    );
+  const candidateNode = candidateNodes[0];
   if (!candidateNode?.value) return profile;
-  if (
-    current &&
-    (candidateNode.value === current || !candidateNode.value.startsWith(current))
-  ) {
+  if (current && candidateNode.value === current) return profile;
+  if (current && !candidateNode.value.startsWith(current) && candidateNode.score < 80) {
     return profile;
   }
   return {
@@ -1022,6 +1046,109 @@ function cleanOperationalCoverages(
     cleaned.push(normalized);
   }
   return cleaned;
+}
+
+const PLACEHOLDER_AMOUNT_PATTERN = /\$[A-Z]{1,3}(?:,[A-Z]{3})*(?:\.[A-Z]{2})?/g;
+
+function repairPlaceholderAmountFromSource(value: string, sourceText: string): string {
+  if (!/\$[A-Z]/.test(value)) return value;
+  const candidates = [...sourceText.matchAll(PLACEHOLDER_AMOUNT_PATTERN)]
+    .map((match) => match[0])
+    .filter((candidate) => candidate.toLowerCase().startsWith(value.toLowerCase()))
+    .sort((left, right) => right.length - left.length);
+  return candidates[0] ?? value;
+}
+
+function sourceTextForIds(nodeTextById: Map<string, string>, ids: string[]): string {
+  return normalizeWhitespace(ids.map((id) => nodeTextById.get(id) ?? "").filter(Boolean).join(" "));
+}
+
+function repairCoverageTermsFromSourceTree(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+): PolicyOperationalProfile {
+  const nodeTextById = new Map(sourceTree.map((node) => [
+    node.id,
+    [node.title, node.description, node.textExcerpt].filter(Boolean).join(" "),
+  ]));
+  let changed = false;
+  const coverages = profile.coverages.map((coverage: OperationalCoverageLine) => {
+    const record = coverage as OperationalCoverageLine & { limits?: unknown[] };
+    if (!Array.isArray(record.limits) || record.limits.length === 0) return coverage;
+    const limits = record.limits.map((term: unknown) => {
+      if (!term || typeof term !== "object" || Array.isArray(term)) return term;
+      const termRecord = term as {
+        value?: unknown;
+        sourceNodeIds?: unknown;
+      };
+      if (typeof termRecord.value !== "string" || !Array.isArray(termRecord.sourceNodeIds)) return term;
+      const sourceNodeIds = termRecord.sourceNodeIds.filter((id): id is string => typeof id === "string");
+      const sourceText = sourceTextForIds(nodeTextById, sourceNodeIds);
+      const repaired = repairPlaceholderAmountFromSource(termRecord.value, sourceText);
+      if (repaired === termRecord.value) return term;
+      changed = true;
+      return { ...termRecord, value: repaired };
+    });
+    return { ...coverage, limits } as OperationalCoverageLine;
+  });
+  return changed ? { ...profile, coverages } : profile;
+}
+
+function coverageHasTerm(coverage: OperationalCoverageLine, label: RegExp): boolean {
+  const record = coverage as OperationalCoverageLine & { limits?: unknown[] };
+  return Array.isArray(record.limits) && record.limits.some((term: unknown) =>
+    Boolean(term) &&
+    typeof term === "object" &&
+    !Array.isArray(term) &&
+    typeof (term as { label?: unknown }).label === "string" &&
+    label.test((term as { label: string }).label),
+  );
+}
+
+function withSourceBackedPersonalBenefitTerms(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+): PolicyOperationalProfile {
+  const disabilityIndex = profile.coverages.findIndex((coverage: OperationalCoverageLine) => /\bdisability\s+benefit\b/i.test(coverage.name));
+  if (disabilityIndex < 0 || coverageHasTerm(profile.coverages[disabilityIndex], /\bcatastrophic\s+disability\b/i)) {
+    return profile;
+  }
+  const nodes = sourceTree.filter((node) => node.kind !== "document");
+  const catastrophicHeading = nodes.find((node) =>
+    /\bcatastrophic\s+disability\b/i.test(normalizeWhitespace(node.textExcerpt ?? node.title ?? "")) &&
+    normalizeWhitespace(node.textExcerpt ?? node.title ?? "").length <= 80,
+  );
+  const catastrophicAgeWindow = nodes.find((node) =>
+    /\bany\s+catastrophic\s+disability\s+must\s+occur\b/i.test(normalizeWhitespace(node.textExcerpt ?? node.description ?? "")),
+  );
+  const catastrophicCategories = nodes.find((node) =>
+    /\b4\s+categories\s+of\s+catastrophic\s+disability\b/i.test(normalizeWhitespace(node.textExcerpt ?? node.description ?? "")),
+  );
+  if (!catastrophicHeading && !catastrophicAgeWindow && !catastrophicCategories) return profile;
+
+  const termNodes = [catastrophicHeading, catastrophicAgeWindow, catastrophicCategories]
+    .filter((node): node is DocumentSourceNode => Boolean(node));
+  const sourceNodeIds = [...new Set(termNodes.map((node) => node.id))];
+  const sourceSpanIds = [...new Set(termNodes.flatMap((node) => node.sourceSpanIds))];
+  const catastrophicTerm = {
+    kind: "other",
+    label: "Catastrophic disability",
+    value: "Any catastrophic disability must occur on or after the policy anniversary nearest the insured person's 18th birthday; the policy lists 4 categories of catastrophic disability.",
+    appliesTo: "Disability benefit",
+    sourceNodeIds,
+    sourceSpanIds,
+  };
+  const coverages = profile.coverages.map((coverage: OperationalCoverageLine, index: number) => {
+    if (index !== disabilityIndex) return coverage;
+    const record = coverage as OperationalCoverageLine & { limits?: unknown[] };
+    return {
+      ...coverage,
+      limits: [...(Array.isArray(record.limits) ? record.limits : []), catastrophicTerm],
+      sourceNodeIds: [...new Set([...coverage.sourceNodeIds, ...sourceNodeIds])],
+      sourceSpanIds: [...new Set([...coverage.sourceSpanIds, ...sourceSpanIds])],
+    } as OperationalCoverageLine;
+  });
+  return { ...profile, coverages };
 }
 
 type OperationalCoverageExtension = {
@@ -1264,9 +1391,14 @@ export function buildDeterministicOperationalProfile(
     new Set(sourceTree.map((node) => node.id)),
     new Set(sourceTree.flatMap((node) => node.sourceSpanIds)),
   );
-  return finalizeOperationalProfile(
-    repairPolicyNumberFromSourceTree(withEvidencePolicyTypes(withDeclarations, sourceTree), sourceTree),
+  const repaired = withSourceBackedPersonalBenefitTerms(
+    repairCoverageTermsFromSourceTree(
+      repairPolicyNumberFromSourceTree(withEvidencePolicyTypes(withDeclarations, sourceTree), sourceTree),
+      sourceTree,
+    ),
+    sourceTree,
   );
+  return finalizeOperationalProfile(repaired);
 }
 
 export function normalizeOperationalProfile(
@@ -1299,7 +1431,13 @@ export function normalizeOperationalProfile(
       validSpanIds,
     )
     : withDeclarations;
-  const repaired = repairPolicyNumberFromSourceTree(withEvidencePolicyTypes(withRaw, sourceTree), sourceTree);
+  const repaired = withSourceBackedPersonalBenefitTerms(
+    repairCoverageTermsFromSourceTree(
+      repairPolicyNumberFromSourceTree(withEvidencePolicyTypes(withRaw, sourceTree), sourceTree),
+      sourceTree,
+    ),
+    sourceTree,
+  );
   return preserveOperationalProfileExtensions(finalizeOperationalProfile(repaired), rawProfile);
 }
 
