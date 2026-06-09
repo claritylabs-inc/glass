@@ -9,9 +9,9 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN NPM_CONFIG_MIN_RELEASE_AGE=0 npm ci --include=optional
+RUN npm ci --include=optional
 RUN set -eux; \
-  native_tgz="$(NPM_CONFIG_MIN_RELEASE_AGE=0 npm pack @llamaindex/liteparse-linux-x64-gnu@2.0.3 --pack-destination /tmp)"; \
+  native_tgz="$(npm pack @llamaindex/liteparse-linux-x64-gnu@2.0.3 --pack-destination /tmp)"; \
   mkdir -p node_modules/@llamaindex/liteparse-linux-x64-gnu; \
   tar -xzf "/tmp/${native_tgz}" -C node_modules/@llamaindex/liteparse-linux-x64-gnu --strip-components=1; \
   rm "/tmp/${native_tgz}"
