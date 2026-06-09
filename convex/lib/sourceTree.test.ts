@@ -964,6 +964,7 @@ describe("sourceTreePolicyFields", () => {
     expect(fields.insuredName).toBe("Unknown");
     expect(fields.carrier).toBe("Manulife");
     expect(fields.security).toBe("Manulife");
+    expect(fields).toHaveProperty("premium", undefined);
     expect(fields.premium).toBeUndefined();
     expect(operationalProfile.premium).toBeUndefined();
   });

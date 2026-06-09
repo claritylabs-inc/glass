@@ -1808,7 +1808,7 @@ export function operationalProfilePolicyFields(
   if (effectiveDate) fields.effectiveDate = effectiveDate;
   if (expirationDate) fields.expirationDate = expirationDate;
   if (retroactiveDate) fields.retroactiveDate = retroactiveDate;
-  if (premium) fields.premium = premium;
+  fields.premium = premium ?? undefined;
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.policyTypes.length > 0) fields.policyTypes = operationalProfile.policyTypes;
   if (operationalProfile.coverages.length > 0) {
