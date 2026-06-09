@@ -936,7 +936,7 @@ describe("sourceTreePolicyFields", () => {
       {
         policyTypes: ["life"],
         namedInsured: {
-          value: "John Doe",
+          value: "Jim Doe",
           confidence: "high",
           sourceNodeIds: [insuredNodeId],
           sourceSpanIds: ["sunpar-insured"],

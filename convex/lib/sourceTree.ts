@@ -1381,6 +1381,7 @@ function normalizedIdentityComparison(value: string): string {
 function preferCoverageNamedInsured(
   current: SourceBackedValue | undefined,
   candidate: SourceBackedValue | undefined,
+  policyTypes: string[],
 ): SourceBackedValue | undefined {
   if (!candidate) return current;
   if (!current) return candidate;
@@ -1388,6 +1389,10 @@ function preferCoverageNamedInsured(
   const currentText = normalizedIdentityComparison(current.value);
   const candidateText = normalizedIdentityComparison(candidate.value);
   if (!currentText || !candidateText || currentText === candidateText) return current;
+
+  if (policyTypes.some((type) => ["life", "critical_illness", "disability", "long_term_care"].includes(type))) {
+    return candidate;
+  }
 
   const currentWordCount = currentText.split(/\s+/).length;
   const candidateWordCount = candidateText.split(/\s+/).length;
@@ -1403,6 +1408,7 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
   const namedInsured = preferCoverageNamedInsured(
     finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
     namedInsuredFromCoverageTerms(coverages),
+    policyTypes,
   );
   const finalized: PolicyOperationalProfile = {
     ...profile,
