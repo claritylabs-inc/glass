@@ -922,7 +922,7 @@ describe("sourceTreePolicyFields", () => {
     expect(coverages[0]?.limits?.[0]?.appliesTo).toBe("Death benefit");
   });
 
-  it("promotes source-backed insured persons coverage terms to policy insured name", () => {
+  it("promotes more complete source-backed insured persons coverage terms to policy insured name", () => {
     const spans: SourceSpanLike[] = [
       { id: "sunpar-policy-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
       { id: "sunpar-insured", text: "Insured persons: John Doe Mary Doe", pageStart: 4 },
@@ -936,7 +936,7 @@ describe("sourceTreePolicyFields", () => {
       {
         policyTypes: ["life"],
         namedInsured: {
-          value: "Insurance amount:",
+          value: "John Doe",
           confidence: "high",
           sourceNodeIds: [insuredNodeId],
           sourceSpanIds: ["sunpar-insured"],
@@ -951,7 +951,7 @@ describe("sourceTreePolicyFields", () => {
               {
                 kind: "other",
                 label: "Insured persons",
-                value: "John Doe Mary Doe",
+                value: "John Doe; Mary Doe",
                 appliesTo: "Sun Par Protector II",
                 sourceNodeIds: [insuredNodeId],
                 sourceSpanIds: ["sunpar-insured"],
@@ -969,10 +969,10 @@ describe("sourceTreePolicyFields", () => {
       operationalProfile,
     });
 
-    expect(operationalProfile.namedInsured?.value).toBe("John Doe Mary Doe");
-    expect(fields.insuredName).toBe("John Doe Mary Doe");
+    expect(operationalProfile.namedInsured?.value).toBe("John Doe; Mary Doe");
+    expect(fields.insuredName).toBe("John Doe; Mary Doe");
     expect(operationalProfile.parties.find((party: PolicyOperationalProfile["parties"][number]) => party.role === "named_insured")?.name)
-      .toBe("John Doe Mary Doe");
+      .toBe("John Doe; Mary Doe");
   });
 
   it("uses source-backed sample brand and clears unsupported insured identity fields", () => {

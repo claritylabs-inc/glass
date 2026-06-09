@@ -1371,11 +1371,39 @@ function namedInsuredFromCoverageTerms(coverages: OperationalCoverageLine[]): So
   return undefined;
 }
 
+function normalizedIdentityComparison(value: string): string {
+  return normalizeWhitespace(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function preferCoverageNamedInsured(
+  current: SourceBackedValue | undefined,
+  candidate: SourceBackedValue | undefined,
+): SourceBackedValue | undefined {
+  if (!candidate) return current;
+  if (!current) return candidate;
+
+  const currentText = normalizedIdentityComparison(current.value);
+  const candidateText = normalizedIdentityComparison(candidate.value);
+  if (!currentText || !candidateText || currentText === candidateText) return current;
+
+  const currentWordCount = currentText.split(/\s+/).length;
+  const candidateWordCount = candidateText.split(/\s+/).length;
+  if (candidateText.includes(currentText) && candidateWordCount > currentWordCount) {
+    return candidate;
+  }
+  return current;
+}
+
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
   const policyTypes = controlledPolicyTypes(profile.policyTypes);
   const coverages = cleanOperationalCoverages(profile.coverages);
-  const namedInsured = finalizeSourceBackedIdentity(profile.namedInsured, "named_insured")
-    ?? namedInsuredFromCoverageTerms(coverages);
+  const namedInsured = preferCoverageNamedInsured(
+    finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
+    namedInsuredFromCoverageTerms(coverages),
+  );
   const finalized: PolicyOperationalProfile = {
     ...profile,
     policyTypes,
