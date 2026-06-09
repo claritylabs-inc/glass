@@ -1453,10 +1453,21 @@ export const updateExtractionInternal = internalMutation({
     fields: v.any(), // Accept any policy fields from insuranceDocToPolicy
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, normalizeEditableFields(args.fields, {
+    const fields = normalizeEditableFields(args.fields, {
       deriveNumericAmounts: false,
       normalizeMoneyText: false,
-    }));
+    });
+    const operationalProfile = fields.operationalProfile;
+    if (
+      operationalProfile &&
+      typeof operationalProfile === "object" &&
+      !Array.isArray(operationalProfile) &&
+      !(operationalProfile as Record<string, unknown>).premium
+    ) {
+      fields.premium = undefined;
+      fields.premiumAmount = undefined;
+    }
+    await ctx.db.patch(args.id, fields);
   },
 });
 
