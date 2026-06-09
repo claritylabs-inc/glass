@@ -32,7 +32,7 @@ type GlobalWebRetrieval = OperatorGlobalModelSettings["webRetrieval"];
 type EmptyArgs = Record<string, never>;
 type OperatorStatus = "onboarding" | "live";
 type TraceStatus = "running" | "complete" | "error" | "cancelled";
-type ExtractionRangeKey = "24h" | "7d" | "30d" | "90d";
+type ExtractionRangeKey = "all" | "24h" | "30d" | "90d";
 type ExtractionTraceListArgs = {
   status?: TraceStatus;
   orgId?: Id<"organizations">;
@@ -76,9 +76,8 @@ type OptimisticMGAInput = {
   adminName?: string;
 };
 
-const extractionRangeMs: Record<ExtractionRangeKey, number> = {
+const extractionRangeMs: Record<Exclude<ExtractionRangeKey, "all">, number> = {
   "24h": 24 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000,
   "30d": 30 * 24 * 60 * 60 * 1000,
   "90d": 90 * 24 * 60 * 60 * 1000,
 };
@@ -88,6 +87,7 @@ function sortByCreatedAtDesc<T extends { createdAt: number }>(rows: T[]) {
 }
 
 export function stableExtractionDateFrom(range: ExtractionRangeKey) {
+  if (range === "all") return undefined;
   return dayjs().startOf("hour").valueOf() - extractionRangeMs[range];
 }
 

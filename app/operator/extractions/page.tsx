@@ -134,9 +134,9 @@ const STATUS_LABELS: Record<string, string> = {
   error: "Error",
   cancelled: "Cancelled",
 };
-const RANGE_LABELS: Record<"24h" | "7d" | "30d" | "90d", string> = {
+const RANGE_LABELS: Record<"all" | "24h" | "30d" | "90d", string> = {
+  all: "All time",
   "24h": "24 hours",
-  "7d": "7 days",
   "30d": "30 days",
   "90d": "90 days",
 };
@@ -1176,7 +1176,7 @@ export default function OperatorExtractionsPage() {
   const traceIdParam = searchParams.get("traceId");
   const traceTabParam = parseTracePanelTab(searchParams.get("tab"));
   const [status, setStatus] = useState<string>(ALL);
-  const [range, setRange] = useState<keyof typeof RANGE_LABELS>("90d");
+  const [range, setRange] = useState<keyof typeof RANGE_LABELS>("all");
   const [orgId, setOrgId] = useState<string>(ALL);
   const selectedTraceId = traceIdParam;
   const activeTraceTab = traceIdParam ? traceTabParam : "summary";
@@ -1308,8 +1308,8 @@ export default function OperatorExtractionsPage() {
           <SelectValue>{RANGE_LABELS[range]}</SelectValue>
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="all">All time</SelectItem>
           <SelectItem value="24h">24 hours</SelectItem>
-          <SelectItem value="7d">7 days</SelectItem>
           <SelectItem value="30d">30 days</SelectItem>
           <SelectItem value="90d">90 days</SelectItem>
         </SelectContent>
