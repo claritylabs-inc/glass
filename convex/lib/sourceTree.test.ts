@@ -432,6 +432,76 @@ describe("normalizeOperationalProfile", () => {
       .toBe("The death benefit is the amount we pay when the insured person dies");
   });
 
+  it("repairs life policy type and full policy number from source evidence when model output is generic", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "life-title", text: "Sun Permanent Life", pageStart: 1 },
+      { id: "life-policy-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
+      { id: "life-owner", text: "Owner: Jim Doe", pageStart: 1 },
+      { id: "life-benefit", text: "Sun Permanent Life Basic insurance coverage Insurance amount: $X,XXX,XXX", pageStart: 4 },
+    ];
+    const tree = normalizeSourceTree([], spans, "life-policy");
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["other"],
+        policyNumber: {
+          value: "LI-1234",
+          confidence: "high",
+          sourceNodeIds: ["life-policy:source_node:text:life-policy-number"],
+          sourceSpanIds: ["life-policy-number"],
+        },
+        coverages: [
+          {
+            name: "Sun Permanent Life - Basic insurance coverage",
+            limit: "$X,XXX,XXX",
+            sourceNodeIds: ["life-policy:source_node:text:life-benefit"],
+            sourceSpanIds: ["life-benefit"],
+          },
+        ],
+      },
+      tree,
+      spans,
+    );
+
+    expect(profile.policyTypes).toEqual(["life"]);
+    expect(profile.coverageTypes).toEqual(["Life"]);
+    expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
+  });
+
+  it("infers critical illness benefit policy types from source evidence", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "term-title", text: "Critical illness insurance", pageStart: 1 },
+      { id: "term-benefits", text: "Critical illness insurance benefit | Total disability waiver | Long term care conversion option", pageStart: 5 },
+    ];
+    const tree = normalizeSourceTree([], spans, "term-policy");
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["other"],
+        coverages: [
+          {
+            name: "Critical illness insurance benefit",
+            sourceNodeIds: ["term-policy:source_node:text:term-benefits"],
+            sourceSpanIds: ["term-benefits"],
+          },
+        ],
+      },
+      tree,
+      spans,
+    );
+
+    expect(profile.policyTypes).toEqual([
+      "critical_illness",
+      "disability",
+      "long_term_care",
+    ]);
+    expect(profile.coverageTypes).toEqual([
+      "Critical Illness",
+      "Disability",
+      "Long Term Care",
+    ]);
+  });
+
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
     const profile = normalizeOperationalProfile(
       {
@@ -753,6 +823,44 @@ describe("sourceTreePolicyFields", () => {
 
     const coverages = fields.coverages as Array<{ limits?: Array<{ appliesTo?: string }> }>;
     expect(coverages[0]?.limits?.[0]?.appliesTo).toBe("Death benefit");
+  });
+
+  it("uses source-backed sample brand and clears unsupported insured identity fields", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "manulife-product", text: "1118-995 | 024 09 30E Manulife Par with Vitality PlusTM", pageStart: 1 },
+      { id: "manulife-death", text: "If the insured person dies during the grace period, we reduce the death benefit by the amount of the missed premium.", pageStart: 2 },
+    ];
+    const tree = normalizeSourceTree([], spans, "manulife-policy");
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        policyTypes: ["other"],
+        namedInsured: {
+          value: "person dies during the grace period, we reduce the death benefit by the amount of the missed",
+          confidence: "high",
+          sourceNodeIds: ["manulife-policy:source_node:text:manulife-death"],
+          sourceSpanIds: ["manulife-death"],
+        },
+        insurer: {
+          value: "for a loan, the rights of a collateral assignee or, under the Quebec Civil Code, a hypothecary creditor, may take preced",
+          confidence: "high",
+          sourceNodeIds: ["manulife-policy:source_node:text:manulife-death"],
+          sourceSpanIds: ["manulife-death"],
+        },
+      },
+      tree,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: tree,
+      operationalProfile,
+    });
+
+    expect(fields.policyTypes).toEqual(["life"]);
+    expect(fields.policyNumber).toBe("Unknown");
+    expect(fields.insuredName).toBe("Unknown");
+    expect(fields.carrier).toBe("Manulife");
+    expect(fields.security).toBe("Manulife");
   });
 
   it("repairs polluted declaration fields from source-backed operational profile values", () => {

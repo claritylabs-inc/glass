@@ -656,6 +656,7 @@ function isBadOperationalIdentityValue(value: string | undefined): boolean {
   if (!text) return true;
   if (text.length > 180) return true;
   if (/^[a-z]/.test(text)) return true;
+  if (/^(owner|policy owner|applicant)\s*:/i.test(text)) return true;
   if (/[•]/.test(text)) return true;
   if (/^[^A-Za-z0-9]+|[^A-Za-z0-9.)]$/.test(text)) return true;
   const words = text.split(/\s+/).filter(Boolean);
@@ -676,9 +677,67 @@ function isBadBrokerValue(value: string | undefined): boolean {
 function isLikelyNamedInsuredValue(value: string): boolean {
   const text = normalizeWhitespace(value);
   if (!text || text.length > 140) return false;
+  if (/^(owner|policy owner|applicant|insured|insured person)\s*:/i.test(text)) return false;
   if (/^(holds|is|are|has|have|with|including|through|provides|administers|licensed|federally)\b/i.test(text)) return false;
   if (/\b(policy|coverage|deductible|premium|claim|limit|retroactive|endorsement)\b/i.test(text)) return false;
   return /[A-Za-z]/.test(text);
+}
+
+function sourceTreeText(sourceTree: DocumentSourceNode[], maxNodes = 80): string {
+  return normalizeWhitespace(
+    sourceTree
+      .filter((node) => node.kind !== "document")
+      .slice(0, maxNodes)
+      .map((node) => [node.title, node.description, node.textExcerpt].filter(Boolean).join(" "))
+      .join(" "),
+  );
+}
+
+function inferPersonalPolicyTypesFromText(text: string): string[] {
+  const normalized = text.toLowerCase();
+  const types: string[] = [];
+  const add = (type: string, pattern: RegExp) => {
+    if (pattern.test(normalized) && !types.includes(type)) types.push(type);
+  };
+  add("life", /\b(life insurance|permanent life|term life|whole life|universal life|sun permanent life|sun par protector|manulife par|vitality\s*plus|death benefit)\b/i);
+  add("critical_illness", /\b(critical illness|critical illness insurance|covered critical illness|partial benefit payout)\b/i);
+  add("disability", /\b(disability benefit|total disability|catastrophic disability|disability waiver|waiver of premium disability)\b/i);
+  add("long_term_care", /\b(long[-\s]?term care|long term care conversion)\b/i);
+  return types;
+}
+
+function inferPolicyTypesFromEvidence(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+): string[] {
+  return inferPersonalPolicyTypesFromText([
+    sourceTreeText(sourceTree),
+    profile.coverageTypes.join(" "),
+    profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => [
+      coverage.name,
+      coverage.limit,
+      coverage.premium,
+      coverage.limits.map((term: PolicyOperationalProfile["coverages"][number]["limits"][number]) =>
+        `${term.label} ${term.value} ${term.appliesTo ?? ""}`
+      ).join(" "),
+    ].filter(Boolean).join(" ")).join(" "),
+  ].join(" "));
+}
+
+function withEvidencePolicyTypes(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+): PolicyOperationalProfile {
+  const inferred = inferPolicyTypesFromEvidence(profile, sourceTree);
+  if (inferred.length === 0) return profile;
+  const current = controlledPolicyTypes(profile.policyTypes);
+  const next = current.every((type) => type === "other")
+    ? inferred
+    : [...current.filter((type) => type !== "other"), ...inferred];
+  return {
+    ...profile,
+    policyTypes: [...new Set(next)].slice(0, 6),
+  };
 }
 
 function valueOfSourceBackedValue(value: unknown): string | undefined {
@@ -747,6 +806,16 @@ function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<
     candidate.insurer = sourceBackedValueFromNode(jacketInsurerNode, titleCase(cleanInsurer.toLowerCase()));
   }
 
+  if (!candidate.insurer) {
+    const manulifeNode = nodes.find((node) =>
+      (node.pageStart ?? Number.MAX_SAFE_INTEGER) <= 3
+      && /\bManulife\b/i.test([node.title, node.description, node.textExcerpt].filter(Boolean).join(" ")),
+    );
+    if (manulifeNode) {
+      candidate.insurer = sourceBackedValueFromNode(manulifeNode, "Manulife");
+    }
+  }
+
   const brokerNode = nodes.find((node) => /\bItem\s*12\.\s*Broker of Record\b/i.test(node.textExcerpt ?? ""));
   const broker = brokerNode?.textExcerpt?.match(/\bItem\s*12\.\s*Broker of Record\s+(.+?)(?=\s+Item\s*13\.|\s+SLS-[A-Z]|\s+This Policy\b|\s+Countersigned\b|$)/i)?.[1];
   if (brokerNode && broker) {
@@ -756,12 +825,66 @@ function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<
   return candidate;
 }
 
+const POLICY_NUMBER_PATTERNS = [
+  /\b(?:policy|contract)\s*(?:number|no\.?|#)\s*:?\s*([A-Z0-9][A-Z0-9,.-]{4,}[A-Z0-9])/i,
+  /\b(?:policy|contract)\s*[:#]\s*([A-Z0-9][A-Z0-9,.-]{4,}[A-Z0-9])/i,
+];
+
+const POLICY_TYPE_ALIASES: Record<string, string> = {
+  "life insurance": "life",
+  "permanent life": "life",
+  "term life": "life",
+  "whole life": "life",
+  "universal life": "life",
+  "critical illness": "critical_illness",
+  "critical illness insurance": "critical_illness",
+  "disability insurance": "disability",
+  "long term care": "long_term_care",
+  "long-term care": "long_term_care",
+};
+
+function policyNumberCandidateFromText(text: string): string | undefined {
+  for (const pattern of POLICY_NUMBER_PATTERNS) {
+    const value = text.match(pattern)?.[1];
+    const clean = normalizeWhitespace(value ?? "").replace(/^[\s:;#-]+|[\s;,.]+$/g, "");
+    if (clean) return clean;
+  }
+  return undefined;
+}
+
+function repairPolicyNumberFromSourceTree(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+): PolicyOperationalProfile {
+  const current = profile.policyNumber?.value;
+  const candidateNode = sourceTree
+    .filter((node) => node.kind !== "document")
+    .slice(0, 80)
+    .map((node) => ({
+      node,
+      value: policyNumberCandidateFromText([node.title, node.description, node.textExcerpt].filter(Boolean).join(" ")),
+    }))
+    .find((item) => item.value);
+  if (!candidateNode?.value) return profile;
+  if (
+    current &&
+    (candidateNode.value === current || !candidateNode.value.startsWith(current))
+  ) {
+    return profile;
+  }
+  return {
+    ...profile,
+    policyNumber: sourceBackedValueFromNode(candidateNode.node, candidateNode.value, "high"),
+  };
+}
+
 function controlledPolicyTypes(values: unknown): string[] {
   const types = Array.isArray(values)
     ? values.filter((value): value is string => typeof value === "string")
     : [];
   const controlled = types
-    .map((type) => type.trim().toLowerCase())
+    .map((type) => type.trim().toLowerCase().replace(/\s+/g, " "))
+    .map((type) => POLICY_TYPE_ALIASES[type] ?? type.replace(/[\s-]+/g, "_"))
     .filter((type) => POLICY_TYPE_KEYS.has(type));
   const unique = [...new Set(controlled)].slice(0, 6);
   return unique.length ? unique : ["other"];
@@ -1141,7 +1264,9 @@ export function buildDeterministicOperationalProfile(
     new Set(sourceTree.map((node) => node.id)),
     new Set(sourceTree.flatMap((node) => node.sourceSpanIds)),
   );
-  return finalizeOperationalProfile(withDeclarations);
+  return finalizeOperationalProfile(
+    repairPolicyNumberFromSourceTree(withEvidencePolicyTypes(withDeclarations, sourceTree), sourceTree),
+  );
 }
 
 export function normalizeOperationalProfile(
@@ -1174,7 +1299,8 @@ export function normalizeOperationalProfile(
       validSpanIds,
     )
     : withDeclarations;
-  return preserveOperationalProfileExtensions(finalizeOperationalProfile(withRaw), rawProfile);
+  const repaired = repairPolicyNumberFromSourceTree(withEvidencePolicyTypes(withRaw, sourceTree), sourceTree);
+  return preserveOperationalProfileExtensions(finalizeOperationalProfile(repaired), rawProfile);
 }
 
 export function normalizeStoredOperationalProfile(
@@ -1480,11 +1606,14 @@ export function operationalProfilePolicyFields(
   const expirationDate = profileValue(operationalProfile, "expirationDate");
   const retroactiveDate = profileValue(operationalProfile, "retroactiveDate");
   const premium = profileValue(operationalProfile, "premium");
-  if (policyNumber) fields.policyNumber = policyNumber;
-  if (namedInsured) fields.insuredName = namedInsured;
+  fields.policyNumber = policyNumber ?? "Unknown";
+  fields.insuredName = namedInsured ?? "Unknown";
   if (insurer) {
     fields.security = insurer;
     fields.carrier = insurer;
+  } else {
+    fields.security = undefined;
+    fields.carrier = "Unknown";
   }
   if (broker) fields.broker = broker;
   if (effectiveDate) fields.effectiveDate = effectiveDate;
