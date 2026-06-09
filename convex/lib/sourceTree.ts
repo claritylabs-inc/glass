@@ -684,6 +684,16 @@ function isLikelyNamedInsuredValue(value: string): boolean {
   return /[A-Za-z]/.test(text);
 }
 
+function datePhraseFromScheduleValue(value: string): string {
+  const text = normalizeWhitespace(value);
+  const monthDate = text.match(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s*(?:\d{4}|X{4})\b/i);
+  if (monthDate) return monthDate[0];
+  const isoDate = text.match(/\b\d{4}-\d{2}-\d{2}\b/);
+  if (isoDate) return isoDate[0];
+  const slashDate = text.match(/\b\d{1,2}[/-]\d{1,2}[/-](?:\d{2,4}|X{4})\b/);
+  return slashDate ? slashDate[0] : text;
+}
+
 function sourceTreeText(sourceTree: DocumentSourceNode[], maxNodes = 80): string {
   return normalizeWhitespace(
     sourceTree
@@ -831,9 +841,9 @@ function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<
         candidate.expirationDate ??= sourceBackedValueFromNode(node, period[2]);
       }
     } else if (!candidate.effectiveDate && /\b(?:policy date|date this policy starts|policy starts)\b/.test(normalizedLabel)) {
-      candidate.effectiveDate = sourceBackedValueFromNode(node, value);
+      candidate.effectiveDate = sourceBackedValueFromNode(node, datePhraseFromScheduleValue(value));
     } else if (!candidate.expirationDate && /\b(?:date this policy ends|policy ends|policy expiry|policy expiration)\b/.test(normalizedLabel)) {
-      candidate.expirationDate = sourceBackedValueFromNode(node, value);
+      candidate.expirationDate = sourceBackedValueFromNode(node, datePhraseFromScheduleValue(value));
     } else if (!candidate.premium && /\b(?:annual premium|total premium|policy premium|premium due)\b/.test(normalizedLabel)) {
       candidate.premium = sourceBackedValueFromNode(node, value);
     } else if (!candidate.broker && /\b(?:broker|broker of record|producer|agent of record)\b/.test(normalizedLabel)) {

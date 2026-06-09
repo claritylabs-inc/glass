@@ -506,7 +506,7 @@ describe("normalizeOperationalProfile", () => {
   it("repairs personal policy end dates from policy summary schedule rows", () => {
     const spans: SourceSpanLike[] = [
       { id: "policy-date", text: "Column 1: Policy date | Column 2: 2021-10-18", pageStart: 4 },
-      { id: "policy-ends", text: "Column 1: Date this policy ends | Column 2: October 2, XXXX", pageStart: 5 },
+      { id: "policy-ends", text: "Column 1: Date this policy ends | Column 2: 15 policy years Non-smoker / Smoker October 2, XXXX", pageStart: 5 },
     ];
     const tree = normalizeSourceTree([], spans, "term-policy");
 
