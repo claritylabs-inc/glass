@@ -922,6 +922,59 @@ describe("sourceTreePolicyFields", () => {
     expect(coverages[0]?.limits?.[0]?.appliesTo).toBe("Death benefit");
   });
 
+  it("promotes source-backed insured persons coverage terms to policy insured name", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "sunpar-policy-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
+      { id: "sunpar-insured", text: "Insured persons: John Doe Mary Doe", pageStart: 4 },
+      { id: "sunpar-limit", text: "Insurance amount: $X,XXX,XXX", pageStart: 4 },
+    ];
+    const tree = normalizeSourceTree([], spans, "sunpar-policy");
+    const insuredNodeId = tree.find((node) => node.sourceSpanIds.includes("sunpar-insured"))?.id;
+    expect(insuredNodeId).toBeTruthy();
+
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        policyTypes: ["life"],
+        namedInsured: {
+          value: "Insurance amount:",
+          confidence: "high",
+          sourceNodeIds: [insuredNodeId],
+          sourceSpanIds: ["sunpar-insured"],
+        },
+        coverages: [
+          {
+            name: "Sun Par Protector II",
+            limit: "$X,XXX,XXX",
+            sourceNodeIds: [insuredNodeId],
+            sourceSpanIds: ["sunpar-insured"],
+            limits: [
+              {
+                kind: "other",
+                label: "Insured persons",
+                value: "John Doe Mary Doe",
+                appliesTo: "Sun Par Protector II",
+                sourceNodeIds: [insuredNodeId],
+                sourceSpanIds: ["sunpar-insured"],
+              },
+            ],
+          },
+        ],
+      },
+      tree,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: tree,
+      operationalProfile,
+    });
+
+    expect(operationalProfile.namedInsured?.value).toBe("John Doe Mary Doe");
+    expect(fields.insuredName).toBe("John Doe Mary Doe");
+    expect(operationalProfile.parties.find((party: PolicyOperationalProfile["parties"][number]) => party.role === "named_insured")?.name)
+      .toBe("John Doe Mary Doe");
+  });
+
   it("uses source-backed sample brand and clears unsupported insured identity fields", () => {
     const spans: SourceSpanLike[] = [
       { id: "manulife-product", text: "1118-995 | 024 09 30E Manulife Par with Vitality PlusTM", pageStart: 1 },

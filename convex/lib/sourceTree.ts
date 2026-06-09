@@ -657,6 +657,7 @@ function isBadOperationalIdentityValue(value: string | undefined): boolean {
   if (text.length > 180) return true;
   if (/^[a-z]/.test(text)) return true;
   if (/^(owner|policy owner|applicant)\s*:/i.test(text)) return true;
+  if (/\b(?:insured persons?|insurance amount|benefit amount|policy number|owner|plan|premium)\s*:/i.test(text)) return true;
   if (/[•]/.test(text)) return true;
   if (/^[^A-Za-z0-9]+|[^A-Za-z0-9.)]$/.test(text)) return true;
   const words = text.split(/\s+/).filter(Boolean);
@@ -1333,16 +1334,55 @@ function finalizeSourceBackedPremium(value: SourceBackedValue | undefined): Sour
   return value && isValidPremiumValue(value.value) ? value : undefined;
 }
 
+function sourceIds(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && id.trim().length > 0) : [];
+}
+
+function isLikelyCoverageNamedInsuredValue(value: string): boolean {
+  const text = normalizeWhitespace(value);
+  if (!isLikelyNamedInsuredValue(text) || isBadOperationalIdentityValue(text)) return false;
+  return !/\b(?:insurance\s+amount|benefit\s+amount|premium|risk\s+classification|policy\s+date|date\s+this\s+policy\s+ends|plan)\b\s*:?\s*$/i.test(text);
+}
+
+function namedInsuredFromCoverageTerms(coverages: OperationalCoverageLine[]): SourceBackedValue | undefined {
+  for (const coverage of coverages) {
+    const coverageRecord = coverage as OperationalCoverageLine & { limits?: unknown[] };
+    if (!Array.isArray(coverageRecord.limits)) continue;
+
+    for (const term of coverageRecord.limits) {
+      if (!term || typeof term !== "object" || Array.isArray(term)) continue;
+      const record = term as Record<string, unknown>;
+      const label = normalizeWhitespace(typeof record.label === "string" ? record.label : "");
+      const value = normalizeWhitespace(typeof record.value === "string" ? record.value : "");
+      if (!/\binsured\s+persons?\b/i.test(label) || !isLikelyCoverageNamedInsuredValue(value)) continue;
+
+      const sourceNodeIds = sourceIds(record.sourceNodeIds);
+      const sourceSpanIds = sourceIds(record.sourceSpanIds);
+      if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0) continue;
+
+      return {
+        value,
+        confidence: "medium",
+        sourceNodeIds,
+        sourceSpanIds,
+      };
+    }
+  }
+  return undefined;
+}
+
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
   const policyTypes = controlledPolicyTypes(profile.policyTypes);
   const coverages = cleanOperationalCoverages(profile.coverages);
+  const namedInsured = finalizeSourceBackedIdentity(profile.namedInsured, "named_insured")
+    ?? namedInsuredFromCoverageTerms(coverages);
   const finalized: PolicyOperationalProfile = {
     ...profile,
     policyTypes,
     coverageTypes: controlledCoverageTypes(policyTypes),
     coverages,
     policyNumber: finalizeSourceBackedPolicyNumber(profile.policyNumber),
-    namedInsured: finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
+    namedInsured,
     insurer: finalizeSourceBackedIdentity(profile.insurer, "insurer"),
     broker: finalizeSourceBackedIdentity(profile.broker, "broker"),
     premium: finalizeSourceBackedPremium(profile.premium),
