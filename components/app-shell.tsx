@@ -15,7 +15,10 @@ import { useMutation } from "convex/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
-import { GlassPromptInput } from "@/components/glass-prompt-input";
+import {
+  ChatInputOverlay,
+  GlassPromptInput,
+} from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -529,29 +532,19 @@ function PersistentChatBar() {
   if (isThreadPage || !hasContext) return null;
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
-      <div className="h-16 bg-linear-to-b from-white/0 via-white/40 to-white/80 dark:from-black/0 dark:via-black/40 dark:to-black/80" />
-      <div
-        className="pointer-events-auto bg-white/80 dark:bg-black/80 px-4 md:px-6 lg:px-8 pt-2"
-        style={{
-          paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
-        }}
-      >
-        <div className="max-w-2xl mx-auto">
-          <GlassPromptInput
-            onSubmit={handleSubmit}
-            placeholder={
-              agentBranding ? `Ask ${agentBranding.name}...` : "Ask Glass..."
-            }
-            contextLabel={pageContext?.summary}
-            disabled={sending}
-            status={sending ? "submitted" : "ready"}
-            agentBranding={agentBranding}
-            orgId={viewerOrg?.org?._id}
-          />
-        </div>
-      </div>
-    </div>
+    <ChatInputOverlay>
+      <GlassPromptInput
+        onSubmit={handleSubmit}
+        placeholder={
+          agentBranding ? `Ask ${agentBranding.name}...` : "Ask Glass..."
+        }
+        contextLabel={pageContext?.summary}
+        disabled={sending}
+        status={sending ? "submitted" : "ready"}
+        agentBranding={agentBranding}
+        orgId={viewerOrg?.org?._id}
+      />
+    </ChatInputOverlay>
   );
 }
 

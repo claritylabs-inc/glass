@@ -36,6 +36,28 @@ import { BrandIcon } from "@/components/ui/brand-icon";
 import type { ChatStatus } from "ai";
 import { useCachedAgentTargets } from "@/lib/sync/glass-cached-queries";
 
+const lightInputOverlayFadeStyle = {
+  backgroundImage:
+    "linear-gradient(to bottom, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.4) 55%, rgba(255, 255, 255, 0.8) 100%)",
+} satisfies React.CSSProperties;
+
+const darkInputOverlayFadeStyle = {
+  backgroundImage:
+    "linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 55%, rgba(0, 0, 0, 0.8) 100%)",
+} satisfies React.CSSProperties;
+
+function InputOverlayFade() {
+  return (
+    <>
+      <div className="h-16 dark:hidden" style={lightInputOverlayFadeStyle} />
+      <div
+        className="hidden h-16 dark:block"
+        style={darkInputOverlayFadeStyle}
+      />
+    </>
+  );
+}
+
 // Inner component — must render inside <PromptInput> to access LocalAttachmentsContext
 function AttachmentActionButtons() {
   const attachments = usePromptInputAttachments();
@@ -686,7 +708,7 @@ export const GlassPromptInput = forwardRef<
 export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
-      <div className="h-16 bg-linear-to-b from-white/0 via-white/40 to-white/80 dark:from-black/0 dark:via-black/40 dark:to-black/80" />
+      <InputOverlayFade />
       <div
         className="pointer-events-auto bg-white/80 dark:bg-black/80 px-4 md:px-6 lg:px-8 pt-2"
         style={{
