@@ -503,6 +503,25 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.policyNumber?.sourceSpanIds).toContain("summary-page");
   });
 
+  it("repairs personal policy end dates from policy summary schedule rows", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "policy-date", text: "Column 1: Policy date | Column 2: 2021-10-18", pageStart: 4 },
+      { id: "policy-ends", text: "Column 1: Date this policy ends | Column 2: October 2, XXXX", pageStart: 5 },
+    ];
+    const tree = normalizeSourceTree([], spans, "term-policy");
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["critical_illness"],
+      },
+      tree,
+      spans,
+    );
+
+    expect(profile.effectiveDate?.value).toBe("2021-10-18");
+    expect(profile.expirationDate?.value).toBe("October 2, XXXX");
+  });
+
   it("repairs label-only policy numbers from source evidence", () => {
     const spans: SourceSpanLike[] = [
       { id: "cover-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },

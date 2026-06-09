@@ -830,6 +830,10 @@ function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<
         candidate.effectiveDate ??= sourceBackedValueFromNode(node, period[1]);
         candidate.expirationDate ??= sourceBackedValueFromNode(node, period[2]);
       }
+    } else if (!candidate.effectiveDate && /\b(?:policy date|date this policy starts|policy starts)\b/.test(normalizedLabel)) {
+      candidate.effectiveDate = sourceBackedValueFromNode(node, value);
+    } else if (!candidate.expirationDate && /\b(?:date this policy ends|policy ends|policy expiry|policy expiration)\b/.test(normalizedLabel)) {
+      candidate.expirationDate = sourceBackedValueFromNode(node, value);
     } else if (!candidate.premium && /\b(?:annual premium|total premium|policy premium|premium due)\b/.test(normalizedLabel)) {
       candidate.premium = sourceBackedValueFromNode(node, value);
     } else if (!candidate.broker && /\b(?:broker|broker of record|producer|agent of record)\b/.test(normalizedLabel)) {
