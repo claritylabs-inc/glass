@@ -719,6 +719,42 @@ describe("sourceTreePolicyFields", () => {
     ).toEqual(["professional_liability", "cyber"]);
   });
 
+  it("materializes coverage term appliesTo context for policy storage", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        policyTypes: ["life"],
+        coverages: [
+          {
+            name: "Death benefit",
+            coverageOrigin: "core",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+            limits: [
+              {
+                kind: "other",
+                label: "Death benefit is the amount paid when the insured person dies",
+                value: "The death benefit is the amount we pay when the insured person dies",
+                appliesTo: "Death benefit",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+    });
+
+    const coverages = fields.coverages as Array<{ limits?: Array<{ appliesTo?: string }> }>;
+    expect(coverages[0]?.limits?.[0]?.appliesTo).toBe("Death benefit");
+  });
+
   it("repairs polluted declaration fields from source-backed operational profile values", () => {
     const operationalProfile = normalizeOperationalProfile(
       {

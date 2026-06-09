@@ -1259,6 +1259,7 @@ export default defineSchema({
               label: v.string(),
               value: v.string(),
               amount: v.optional(v.number()),
+              appliesTo: v.optional(v.string()),
               kind: v.optional(v.string()),
               sourceNodeIds: v.optional(v.array(v.string())),
               sourceSpanIds: v.optional(v.array(v.string())),
