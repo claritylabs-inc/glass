@@ -77,6 +77,29 @@ function nowMs(): number {
   return dayjs().valueOf();
 }
 
+function effectivePolicyDataStage(policy: Doc<"policies">) {
+  if (
+    policy.extractionDataStage === "placeholder" ||
+    policy.extractionDataStage === "preview" ||
+    policy.extractionDataStage === "final"
+  ) {
+    return policy.extractionDataStage;
+  }
+  return policy.pipelineStatus === "complete" ? "final" : "placeholder";
+}
+
+function assertPolicyReadyForChange(policy: Doc<"policies">) {
+  if (
+    policy.pipelineStatus === "complete" &&
+    effectivePolicyDataStage(policy) === "final"
+  ) {
+    return;
+  }
+  throw new Error(
+    `Policy ${policy.policyNumber ?? policy._id} must finish enrichment before policy changes or endorsements can be processed.`,
+  );
+}
+
 function normalizeCaseStatus(
   status: PolicyChangeStatus | undefined,
 ): PolicyChangeStatus {
@@ -478,6 +501,7 @@ export const createFromChat = mutation({
       const policy = await ctx.db.get(args.policyId);
       if (!policy || policy.orgId !== orgId)
         throw new Error("Policy not found");
+      assertPolicyReadyForChange(policy);
     }
     const now = nowMs();
     const brokerSubmission = await buildInitialBrokerSubmission(
@@ -597,6 +621,13 @@ export const createFromChatInternal = internalMutation({
     brokerSubmission: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    if (args.policyId) {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy || policy.orgId !== args.orgId) {
+        throw new Error("Policy not found");
+      }
+      assertPolicyReadyForChange(policy);
+    }
     const now = nowMs();
     const validationIssues = buildInitialValidation(args);
     const missingInfo = withBrokerRecipientQuestion(
@@ -673,6 +704,13 @@ export const createAnalyzedInternal = internalMutation({
     brokerSubmission: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    if (args.policyId) {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy || policy.orgId !== args.orgId) {
+        throw new Error("Policy not found");
+      }
+      assertPolicyReadyForChange(policy);
+    }
     const now = nowMs();
     const validationIssues = Array.isArray(args.validationIssues)
       ? args.validationIssues
@@ -789,6 +827,7 @@ export const createFromEmail = mutation({
       const policy = await ctx.db.get(args.policyId);
       if (!policy || policy.orgId !== orgId)
         throw new Error("Policy not found");
+      assertPolicyReadyForChange(policy);
     }
     const now = nowMs();
     const brokerSubmission = await buildInitialBrokerSubmission(
@@ -856,6 +895,7 @@ export const createFromUploadedDocument = mutation({
       const policy = await ctx.db.get(args.policyId);
       if (!policy || policy.orgId !== orgId)
         throw new Error("Policy not found");
+      assertPolicyReadyForChange(policy);
     }
     const now = nowMs();
     const brokerSubmission = await buildInitialBrokerSubmission(
@@ -1223,6 +1263,7 @@ export const completeFromEndorsement = internalMutation({
   }> => {
     const policy = await ctx.db.get(args.policyId);
     if (!policy?.orgId) throw new Error("Policy not found");
+    assertPolicyReadyForChange(policy);
 
     if (args.caseId) {
       const changeCase = await ctx.db.get(args.caseId);

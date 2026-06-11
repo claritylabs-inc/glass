@@ -55,6 +55,9 @@ function mapPolicy(policy: Record<string, unknown>) {
     policyTypes: policy.policyTypes,
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
+    extractionStatus: policy.pipelineStatus,
+    dataStage: policy.extractionDataStage,
+    provisional: policy.extractionDataStage === "preview",
     coverages: Array.isArray(policy.coverages)
       ? policy.coverages.map((coverage) => {
           const c = coverage as Record<string, unknown>;
@@ -154,7 +157,7 @@ export function buildVendorComplianceTools(
           };
         }
         const id = vendorOrgId(matches[0]);
-        const policies = await ctx.runQuery(internal.policies.listAllInternal, {
+        const policies = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, {
           orgId: id as Id<"organizations">,
         });
         const mapped = (Array.isArray(policies) ? policies : [])

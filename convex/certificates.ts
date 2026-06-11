@@ -415,6 +415,18 @@ export const getGenerationContextForOrg = internalQuery({
   },
 });
 
+function effectivePolicyDataStage(policy: Record<string, unknown> | null | undefined) {
+  const stage = policy?.extractionDataStage;
+  if (stage === "placeholder" || stage === "preview" || stage === "final") {
+    return stage;
+  }
+  return policy?.pipelineStatus === "complete" ? "final" : "placeholder";
+}
+
+function policyReadyForCertificate(policy: Record<string, unknown> | null | undefined) {
+  return policy?.pipelineStatus === "complete" && effectivePolicyDataStage(policy) === "final";
+}
+
 export const generateForPolicy = action({
   args: {
     policyId: v.id("policies"),
@@ -547,6 +559,15 @@ export const generateForOrg = internalAction({
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
     });
+    if (!policyReadyForCertificate(policy as Record<string, unknown> | null)) {
+      return {
+        status: "extraction_in_progress",
+        holderName,
+        certificateHolder,
+        message:
+          "COI generation is available after Glass finishes full source-backed extraction for this policy.",
+      };
+    }
     const org = await ctx.runQuery(internal.orgs.getInternal, {
       id: args.orgId,
     });

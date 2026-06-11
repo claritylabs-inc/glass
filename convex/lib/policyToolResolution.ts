@@ -54,7 +54,7 @@ export async function resolvePolicyReferenceForOrg(ctx: ActionCtx, args: {
   const policies = (
     await Promise.all(
       args.orgIds.map((orgId) =>
-        ctx.runQuery(internal.policies.listAllInternal, { orgId }),
+        ctx.runQuery(internal.policies.listAllPreviewReadableInternal, { orgId }),
       ),
     )
   ).flat() as Doc<"policies">[];

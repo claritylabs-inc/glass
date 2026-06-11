@@ -30,6 +30,29 @@ function serializeDraft(draft: Doc<"pendingEmails"> | null) {
   };
 }
 
+function effectivePolicyDataStage(policy: Doc<"policies">) {
+  if (
+    policy.extractionDataStage === "placeholder" ||
+    policy.extractionDataStage === "preview" ||
+    policy.extractionDataStage === "final"
+  ) {
+    return policy.extractionDataStage;
+  }
+  return policy.pipelineStatus === "complete" ? "final" : "placeholder";
+}
+
+function assertPolicyReadyForDelivery(policy: Doc<"policies">) {
+  if (
+    policy.pipelineStatus === "complete" &&
+    effectivePolicyDataStage(policy) === "final"
+  ) {
+    return;
+  }
+  throw new Error(
+    `Policy ${policy.policyNumber ?? policy._id} must finish enrichment before the original PDF can be delivered.`,
+  );
+}
+
 export const upsertForMcp = internalAction({
   args: {
     orgId: v.id("organizations"),
@@ -44,9 +67,13 @@ export const upsertForMcp = internalAction({
     originalPolicyIds: v.optional(v.array(v.id("policies"))),
   },
   handler: async (ctx, args) => {
-    const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
+    const org = await ctx.runQuery(internal.orgs.getInternal, {
+      id: args.orgId,
+    });
     if (!org) throw new Error("Organization not found");
-    const user = await ctx.runQuery(internal.users.getInternal, { id: args.userId });
+    const user = await ctx.runQuery(internal.users.getInternal, {
+      id: args.userId,
+    });
     const identity = await resolveEmailAgentIdentity(ctx, org);
     if (!identity.canSend || !identity.agentAddress || !identity.fromHeader) {
       throw new Error(identity.reason ?? "Email sending is not configured.");
@@ -54,9 +81,9 @@ export const upsertForMcp = internalAction({
 
     let threadId = args.threadId;
     if (args.draftId) {
-      const draft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+      const draft = (await ctx.runQuery(internal.pendingEmails.getInternal, {
         id: args.draftId,
-      }) as Doc<"pendingEmails"> | null;
+      })) as Doc<"pendingEmails"> | null;
       if (!draft || draft.orgId !== args.orgId || draft.status !== "draft") {
         throw new Error("Draft not found");
       }
@@ -73,12 +100,17 @@ export const upsertForMcp = internalAction({
     const attachments: EmailAttachmentMeta[] = [];
     const referencedPolicyIds: Id<"policies">[] = [];
     for (const policyId of args.originalPolicyIds ?? []) {
-      const policy = await ctx.runQuery(internal.policies.getInternal, { id: policyId }) as Doc<"policies"> | null;
+      const policy = (await ctx.runQuery(internal.policies.getInternal, {
+        id: policyId,
+      })) as Doc<"policies"> | null;
       if (!policy || policy.orgId !== args.orgId) {
         throw new Error(`Policy ${policyId} not found`);
       }
+      assertPolicyReadyForDelivery(policy);
       if (!policy.fileId) {
-        throw new Error(`Policy ${policy.policyNumber ?? policyId} does not have an original PDF file available.`);
+        throw new Error(
+          `Policy ${policy.policyNumber ?? policyId} does not have an original PDF file available.`,
+        );
       }
       referencedPolicyIds.push(policyId);
       attachments.push({
@@ -89,35 +121,42 @@ export const upsertForMcp = internalAction({
       });
     }
 
-    const pendingEmailId = await upsertEmailDraftArtifact(ctx, {
-      orgId: args.orgId,
-      threadId,
-      channel: "mcp",
-      fromHeader: identity.fromHeader,
-      agentAddress: identity.agentAddress,
-      brokerBranding: identity.brokerBranding,
-      senderEmail: user?.email,
-      defaultBcc:
-        org.bccRequesterOnAgentEmails !== false && user?.email
-          ? [user.email]
-          : undefined,
-    }, {
-      to: args.to,
-      cc: args.cc ?? [],
-      bcc: [
-        ...(args.bcc ?? []),
-        ...(org.bccRequesterOnAgentEmails !== false && user?.email ? [user.email] : []),
-      ],
-      subject: args.subject,
-      body: args.body,
-      attachments,
-      referencedPolicyIds: referencedPolicyIds.length > 0 ? referencedPolicyIds : undefined,
-    });
+    const pendingEmailId = await upsertEmailDraftArtifact(
+      ctx,
+      {
+        orgId: args.orgId,
+        threadId,
+        channel: "mcp",
+        fromHeader: identity.fromHeader,
+        agentAddress: identity.agentAddress,
+        brokerBranding: identity.brokerBranding,
+        senderEmail: user?.email,
+        defaultBcc:
+          org.bccRequesterOnAgentEmails !== false && user?.email
+            ? [user.email]
+            : undefined,
+      },
+      {
+        to: args.to,
+        cc: args.cc ?? [],
+        bcc: [
+          ...(args.bcc ?? []),
+          ...(org.bccRequesterOnAgentEmails !== false && user?.email
+            ? [user.email]
+            : []),
+        ],
+        subject: args.subject,
+        body: args.body,
+        attachments,
+        referencedPolicyIds:
+          referencedPolicyIds.length > 0 ? referencedPolicyIds : undefined,
+      },
+    );
     if (!pendingEmailId) throw new Error("Failed to create email draft.");
 
-    const draft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+    const draft = (await ctx.runQuery(internal.pendingEmails.getInternal, {
       id: pendingEmailId,
-    }) as Doc<"pendingEmails"> | null;
+    })) as Doc<"pendingEmails"> | null;
     return serializeDraft(draft);
   },
 });
@@ -128,18 +167,18 @@ export const sendForMcp = internalAction({
     draftId: v.id("pendingEmails"),
   },
   handler: async (ctx, args) => {
-    const draft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+    const draft = (await ctx.runQuery(internal.pendingEmails.getInternal, {
       id: args.draftId,
-    }) as Doc<"pendingEmails"> | null;
+    })) as Doc<"pendingEmails"> | null;
     if (!draft || draft.orgId !== args.orgId || draft.status !== "draft") {
       throw new Error("Draft not found");
     }
     await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
       id: args.draftId,
     });
-    const updated = await ctx.runQuery(internal.pendingEmails.getInternal, {
+    const updated = (await ctx.runQuery(internal.pendingEmails.getInternal, {
       id: args.draftId,
-    }) as Doc<"pendingEmails"> | null;
+    })) as Doc<"pendingEmails"> | null;
     return serializeDraft(updated);
   },
 });
@@ -157,9 +196,9 @@ export const sendManyForMcp = internalAction({
 
     const drafts: Array<Doc<"pendingEmails">> = [];
     for (const draftId of uniqueIds) {
-      const draft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+      const draft = (await ctx.runQuery(internal.pendingEmails.getInternal, {
         id: draftId,
-      }) as Doc<"pendingEmails"> | null;
+      })) as Doc<"pendingEmails"> | null;
       if (!draft || draft.orgId !== args.orgId || draft.status !== "draft") {
         throw new Error(`Draft ${draftId} not found`);
       }
@@ -170,9 +209,12 @@ export const sendManyForMcp = internalAction({
     const failed: Array<{ id: Id<"pendingEmails">; error: string }> = [];
     for (const draft of drafts) {
       try {
-        await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
-          id: draft._id,
-        });
+        await ctx.runAction(
+          internal.actions.sendPendingEmail.sendDraftInternal,
+          {
+            id: draft._id,
+          },
+        );
         sent.push({ id: draft._id, recipientEmail: draft.recipientEmail });
       } catch (err) {
         failed.push({
@@ -185,9 +227,10 @@ export const sendManyForMcp = internalAction({
     return {
       sent,
       failed,
-      summary: failed.length === 0
-        ? `Sent ${sent.length} email${sent.length === 1 ? "" : "s"}.`
-        : `Sent ${sent.length} email${sent.length === 1 ? "" : "s"}; ${failed.length} failed.`,
+      summary:
+        failed.length === 0
+          ? `Sent ${sent.length} email${sent.length === 1 ? "" : "s"}.`
+          : `Sent ${sent.length} email${sent.length === 1 ? "" : "s"}; ${failed.length} failed.`,
     };
   },
 });
@@ -199,18 +242,22 @@ export const summarizeForMcp = internalAction({
     showAll: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const drafts = await ctx.runQuery(internal.pendingEmails.listDraftsInternal, {
-      orgId: args.orgId,
-      threadId: args.threadId,
-    }) as Array<Doc<"pendingEmails">>;
+    const drafts = (await ctx.runQuery(
+      internal.pendingEmails.listDraftsInternal,
+      {
+        orgId: args.orgId,
+        threadId: args.threadId,
+      },
+    )) as Array<Doc<"pendingEmails">>;
     return {
-      summary: drafts.length > 0
-        ? buildEmailDraftTextSummary(drafts, {
-            sampleSize: args.showAll ? drafts.length : 3,
-            includeIds: true,
-            commands: "mcp",
-          })
-        : "No email drafts found.",
+      summary:
+        drafts.length > 0
+          ? buildEmailDraftTextSummary(drafts, {
+              sampleSize: args.showAll ? drafts.length : 3,
+              includeIds: true,
+              commands: "mcp",
+            })
+          : "No email drafts found.",
       drafts: drafts.map(serializeDraft),
     };
   },
@@ -222,18 +269,18 @@ export const cancelForMcp = internalAction({
     draftId: v.id("pendingEmails"),
   },
   handler: async (ctx, args) => {
-    const draft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+    const draft = (await ctx.runQuery(internal.pendingEmails.getInternal, {
       id: args.draftId,
-    }) as Doc<"pendingEmails"> | null;
+    })) as Doc<"pendingEmails"> | null;
     if (!draft || draft.orgId !== args.orgId || draft.status !== "draft") {
       throw new Error("Draft not found");
     }
     await ctx.runMutation(internal.pendingEmails.cancelInternal, {
       id: args.draftId,
     });
-    const updated = await ctx.runQuery(internal.pendingEmails.getInternal, {
+    const updated = (await ctx.runQuery(internal.pendingEmails.getInternal, {
       id: args.draftId,
-    }) as Doc<"pendingEmails"> | null;
+    })) as Doc<"pendingEmails"> | null;
     return serializeDraft(updated);
   },
 });

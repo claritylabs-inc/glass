@@ -74,6 +74,8 @@ export interface McpPolicySummarySource {
   summary?: string;
   isRenewal: boolean;
   coverages: Jsonish[];
+  pipelineStatus?: string;
+  extractionDataStage?: "placeholder" | "preview" | "final" | string;
 }
 
 export interface McpPolicySummaryDto {
@@ -91,6 +93,9 @@ export interface McpPolicySummaryDto {
   summary?: string;
   isRenewal: boolean;
   coverages: Jsonish[];
+  pipelineStatus?: string;
+  extractionDataStage?: string;
+  provisional?: boolean;
 }
 
 export function toMcpPolicySummaryDto(policy: McpPolicySummarySource): McpPolicySummaryDto {
@@ -109,6 +114,9 @@ export function toMcpPolicySummaryDto(policy: McpPolicySummarySource): McpPolicy
     summary: policy.summary,
     isRenewal: policy.isRenewal,
     coverages: policy.coverages,
+    pipelineStatus: policy.pipelineStatus,
+    extractionDataStage: policy.extractionDataStage,
+    provisional: policy.extractionDataStage === "preview",
   };
 }
 
@@ -123,6 +131,9 @@ export interface McpPolicySearchResultDto {
   premium?: string | number;
   insuredName: string;
   summary?: string;
+  pipelineStatus?: string;
+  extractionDataStage?: string;
+  provisional?: boolean;
 }
 
 export function toMcpPolicySearchResultDto(
@@ -139,6 +150,9 @@ export function toMcpPolicySearchResultDto(
     premium: policy.premium,
     insuredName: policy.insuredName,
     summary: policy.summary,
+    pipelineStatus: policy.pipelineStatus,
+    extractionDataStage: policy.extractionDataStage,
+    provisional: policy.extractionDataStage === "preview",
   };
 }
 
@@ -151,6 +165,9 @@ export interface McpConnectedVendorPolicyDto {
   expirationDate: string;
   premium?: string | number;
   insuredName: string;
+  pipelineStatus?: string;
+  extractionDataStage?: string;
+  provisional?: boolean;
 }
 
 export function toMcpConnectedVendorPolicyDto(
@@ -165,6 +182,9 @@ export function toMcpConnectedVendorPolicyDto(
     expirationDate: policy.expirationDate,
     premium: policy.premium,
     insuredName: policy.insuredName,
+    pipelineStatus: policy.pipelineStatus,
+    extractionDataStage: policy.extractionDataStage,
+    provisional: policy.extractionDataStage === "preview",
   };
 }
 
@@ -176,6 +196,9 @@ export interface McpMyPolicyDto {
   effectiveDate: string;
   expirationDate: string;
   premium?: string | number;
+  pipelineStatus?: string;
+  extractionDataStage?: string;
+  provisional?: boolean;
 }
 
 export function toMcpMyPolicyDto(policy: McpPolicySummarySource): McpMyPolicyDto {
@@ -187,6 +210,9 @@ export function toMcpMyPolicyDto(policy: McpPolicySummarySource): McpMyPolicyDto
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
     premium: policy.premium,
+    pipelineStatus: policy.pipelineStatus,
+    extractionDataStage: policy.extractionDataStage,
+    provisional: policy.extractionDataStage === "preview",
   };
 }
 

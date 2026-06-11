@@ -69,6 +69,7 @@ type DraftPolicyRow = {
   effectiveDate?: string;
   expirationDate?: string;
   pipelineStatus?: string;
+  extractionDataStage?: string;
   uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email";
 };
 
@@ -582,6 +583,7 @@ export function InviteClientDrawer({
                   effectiveDate={policy.effectiveDate}
                   expirationDate={policy.expirationDate}
                   pipelineStatus={policy.pipelineStatus}
+                  extractionDataStage={policy.extractionDataStage}
                   uploadedBySide={policy.uploadedBySide}
                 />
               ))}

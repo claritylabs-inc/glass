@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import { createRequire } from "module";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { Output, generateText as aiGenerateText, gateway } from "ai";
+import { Output, generateText as aiGenerateText, gateway, jsonSchema } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -48,6 +48,8 @@ type ClaimedJob = {
   modelSettings?: WorkerModelSettings;
 };
 
+type ClaimedPreviewJob = Omit<ClaimedJob, "clSdkCheckpoint">;
+
 type ModelProvider =
   | "openai"
   | "anthropic"
@@ -57,7 +59,7 @@ type ModelProvider =
   | "cohere"
   | "deepseek";
 
-type ModelTask = "extraction" | "classification";
+type ModelTask = "extraction" | "extraction_preview" | "classification";
 
 type WorkerModelRoute = {
   provider: ModelProvider;
@@ -135,11 +137,27 @@ const actions = {
     },
     ClaimedJob | null
   >("actions/policyExtraction.js:claimExternalJob"),
+  claimExternalPreviewJob: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      workerId?: string;
+      workerVersion?: string;
+      workerProtocolVersion?: string;
+      clSdkVersion?: string;
+    },
+    ClaimedPreviewJob | null
+  >("actions/policyExtraction.js:claimExternalPreviewJob"),
   heartbeatExternalJob: makeFunctionReference<
     "action",
     { secret: string; policyId: string; leaseId: string },
     AckResult
   >("actions/policyExtraction.js:heartbeatExternalJob"),
+  heartbeatExternalPreviewJob: makeFunctionReference<
+    "action",
+    { secret: string; policyId: string; leaseId: string },
+    AckResult
+  >("actions/policyExtraction.js:heartbeatExternalPreviewJob"),
   logExternalJob: makeFunctionReference<
     "action",
     {
@@ -183,11 +201,36 @@ const actions = {
     },
     AckResult
   >("actions/policyExtraction.js:completeExternalExtract"),
+  completeExternalPreview: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      policyId: string;
+      leaseId: string;
+      state: WorkerState;
+      fields: unknown;
+      previewVersion: string;
+      previewModel?: string;
+    },
+    AckResult
+  >("actions/policyExtraction.js:completeExternalPreview"),
   failExternalJob: makeFunctionReference<
     "action",
     { secret: string; policyId: string; leaseId: string; state?: WorkerState; error: string },
     AckResult
   >("actions/policyExtraction.js:failExternalJob"),
+  failExternalPreviewJob: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      policyId: string;
+      leaseId: string;
+      state?: WorkerState;
+      error: string;
+      previewVersion?: string;
+    },
+    AckResult
+  >("actions/policyExtraction.js:failExternalPreviewJob"),
   recordExternalTraceEvent: makeFunctionReference<
     "action",
     {
@@ -238,6 +281,25 @@ const LITEPARSE_MAX_FILE_SIZE = readOptionalIntEnv(
   "LITEPARSE_MAX_FILE_SIZE_BYTES",
 );
 const MODEL_CALL_TIMEOUT_MS = readBoundedIntEnv("MODEL_CALL_TIMEOUT_MS", 180_000, 30_000, 15 * 60_000);
+const POLICY_PREVIEW_VERSION = "policy-preview-v1";
+const POLICY_PREVIEW_TEXT_LIMIT = readBoundedIntEnv(
+  "EXTRACTION_PREVIEW_TEXT_LIMIT",
+  120_000,
+  20_000,
+  300_000,
+);
+const POLICY_PREVIEW_MAX_COVERAGES = readBoundedIntEnv(
+  "EXTRACTION_PREVIEW_MAX_COVERAGES",
+  24,
+  1,
+  100,
+);
+const PREVIEW_JOB_CONCURRENCY = readBoundedIntEnv(
+  "EXTRACTION_PREVIEW_CONCURRENCY",
+  2,
+  1,
+  8,
+);
 
 const convex = new ConvexHttpClient(CONVEX_URL);
 
@@ -344,6 +406,7 @@ function readSourceKind(value: unknown): "policy_pdf" | "application_pdf" | "ema
 const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
   classification: { provider: "openai", model: "gpt-5.4-nano" },
   extraction: { provider: "openai", model: "gpt-5.4-nano" },
+  extraction_preview: { provider: "openai", model: "gpt-5.4-nano" },
 };
 
 const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
@@ -504,6 +567,7 @@ function routeToModel(route: WorkerModelRoute, apiKey?: string): LanguageModel {
 }
 
 function modelTaskForTaskKind(taskKind?: string): ModelTask {
+  if (taskKind === "extraction_preview") return "extraction_preview";
   if (taskKind === "extraction_classify") return "classification";
   return "extraction";
 }
@@ -556,6 +620,7 @@ function resolveFallbackModel(
   taskKind: string | undefined,
   primaryRoute: WorkerModelRoute,
 ): ResolvedWorkerModelRoute | null {
+  if (task === "extraction_preview") return null;
   if (task === "classification" || task === "extraction") {
     if (!taskKind || !QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) return null;
   }
@@ -688,6 +753,7 @@ function modelTraceLabel(
   }
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
+    extraction_preview: "Extract provisional policy fields",
     extraction_form_inventory: "Extract form inventory",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
@@ -704,6 +770,7 @@ function modelTraceLabel(
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
   if (task === "extraction") return kind === "generateText" ? "Extract policy text" : "Extract policy structure";
+  if (task === "extraction_preview") return "Extract provisional policy fields";
   if (task === "classification") return "Classify document";
   return kind === "generateText" ? "Generate text" : "Generate structured output";
 }
@@ -1545,6 +1612,345 @@ function sanitizeCompletionDocument(value: unknown, depth = 0): unknown {
   return output;
 }
 
+const PREVIEW_TOP_LEVEL_FIELDS = [
+  "documentType",
+  "carrier",
+  "security",
+  "underwriter",
+  "mga",
+  "broker",
+  "policyNumber",
+  "quoteNumber",
+  "policyTypes",
+  "effectiveDate",
+  "expirationDate",
+  "proposedEffectiveDate",
+  "proposedExpirationDate",
+  "quoteExpirationDate",
+  "insuredName",
+  "premium",
+  "totalCost",
+  "summary",
+  "limits",
+  "deductibles",
+  "coverages",
+] as const;
+
+const PREVIEW_LIMIT_FIELDS = [
+  "perOccurrence",
+  "generalAggregate",
+  "productsCompletedOpsAggregate",
+  "personalAdvertisingInjury",
+  "eachEmployee",
+  "combinedSingleLimit",
+  "umbrellaAggregate",
+  "umbrellaRetention",
+] as const;
+
+const PREVIEW_DEDUCTIBLE_FIELDS = [
+  "perClaim",
+  "perOccurrence",
+  "aggregateDeductible",
+  "selfInsuredRetention",
+  "appliesTo",
+] as const;
+
+const PREVIEW_COVERAGE_FIELDS = [
+  "name",
+  "coverageCode",
+  "limit",
+  "limitType",
+  "deductible",
+  "deductibleType",
+  "originalContent",
+] as const;
+
+const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    documentType: { type: ["string", "null"], enum: ["policy", "quote", null] },
+    carrier: { type: ["string", "null"] },
+    security: { type: ["string", "null"] },
+    underwriter: { type: ["string", "null"] },
+    mga: { type: ["string", "null"] },
+    broker: { type: ["string", "null"] },
+    policyNumber: { type: ["string", "null"] },
+    quoteNumber: { type: ["string", "null"] },
+    policyTypes: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 12,
+    },
+    effectiveDate: { type: ["string", "null"] },
+    expirationDate: { type: ["string", "null"] },
+    proposedEffectiveDate: { type: ["string", "null"] },
+    proposedExpirationDate: { type: ["string", "null"] },
+    quoteExpirationDate: { type: ["string", "null"] },
+    insuredName: { type: ["string", "null"] },
+    premium: { type: ["string", "null"] },
+    totalCost: { type: ["string", "null"] },
+    summary: { type: ["string", "null"] },
+    limits: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      properties: {
+        perOccurrence: { type: ["string", "null"] },
+        generalAggregate: { type: ["string", "null"] },
+        productsCompletedOpsAggregate: { type: ["string", "null"] },
+        personalAdvertisingInjury: { type: ["string", "null"] },
+        eachEmployee: { type: ["string", "null"] },
+        combinedSingleLimit: { type: ["string", "null"] },
+        umbrellaAggregate: { type: ["string", "null"] },
+        umbrellaRetention: { type: ["string", "null"] },
+      },
+      required: [...PREVIEW_LIMIT_FIELDS],
+    },
+    deductibles: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      properties: {
+        perClaim: { type: ["string", "null"] },
+        perOccurrence: { type: ["string", "null"] },
+        aggregateDeductible: { type: ["string", "null"] },
+        selfInsuredRetention: { type: ["string", "null"] },
+        appliesTo: { type: ["string", "null"] },
+      },
+      required: [...PREVIEW_DEDUCTIBLE_FIELDS],
+    },
+    coverages: {
+      type: "array",
+      maxItems: POLICY_PREVIEW_MAX_COVERAGES,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string" },
+          coverageCode: { type: ["string", "null"] },
+          limit: { type: ["string", "null"] },
+          limitType: { type: ["string", "null"] },
+          deductible: { type: ["string", "null"] },
+          deductibleType: { type: ["string", "null"] },
+          originalContent: { type: ["string", "null"] },
+        },
+        required: [...PREVIEW_COVERAGE_FIELDS],
+      },
+    },
+  },
+  required: [...PREVIEW_TOP_LEVEL_FIELDS],
+};
+
+const previewExtractionOutputSchema =
+  jsonSchema<Record<string, unknown>>(previewExtractionSchema);
+
+function cleanPreviewString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  if (!trimmed) return undefined;
+  if (/^(unknown|not\s*(available|provided|found)|n\/a|null|none)$/i.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed.slice(0, 500);
+}
+
+function cleanPreviewParagraph(value: unknown): string | undefined {
+  const trimmed = cleanPreviewString(value);
+  return trimmed ? trimmed.slice(0, 1000) : undefined;
+}
+
+function compactRecord(value: unknown, allowedKeys: readonly string[]): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const output: Record<string, string> = {};
+  for (const key of allowedKeys) {
+    const cleaned = cleanPreviewString((value as Record<string, unknown>)[key]);
+    if (cleaned) output[key] = cleaned;
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
+}
+
+function normalizePreviewFields(value: unknown): Record<string, unknown> {
+  const input = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const fields: Record<string, unknown> = {};
+  const documentType = input.documentType === "quote" || input.documentType === "policy"
+    ? input.documentType
+    : undefined;
+  if (documentType) fields.documentType = documentType;
+  for (const key of [
+    "carrier",
+    "security",
+    "underwriter",
+    "mga",
+    "broker",
+    "policyNumber",
+    "quoteNumber",
+    "effectiveDate",
+    "expirationDate",
+    "proposedEffectiveDate",
+    "proposedExpirationDate",
+    "quoteExpirationDate",
+    "insuredName",
+    "premium",
+    "totalCost",
+  ]) {
+    const cleaned = cleanPreviewString(input[key]);
+    if (cleaned) fields[key] = cleaned;
+  }
+  const summary = cleanPreviewParagraph(input.summary);
+  if (summary) fields.summary = summary;
+  if (Array.isArray(input.policyTypes)) {
+    const policyTypes = Array.from(
+      new Set(
+        input.policyTypes
+          .map(cleanPreviewString)
+          .filter((item): item is string => Boolean(item))
+          .map((item) => item.toLowerCase().replace(/\s+/g, "_")),
+      ),
+    ).slice(0, 12);
+    if (policyTypes.length > 0) fields.policyTypes = policyTypes;
+  }
+  if (Array.isArray(input.coverages)) {
+    const coverages = input.coverages
+      .map((coverage) => {
+        if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) return null;
+        const row = coverage as Record<string, unknown>;
+        const name = cleanPreviewString(row.name);
+        if (!name) return null;
+        return stripUndefined({
+          name,
+          coverageCode: cleanPreviewString(row.coverageCode),
+          limit: cleanPreviewString(row.limit),
+          limitType: cleanPreviewString(row.limitType),
+          deductible: cleanPreviewString(row.deductible),
+          deductibleType: cleanPreviewString(row.deductibleType),
+          originalContent: cleanPreviewParagraph(row.originalContent),
+        });
+      })
+      .filter(Boolean)
+      .slice(0, POLICY_PREVIEW_MAX_COVERAGES);
+    if (coverages.length > 0) fields.coverages = coverages;
+  }
+  const limits = compactRecord(input.limits, [
+    "perOccurrence",
+    "generalAggregate",
+    "productsCompletedOpsAggregate",
+    "personalAdvertisingInjury",
+    "eachEmployee",
+    "combinedSingleLimit",
+    "umbrellaAggregate",
+    "umbrellaRetention",
+  ]);
+  if (limits) fields.limits = limits;
+  const deductibles = compactRecord(input.deductibles, [
+    "perClaim",
+    "perOccurrence",
+    "aggregateDeductible",
+    "selfInsuredRetention",
+    "appliesTo",
+  ]);
+  if (deductibles) fields.deductibles = deductibles;
+  return fields;
+}
+
+function previewTextFromSourceSpans(sourceSpans: Array<Record<string, unknown>>): string {
+  let output = "";
+  for (const span of sourceSpans) {
+    const text = typeof span.text === "string" ? span.text.replace(/\s+/g, " ").trim() : "";
+    if (!text) continue;
+    const page = typeof span.pageStart === "number" ? `p.${span.pageStart}` : "p.unknown";
+    const next = `[${page}] ${text}\n`;
+    if (output.length + next.length > POLICY_PREVIEW_TEXT_LIMIT) {
+      output += next.slice(0, Math.max(0, POLICY_PREVIEW_TEXT_LIMIT - output.length));
+      break;
+    }
+    output += next;
+  }
+  return output.trim();
+}
+
+async function extractPreviewFields(job: ClaimedPreviewJob, sourceText: string) {
+  const route = resolveModelForTaskKind("extraction_preview", job.modelSettings);
+  const maxOutputTokens = Math.min(
+    maxOutputTokensForRoute(4096, route),
+    8192,
+  );
+  const system = `You extract a fast provisional first read from insurance policy or quote text.
+Return only fields that are explicitly present or strongly implied by the document text.
+Leave unknown fields null or empty. Do not invent carriers, dates, limits, policy numbers, insured names, or coverages.
+This output is provisional and will be overwritten by a later source-backed extraction.`;
+  const prompt = `Extract a provisional policy summary from this LiteParse/PDF text.
+
+Use concise display strings for dates, money, limits, deductibles, and coverage names.
+For policyTypes, use compact lowercase insurance line names such as general_liability, cyber, professional_liability, workers_comp, auto, umbrella, property, crime, fiduciary, d_and_o, epli, other.
+
+Document text:
+${sourceText}`;
+  const callProviderOptions = providerOptionsForModelCall(route, undefined);
+  const startedAt = nowMs();
+  const label = "Extract provisional policy fields";
+  try {
+    const result = await aiGenerateText({
+      model: route.model,
+      system,
+      prompt,
+      output: Output.object({ schema: previewExtractionOutputSchema }),
+      maxOutputTokens,
+      providerOptions: callProviderOptions,
+      abortSignal: modelAbortSignal(),
+    });
+    const usage = mapUsage(result.usage);
+    await recordModelCallComplete({
+      job,
+      route,
+      label,
+      taskKind: "extraction_preview",
+      attempt: 1,
+      startedAt,
+      usage,
+      details: modelTraceDetails({
+        kind: "generateObject",
+        label,
+        task: route.task,
+        taskKind: "extraction_preview",
+        prompt,
+        system,
+        maxOutputTokens,
+        providerOptions: callProviderOptions,
+        trace: { phase: "preview", label },
+        output: result.output,
+        outputKind: "object",
+      }),
+    });
+    return {
+      fields: normalizePreviewFields(result.output),
+      route,
+    };
+  } catch (error) {
+    await recordModelCallError({
+      job,
+      route,
+      label,
+      taskKind: "extraction_preview",
+      attempt: 1,
+      startedAt,
+      error,
+      details: modelTraceDetails({
+        kind: "generateObject",
+        label,
+        task: route.task,
+        taskKind: "extraction_preview",
+        prompt,
+        system,
+        maxOutputTokens,
+        providerOptions: callProviderOptions,
+        trace: { phase: "preview", label },
+      }),
+    });
+    throw error;
+  }
+}
+
 async function completeJob(
   job: ClaimedJob,
   result: ExtractionResult,
@@ -1738,6 +2144,107 @@ async function processJob(job: ClaimedJob): Promise<void> {
   }
 }
 
+async function completePreviewJob(
+  job: ClaimedPreviewJob,
+  fields: Record<string, unknown>,
+  previewModel?: string,
+): Promise<void> {
+  const completed = await convex.action(actions.completeExternalPreview, {
+    secret: SECRET,
+    policyId: job.policyId,
+    leaseId: job.leaseId,
+    state: job.state,
+    fields,
+    previewVersion: POLICY_PREVIEW_VERSION,
+    previewModel,
+  });
+  if (!completed.ok) {
+    throw new Error(`Convex rejected preview completion for ${job.policyId}`);
+  }
+}
+
+async function failPreviewJob(job: ClaimedPreviewJob, error: unknown): Promise<void> {
+  await convex.action(actions.failExternalPreviewJob, {
+    secret: SECRET,
+    policyId: job.policyId,
+    leaseId: job.leaseId,
+    state: job.state,
+    error: errorMessage(error),
+    previewVersion: POLICY_PREVIEW_VERSION,
+  });
+}
+
+async function heartbeatPreview(job: ClaimedPreviewJob): Promise<AckResult> {
+  return await convex.action(actions.heartbeatExternalPreviewJob, {
+    secret: SECRET,
+    policyId: job.policyId,
+    leaseId: job.leaseId,
+  });
+}
+
+async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
+  console.log(`[${job.policyId}] claimed external preview extraction job`);
+  await logJob(job, `External worker ${WORKER_ID} started provisional extraction`, "info");
+  const heartbeatTimer = setInterval(() => {
+    heartbeatPreview(job).catch((error) => {
+      console.error(`[${job.policyId}] preview heartbeat failed:`, error);
+    });
+  }, HEARTBEAT_MS);
+
+  try {
+    const pdfBytes = await fetchPdfBytes(job.fileUrl);
+    let sourceSpans: Array<Record<string, unknown>>;
+    try {
+      const converted = await convertPdfWithLiteParse({
+        pdfBytes,
+        documentId: job.policyId,
+        sourceKind: "policy_pdf",
+        maxPages: LITEPARSE_MAX_PAGES,
+        maxFileSize: LITEPARSE_MAX_FILE_SIZE,
+      });
+      sourceSpans = converted.sourceSpans as Array<Record<string, unknown>>;
+      await logJob(
+        job,
+        `LiteParse prepared ${sourceSpans.length} spans for provisional extraction in ${converted.metadata.parsingMs ?? 0}ms`,
+        "info",
+      );
+    } catch (error) {
+      await logJob(
+        job,
+        `LiteParse unavailable for provisional extraction; falling back to PDF.js source spans (${errorMessage(error)})`,
+        "warn",
+      );
+      const fallbackSource = await buildPdfSourceSpans({
+        pdfBytes,
+        documentId: job.policyId,
+        sourceKind: "policy_pdf",
+      });
+      sourceSpans = fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>>;
+    }
+
+    const sourceText = previewTextFromSourceSpans(sourceSpans);
+    if (!sourceText) {
+      throw new Error("No text was available for provisional extraction");
+    }
+
+    const { fields, route } = await extractPreviewFields(job, sourceText);
+    if (Object.keys(fields).length === 0) {
+      throw new Error("Provisional extraction returned no usable fields");
+    }
+    await completePreviewJob(
+      job,
+      fields,
+      `${route.route.provider}/${route.route.model}`,
+    );
+    console.log(`[${job.policyId}] completed external preview extraction`);
+  } catch (error) {
+    console.error(`[${job.policyId}] preview extraction failed:`, error);
+    await failPreviewJob(job, error);
+  } finally {
+    clearInterval(heartbeatTimer);
+  }
+}
+
 async function claimJob(): Promise<ClaimedJob | null> {
   return await convex.action(actions.claimExternalJob, {
     secret: SECRET,
@@ -1748,11 +2255,60 @@ async function claimJob(): Promise<ClaimedJob | null> {
   });
 }
 
+async function claimPreviewJob(): Promise<ClaimedPreviewJob | null> {
+  return await convex.action(actions.claimExternalPreviewJob, {
+    secret: SECRET,
+    workerId: WORKER_ID,
+    workerVersion: WORKER_VERSION,
+    workerProtocolVersion: WORKER_PROTOCOL_VERSION,
+    clSdkVersion: WORKER_CL_SDK_VERSION,
+  });
+}
+
+async function runPreviewLoop(): Promise<void> {
+  const active = new Set<Promise<void>>();
+  let lastIdleLogAt = 0;
+  while (!shuttingDown) {
+    if (active.size >= PREVIEW_JOB_CONCURRENCY) {
+      await Promise.race(active);
+      continue;
+    }
+
+    let job: ClaimedPreviewJob | null = null;
+    try {
+      job = await claimPreviewJob();
+    } catch (error) {
+      console.error("Failed to claim preview extraction job:", error);
+      await sleep(POLL_MS);
+      continue;
+    }
+    if (job) {
+      const task = processPreviewJob(job).finally(() => {
+        active.delete(task);
+      });
+      active.add(task);
+      continue;
+    }
+
+    const now = nowMs();
+    if (now - lastIdleLogAt >= IDLE_LOG_MS) {
+      console.log("No preview extraction jobs available");
+      lastIdleLogAt = now;
+    }
+    await sleep(POLL_MS);
+  }
+
+  await Promise.allSettled(active);
+}
+
 async function main(): Promise<void> {
   console.log(
     `Glass extraction worker ${WORKER_ID} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} connected to ${CONVEX_URL}`,
   );
   const httpServer = startHttpServer();
+  const previewLoop = runPreviewLoop().catch((error) => {
+    console.error("Preview extraction loop failed:", error);
+  });
   let lastIdleLogAt = 0;
   try {
     while (!shuttingDown) {
@@ -1777,6 +2333,8 @@ async function main(): Promise<void> {
       await sleep(POLL_MS);
     }
   } finally {
+    shuttingDown = true;
+    await previewLoop;
     httpServer?.close();
   }
   console.log("Extraction worker shutting down");

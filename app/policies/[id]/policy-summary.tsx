@@ -104,16 +104,6 @@ function isRealPolicyType(value: string) {
   return normalized && normalized !== "other" && !isPendingValue(normalized);
 }
 
-function pushRealValue(
-  rows: { label: string; value: string }[],
-  label: string,
-  value: unknown,
-) {
-  const text = realText(typeof value === "string" ? value : undefined);
-  if (text) rows.push({ label, value: text });
-  return text;
-}
-
 function ExtractionPendingDetails() {
   return (
     <div className="min-w-0 space-y-4">
@@ -157,8 +147,6 @@ export interface PolicySummaryProps {
   premium?: string;
   policyTypes: string[];
   policyTermType?: string;
-  limits?: Record<string, unknown>;
-  deductibles?: Record<string, unknown>;
   summary?: string;
   isRenewal?: boolean;
   documentType?: string;
@@ -176,7 +164,6 @@ export function PolicySummary({
   premium,
   policyTypes,
   policyTermType,
-  limits,
   summary: _summary,
   isRenewal,
   documentType,
@@ -200,24 +187,13 @@ export function PolicySummary({
           ? `${realEffectiveDate ?? "—"} – ${realExpirationDate ?? "—"}`
           : undefined;
 
-  const keyLimits: { label: string; value: string }[] = [];
-  if (limits && typeof limits === "object") {
-    const l = limits as Record<string, unknown>;
-    pushRealValue(keyLimits, "Per Occurrence", l.perOccurrence);
-    pushRealValue(keyLimits, "Aggregate", l.aggregate);
-    pushRealValue(keyLimits, "Per Claim", l.perClaim);
-    pushRealValue(keyLimits, "Each Occurrence", l.eachOccurrence);
-    pushRealValue(keyLimits, "General Aggregate", l.generalAggregate);
-  }
-
   const hasExtractedDetails =
     realPolicyTypes.length > 0 ||
     !!realAdministrator ||
     !!realCarrier ||
     !!realInsuredName ||
     !!periodValue ||
-    !!realPremium ||
-    keyLimits.length > 0;
+    !!realPremium;
 
   return (
     <OperationalPanel className="mb-6 @container">
@@ -289,9 +265,6 @@ export function PolicySummary({
             <SummaryRow label="Policy period" value={periodValue} />
           )}
           {realPremium && <SummaryRow label="Premium" value={realPremium} />}
-          {keyLimits.map(({ label, value }) => (
-            <SummaryRow key={label} label={label} value={value} />
-          ))}
         </div>
       </OperationalPanelBody>
     </OperationalPanel>

@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
-type UploadedBySide = "broker" | "client" | "email_scan" | "agent_email" | undefined;
+type UploadedBySide =
+  | "broker"
+  | "client"
+  | "email_scan"
+  | "agent_email"
+  | undefined;
 
 interface PolicyListItemProps {
   carrier: string;
@@ -13,6 +18,7 @@ interface PolicyListItemProps {
   effectiveDate?: string;
   expirationDate?: string;
   pipelineStatus?: string;
+  extractionDataStage?: string;
   uploadedBySide?: UploadedBySide;
   href?: string;
   onClick?: () => void;
@@ -52,11 +58,15 @@ export function PolicyListItem({
   effectiveDate,
   expirationDate,
   pipelineStatus,
+  extractionDataStage,
   uploadedBySide,
   href,
   onClick,
 }: PolicyListItemProps) {
-  const isProcessing = pipelineStatus === "running" || !pipelineStatus;
+  const isProvisional =
+    extractionDataStage === "preview" && pipelineStatus !== "complete";
+  const isProcessing =
+    !isProvisional && (pipelineStatus === "running" || !pipelineStatus);
   const carrierClean = cleanField(carrier);
   const administratorClean = cleanField(administrator);
   const policyNumberClean = cleanField(policyNumber);
@@ -67,7 +77,7 @@ export function PolicyListItem({
   const title =
     administratorClean ??
     carrierClean ??
-    (isProcessing ? fileNameClean ?? "New upload" : "Untitled policy");
+    (isProcessing ? (fileNameClean ?? "New upload") : "Untitled policy");
   const hasDates = effectiveClean && expirationClean;
   const rowClass =
     "flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0 hover:bg-muted/40 transition-colors";
@@ -75,16 +85,31 @@ export function PolicyListItem({
     <>
       <div className="space-y-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-base font-medium text-foreground truncate">{title}</span>
+          <span className="text-base font-medium text-foreground truncate">
+            {title}
+          </span>
           {isProcessing ? (
-            <Badge variant="outline" className="text-label text-muted-foreground">
-              Processing
+            <Badge
+              variant="outline"
+              className="text-label text-muted-foreground"
+            >
+              Extracting
+            </Badge>
+          ) : null}
+          {isProvisional ? (
+            <Badge
+              variant="outline"
+              className="text-label text-muted-foreground"
+            >
+              Enriching
             </Badge>
           ) : null}
           <ProvenanceBadge side={uploadedBySide} />
         </div>
         {policyNumberClean ? (
-          <p className="text-label text-muted-foreground truncate">{policyNumberClean}</p>
+          <p className="text-label text-muted-foreground truncate">
+            {policyNumberClean}
+          </p>
         ) : null}
       </div>
       {hasDates ? (
