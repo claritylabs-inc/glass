@@ -16,8 +16,15 @@ export { buildConversationMemoryContext, buildConversationMemoryFromList, buildD
 
 /* ── Markdown processing ── */
 
+// Mirror of UNCERTAINTY_MARKER_RE in lib/uncertainty.ts. Kept inline here because
+// Convex bundles only the convex/ tree and cannot import the app-side module.
+// The agent wraps low-confidence claims in `[?...?]`; outside the web chat those
+// markers are stripped back to the bare claim text.
+const UNCERTAINTY_MARKER_RE = /\[\?([\s\S]+?)\?\]/g;
+
 export function stripMarkdown(text: string): string {
   let result = text;
+  result = result.replace(UNCERTAINTY_MARKER_RE, "$1");
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
   result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
   result = result.replace(/\*\*(.+?)\*\*/g, "$1");
@@ -28,6 +35,7 @@ export function stripMarkdown(text: string): string {
 export function markdownToHtml(text: string): string {
   const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
   let result = text;
+  result = result.replace(UNCERTAINTY_MARKER_RE, "$1");
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
   result = result.replace(
     /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
@@ -255,6 +263,22 @@ ANALYTICAL STANDARDS:
 - Distinguish policy text from issues that genuinely require carrier confirmation.
 - For property claim analysis, check coinsurance, valuation, deductibles, sublimits, and relevant exclusions.
 - Flag material coverage adequacy issues when obvious from the policy data.`;
+}
+
+/**
+ * Instructions for inline confidence flagging. The agent wraps individual
+ * claims it is not confident are supported by its sources/context in `[?...?]`
+ * markers; the web chat renders those spans as highlighted "verify this" text.
+ */
+export function buildUncertaintyInstructions(): string {
+  return `
+
+CONFIDENCE FLAGGING:
+- When you state a specific factual claim — a policy number, carrier, limit, deductible, premium, date, named party, coverage, exclusion, or endorsement — that is NOT clearly supported by the retrieved sources or provided context (you are inferring it, recalling it from general knowledge, or estimating), wrap just that claim in [?...?] markers.
+- Example: "The policy carries [?$2M in flood coverage?], but confirm against the declarations page."
+- Mark only the specific uncertain word or phrase. Never wrap an entire sentence, paragraph, or message, and do not put markdown (bold, links, lists) inside the markers.
+- Most claims are source-backed and should NOT be marked. Use this sparingly — over-flagging makes the signal useless.
+- Do not use these markers in emails, COIs, or other generated documents, only in your chat reply. Do not flag your own questions, general guidance, or clearly source-backed facts.`;
 }
 
 export function policySearchScore(

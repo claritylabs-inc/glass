@@ -4,6 +4,7 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
+import { remarkUncertainty } from "@/lib/uncertainty";
 
 /**
  * Shared base styles for markdown-rendered content.
@@ -56,8 +57,25 @@ export type ProseMarkdownProps = {
   gfm?: boolean;
   /** Convert soft line-breaks to <br> (default: false) */
   breaks?: boolean;
+  /**
+   * Render `[?...?]` confidence markers as highlighted "verify this" spans
+   * (default: false). Used for agent chat answers.
+   */
+  flagUncertainty?: boolean;
   /** Extra react-markdown component overrides */
   components?: Components;
+};
+
+/** Renders a claim the agent flagged as low-confidence. */
+const uncertaintyComponents: Components = {
+  mark: ({ children }) => (
+    <mark
+      className="rounded-[3px] bg-amber-400/15 px-0.5 text-foreground decoration-dotted decoration-amber-500/50 underline underline-offset-2"
+      title="Glass is less certain about this — verify it against the source."
+    >
+      {children}
+    </mark>
+  ),
 };
 
 /**
@@ -81,15 +99,18 @@ export function ProseMarkdown({
   compact = false,
   gfm = false,
   breaks = false,
+  flagUncertainty = false,
   components,
 }: ProseMarkdownProps) {
   const plugins = [];
   if (gfm) plugins.push(remarkGfm);
   if (breaks) plugins.push(remarkBreaks);
+  if (flagUncertainty) plugins.push(remarkUncertainty);
 
   // Merge default GFM table component with user overrides
   const mergedComponents = {
     ...(gfm ? defaultGfmComponents : null),
+    ...(flagUncertainty ? uncertaintyComponents : null),
     ...components,
   };
 

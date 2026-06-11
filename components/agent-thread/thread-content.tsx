@@ -29,6 +29,7 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
+import { stripUncertaintyMarkers } from "@/lib/uncertainty";
 import {
   useArchivedThreadCacheActions,
   useThreadCacheActions,
@@ -1019,7 +1020,7 @@ function UnifiedThreadActions({
       if (msg.ccAddresses?.length)
         lines.push(`CC: ${msg.ccAddresses.join(", ")}`);
       lines.push("");
-      lines.push(msg.content);
+      lines.push(stripUncertaintyMarkers(msg.content));
       if (msg.attachments?.length) {
         lines.push(
           `Attachments: ${msg.attachments.map((a) => a.filename).join(", ")}`,
@@ -1341,6 +1342,7 @@ export function UnifiedMessageBubble({
               <ProseMarkdown
                 gfm
                 breaks
+                flagUncertainty
                 className={MARKDOWN_STYLES}
                 components={markdownComponents}
               >
@@ -1507,6 +1509,7 @@ export function UnifiedMessageBubble({
                   <ProseMarkdown
                     gfm
                     breaks
+                    flagUncertainty
                     className={MARKDOWN_STYLES}
                     components={markdownComponents}
                   >
@@ -1527,7 +1530,7 @@ export function UnifiedMessageBubble({
                   messageId={msg._id}
                   onOpenMailboxArtifact={onOpenMailboxArtifact}
                   openMailboxArtifactRef={openMailboxArtifactRef}
-                  copyContent={fixedContent}
+                  copyContent={stripUncertaintyMarkers(fixedContent)}
                   retryMessageId={
                     msg.channel === "chat" || msg.channel === "imessage"
                       ? msg._id
