@@ -16,15 +16,15 @@ export { buildConversationMemoryContext, buildConversationMemoryFromList, buildD
 
 /* ── Markdown processing ── */
 
-// Mirror of UNCERTAINTY_MARKER_RE in lib/uncertainty.ts. Kept inline here because
+// Mirror of CONFIDENCE_MARKER_RE in lib/confidence.ts. Kept inline here because
 // Convex bundles only the convex/ tree and cannot import the app-side module.
-// The agent wraps low-confidence claims in `[?...?]`; outside the web chat those
-// markers are stripped back to the bare claim text.
-const UNCERTAINTY_MARKER_RE = /\[\?([\s\S]+?)\?\]/g;
+// The agent tints phrases with `[[g|i|u:...]]`; outside the web chat those
+// markers are stripped back to the bare phrase (group 2).
+const CONFIDENCE_MARKER_RE = /\[\[(?:g|i|u):([\s\S]+?)\]\]/g;
 
 export function stripMarkdown(text: string): string {
   let result = text;
-  result = result.replace(UNCERTAINTY_MARKER_RE, "$1");
+  result = result.replace(CONFIDENCE_MARKER_RE, "$1");
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
   result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
   result = result.replace(/\*\*(.+?)\*\*/g, "$1");
@@ -35,7 +35,7 @@ export function stripMarkdown(text: string): string {
 export function markdownToHtml(text: string): string {
   const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
   let result = text;
-  result = result.replace(UNCERTAINTY_MARKER_RE, "$1");
+  result = result.replace(CONFIDENCE_MARKER_RE, "$1");
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
   result = result.replace(
     /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
@@ -266,19 +266,22 @@ ANALYTICAL STANDARDS:
 }
 
 /**
- * Instructions for inline confidence flagging. The agent wraps individual
- * claims it is not confident are supported by its sources/context in `[?...?]`
- * markers; the web chat renders those spans as highlighted "verify this" text.
+ * Instructions for inline confidence tinting. The agent wraps each substantive
+ * phrase in its chat answer in a marker indicating how well that phrase is
+ * backed by a source; the web chat renders those spans tinted by level.
  */
-export function buildUncertaintyInstructions(): string {
+export function buildConfidenceInstructions(): string {
   return `
 
-CONFIDENCE FLAGGING:
-- When you state a specific factual claim — a policy number, carrier, limit, deductible, premium, date, named party, coverage, exclusion, or endorsement — that is NOT clearly supported by the retrieved sources or provided context (you are inferring it, recalling it from general knowledge, or estimating), wrap just that claim in [?...?] markers.
-- Example: "The policy carries [?$2M in flood coverage?], but confirm against the declarations page."
-- Mark only the specific uncertain word or phrase. Never wrap an entire sentence, paragraph, or message, and do not put markdown (bold, links, lists) inside the markers.
-- Most claims are source-backed and should NOT be marked. Use this sparingly — over-flagging makes the signal useless.
-- Do not use these markers in emails, COIs, or other generated documents, only in your chat reply. Do not flag your own questions, general guidance, or clearly source-backed facts.`;
+CONFIDENCE TINTING:
+- Tint the factual phrases in your chat reply by how well each is backed by a source, using inline markers:
+  - [[g:phrase]] GROUNDED — the phrase is directly supported by retrieved policy source text, tool results, or provided context.
+  - [[i:phrase]] INFERRED — a reasonable inference or synthesis from the available information, but not stated outright in a source.
+  - [[u:phrase]] UNVERIFIED — general knowledge, an assumption, or a recollection that is NOT backed by any provided source.
+- Example: "[[g:The general liability limit is $2M per occurrence]], and [[i:that should satisfy the lease requirement]], though [[u:most landlords also want $5M umbrella coverage]]."
+- Wrap whole standalone claims or phrases — typically clause- or sentence-sized. Do not wrap every word, connective filler, or your own questions, and do not nest markdown (bold, links, lists) inside a marker.
+- Be honest and calibrated: reserve [[g:...]] for facts you can actually tie to a source or tool result this turn. Default to [[i:...]] or [[u:...]] when you are extrapolating or relying on memory.
+- Use the markers only in your chat reply. Never put them in emails, COIs, notes, or other generated documents.`;
 }
 
 export function policySearchScore(

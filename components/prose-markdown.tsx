@@ -4,7 +4,11 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
-import { remarkUncertainty } from "@/lib/uncertainty";
+import {
+  remarkConfidence,
+  CONFIDENCE_LEVEL_META,
+  type ConfidenceLevel,
+} from "@/lib/confidence";
 
 /**
  * Shared base styles for markdown-rendered content.
@@ -58,24 +62,46 @@ export type ProseMarkdownProps = {
   /** Convert soft line-breaks to <br> (default: false) */
   breaks?: boolean;
   /**
-   * Render `[?...?]` confidence markers as highlighted "verify this" spans
+   * Render `[[g|i|u:...]]` confidence markers as source-backing tints
    * (default: false). Used for agent chat answers.
    */
-  flagUncertainty?: boolean;
+  flagConfidence?: boolean;
   /** Extra react-markdown component overrides */
   components?: Components;
 };
 
-/** Renders a claim the agent flagged as low-confidence. */
-const uncertaintyComponents: Components = {
-  mark: ({ children }) => (
-    <mark
-      className="rounded-[3px] bg-amber-400/15 px-0.5 text-foreground decoration-dotted decoration-amber-500/50 underline underline-offset-2"
-      title="Glass is less certain about this — verify it against the source."
-    >
-      {children}
-    </mark>
-  ),
+/** Tailwind tint per confidence level — kept subtle so prose stays readable. */
+const CONFIDENCE_TINT: Record<ConfidenceLevel, string> = {
+  grounded:
+    "bg-emerald-400/12 decoration-emerald-500/40 dark:bg-emerald-400/15",
+  inferred: "bg-amber-400/15 decoration-amber-500/45 dark:bg-amber-400/15",
+  unverified: "bg-rose-400/18 decoration-rose-500/50 dark:bg-rose-400/20",
+};
+
+function isConfidenceLevel(value: unknown): value is ConfidenceLevel {
+  return value === "grounded" || value === "inferred" || value === "unverified";
+}
+
+/** Renders a phrase tinted by how well the agent could back it with a source. */
+const confidenceComponents: Components = {
+  mark: ({ children, ...props }) => {
+    const rawLevel = (props as Record<string, unknown>)["data-level"];
+    const level: ConfidenceLevel = isConfidenceLevel(rawLevel)
+      ? rawLevel
+      : "inferred";
+    const meta = CONFIDENCE_LEVEL_META[level];
+    return (
+      <mark
+        className={cn(
+          "rounded-[3px] px-0.5 text-foreground underline decoration-dotted underline-offset-2",
+          CONFIDENCE_TINT[level],
+        )}
+        title={`${meta.label}: ${meta.description}`}
+      >
+        {children}
+      </mark>
+    );
+  },
 };
 
 /**
@@ -99,18 +125,18 @@ export function ProseMarkdown({
   compact = false,
   gfm = false,
   breaks = false,
-  flagUncertainty = false,
+  flagConfidence = false,
   components,
 }: ProseMarkdownProps) {
   const plugins = [];
   if (gfm) plugins.push(remarkGfm);
   if (breaks) plugins.push(remarkBreaks);
-  if (flagUncertainty) plugins.push(remarkUncertainty);
+  if (flagConfidence) plugins.push(remarkConfidence);
 
   // Merge default GFM table component with user overrides
   const mergedComponents = {
     ...(gfm ? defaultGfmComponents : null),
-    ...(flagUncertainty ? uncertaintyComponents : null),
+    ...(flagConfidence ? confidenceComponents : null),
     ...components,
   };
 

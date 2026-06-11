@@ -1,0 +1,106 @@
+import { describe, it, expect } from "vitest";
+import {
+  stripConfidenceMarkers,
+  summarizeConfidence,
+  remarkConfidence,
+} from "../lib/confidence";
+import { stripMarkdown, markdownToHtml } from "../convex/lib/aiUtils";
+
+describe("stripConfidenceMarkers", () => {
+  it("unwraps each level to its inner phrase", () => {
+    expect(
+      stripConfidenceMarkers(
+        "[[g:The limit is $2M]] but [[u:landlords want more]].",
+      ),
+    ).toBe("The limit is $2M but landlords want more.");
+  });
+
+  it("leaves text without markers untouched", () => {
+    expect(stripConfidenceMarkers("Plain answer.")).toBe("Plain answer.");
+  });
+
+  it("ignores an unclosed marker", () => {
+    expect(stripConfidenceMarkers("a [[g: dangling")).toBe("a [[g: dangling");
+  });
+});
+
+describe("plain-text renderers strip markers", () => {
+  it("stripMarkdown removes confidence markers", () => {
+    expect(stripMarkdown("Coverage is [[g:$1M]] per occurrence.")).toBe(
+      "Coverage is $1M per occurrence.",
+    );
+  });
+
+  it("markdownToHtml removes confidence markers", () => {
+    expect(markdownToHtml("Limit [[u:$5,000]] deductible.")).toBe(
+      "Limit $5,000 deductible.",
+    );
+  });
+});
+
+describe("summarizeConfidence", () => {
+  it("returns null when there are no markers", () => {
+    expect(summarizeConfidence("No annotations here.")).toBeNull();
+  });
+
+  it("counts levels and length-weights the score", () => {
+    const summary = summarizeConfidence("[[g:aaaa]] [[u:bbbb]]");
+    expect(summary).not.toBeNull();
+    expect(summary!.counts).toEqual({
+      grounded: 1,
+      inferred: 0,
+      unverified: 1,
+    });
+    // Equal-length grounded (weight 1) + unverified (weight 0) → 0.5
+    expect(summary!.score).toBeCloseTo(0.5);
+  });
+
+  it("scores an all-grounded answer at 1", () => {
+    expect(summarizeConfidence("[[g:fully backed]]")!.score).toBe(1);
+  });
+});
+
+describe("remarkConfidence", () => {
+  type Node = {
+    type: string;
+    value?: string;
+    children?: Node[];
+    data?: { hName?: string; hProperties?: Record<string, unknown> };
+  };
+
+  it("rewrites a marked span into a mark node carrying its level", () => {
+    const tree: Node = {
+      type: "root",
+      children: [
+        {
+          type: "paragraph",
+          children: [{ type: "text", value: "Limit is [[u:$2M]] here." }],
+        },
+      ],
+    };
+    remarkConfidence()(tree as never);
+
+    const paragraph = tree.children![0];
+    expect(paragraph.children).toHaveLength(3);
+    expect(paragraph.children![0]).toEqual({ type: "text", value: "Limit is " });
+    const mark = paragraph.children![1];
+    expect(mark.data?.hName).toBe("mark");
+    expect(mark.data?.hProperties?.["data-level"]).toBe("unverified");
+    expect(mark.children![0]).toEqual({ type: "text", value: "$2M" });
+    expect(paragraph.children![2]).toEqual({ type: "text", value: " here." });
+  });
+
+  it("leaves unmarked text untouched", () => {
+    const tree: Node = {
+      type: "root",
+      children: [
+        { type: "paragraph", children: [{ type: "text", value: "All good." }] },
+      ],
+    };
+    remarkConfidence()(tree as never);
+    expect(tree.children![0].children![0]).toEqual({
+      type: "text",
+      value: "All good.",
+    });
+  });
+});

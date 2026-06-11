@@ -36,7 +36,7 @@ import {
   markdownToHtml,
   buildChannelInstructions,
   buildPolicyToolInstructions,
-  buildUncertaintyInstructions,
+  buildConfidenceInstructions,
   logAiError,
 } from "../lib/aiUtils";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
@@ -1161,7 +1161,7 @@ export const run = internalAction({
         selectedSteeringBlock +
         complianceBlock +
         attachmentNote +
-        buildUncertaintyInstructions();
+        buildConfidenceInstructions();
 
       const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, {
         orgId: args.orgId,
