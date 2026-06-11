@@ -21,6 +21,7 @@ import {
   Clock,
   Download,
   Paperclip,
+  Highlighter,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -29,7 +30,7 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
-import { stripConfidenceMarkers } from "@/lib/confidence";
+import { stripConfidenceMarkers, summarizeConfidence } from "@/lib/confidence";
 import { ConfidenceLegend } from "@/components/confidence-legend";
 import {
   useArchivedThreadCacheActions,
@@ -684,6 +685,9 @@ function MessageFooterActions({
   onToggleToolCalls,
   showSubagentActivity,
   onToggleSubagentActivity,
+  hasConfidence,
+  showConfidence,
+  onToggleConfidence,
   rightAligned,
 }: {
   refs: { type: "policy"; id: string; page?: number }[];
@@ -707,6 +711,9 @@ function MessageFooterActions({
   onToggleToolCalls: () => void;
   showSubagentActivity?: boolean;
   onToggleSubagentActivity?: () => void;
+  hasConfidence?: boolean;
+  showConfidence?: boolean;
+  onToggleConfidence?: () => void;
   rightAligned?: boolean;
 }) {
   const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
@@ -746,6 +753,7 @@ function MessageFooterActions({
     !hasSubagentActivity &&
     !hasAttachments &&
     !hasMailboxTasks &&
+    !hasConfidence &&
     !copyContent?.trim() &&
     !retryMessageId
   )
@@ -834,6 +842,22 @@ function MessageFooterActions({
               isOpen={showReasoning}
               onToggle={onToggleReasoning}
             />
+          ) : null}
+          {hasConfidence && onToggleConfidence ? (
+            <button
+              type="button"
+              onClick={onToggleConfidence}
+              aria-expanded={showConfidence}
+              title="Show how well each phrase is backed by a source"
+              className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-label font-medium transition-colors ${
+                showConfidence
+                  ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
+                  : "border-foreground/8 bg-transparent text-muted-foreground/55 hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+              }`}
+            >
+              <Highlighter className="h-3 w-3" />
+              Confidence
+            </button>
           ) : null}
           {toolCalls.length > 0 && (
             <button
@@ -1278,6 +1302,7 @@ export function UnifiedMessageBubble({
   const [showReasoning, setShowReasoning] = useState(false);
   const [showToolCalls, setShowToolCalls] = useState(false);
   const [showSubagentActivity, setShowSubagentActivity] = useState(false);
+  const [showConfidence, setShowConfidence] = useState(false);
   const [now] = useState(() => dayjs().valueOf());
   const time = dayjs(msg._creationTime);
   const channelIcon =
@@ -1511,13 +1536,16 @@ export function UnifiedMessageBubble({
                     gfm
                     breaks
                     flagConfidence
+                    confidenceFullView={showConfidence}
                     className={MARKDOWN_STYLES}
                     components={markdownComponents}
                   >
                     {fixedContent}
                   </ProseMarkdown>
                 </div>
-                {!isError ? <ConfidenceLegend content={fixedContent} /> : null}
+                {!isError && showConfidence ? (
+                  <ConfidenceLegend content={fixedContent} />
+                ) : null}
                 <MessageFooterActions
                   refs={allRefs}
                   citedSections={citedSections}
@@ -1546,6 +1574,11 @@ export function UnifiedMessageBubble({
                   onToggleSubagentActivity={() =>
                     setShowSubagentActivity((value) => !value)
                   }
+                  hasConfidence={
+                    !isError && summarizeConfidence(fixedContent) !== null
+                  }
+                  showConfidence={showConfidence}
+                  onToggleConfidence={() => setShowConfidence((value) => !value)}
                   rightAligned={brokerPerspective}
                 />
                 <VendorComplianceArtifacts

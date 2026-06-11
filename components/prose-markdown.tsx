@@ -62,10 +62,14 @@ export type ProseMarkdownProps = {
   /** Convert soft line-breaks to <br> (default: false) */
   breaks?: boolean;
   /**
-   * Render `[[g|i|u:...]]` confidence markers as source-backing tints
-   * (default: false). Used for agent chat answers.
+   * Render `[[g|i|u:...]]` confidence markers (default: false). Used for agent
+   * chat answers. By default only low-confidence (unverified) phrases are
+   * tinted; set `confidenceFullView` to reveal the full grounded/inferred
+   * breakdown.
    */
   flagConfidence?: boolean;
+  /** Tint every confidence level, not just always-visible low-confidence ones. */
+  confidenceFullView?: boolean;
   /** Extra react-markdown component overrides */
   components?: Components;
 };
@@ -78,31 +82,44 @@ const CONFIDENCE_TINT: Record<ConfidenceLevel, string> = {
   unverified: "bg-rose-400/18 decoration-rose-500/50 dark:bg-rose-400/20",
 };
 
+/** Levels that stay highlighted even when the full view is collapsed. */
+const ALWAYS_VISIBLE_LEVELS: ReadonlySet<ConfidenceLevel> = new Set([
+  "unverified",
+]);
+
 function isConfidenceLevel(value: unknown): value is ConfidenceLevel {
   return value === "grounded" || value === "inferred" || value === "unverified";
 }
 
-/** Renders a phrase tinted by how well the agent could back it with a source. */
-const confidenceComponents: Components = {
-  mark: ({ children, ...props }) => {
-    const rawLevel = (props as Record<string, unknown>)["data-level"];
-    const level: ConfidenceLevel = isConfidenceLevel(rawLevel)
-      ? rawLevel
-      : "inferred";
-    const meta = CONFIDENCE_LEVEL_META[level];
-    return (
-      <mark
-        className={cn(
-          "rounded-[3px] px-0.5 text-foreground underline decoration-dotted underline-offset-2",
-          CONFIDENCE_TINT[level],
-        )}
-        title={`${meta.label}: ${meta.description}`}
-      >
-        {children}
-      </mark>
-    );
-  },
-};
+/**
+ * Build the `<mark>` renderer for confidence phrases. In the collapsed view
+ * only always-visible levels are tinted; other phrases render as plain text.
+ */
+function makeConfidenceComponents(fullView: boolean): Components {
+  return {
+    mark: ({ children, ...props }) => {
+      const rawLevel = (props as Record<string, unknown>)["data-level"];
+      const level: ConfidenceLevel = isConfidenceLevel(rawLevel)
+        ? rawLevel
+        : "inferred";
+      if (!fullView && !ALWAYS_VISIBLE_LEVELS.has(level)) {
+        return <>{children}</>;
+      }
+      const meta = CONFIDENCE_LEVEL_META[level];
+      return (
+        <mark
+          className={cn(
+            "rounded-[3px] px-0.5 text-foreground underline decoration-dotted underline-offset-2",
+            CONFIDENCE_TINT[level],
+          )}
+          title={`${meta.label}: ${meta.description}`}
+        >
+          {children}
+        </mark>
+      );
+    },
+  };
+}
 
 /**
  * Unified markdown renderer used across Glass.
@@ -126,6 +143,7 @@ export function ProseMarkdown({
   gfm = false,
   breaks = false,
   flagConfidence = false,
+  confidenceFullView = false,
   components,
 }: ProseMarkdownProps) {
   const plugins = [];
@@ -136,7 +154,7 @@ export function ProseMarkdown({
   // Merge default GFM table component with user overrides
   const mergedComponents = {
     ...(gfm ? defaultGfmComponents : null),
-    ...(flagConfidence ? confidenceComponents : null),
+    ...(flagConfidence ? makeConfidenceComponents(confidenceFullView) : null),
     ...components,
   };
 
