@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction, useMutation } from "convex/react";
+import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -20,7 +21,10 @@ import {
   useCachedPolicyList,
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
-import { useUpsertCachedQuery } from "@/lib/sync/use-cached-query";
+import {
+  showPolicyExtractionQueuedToast,
+  showPolicyExtractionReadyToast,
+} from "@/components/shared/extraction-banner";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -31,26 +35,32 @@ const DOC_TYPE_TABS = [
 
 type DocTypeTab = (typeof DOC_TYPE_TABS)[number]["id"];
 
+type PolicyListToastRow = {
+  _id: string;
+  carrier?: string | null;
+  fileName?: string | null;
+  policyNumber?: string | null;
+  effectiveDate?: string | null;
+  expirationDate?: string | null;
+  documentType?: string | null;
+  pipelineStatus?: string;
+  pipelineError?: string | null;
+  extractionDataStage?: string | null;
+  extractionPreviewError?: string | null;
+  uploadedBySide?: string;
+};
+
 export default function PoliciesPage() {
+  const router = useRouter();
   const [docTypeTab, setDocTypeTab] = useState<DocTypeTab>("policy");
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const pendingExtractionToastsRef = useRef<
+    Record<string, { documentType: DocTypeTab; fileName?: string | null }>
+  >({});
 
   const policies = useCachedPolicyList(docTypeTab);
   const viewerOrg = useCachedViewerOrg();
-  const upsertPolicyList = useUpsertCachedQuery<
-    Array<{
-      _id: Id<"policies">;
-      fileName?: string | null;
-      carrier?: string | null;
-      policyNumber?: string | null;
-      documentType?: string;
-      pipelineStatus?: string;
-      uploadedBySide?: string;
-      [key: string]: unknown;
-    }>,
-    { documentType: "policy" | "quote" }
-  >("policies.listForClient");
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
   const extractFromUpload = useAction(
@@ -70,6 +80,37 @@ export default function PoliciesPage() {
       return storageId;
     },
     [generateUploadUrl],
+  );
+
+  const resolvePendingExtractionToasts = useCallback(
+    (
+      rows: PolicyListToastRow[] | undefined,
+    ) => {
+      if (!rows) return;
+      const pending = pendingExtractionToastsRef.current;
+      if (Object.keys(pending).length === 0) return;
+      const rowsById = new Map(rows.map((policy) => [policy._id, policy]));
+      const readyIds = Object.keys(pending).filter((policyId) =>
+        rowsById.has(policyId),
+      );
+      if (readyIds.length === 0) return;
+
+      for (const policyId of readyIds) {
+        const policy = rowsById.get(policyId);
+        if (!policy) continue;
+        const pendingPolicy = pending[policyId];
+        showPolicyExtractionReadyToast(
+          {
+            ...policy,
+            documentType: policy.documentType ?? pendingPolicy.documentType,
+            fileName: policy.fileName ?? pendingPolicy.fileName,
+          },
+          () => router.push(`/policies/${policyId}`),
+        );
+        delete pending[policyId];
+      }
+    },
+    [router],
   );
 
   const uploadMany = useCallback(
@@ -104,18 +145,16 @@ export default function PoliciesPage() {
             if ("error" in result) {
               throw new Error(result.error);
             }
-            await upsertPolicyList({ documentType }, (current) => [
-              {
-                _id: result.id as Id<"policies">,
-                fileName: files[i].name,
-                carrier: "Extracting...",
-                policyNumber: "Extracting...",
-                documentType,
-                pipelineStatus: "processing",
-                uploadedBySide: "client",
-              },
-              ...(current ?? []).filter((policy) => policy._id !== result.id),
-            ]);
+            showPolicyExtractionQueuedToast({
+              policyId: result.id,
+              documentType,
+              fileName: files[i].name,
+            });
+            pendingExtractionToastsRef.current[result.id] = {
+              documentType,
+              fileName: files[i].name,
+            };
+            resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
           }
         } else {
           const result = (await extractFromUpload({
@@ -132,28 +171,22 @@ export default function PoliciesPage() {
           if ("error" in result) {
             throw new Error(result.error);
           }
-          await upsertPolicyList({ documentType }, (current) => [
-            {
-              _id: result.id as Id<"policies">,
-              fileName:
-                files.length > 1
-                  ? `${files[0].name.replace(/\.pdf$/i, "")} + ${files.length - 1} more.pdf`
-                  : files[0].name,
-              carrier: "Extracting...",
-              policyNumber: "Extracting...",
-              documentType,
-              pipelineStatus: "processing",
-              uploadedBySide: "client",
-            },
-            ...(current ?? []).filter((policy) => policy._id !== result.id),
-          ]);
+          const displayFileName =
+            files.length > 1
+              ? `${files[0].name.replace(/\.pdf$/i, "")} + ${files.length - 1} more.pdf`
+              : files[0].name;
+          showPolicyExtractionQueuedToast({
+            policyId: result.id,
+            documentType,
+            fileName: displayFileName,
+          });
+          pendingExtractionToastsRef.current[result.id] = {
+            documentType,
+            fileName: displayFileName,
+          };
+          resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
         }
 
-        toast.success(
-          uploadMode === "separate" && files.length > 1
-            ? `${files.length} ${documentType === "quote" ? "quotes" : "policies"} uploaded — extraction running in the background.`
-            : `${documentType === "quote" ? "Quote" : "Policy"} uploaded — extraction running in the background.`,
-        );
       } catch (err) {
         console.error(err);
         toast.error("Upload failed. Please try again.");
@@ -161,7 +194,7 @@ export default function PoliciesPage() {
         setUploading(false);
       }
     },
-    [uploadOne, extractFromUpload, upsertPolicyList],
+    [uploadOne, extractFromUpload, policies, resolvePendingExtractionToasts],
   );
 
   const handleDrawerUpload = useCallback(
@@ -181,22 +214,17 @@ export default function PoliciesPage() {
 
   const isLoading = policies === undefined;
   const isViewerOrgLoading = viewerOrg === undefined;
-  const list = (policies ?? []) as Array<{
-    _id: string;
-    carrier?: string | null;
-    fileName?: string | null;
-    policyNumber?: string | null;
-    effectiveDate?: string | null;
-    expirationDate?: string | null;
-    pipelineStatus?: string;
-    uploadedBySide?: string;
-  }>;
+  const list = (policies ?? []) as PolicyListToastRow[];
 
   const agentHandle =
     viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle ?? null;
   const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
   const brokerForCallout = viewerOrg?.brokerOrg ?? null;
   const fallbackHandle = viewerOrg?.org?.agentHandle ?? null;
+
+  useEffect(() => {
+    resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
+  }, [policies, resolvePendingExtractionToasts]);
 
   return (
     <AppShell
@@ -265,6 +293,7 @@ export default function PoliciesPage() {
                 effectiveDate={p.effectiveDate}
                 expirationDate={p.expirationDate}
                 pipelineStatus={p.pipelineStatus}
+                extractionDataStage={p.extractionDataStage}
                 uploadedBySide={p.uploadedBySide}
                 href={`/policies/${p._id}`}
               />

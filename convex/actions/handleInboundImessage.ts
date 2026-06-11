@@ -875,12 +875,11 @@ export const processInbound = internalAction({
       const scopedPolicySets = await Promise.all(
         readOrgIds.map(async (scopedOrgId) => ({
           orgId: scopedOrgId,
-          policies: await ctx.runQuery(internal.policies.listAllInternal, {
+          policies: await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, {
             orgId: scopedOrgId,
           }),
         })),
       );
-      const policies = scopedPolicySets.flatMap((entry) => entry.policies);
       const policyContextParts: string[] = [];
       const relevantPolicyIds: Id<"policies">[] = [];
       for (const entry of scopedPolicySets) {

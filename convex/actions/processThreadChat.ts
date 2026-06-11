@@ -934,7 +934,7 @@ export const run = internalAction({
       >();
       await Promise.all(
         scope.readOrgIds.map(async (readOrgId) => {
-          const docs = await ctx.runQuery(internal.policies.listAllInternal, {
+          const docs = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, {
             orgId: readOrgId,
           });
           policiesByOrg.set(String(readOrgId), {

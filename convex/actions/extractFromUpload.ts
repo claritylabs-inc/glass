@@ -1,5 +1,6 @@
 "use node";
 
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
@@ -74,7 +75,7 @@ export const extractFromUpload = action({
       policyNumber: "Extracting...",
       policyTypes: ["other"],
       documentType: "policy",
-      policyYear: new Date().getFullYear(),
+      policyYear: dayjs().year(),
       effectiveDate: "Extracting...",
       expirationDate: "Extracting...",
       isRenewal: false,
@@ -176,7 +177,7 @@ export const extractFromUploadInternal = internalAction({
       policyNumber: "Extracting...",
       policyTypes: ["other"],
       documentType: "policy",
-      policyYear: new Date().getFullYear(),
+      policyYear: dayjs().year(),
       effectiveDate: "Extracting...",
       expirationDate: "Extracting...",
       isRenewal: false,
