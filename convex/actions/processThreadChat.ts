@@ -88,6 +88,14 @@ function normalizeConfidenceRepair(text: string, fallback: string): string {
   return hasConfidenceMarkers(repaired) ? repaired : fallback;
 }
 
+function restoreSentenceBoundarySpacing(text: string): string {
+  return text
+    .replace(/([a-z0-9)\]][.!?])(?=[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)\]][.!?])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)\]][.!?]\]\])(?=[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)\]][.!?]\]\])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ");
+}
+
 async function repairMissingConfidenceMarkers({
   content,
   model,
@@ -1414,7 +1422,6 @@ export const run = internalAction({
       }> = [];
       let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
       let lastToolName = "";
-      let lastToolPolicyId = "";
 
       // streamText with tools — supports both streaming Q&A and tool calls
       const tools = {
@@ -1740,7 +1747,7 @@ export const run = internalAction({
               lastFlush = now;
               await ctx.runMutation(internal.threads.streamAgentMessage, {
                 id: agentMsgId,
-                content,
+                content: restoreSentenceBoundarySpacing(content),
               });
             }
           } else if (part.type === "tool-call") {
@@ -1749,10 +1756,6 @@ export const run = internalAction({
               ((part as Record<string, unknown>).input as
                 | Record<string, unknown>
                 | undefined) ?? undefined;
-            lastToolPolicyId =
-              part.toolName === "lookup_policy_section"
-                ? ((input?.policyId as string) ?? "")
-                : "";
             usedTools.push(part.toolName);
             toolCalls.push({
               name: part.toolName,
@@ -1762,7 +1765,9 @@ export const run = internalAction({
               TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
             await ctx.runMutation(internal.threads.streamAgentMessage, {
               id: agentMsgId,
-              content: content ? content + `\n\n*${label}*` : `*${label}*`,
+              content: content
+                ? restoreSentenceBoundarySpacing(content) + `\n\n*${label}*`
+                : `*${label}*`,
             });
           } else if (part.type === "tool-result") {
             const output = (part as Record<string, unknown>).output;
@@ -1843,12 +1848,10 @@ export const run = internalAction({
                     citedCoverageNames.add(
                       String((r as Record<string, unknown>).title),
                     );
-                    if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
                   } else {
                     citedSections.add(
                       String((r as Record<string, unknown>).title),
                     );
-                    if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
                   }
                   const sourceSpanIds = (r as Record<string, unknown>)
                     .sourceSpanIds;
@@ -1864,7 +1867,7 @@ export const run = internalAction({
             // Clear the tool label but keep accumulated content
             await ctx.runMutation(internal.threads.streamAgentMessage, {
               id: agentMsgId,
-              content: content || "",
+              content: restoreSentenceBoundarySpacing(content || ""),
             });
           }
         }
@@ -1912,6 +1915,7 @@ export const run = internalAction({
       if (await isAgentResponseCancelled(true)) return;
 
       // Final update — save content, reasoning, and cited sections
+      content = restoreSentenceBoundarySpacing(content);
       const completedCoiEmailSideEffect =
         usedTools.includes("email_expert") ||
         usedTools.includes("generate_coi") ||
@@ -1940,6 +1944,7 @@ export const run = internalAction({
           model: chatModel.model,
           route: chatModel.route,
         });
+        content = restoreSentenceBoundarySpacing(content);
       }
       const finalReferencedPolicyIds = new Set<string>([
         ...selectedPolicyIds,

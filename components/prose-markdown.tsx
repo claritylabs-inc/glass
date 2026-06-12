@@ -109,7 +109,7 @@ function makeConfidenceComponents(fullView: boolean): Components {
       return (
         <mark
           className={cn(
-            "rounded-[3px] px-0.5 text-foreground underline decoration-dotted underline-offset-2",
+            "rounded-[3px] text-foreground underline decoration-dotted underline-offset-2",
             CONFIDENCE_TINT[level],
           )}
           title={`${meta.label}: ${meta.description}`}

@@ -559,6 +559,9 @@ export function buildAgentToolExecutors(
           "exact source lookup",
         );
         if (!resolved.ok) return resolved.message;
+        await options.onPolicyReferenced?.(
+          resolved.policy._id as Id<"policies">,
+        );
         return searchPolicyDocumentWithSourceSpans(
           ctx,
           resolved.policy,

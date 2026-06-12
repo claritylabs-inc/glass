@@ -21,7 +21,7 @@ import {
   Clock,
   Download,
   Paperclip,
-  Highlighter,
+  BadgeCheck,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -31,7 +31,6 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 import { stripConfidenceMarkers, summarizeConfidence } from "@/lib/confidence";
-import { ConfidenceLegend } from "@/components/confidence-legend";
 import {
   useArchivedThreadCacheActions,
   useThreadCacheActions,
@@ -609,12 +608,10 @@ function ReasoningPanel({ reasoning }: { reasoning: string }) {
 
 function ReasoningFooterButton({
   reasoning,
-  isStreaming,
   isOpen,
   onToggle,
 }: {
   reasoning: string;
-  isStreaming?: boolean;
   isOpen: boolean;
   onToggle: () => void;
 }) {
@@ -630,14 +627,36 @@ function ReasoningFooterButton({
     >
       <Brain className="h-3 w-3" />
       Reasoning
-      <span className="text-muted-foreground/35">
-        {isStreaming ? <Loader2 className="h-3 w-3 animate-spin" /> : stepCount}
-      </span>
+      <span className="text-muted-foreground/35">{stepCount}</span>
       <ChevronDown
         className={`h-3 w-3 transition-transform duration-150 ${
           isOpen ? "rotate-180" : ""
         }`}
       />
+    </button>
+  );
+}
+
+function ConfidenceFooterButton({
+  isActive,
+  onToggle,
+}: {
+  isActive: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={isActive}
+      className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-label font-medium transition-colors ${
+        isActive
+          ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
+          : "border-foreground/8 bg-transparent text-muted-foreground/55 hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+      }`}
+    >
+      <BadgeCheck className="h-3 w-3" />
+      Confidence level
     </button>
   );
 }
@@ -685,7 +704,7 @@ function MessageFooterActions({
   onToggleToolCalls,
   showSubagentActivity,
   onToggleSubagentActivity,
-  hasConfidence,
+  confidenceContent,
   showConfidence,
   onToggleConfidence,
   rightAligned,
@@ -711,7 +730,7 @@ function MessageFooterActions({
   onToggleToolCalls: () => void;
   showSubagentActivity?: boolean;
   onToggleSubagentActivity?: () => void;
-  hasConfidence?: boolean;
+  confidenceContent?: string;
   showConfidence?: boolean;
   onToggleConfidence?: () => void;
   rightAligned?: boolean;
@@ -742,6 +761,16 @@ function MessageFooterActions({
     mailboxArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ??
     [];
   const hasMailboxTasks = mailboxTasks.length > 0;
+  const confidenceSummary = useMemo(
+    () => (confidenceContent ? summarizeConfidence(confidenceContent) : null),
+    [confidenceContent],
+  );
+  const confidencePhraseCount = confidenceSummary
+    ? confidenceSummary.counts.grounded +
+      confidenceSummary.counts.inferred +
+      confidenceSummary.counts.unverified
+    : 0;
+  const hasConfidence = confidencePhraseCount > 0;
   const selectedMailboxIndex =
     openMailboxArtifactRef?.messageId === messageId
       ? (openMailboxArtifactRef?.index ?? null)
@@ -843,21 +872,11 @@ function MessageFooterActions({
               onToggle={onToggleReasoning}
             />
           ) : null}
-          {hasConfidence && onToggleConfidence ? (
-            <button
-              type="button"
-              onClick={onToggleConfidence}
-              aria-expanded={showConfidence}
-              title="Show how well each phrase is backed by a source"
-              className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-label font-medium transition-colors ${
-                showConfidence
-                  ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
-                  : "border-foreground/8 bg-transparent text-muted-foreground/55 hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
-              }`}
-            >
-              <Highlighter className="h-3 w-3" />
-              Confidence
-            </button>
+          {hasConfidence && confidenceContent && onToggleConfidence ? (
+            <ConfidenceFooterButton
+              isActive={showConfidence ?? false}
+              onToggle={onToggleConfidence}
+            />
           ) : null}
           {toolCalls.length > 0 && (
             <button
@@ -1086,6 +1105,8 @@ function UnifiedThreadActions({
 /* ── Shared markdown container styles ── */
 const MARKDOWN_STYLES = "[&_a]:text-primary-light [&_a]:underline";
 
+type FooterPanel = "reasoning" | "tools" | "subagents" | "confidence";
+
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
     if (href?.startsWith("/policies/")) {
@@ -1299,10 +1320,15 @@ export function UnifiedMessageBubble({
   openMailboxArtifactRef?: MailboxArtifactRef | null;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
-  const [showReasoning, setShowReasoning] = useState(false);
-  const [showToolCalls, setShowToolCalls] = useState(false);
-  const [showSubagentActivity, setShowSubagentActivity] = useState(false);
-  const [showConfidence, setShowConfidence] = useState(false);
+  const [activeFooterPanel, setActiveFooterPanel] =
+    useState<FooterPanel | null>(null);
+  const showReasoning = activeFooterPanel === "reasoning";
+  const showToolCalls = activeFooterPanel === "tools";
+  const showSubagentActivity = activeFooterPanel === "subagents";
+  const showConfidence = activeFooterPanel === "confidence";
+  const toggleFooterPanel = (panel: FooterPanel) => {
+    setActiveFooterPanel((current) => (current === panel ? null : panel));
+  };
   const [now] = useState(() => dayjs().valueOf());
   const time = dayjs(msg._creationTime);
   const channelIcon =
@@ -1315,7 +1341,6 @@ export function UnifiedMessageBubble({
   // Processing state — unified bubble with thinking, tool status, and streaming content
   if (msg.role === "agent" && msg.status === "processing") {
     const hasContent = msg.content && msg.content.length > 0;
-    const hasReasoning = msg.reasoning && msg.reasoning.length > 0;
     const ageMs = now - msg._creationTime;
     const isStale = ageMs > 60_000;
     // Tool status messages are like "*Searching policies...*"
@@ -1387,21 +1412,6 @@ export function UnifiedMessageBubble({
                 : undefined
             }
           />
-          {hasReasoning ? (
-            <div className="mt-1.5">
-              <div className="flex min-w-0 flex-wrap items-start gap-1.5">
-                <ReasoningFooterButton
-                  reasoning={msg.reasoning ?? ""}
-                  isStreaming
-                  isOpen={showReasoning}
-                  onToggle={() => setShowReasoning((value) => !value)}
-                />
-              </div>
-              {showReasoning ? (
-                <ReasoningPanel reasoning={msg.reasoning ?? ""} />
-              ) : null}
-            </div>
-          ) : null}
           {relatedEmailMessages.length > 0 ? (
             <div className="mt-3">
               <EmailStackCard
@@ -1543,9 +1553,6 @@ export function UnifiedMessageBubble({
                     {fixedContent}
                   </ProseMarkdown>
                 </div>
-                {!isError && showConfidence ? (
-                  <ConfidenceLegend content={fixedContent} />
-                ) : null}
                 <MessageFooterActions
                   refs={allRefs}
                   citedSections={citedSections}
@@ -1567,18 +1574,16 @@ export function UnifiedMessageBubble({
                       : undefined
                   }
                   showReasoning={showReasoning}
-                  onToggleReasoning={() => setShowReasoning((value) => !value)}
+                  onToggleReasoning={() => toggleFooterPanel("reasoning")}
                   showToolCalls={showToolCalls}
-                  onToggleToolCalls={() => setShowToolCalls((value) => !value)}
+                  onToggleToolCalls={() => toggleFooterPanel("tools")}
                   showSubagentActivity={showSubagentActivity}
                   onToggleSubagentActivity={() =>
-                    setShowSubagentActivity((value) => !value)
+                    toggleFooterPanel("subagents")
                   }
-                  hasConfidence={
-                    !isError && summarizeConfidence(fixedContent) !== null
-                  }
+                  confidenceContent={!isError ? fixedContent : undefined}
                   showConfidence={showConfidence}
-                  onToggleConfidence={() => setShowConfidence((value) => !value)}
+                  onToggleConfidence={() => toggleFooterPanel("confidence")}
                   rightAligned={brokerPerspective}
                 />
                 <VendorComplianceArtifacts

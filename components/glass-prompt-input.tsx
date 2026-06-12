@@ -49,9 +49,12 @@ const darkInputOverlayFadeStyle = {
 function InputOverlayFade() {
   return (
     <>
-      <div className="h-16 dark:hidden" style={lightInputOverlayFadeStyle} />
       <div
-        className="hidden h-16 dark:block"
+        className="h-16 backdrop-blur-md dark:hidden"
+        style={lightInputOverlayFadeStyle}
+      />
+      <div
+        className="hidden h-16 backdrop-blur-md dark:block"
         style={darkInputOverlayFadeStyle}
       />
     </>
@@ -563,7 +566,7 @@ export const GlassPromptInput = forwardRef<
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         className={cn(
-          "rounded-xl border border-foreground/6 bg-card shadow-none transition-[background-color,border-color,box-shadow] duration-100 overflow-hidden hover:border-foreground/14 hover:bg-foreground/1 focus-within:border-foreground/20 focus-within:bg-card focus-within:shadow-none dark:hover:border-[#2f2f2f] dark:focus-within:border-[#3a3a3a] **:data-[slot=input-group]:!border-0 **:data-[slot=input-group]:!ring-0 **:data-[slot=input-group]:rounded-none **:data-[slot=input-group]:bg-transparent **:data-[slot=input-group]:!shadow-none",
+          "rounded-xl border border-foreground/6 bg-card shadow-none transition-[background-color,border-color,box-shadow] duration-100 overflow-hidden hover:border-foreground/14 focus-within:border-foreground/20 focus-within:shadow-none dark:hover:border-[#2f2f2f] dark:focus-within:border-[#3a3a3a] **:data-[slot=input-group]:!border-0 **:data-[slot=input-group]:!ring-0 **:data-[slot=input-group]:rounded-none **:data-[slot=input-group]:bg-transparent **:data-[slot=input-group]:!shadow-none",
           isDraggingFiles && "border-primary/40 bg-primary/5",
         )}
       >
@@ -710,7 +713,7 @@ export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
       <InputOverlayFade />
       <div
-        className="pointer-events-auto bg-white/80 dark:bg-black/80 px-4 md:px-6 lg:px-8 pt-2"
+        className="pointer-events-auto bg-white/80 px-4 pt-2 backdrop-blur-md dark:bg-black/80 md:px-6 lg:px-8"
         style={{
           paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
         }}
