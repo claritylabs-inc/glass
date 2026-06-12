@@ -46,6 +46,10 @@ const darkInputOverlayFadeStyle = {
     "linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 55%, rgba(0, 0, 0, 0.8) 100%)",
 } satisfies React.CSSProperties;
 
+const INPUT_INTENT_RADIUS = 180;
+const INPUT_INTENT_EPSILON = 0.01;
+const PREPARED_ACTION_INTENT_THRESHOLD = 0.34;
+
 function InputOverlayFade() {
   return (
     <>
@@ -124,10 +128,23 @@ function AttachmentTags({
 }
 
 type PromptReference = NonNullable<PromptInputMessage["references"]>[number];
+type PromptTargetKind = PromptReference["kind"];
+
+type PromptTrigger = {
+  marker: "@" | "/";
+  query: string;
+  start: number;
+  end: number;
+  preparedKinds?: PromptTargetKind[];
+};
 
 type MentionTarget = PromptReference & {
   sublabel?: string;
 };
+
+const PREPARED_POLICY_TARGET_KINDS: PromptTargetKind[] = ["policy", "quote"];
+const PREPARED_REQUIREMENT_TARGET_KINDS: PromptTargetKind[] = ["requirement"];
+const PREPARED_MAILBOX_TARGET_KINDS: PromptTargetKind[] = ["mailbox"];
 
 function referenceIcon(kind: PromptReference["kind"]) {
   if (kind === "requirement") return <ClipboardList className="h-3.5 w-3.5" />;
@@ -188,7 +205,112 @@ function TriggerHintTags({
   );
 }
 
-function findActiveTrigger(value: string, cursor: number) {
+function PreparedInputActions({
+  visible,
+  roomyOnMobile = false,
+  showAttach,
+  hasPolicyTargets,
+  hasRequirementTargets,
+  hasMailboxTargets,
+  onOpenTargetPicker,
+}: {
+  visible: boolean;
+  roomyOnMobile?: boolean;
+  showAttach: boolean;
+  hasPolicyTargets: boolean;
+  hasRequirementTargets: boolean;
+  hasMailboxTargets: boolean;
+  onOpenTargetPicker: (marker: "@" | "/", kinds: PromptTargetKind[]) => void;
+}) {
+  const attachments = usePromptInputAttachments();
+
+  const actions: Array<{
+    id: string;
+    label: string;
+    icon: React.ReactNode;
+    onSelect: () => void;
+  }> = [];
+
+  if (hasPolicyTargets) {
+    actions.push({
+      id: "policy",
+      label: "Policy",
+      icon: <FileText className="h-3.5 w-3.5" />,
+      onSelect: () => {
+        onOpenTargetPicker("@", PREPARED_POLICY_TARGET_KINDS);
+      },
+    });
+  }
+
+  if (hasRequirementTargets) {
+    actions.push({
+      id: "requirement",
+      label: "Requirement",
+      icon: <ClipboardList className="h-3.5 w-3.5" />,
+      onSelect: () => {
+        onOpenTargetPicker("@", PREPARED_REQUIREMENT_TARGET_KINDS);
+      },
+    });
+  }
+
+  if (hasMailboxTargets) {
+    actions.push({
+      id: "mailbox",
+      label: "Mailbox",
+      icon: <Inbox className="h-3.5 w-3.5" />,
+      onSelect: () => {
+        onOpenTargetPicker("/", PREPARED_MAILBOX_TARGET_KINDS);
+      },
+    });
+  }
+
+  if (showAttach) {
+    actions.push({
+      id: "attach",
+      label: "Attach",
+      icon: <Paperclip className="h-3.5 w-3.5" />,
+      onSelect: () => {
+        attachments.openFileDialog();
+      },
+    });
+  }
+
+  if (!visible || actions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      aria-label="Prepared prompt actions"
+      data-glass-prepared-actions
+      className={cn(
+        "pointer-events-none absolute z-20 flex max-w-[calc(100%-6.25rem)] items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        roomyOnMobile
+          ? "left-3 bottom-2 sm:left-2 sm:bottom-1.5"
+          : "left-2 bottom-1.5",
+      )}
+    >
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          aria-label={action.label}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            event.preventDefault();
+            action.onSelect();
+          }}
+          className="pointer-events-auto inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card/95 px-2.5 text-label font-medium text-muted-foreground/70 transition-colors hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
+        >
+          {action.icon}
+          <span className="hidden sm:inline">{action.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function findActiveTrigger(value: string, cursor: number): PromptTrigger | null {
   const prefix = value.slice(0, cursor);
   const match = prefix.match(/(^|\s)([@/])([^\s@/]*)$/);
   if (!match) return null;
@@ -242,10 +364,15 @@ export const GlassPromptInput = forwardRef<
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const pointerFrameRef = useRef<number | null>(null);
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [pointerIntent, setPointerIntent] = useState(0);
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [textValue, setTextValue] = useState("");
-  const [activeTrigger, setActiveTrigger] =
-    useState<ReturnType<typeof findActiveTrigger>>(null);
+  const [activeTrigger, setActiveTrigger] = useState<PromptTrigger | null>(
+    null,
+  );
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [references, setReferences] = useState<PromptReference[]>([]);
   const [pickerRect, setPickerRect] = useState<{
@@ -273,10 +400,11 @@ export const GlassPromptInput = forwardRef<
 
   const suggestions = useMemo(() => {
     if (!activeTrigger) return [];
-    const allowedKinds: PromptReference["kind"][] =
-      activeTrigger.marker === "/"
-        ? ["mailbox"]
-        : ["policy", "quote", "requirement"];
+    const allowedKinds: PromptTargetKind[] =
+      activeTrigger.preparedKinds ??
+      (activeTrigger.marker === "/"
+        ? PREPARED_MAILBOX_TARGET_KINDS
+        : ["policy", "quote", "requirement"]);
     const query = activeTrigger.query.toLowerCase();
     return mentionTargets
       .filter((target) => allowedKinds.includes(target.kind))
@@ -326,14 +454,24 @@ export const GlassPromptInput = forwardRef<
         textarea.value,
         textarea.selectionStart,
       );
-      setActiveTrigger(trigger);
+      setActiveTrigger((current) => {
+        if (!trigger) return null;
+        if (
+          current?.preparedKinds &&
+          current.marker === trigger.marker &&
+          current.start === trigger.start
+        ) {
+          return { ...trigger, preparedKinds: current.preparedKinds };
+        }
+        return trigger;
+      });
       setSelectedIndex(0);
     },
     [],
   );
 
   const setTextareaValue = useCallback(
-    (next: string, cursor?: number) => {
+    (next: string, cursor?: number, nextTrigger?: PromptTrigger | null) => {
       const el = textareaRef.current;
       if (!el) return;
       const nativeSetter = Object.getOwnPropertyDescriptor(
@@ -342,14 +480,38 @@ export const GlassPromptInput = forwardRef<
       )?.set;
       nativeSetter?.call(el, next);
       el.dispatchEvent(new Event("input", { bubbles: true }));
+      if (nextTrigger !== undefined) {
+        setActiveTrigger(nextTrigger);
+        setSelectedIndex(0);
+      }
       const nextCursor = cursor ?? next.length;
       requestAnimationFrame(() => {
         el.focus();
         el.setSelectionRange(nextCursor, nextCursor);
-        updateTriggerFromTextarea(el);
+        if (nextTrigger !== undefined) {
+          setActiveTrigger(nextTrigger);
+          setSelectedIndex(0);
+        } else {
+          updateTriggerFromTextarea(el);
+        }
       });
     },
     [updateTriggerFromTextarea],
+  );
+
+  const openPreparedTargetPicker = useCallback(
+    (marker: "@" | "/", kinds: PromptTargetKind[]) => {
+      const trigger: PromptTrigger = {
+        marker,
+        query: "",
+        start: 0,
+        end: marker.length,
+        preparedKinds: kinds,
+      };
+      setTextValue(marker);
+      setTextareaValue(marker, marker.length, trigger);
+    },
+    [setTextareaValue],
   );
 
   const selectTarget = useCallback(
@@ -491,10 +653,22 @@ export const GlassPromptInput = forwardRef<
         if (target) selectTarget(target);
       } else if (event.key === "Escape") {
         event.preventDefault();
+        if (activeTrigger.preparedKinds && textValue === activeTrigger.marker) {
+          setTextValue("");
+          setTextareaValue("", 0, null);
+          return;
+        }
         setActiveTrigger(null);
       }
     },
-    [activeTrigger, suggestions, selectedIndex, selectTarget],
+    [
+      activeTrigger,
+      suggestions,
+      selectedIndex,
+      selectTarget,
+      setTextareaValue,
+      textValue,
+    ],
   );
 
   const handleStopClick = useCallback(
@@ -505,8 +679,98 @@ export const GlassPromptInput = forwardRef<
     [onStop],
   );
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const finePointer = window.matchMedia("(pointer: fine)");
+    if (!finePointer.matches) return;
+
+    const scheduleIntentUpdate = () => {
+      if (pointerFrameRef.current !== null) return;
+      pointerFrameRef.current = window.requestAnimationFrame(() => {
+        pointerFrameRef.current = null;
+        const point = lastPointerRef.current;
+        const wrapper = wrapperRef.current;
+        if (!point || !wrapper) {
+          setPointerIntent(0);
+          return;
+        }
+
+        const rect = wrapper.getBoundingClientRect();
+        const dx = Math.max(
+          rect.left - point.x,
+          0,
+          point.x - rect.right,
+        );
+        const dy = Math.max(
+          rect.top - point.y,
+          0,
+          point.y - rect.bottom,
+        );
+        const distance = Math.hypot(dx, dy);
+        const next = Math.max(0, 1 - distance / INPUT_INTENT_RADIUS) ** 2;
+        setPointerIntent((current) =>
+          Math.abs(current - next) < INPUT_INTENT_EPSILON ? current : next,
+        );
+      });
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      lastPointerRef.current = { x: event.clientX, y: event.clientY };
+      scheduleIntentUpdate();
+    };
+
+    const clearPointerIntent = () => {
+      lastPointerRef.current = null;
+      if (pointerFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerFrameRef.current);
+        pointerFrameRef.current = null;
+      }
+      setPointerIntent(0);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, {
+      passive: true,
+    });
+    window.addEventListener("resize", scheduleIntentUpdate);
+    window.addEventListener("scroll", scheduleIntentUpdate, true);
+    window.addEventListener("blur", clearPointerIntent);
+    document.addEventListener("mouseleave", clearPointerIntent);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("resize", scheduleIntentUpdate);
+      window.removeEventListener("scroll", scheduleIntentUpdate, true);
+      window.removeEventListener("blur", clearPointerIntent);
+      document.removeEventListener("mouseleave", clearPointerIntent);
+      if (pointerFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerFrameRef.current);
+      }
+    };
+  }, []);
+
+  const handleWrapperFocusCapture = useCallback(() => {
+    setIsComposerFocused(true);
+  }, []);
+
+  const handleWrapperBlurCapture = useCallback(
+    (event: React.FocusEvent<HTMLDivElement>) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        return;
+      }
+      setIsComposerFocused(false);
+      setActiveTrigger(null);
+    },
+    [],
+  );
+
   return (
-    <div ref={wrapperRef} className="relative w-full">
+    <div
+      ref={wrapperRef}
+      className="relative w-full"
+      onFocusCapture={handleWrapperFocusCapture}
+      onBlurCapture={handleWrapperBlurCapture}
+    >
       {activeTrigger && suggestions.length > 0 && pickerRect ? (
         <div
           className="fixed z-50 overflow-hidden rounded-lg border border-foreground/8 bg-popover shadow-lg"
@@ -556,6 +820,16 @@ export const GlassPromptInput = forwardRef<
           </div>
         </div>
       ) : null}
+      <div
+        data-glass-prompt-intent-ring
+        className="pointer-events-none absolute inset-0 z-10 rounded-xl ring-1 ring-foreground/16 transition-opacity duration-100 ease-out"
+        style={{
+          opacity:
+            disabled || isDraggingFiles
+              ? 0
+              : Math.max(pointerIntent, isComposerFocused ? 0.72 : 0),
+        }}
+      />
       <PromptInput
         onSubmit={handleSubmit}
         onDragEnter={handleDragEnter}
@@ -697,6 +971,25 @@ export const GlassPromptInput = forwardRef<
             </div>
           </PromptInputTools>
         </PromptInputFooter>
+        <PreparedInputActions
+          visible={
+            (pointerIntent >= PREPARED_ACTION_INTENT_THRESHOLD ||
+              isComposerFocused) &&
+            textValue.trim().length === 0 &&
+            !activeTrigger &&
+            !disabled &&
+            !isGenerating &&
+            !isDraggingFiles
+          }
+          roomyOnMobile={roomyOnMobile}
+          showAttach={showAttach}
+          hasPolicyTargets={
+            (targets?.policies.length ?? 0) + (targets?.quotes.length ?? 0) > 0
+          }
+          hasRequirementTargets={(targets?.requirements.length ?? 0) > 0}
+          hasMailboxTargets={(targets?.mailboxes.length ?? 0) > 0}
+          onOpenTargetPicker={openPreparedTargetPicker}
+        />
       </PromptInput>
     </div>
   );
