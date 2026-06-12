@@ -54,6 +54,12 @@ const pipelineStatusValidator = v.union(
   v.literal("error"),
 );
 
+const extractionDataStageValidator = v.union(
+  v.literal("placeholder"),
+  v.literal("preview"),
+  v.literal("final"),
+);
+
 const notificationChannelValidator = v.union(
   v.literal("in_app"),
   v.literal("email"),
@@ -494,6 +500,7 @@ export default defineSchema({
         email_draft: v.optional(modelRouteValidator),
         email_reply: v.optional(modelRouteValidator),
         extraction: v.optional(modelRouteValidator),
+        extraction_preview: v.optional(modelRouteValidator),
         classification: v.optional(modelRouteValidator),
         analysis: v.optional(modelRouteValidator),
         summary: v.optional(modelRouteValidator),
@@ -518,6 +525,7 @@ export default defineSchema({
         email_draft: v.optional(modelRouteValidator),
         email_reply: v.optional(modelRouteValidator),
         extraction: v.optional(modelRouteValidator),
+        extraction_preview: v.optional(modelRouteValidator),
         classification: v.optional(modelRouteValidator),
         analysis: v.optional(modelRouteValidator),
         summary: v.optional(modelRouteValidator),
@@ -929,6 +937,11 @@ export default defineSchema({
     orgId: v.optional(v.id("organizations")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
+    extractionDataStage: v.optional(extractionDataStageValidator),
+    extractionDataStageUpdatedAt: v.optional(v.number()),
+    extractionPreviewVersion: v.optional(v.string()),
+    extractionPreviewModel: v.optional(v.string()),
+    extractionPreviewError: v.optional(v.string()),
     // Provenance — who uploaded and from which side
     uploadedBySide: v.optional(
       v.union(
@@ -1450,6 +1463,21 @@ export default defineSchema({
   // Narrow queue for external Railway extraction workers. Claim polling reads
   // this table instead of scanning all running pipeline records.
   policyExtractionQueue: defineTable({
+    policyId: v.id("policies"),
+    runId: v.id("policyExtractionRuns"),
+    status: v.union(v.literal("queued"), v.literal("leased")),
+    leaseId: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    heartbeatAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_status_updatedAt", ["status", "updatedAt"]),
+
+  // Lightweight first-read queue. Preview workers populate bounded canonical
+  // fields before the full source-backed extraction pipeline completes.
+  policyExtractionPreviewQueue: defineTable({
     policyId: v.id("policies"),
     runId: v.id("policyExtractionRuns"),
     status: v.union(v.literal("queued"), v.literal("leased")),

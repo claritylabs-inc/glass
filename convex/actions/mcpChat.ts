@@ -114,13 +114,12 @@ export const run = internalAction({
     const allMessages = await ctx.runQuery(internal.threads.messagesInternal, { threadId });
     const policiesByOrg = new Map<string, { policies: any[]; quotes: any[] }>();
     await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
-      const docs = await ctx.runQuery(internal.policies.listAllInternal, { orgId: readOrgId });
+      const docs = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, { orgId: readOrgId });
       policiesByOrg.set(String(readOrgId), {
         policies: (docs as any[]).filter((policy) => policy.documentType !== "quote"),
         quotes: (docs as any[]).filter((policy) => policy.documentType === "quote"),
       });
     }));
-    const policies = Array.from(policiesByOrg.values()).flatMap((entry) => [...entry.policies, ...entry.quotes]);
     const siteUrl = getClientPortalUrl();
 
     // Build system prompt

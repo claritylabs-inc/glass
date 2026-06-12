@@ -66,6 +66,7 @@ const routesValidator = v.object({
   email_draft: v.optional(routeUpdateValidator),
   email_reply: v.optional(routeUpdateValidator),
   extraction: v.optional(routeUpdateValidator),
+  extraction_preview: v.optional(routeUpdateValidator),
   classification: v.optional(routeUpdateValidator),
   analysis: v.optional(routeUpdateValidator),
   summary: v.optional(routeUpdateValidator),

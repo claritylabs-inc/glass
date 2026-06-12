@@ -85,6 +85,9 @@ describe("MCP policy DTO helpers", () => {
       summary: "GL policy",
       isRenewal: false,
       coverages: [{ name: "GL" }],
+      pipelineStatus: undefined,
+      extractionDataStage: undefined,
+      provisional: false,
     });
   });
 

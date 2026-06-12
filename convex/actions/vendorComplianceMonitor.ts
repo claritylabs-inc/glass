@@ -290,7 +290,7 @@ export const run = internalAction({
     for (const clientOrgId of clientOrgIds) {
       const complianceRows = await ctx.runQuery(
         (internal as any).compliance.listVendorComplianceInternal,
-        { clientOrgId },
+        { clientOrgId, includePreviewPolicies: false },
       ) as Record<string, unknown>[];
       const rows = serializeMonitorRows(complianceRows);
       checkedVendors += rows.length;

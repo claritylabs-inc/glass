@@ -101,11 +101,16 @@ export type BuildAgentToolExecutorsOptions = {
   onPolicyReferenced?: (policyId: Id<"policies">) => void | Promise<void>;
   onResponseAttachment?: (attachment: ToolAttachment) => void | Promise<void>;
   onToolArtifact?: (artifact: ToolArtifact) => void | Promise<void>;
-  onPolicyChangeCase?: (caseId: Id<"policyChangeCases">) => void | Promise<void>;
+  onPolicyChangeCase?: (
+    caseId: Id<"policyChangeCases">,
+  ) => void | Promise<void>;
   onPolicyChangeEmailDraft?: (args: {
     caseId: Id<"policyChangeCases">;
     draft: PolicyChangeDraftResult;
-  }) => void | { pendingEmailId?: Id<"pendingEmails"> } | Promise<void | { pendingEmailId?: Id<"pendingEmails"> }>;
+  }) =>
+    | void
+    | { pendingEmailId?: Id<"pendingEmails"> }
+    | Promise<void | { pendingEmailId?: Id<"pendingEmails"> }>;
 };
 
 function certificateSourceForSurface(surface: AgentToolSurface) {
@@ -125,17 +130,23 @@ function programSelectionSourceForSurface(surface: AgentToolSurface) {
   return "agent" as const;
 }
 
-function typeMap(value: string): "fact" | "preference" | "risk_note" | "observation" {
-  if (value === "fact" || value === "preference" || value === "risk_note") return value;
+function typeMap(
+  value: string,
+): "fact" | "preference" | "risk_note" | "observation" {
+  if (value === "fact" || value === "preference" || value === "risk_note")
+    return value;
   return "observation";
 }
 
 function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
+  const extractionDataStage = effectivePolicyDataStage(policy);
+  const provisional = extractionDataStage === "preview";
   return {
     id: policy._id,
-    client: scope.mode === "broker_portfolio"
-      ? orgLabelForScope(scope, policy.orgId)
-      : policy._scopeOrgName,
+    client:
+      scope.mode === "broker_portfolio"
+        ? orgLabelForScope(scope, policy.orgId)
+        : policy._scopeOrgName,
     orgId: policy.orgId,
     insured: policy.insuredName,
     carrier: policy.security,
@@ -144,6 +155,12 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
     effective: policy.effectiveDate,
     expiration: policy.expirationDate,
     premium: policy.premium,
+    extractionStatus: policy.pipelineStatus,
+    dataStage: extractionDataStage,
+    provisional,
+    availabilityNote: provisional
+      ? "Extraction is complete for this policy and enrichment is still running. Summaries and broad comparisons are available, but source evidence, COIs, policy delivery, policy changes, and endorsements require enrichment to finish."
+      : undefined,
     coverages: (policy.coverages ?? []).map((coverage: any) => ({
       name: coverage.name,
       limit: coverage.limit,
@@ -154,19 +171,64 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
   };
 }
 
-function canWriteOrg(options: BuildAgentToolExecutorsOptions, orgId: Id<"organizations"> | string) {
+function effectivePolicyDataStage(policy: Record<string, any>) {
+  if (
+    policy.extractionDataStage === "placeholder" ||
+    policy.extractionDataStage === "preview" ||
+    policy.extractionDataStage === "final"
+  ) {
+    return policy.extractionDataStage as "placeholder" | "preview" | "final";
+  }
+  return policy.pipelineStatus === "complete" ? "final" : "placeholder";
+}
+
+function isFinalPolicy(policy: Record<string, any>) {
+  return (
+    policy.pipelineStatus === "complete" &&
+    effectivePolicyDataStage(policy) === "final"
+  );
+}
+
+function finalExtractionRequiredMessage(
+  policy: Record<string, any>,
+  action: string,
+) {
+  const label = policy.policyNumber
+    ? ` ${policy.policyNumber}`
+    : policy.fileName
+      ? ` ${policy.fileName}`
+      : "";
+  return [
+    `Glass has completed extraction for policy${label}, but ${action} requires enrichment to finish.`,
+    "Try again after enrichment completes.",
+  ].join(" ");
+}
+
+function canWriteOrg(
+  options: BuildAgentToolExecutorsOptions,
+  orgId: Id<"organizations"> | string,
+) {
   if (options.canWrite === false) return false;
   const writableOrgIds = options.writableOrgIds ?? options.scope.writableOrgIds;
   return writableOrgIds.some((id) => String(id) === String(orgId));
 }
 
-function canReadOrg(options: BuildAgentToolExecutorsOptions, orgId: Id<"organizations"> | string) {
+function canReadOrg(
+  options: BuildAgentToolExecutorsOptions,
+  orgId: Id<"organizations"> | string,
+) {
   const readOrgIds = options.readOrgIds ?? options.scope.readOrgIds;
   return readOrgIds.some((id) => String(id) === String(orgId));
 }
 
-function writeUnavailable(options: BuildAgentToolExecutorsOptions, action: string) {
-  return options.writeUnavailableMessage ?? `You do not have permission to ${action}.`;
+function writeUnavailable(
+  options: BuildAgentToolExecutorsOptions,
+  action: string,
+) {
+  return (
+    options.writeUnavailableMessage ??
+    `You do not have permission to ${action}.`
+  );
 }
 
 async function listPoliciesForReadableOrgs(
@@ -176,7 +238,10 @@ async function listPoliciesForReadableOrgs(
   const readOrgIds = options.readOrgIds ?? options.scope.readOrgIds;
   const rows = await Promise.all(
     readOrgIds.map(async (orgId) => {
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, { orgId });
+      const policies = await ctx.runQuery(
+        internal.policies.listAllPreviewReadableInternal,
+        { orgId },
+      );
       return (policies as Array<Record<string, unknown>>).map((policy) => ({
         ...policy,
         _scopeOrgName: orgLabelForScope(options.scope, orgId),
@@ -354,6 +419,40 @@ async function resolvePolicyChangeCaseForTool(
   };
 }
 
+async function resolveFinalReadablePolicy(
+  ctx: ActionCtx,
+  options: BuildAgentToolExecutorsOptions,
+  reference: string,
+  action: string,
+) {
+  const resolved = await resolveReadablePolicy(ctx, options, reference);
+  if (!resolved.ok) return resolved;
+  if (!isFinalPolicy(resolved.policy)) {
+    return {
+      ok: false as const,
+      message: finalExtractionRequiredMessage(resolved.policy, action),
+    };
+  }
+  return resolved;
+}
+
+async function resolveFinalWritablePolicy(
+  ctx: ActionCtx,
+  options: BuildAgentToolExecutorsOptions,
+  reference: string,
+  action: string,
+) {
+  const resolved = await resolveWritablePolicy(ctx, options, reference, action);
+  if (!resolved.ok) return resolved;
+  if (!isFinalPolicy(resolved.policy)) {
+    return {
+      ok: false as const,
+      message: finalExtractionRequiredMessage(resolved.policy, action),
+    };
+  }
+  return resolved;
+}
+
 export function buildAgentToolExecutors(
   ctx: ActionCtx,
   options: BuildAgentToolExecutorsOptions,
@@ -380,24 +479,37 @@ export function buildAgentToolExecutors(
           }))
           .filter((match) => match.score > 0)
           .sort((left, right) => right.score - left.score);
-        const matches = scored.length > 0
-          ? scored.map((match) => match.policy)
-          : policies.slice(0, 5);
-        if (matches.length === 0) return "No policies found for this organization.";
+        const matches =
+          scored.length > 0
+            ? scored.map((match) => match.policy)
+            : policies.slice(0, 5);
+        if (matches.length === 0)
+          return "No policies found for this organization.";
         for (const policy of matches.slice(0, 5)) {
-          if (policy._id) await options.onPolicyReferenced?.(policy._id as Id<"policies">);
+          if (policy._id)
+            await options.onPolicyReferenced?.(policy._id as Id<"policies">);
         }
-        return matches.slice(0, 5).map((policy) =>
-          formatPolicyForTool(policy as Record<string, any>, options.scope),
-        );
+        return matches
+          .slice(0, 5)
+          .map((policy) =>
+            formatPolicyForTool(policy as Record<string, any>, options.scope),
+          );
       },
     },
     compare_coverages: {
       ...compareCoverages,
       execute: async (params: { policyId1: string; policyId2: string }) => {
-        const first = await resolveReadablePolicy(ctx, options, params.policyId1);
+        const first = await resolveReadablePolicy(
+          ctx,
+          options,
+          params.policyId1,
+        );
         if (!first.ok) return first.message;
-        const second = await resolveReadablePolicy(ctx, options, params.policyId2);
+        const second = await resolveReadablePolicy(
+          ctx,
+          options,
+          params.policyId2,
+        );
         if (!second.ok) return second.message;
         return {
           policy1: formatPolicyForTool(first.policy as any, options.scope),
@@ -412,7 +524,8 @@ export function buildAgentToolExecutors(
         appliesTo?: "vendors" | "own_org" | "both" | "all";
       }) => {
         const blocks: string[] = [];
-        for (const readOrgId of options.readOrgIds ?? options.scope.readOrgIds) {
+        for (const readOrgId of options.readOrgIds ??
+          options.scope.readOrgIds) {
           const requirements = await ctx.runQuery(
             internal.compliance.listRequirementsInternal,
             { orgId: readOrgId },
@@ -432,12 +545,19 @@ export function buildAgentToolExecutors(
     },
     ...buildVendorComplianceTools(
       ctx,
-      (options.readOrgIds ?? options.scope.readOrgIds).map((orgId) => String(orgId)),
+      (options.readOrgIds ?? options.scope.readOrgIds).map((orgId) =>
+        String(orgId),
+      ),
     ),
     lookup_policy_section: {
       ...lookupPolicySection,
       execute: async (params: { policyId: string; query: string }) => {
-        const resolved = await resolveReadablePolicy(ctx, options, params.policyId);
+        const resolved = await resolveFinalReadablePolicy(
+          ctx,
+          options,
+          params.policyId,
+          "exact source lookup",
+        );
         if (!resolved.ok) return resolved.message;
         return searchPolicyDocumentWithSourceSpans(
           ctx,
@@ -454,11 +574,17 @@ export function buildAgentToolExecutors(
         type: string;
         policyId?: string;
       }) => {
-        if (options.canWrite === false) return writeUnavailable(options, "save durable notes");
+        if (options.canWrite === false)
+          return writeUnavailable(options, "save durable notes");
         let policyId: Id<"policies"> | undefined;
         let targetOrgId = options.orgId;
         if (params.policyId) {
-          const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "save notes for that policy");
+          const resolved = await resolveWritablePolicy(
+            ctx,
+            options,
+            params.policyId,
+            "save notes for that policy",
+          );
           if (!resolved.ok) return resolved.message;
           policyId = resolved.policy._id;
           targetOrgId = resolved.policy.orgId;
@@ -476,10 +602,16 @@ export function buildAgentToolExecutors(
     attach_policy_document: {
       ...attachPolicyDocument,
       execute: async (params: { policyId: string }) => {
-        const resolved = await resolveReadablePolicy(ctx, options, params.policyId);
+        const resolved = await resolveFinalReadablePolicy(
+          ctx,
+          options,
+          params.policyId,
+          "original policy delivery",
+        );
         if (!resolved.ok) return resolved.message;
         const policy = resolved.policy;
-        if (!policy.fileId) return "That policy does not have an original PDF file available.";
+        if (!policy.fileId)
+          return "That policy does not have an original PDF file available.";
         const attachment = {
           filename: policy.fileName ?? `${policy.policyNumber ?? "policy"}.pdf`,
           contentType: "application/pdf",
@@ -502,7 +634,12 @@ export function buildAgentToolExecutors(
         sourceSpanIds: string[];
         fieldUpdates?: Record<string, string | undefined>;
       }) => {
-        const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "confirm policy facts");
+        const resolved = await resolveFinalWritablePolicy(
+          ctx,
+          options,
+          params.policyId,
+          "source-backed fact confirmation",
+        );
         if (!resolved.ok) return resolved.message;
         try {
           const result = await ctx.runMutation(
@@ -543,13 +680,20 @@ export function buildAgentToolExecutors(
         partnerProgramId?: string;
         explicitReissue?: boolean;
       }) => {
-        const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "generate a certificate");
+        const resolved = await resolveFinalWritablePolicy(
+          ctx,
+          options,
+          params.policyId,
+          "certificate generation",
+        );
         if (!resolved.ok) return resolved.message;
         const autoGenerate = options.org?.autoGenerateCoi !== false;
         if (!autoGenerate) {
           const handling = options.org?.coiHandling ?? "ignore";
-          if (handling === "broker") return "COI auto-generation is off. Please contact your broker to obtain this certificate.";
-          if (handling === "member") return "COI auto-generation is off. Please route this COI request to your primary insurance contact.";
+          if (handling === "broker")
+            return "COI auto-generation is off. Please contact your broker to obtain this certificate.";
+          if (handling === "member")
+            return "COI auto-generation is off. Please route this COI request to your primary insurance contact.";
           return "COI auto-generation is disabled for this organization.";
         }
         try {
@@ -568,7 +712,9 @@ export function buildAgentToolExecutors(
               holderPhone: params.holderPhone,
               requestText: params.requestText,
               requestedEndorsements: params.requestedEndorsements,
-              selectedPartnerProgramId: normalizeSelectedPartnerProgramId(params.partnerProgramId),
+              selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
+                params.partnerProgramId,
+              ),
               forceReissue: params.explicitReissue,
               source: certificateSourceForSurface(options.surface),
               createdByUserId: options.userId,
@@ -585,15 +731,21 @@ export function buildAgentToolExecutors(
               evidence: generated.evidence,
               brokerHandoffOffered: generated.brokerHandoffOffered,
             };
-            await options.onToolArtifact?.({ type: "certificate_hold", data: output });
+            await options.onToolArtifact?.({
+              type: "certificate_hold",
+              data: output,
+            });
             if (generated.policyChangeCaseId) {
-              await options.onPolicyChangeCase?.(generated.policyChangeCaseId as Id<"policyChangeCases">);
+              await options.onPolicyChangeCase?.(
+                generated.policyChangeCaseId as Id<"policyChangeCases">,
+              );
             }
             return output;
           }
           if (generated.status === "pending_approval") {
             return {
-              message: "Certified COI request created and sent to the program administrator for approval.",
+              message:
+                "Certified COI request created and sent to the program administrator for approval.",
               requestId: generated.requestId,
               authorityType: generated.authorityType,
               certificationStatus: generated.certificationStatus,
@@ -610,7 +762,8 @@ export function buildAgentToolExecutors(
               source: programSelectionSourceForSurface(options.surface),
             });
             const output = {
-              message: "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
+              message:
+                "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
               candidates: generated.matchCandidates,
               programSelection: selection,
               authorityType: generated.authorityType,
@@ -624,6 +777,13 @@ export function buildAgentToolExecutors(
             }
             return output;
           }
+          if (generated.status === "extraction_in_progress") {
+            return {
+              message: generated.message,
+              status: generated.status,
+              policyId: policy._id,
+            };
+          }
           const attachment = {
             filename: generated.fileName,
             contentType: "application/pdf",
@@ -633,9 +793,10 @@ export function buildAgentToolExecutors(
           await options.onResponseAttachment?.(attachment);
           if (generated.status === "existing") {
             return {
-              message: generated.authorityType === "certified"
-                ? "I found an existing certified COI for this holder and current policy version and attached it to this response."
-                : "I found an existing non-binding COI for this holder and current policy version and attached it to this response.",
+              message:
+                generated.authorityType === "certified"
+                  ? "I found an existing certified COI for this holder and current policy version and attached it to this response."
+                  : "I found an existing non-binding COI for this holder and current policy version and attached it to this response.",
               attachment,
               holderId: generated.holderId,
               policyCertificateId: generated.policyCertificateId,
@@ -645,9 +806,10 @@ export function buildAgentToolExecutors(
             };
           }
           return {
-            message: generated.authorityType === "certified"
-              ? "Certified COI generated and attached to this response."
-              : "Non-binding COI generated and attached to this response.",
+            message:
+              generated.authorityType === "certified"
+                ? "Certified COI generated and attached to this response."
+                : "Non-binding COI generated and attached to this response.",
             attachment,
           };
         } catch (err) {
@@ -664,7 +826,8 @@ export function buildAgentToolExecutors(
         policyId?: string;
         evidenceSourceIds?: string[];
       }) => {
-        if (options.canWrite === false) return writeUnavailable(options, "create a policy change request");
+        if (options.canWrite === false)
+          return writeUnavailable(options, "create a policy change request");
         const intake = evaluatePceIntake({
           requestKind: params.requestKind,
           requestText: params.requestText,
@@ -673,7 +836,12 @@ export function buildAgentToolExecutors(
         let targetOrgId = options.orgId;
         let policyId: Id<"policies"> | undefined;
         if (params.policyId) {
-          const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "create this policy change request");
+          const resolved = await resolveFinalWritablePolicy(
+            ctx,
+            options,
+            params.policyId,
+            "policy change requests",
+          );
           if (!resolved.ok) return resolved.message;
           targetOrgId = resolved.policy.orgId;
           policyId = resolved.policy._id;
@@ -691,20 +859,22 @@ export function buildAgentToolExecutors(
           requestText: params.requestText,
           evidenceSourceIds: params.evidenceSourceIds,
         };
-        const result = options.surface === "email"
-          ? await ctx.runAction(
-              internal.actions.policyChangeRequests.createFromEmailForThread,
-              createArgsBase,
-            )
-          : await ctx.runAction(
-              internal.actions.policyChangeRequests.createFromChatForThread,
-              {
-                ...createArgsBase,
-                operatorInitiatedUserMessageId: options.surface === "web"
-                  ? options.operatorInitiatedUserMessageId
-                  : undefined,
-              },
-            );
+        const result =
+          options.surface === "email"
+            ? await ctx.runAction(
+                internal.actions.policyChangeRequests.createFromEmailForThread,
+                createArgsBase,
+              )
+            : await ctx.runAction(
+                internal.actions.policyChangeRequests.createFromChatForThread,
+                {
+                  ...createArgsBase,
+                  operatorInitiatedUserMessageId:
+                    options.surface === "web"
+                      ? options.operatorInitiatedUserMessageId
+                      : undefined,
+                },
+              );
         if (result?.error) return result.error;
         const caseId = result?.caseId as Id<"policyChangeCases"> | undefined;
         if (caseId) await options.onPolicyChangeCase?.(caseId);
@@ -724,7 +894,8 @@ export function buildAgentToolExecutors(
         infoText: string;
         sourceSpanIds?: string[];
       }) => {
-        if (options.canWrite === false) return writeUnavailable(options, "update a policy change request");
+        if (options.canWrite === false)
+          return writeUnavailable(options, "update a policy change request");
         await ctx.runMutation(internal.policyChanges.addInfo, {
           caseId: params.caseId as Id<"policyChangeCases">,
           userId: options.userId,
@@ -742,7 +913,8 @@ export function buildAgentToolExecutors(
         recipientName?: string;
         instructions?: string;
       }) => {
-        if (options.canWrite === false) return writeUnavailable(options, "draft a policy change email");
+        if (options.canWrite === false)
+          return writeUnavailable(options, "draft a policy change email");
         const resolvedCase = await resolvePolicyChangeCaseForTool(ctx, options, {
           caseId: params.caseId,
           orgId: options.orgId,
@@ -794,7 +966,12 @@ export function buildAgentToolExecutors(
         summary?: string;
         fieldUpdates?: Record<string, unknown>;
       }) => {
-        const resolved = await resolveWritablePolicy(ctx, options, params.policyId, "complete a policy change request");
+        const resolved = await resolveFinalWritablePolicy(
+          ctx,
+          options,
+          params.policyId,
+          "endorsement completion",
+        );
         if (!resolved.ok) return resolved.message;
         const resolvedCase = await resolvePolicyChangeCaseForTool(ctx, options, {
           caseId: params.caseId,
