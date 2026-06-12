@@ -72,6 +72,17 @@ type ListedPolicyForTool = Record<string, any> & {
   _scopeOrgName?: string;
 };
 
+type PolicyChangeCaseForTool = {
+  _id: Id<"policyChangeCases">;
+  orgId: Id<"organizations">;
+  policyId?: Id<"policies">;
+  affectedPolicyIds?: Id<"policies">[];
+  status?: string;
+  summary?: string;
+  requestText?: string;
+  updatedAt?: number;
+};
+
 export type BuildAgentToolExecutorsOptions = {
   surface: AgentToolSurface;
   orgId: Id<"organizations">;
@@ -81,6 +92,9 @@ export type BuildAgentToolExecutorsOptions = {
   readOrgIds?: Id<"organizations">[];
   writableOrgIds?: Id<"organizations">[];
   org?: Record<string, unknown> | null;
+  threadId?: Id<"threads">;
+  defaultPolicyChangeCaseId?: Id<"policyChangeCases">;
+  getCurrentPolicyChangeCaseId?: () => Id<"policyChangeCases"> | undefined;
   canWrite?: boolean;
   writeUnavailableMessage?: string;
   availableFileIds?: Set<string>;
@@ -267,6 +281,142 @@ async function resolveWritablePolicy(
     return { ok: false as const, message: writeUnavailable(options, action) };
   }
   return resolved;
+}
+
+function policyChangeCaseMatchesPolicy(
+  changeCase: PolicyChangeCaseForTool,
+  policyId?: Id<"policies">,
+) {
+  if (!policyId) return true;
+  if (changeCase.policyId) return String(changeCase.policyId) === String(policyId);
+  return Array.isArray(changeCase.affectedPolicyIds)
+    ? changeCase.affectedPolicyIds.some((id: unknown) => String(id) === String(policyId))
+    : false;
+}
+
+function activePolicyChangeCase(changeCase: PolicyChangeCaseForTool) {
+  return !["completed", "declined", "cancelled"].includes(String(changeCase.status));
+}
+
+function caseSelectionResponse(
+  message: string,
+  candidates: PolicyChangeCaseForTool[] = [],
+) {
+  return {
+    status: "needs_case_selection",
+    message,
+    cases: candidates.slice(0, 8).map((changeCase) => ({
+      caseId: changeCase._id,
+      policyId: changeCase.policyId,
+      status: changeCase.status,
+      summary: changeCase.summary,
+      requestText: typeof changeCase.requestText === "string"
+        ? changeCase.requestText.slice(0, 500)
+        : undefined,
+      updatedAt: changeCase.updatedAt,
+    })),
+  };
+}
+
+async function resolvePolicyChangeCaseForTool(
+  ctx: ActionCtx,
+  options: BuildAgentToolExecutorsOptions,
+  args: {
+    caseId?: string;
+    policyId?: Id<"policies">;
+    orgId: Id<"organizations">;
+    activeOnly?: boolean;
+    actionLabel: string;
+  },
+) {
+  const explicitCaseId = args.caseId?.trim();
+  if (explicitCaseId) {
+    const explicitMatches = await ctx.runQuery(
+      internal.policyChanges.resolveCaseCandidatesInternal,
+      {
+        orgId: args.orgId,
+        candidateCaseIds: [explicitCaseId],
+        activeOnly: false,
+      },
+    ) as PolicyChangeCaseForTool[];
+    const explicit = explicitMatches.find((changeCase) =>
+      String(changeCase._id) === explicitCaseId,
+    );
+    if (explicit) {
+      if (!canWriteOrg(options, explicit.orgId)) {
+        return {
+          ok: false as const,
+          response: writeUnavailable(options, args.actionLabel),
+        };
+      }
+      if (!policyChangeCaseMatchesPolicy(explicit, args.policyId)) {
+        return {
+          ok: false as const,
+          response: caseSelectionResponse(
+            "That policy change case belongs to a different policy. Choose the correct case for this policy before continuing.",
+            [explicit],
+          ),
+        };
+      }
+      if (args.activeOnly !== false && !activePolicyChangeCase(explicit)) {
+        return {
+          ok: false as const,
+          response: caseSelectionResponse(
+            "That policy change case is already closed and cannot be used for this action.",
+            [explicit],
+          ),
+        };
+      }
+      return {
+        ok: true as const,
+        caseId: explicit._id,
+      };
+    }
+  }
+
+  const candidateCaseIds = [
+    explicitCaseId,
+    options.getCurrentPolicyChangeCaseId?.(),
+    options.defaultPolicyChangeCaseId,
+  ]
+    .filter((caseId): caseId is string | Id<"policyChangeCases"> => Boolean(caseId))
+    .map(String);
+  const candidates = await ctx.runQuery(
+    internal.policyChanges.resolveCaseCandidatesInternal,
+    {
+      orgId: args.orgId,
+      policyId: args.policyId,
+      threadId: options.threadId,
+      candidateCaseIds,
+      activeOnly: args.activeOnly !== false,
+    },
+  ) as PolicyChangeCaseForTool[];
+  const writableCandidates = candidates.filter((changeCase) =>
+    canWriteOrg(options, changeCase.orgId),
+  );
+
+  if (writableCandidates.length === 1) {
+    const changeCase = writableCandidates[0];
+    return {
+      ok: true as const,
+      caseId: changeCase._id,
+    };
+  }
+  if (writableCandidates.length > 1) {
+    return {
+      ok: false as const,
+      response: caseSelectionResponse(
+        "I found multiple active policy change cases that could match this request. Ask which case to use before continuing.",
+        writableCandidates,
+      ),
+    };
+  }
+  return {
+    ok: false as const,
+    response: caseSelectionResponse(
+      `I could not resolve the policy change case for this ${args.actionLabel}. Ask for the case to use before continuing.`,
+    ),
+  };
 }
 
 async function resolveFinalReadablePolicy(
@@ -522,6 +672,7 @@ export function buildAgentToolExecutors(
       execute: async (params: {
         policyId: string;
         certificateHolder?: string;
+        holderContactName?: string;
         holderEmail?: string;
         holderPhone?: string;
         requestText?: string;
@@ -556,6 +707,7 @@ export function buildAgentToolExecutors(
                 params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
                 "Certificate holder",
               certificateHolder: params.certificateHolder,
+              holderContactName: params.holderContactName,
               holderEmail: params.holderEmail,
               holderPhone: params.holderPhone,
               requestText: params.requestText,
@@ -756,25 +908,29 @@ export function buildAgentToolExecutors(
     draft_policy_change_email: {
       ...draftPolicyChangeSubmission,
       execute: async (params: {
-        caseId: string;
+        caseId?: string;
         recipientEmail?: string;
         recipientName?: string;
         instructions?: string;
       }) => {
         if (options.canWrite === false)
           return writeUnavailable(options, "draft a policy change email");
-        const draft = await ctx.runMutation(
-          internal.policyChanges.draftSubmission,
-          {
-            caseId: params.caseId as Id<"policyChangeCases">,
-            userId: options.userId,
-            recipientEmail: params.recipientEmail,
-            recipientName: params.recipientName,
-            instructions: params.instructions,
-          },
-        );
+        const resolvedCase = await resolvePolicyChangeCaseForTool(ctx, options, {
+          caseId: params.caseId,
+          orgId: options.orgId,
+          activeOnly: true,
+          actionLabel: "draft a policy change email",
+        });
+        if (!resolvedCase.ok) return resolvedCase.response;
+        const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
+          caseId: resolvedCase.caseId,
+          userId: options.userId,
+          recipientEmail: params.recipientEmail,
+          recipientName: params.recipientName,
+          instructions: params.instructions,
+        });
         const callbackResult = await options.onPolicyChangeEmailDraft?.({
-          caseId: params.caseId as Id<"policyChangeCases">,
+          caseId: resolvedCase.caseId,
           draft,
         });
         const pendingEmailId =
@@ -784,7 +940,7 @@ export function buildAgentToolExecutors(
         const draftWithOptionalAddresses = draft as PolicyChangeDraftResult;
         return {
           status: draft.needsRecipient ? "needs_recipient" : "drafted",
-          caseId: params.caseId,
+          caseId: resolvedCase.caseId,
           readyToSend: !draft.needsRecipient,
           nextAction: draft.needsRecipient
             ? "Ask for the broker email address."
@@ -817,6 +973,14 @@ export function buildAgentToolExecutors(
           "endorsement completion",
         );
         if (!resolved.ok) return resolved.message;
+        const resolvedCase = await resolvePolicyChangeCaseForTool(ctx, options, {
+          caseId: params.caseId,
+          orgId: resolved.policy.orgId,
+          policyId: resolved.policy._id,
+          activeOnly: true,
+          actionLabel: "complete a policy change request",
+        });
+        if (!resolvedCase.ok) return resolvedCase.response;
         if (options.availableFileIds) {
           for (const file of params.files) {
             if (!options.availableFileIds.has(file.fileId)) {
@@ -824,21 +988,18 @@ export function buildAgentToolExecutors(
             }
           }
         }
-        const result = await ctx.runMutation(
-          internal.policyChanges.completeFromEndorsement,
-          {
-            caseId: params.caseId as Id<"policyChangeCases"> | undefined,
-            userId: options.userId,
-            policyId: resolved.policy._id,
-            files: params.files.map((file) => ({
-              fileId: file.fileId as Id<"_storage">,
-              fileName: file.fileName,
-            })),
-            summary: params.summary,
-            fieldUpdates: params.fieldUpdates,
-          },
-        );
-        return { status: "completed", ...result };
+        const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
+          caseId: resolvedCase.caseId,
+          userId: options.userId,
+          policyId: resolved.policy._id,
+          files: params.files.map((file) => ({
+            fileId: file.fileId as Id<"_storage">,
+            fileName: file.fileName,
+          })),
+          summary: params.summary,
+          fieldUpdates: params.fieldUpdates,
+        });
+        return { status: "completed", caseId: resolvedCase.caseId, ...result };
       },
     },
   };

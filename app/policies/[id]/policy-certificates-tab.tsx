@@ -221,6 +221,7 @@ export function CertificateCreatePanel({
     [initialProgram],
   );
   const [holderName, setHolderName] = useState("");
+  const [holderContactName, setHolderContactName] = useState("");
   const [holderEmail, setHolderEmail] = useState("");
   const [holderPhone, setHolderPhone] = useState("");
   const [addressLine1, setAddressLine1] = useState("");
@@ -242,6 +243,7 @@ export function CertificateCreatePanel({
 
   const reset = () => {
     setHolderName("");
+    setHolderContactName("");
     setHolderEmail("");
     setHolderPhone("");
     setAddressLine1("");
@@ -342,6 +344,7 @@ export function CertificateCreatePanel({
       const result = await generateCertificate({
         policyId,
         holderName: holderName.trim(),
+        holderContactName: holderContactName.trim() || undefined,
         holderEmail: holderEmail.trim() || undefined,
         holderPhone: holderPhone.trim() || undefined,
         addressLine1: addressLine1.trim() || undefined,
@@ -527,6 +530,18 @@ export function CertificateCreatePanel({
               placeholder="Company or individual name"
               autoComplete="organization"
               autoFocus
+              disabled={generating}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="certificate-holder-contact">Holder contact</Label>
+            <Input
+              id="certificate-holder-contact"
+              value={holderContactName}
+              onChange={(event) => setHolderContactName(event.target.value)}
+              placeholder="Attention contact"
+              autoComplete="name"
               disabled={generating}
             />
           </div>

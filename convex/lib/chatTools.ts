@@ -182,6 +182,10 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("Name/address of the certificate holder"),
+    holderContactName: z
+      .string()
+      .optional()
+      .describe("Specific certificate holder contact name or attention line when the user provides one"),
     holderEmail: z
       .string()
       .optional()
@@ -245,9 +249,9 @@ export const addPolicyChangeInfo = tool({
 
 export const draftPolicyChangeSubmission = tool({
   description:
-    "Draft the broker email for an existing policy change request. If the recipient is unknown, draft the email and ask for the recipient instead of inventing an email address.",
+    "Draft the broker email for an existing policy change request. Use the current conversation's policy change case when a case ID is not explicitly known. If the recipient is unknown, draft the email and ask for the recipient instead of inventing an email address.",
   inputSchema: z.object({
-    caseId: z.string().describe("Existing policy change case ID"),
+    caseId: z.string().optional().describe("Existing policy change case ID, if known"),
     recipientEmail: z.string().optional().describe("Known recipient email, if explicitly provided or already known"),
     recipientName: z.string().optional().describe("Known recipient name, if available"),
     instructions: z.string().optional().describe("Extra instructions to include in the draft"),

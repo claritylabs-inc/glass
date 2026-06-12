@@ -247,6 +247,7 @@ export const recordIssuedVersionInternal = internalMutation({
     fileSize: v.optional(v.number()),
     certificateHolder: v.optional(v.string()),
     certificateHolderName: v.optional(v.string()),
+    holderContactName: v.optional(v.string()),
     holderEmail: v.optional(v.string()),
     holderPhone: v.optional(v.string()),
     holderAddress: v.optional(v.any()),
@@ -268,7 +269,6 @@ export const recordIssuedVersionInternal = internalMutation({
     ),
     approvalAudit: v.optional(v.any()),
     disclaimer: v.optional(v.string()),
-    legacyCertificateId: v.optional(v.id("certificates")),
     createdByUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -302,6 +302,7 @@ export const recordIssuedVersionInternal = internalMutation({
       certificateHolderName: args.certificateHolderName,
       holderSnapshot: holderSnapshot({
         displayName: args.certificateHolderName ?? "Certificate holder",
+        contactName: args.holderContactName,
         email: args.holderEmail,
         phone: args.holderPhone,
         address: args.holderAddress,
@@ -318,7 +319,6 @@ export const recordIssuedVersionInternal = internalMutation({
       approvalMode: args.approvalMode,
       approvalAudit: args.approvalAudit,
       disclaimer: args.disclaimer,
-      legacyCertificateId: args.legacyCertificateId,
       issuedAt: now,
       createdByUserId: args.createdByUserId,
       createdAt: now,

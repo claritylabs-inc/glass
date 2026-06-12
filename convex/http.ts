@@ -576,9 +576,15 @@ function requireMcpWriteScope(identity: McpIdentity): void {
 
 function normalizeCertificateRequest(body: Record<string, unknown>) {
   const certificateHolder =
-    typeof body.certificate_holder === "string"
-      ? body.certificate_holder.trim()
-      : "";
+    typeof body.certificate_holder === "string" ? body.certificate_holder.trim() : "";
+  const certificateHolderAddressLines = certificateHolder
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(1)
+    .filter((line) =>
+      !/^(attn|attention|email|e-mail|phone|tel|telephone)\s*:/i.test(line),
+    );
   const selectedPartnerProgramId =
     (typeof body.selectedPartnerProgramId === "string" &&
       body.selectedPartnerProgramId.trim()) ||
@@ -605,6 +611,11 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
 
   return {
     holderName,
+    holderContactName:
+      (typeof body.holderContactName === "string" && body.holderContactName.trim()) ||
+      (typeof body.holder_contact_name === "string" && body.holder_contact_name.trim()) ||
+      (typeof body.certificate_holder_contact_name === "string" && body.certificate_holder_contact_name.trim()) ||
+      undefined,
     holderEmail:
       (typeof body.holderEmail === "string" && body.holderEmail.trim()) ||
       (typeof body.holder_email === "string" && body.holder_email.trim()) ||
@@ -624,12 +635,12 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
     addressLine1:
       (typeof body.addressLine1 === "string" && body.addressLine1.trim()) ||
       (typeof body.address_line_1 === "string" && body.address_line_1.trim()) ||
-      certificateHolder.split(/\r?\n/)[1]?.trim() ||
+      certificateHolderAddressLines[0] ||
       undefined,
     addressLine2:
       (typeof body.addressLine2 === "string" && body.addressLine2.trim()) ||
       (typeof body.address_line_2 === "string" && body.address_line_2.trim()) ||
-      certificateHolder.split(/\r?\n/)[2]?.trim() ||
+      certificateHolderAddressLines[1] ||
       undefined,
     city: (typeof body.city === "string" && body.city.trim()) || undefined,
     state: (typeof body.state === "string" && body.state.trim()) || undefined,
@@ -1296,22 +1307,11 @@ const MCP_TOOLS = [
       properties: {
         policyId: { type: "string", description: "The policy ID" },
         holderName: { type: "string", description: "Certificate holder name" },
-        holderEmail: {
-          type: "string",
-          description: "Certificate holder email for renewal delivery",
-        },
-        holderPhone: {
-          type: "string",
-          description: "Certificate holder phone for renewal delivery",
-        },
-        addressLine1: {
-          type: "string",
-          description: "Certificate holder street address",
-        },
-        addressLine2: {
-          type: "string",
-          description: "Suite, floor, or attention line",
-        },
+        holderContactName: { type: "string", description: "Certificate holder contact or attention name" },
+        holderEmail: { type: "string", description: "Certificate holder email for renewal delivery" },
+        holderPhone: { type: "string", description: "Certificate holder phone for renewal delivery" },
+        addressLine1: { type: "string", description: "Certificate holder street address" },
+        addressLine2: { type: "string", description: "Suite, floor, or attention line" },
         city: { type: "string", description: "Certificate holder city" },
         state: { type: "string", description: "Certificate holder state" },
         postalCode: {

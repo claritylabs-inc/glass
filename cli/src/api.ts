@@ -21,9 +21,11 @@ export class GlassApi {
     explicitReissue = false,
     holderEmail?: string,
     holderPhone?: string,
+    holderContactName?: string,
   ) {
     return this.post<{ data: Record<string, unknown> }>(`/api/v1/policies/${policyId}/certificates`, {
       certificate_holder_name: holderName,
+      certificate_holder_contact_name: holderContactName,
       certificate_holder_email: holderEmail,
       certificate_holder_phone: holderPhone,
       certificate_holder: [holderName, holderAddress].filter(Boolean).join("\n"),

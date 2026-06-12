@@ -482,6 +482,7 @@ export function buildEmailExpertTool(
             fileId: z.string().optional(),
             filename: z.string().optional(),
             certificateHolder: z.string().optional(),
+            holderContactName: z.string().optional(),
             holderEmail: z.string().optional(),
             holderPhone: z.string().optional(),
             requestText: z.string().optional(),
@@ -634,6 +635,7 @@ async function runEmailSubagent(
   const generateCoiAttachment = async (
     policyId: string,
     certificateHolder?: string,
+    holderContactName?: string,
     holderEmail?: string,
     holderPhone?: string,
     requestText?: string,
@@ -685,6 +687,7 @@ async function runEmailSubagent(
     const result = await executors.generate_coi.execute({
       policyId,
       certificateHolder,
+      holderContactName,
       holderEmail,
       holderPhone,
       requestText,
@@ -746,6 +749,7 @@ async function runEmailSubagent(
       await generateCoiAttachment(
         requested.policyId,
         requested.certificateHolder,
+        requested.holderContactName,
         requested.holderEmail,
         requested.holderPhone,
         requested.requestText,
@@ -1125,6 +1129,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
         inputSchema: z.object({
           policyId: z.string(),
           certificateHolder: z.string().optional(),
+          holderContactName: z.string().optional(),
           holderEmail: z.string().optional(),
           holderPhone: z.string().optional(),
           requestText: z.string().optional(),
@@ -1134,6 +1139,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
         execute: async ({
           policyId,
           certificateHolder,
+          holderContactName,
           holderEmail,
           holderPhone,
           requestText,
@@ -1143,6 +1149,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           generateCoiAttachment(
             policyId,
             certificateHolder,
+            holderContactName,
             holderEmail,
             holderPhone,
             requestText,

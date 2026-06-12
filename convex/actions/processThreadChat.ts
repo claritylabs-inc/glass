@@ -1370,6 +1370,8 @@ export const run = internalAction({
           orgId: args.orgId,
           userId: args.userId,
           scope,
+          threadId: args.threadId,
+          getCurrentPolicyChangeCaseId: () => policyChangeCaseId,
           operatorInitiatedUserMessageId: scope.operatorInitiated
             ? args.userMessageId
             : undefined,
