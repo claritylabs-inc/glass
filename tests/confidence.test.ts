@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  hasConfidenceMarkers,
   stripConfidenceMarkers,
   summarizeConfidence,
   remarkConfidence,
@@ -21,6 +22,17 @@ describe("stripConfidenceMarkers", () => {
 
   it("ignores an unclosed marker", () => {
     expect(stripConfidenceMarkers("a [[g: dangling")).toBe("a [[g: dangling");
+  });
+});
+
+describe("hasConfidenceMarkers", () => {
+  it("detects any supported confidence marker", () => {
+    expect(hasConfidenceMarkers("[[i:likely covered]]")).toBe(true);
+  });
+
+  it("ignores unmarked text and unsupported marker codes", () => {
+    expect(hasConfidenceMarkers("likely covered")).toBe(false);
+    expect(hasConfidenceMarkers("[[x:likely covered]]")).toBe(false);
   });
 });
 

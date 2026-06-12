@@ -11,6 +11,7 @@ import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import {
   fallbackRouteForCall,
+  generateTextWithFallback,
   getModelAndRouteForOrg,
   getModelForRoute,
   getProviderOptionsForRoute,
@@ -37,6 +38,7 @@ import {
   buildChannelInstructions,
   buildPolicyToolInstructions,
   buildConfidenceInstructions,
+  hasConfidenceMarkers,
   logAiError,
 } from "../lib/aiUtils";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
@@ -78,6 +80,55 @@ import {
   isPendingEmailRestoreIntent,
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
+
+function normalizeConfidenceRepair(text: string, fallback: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
+  const repaired = fenced ? fenced[1].trim() : trimmed;
+  return hasConfidenceMarkers(repaired) ? repaired : fallback;
+}
+
+async function repairMissingConfidenceMarkers({
+  content,
+  model,
+  route,
+}: {
+  content: string;
+  model: Parameters<typeof generateTextWithFallback>[0]["model"];
+  route: Awaited<ReturnType<typeof getModelAndRouteForOrg>>["route"];
+}): Promise<string> {
+  if (!content.trim() || hasConfidenceMarkers(content)) return content;
+
+  const result = await generateTextWithFallback(
+    {
+      model,
+      providerOptions: getProviderOptionsForRoute(route),
+      maxOutputTokens: 4096,
+      system: `You are a precise Markdown editor for Glass chat answers.
+
+Rewrite the assistant answer by adding confidence markers to factual phrases.
+Preserve the original wording, order, Markdown structure, table pipes, headings, numbers, and punctuation. Do not add claims. Do not remove claims.
+
+Use exactly these inline markers:
+- [[g:phrase]] for facts directly supported by policy data, retrieved source text, tool results, or provided context.
+- [[i:phrase]] for reasonable calculations, deductions, or synthesis from the available information.
+- [[u:phrase]] for assumptions, general knowledge, or claims not backed by provided context.
+
+Wrap factual table cell contents too, while preserving the table shape.
+Leave purely conversational filler and user-facing questions unwrapped.
+Return only the rewritten Markdown. Do not use a code fence.
+The rewritten answer is invalid unless it contains at least one confidence marker.`,
+      prompt: `Assistant answer to annotate:\n\n${content}`,
+    },
+    {
+      task: "chat",
+      taskKind: "query_reason",
+      primaryRoute: route,
+    },
+  );
+
+  return normalizeConfidenceRepair(result.text, content);
+}
 
 type DraftEmailForBatchRevision = {
   _id: Id<"pendingEmails">;
@@ -1882,6 +1933,14 @@ export const run = internalAction({
         content =
           "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
       }
+      const emailResult = emailToolResult.current;
+      if (!emailResult && !completedCoiEmailSideEffect) {
+        content = await repairMissingConfidenceMarkers({
+          content,
+          model: chatModel.model,
+          route: chatModel.route,
+        });
+      }
       const finalReferencedPolicyIds = new Set<string>([
         ...selectedPolicyIds,
         ...citedPolicyIds,
@@ -1913,7 +1972,6 @@ export const run = internalAction({
           responseAttachments.length > 0 ? responseAttachments : undefined,
         policyChangeCaseId,
       });
-      const emailResult = emailToolResult.current;
       if (emailResult) {
         if (
           emailResult.pendingEmailId &&

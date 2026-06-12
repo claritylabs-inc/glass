@@ -21,6 +21,11 @@ export { buildConversationMemoryContext, buildConversationMemoryFromList, buildD
 // The agent tints phrases with `[[g|i|u:...]]`; outside the web chat those
 // markers are stripped back to the bare phrase (group 2).
 const CONFIDENCE_MARKER_RE = /\[\[(?:g|i|u):([\s\S]+?)\]\]/g;
+const CONFIDENCE_MARKER_PRESENT_RE = /\[\[(?:g|i|u):[\s\S]+?\]\]/;
+
+export function hasConfidenceMarkers(text: string): boolean {
+  return CONFIDENCE_MARKER_PRESENT_RE.test(text);
+}
 
 export function stripMarkdown(text: string): string {
   let result = text;
@@ -274,13 +279,16 @@ export function buildConfidenceInstructions(): string {
   return `
 
 CONFIDENCE TINTING:
+- This is a REQUIRED OUTPUT CONTRACT for ordinary web chat replies. If your final chat reply contains factual claims, it MUST contain inline confidence markers.
 - Tint the factual phrases in your chat reply by how well each is backed by a source, using inline markers:
   - [[g:phrase]] GROUNDED — the phrase is directly supported by retrieved policy source text, tool results, or provided context.
   - [[i:phrase]] INFERRED — a reasonable inference or synthesis from the available information, but not stated outright in a source.
   - [[u:phrase]] UNVERIFIED — general knowledge, an assumption, or a recollection that is NOT backed by any provided source.
 - Example: "[[g:The general liability limit is $2M per occurrence]], and [[i:that should satisfy the lease requirement]], though [[u:most landlords also want $5M umbrella coverage]]."
+- For markdown tables, wrap factual cell contents, for example: "| [[g:Each Claim Limit]] | [[g:$5,000,000]] |".
 - Wrap whole standalone claims or phrases — typically clause- or sentence-sized. Do not wrap every word, connective filler, or your own questions, and do not nest markdown (bold, links, lists) inside a marker.
 - Be honest and calibrated: reserve [[g:...]] for facts you can actually tie to a source or tool result this turn. Default to [[i:...]] or [[u:...]] when you are extrapolating or relying on memory.
+- Before sending the final chat reply, verify that at least one marker appears as raw text in the reply. An unmarked factual answer is invalid.
 - Use the markers only in your chat reply. Never put them in emails, COIs, notes, or other generated documents.`;
 }
 

@@ -53,6 +53,11 @@ export const CONFIDENCE_LEVEL_META: Record<
 
 /** Matches `[[g:...]]` / `[[i:...]]` / `[[u:...]]`; group 1 = code, group 2 = phrase. */
 export const CONFIDENCE_MARKER_RE = /\[\[(g|i|u):([\s\S]+?)\]\]/g;
+const CONFIDENCE_MARKER_PRESENT_RE = /\[\[(?:g|i|u):[\s\S]+?\]\]/;
+
+export function hasConfidenceMarkers(text: string): boolean {
+  return CONFIDENCE_MARKER_PRESENT_RE.test(text);
+}
 
 /** Replace every confidence marker with just its inner phrase. */
 export function stripConfidenceMarkers(text: string): string {
