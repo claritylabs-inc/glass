@@ -109,6 +109,15 @@ const workerPackage = require("../package.json") as {
 const WORKER_PROTOCOL_VERSION = "source-tree-v1";
 
 const actions = {
+  saveExternalCompletionPayload: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      policyId: string;
+      payload: unknown;
+    },
+    { storageId: string; byteLength: number }
+  >("externalExtractionPayload:saveExternalCompletionPayload"),
   createExternalCompletionUploadUrl: makeFunctionReference<
     "action",
     {
@@ -1542,33 +1551,64 @@ function payloadSizeSummary(payload: Record<string, unknown>): string {
     .join(", ");
 }
 
+const COMPLETION_UPLOAD_ATTEMPTS = 3;
+const COMPLETION_ACTION_FALLBACK_MAX_BYTES = 4.5 * 1024 * 1024;
+
 async function uploadCompletionPayload(
   job: ClaimedJob,
   payload: Record<string, unknown>,
 ): Promise<{ storageId: string; byteLength: number }> {
   const json = JSON.stringify(payload);
   const byteLength = Buffer.byteLength(json);
-  const { uploadUrl } = await convex.action(actions.createExternalCompletionUploadUrl, {
-    secret: SECRET,
-  });
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: json,
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to upload completion payload: ${response.status} ${await response.text()}`);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= COMPLETION_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const { uploadUrl } = await convex.action(actions.createExternalCompletionUploadUrl, {
+        secret: SECRET,
+      });
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to upload completion payload: ${response.status} ${await response.text()}`);
+      }
+      const uploaded = await response.json() as { storageId?: string };
+      if (!uploaded.storageId) {
+        throw new Error("Completion payload upload did not return a storageId");
+      }
+      return await convex.action(actions.finalizeExternalCompletionPayload, {
+        secret: SECRET,
+        policyId: job.policyId,
+        storageId: uploaded.storageId,
+        byteLength,
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < COMPLETION_UPLOAD_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+      }
+    }
   }
-  const uploaded = await response.json() as { storageId?: string };
-  if (!uploaded.storageId) {
-    throw new Error("Completion payload upload did not return a storageId");
+
+  if (byteLength <= COMPLETION_ACTION_FALLBACK_MAX_BYTES) {
+    await logJob(
+      job,
+      `Direct completion payload upload failed; retrying through Convex action fallback (${formatBytes(byteLength)}): ${errorMessage(lastError)}`,
+      "warn",
+    );
+    return await convex.action(actions.saveExternalCompletionPayload, {
+      secret: SECRET,
+      policyId: job.policyId,
+      payload,
+    });
   }
-  return await convex.action(actions.finalizeExternalCompletionPayload, {
-    secret: SECRET,
-    policyId: job.policyId,
-    storageId: uploaded.storageId,
-    byteLength,
-  });
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Failed to upload completion payload: ${String(lastError)}`);
 }
 
 const HEAVY_PAYLOAD_KEYS = new Set([
