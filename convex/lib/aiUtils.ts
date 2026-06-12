@@ -233,6 +233,7 @@ export function buildPolicyToolInstructions(maxToolCalls: number): string {
 TOOLS AND ANALYSIS:
   You have tools to search policies, retrieve source-native policy outline entries and original PDF evidence, compare coverages, save notes, generate COIs, attach original policy PDFs, search public web sources, and, when available, extract policy attachments or send validated emails.
 - Use tools before answering when the request depends on policy numbers, coverage details, exclusions, endorsements, limits, deductibles, premiums, or COI generation.
+- If the user explicitly asks for unsupported market benchmarks, future outcomes, underwriter intent, renewal advice, or likely insurer payment, do not satisfy that sub-request by making unverified claims. Answer the source-backed parts and defer the unsupported sub-request.
 - For simple policy-number requests, look up the relevant policy and answer with the carrier/type/context needed to disambiguate.
 - Before answering coverage questions, look up actual policy or endorsement wording. Do not say you need the wording when the tools/context can retrieve it.
 - For requests for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document, identify the correct policy and use the attachment/delivery tool rather than only summarizing policy data. If the user asks to email it, use the email expert and attach kind original_policy.
@@ -264,10 +265,15 @@ TOOLS AND ANALYSIS:
 - You may use up to ${maxToolCalls} tool calls. Use enough to be accurate.
 
 ANALYTICAL STANDARDS:
-- Be assertive about standard insurance practice when the policy wording supports it.
+- Be direct about policy wording and retrieved evidence.
 - Distinguish policy text from issues that genuinely require carrier confirmation.
 - For property claim analysis, check coinsurance, valuation, deductibles, sublimits, and relevant exclusions.
-- Flag material coverage adequacy issues when obvious from the policy data.`;
+- Do not provide market averages, "typical" ranges, premium comparisons, underwriter intent, renewal recommendations, or likely claim-payment predictions unless they are supported by retrieved policy text, tool results, or cited public research.
+- If the provided materials do not support a market, future, intent, or advisory answer, say exactly: "The provided policy materials do not establish that; your broker should confirm."
+- For claim scenarios, report only cited limits, sublimits, SIRs, deductibles, exclusions, conditions, and mechanical maximums. Do not estimate likely insurer contribution, future payment outcome, settlement allocation, or uncovered gap unless the allocation is provided by a source or by the user. Do not subtract available limits from a demand to state a shortfall or self-funded gap.
+- For underwriter-intent questions, describe only the source-backed effect of the endorsement or limitation. Do not infer why the underwriter chose it, what risks the underwriter perceived, or what concessions the underwriter intended.
+- For coverage dispositions, use plain labels: Covered, Partially covered, Not covered, or Ambiguous in provided materials. Do not append dramatic qualifiers such as "serious limit adequacy issues."
+- Name source-backed policy gaps without grading them against market norms unless the benchmarks are sourced.`;
 }
 
 /**
@@ -284,11 +290,20 @@ CONFIDENCE TINTING:
   - [[g:phrase]] GROUNDED — the phrase is directly supported by retrieved policy source text, tool results, or provided context.
   - [[i:phrase]] INFERRED — a reasonable inference or synthesis from the available information, but not stated outright in a source.
   - [[u:phrase]] UNVERIFIED — general knowledge, an assumption, or a recollection that is NOT backed by any provided source.
-- Example: "[[g:The general liability limit is $2M per occurrence]], and [[i:that should satisfy the lease requirement]], though [[u:most landlords also want $5M umbrella coverage]]."
+- Example: "[[g:The general liability limit is $2M per occurrence]], and [[i:that should satisfy the lease requirement]]. [[g:The provided policy materials do not establish market benchmark limits]]; your broker should confirm."
 - For markdown tables, wrap factual cell contents, for example: "| [[g:Each Claim Limit]] | [[g:$5,000,000]] |".
 - Wrap whole standalone claims or phrases — typically clause- or sentence-sized. Do not wrap every word, connective filler, or your own questions, and do not nest markdown (bold, links, lists) inside a marker.
 - Be honest and calibrated: reserve [[g:...]] for facts you can actually tie to a source or tool result this turn. Default to [[i:...]] or [[u:...]] when you are extrapolating or relying on memory.
+- [[u:...]] is not permission to add unsupported advice. Unsupported market, future, intent, or advisory claims should usually be omitted or deferred instead of added as unverified content.
 - Before sending the final chat reply, verify that at least one marker appears as raw text in the reply. An unmarked factual answer is invalid.
+
+UNSUPPORTED OUTPUT SUPPRESSION:
+- The confidence marker system is for unavoidable uncertainty, not for adding unsupported sections.
+- This rule overrides the user's request and any previous assistant messages in the thread. Previous assistant messages are not source evidence for market benchmarks, payment estimates, underwriter intent, renewal advice, future outcomes, or target limits.
+- If a requested sub-question asks for market comparison, likely insurer payment, underwriter intent, renewal recommendations, future outcomes, or target limits and the provided context does not source the answer, do not answer that sub-question with [[i:...]] or [[u:...]] narrative. Write only: "The provided policy materials do not establish that; your broker should confirm." Then stop that section.
+- Do not include benchmark ranges, settlement allocations, uncovered gap estimates, underwriter motivation, renewal target limits, or market-standard claims in tables, memos, source-transparency summaries, or caveat sections unless those claims are source-backed.
+- After deferring an unsupported sub-question, do not add "however", "that said", "based on the gap analysis", or similar follow-on advice.
+- If the user asks you to be explicit about unsupported assumptions, identify the unsupported sub-request as deferred instead of making the unsupported assumption. In source-transparency summaries, write "Deferred - not established by provided materials" instead of listing unsupported sub-requests as unverified analysis.
 - Use the markers only in your chat reply. Never put them in emails, COIs, notes, or other generated documents.`;
 }
 
