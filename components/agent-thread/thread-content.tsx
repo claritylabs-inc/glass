@@ -21,6 +21,7 @@ import {
   Clock,
   Download,
   Paperclip,
+  BadgeCheck,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -29,6 +30,7 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
+import { stripConfidenceMarkers, summarizeConfidence } from "@/lib/confidence";
 import {
   useArchivedThreadCacheActions,
   useThreadCacheActions,
@@ -606,12 +608,10 @@ function ReasoningPanel({ reasoning }: { reasoning: string }) {
 
 function ReasoningFooterButton({
   reasoning,
-  isStreaming,
   isOpen,
   onToggle,
 }: {
   reasoning: string;
-  isStreaming?: boolean;
   isOpen: boolean;
   onToggle: () => void;
 }) {
@@ -627,14 +627,36 @@ function ReasoningFooterButton({
     >
       <Brain className="h-3 w-3" />
       Reasoning
-      <span className="text-muted-foreground/35">
-        {isStreaming ? <Loader2 className="h-3 w-3 animate-spin" /> : stepCount}
-      </span>
+      <span className="text-muted-foreground/35">{stepCount}</span>
       <ChevronDown
         className={`h-3 w-3 transition-transform duration-150 ${
           isOpen ? "rotate-180" : ""
         }`}
       />
+    </button>
+  );
+}
+
+function ConfidenceFooterButton({
+  isActive,
+  onToggle,
+}: {
+  isActive: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={isActive}
+      className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-label font-medium transition-colors ${
+        isActive
+          ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
+          : "border-foreground/8 bg-transparent text-muted-foreground/55 hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+      }`}
+    >
+      <BadgeCheck className="h-3 w-3" />
+      Confidence level
     </button>
   );
 }
@@ -682,6 +704,9 @@ function MessageFooterActions({
   onToggleToolCalls,
   showSubagentActivity,
   onToggleSubagentActivity,
+  confidenceContent,
+  showConfidence,
+  onToggleConfidence,
   rightAligned,
 }: {
   refs: { type: "policy"; id: string; page?: number }[];
@@ -705,6 +730,9 @@ function MessageFooterActions({
   onToggleToolCalls: () => void;
   showSubagentActivity?: boolean;
   onToggleSubagentActivity?: () => void;
+  confidenceContent?: string;
+  showConfidence?: boolean;
+  onToggleConfidence?: () => void;
   rightAligned?: boolean;
 }) {
   const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
@@ -733,6 +761,16 @@ function MessageFooterActions({
     mailboxArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ??
     [];
   const hasMailboxTasks = mailboxTasks.length > 0;
+  const confidenceSummary = useMemo(
+    () => (confidenceContent ? summarizeConfidence(confidenceContent) : null),
+    [confidenceContent],
+  );
+  const confidencePhraseCount = confidenceSummary
+    ? confidenceSummary.counts.grounded +
+      confidenceSummary.counts.inferred +
+      confidenceSummary.counts.unverified
+    : 0;
+  const hasConfidence = confidencePhraseCount > 0;
   const selectedMailboxIndex =
     openMailboxArtifactRef?.messageId === messageId
       ? (openMailboxArtifactRef?.index ?? null)
@@ -744,6 +782,7 @@ function MessageFooterActions({
     !hasSubagentActivity &&
     !hasAttachments &&
     !hasMailboxTasks &&
+    !hasConfidence &&
     !copyContent?.trim() &&
     !retryMessageId
   )
@@ -831,6 +870,12 @@ function MessageFooterActions({
               reasoning={reasoning}
               isOpen={showReasoning}
               onToggle={onToggleReasoning}
+            />
+          ) : null}
+          {hasConfidence && confidenceContent && onToggleConfidence ? (
+            <ConfidenceFooterButton
+              isActive={showConfidence ?? false}
+              onToggle={onToggleConfidence}
             />
           ) : null}
           {toolCalls.length > 0 && (
@@ -1019,7 +1064,7 @@ function UnifiedThreadActions({
       if (msg.ccAddresses?.length)
         lines.push(`CC: ${msg.ccAddresses.join(", ")}`);
       lines.push("");
-      lines.push(msg.content);
+      lines.push(stripConfidenceMarkers(msg.content));
       if (msg.attachments?.length) {
         lines.push(
           `Attachments: ${msg.attachments.map((a) => a.filename).join(", ")}`,
@@ -1035,7 +1080,7 @@ function UnifiedThreadActions({
     <>
       <PillButton
         size="compact"
-        variant="iconLabel"
+        variant="icon"
         onClick={handleCopyThread}
         label="Copy thread"
       >
@@ -1043,7 +1088,7 @@ function UnifiedThreadActions({
       </PillButton>
       <PillButton
         size="compact"
-        variant="iconLabel"
+        variant="icon"
         onClick={handleArchiveToggle}
         label={isArchived ? "Unarchive" : "Archive"}
       >
@@ -1059,6 +1104,8 @@ function UnifiedThreadActions({
 
 /* ── Shared markdown container styles ── */
 const MARKDOWN_STYLES = "[&_a]:text-primary-light [&_a]:underline";
+
+type FooterPanel = "reasoning" | "tools" | "subagents" | "confidence";
 
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -1273,9 +1320,15 @@ export function UnifiedMessageBubble({
   openMailboxArtifactRef?: MailboxArtifactRef | null;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
-  const [showReasoning, setShowReasoning] = useState(false);
-  const [showToolCalls, setShowToolCalls] = useState(false);
-  const [showSubagentActivity, setShowSubagentActivity] = useState(false);
+  const [activeFooterPanel, setActiveFooterPanel] =
+    useState<FooterPanel | null>(null);
+  const showReasoning = activeFooterPanel === "reasoning";
+  const showToolCalls = activeFooterPanel === "tools";
+  const showSubagentActivity = activeFooterPanel === "subagents";
+  const showConfidence = activeFooterPanel === "confidence";
+  const toggleFooterPanel = (panel: FooterPanel) => {
+    setActiveFooterPanel((current) => (current === panel ? null : panel));
+  };
   const [now] = useState(() => dayjs().valueOf());
   const time = dayjs(msg._creationTime);
   const channelIcon =
@@ -1288,7 +1341,6 @@ export function UnifiedMessageBubble({
   // Processing state — unified bubble with thinking, tool status, and streaming content
   if (msg.role === "agent" && msg.status === "processing") {
     const hasContent = msg.content && msg.content.length > 0;
-    const hasReasoning = msg.reasoning && msg.reasoning.length > 0;
     const ageMs = now - msg._creationTime;
     const isStale = ageMs > 60_000;
     // Tool status messages are like "*Searching policies...*"
@@ -1341,6 +1393,7 @@ export function UnifiedMessageBubble({
               <ProseMarkdown
                 gfm
                 breaks
+                flagConfidence
                 className={MARKDOWN_STYLES}
                 components={markdownComponents}
               >
@@ -1359,21 +1412,6 @@ export function UnifiedMessageBubble({
                 : undefined
             }
           />
-          {hasReasoning ? (
-            <div className="mt-1.5">
-              <div className="flex min-w-0 flex-wrap items-start gap-1.5">
-                <ReasoningFooterButton
-                  reasoning={msg.reasoning ?? ""}
-                  isStreaming
-                  isOpen={showReasoning}
-                  onToggle={() => setShowReasoning((value) => !value)}
-                />
-              </div>
-              {showReasoning ? (
-                <ReasoningPanel reasoning={msg.reasoning ?? ""} />
-              ) : null}
-            </div>
-          ) : null}
           {relatedEmailMessages.length > 0 ? (
             <div className="mt-3">
               <EmailStackCard
@@ -1507,6 +1545,8 @@ export function UnifiedMessageBubble({
                   <ProseMarkdown
                     gfm
                     breaks
+                    flagConfidence
+                    confidenceFullView={showConfidence}
                     className={MARKDOWN_STYLES}
                     components={markdownComponents}
                   >
@@ -1527,20 +1567,23 @@ export function UnifiedMessageBubble({
                   messageId={msg._id}
                   onOpenMailboxArtifact={onOpenMailboxArtifact}
                   openMailboxArtifactRef={openMailboxArtifactRef}
-                  copyContent={fixedContent}
+                  copyContent={stripConfidenceMarkers(fixedContent)}
                   retryMessageId={
                     msg.channel === "chat" || msg.channel === "imessage"
                       ? msg._id
                       : undefined
                   }
                   showReasoning={showReasoning}
-                  onToggleReasoning={() => setShowReasoning((value) => !value)}
+                  onToggleReasoning={() => toggleFooterPanel("reasoning")}
                   showToolCalls={showToolCalls}
-                  onToggleToolCalls={() => setShowToolCalls((value) => !value)}
+                  onToggleToolCalls={() => toggleFooterPanel("tools")}
                   showSubagentActivity={showSubagentActivity}
                   onToggleSubagentActivity={() =>
-                    setShowSubagentActivity((value) => !value)
+                    toggleFooterPanel("subagents")
                   }
+                  confidenceContent={!isError ? fixedContent : undefined}
+                  showConfidence={showConfidence}
+                  onToggleConfidence={() => toggleFooterPanel("confidence")}
                   rightAligned={brokerPerspective}
                 />
                 <VendorComplianceArtifacts

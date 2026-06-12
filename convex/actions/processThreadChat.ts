@@ -11,6 +11,7 @@ import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import {
   fallbackRouteForCall,
+  generateTextWithFallback,
   getModelAndRouteForOrg,
   getModelForRoute,
   getProviderOptionsForRoute,
@@ -36,6 +37,8 @@ import {
   markdownToHtml,
   buildChannelInstructions,
   buildPolicyToolInstructions,
+  buildConfidenceInstructions,
+  hasConfidenceMarkers,
   logAiError,
 } from "../lib/aiUtils";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
@@ -77,6 +80,63 @@ import {
   isPendingEmailRestoreIntent,
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
+
+function normalizeConfidenceRepair(text: string, fallback: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
+  const repaired = fenced ? fenced[1].trim() : trimmed;
+  return hasConfidenceMarkers(repaired) ? repaired : fallback;
+}
+
+function restoreSentenceBoundarySpacing(text: string): string {
+  return text
+    .replace(/([a-z0-9)\]][.!?])(?=[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)\]][.!?])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)\]][.!?]\]\])(?=[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)\]][.!?]\]\])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ");
+}
+
+async function repairMissingConfidenceMarkers({
+  content,
+  model,
+  route,
+}: {
+  content: string;
+  model: Parameters<typeof generateTextWithFallback>[0]["model"];
+  route: Awaited<ReturnType<typeof getModelAndRouteForOrg>>["route"];
+}): Promise<string> {
+  if (!content.trim() || hasConfidenceMarkers(content)) return content;
+
+  const result = await generateTextWithFallback(
+    {
+      model,
+      providerOptions: getProviderOptionsForRoute(route),
+      maxOutputTokens: 4096,
+      system: `You are a precise Markdown editor for Glass chat answers.
+
+Rewrite the assistant answer by adding confidence markers to factual phrases.
+Preserve the original wording, order, Markdown structure, table pipes, headings, numbers, and punctuation. Do not add claims. Do not remove claims.
+
+Use exactly these inline markers:
+- [[g:phrase]] for facts directly supported by policy data, retrieved source text, tool results, or provided context.
+- [[i:phrase]] for reasonable calculations, deductions, or synthesis from the available information.
+- [[u:phrase]] for assumptions, general knowledge, or claims not backed by provided context.
+
+Wrap factual table cell contents too, while preserving the table shape.
+Leave purely conversational filler and user-facing questions unwrapped.
+Return only the rewritten Markdown. Do not use a code fence.
+The rewritten answer is invalid unless it contains at least one confidence marker.`,
+      prompt: `Assistant answer to annotate:\n\n${content}`,
+    },
+    {
+      task: "chat",
+      taskKind: "query_reason",
+      primaryRoute: route,
+    },
+  );
+
+  return normalizeConfidenceRepair(result.text, content);
+}
 
 type DraftEmailForBatchRevision = {
   _id: Id<"pendingEmails">;
@@ -1159,7 +1219,8 @@ export const run = internalAction({
         requirementsBlock +
         selectedSteeringBlock +
         complianceBlock +
-        attachmentNote;
+        attachmentNote +
+        buildConfidenceInstructions();
 
       const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, {
         orgId: args.orgId,
@@ -1361,7 +1422,6 @@ export const run = internalAction({
       }> = [];
       let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
       let lastToolName = "";
-      let lastToolPolicyId = "";
 
       // streamText with tools — supports both streaming Q&A and tool calls
       const tools = {
@@ -1687,7 +1747,7 @@ export const run = internalAction({
               lastFlush = now;
               await ctx.runMutation(internal.threads.streamAgentMessage, {
                 id: agentMsgId,
-                content,
+                content: restoreSentenceBoundarySpacing(content),
               });
             }
           } else if (part.type === "tool-call") {
@@ -1696,10 +1756,6 @@ export const run = internalAction({
               ((part as Record<string, unknown>).input as
                 | Record<string, unknown>
                 | undefined) ?? undefined;
-            lastToolPolicyId =
-              part.toolName === "lookup_policy_section"
-                ? ((input?.policyId as string) ?? "")
-                : "";
             usedTools.push(part.toolName);
             toolCalls.push({
               name: part.toolName,
@@ -1709,7 +1765,9 @@ export const run = internalAction({
               TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
             await ctx.runMutation(internal.threads.streamAgentMessage, {
               id: agentMsgId,
-              content: content ? content + `\n\n*${label}*` : `*${label}*`,
+              content: content
+                ? restoreSentenceBoundarySpacing(content) + `\n\n*${label}*`
+                : `*${label}*`,
             });
           } else if (part.type === "tool-result") {
             const output = (part as Record<string, unknown>).output;
@@ -1790,12 +1848,10 @@ export const run = internalAction({
                     citedCoverageNames.add(
                       String((r as Record<string, unknown>).title),
                     );
-                    if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
                   } else {
                     citedSections.add(
                       String((r as Record<string, unknown>).title),
                     );
-                    if (lastToolPolicyId) citedPolicyIds.add(lastToolPolicyId);
                   }
                   const sourceSpanIds = (r as Record<string, unknown>)
                     .sourceSpanIds;
@@ -1811,7 +1867,7 @@ export const run = internalAction({
             // Clear the tool label but keep accumulated content
             await ctx.runMutation(internal.threads.streamAgentMessage, {
               id: agentMsgId,
-              content: content || "",
+              content: restoreSentenceBoundarySpacing(content || ""),
             });
           }
         }
@@ -1859,6 +1915,7 @@ export const run = internalAction({
       if (await isAgentResponseCancelled(true)) return;
 
       // Final update — save content, reasoning, and cited sections
+      content = restoreSentenceBoundarySpacing(content);
       const completedCoiEmailSideEffect =
         usedTools.includes("email_expert") ||
         usedTools.includes("generate_coi") ||
@@ -1879,6 +1936,15 @@ export const run = internalAction({
       ) {
         content =
           "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
+      }
+      const emailResult = emailToolResult.current;
+      if (!emailResult && !completedCoiEmailSideEffect) {
+        content = await repairMissingConfidenceMarkers({
+          content,
+          model: chatModel.model,
+          route: chatModel.route,
+        });
+        content = restoreSentenceBoundarySpacing(content);
       }
       const finalReferencedPolicyIds = new Set<string>([
         ...selectedPolicyIds,
@@ -1911,7 +1977,6 @@ export const run = internalAction({
           responseAttachments.length > 0 ? responseAttachments : undefined,
         policyChangeCaseId,
       });
-      const emailResult = emailToolResult.current;
       if (emailResult) {
         if (
           emailResult.pendingEmailId &&

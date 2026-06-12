@@ -4,6 +4,11 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
+import {
+  remarkConfidence,
+  CONFIDENCE_LEVEL_META,
+  type ConfidenceLevel,
+} from "@/lib/confidence";
 
 /**
  * Shared base styles for markdown-rendered content.
@@ -56,9 +61,65 @@ export type ProseMarkdownProps = {
   gfm?: boolean;
   /** Convert soft line-breaks to <br> (default: false) */
   breaks?: boolean;
+  /**
+   * Render `[[g|i|u:...]]` confidence markers (default: false). Used for agent
+   * chat answers. By default only low-confidence (unverified) phrases are
+   * tinted; set `confidenceFullView` to reveal the full grounded/inferred
+   * breakdown.
+   */
+  flagConfidence?: boolean;
+  /** Tint every confidence level, not just always-visible low-confidence ones. */
+  confidenceFullView?: boolean;
   /** Extra react-markdown component overrides */
   components?: Components;
 };
+
+/** Tailwind tint per confidence level — kept subtle so prose stays readable. */
+const CONFIDENCE_TINT: Record<ConfidenceLevel, string> = {
+  grounded:
+    "bg-emerald-400/12 decoration-emerald-500/40 dark:bg-emerald-400/15",
+  inferred: "bg-amber-400/15 decoration-amber-500/45 dark:bg-amber-400/15",
+  unverified: "bg-rose-400/18 decoration-rose-500/50 dark:bg-rose-400/20",
+};
+
+/** Levels that stay highlighted even when the full view is collapsed. */
+const ALWAYS_VISIBLE_LEVELS: ReadonlySet<ConfidenceLevel> = new Set([
+  "unverified",
+]);
+
+function isConfidenceLevel(value: unknown): value is ConfidenceLevel {
+  return value === "grounded" || value === "inferred" || value === "unverified";
+}
+
+/**
+ * Build the `<mark>` renderer for confidence phrases. In the collapsed view
+ * only always-visible levels are tinted; other phrases render as plain text.
+ */
+function makeConfidenceComponents(fullView: boolean): Components {
+  return {
+    mark: ({ children, ...props }) => {
+      const rawLevel = (props as Record<string, unknown>)["data-level"];
+      const level: ConfidenceLevel = isConfidenceLevel(rawLevel)
+        ? rawLevel
+        : "inferred";
+      if (!fullView && !ALWAYS_VISIBLE_LEVELS.has(level)) {
+        return <>{children}</>;
+      }
+      const meta = CONFIDENCE_LEVEL_META[level];
+      return (
+        <mark
+          className={cn(
+            "rounded-[3px] text-foreground underline decoration-dotted underline-offset-2",
+            CONFIDENCE_TINT[level],
+          )}
+          title={`${meta.label}: ${meta.description}`}
+        >
+          {children}
+        </mark>
+      );
+    },
+  };
+}
 
 /**
  * Unified markdown renderer used across Glass.
@@ -81,15 +142,19 @@ export function ProseMarkdown({
   compact = false,
   gfm = false,
   breaks = false,
+  flagConfidence = false,
+  confidenceFullView = false,
   components,
 }: ProseMarkdownProps) {
   const plugins = [];
   if (gfm) plugins.push(remarkGfm);
   if (breaks) plugins.push(remarkBreaks);
+  if (flagConfidence) plugins.push(remarkConfidence);
 
   // Merge default GFM table component with user overrides
   const mergedComponents = {
     ...(gfm ? defaultGfmComponents : null),
+    ...(flagConfidence ? makeConfidenceComponents(confidenceFullView) : null),
     ...components,
   };
 
