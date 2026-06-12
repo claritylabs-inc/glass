@@ -50,7 +50,6 @@ import type * as auth from "../auth.js";
 import type * as brokerActivity from "../brokerActivity.js";
 import type * as certificateHolders from "../certificateHolders.js";
 import type * as certificateLifecycle from "../certificateLifecycle.js";
-import type * as certificateLifecycleBackfill from "../certificateLifecycleBackfill.js";
 import type * as certificateWorkflowJobs from "../certificateWorkflowJobs.js";
 import type * as certificateWorkflowSettings from "../certificateWorkflowSettings.js";
 import type * as certificates from "../certificates.js";
@@ -229,7 +228,6 @@ declare const fullApi: ApiFromModules<{
   brokerActivity: typeof brokerActivity;
   certificateHolders: typeof certificateHolders;
   certificateLifecycle: typeof certificateLifecycle;
-  certificateLifecycleBackfill: typeof certificateLifecycleBackfill;
   certificateWorkflowJobs: typeof certificateWorkflowJobs;
   certificateWorkflowSettings: typeof certificateWorkflowSettings;
   certificates: typeof certificates;
