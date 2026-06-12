@@ -54,11 +54,11 @@ function InputOverlayFade() {
   return (
     <>
       <div
-        className="h-16 backdrop-blur-md dark:hidden"
+        className="h-16 dark:hidden"
         style={lightInputOverlayFadeStyle}
       />
       <div
-        className="hidden h-16 backdrop-blur-md dark:block"
+        className="hidden h-16 dark:block"
         style={darkInputOverlayFadeStyle}
       />
     </>
@@ -1006,7 +1006,7 @@ export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
       <InputOverlayFade />
       <div
-        className="pointer-events-auto bg-white/80 px-4 pt-2 backdrop-blur-md dark:bg-black/80 md:px-6 lg:px-8"
+        className="pointer-events-auto px-4 pt-2 md:px-6 lg:px-8"
         style={{
           paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
         }}
