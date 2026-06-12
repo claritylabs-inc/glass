@@ -321,7 +321,7 @@ function DropZone({
       {staged.length > 0 && !hideUploadButton ? (
         <PillButton
           variant="primary"
-          className="w-full"
+          className="w-full sm:w-fit"
           disabled={uploading}
           onClick={handleUpload}
         >
