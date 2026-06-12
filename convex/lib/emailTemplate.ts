@@ -133,15 +133,18 @@ ${bodyHtml}
 </html>`;
 }
 
-export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, branding: BrandingContext = getDefaultBranding()): { html: string; text: string } {
-  const digits = token.split("");
-
-  const digitCells = digits
+function buildCodeCells(token: string) {
+  return token
+    .split("")
     .map(
       (d) =>
         `<td style="width:36px;height:44px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:22px;font-weight:600;color:#000000;background-color:#f5f5f5;border-radius:8px;">${d}</td>`,
     )
     .join('<td style="width:6px;"></td>');
+}
+
+export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, branding: BrandingContext = getDefaultBranding()): { html: string; text: string } {
+  const digitCells = buildCodeCells(token);
 
   const bodyHtml = `
 <tr><td align="center" style="padding:28px 40px 0 40px;">
@@ -168,6 +171,36 @@ export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, brandin
 
   const html = buildEmailShell({ title: "Your sign-in code", bodyHtml, branding, siteUrl });
   const text = `Your ${branding.brandName} sign-in code is: ${token}\n\nEnter this code in the browser window where you started signing in. It expires in 15 minutes.\n\nIf you didn't request this code, you can safely ignore this email.`;
+  return { html, text };
+}
+
+export function buildEmailChangeOtpEmail(token: string, siteUrl: string = SITE_URL, branding: BrandingContext = getDefaultBranding()): { html: string; text: string } {
+  const digitCells = buildCodeCells(token);
+  const bodyHtml = `
+<tr><td align="center" style="padding:28px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#000000;line-height:1.5;">
+    Confirm your email change
+  </p>
+</td></tr>
+<tr><td align="center" style="padding:24px 40px 0 40px;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>${digitCells}</tr></table>
+</td></tr>
+<tr><td align="center" style="padding:24px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.5;">
+    Enter this code in Glass to finish changing your account email. It expires in 15 minutes.
+  </p>
+</td></tr>
+<tr><td style="padding:32px 40px 0 40px;">
+  <div style="height:1px;background-color:rgba(17,24,39,0.06);"></div>
+</td></tr>
+<tr><td align="center" style="padding:20px 40px 32px 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.5;">
+    If you didn't request this change, you can safely ignore this email.
+  </p>
+</td></tr>`;
+
+  const html = buildEmailShell({ title: "Confirm your email change", bodyHtml, branding, siteUrl });
+  const text = `Your ${branding.brandName} email change code is: ${token}\n\nEnter this code in Glass to finish changing your account email. It expires in 15 minutes.\n\nIf you didn't request this change, you can safely ignore this email.`;
   return { html, text };
 }
 

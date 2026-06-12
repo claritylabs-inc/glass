@@ -207,6 +207,29 @@ export default defineSchema({
     .index("email", ["email"])
     .index("phone", ["phone"]),
 
+  userEmailChangeRequests: defineTable({
+    targetUserId: v.id("users"),
+    requestedByUserId: v.id("users"),
+    oldEmail: v.optional(v.string()),
+    newEmail: v.string(),
+    codeHash: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("confirmed"),
+      v.literal("cancelled"),
+      v.literal("expired"),
+    ),
+    requestedAt: v.number(),
+    expiresAt: v.number(),
+    confirmedAt: v.optional(v.number()),
+    confirmedByUserId: v.optional(v.id("users")),
+    cancelledAt: v.optional(v.number()),
+    cancelledByUserId: v.optional(v.id("users")),
+  })
+    .index("by_target_status", ["targetUserId", "status"])
+    .index("by_newEmail_status", ["newEmail", "status"])
+    .index("by_requestedBy", ["requestedByUserId"]),
+
   // Organizations — owns company data, agent, broker info
   organizations: defineTable({
     name: v.string(),

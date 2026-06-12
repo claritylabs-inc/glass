@@ -108,6 +108,7 @@ import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_domains from "../lib/domains.js";
 import type * as lib_emailAddress from "../lib/emailAddress.js";
 import type * as lib_emailCancelIntent from "../lib/emailCancelIntent.js";
+import type * as lib_emailChange from "../lib/emailChange.js";
 import type * as lib_emailDraftSummary from "../lib/emailDraftSummary.js";
 import type * as lib_emailIntentGuards from "../lib/emailIntentGuards.js";
 import type * as lib_emailPolicySources from "../lib/emailPolicySources.js";
@@ -286,6 +287,7 @@ declare const fullApi: ApiFromModules<{
   "lib/domains": typeof lib_domains;
   "lib/emailAddress": typeof lib_emailAddress;
   "lib/emailCancelIntent": typeof lib_emailCancelIntent;
+  "lib/emailChange": typeof lib_emailChange;
   "lib/emailDraftSummary": typeof lib_emailDraftSummary;
   "lib/emailIntentGuards": typeof lib_emailIntentGuards;
   "lib/emailPolicySources": typeof lib_emailPolicySources;

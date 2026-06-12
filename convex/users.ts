@@ -1,12 +1,151 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery } from "./_generated/server";
+import dayjs from "dayjs";
+import {
+  action,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
+import { internal as _internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { notify } from "./lib/notify";
+import {
+  EMAIL_CHANGE_PROVIDER,
+  EMAIL_CHANGE_TTL_MS,
+  generateEmailChangeCode,
+  sendEmailChangeVerificationEmail,
+} from "./lib/emailChange";
+import { normalizeEmailAddress } from "./lib/emailAddress";
 import {
   normalizeAvailableUserPhone,
   normalizeUserPhone,
 } from "./lib/userPhone";
-import { assertCustomerUser } from "./lib/operatorIdentity";
+import {
+  assertCustomerUser,
+  isBootstrapOperatorEmail,
+} from "./lib/operatorIdentity";
+
+const internal = _internal as any;
+const EMAIL_INVALID_MESSAGE = "Enter a valid email address.";
+const EMAIL_CURRENT_MESSAGE = "That is already the current email address.";
+const EMAIL_IN_USE_MESSAGE = "This email is already used by another user.";
+const EMAIL_PENDING_MESSAGE = "This email already has a pending change request.";
+
+type EmailChangeCtx = QueryCtx | MutationCtx;
+type EmailAvailabilityReason =
+  | "invalid"
+  | "current"
+  | "user_exists"
+  | "auth_account_exists"
+  | "pending";
+
+function normalizeEmailForChange(email: string) {
+  const normalized = normalizeEmailAddress(email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new Error(EMAIL_INVALID_MESSAGE);
+  }
+  if (isBootstrapOperatorEmail(normalized)) {
+    throw new Error("Operator emails cannot be used for customer accounts");
+  }
+  return normalized;
+}
+
+async function sha256Hex(input: string) {
+  const data = new TextEncoder().encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function latestActiveEmailChangeRequest(
+  ctx: EmailChangeCtx,
+  targetUserId: Id<"users">,
+) {
+  const now = dayjs().valueOf();
+  const pending = await ctx.db
+    .query("userEmailChangeRequests")
+    .withIndex("by_target_status", (q) =>
+      q.eq("targetUserId", targetUserId).eq("status", "pending"),
+    )
+    .collect();
+  return (
+    pending
+      .filter((request) => request.expiresAt > now)
+      .sort((a, b) => b.requestedAt - a.requestedAt)[0] ?? null
+  );
+}
+
+async function emailAvailabilityForTarget(
+  ctx: EmailChangeCtx,
+  normalizedEmail: string,
+  targetUserId: Id<"users">,
+): Promise<{ available: boolean; reason?: EmailAvailabilityReason }> {
+  const target = await ctx.db.get(targetUserId);
+  if (!target) throw new Error("User not found");
+  if (target.email?.trim().toLowerCase() === normalizedEmail) {
+    return { available: false, reason: "current" };
+  }
+
+  const existingUser = await ctx.db
+    .query("users")
+    .withIndex("email", (q) => q.eq("email", normalizedEmail))
+    .first();
+  if (existingUser && existingUser._id !== targetUserId) {
+    return { available: false, reason: "user_exists" };
+  }
+
+  const existingAccount = await ctx.db
+    .query("authAccounts")
+    .withIndex("providerAndAccountId", (q) =>
+      q
+        .eq("provider", EMAIL_CHANGE_PROVIDER)
+        .eq("providerAccountId", normalizedEmail),
+    )
+    .first();
+  if (existingAccount && existingAccount.userId !== targetUserId) {
+    return { available: false, reason: "auth_account_exists" };
+  }
+
+  const now = dayjs().valueOf();
+  const pending = await ctx.db
+    .query("userEmailChangeRequests")
+    .withIndex("by_newEmail_status", (q) =>
+      q.eq("newEmail", normalizedEmail).eq("status", "pending"),
+    )
+    .collect();
+  if (
+    pending.some(
+      (request) =>
+        request.targetUserId !== targetUserId && request.expiresAt > now,
+    )
+  ) {
+    return { available: false, reason: "pending" };
+  }
+
+  return { available: true };
+}
+
+function emailAvailabilityError(reason: EmailAvailabilityReason | undefined) {
+  if (reason === "current") return EMAIL_CURRENT_MESSAGE;
+  if (reason === "pending") return EMAIL_PENDING_MESSAGE;
+  return EMAIL_IN_USE_MESSAGE;
+}
+
+async function deleteVerificationCodesForAccount(
+  ctx: MutationCtx,
+  accountId: Id<"authAccounts">,
+) {
+  const codes = await ctx.db
+    .query("authVerificationCodes")
+    .withIndex("accountId", (q) => q.eq("accountId", accountId))
+    .collect();
+  for (const code of codes) await ctx.db.delete(code._id);
+}
 
 export const viewer = query({
   args: {},
@@ -25,6 +164,55 @@ export const checkEmail = query({
       .withIndex("email", (q) => q.eq("email", args.email))
       .first();
     return { exists: !!user };
+  },
+});
+
+export const checkEmailAvailability = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    await assertCustomerUser(ctx, userId);
+
+    let normalized = "";
+    try {
+      normalized = normalizeEmailForChange(args.email);
+    } catch {
+      return {
+        available: false,
+        normalized,
+        reason: "invalid" as const,
+      };
+    }
+
+    const availability = await emailAvailabilityForTarget(
+      ctx,
+      normalized,
+      userId,
+    );
+    return { ...availability, normalized };
+  },
+});
+
+export const getMyPendingEmailChange = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const request = await latestActiveEmailChangeRequest(ctx, userId);
+    if (!request) return null;
+
+    const requestedBy = await ctx.db.get(request.requestedByUserId);
+    return {
+      requestId: request._id,
+      oldEmail: request.oldEmail,
+      newEmail: request.newEmail,
+      requestedAt: request.requestedAt,
+      expiresAt: request.expiresAt,
+      requestedByUserId: request.requestedByUserId,
+      requestedByName: requestedBy?.name,
+      requestedByEmail: requestedBy?.email,
+    };
   },
 });
 
@@ -113,6 +301,229 @@ export const updateProfile = mutation({
       }
     }
     await ctx.db.patch(userId, patch);
+  },
+});
+
+export const requestEmailChange = action({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const code = generateEmailChangeCode();
+    const request = await ctx.runMutation(
+      internal.users.createEmailChangeRequestInternal,
+      {
+        targetUserId: userId,
+        requestedByUserId: userId,
+        newEmail: args.email,
+        code,
+      },
+    );
+    const result = await sendEmailChangeVerificationEmail({
+      to: request.newEmail,
+      code,
+    });
+
+    if (!result.ok) {
+      await ctx.runMutation(internal.users.cancelEmailChangeRequestInternal, {
+        requestId: request.requestId,
+        cancelledByUserId: userId,
+      });
+      throw new Error(`Failed to send verification email: ${result.error}`);
+    }
+
+    return request;
+  },
+});
+
+export const confirmEmailChange = mutation({
+  args: {
+    requestId: v.id("userEmailChangeRequests"),
+    code: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.targetUserId !== userId) {
+      throw new Error("Email change request not found");
+    }
+    if (request.status !== "pending") {
+      throw new Error("Email change request is no longer pending");
+    }
+
+    const now = dayjs().valueOf();
+    if (request.expiresAt < now) {
+      await ctx.db.patch(request._id, { status: "expired" });
+      throw new Error("This code has expired. Request a new one.");
+    }
+
+    const codeHash = await sha256Hex(args.code.trim());
+    if (codeHash !== request.codeHash) {
+      throw new Error("That code didn't work. Please double-check and try again.");
+    }
+
+    const normalized = normalizeEmailForChange(request.newEmail);
+    const availability = await emailAvailabilityForTarget(
+      ctx,
+      normalized,
+      userId,
+    );
+    if (!availability.available) {
+      throw new Error(emailAvailabilityError(availability.reason));
+    }
+
+    const providerAccounts = await ctx.db
+      .query("authAccounts")
+      .withIndex("userIdAndProvider", (q) =>
+        q.eq("userId", userId).eq("provider", EMAIL_CHANGE_PROVIDER),
+      )
+      .collect();
+    const existingNewAccount = await ctx.db
+      .query("authAccounts")
+      .withIndex("providerAndAccountId", (q) =>
+        q
+          .eq("provider", EMAIL_CHANGE_PROVIDER)
+          .eq("providerAccountId", normalized),
+      )
+      .first();
+    if (existingNewAccount && existingNewAccount.userId !== userId) {
+      throw new Error(EMAIL_IN_USE_MESSAGE);
+    }
+
+    const accountToKeep =
+      existingNewAccount ??
+      providerAccounts.find(
+        (account) => account.providerAccountId === request.oldEmail,
+      ) ??
+      providerAccounts[0];
+
+    if (accountToKeep) {
+      await deleteVerificationCodesForAccount(ctx, accountToKeep._id);
+      await ctx.db.patch(accountToKeep._id, {
+        providerAccountId: normalized,
+        emailVerified: normalized,
+      });
+    } else {
+      await ctx.db.insert("authAccounts", {
+        userId,
+        provider: EMAIL_CHANGE_PROVIDER,
+        providerAccountId: normalized,
+        emailVerified: normalized,
+      });
+    }
+
+    for (const account of providerAccounts) {
+      if (account._id === accountToKeep?._id) continue;
+      await deleteVerificationCodesForAccount(ctx, account._id);
+      await ctx.db.delete(account._id);
+    }
+
+    await ctx.db.patch(userId, {
+      email: normalized,
+      emailVerificationTime: now,
+    });
+    await ctx.db.patch(request._id, {
+      status: "confirmed",
+      confirmedAt: now,
+      confirmedByUserId: userId,
+    });
+
+    return { email: normalized };
+  },
+});
+
+export const cancelEmailChange = mutation({
+  args: { requestId: v.id("userEmailChangeRequests") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.targetUserId !== userId) {
+      throw new Error("Email change request not found");
+    }
+    if (request.status !== "pending") return { requestId: request._id };
+
+    await ctx.db.patch(request._id, {
+      status: "cancelled",
+      cancelledAt: dayjs().valueOf(),
+      cancelledByUserId: userId,
+    });
+    return { requestId: request._id };
+  },
+});
+
+export const createEmailChangeRequestInternal = internalMutation({
+  args: {
+    targetUserId: v.id("users"),
+    requestedByUserId: v.id("users"),
+    newEmail: v.string(),
+    code: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const target = await assertCustomerUser(ctx, args.targetUserId);
+    await assertCustomerUser(ctx, args.requestedByUserId);
+    const normalized = normalizeEmailForChange(args.newEmail);
+    const availability = await emailAvailabilityForTarget(
+      ctx,
+      normalized,
+      args.targetUserId,
+    );
+    if (!availability.available) {
+      throw new Error(emailAvailabilityError(availability.reason));
+    }
+
+    const now = dayjs().valueOf();
+    const existing = await ctx.db
+      .query("userEmailChangeRequests")
+      .withIndex("by_target_status", (q) =>
+        q.eq("targetUserId", args.targetUserId).eq("status", "pending"),
+      )
+      .collect();
+    for (const request of existing) {
+      await ctx.db.patch(request._id, {
+        status: "cancelled",
+        cancelledAt: now,
+        cancelledByUserId: args.requestedByUserId,
+      });
+    }
+
+    const requestId = await ctx.db.insert("userEmailChangeRequests", {
+      targetUserId: args.targetUserId,
+      requestedByUserId: args.requestedByUserId,
+      oldEmail: target.email,
+      newEmail: normalized,
+      codeHash: await sha256Hex(args.code),
+      status: "pending",
+      requestedAt: now,
+      expiresAt: now + EMAIL_CHANGE_TTL_MS,
+    });
+
+    return {
+      requestId,
+      newEmail: normalized,
+      requestedAt: now,
+      expiresAt: now + EMAIL_CHANGE_TTL_MS,
+    };
+  },
+});
+
+export const cancelEmailChangeRequestInternal = internalMutation({
+  args: {
+    requestId: v.id("userEmailChangeRequests"),
+    cancelledByUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.status !== "pending") return null;
+    await ctx.db.patch(request._id, {
+      status: "cancelled",
+      cancelledAt: dayjs().valueOf(),
+      cancelledByUserId: args.cancelledByUserId,
+    });
+    return { requestId: request._id };
   },
 });
 

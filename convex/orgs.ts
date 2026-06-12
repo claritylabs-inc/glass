@@ -13,6 +13,10 @@ import { normalizeOptionalEmail, resolveBrokerIdentityForClient } from "./lib/br
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthSiteUrl } from "./lib/domains";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
+import {
+  generateEmailChangeCode,
+  sendEmailChangeVerificationEmail,
+} from "./lib/emailChange";
 import { normalizeAvailableUserPhone } from "./lib/userPhone";
 import {
   assertCustomerUser,
@@ -88,7 +92,10 @@ async function createMemberInvitation(
   return { invitationId, reusedExisting: false };
 }
 
-async function requireOrgAdminForUser(ctx: MutationCtx, userId: Id<"users">) {
+async function requireOrgAdminForUser(
+  ctx: QueryCtx | MutationCtx,
+  userId: Id<"users">,
+) {
   const membership = await ctx.db
     .query("orgMemberships")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -226,6 +233,7 @@ export const listMembers = query({
   args: {},
   handler: async (ctx) => {
     const { orgId } = await requireOrgAccess(ctx);
+    const now = dayjs().valueOf();
 
     const memberships = await ctx.db
       .query("orgMemberships")
@@ -235,6 +243,16 @@ export const listMembers = query({
     const members = await Promise.all(
       memberships.map(async (m) => {
         const user = await ctx.db.get(m.userId);
+        const pendingEmailChanges = await ctx.db
+          .query("userEmailChangeRequests")
+          .withIndex("by_target_status", (q) =>
+            q.eq("targetUserId", m.userId).eq("status", "pending"),
+          )
+          .collect();
+        const pendingEmailChange =
+          pendingEmailChanges
+            .filter((request) => request.expiresAt > now)
+            .sort((a, b) => b.requestedAt - a.requestedAt)[0] ?? null;
         return {
           membershipId: m._id,
           userId: m.userId,
@@ -243,6 +261,15 @@ export const listMembers = query({
           email: user?.email,
           phone: user?.phone,
           title: user?.title,
+          pendingEmailChange: pendingEmailChange
+            ? {
+                requestId: pendingEmailChange._id,
+                newEmail: pendingEmailChange.newEmail,
+                requestedAt: pendingEmailChange.requestedAt,
+                expiresAt: pendingEmailChange.expiresAt,
+                requestedByUserId: pendingEmailChange.requestedByUserId,
+              }
+            : undefined,
         };
       }),
     );
@@ -1002,6 +1029,49 @@ export const sendMemberInvitation = action({
   },
 });
 
+export const requestMemberEmailChange = action({
+  args: {
+    membershipId: v.id("orgMemberships"),
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const target = await ctx.runQuery(
+      internal.orgs.getMemberEmailChangeTargetInternal,
+      {
+        membershipId: args.membershipId,
+        requestedByUserId: userId,
+      },
+    );
+    const code = generateEmailChangeCode();
+    const request = await ctx.runMutation(
+      internal.users.createEmailChangeRequestInternal,
+      {
+        targetUserId: target.targetUserId,
+        requestedByUserId: userId,
+        newEmail: args.email,
+        code,
+      },
+    );
+    const result = await sendEmailChangeVerificationEmail({
+      to: request.newEmail,
+      code,
+    });
+
+    if (!result.ok) {
+      await ctx.runMutation(internal.users.cancelEmailChangeRequestInternal, {
+        requestId: request.requestId,
+        cancelledByUserId: userId,
+      });
+      throw new Error(`Failed to send verification email: ${result.error}`);
+    }
+
+    return request;
+  },
+});
+
 export const createMemberInvitationInternal = internalMutation({
   args: {
     email: v.string(),
@@ -1010,6 +1080,25 @@ export const createMemberInvitationInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     return await createMemberInvitation(ctx, args);
+  },
+});
+
+export const getMemberEmailChangeTargetInternal = internalQuery({
+  args: {
+    membershipId: v.id("orgMemberships"),
+    requestedByUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireOrgAdminForUser(
+      ctx,
+      args.requestedByUserId,
+    );
+    const membership = await ctx.db.get(args.membershipId);
+    if (!membership || membership.orgId !== orgId) {
+      throw new Error("Membership not found");
+    }
+    await assertCustomerUser(ctx, membership.userId);
+    return { targetUserId: membership.userId };
   },
 });
 
@@ -1161,6 +1250,36 @@ export const updateMemberProfile = mutation({
       patch.phone = await normalizeAvailableUserPhone(ctx, args.phone, membership.userId);
     }
     await ctx.db.patch(membership.userId, patch);
+  },
+});
+
+export const cancelMemberEmailChange = mutation({
+  args: {
+    membershipId: v.id("orgMemberships"),
+    requestId: v.id("userEmailChangeRequests"),
+  },
+  handler: async (ctx, args) => {
+    const { orgId, userId } = await requireOrgAdmin(ctx);
+    const membership = await ctx.db.get(args.membershipId);
+    if (!membership || membership.orgId !== orgId) {
+      throw new Error("Membership not found");
+    }
+
+    const request = await ctx.db.get(args.requestId);
+    if (
+      !request ||
+      request.targetUserId !== membership.userId ||
+      request.status !== "pending"
+    ) {
+      throw new Error("Email change request not found");
+    }
+
+    await ctx.db.patch(request._id, {
+      status: "cancelled",
+      cancelledAt: dayjs().valueOf(),
+      cancelledByUserId: userId,
+    });
+    return { requestId: request._id };
   },
 });
 

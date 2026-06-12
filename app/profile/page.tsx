@@ -9,15 +9,18 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Monitor, Moon, Sun } from "lucide-react";
+import { Loader2, Mail, Monitor, Moon, Sun } from "lucide-react";
 import {
   OperationalPanel,
   OperationalPanelBody,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
+import { PillButton } from "@/components/ui/pill-button";
+import { SelfEmailChangeDrawer } from "@/components/settings/change-email-drawer";
 import { useTheme } from "@/hooks/use-theme";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { useViewerCacheActions } from "@/lib/sync/glass-cached-queries";
 import {
   cachedQueryArgsKey,
   cachedQueryCollectionFor,
@@ -45,11 +48,13 @@ export default function ProfilePage() {
   const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
   const updateProfile = useMutation(api.users.updateProfile);
   const { theme, setTheme } = useTheme();
+  const { patchViewer } = useViewerCacheActions();
 
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [phone, setPhone] = useState("");
   const [debouncedPhone, setDebouncedPhone] = useState("");
+  const [emailDrawerOpen, setEmailDrawerOpen] = useState(false);
   const [persistedValues, setPersistedValues] = useState<ProfileValues | null>(
     null,
   );
@@ -188,9 +193,32 @@ export default function ProfilePage() {
       ) : null}
     </span>
   );
+  const headerActions = (
+    <>
+      <PillButton
+        size="compact"
+        variant="secondary"
+        onClick={() => setEmailDrawerOpen(true)}
+      >
+        <Mail className="h-3.5 w-3.5" />
+        Change Email
+      </PillButton>
+      {saveStatus}
+    </>
+  );
 
   return (
-    <AppShell actions={saveStatus}>
+    <AppShell
+      actions={headerActions}
+      rightPanel={
+        <SelfEmailChangeDrawer
+          open={emailDrawerOpen}
+          onOpenChange={setEmailDrawerOpen}
+          currentEmail={viewer?.email}
+          onConfirmed={(email) => patchViewer({ email })}
+        />
+      }
+    >
       <FadeIn when={true} staggerIndex={1} duration={0.6}>
         <form onSubmit={handleSubmit}>
           <OperationalPanel className="mb-4">

@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import {
   Loader2,
+  Mail,
   UserPlus,
   ShieldCheck,
 } from "lucide-react";
@@ -34,6 +35,13 @@ type TeamMember = {
   email?: string;
   phone?: string;
   title?: string;
+  pendingEmailChange?: {
+    requestId: Id<"userEmailChangeRequests">;
+    newEmail: string;
+    requestedAt: number;
+    expiresAt: number;
+    requestedByUserId: Id<"users">;
+  };
 };
 type TeamInvitation = {
   _id: Id<"orgInvitations">;
@@ -75,6 +83,8 @@ export function TeamSection() {
   const removeMember = useMutation(api.orgs.removeMember);
   const updateMemberRole = useMutation(api.orgs.updateMemberRole);
   const updateMemberProfile = useMutation(api.orgs.updateMemberProfile);
+  const requestMemberEmailChange = useAction(api.orgs.requestMemberEmailChange);
+  const cancelMemberEmailChange = useMutation(api.orgs.cancelMemberEmailChange);
   const setPrimaryContact = useMutation(api.orgs.setPrimaryInsuranceContact);
   const cancelInvitation = useMutation(api.orgs.cancelInvitation);
 
@@ -85,7 +95,11 @@ export function TeamSection() {
   const [editName, setEditName] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [emailChangeError, setEmailChangeError] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [requestingEmailChange, setRequestingEmailChange] = useState(false);
+  const [cancellingEmailChange, setCancellingEmailChange] = useState(false);
 
   const { setActions, setRightPanel } = useSettingsActions();
 
@@ -176,6 +190,135 @@ export function TeamSection() {
                 placeholder="(555) 123-4567"
               />
             </label>
+            <div className="space-y-3 border-t border-foreground/6 pt-4">
+              <div>
+                <p className="text-label font-medium text-muted-foreground">Account email</p>
+                <p className="truncate text-base text-foreground">
+                  {editingMember.email ?? "No email"}
+                </p>
+              </div>
+              {editingMember.pendingEmailChange ? (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2">
+                    <p className="text-label text-muted-foreground">Pending email</p>
+                    <p className="truncate text-base font-medium text-foreground">
+                      {editingMember.pendingEmailChange.newEmail}
+                    </p>
+                  </div>
+                  <PillButton
+                    variant="secondary"
+                    disabled={cancellingEmailChange}
+                    onClick={async () => {
+                      if (!editingMember.pendingEmailChange) return;
+                      setCancellingEmailChange(true);
+                      setEmailChangeError("");
+                      try {
+                        await cancelMemberEmailChange({
+                          membershipId: editingMember.membershipId,
+                          requestId: editingMember.pendingEmailChange.requestId,
+                        });
+                        await updateCachedMembers({}, (current) =>
+                          current.map((member) =>
+                            member.membershipId === editingMember.membershipId
+                              ? { ...member, pendingEmailChange: undefined }
+                              : member,
+                          ),
+                        );
+                        setEditingMember({
+                          ...editingMember,
+                          pendingEmailChange: undefined,
+                        });
+                        toast.success("Email change cancelled");
+                      } catch (error) {
+                        const message =
+                          error instanceof Error
+                            ? error.message
+                            : "Failed to cancel email change";
+                        setEmailChangeError(message);
+                        toast.error(message);
+                      } finally {
+                        setCancellingEmailChange(false);
+                      }
+                    }}
+                  >
+                    {cancellingEmailChange ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    Cancel email change
+                  </PillButton>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="block space-y-1.5">
+                    <span className="text-label font-medium text-muted-foreground">New email</span>
+                    <input
+                      type="email"
+                      value={editEmail}
+                      onChange={(event) => {
+                        setEditEmail(event.target.value);
+                        setEmailChangeError("");
+                      }}
+                      className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                      placeholder="name@example.com"
+                    />
+                  </label>
+                  <PillButton
+                    variant="secondary"
+                    disabled={requestingEmailChange || !editEmail.trim()}
+                    onClick={async () => {
+                      if (!editEmail.trim() || !viewer?._id) return;
+                      setRequestingEmailChange(true);
+                      setEmailChangeError("");
+                      try {
+                        const result = await requestMemberEmailChange({
+                          membershipId: editingMember.membershipId,
+                          email: editEmail.trim(),
+                        });
+                        const pendingEmailChange = {
+                          requestId: result.requestId,
+                          newEmail: result.newEmail,
+                          requestedAt: result.requestedAt,
+                          expiresAt: result.expiresAt,
+                          requestedByUserId: viewer._id,
+                        };
+                        await updateCachedMembers({}, (current) =>
+                          current.map((member) =>
+                            member.membershipId === editingMember.membershipId
+                              ? { ...member, pendingEmailChange }
+                              : member,
+                          ),
+                        );
+                        setEditingMember({
+                          ...editingMember,
+                          pendingEmailChange,
+                        });
+                        setEditEmail("");
+                        toast.success(`Verification code sent to ${result.newEmail}`);
+                      } catch (error) {
+                        const message =
+                          error instanceof Error
+                            ? error.message
+                            : "Failed to request email change";
+                        setEmailChangeError(message);
+                        toast.error(message);
+                      } finally {
+                        setRequestingEmailChange(false);
+                      }
+                    }}
+                  >
+                    {requestingEmailChange ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mail className="h-4 w-4" />
+                    )}
+                    Send verification
+                  </PillButton>
+                </div>
+              )}
+              {emailChangeError ? (
+                <p className="text-label text-red-500/80">{emailChangeError}</p>
+              ) : null}
+            </div>
           </div>
         </SettingsDrawer>,
       );
@@ -185,14 +328,21 @@ export function TeamSection() {
     return () => setRightPanel(null);
   }, [
     editName,
+    editEmail,
+    emailChangeError,
     editPhone,
     editTitle,
     editingMember,
     inviteOpen,
+    cancellingEmailChange,
+    requestingEmailChange,
     savingProfile,
+    cancelMemberEmailChange,
+    requestMemberEmailChange,
     setRightPanel,
     updateCachedMembers,
     updateMemberProfile,
+    viewer,
   ]);
 
   if (viewer === undefined || orgData === undefined || members === undefined) {
@@ -256,6 +406,8 @@ export function TeamSection() {
                         setEditName(member.name ?? "");
                         setEditTitle(member.title ?? "");
                         setEditPhone(member.phone ?? "");
+                        setEditEmail("");
+                        setEmailChangeError("");
                       }}
                     >
                       Edit
