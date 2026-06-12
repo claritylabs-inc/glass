@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useAction } from "convex/react";
 import dayjs from "dayjs";
@@ -25,10 +25,11 @@ import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useClientDetailActions } from "../layout";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
-  useCachedQuery,
-  useUpsertCachedQuery,
-} from "@/lib/sync/use-cached-query";
+  showPolicyExtractionQueuedToast,
+  showPolicyExtractionReadyToast,
+} from "@/components/shared/extraction-banner";
 
 type DocType = "policy" | "quote";
 
@@ -40,7 +41,11 @@ type BrokerPolicyRow = {
   fileName?: string | null;
   effectiveDate?: string | null;
   expirationDate?: string | null;
+  documentType?: string | null;
   pipelineStatus?: string | null;
+  pipelineError?: string | null;
+  extractionDataStage?: string | null;
+  extractionPreviewError?: string | null;
   uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email" | null;
   premium?: string | null;
 };
@@ -60,8 +65,14 @@ function formatDate(value?: string | null) {
   return parsed.isValid() ? parsed.format("MMM D, YYYY") : cleaned;
 }
 
-function displayStatus(status?: string | null) {
-  if (!status) return "Processing";
+function displayStatus(
+  status?: string | null,
+  extractionDataStage?: string | null,
+) {
+  if (extractionDataStage === "preview" && status !== "complete") {
+    return "enriching";
+  }
+  if (!status || status === "running") return "extracting";
   return status.replace(/_/g, " ");
 }
 
@@ -79,6 +90,9 @@ export default function ClientPoliciesPage() {
   const [docType, setDocType] = useState<DocType>("policy");
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const pendingExtractionToastsRef = useRef<
+    Record<string, { documentType: DocType; fileName?: string | null }>
+  >({});
   const { setActions, setRightPanel } = useClientDetailActions();
 
   const label = docType === "quote" ? "quote" : "policy";
@@ -120,10 +134,6 @@ export default function ClientPoliciesPage() {
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
-  const upsertBrokerPolicies = useUpsertCachedQuery<
-    BrokerPolicyRow[],
-    { clientOrgId: Id<"organizations">; documentType: DocType }
-  >("policies.listForBroker");
 
   const uploadStorage = useCallback(
     async (file: File): Promise<string> => {
@@ -138,6 +148,35 @@ export default function ClientPoliciesPage() {
       return storageId;
     },
     [generateUploadUrl],
+  );
+
+  const resolvePendingExtractionToasts = useCallback(
+    (rows: BrokerPolicyRow[] | undefined) => {
+      if (!rows) return;
+      const pending = pendingExtractionToastsRef.current;
+      if (Object.keys(pending).length === 0) return;
+      const rowsById = new Map(rows.map((policy) => [policy._id, policy]));
+      const readyIds = Object.keys(pending).filter((policyId) =>
+        rowsById.has(policyId as Id<"policies">),
+      );
+      if (readyIds.length === 0) return;
+
+      for (const policyId of readyIds) {
+        const policy = rowsById.get(policyId as Id<"policies">);
+        if (!policy) continue;
+        const pendingPolicy = pending[policyId];
+        showPolicyExtractionReadyToast(
+          {
+            ...policy,
+            documentType: policy.documentType ?? pendingPolicy.documentType,
+            fileName: policy.fileName ?? pendingPolicy.fileName,
+          },
+          () => router.push(`/clients/${clientOrgId}/policies/${policyId}`),
+        );
+        delete pending[policyId];
+      }
+    },
+    [clientOrgId, router],
   );
 
   const handleUpload = useCallback(
@@ -159,19 +198,17 @@ export default function ClientPoliciesPage() {
               fileName: files[i].name,
               documentType: docType,
             })) as Id<"policies">;
-            await upsertBrokerPolicies(
-              { clientOrgId: clientOrgId as Id<"organizations">, documentType: docType },
-              (current) => [
-                {
-                  _id: policyId,
-                  fileName: files[i].name,
-                  carrier: "Extracting...",
-                  policyNumber: "Extracting...",
-                  pipelineStatus: "processing",
-                  uploadedBySide: "broker",
-                },
-                ...(current ?? []).filter((policy) => policy._id !== policyId),
-              ],
+            showPolicyExtractionQueuedToast({
+              policyId,
+              documentType: docType,
+              fileName: files[i].name,
+            });
+            pendingExtractionToastsRef.current[policyId] = {
+              documentType: docType,
+              fileName: files[i].name,
+            };
+            resolvePendingExtractionToasts(
+              policies as BrokerPolicyRow[] | undefined,
             );
 
             const result = await extractFromUpload({
@@ -195,22 +232,21 @@ export default function ClientPoliciesPage() {
             fileName: files[0].name,
             documentType: docType,
           })) as Id<"policies">;
-          await upsertBrokerPolicies(
-            { clientOrgId: clientOrgId as Id<"organizations">, documentType: docType },
-            (current) => [
-              {
-                _id: policyId,
-                fileName:
-                  files.length > 1
-                    ? `${files[0].name.replace(/\.pdf$/i, "")} + ${files.length - 1} more.pdf`
-                    : files[0].name,
-                carrier: "Extracting...",
-                policyNumber: "Extracting...",
-                pipelineStatus: "processing",
-                uploadedBySide: "broker",
-              },
-              ...(current ?? []).filter((policy) => policy._id !== policyId),
-            ],
+          const displayFileName =
+            files.length > 1
+              ? `${files[0].name.replace(/\.pdf$/i, "")} + ${files.length - 1} more.pdf`
+              : files[0].name;
+          showPolicyExtractionQueuedToast({
+            policyId,
+            documentType: docType,
+            fileName: displayFileName,
+          });
+          pendingExtractionToastsRef.current[policyId] = {
+            documentType: docType,
+            fileName: displayFileName,
+          };
+          resolvePendingExtractionToasts(
+            policies as BrokerPolicyRow[] | undefined,
           );
 
           if (files.length > 1) toast.info(`Merging ${files.length} files…`);
@@ -232,12 +268,6 @@ export default function ClientPoliciesPage() {
             throw new Error(result.error);
           }
         }
-
-        toast.success(
-          uploadMode === "separate" && files.length > 1
-            ? `${files.length} ${docType === "quote" ? "quotes" : "policies"} started — the client will see them shortly.`
-            : "Upload started — the client will see it shortly.",
-        );
       } catch (err) {
         toast.error("Upload failed. Please try again.");
         console.error(err);
@@ -251,7 +281,8 @@ export default function ClientPoliciesPage() {
       uploadStorage,
       createBrokerUpload,
       extractFromUpload,
-      upsertBrokerPolicies,
+      policies,
+      resolvePendingExtractionToasts,
     ],
   );
 
@@ -270,6 +301,10 @@ export default function ClientPoliciesPage() {
 
   const isLoading = policies === undefined;
   const rows = (policies ?? []) as BrokerPolicyRow[];
+
+  useEffect(() => {
+    resolvePendingExtractionToasts(policies as BrokerPolicyRow[] | undefined);
+  }, [policies, resolvePendingExtractionToasts]);
 
   return (
     <div className="space-y-4">
@@ -366,7 +401,10 @@ export default function ClientPoliciesPage() {
                         variant="secondary"
                         className="font-normal text-muted-foreground"
                       >
-                        {displayStatus(policy.pipelineStatus)}
+                        {displayStatus(
+                          policy.pipelineStatus,
+                          policy.extractionDataStage,
+                        )}
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-60 px-4 truncate text-muted-foreground">

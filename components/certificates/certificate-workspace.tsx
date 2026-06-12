@@ -19,6 +19,7 @@ import { PillButton } from "@/components/ui/pill-button";
 export type CertificateHolderRecord = {
   _id: Id<"certificateHolders">;
   displayName: string;
+  contactName?: string;
   email?: string;
   phone?: string;
   address?: {
@@ -247,11 +248,12 @@ export function CertificateRow({
   onSelect: () => void;
 }) {
   const badge = certificateBadge(row);
-  const holderContact =
-    row.holder?.email ??
-    row.holder?.phone ??
-    certificateHolderAddress(row.holder) ??
-    "No holder contact recorded";
+  const holderContact = [
+    row.holder?.contactName ? `Attn: ${row.holder.contactName}` : undefined,
+    row.holder?.email,
+    row.holder?.phone,
+    certificateHolderAddress(row.holder),
+  ].filter(Boolean).join("\n") || "No holder contact recorded";
   return (
     <OperationalItem
       aria-label={`Open certificate details for ${row.holder?.displayName ?? "certificate holder"}`}
@@ -400,6 +402,7 @@ export function CertificateDetailPanel({
             title="Holder"
             rows={[
               { label: "Name", value: row.holder?.displayName },
+              { label: "Contact", value: row.holder?.contactName },
               { label: "Email", value: row.holder?.email },
               { label: "Phone", value: row.holder?.phone },
               {

@@ -223,10 +223,7 @@ function maxMatchingCoverageAmount(
   return maxAmount;
 }
 
-function bestMatchingCoverage(
-  policy: Doc<"policies">,
-  terms: string[],
-) {
+function bestMatchingCoverage(policy: Doc<"policies">, terms: string[]) {
   let best:
     | {
         name?: string;
@@ -287,9 +284,7 @@ const INSURED_NAME_STOPWORDS = new Set([
 function significantNameTokens(value: string | undefined | null) {
   return normalizeText(value)
     .split(/\s+/)
-    .filter(
-      (token) => token.length >= 3 && !INSURED_NAME_STOPWORDS.has(token),
-    );
+    .filter((token) => token.length >= 3 && !INSURED_NAME_STOPWORDS.has(token));
 }
 
 function insuredNameMatches(
@@ -315,6 +310,40 @@ function orgLegalNames(org: Doc<"organizations"> | null | undefined) {
     org?.name,
     ...(org?.relatedLegalEntities ?? []).map((entity) => entity.legalName),
   ].filter((name): name is string => Boolean(name?.trim()));
+}
+
+function policyDataStage(policy: Doc<"policies">) {
+  if (
+    policy.extractionDataStage === "placeholder" ||
+    policy.extractionDataStage === "preview" ||
+    policy.extractionDataStage === "final"
+  ) {
+    return policy.extractionDataStage;
+  }
+  return policy.pipelineStatus === "complete" ? "final" : "placeholder";
+}
+
+function policyReadableForCompliance(
+  policy: Doc<"policies">,
+  includePreviewPolicies: boolean,
+) {
+  if (policy.deletedAt || policy.dismissed || policy.documentType === "quote") {
+    return false;
+  }
+  const dataStage = policyDataStage(policy);
+  if (policy.pipelineStatus === "complete" && dataStage === "final")
+    return true;
+  return (
+    includePreviewPolicies &&
+    dataStage === "preview" &&
+    policy.pipelineStatus !== "complete"
+  );
+}
+
+function compliancePolicyNote(policy: Doc<"policies">) {
+  return policyDataStage(policy) === "preview"
+    ? " This match is based on extraction and will be rechecked after enrichment."
+    : "";
 }
 
 function insuredNameMatchesAny(
@@ -350,6 +379,8 @@ function matchedPolicySummary(
     insuredName: candidate.policy.insuredName,
     expectedInsuredName,
     expirationDate: candidate.policy.expirationDate,
+    dataStage: policyDataStage(candidate.policy),
+    provisional: policyDataStage(candidate.policy) === "preview",
     coverageName: candidate.coverage?.name,
     coverageLimit: candidate.coverage?.limit,
     detectedLimitAmount: candidate.limitAmount,
@@ -362,7 +393,9 @@ function assessRequirement(
   now = dayjs().valueOf(),
   expectedInsuredName?: string,
   expectedInsuredNames?: string[],
+  options?: { includePreviewPolicies?: boolean },
 ) {
+  const includePreviewPolicies = options?.includePreviewPolicies !== false;
   const insuredNames = expectedInsuredNames?.length
     ? expectedInsuredNames
     : expectedInsuredName
@@ -374,11 +407,8 @@ function assessRequirement(
     requirement.requirementText,
   );
   const candidates = policies
-    .filter(
-      (policy) =>
-        !policy.deletedAt &&
-        !policy.dismissed &&
-        policy.documentType !== "quote",
+    .filter((policy) =>
+      policyReadableForCompliance(policy, includePreviewPolicies),
     )
     .map((policy) => ({
       policy,
@@ -393,9 +423,11 @@ function assessRequirement(
       }
       return (
         terms.some((term) => text.includes(normalizeText(term))) ||
-        policy.policyTypes.some((policyType) => normalizeText(policyType).includes(
-          requirement.category.replace("_", " "),
-        ))
+        policy.policyTypes.some((policyType) =>
+          normalizeText(policyType).includes(
+            requirement.category.replace("_", " "),
+          ),
+        )
       );
     })
     .sort(
@@ -437,7 +469,7 @@ function assessRequirement(
       daysUntilExpiration: Number.isFinite(best.expiration)
         ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
         : undefined,
-      notes: `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the required $${requiredLimitAmount.toLocaleString()} limit from structured coverage data.`,
+      notes: `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the required $${requiredLimitAmount.toLocaleString()} limit from structured coverage data.${compliancePolicyNote(best.policy)}`,
     };
   }
   if (
@@ -457,13 +489,10 @@ function assessRequirement(
       daysUntilExpiration: Number.isFinite(best.expiration)
         ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
         : undefined,
-      notes: `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the detected limit $${best.limitAmount.toLocaleString()} is below the required $${requiredLimitAmount.toLocaleString()}.`,
+      notes: `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the detected limit $${best.limitAmount.toLocaleString()} is below the required $${requiredLimitAmount.toLocaleString()}.${compliancePolicyNote(best.policy)}`,
     };
   }
-  if (
-    active &&
-    !insuredNameMatchesAny(best.policy.insuredName, insuredNames)
-  ) {
+  if (active && !insuredNameMatchesAny(best.policy.insuredName, insuredNames)) {
     return {
       requirementId: requirement._id,
       status: "missing" as const,
@@ -476,8 +505,8 @@ function assessRequirement(
         ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
         : undefined,
       notes: best.policy.insuredName
-        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the insured name is ${best.policy.insuredName}; expected one of ${insuredNames.join(", ")}.`
-        : `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the named insured as one of ${insuredNames.join(", ")}.`,
+        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the insured name is ${best.policy.insuredName}; expected one of ${insuredNames.join(", ")}.${compliancePolicyNote(best.policy)}`
+        : `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the named insured as one of ${insuredNames.join(", ")}.${compliancePolicyNote(best.policy)}`,
     };
   }
   const daysUntilExpiration = Number.isFinite(best.expiration)
@@ -500,10 +529,10 @@ function assessRequirement(
     daysUntilExpiration,
     notes:
       status === "met"
-        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}.`
+        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}.${compliancePolicyNote(best.policy)}`
         : status === "expiring_soon"
-          ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but it expires in ${daysUntilExpiration} days.`
-          : `Latest matching policy ${best.policy.carrier} ${best.policy.policyNumber} appears expired.`,
+          ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but it expires in ${daysUntilExpiration} days.${compliancePolicyNote(best.policy)}`
+          : `Latest matching policy ${best.policy.carrier} ${best.policy.policyNumber} appears expired.${compliancePolicyNote(best.policy)}`,
   };
 }
 
@@ -531,6 +560,7 @@ function assessRequirementWithManualReview(
   now = dayjs().valueOf(),
   expectedInsuredName?: string,
   expectedInsuredNames?: string[],
+  options?: { includePreviewPolicies?: boolean },
 ) {
   return (
     manualReviewForRequirement(requirement) ??
@@ -540,6 +570,7 @@ function assessRequirementWithManualReview(
       now,
       expectedInsuredName,
       expectedInsuredNames,
+      options,
     )
   );
 }
@@ -870,11 +901,8 @@ export const listVendorCompliance = query({
         .query("policies")
         .withIndex("by_orgId", (q) => q.eq("orgId", rel.vendorOrgId))
         .collect();
-      const policyCount = policies.filter(
-        (policy) =>
-          !policy.deletedAt &&
-          !policy.dismissed &&
-          policy.documentType !== "quote",
+      const policyCount = policies.filter((policy) =>
+        policyReadableForCompliance(policy, true),
       ).length;
       const checks = requirements.map((requirement) => ({
         requirement,
@@ -1024,7 +1052,9 @@ export const getManualComplianceReviewContextInternal = internalQuery({
       requirement.appliesTo !== "own_org" &&
       requirement.appliesTo !== "both"
     ) {
-      throw new Error("This requirement is not checked against your organization");
+      throw new Error(
+        "This requirement is not checked against your organization",
+      );
     }
 
     const [org, policies] = await Promise.all([
@@ -1034,11 +1064,8 @@ export const getManualComplianceReviewContextInternal = internalQuery({
         .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
         .collect(),
     ]);
-    const activePolicies = policies.filter(
-      (policy) =>
-        !policy.deletedAt &&
-        !policy.dismissed &&
-        policy.documentType !== "quote",
+    const activePolicies = policies.filter((policy) =>
+      policyReadableForCompliance(policy, true),
     );
 
     return {
@@ -1417,8 +1444,12 @@ export const createRequirementsInternal = internalMutation({
 });
 
 export const listVendorComplianceInternal = internalQuery({
-  args: { clientOrgId: v.id("organizations") },
+  args: {
+    clientOrgId: v.id("organizations"),
+    includePreviewPolicies: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
+    const includePreviewPolicies = args.includePreviewPolicies !== false;
     const requirements = vendorScopedRequirements(
       await listRequirementsForOrg(ctx, args.clientOrgId),
     );
@@ -1435,11 +1466,8 @@ export const listVendorComplianceInternal = internalQuery({
         .query("policies")
         .withIndex("by_orgId", (q) => q.eq("orgId", rel.vendorOrgId))
         .collect();
-      const policyCount = policies.filter(
-        (policy) =>
-          !policy.deletedAt &&
-          !policy.dismissed &&
-          policy.documentType !== "quote",
+      const policyCount = policies.filter((policy) =>
+        policyReadableForCompliance(policy, includePreviewPolicies),
       ).length;
       const checks = requirements.map((requirement) => ({
         requirement,
@@ -1449,6 +1477,7 @@ export const listVendorComplianceInternal = internalQuery({
           dayjs().valueOf(),
           vendorOrg?.name,
           orgLegalNames(vendorOrg),
+          { includePreviewPolicies },
         ),
       }));
       const missing = checks.filter(
@@ -1532,7 +1561,9 @@ export const getConnectedVendorContactInternal = internalQuery({
     ).filter(Boolean);
 
     return {
-      vendorEmail: invitation?.vendorEmail ?? vendorUsers.find((user) => user?.email)?.email,
+      vendorEmail:
+        invitation?.vendorEmail ??
+        vendorUsers.find((user) => user?.email)?.email,
       vendorUserEmails: vendorUsers
         .map((user) => user?.email)
         .filter((email): email is string => Boolean(email)),
@@ -1585,9 +1616,7 @@ export const recordVendorComplianceRunInternal = internalMutation({
         }
       }
 
-      const issueChecks = row.checks.filter(
-        (check) => check.status !== "met",
-      );
+      const issueChecks = row.checks.filter((check) => check.status !== "met");
       const alertableIssueChecks = issueChecks.filter((check) => {
         const latest = latestByRequirement.get(check.requirementId);
         return (
@@ -1641,7 +1670,8 @@ export const recordVendorComplianceRunInternal = internalMutation({
         (check) => check.status === "expired",
       );
       const hasGap = alertableIssueChecks.some(
-        (check) => check.status === "missing" || check.status === "needs_review",
+        (check) =>
+          check.status === "missing" || check.status === "needs_review",
       );
       const type = hasExpired
         ? "vendor_policy_expired"
@@ -1651,7 +1681,8 @@ export const recordVendorComplianceRunInternal = internalMutation({
       const severity = hasExpired ? "critical" : "warning";
       const issueLines = alertableIssueChecks.map((check) => {
         const status =
-          check.status === "expiring_soon" && check.daysUntilExpiration !== undefined
+          check.status === "expiring_soon" &&
+          check.daysUntilExpiration !== undefined
             ? `expires in ${check.daysUntilExpiration} days`
             : check.status.replace(/_/g, " ");
         return `${check.requirementTitle}: ${status}${check.notes ? ` - ${check.notes}` : ""}`;
@@ -1668,7 +1699,9 @@ export const recordVendorComplianceRunInternal = internalMutation({
               : `${row.vendorName} is missing vendor requirements`;
       const body = `${issueCount} vendor ${noun} attention for ${row.vendorName}: ${issueLines
         .slice(0, 3)
-        .join("; ")}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`;
+        .join(
+          "; ",
+        )}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`;
 
       events.push({
         type,

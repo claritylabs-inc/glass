@@ -7,6 +7,7 @@ import { getOrgAccess, requireCurrentOrgAccess } from "./lib/access";
 import {
   certificateHolderDedupeKey,
   normalizeCertificateHolderAddress,
+  normalizeCertificateHolderContactName,
   normalizeCertificateHolderEmail,
   normalizeCertificateHolderName,
 } from "./lib/certificateIdentity";
@@ -93,6 +94,7 @@ export const listForOrg = query({
     return holders
       .filter((holder) =>
         holder.normalizedName.includes(needle)
+        || normalizeCertificateHolderName(holder.contactName ?? "").includes(needle)
         || holder.normalizedEmail?.includes(needle)
         || holder.normalizedAddressKey?.includes(needle),
       )
@@ -114,6 +116,7 @@ export const listForOrgInternal = internalQuery({
     const filtered = needle
       ? holders.filter((holder) =>
           holder.normalizedName.includes(needle)
+          || normalizeCertificateHolderName(holder.contactName ?? "").includes(needle)
           || holder.normalizedEmail?.includes(needle)
           || holder.normalizedAddressKey?.includes(needle),
         )
@@ -125,6 +128,7 @@ export const listForOrgInternal = internalQuery({
 export const upsertForCurrentOrg = mutation({
   args: {
     displayName: v.string(),
+    contactName: v.optional(v.string()),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     address: v.optional(addressValidator),
@@ -147,6 +151,7 @@ export const upsertForCurrentOrg = mutation({
 async function upsertHolder(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   displayName: string;
+  contactName?: string;
   email?: string;
   phone?: string;
   address?: {
@@ -178,14 +183,29 @@ async function upsertHolder(ctx: MutationCtx, args: {
     normalizedAddressKey,
   });
   const now = dayjs().valueOf();
+  const preserveExistingOptionalFields =
+    Boolean(existing) && args.source === "certificate_generation";
   const patch = {
     displayName,
     normalizedName,
-    email: cleanOptional(args.email),
-    normalizedEmail,
-    phone: cleanOptional(args.phone),
-    address: args.address,
-    normalizedAddressKey,
+    contactName:
+      normalizeCertificateHolderContactName(args.contactName) ??
+      (preserveExistingOptionalFields ? existing?.contactName : undefined),
+    email:
+      cleanOptional(args.email) ??
+      (preserveExistingOptionalFields ? existing?.email : undefined),
+    normalizedEmail:
+      normalizedEmail ??
+      (preserveExistingOptionalFields ? existing?.normalizedEmail : undefined),
+    phone:
+      cleanOptional(args.phone) ??
+      (preserveExistingOptionalFields ? existing?.phone : undefined),
+    address:
+      args.address ??
+      (preserveExistingOptionalFields ? existing?.address : undefined),
+    normalizedAddressKey:
+      normalizedAddressKey ??
+      (preserveExistingOptionalFields ? existing?.normalizedAddressKey : undefined),
     mapboxFeatureId: cleanOptional(args.mapboxFeatureId),
     mapboxMetadata: args.mapboxMetadata,
     source: args.source,
@@ -210,6 +230,7 @@ export const upsertInternal = internalMutation({
   args: {
     orgId: v.id("organizations"),
     displayName: v.string(),
+    contactName: v.optional(v.string()),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     address: v.optional(addressValidator),

@@ -114,13 +114,12 @@ export const run = internalAction({
     const allMessages = await ctx.runQuery(internal.threads.messagesInternal, { threadId });
     const policiesByOrg = new Map<string, { policies: any[]; quotes: any[] }>();
     await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
-      const docs = await ctx.runQuery(internal.policies.listAllInternal, { orgId: readOrgId });
+      const docs = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, { orgId: readOrgId });
       policiesByOrg.set(String(readOrgId), {
         policies: (docs as any[]).filter((policy) => policy.documentType !== "quote"),
         quotes: (docs as any[]).filter((policy) => policy.documentType === "quote"),
       });
     }));
-    const policies = Array.from(policiesByOrg.values()).flatMap((entry) => [...entry.policies, ...entry.quotes]);
     const siteUrl = getClientPortalUrl();
 
     // Build system prompt
@@ -194,6 +193,7 @@ MCP MODE:
       fileId?: Id<"_storage">;
     }> = [];
     const mcpToolArtifacts: Array<{ type: string; data: unknown }> = [];
+    let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
 
     const tools = {
       ...buildAgentToolExecutors(ctx, {
@@ -202,6 +202,8 @@ MCP MODE:
         userId: args.userId,
         scope,
         org,
+        threadId,
+        getCurrentPolicyChangeCaseId: () => policyChangeCaseId,
         onPolicyReferenced: (policyId) => {
           referencedPolicySourceIds.add(String(policyId));
         },
@@ -210,6 +212,9 @@ MCP MODE:
         },
         onToolArtifact: (artifact) => {
           mcpToolArtifacts.push(artifact);
+        },
+        onPolicyChangeCase: (caseId) => {
+          policyChangeCaseId = caseId;
         },
       }),
       create_imessage_group_chat: {
@@ -401,6 +406,7 @@ MCP MODE:
         responseAttachments.length > 0 ? responseAttachments : undefined,
       toolArtifacts:
         mcpToolArtifacts.length > 0 ? mcpToolArtifacts : undefined,
+      policyChangeCaseId,
     });
     await ctx.runMutation(internal.threads.touchThread, { threadId });
 

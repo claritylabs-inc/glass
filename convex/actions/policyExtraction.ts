@@ -240,6 +240,19 @@ type ExternalClaimResult = {
   };
 } | null;
 
+type ExternalPreviewClaimResult = {
+  policyId: string;
+  leaseId: string;
+  leaseExpiresAt: number;
+  state: PolicyExtractionState;
+  fileUrl: string;
+  modelSettings?: {
+    routes?: Record<string, { provider: string; model: string }>;
+    routeSources?: Record<string, string>;
+    providerKeys?: Record<string, string>;
+  };
+} | null;
+
 type ExternalAckResult = {
   ok: boolean;
   leaseExpiresAt?: number;
@@ -1611,6 +1624,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
             }),
+            extractionDataStage: "final",
+            extractionDataStageUpdatedAt: nowMs(),
+            extractionPreviewError: undefined,
           },
         },
       );
@@ -2183,6 +2199,92 @@ export const claimExternalJob = action({
   },
 });
 
+export const claimExternalPreviewJob = action({
+  args: {
+    secret: v.string(),
+    workerId: v.optional(v.string()),
+    workerVersion: v.optional(v.string()),
+    workerProtocolVersion: v.optional(v.string()),
+    clSdkVersion: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ExternalPreviewClaimResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    const incompatibility = validateExternalWorkerCompatibility(args);
+    if (incompatibility) {
+      console.warn(incompatibility);
+      return null;
+    }
+    const leaseId = `${args.workerId ?? "worker"}:preview:${randomUUID()}`;
+    const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
+    const claimed = await ctx.runMutation(
+      (internal as any).policies.pipelineClaimExternalPreviewWorkerJob,
+      { leaseId, leaseExpiresAt },
+    ) as
+      | {
+          policyId: string;
+          checkpoint: {
+            state: PolicyExtractionState;
+          };
+        }
+      | null;
+
+    if (!claimed) return null;
+    const fileId = claimed.checkpoint.state.fileId;
+    if (!fileId) {
+      await ctx.runMutation((internal as any).policies.pipelineCompletePreviewLease, {
+        jobId: claimed.policyId,
+        leaseId,
+      });
+      return null;
+    }
+
+    const fileUrl = await ctx.storage.getUrl(fileId as Id<"_storage">);
+    if (!fileUrl) {
+      await ctx.runMutation((internal as any).policies.pipelineCompletePreviewLease, {
+        jobId: claimed.policyId,
+        leaseId,
+      });
+      return null;
+    }
+    await traceEvent(ctx, claimed.checkpoint.state.traceId, {
+      kind: "worker",
+      phase: "preview",
+      label: "external worker preview claim",
+      status: "claimed",
+      message: `External worker claimed preview job${args.workerId ? ` (${args.workerId})` : ""}`,
+      details: { workerId: args.workerId, leaseId },
+    });
+
+    let modelSettings:
+      | {
+          routes?: Record<string, { provider: string; model: string }>;
+          routeSources?: Record<string, string>;
+          providerKeys?: Record<string, string>;
+        }
+      | undefined;
+    try {
+      modelSettings = await ctx.runQuery((internal as any).modelSettings.resolveForOrg, {
+        orgId: claimed.checkpoint.state.orgId as Id<"organizations">,
+      }) as typeof modelSettings;
+    } catch (error) {
+      console.warn(
+        `External worker preview model settings unavailable for ${claimed.policyId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return {
+      policyId: claimed.policyId,
+      leaseId,
+      leaseExpiresAt,
+      state: claimed.checkpoint.state,
+      fileUrl,
+      modelSettings,
+    };
+  },
+});
+
 export const heartbeatExternalJob = action({
   args: {
     secret: v.string(),
@@ -2193,6 +2295,24 @@ export const heartbeatExternalJob = action({
     requireExtractionWorkerSecret(args.secret);
     const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
     const ok = await ctx.runMutation((internal as any).policies.pipelineExtendLease, {
+      jobId: args.policyId,
+      leaseId: args.leaseId,
+      leaseExpiresAt,
+    }) as boolean;
+    return { ok, leaseExpiresAt };
+  },
+});
+
+export const heartbeatExternalPreviewJob = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
+    const ok = await ctx.runMutation((internal as any).policies.pipelineExtendPreviewLease, {
       jobId: args.policyId,
       leaseId: args.leaseId,
       leaseExpiresAt,
@@ -2469,6 +2589,9 @@ export const completeExternalExtract = action({
           existingDocumentMetadata: doc.documentMetadata,
           existingDeclarations: doc.declarations,
         }),
+        extractionDataStage: "final",
+        extractionDataStageUpdatedAt: nowMs(),
+        extractionPreviewError: undefined,
       },
     });
 
@@ -2527,6 +2650,98 @@ export const completeExternalExtract = action({
       });
     }
     return { ok: checkpointUpdated };
+  },
+});
+
+export const completeExternalPreview = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+    state: v.any(),
+    fields: v.any(),
+    previewVersion: v.string(),
+    previewModel: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    const ok = await ctx.runMutation((internal as any).policies.pipelineCompletePreviewLease, {
+      jobId: args.policyId,
+      leaseId: args.leaseId,
+    }) as boolean;
+    if (!ok) return { ok: false };
+
+    const updated = await ctx.runMutation((internal as any).policies.updatePreviewExtractionInternal, {
+      id: args.policyId as Id<"policies">,
+      fields: args.fields,
+      previewVersion: args.previewVersion,
+      previewModel: args.previewModel,
+    }) as { updated: boolean; reason?: string };
+
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+      jobId: args.policyId,
+      timestamp: nowMs(),
+      message: updated.updated
+        ? "Provisional policy extraction is ready"
+        : `Provisional policy extraction skipped${updated.reason ? ` (${updated.reason})` : ""}`,
+      phase: "preview",
+      level: updated.updated ? "info" : "warn",
+    });
+    await traceEvent(ctx, (args.state as PolicyExtractionState | undefined)?.traceId, {
+      kind: "phase",
+      phase: "preview",
+      label: "external_preview_extract",
+      status: updated.updated ? "complete" : "skipped",
+      message: updated.updated
+        ? "External preview extraction completed"
+        : `External preview extraction skipped${updated.reason ? ` (${updated.reason})` : ""}`,
+      details: {
+        previewVersion: args.previewVersion,
+        previewModel: args.previewModel,
+        updated,
+      },
+    });
+    return { ok: true };
+  },
+});
+
+export const failExternalPreviewJob = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+    state: v.optional(v.any()),
+    error: v.string(),
+    previewVersion: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    const ok = await ctx.runMutation((internal as any).policies.pipelineCompletePreviewLease, {
+      jobId: args.policyId,
+      leaseId: args.leaseId,
+    }) as boolean;
+    if (!ok) return { ok: false };
+    await ctx.runMutation((internal as any).policies.failPreviewExtractionInternal, {
+      id: args.policyId as Id<"policies">,
+      error: args.error,
+      previewVersion: args.previewVersion,
+    });
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+      jobId: args.policyId,
+      timestamp: nowMs(),
+      message: `Provisional policy extraction failed: ${args.error}`,
+      phase: "preview",
+      level: "warn",
+    });
+    await traceEvent(ctx, (args.state as PolicyExtractionState | undefined)?.traceId, {
+      kind: "phase",
+      phase: "preview",
+      label: "external_preview_extract",
+      status: "error",
+      message: args.error,
+      details: { previewVersion: args.previewVersion },
+    });
+    return { ok: true };
   },
 });
 

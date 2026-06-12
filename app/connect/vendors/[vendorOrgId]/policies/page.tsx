@@ -94,6 +94,7 @@ export default function ConnectedVendorPoliciesPage({
                 effectiveDate={policy.effectiveDate}
                 expirationDate={policy.expirationDate}
                 pipelineStatus={policy.pipelineStatus}
+                extractionDataStage={policy.extractionDataStage}
                 uploadedBySide={policy.uploadedBySide}
                 onClick={() =>
                   router.push(

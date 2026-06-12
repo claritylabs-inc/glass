@@ -11,30 +11,36 @@ import {
   toResendAttachments,
 } from "../lib/emailSubagent";
 import { sendResendEmail } from "../lib/resend";
+import {
+  certificateHolderDisplayBlock,
+  type CertificateHolderAddressInput,
+} from "../lib/certificateIdentity";
 
-function holderAddressBlock(holder: {
-  displayName: string;
-  address?: {
-    formatted?: string;
-    line1?: string;
-    line2?: string;
-    city?: string;
-    state?: string;
-    postalCode?: string;
+type PreparedSendJob = {
+  job: {
+    orgId: Id<"organizations">;
+    policyId: Id<"policies">;
+    recipientEmail?: string;
+    recipientPhone?: string;
+    policyVersionId?: Id<"policyVersions">;
   };
-}) {
-  const cityStateZip = [
-    holder.address?.city,
-    [holder.address?.state, holder.address?.postalCode].filter(Boolean).join(" "),
-  ].filter(Boolean).join(", ");
-  return [
-    holder.displayName,
-    holder.address?.formatted,
-    holder.address?.line1,
-    holder.address?.line2,
-    cityStateZip,
-  ].filter(Boolean).join("\n");
-}
+  holder: {
+    displayName: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
+    address?: CertificateHolderAddressInput;
+  };
+  org: Record<string, unknown>;
+  userId?: Id<"users">;
+};
+
+type GeneratedCertificate = {
+  fileId?: Id<"_storage">;
+  fileName?: string;
+  size?: number;
+  certificateVersionId?: Id<"certificateVersions">;
+};
 
 export const send = action({
   args: {
@@ -44,20 +50,21 @@ export const send = action({
   handler: async (ctx, args): Promise<{ status: "sent"; fileId: Id<"_storage">; certificateVersionId?: string }> => {
     const prepared = await ctx.runMutation(api.certificateWorkflowJobs.prepareSendJob, {
       jobId: args.jobId,
-    }) as any;
+    }) as PreparedSendJob;
     try {
       const generated = await ctx.runAction(internal.certificates.generateForOrg, {
         orgId: prepared.job.orgId,
         policyId: prepared.job.policyId,
         holderName: prepared.holder.displayName,
-        certificateHolder: holderAddressBlock(prepared.holder),
+        certificateHolder: certificateHolderDisplayBlock(prepared.holder),
+        holderContactName: prepared.holder.contactName,
         holderEmail: prepared.job.recipientEmail ?? prepared.holder.email,
         holderPhone: prepared.job.recipientPhone ?? prepared.holder.phone,
         policyVersionId: prepared.job.policyVersionId,
         source: "agent",
         createdByUserId: prepared.userId,
         forceReissue: true,
-      }) as any;
+      }) as GeneratedCertificate;
       if (!generated?.fileId) {
         throw new Error("Certificate generation did not produce a PDF.");
       }
@@ -65,6 +72,9 @@ export const send = action({
       const identity = await resolveEmailAgentIdentity(ctx, prepared.org);
       if (!identity.canSend || !identity.agentAddress || !identity.fromHeader) {
         throw new Error(identity.reason ?? "Email sending is not configured.");
+      }
+      if (!prepared.job.recipientEmail) {
+        throw new Error("Certificate workflow job is missing a recipient email.");
       }
       const signature = buildEmailSignature(identity.agentAddress, identity.brokerBranding);
       const subject = `Certificate of Insurance - ${prepared.holder.displayName}`;
@@ -85,7 +95,7 @@ export const send = action({
         filename: generated.fileName ?? "certificate-of-insurance.pdf",
         contentType: "application/pdf",
         size: generated.size ?? 0,
-        fileId: generated.fileId as Id<"_storage">,
+        fileId: generated.fileId,
       }]);
       const sent = await sendResendEmail(payload as Parameters<typeof sendResendEmail>[0], {
         retries: 2,
@@ -94,12 +104,12 @@ export const send = action({
 
       await ctx.runMutation(internal.certificateWorkflowJobs.markSentInternal, {
         jobId: args.jobId,
-        generatedCertificateVersionId: generated.certificateVersionId as Id<"certificateVersions"> | undefined,
+        generatedCertificateVersionId: generated.certificateVersionId,
         sentByUserId: prepared.userId,
       });
       return {
         status: "sent",
-        fileId: generated.fileId as Id<"_storage">,
+        fileId: generated.fileId,
         certificateVersionId: generated.certificateVersionId,
       };
     } catch (error) {

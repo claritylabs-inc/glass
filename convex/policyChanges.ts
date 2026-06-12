@@ -24,7 +24,7 @@ import {
 } from "./lib/declarationFacts";
 import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 
 const caseSourceKindValidator = v.union(
   v.literal("chat"),
@@ -75,6 +75,29 @@ type PolicyChangeRequestDetails = {
 
 function nowMs(): number {
   return dayjs().valueOf();
+}
+
+function effectivePolicyDataStage(policy: Doc<"policies">) {
+  if (
+    policy.extractionDataStage === "placeholder" ||
+    policy.extractionDataStage === "preview" ||
+    policy.extractionDataStage === "final"
+  ) {
+    return policy.extractionDataStage;
+  }
+  return policy.pipelineStatus === "complete" ? "final" : "placeholder";
+}
+
+function assertPolicyReadyForChange(policy: Doc<"policies">) {
+  if (
+    policy.pipelineStatus === "complete" &&
+    effectivePolicyDataStage(policy) === "final"
+  ) {
+    return;
+  }
+  throw new Error(
+    `Policy ${policy.policyNumber ?? policy._id} must finish enrichment before policy changes or endorsements can be processed.`,
+  );
 }
 
 function normalizeCaseStatus(
@@ -478,6 +501,7 @@ export const createFromChat = mutation({
       const policy = await ctx.db.get(args.policyId);
       if (!policy || policy.orgId !== orgId)
         throw new Error("Policy not found");
+      assertPolicyReadyForChange(policy);
     }
     const now = nowMs();
     const brokerSubmission = await buildInitialBrokerSubmission(
@@ -585,6 +609,119 @@ export const getInternal = internalQuery({
   },
 });
 
+function isActiveCaseStatus(status: string | undefined) {
+  return status !== "completed" && status !== "declined" && status !== "cancelled";
+}
+
+function caseBelongsToPolicy(
+  changeCase: Doc<"policyChangeCases">,
+  policyId?: Id<"policies">,
+) {
+  if (!policyId) return true;
+  if (changeCase.policyId) return changeCase.policyId === policyId;
+  return Array.isArray(changeCase.affectedPolicyIds)
+    ? changeCase.affectedPolicyIds.some((id) => id === policyId)
+    : false;
+}
+
+async function getCaseByStringId(ctx: QueryCtx, caseId: string) {
+  const normalized = ctx.db.normalizeId("policyChangeCases", caseId);
+  return normalized ? await ctx.db.get(normalized) : null;
+}
+
+async function collectPolicyChangeCaseIdsForThread(
+  ctx: QueryCtx,
+  threadId: Id<"threads">,
+) {
+  const messages = await ctx.db
+    .query("threadMessages")
+    .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+    .collect();
+  const caseIds = new Set<string>();
+  const pendingEmailIds = new Set<Id<"pendingEmails">>();
+  for (const message of messages) {
+    if (message.policyChangeCaseId) caseIds.add(String(message.policyChangeCaseId));
+    if (message.pendingEmailId) pendingEmailIds.add(message.pendingEmailId);
+  }
+  for (const pendingEmailId of pendingEmailIds) {
+    const pending = await ctx.db.get(pendingEmailId);
+    if (pending?.policyChangeCaseId) caseIds.add(String(pending.policyChangeCaseId));
+  }
+  return caseIds;
+}
+
+export const resolveCaseCandidatesInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    policyId: v.optional(v.id("policies")),
+    threadId: v.optional(v.id("threads")),
+    candidateCaseIds: v.optional(v.array(v.string())),
+    activeOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const activeOnly = args.activeOnly !== false;
+    const candidateIds = new Set<string>();
+    for (const caseId of args.candidateCaseIds ?? []) {
+      const trimmed = caseId.trim();
+      if (trimmed) candidateIds.add(trimmed);
+    }
+
+    if (args.threadId) {
+      for (const caseId of await collectPolicyChangeCaseIdsForThread(ctx, args.threadId)) {
+        candidateIds.add(caseId);
+      }
+    }
+
+    if (args.policyId) {
+      const policyCases = await ctx.db
+        .query("policyChangeCases")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId!))
+        .collect();
+      for (const changeCase of policyCases) {
+        if (changeCase.orgId === args.orgId) candidateIds.add(String(changeCase._id));
+      }
+    }
+
+    const cases: Array<Doc<"policyChangeCases">> = [];
+    for (const caseId of candidateIds) {
+      const changeCase = await getCaseByStringId(ctx, caseId);
+      if (!changeCase) continue;
+      if (changeCase.orgId !== args.orgId) continue;
+      if (!caseBelongsToPolicy(changeCase, args.policyId)) continue;
+      if (activeOnly && !isActiveCaseStatus(changeCase.status)) continue;
+      cases.push(changeCase);
+    }
+
+    const unique = new Map<string, Doc<"policyChangeCases">>();
+    for (const changeCase of cases) unique.set(String(changeCase._id), changeCase);
+    return Array.from(unique.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+  },
+});
+
+export const findSingleWaitingForEndorsementCaseInThreadInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    threadId: v.id("threads"),
+  },
+  handler: async (ctx, args) => {
+    const candidateIds = await collectPolicyChangeCaseIdsForThread(ctx, args.threadId);
+    const cases: Array<Doc<"policyChangeCases">> = [];
+    const recentCutoff = dayjs().subtract(90, "day").valueOf();
+    for (const candidateId of candidateIds) {
+      const changeCase = await getCaseByStringId(ctx, candidateId);
+      if (
+        changeCase &&
+        changeCase.orgId === args.orgId &&
+        changeCase.status === "waiting_for_endorsement" &&
+        changeCase.updatedAt >= recentCutoff
+      ) {
+        cases.push(changeCase);
+      }
+    }
+    return cases.length === 1 ? cases[0] : null;
+  },
+});
+
 export const createFromChatInternal = internalMutation({
   args: {
     orgId: v.id("organizations"),
@@ -597,6 +734,13 @@ export const createFromChatInternal = internalMutation({
     brokerSubmission: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    if (args.policyId) {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy || policy.orgId !== args.orgId) {
+        throw new Error("Policy not found");
+      }
+      assertPolicyReadyForChange(policy);
+    }
     const now = nowMs();
     const validationIssues = buildInitialValidation(args);
     const missingInfo = withBrokerRecipientQuestion(
@@ -673,6 +817,13 @@ export const createAnalyzedInternal = internalMutation({
     brokerSubmission: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    if (args.policyId) {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy || policy.orgId !== args.orgId) {
+        throw new Error("Policy not found");
+      }
+      assertPolicyReadyForChange(policy);
+    }
     const now = nowMs();
     const validationIssues = Array.isArray(args.validationIssues)
       ? args.validationIssues
@@ -789,6 +940,7 @@ export const createFromEmail = mutation({
       const policy = await ctx.db.get(args.policyId);
       if (!policy || policy.orgId !== orgId)
         throw new Error("Policy not found");
+      assertPolicyReadyForChange(policy);
     }
     const now = nowMs();
     const brokerSubmission = await buildInitialBrokerSubmission(
@@ -856,6 +1008,7 @@ export const createFromUploadedDocument = mutation({
       const policy = await ctx.db.get(args.policyId);
       if (!policy || policy.orgId !== orgId)
         throw new Error("Policy not found");
+      assertPolicyReadyForChange(policy);
     }
     const now = nowMs();
     const brokerSubmission = await buildInitialBrokerSubmission(
@@ -1223,11 +1376,15 @@ export const completeFromEndorsement = internalMutation({
   }> => {
     const policy = await ctx.db.get(args.policyId);
     if (!policy?.orgId) throw new Error("Policy not found");
+    assertPolicyReadyForChange(policy);
 
     if (args.caseId) {
       const changeCase = await ctx.db.get(args.caseId);
       if (!changeCase || changeCase.orgId !== policy.orgId) {
         throw new Error("Policy change case not found");
+      }
+      if (!caseBelongsToPolicy(changeCase, args.policyId)) {
+        throw new Error("Policy change case does not belong to this policy");
       }
     }
 

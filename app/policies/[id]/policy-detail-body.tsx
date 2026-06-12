@@ -62,6 +62,7 @@ import {
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import { PolicyDetailSkeleton } from "./policy-detail-skeleton";
+import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
 
 type PolicyPipelineLogEntry = LogEntry & {
   timestamp: number;
@@ -122,6 +123,32 @@ const POLICY_VERSION_LABELS: Record<PolicyVersionRow["versionKind"], string> = {
   re_extraction: "Re-extraction",
   renewal: "Renewal",
 };
+
+function policyDataStage(policy: Record<string, unknown>) {
+  const stage = policy.extractionDataStage;
+  if (stage === "placeholder" || stage === "preview" || stage === "final") {
+    return stage;
+  }
+  return policy.pipelineStatus === "complete" ? "final" : "placeholder";
+}
+
+function ProvisionalPolicyGate({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <OperationalPanel as="div">
+      <OperationalPanelHeader title={title} description={description} />
+      <OperationalPanelBody className="px-4 py-5 text-base text-muted-foreground">
+        Extraction is complete for this policy. Enrichment is still running, so
+        source-backed actions are held until enrichment finishes.
+      </OperationalPanelBody>
+    </OperationalPanel>
+  );
+}
 
 function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
   const versions = useCachedQuery(
@@ -188,7 +215,9 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
                     {dayjs(version.createdAt).format("MMM D, YYYY h:mm A")}
                   </span>
                   {dateRange ? <span>{dateRange}</span> : null}
-                  {version.policyNumber ? <span>{version.policyNumber}</span> : null}
+                  {version.policyNumber ? (
+                    <span>{version.policyNumber}</span>
+                  ) : null}
                   <span>
                     {diffCount === 1
                       ? "1 changed field"
@@ -311,6 +340,9 @@ export function PolicyDetailBody({
   const canRequestBrokerExtractionHelp =
     !!viewerOrg?.brokerOrg && !readOnly && !isDeleted;
   const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
+  const extractionDataStage = policyDataStage(p);
+  const isPolicyFinal =
+    pipelineStatus === "complete" && extractionDataStage === "final";
   const canCancelExtraction =
     pipelineStatus === "running" || pipelineStatus === "paused";
   const isProcessingPolicy =
@@ -440,6 +472,13 @@ export function PolicyDetailBody({
     }
   }, [cancelExtraction, policy]);
 
+  const explainFinalExtractionGate = useCallback(() => {
+    toast.message("Enrichment is still running", {
+      description:
+        "Policy details are available now. COIs, policy changes, endorsements, and source-backed actions unlock when enrichment finishes.",
+    });
+  }, []);
+
   useEffect(() => {
     if (!onActions) return;
     if (!policy) {
@@ -473,12 +512,15 @@ export function PolicyDetailBody({
             )}
           </PillButton>
         )}
-        <ViewPdfButton url={fileUrl} disabled={isProcessingPolicy} />
+        <ViewPdfButton url={fileUrl} disabled={!fileUrl} />
         {!readOnly && !isDeleted && (
           <PillButton
             size="compact"
-            disabled={isProcessingPolicy}
             onClick={() => {
+              if (!isPolicyFinal) {
+                explainFinalExtractionGate();
+                return;
+              }
               setSelectedCertificate(null);
               setShowCertificateSheet(true);
             }}
@@ -499,6 +541,8 @@ export function PolicyDetailBody({
     cancelingExtraction,
     canCancelExtraction,
     isProcessingPolicy,
+    isPolicyFinal,
+    explainFinalExtractionGate,
     handleCancelExtraction,
     fileUrl,
     visibleActiveTab,
@@ -512,7 +556,7 @@ export function PolicyDetailBody({
       onRightPanel(null);
       return;
     }
-    if (showCertificateSheet && !readOnly) {
+    if (showCertificateSheet && !readOnly && isPolicyFinal) {
       onRightPanel(
         <CertificateCreatePanel
           open={showCertificateSheet}
@@ -566,6 +610,7 @@ export function PolicyDetailBody({
     policy,
     fullPolicy,
     readOnly,
+    isPolicyFinal,
     showCertificateSheet,
     showEditExtractedFields,
     selectedCertificateForPanel,
@@ -699,6 +744,16 @@ export function PolicyDetailBody({
         </div>
       )}
 
+      <PolicyExtractionBanner
+        policyId={policy._id}
+        status={pipelineStatus}
+        extractionDataStage={extractionDataStage}
+        error={p.pipelineError as string | undefined}
+        log={pipelineLog}
+        onCancel={canCancelExtraction ? handleCancelExtraction : undefined}
+        cancelling={cancelingExtraction}
+      />
+
       <Tabs
         value={visibleActiveTab}
         onValueChange={(value) => setActiveTab(value as PolicyDetailTab)}
@@ -733,14 +788,7 @@ export function PolicyDetailBody({
       </Tabs>
 
       {visibleActiveTab === "details" && (
-        <PolicyDetailsTab
-          policy={policy}
-          fileUrl={fileUrl}
-          pipelineLog={pipelineLog}
-          canCancelExtraction={canCancelExtraction}
-          cancelingExtraction={cancelingExtraction}
-          onCancelExtraction={handleCancelExtraction}
-        />
+        <PolicyDetailsTab policy={policy} fileUrl={fileUrl} />
       )}
 
       {visibleActiveTab === "review" && hasExtractionReviews && (
@@ -757,7 +805,14 @@ export function PolicyDetailBody({
         </FadeIn>
       )}
 
-      {visibleActiveTab === "changes" && (
+      {visibleActiveTab === "changes" && !isPolicyFinal && (
+        <ProvisionalPolicyGate
+          title="Policy changes unavailable"
+          description="Policy changes and endorsements require enrichment to finish for this policy."
+        />
+      )}
+
+      {visibleActiveTab === "changes" && isPolicyFinal && (
         <PolicyChangesTab
           policyId={id}
           canManage={canManagePolicyChanges}
@@ -765,7 +820,14 @@ export function PolicyDetailBody({
         />
       )}
 
-      {visibleActiveTab === "certificates" && (
+      {visibleActiveTab === "certificates" && !isPolicyFinal && (
+        <ProvisionalPolicyGate
+          title="Certificates unavailable"
+          description="COI generation requires enrichment to finish for this policy."
+        />
+      )}
+
+      {visibleActiveTab === "certificates" && isPolicyFinal && (
         <CertificatesTab
           policyId={policy._id}
           selectedCertificateId={selectedCertificateForPanel?._id ?? null}

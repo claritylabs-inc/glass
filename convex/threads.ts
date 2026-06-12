@@ -1194,6 +1194,7 @@ export const insertImessageMessage = internalMutation({
     }))),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
     error: v.optional(v.string()),
   },
@@ -1216,6 +1217,7 @@ export const insertImessageMessage = internalMutation({
       toolArtifacts: args.toolArtifacts,
       referencedPolicyIds: args.referencedPolicyIds,
       pendingEmailId: args.pendingEmailId,
+      policyChangeCaseId: args.policyChangeCaseId,
       status: args.status,
       error: args.error,
     });
@@ -1407,21 +1409,6 @@ export const findEmailThreadBySubject = internalQuery({
 
     return threads.find((thread) =>
       thread.title.replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "").trim().toLowerCase() === baseSubject
-    ) ?? null;
-  },
-});
-
-export const findLatestPolicyChangeEmailInThread = internalQuery({
-  args: { threadId: v.id("threads") },
-  handler: async (ctx, args) => {
-    const messages = await ctx.db
-      .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
-      .order("desc")
-      .take(50);
-    return messages.find((message) =>
-      message.channel === "email" &&
-      (message.policyChangeCaseId || message.pendingEmailId)
     ) ?? null;
   },
 });
