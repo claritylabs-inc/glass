@@ -10,7 +10,11 @@ import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
 import { getAuthSiteUrl } from "./lib/domains";
 import { normalizeCoverageName } from "./lib/coverageNames";
-import { normalizeAvailableUserPhone } from "./lib/userPhone";
+import {
+  findUserByNormalizedPhone,
+  normalizeAvailableUserPhone,
+  normalizeUserPhone,
+} from "./lib/userPhone";
 import {
   assertCustomerUser,
   isBootstrapOperatorEmail,
@@ -422,6 +426,7 @@ async function listOperatorClientRows(ctx: QueryCtx) {
         primaryContactName: client.primaryContactName,
         primaryContactEmail: client.primaryContactEmail,
         primaryContactPhone: client.primaryContactPhone,
+        adminUserId: admin?._id,
         adminName: admin?.name,
         adminEmail: admin?.email,
         adminPhone: admin?.phone,
@@ -776,6 +781,31 @@ export const checkBrokerSetupIdentifiers = query({
   },
 });
 
+export const checkUserPhoneAvailability = query({
+  args: {
+    phone: v.string(),
+    ownerUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+
+    let normalized: string | undefined;
+    try {
+      normalized = normalizeUserPhone(args.phone);
+    } catch {
+      return { available: false, normalized: "" };
+    }
+    if (!normalized) return { available: false, normalized: "" };
+
+    const existing = await findUserByNormalizedPhone(ctx, normalized);
+    return {
+      available: !existing || existing._id === args.ownerUserId,
+      current: existing?._id === args.ownerUserId,
+      normalized,
+    };
+  },
+});
+
 export const createBroker = action({
   args: {
     name: v.string(),
@@ -997,7 +1027,12 @@ export const updateClientSettings = mutation({
     }
 
     const primaryContactEmail = normalizeOptionalContactEmail(args.primaryContactEmail);
-    const primaryContactPhone = normalizeOptionalContactPhone(args.primaryContactPhone);
+    const admin = await getOrgAdmin(ctx, args.clientOrgId);
+    const primaryContactPhone = await normalizeAvailableUserPhone(
+      ctx,
+      args.primaryContactPhone,
+      admin?._id,
+    );
     const patch = {
       brokerOrgId: args.brokerOrgId,
       website: args.website?.trim() || undefined,
@@ -1008,6 +1043,12 @@ export const updateClientSettings = mutation({
     };
 
     await ctx.db.patch(args.clientOrgId, patch);
+    if (admin && normalizeOperatorEmail(admin.email) === primaryContactEmail) {
+      await ctx.db.patch(admin._id, {
+        name: patch.primaryContactName,
+        phone: primaryContactPhone,
+      });
+    }
     await writeOperatorAudit(ctx, {
       operatorUserId: operator.userId,
       type: "setup_write",

@@ -52,6 +52,7 @@ type ClientRow = {
   primaryContactName?: string;
   primaryContactEmail?: string;
   primaryContactPhone?: string;
+  adminUserId?: Id<"users">;
   adminName?: string;
   adminEmail?: string;
   adminPhone?: string;
@@ -193,6 +194,8 @@ export default function OperatorClientsPage() {
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaveStatus, setSettingsSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
+  const [debouncedAdminPhone, setDebouncedAdminPhone] = useState("");
+  const [debouncedEditPrimaryContactPhone, setDebouncedEditPrimaryContactPhone] = useState("");
 
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients() as ClientRow[] | undefined;
@@ -201,6 +204,12 @@ export default function OperatorClientsPage() {
   const handleAvailability = useQuery(
     api.orgs.checkHandleAvailability,
     debouncedAgentHandle ? { handle: debouncedAgentHandle } : "skip",
+  );
+  const createPhoneValid = isValidOptionalPhone(adminPhone);
+  const createShouldCheckPhone = !!adminPhone.trim() && createPhoneValid;
+  const createPhoneAvailability = useQuery(
+    api.operator.checkUserPhoneAvailability,
+    createShouldCheckPhone ? { phone: debouncedAdminPhone } : "skip",
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createClient = useAction((api as any).operator.createSoloClient);
@@ -225,24 +234,67 @@ export default function OperatorClientsPage() {
     () => brokers?.find((broker) => broker._id === editBrokerOrgId) ?? null,
     [editBrokerOrgId, brokers],
   );
+  const editPhoneValid = isValidOptionalPhone(editPrimaryContactPhone);
+  const editPhoneChanged =
+    editPrimaryContactPhone.trim() !== (selected?.primaryContactPhone ?? "");
+  const editShouldCheckPhone = !!editPrimaryContactPhone.trim() && editPhoneValid && editPhoneChanged;
+  const editPhoneAvailability = useQuery(
+    api.operator.checkUserPhoneAvailability,
+    editShouldCheckPhone
+      ? {
+          phone: debouncedEditPrimaryContactPhone,
+          ownerUserId: selected?.adminUserId,
+        }
+      : "skip",
+  );
   const clientSettingsValidationError = !isValidOptionalEmail(editPrimaryContactEmail)
     ? "Enter a valid email"
-    : !isValidOptionalPhone(editPrimaryContactPhone)
+    : !editPhoneValid
       ? "Enter a valid phone number"
+      : editShouldCheckPhone &&
+          (debouncedEditPrimaryContactPhone !== editPrimaryContactPhone.trim() ||
+            editPhoneAvailability === undefined)
+        ? "Checking phone number"
+        : editShouldCheckPhone && editPhoneAvailability?.available === false
+          ? "This phone number is already used by another user"
       : null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedAgentHandle(agentHandle), 250);
     return () => window.clearTimeout(timer);
   }, [agentHandle]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedAdminPhone(adminPhone.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [adminPhone]);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setDebouncedEditPrimaryContactPhone(editPrimaryContactPhone.trim()),
+      300,
+    );
+    return () => window.clearTimeout(timer);
+  }, [editPrimaryContactPhone]);
 
   const handleChecking =
     agentHandle.length >= 3 &&
     (agentHandle !== debouncedAgentHandle || handleAvailability === undefined);
   const handleUnavailable = !!agentHandle && handleAvailability?.available === false;
+  const createPhoneChecking =
+    createShouldCheckPhone &&
+    (debouncedAdminPhone !== adminPhone.trim() || createPhoneAvailability === undefined);
+  const createPhoneUnavailable =
+    createShouldCheckPhone && createPhoneAvailability?.available === false;
+  const createPhoneError = !createPhoneValid
+    ? "Enter a valid phone number"
+    : createPhoneChecking
+      ? "Checking phone number"
+      : createPhoneUnavailable
+        ? "This phone number is already used by another user"
+        : null;
 
   async function submitClient(event: React.FormEvent) {
     event.preventDefault();
+    if (createPhoneError) return;
     setBusy(true);
     try {
       const result = await createClient({
@@ -320,7 +372,7 @@ export default function OperatorClientsPage() {
     setEditAgentHandle(client.agentHandle ?? "");
     setEditPrimaryContactName(client.primaryContactName ?? client.adminName ?? "");
     setEditPrimaryContactEmail(client.primaryContactEmail ?? client.adminEmail ?? "");
-    setEditPrimaryContactPhone(client.primaryContactPhone ?? client.adminPhone ?? "");
+    setEditPrimaryContactPhone(client.primaryContactPhone ?? "");
     setSettingsDirty(false);
     setSettingsSaveStatus("idle");
   }
@@ -361,6 +413,8 @@ export default function OperatorClientsPage() {
         primaryContactName: editPrimaryContactName || undefined,
         primaryContactEmail: editPrimaryContactEmail || undefined,
         primaryContactPhone: editPrimaryContactPhone || undefined,
+        adminName: editPrimaryContactName || undefined,
+        adminPhone: editPrimaryContactPhone || undefined,
       });
       setSettingsDirty(false);
       setSettingsSaveStatus("saved");
@@ -474,7 +528,7 @@ export default function OperatorClientsPage() {
           <PillButton
             type="submit"
             form="operator-create-client-form"
-            disabled={busy || !name || !adminEmail || handleUnavailable}
+            disabled={busy || !name || !adminEmail || handleUnavailable || !!createPhoneError}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Create for setup
@@ -599,7 +653,7 @@ export default function OperatorClientsPage() {
               placeholder="Terry Wang"
             />
           </Field>
-          <Field label="Client admin phone">
+          <Field label="Client admin phone" error={createPhoneError}>
             <PhoneInput
               value={adminPhone}
               onChange={(value) => setAdminPhone(value ?? "")}
