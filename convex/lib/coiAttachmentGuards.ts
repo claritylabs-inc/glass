@@ -13,6 +13,7 @@ export type RequestedEmailAttachment = {
   fileId?: string;
   filename?: string;
   certificateHolder?: string;
+  holderContactName?: string;
   holderEmail?: string;
   holderPhone?: string;
   requestText?: string;

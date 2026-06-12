@@ -131,6 +131,18 @@ describe("COI PDF footer copy", () => {
 });
 
 describe("COI PDF generation", () => {
+  it("uses the canonical holder block from certificate generation inputs", () => {
+    const certificates = readFileSync(join(ROOT, "convex/certificates.ts"), "utf-8");
+    const generateCoi = readFileSync(join(ROOT, "convex/actions/generateCoi.ts"), "utf-8");
+
+    expect(certificates).toContain("certificateHolderDisplayBlock");
+    expect(certificates).toContain("holderContactName");
+    expect(certificates).toContain("holderEmail");
+    expect(certificates).toContain("holderPhone");
+    expect(generateCoi).toContain("holderContactName");
+    expect(generateCoi).toContain("recordIssuedVersionInternal");
+  });
+
   it("renders the generated PDF successfully", async () => {
     const data = policyToCoiData({
       policyTypes: ["general_liability"],

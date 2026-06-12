@@ -51,6 +51,7 @@ async function ensureCertificateLifecycleContext(
     policyVersionId?: Id<"policyVersions">;
     holderEmail?: string;
     holderPhone?: string;
+    holderContactName?: string;
     holderAddress?: {
       line1?: string;
       line2?: string;
@@ -69,6 +70,7 @@ async function ensureCertificateLifecycleContext(
     {
       orgId: args.orgId,
       displayName: args.certificateHolderName?.trim() || firstCertificateHolderLine(args.certificateHolder),
+      contactName: args.holderContactName,
       email: args.holderEmail,
       phone: args.holderPhone,
       address: args.holderAddress,
@@ -336,6 +338,7 @@ export const run = internalAction({
     policyVersionId: v.optional(v.id("policyVersions")),
     holderEmail: v.optional(v.string()),
     holderPhone: v.optional(v.string()),
+    holderContactName: v.optional(v.string()),
     holderAddress: v.optional(holderAddressValidator),
   },
   handler: async (ctx, args): Promise<{
@@ -470,6 +473,7 @@ export const run = internalAction({
           certificateHolderName: args.certificateHolderName,
           holderEmail: args.holderEmail,
           holderPhone: args.holderPhone,
+          holderContactName: args.holderContactName,
           holderAddress: args.holderAddress,
           policySnapshot: lifecycle.policySnapshot,
           source: args.source,
@@ -482,7 +486,6 @@ export const run = internalAction({
           approvalMode: args.approvalMode,
           approvalAudit: args.approvalAudit,
           disclaimer: args.disclaimer,
-          legacyCertificateId: certificateId,
           createdByUserId: args.createdByUserId,
         },
       );

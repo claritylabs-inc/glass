@@ -136,17 +136,12 @@ describe("toCertificateDto", () => {
       file_id: "f1",
       authority_type: "non_binding",
       certification_status: "not_applicable",
-      holder_id: null,
-      policy_certificate_id: null,
-      certificate_version_id: null,
-      certificate_version_number: null,
-      policy_version_id: null,
       url: null,
     });
   });
 
-  it("maps lifecycle IDs without breaking legacy certificate metadata", () => {
-    const dto = toCertificateDto({
+  it("keeps lifecycle identity out of legacy certificate DTOs", () => {
+    const legacyCertificate = {
       _id: "legacy-c1",
       policyId: "p1",
       fileId: "f1",
@@ -158,16 +153,16 @@ describe("toCertificateDto", () => {
       certificateVersionNumber: 2,
       policyVersionId: "pv-3",
       url: "https://example.com/coi.pdf",
-    });
+    };
 
-    expect(dto).toMatchObject({
-      holder_id: "holder-1",
-      policy_certificate_id: "pc-1",
-      certificate_version_id: "cv-2",
-      certificate_version_number: 2,
-      policy_version_id: "pv-3",
-      url: "https://example.com/coi.pdf",
-    });
+    const dto = toCertificateDto(legacyCertificate);
+
+    expect(dto).not.toHaveProperty("holder_id");
+    expect(dto).not.toHaveProperty("policy_certificate_id");
+    expect(dto).not.toHaveProperty("certificate_version_id");
+    expect(dto).not.toHaveProperty("certificate_version_number");
+    expect(dto).not.toHaveProperty("policy_version_id");
+    expect(dto.url).toBe("https://example.com/coi.pdf");
   });
 });
 

@@ -55,9 +55,31 @@ describe("source spans and PCE backend surfaces", () => {
     expect(agentToolExecutors).toContain("evaluatePceIntake");
     expect(agentToolExecutors).toContain("internal.actions.policyChangeRequests.createFromChatForThread");
     expect(agentToolExecutors).toContain("internal.actions.policyChangeRequests.createFromEmailForThread");
+    expect(agentToolExecutors).toContain("resolvePolicyChangeCaseForTool");
+    expect(agentToolExecutors).toContain("resolveCaseCandidatesInternal");
+    expect(agentToolExecutors).toContain("getCurrentPolicyChangeCaseId");
+    expect(agentToolExecutors).toContain("defaultPolicyChangeCaseId");
+    expect(chatTools).toContain("caseId: z.string().optional()");
     expect(threadChat).toContain("policyChangeCaseId");
     expect(read("convex/actions/handleInboundEmail.ts")).toContain("buildAgentToolExecutors");
     expect(read("convex/actions/handleInboundImessage.ts")).toContain("buildAgentToolExecutors");
+  });
+
+  it("keeps endorsement completion policy-scoped and email-correlated", () => {
+    const policyChanges = read("convex/policyChanges.ts");
+    const inboundEmail = read("convex/actions/handleInboundEmail.ts");
+    const agentToolExecutors = read("convex/lib/agentToolExecutors.ts");
+
+    expect(policyChanges).toContain("caseBelongsToPolicy");
+    expect(policyChanges).toContain("Policy change case does not belong to this policy");
+    expect(agentToolExecutors).toContain("That policy change case belongs to a different policy");
+    expect(inboundEmail).toContain("resolveInboundThreadAndPolicyChange");
+    expect(inboundEmail).toContain("extractPendingEmailIdsFromHeaders");
+    expect(inboundEmail).toContain("GLASS_PENDING_MESSAGE_ID_RE");
+    expect(inboundEmail).toContain("findSingleWaitingForEndorsementCaseInThreadInternal");
+    expect(inboundEmail).not.toContain("findLatestPolicyChangeEmailInThread");
+    expect(inboundEmail).toContain("defaultPolicyChangeCaseId: correlatedPolicyChangeCaseId");
+    expect(inboundEmail).toContain("policyChangeCaseId: correlatedPolicyChangeCaseId");
   });
 
   it("renders policy change request artifacts in chat", () => {

@@ -6,6 +6,11 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
 import {
+  certificateHolderDisplayBlock,
+  parseCertificateHolderBlock,
+  type CertificateHolderAddressInput,
+} from "./lib/certificateIdentity";
+import {
   buildCertificateGateEvidencePacket,
   inferCertificateEndorsements,
   type CertificateEndorsementKind,
@@ -28,27 +33,6 @@ const certificateSourceValidator = v.union(
 );
 
 const requestedEndorsementValidator = v.array(v.string());
-
-function compactCertificateHolder(args: {
-  holderName: string;
-  addressLine1?: string;
-  addressLine2?: string;
-  city?: string;
-  state?: string;
-  postalCode?: string;
-}) {
-  const cityStateZip = [
-    args.city?.trim(),
-    [args.state?.trim(), args.postalCode?.trim()].filter(Boolean).join(" "),
-  ].filter(Boolean).join(", ");
-
-  return [
-    args.holderName.trim(),
-    args.addressLine1?.trim(),
-    args.addressLine2?.trim(),
-    cityStateZip,
-  ].filter(Boolean).join("\n");
-}
 
 function cleanOptionalText(value?: string) {
   const trimmed = value?.trim();
@@ -300,21 +284,10 @@ export const listByPolicyInternal = internalQuery({
       .collect();
 
     return await Promise.all(
-      rows.map(async (row) => {
-        const version = await ctx.db
-          .query("certificateVersions")
-          .withIndex("by_legacyCertificateId", (q) => q.eq("legacyCertificateId", row._id))
-          .first();
-        return {
-          ...row,
-          holderId: version?.holderId,
-          policyCertificateId: version?.certificateId,
-          certificateVersionId: version?._id,
-          certificateVersionNumber: version?.versionNumber,
-          policyVersionId: version?.policyVersionId,
-          url: await ctx.storage.getUrl(row.fileId),
-        };
-      }),
+      rows.map(async (row) => ({
+        ...row,
+        url: await ctx.storage.getUrl(row.fileId),
+      })),
     );
   },
 });
@@ -338,22 +311,11 @@ export const listActivityByPolicy = query({
     ]);
     return {
       certificates: await Promise.all(
-        certificates.map(async (row) => {
-          const version = await ctx.db
-            .query("certificateVersions")
-            .withIndex("by_legacyCertificateId", (q) => q.eq("legacyCertificateId", row._id))
-            .first();
-          return {
-            ...row,
-            holderId: version?.holderId,
-            policyCertificateId: version?.certificateId,
-            certificateVersionId: version?._id,
-            certificateVersionNumber: version?.versionNumber,
-            policyVersionId: version?.policyVersionId,
-            url: await ctx.storage.getUrl(row.fileId),
-            activityType: "certificate" as const,
-          };
-        }),
+        certificates.map(async (row) => ({
+          ...row,
+          url: await ctx.storage.getUrl(row.fileId),
+          activityType: "certificate" as const,
+        })),
       ),
       holds: holds.map((row) => ({ ...row, activityType: "hold" as const })),
     };
@@ -420,6 +382,7 @@ export const generateForPolicy = action({
     policyId: v.id("policies"),
     holderName: v.string(),
     certificateHolder: v.optional(v.string()),
+    holderContactName: v.optional(v.string()),
     holderEmail: v.optional(v.string()),
     holderPhone: v.optional(v.string()),
     addressLine1: v.optional(v.string()),
@@ -449,6 +412,7 @@ export const generateForPolicy = action({
       orgId: context.orgId,
       holderName,
       certificateHolder: args.certificateHolder,
+      holderContactName: args.holderContactName,
       holderEmail: args.holderEmail,
       holderPhone: args.holderPhone,
       addressLine1: args.addressLine1,
@@ -518,6 +482,7 @@ export const generateForOrg = internalAction({
     policyId: v.id("policies"),
     holderName: v.string(),
     certificateHolder: v.optional(v.string()),
+    holderContactName: v.optional(v.string()),
     holderEmail: v.optional(v.string()),
     holderPhone: v.optional(v.string()),
     addressLine1: v.optional(v.string()),
@@ -542,7 +507,23 @@ export const generateForOrg = internalAction({
       orgId: args.orgId,
       policyId: args.policyId,
     });
-    const certificateHolder = args.certificateHolder?.trim() || compactCertificateHolder({ ...args, holderName });
+    const parsedHolderBlock = parseCertificateHolderBlock(
+      args.certificateHolder,
+      holderName,
+    );
+    const holderContactName = args.holderContactName ?? parsedHolderBlock.contactName;
+    const holderEmail = args.holderEmail ?? parsedHolderBlock.email;
+    const holderPhone = args.holderPhone ?? parsedHolderBlock.phone;
+    const holderAddress =
+      structuredCertificateHolderAddress(args) ??
+      parsedHolderBlock.address;
+    const certificateHolder = certificateHolderDisplayBlock({
+      displayName: holderName,
+      contactName: holderContactName,
+      email: holderEmail,
+      phone: holderPhone,
+      address: holderAddress as CertificateHolderAddressInput | undefined,
+    });
 
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
@@ -692,12 +673,12 @@ export const generateForOrg = internalAction({
       };
     }
 
-    const holderAddress = structuredCertificateHolderAddress(args);
     const holderId = await ctx.runMutation((internal as any).certificateHolders.upsertInternal, {
       orgId: args.orgId,
       displayName: holderName,
-      email: args.holderEmail,
-      phone: args.holderPhone,
+      contactName: holderContactName,
+      email: holderEmail,
+      phone: holderPhone,
       address: holderAddress,
       source: "certificate_generation",
       sourceRef: String(args.policyId),
@@ -737,7 +718,9 @@ export const generateForOrg = internalAction({
           partnerProgramId: authority.partnerProgramId,
           templateId: authority.templateId,
         });
-    if (reusableVersion?.fileId) {
+    const reusableHolderMatches =
+      reusableVersion?.certificateHolder?.trim() === certificateHolder.trim();
+    if (reusableVersion?.fileId && reusableHolderMatches) {
       return {
         status: "existing",
         reused: true,
@@ -745,9 +728,6 @@ export const generateForOrg = internalAction({
         url: reusableVersion.url,
         fileName: reusableVersion.fileName ?? "certificate-of-insurance.pdf",
         size: reusableVersion.fileSize ?? 0,
-        certificateId: reusableVersion.legacyCertificateId
-          ? String(reusableVersion.legacyCertificateId)
-          : undefined,
         holderId: String(holderId),
         policyCertificateId: String(policyCertificateId),
         certificateVersionId: String(reusableVersion._id),
@@ -789,8 +769,9 @@ export const generateForOrg = internalAction({
       orgId: args.orgId,
       certificateHolder,
       certificateHolderName: holderName,
-      holderEmail: args.holderEmail,
-      holderPhone: args.holderPhone,
+      holderContactName,
+      holderEmail,
+      holderPhone,
       source: args.source,
       createdByUserId: args.createdByUserId,
       authorityType: authority.authorityType,

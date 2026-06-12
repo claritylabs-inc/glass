@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess } from "./lib/access";
 import {
+  certificateHolderDisplayBlock,
   holderSnapshot,
   normalizeCertificateHolderAddress,
   normalizeCertificateHolderName,
@@ -34,19 +35,6 @@ function cleanOptional(value?: string) {
 
 function normalizeEmail(value?: string) {
   return cleanOptional(value)?.toLowerCase();
-}
-
-function holderAddressBlock(holder: Pick<Doc<"certificateHolders">, "displayName" | "address">) {
-  const address = holder.address as CertificateHolderAddressInput | undefined;
-  return [
-    holder.displayName,
-    address?.formatted,
-    address?.line1,
-    address?.line2,
-    [address?.city, [address?.state, address?.postalCode].filter(Boolean).join(" ")]
-      .filter(Boolean)
-      .join(", "),
-  ].filter(Boolean).join("\n");
 }
 
 async function ensureHolder(ctx: MutationCtx, args: {
@@ -146,11 +134,20 @@ async function createWorkflowJob(ctx: MutationCtx, args: {
     policyVersionId: args.policyVersionId,
     versionNumber: await nextVersionNumber(ctx, args.certificateId),
     status: "draft",
-    certificateHolder: holder ? holderAddressBlock(holder) : args.recipientName,
+    certificateHolder: holder
+      ? certificateHolderDisplayBlock({
+          displayName: holder.displayName,
+          contactName: holder.contactName,
+          email: holder.email,
+          phone: holder.phone,
+          address: holder.address as CertificateHolderAddressInput | undefined,
+        })
+      : args.recipientName,
     certificateHolderName: holder?.displayName ?? args.recipientName,
     holderSnapshot: holder
       ? holderSnapshot({
           displayName: holder.displayName,
+          contactName: holder.contactName,
           email: holder.email,
           phone: holder.phone,
           address: holder.address as CertificateHolderAddressInput | undefined,

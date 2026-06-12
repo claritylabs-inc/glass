@@ -289,11 +289,6 @@ export interface CertificateDtoSource {
   standingAuthorizationId?: DtoId;
   disclaimer?: string;
   createdAt: number;
-  holderId?: DtoId;
-  policyCertificateId?: DtoId;
-  certificateVersionId?: DtoId;
-  certificateVersionNumber?: number;
-  policyVersionId?: DtoId;
   url?: string | null;
 }
 
@@ -313,11 +308,6 @@ export interface CertificateDto {
   approval_id: string | null;
   standing_authorization_id: string | null;
   disclaimer: string | null;
-  holder_id: string | null;
-  policy_certificate_id: string | null;
-  certificate_version_id: string | null;
-  certificate_version_number: number | null;
-  policy_version_id: string | null;
   created_at: number;
   url: string | null;
 }
@@ -339,11 +329,6 @@ export function toCertificateDto(certificate: CertificateDtoSource): Certificate
     approval_id: certificate.approvalId ?? null,
     standing_authorization_id: certificate.standingAuthorizationId ?? null,
     disclaimer: certificate.disclaimer ?? null,
-    holder_id: certificate.holderId ?? null,
-    policy_certificate_id: certificate.policyCertificateId ?? null,
-    certificate_version_id: certificate.certificateVersionId ?? null,
-    certificate_version_number: certificate.certificateVersionNumber ?? null,
-    policy_version_id: certificate.policyVersionId ?? null,
     created_at: certificate.createdAt,
     url: certificate.url ?? null,
   };
@@ -353,6 +338,7 @@ export interface CertificateHolderDtoSource {
   _id: DtoId;
   orgId: DtoId;
   displayName: string;
+  contactName?: string;
   email?: string;
   phone?: string;
   address?: {
@@ -380,6 +366,7 @@ export function toCertificateHolderDto(holder: CertificateHolderDtoSource) {
     id: holder._id,
     org_id: holder.orgId,
     display_name: holder.displayName,
+    contact_name: holder.contactName ?? null,
     email: holder.email ?? null,
     phone: holder.phone ?? null,
     address: holder.address ?? null,
@@ -458,7 +445,6 @@ export interface CertificateVersionDtoSource {
   templateId?: DtoId;
   standingAuthorizationId?: DtoId;
   approvalId?: DtoId;
-  legacyCertificateId?: DtoId;
   issuedAt?: number;
   supersededAt?: number;
   voidedAt?: number;
@@ -469,6 +455,13 @@ export interface CertificateVersionDtoSource {
 }
 
 export function toCertificateVersionDto(version: CertificateVersionDtoSource) {
+  const holderSnapshot = version.holderSnapshot &&
+    typeof version.holderSnapshot === "object" &&
+    !Array.isArray(version.holderSnapshot)
+    ? version.holderSnapshot as { contactName?: unknown }
+    : {};
+  const contactName = version.holder?.contactName ??
+    (typeof holderSnapshot.contactName === "string" ? holderSnapshot.contactName : undefined);
   return {
     id: version._id,
     org_id: version.orgId,
@@ -483,6 +476,7 @@ export function toCertificateVersionDto(version: CertificateVersionDtoSource) {
     file_size: version.fileSize ?? null,
     certificate_holder: version.certificateHolder ?? null,
     certificate_holder_name: version.certificateHolderName ?? null,
+    contact_name: contactName ?? null,
     holder_snapshot: version.holderSnapshot ?? null,
     holder: version.holder ? toCertificateHolderDto(version.holder) : null,
     source: version.source ?? null,
@@ -493,7 +487,6 @@ export function toCertificateVersionDto(version: CertificateVersionDtoSource) {
     template_id: version.templateId ?? null,
     standing_authorization_id: version.standingAuthorizationId ?? null,
     approval_id: version.approvalId ?? null,
-    legacy_certificate_id: version.legacyCertificateId ?? null,
     issued_at: version.issuedAt ?? null,
     superseded_at: version.supersededAt ?? null,
     voided_at: version.voidedAt ?? null,

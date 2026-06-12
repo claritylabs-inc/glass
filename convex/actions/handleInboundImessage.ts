@@ -1123,6 +1123,7 @@ export const processInbound = internalAction({
         current: null,
       };
       const imessageToolArtifacts: Array<{ type: string; data: unknown }> = [];
+      let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
       const availableFileIds = new Set(
         availableEmailAttachments.map((attachment) => String(attachment.fileId)),
       );
@@ -1142,6 +1143,8 @@ export const processInbound = internalAction({
           readOrgIds,
           writableOrgIds: imessageWritableOrgIds,
           org,
+          threadId,
+          getCurrentPolicyChangeCaseId: () => policyChangeCaseId,
           canWrite: currentSenderIsLinked,
           writeUnavailableMessage:
             "Only a linked Glass user in this chat can do that.",
@@ -1166,6 +1169,9 @@ export const processInbound = internalAction({
                 artifact.data as CertificateProgramSelection,
               );
             }
+          },
+          onPolicyChangeCase: (caseId) => {
+            policyChangeCaseId = caseId;
           },
         }),
         create_imessage_group_chat: {
@@ -1339,6 +1345,7 @@ export const processInbound = internalAction({
                   : undefined,
               usedTools: usedTools.length > 0 ? usedTools : undefined,
               toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+              policyChangeCaseId,
             });
           }
         }
@@ -1417,6 +1424,7 @@ export const processInbound = internalAction({
                     data: selection,
                   }))
                 : undefined,
+          policyChangeCaseId,
         });
       }
 

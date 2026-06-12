@@ -2,6 +2,7 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText, stepCountIs, type ModelMessage } from "ai";
 import { haikuModel } from "../lib/ai";
@@ -74,6 +75,7 @@ import {
 } from "../lib/emailDraftSummary";
 
 const GLASS_PUBLIC_URL = getClientPortalUrl();
+const GLASS_PENDING_MESSAGE_ID_RE = /<?glass-pending-([^@\s>]+)@[^>\s]+>?/gi;
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com",
@@ -117,6 +119,18 @@ function getCompanyDomains(
     }
   }
   return domains;
+}
+
+function extractPendingEmailIdsFromHeaders(values: Array<string | undefined>) {
+  const ids = new Set<string>();
+  for (const value of values) {
+    if (!value) continue;
+    for (const match of value.matchAll(GLASS_PENDING_MESSAGE_ID_RE)) {
+      const pendingEmailId = match[1]?.trim();
+      if (pendingEmailId) ids.add(pendingEmailId);
+    }
+  }
+  return [...ids];
 }
 
 interface WebhookPayload {
@@ -320,6 +334,16 @@ type ToolSentEmail = {
   responseMessageId?: string;
 };
 
+type EmailThreadMode = "direct" | "cc" | "forward" | "unknown";
+
+type InboundThreadResolution = {
+  existingThreadId?: Id<"threads">;
+  threadRootMode?: EmailThreadMode;
+  matchedParentEmailMessage: Doc<"threadMessages"> | null;
+  correlatedPolicyChangeCaseId?: Id<"policyChangeCases">;
+  correlatedPendingEmailId?: Id<"pendingEmails">;
+};
+
 const SUPPORTED_ATTACHMENT_TYPES = new Set([
   "application/pdf",
   "text/plain",
@@ -410,6 +434,133 @@ async function fetchEmailContent(
     return await fallback.json();
   }
   return await res.json();
+}
+
+async function resolveInboundThreadAndPolicyChange(
+  ctx: ActionCtx,
+  args: {
+    orgId: Id<"organizations">;
+    fromEmail: string;
+    subject: string;
+    messageId?: string;
+    inReplyTo?: string;
+    references?: string;
+    threadSuffix?: string;
+    agentAddressWithSuffix?: string | null;
+  },
+): Promise<InboundThreadResolution> {
+  let existingThreadId: Id<"threads"> | undefined;
+  let threadRootMode: EmailThreadMode | undefined;
+  let matchedParentEmailMessage: Doc<"threadMessages"> | null = null;
+  let correlatedPolicyChangeCaseId: Id<"policyChangeCases"> | undefined;
+  let correlatedPendingEmailId: Id<"pendingEmails"> | undefined;
+
+  const replyMessageIdCandidates = [
+    args.inReplyTo,
+    ...(args.references ? args.references.trim().split(/\s+/).reverse() : []),
+  ].filter((value): value is string => Boolean(value?.trim()));
+
+  const deterministicPendingEmailIds = extractPendingEmailIdsFromHeaders([
+    args.messageId,
+    args.inReplyTo,
+    args.references,
+  ]);
+  for (const pendingEmailId of deterministicPendingEmailIds) {
+    const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
+      id: pendingEmailId as Id<"pendingEmails">,
+    }).catch(() => null) as Doc<"pendingEmails"> | null;
+    if (!pending || pending.orgId !== args.orgId) continue;
+    correlatedPendingEmailId = pending._id;
+    correlatedPolicyChangeCaseId = pending.policyChangeCaseId;
+    if (pending.threadMessageId) {
+      matchedParentEmailMessage = await ctx.runQuery(
+        internal.threads.getMessageInternal,
+        { id: pending.threadMessageId },
+      ).catch(() => null) as Doc<"threadMessages"> | null;
+    }
+    if (pending.threadId) {
+      existingThreadId = pending.threadId;
+      const parentThread = await ctx.runQuery(internal.threads.getInternal, {
+        id: pending.threadId,
+      });
+      threadRootMode = parentThread?.emailMode;
+    }
+    break;
+  }
+
+  for (const candidate of [...new Set(replyMessageIdCandidates)]) {
+    if (matchedParentEmailMessage && correlatedPolicyChangeCaseId) break;
+    const matched = await ctx.runQuery(
+      internal.threads.findEmailMessageByMessageId,
+      { orgId: args.orgId, messageId: candidate },
+    ) as Doc<"threadMessages"> | null;
+    if (!matched) continue;
+    matchedParentEmailMessage = matched;
+    existingThreadId = matched.threadId;
+    correlatedPendingEmailId = matched.pendingEmailId;
+    const pending = matched.pendingEmailId
+      ? await ctx.runQuery(internal.pendingEmails.getInternal, {
+          id: matched.pendingEmailId,
+        }) as Doc<"pendingEmails"> | null
+      : null;
+    correlatedPolicyChangeCaseId =
+      matched.policyChangeCaseId ?? pending?.policyChangeCaseId;
+    const parentThread = await ctx.runQuery(internal.threads.getInternal, {
+      id: matched.threadId,
+    });
+    threadRootMode = parentThread?.emailMode;
+    break;
+  }
+
+  if (!existingThreadId && args.threadSuffix && args.agentAddressWithSuffix) {
+    const unifiedThread = await ctx.runQuery(internal.threads.findByEmail, {
+      threadEmail: args.agentAddressWithSuffix,
+    });
+    if (unifiedThread) {
+      existingThreadId = unifiedThread._id;
+      threadRootMode = unifiedThread.emailMode;
+    }
+  }
+
+  if (!existingThreadId && args.inReplyTo) {
+    const parent = await ctx.runQuery(
+      internal.threads.findThreadByEmailMessageId,
+      { orgId: args.orgId, messageId: args.inReplyTo },
+    );
+    if (parent) {
+      existingThreadId = parent._id;
+      threadRootMode = parent.emailMode;
+    }
+  }
+
+  if (!existingThreadId) {
+    const subjectMatch = await ctx.runQuery(
+      internal.threads.findEmailThreadBySubject,
+      { orgId: args.orgId, subject: args.subject, fromEmail: args.fromEmail },
+    );
+    if (subjectMatch) {
+      existingThreadId = subjectMatch._id;
+      threadRootMode = subjectMatch.emailMode;
+    }
+  }
+
+  if (existingThreadId && !correlatedPolicyChangeCaseId) {
+    const singleWaitingCase = await ctx.runQuery(
+      internal.policyChanges.findSingleWaitingForEndorsementCaseInThreadInternal,
+      { orgId: args.orgId, threadId: existingThreadId },
+    ) as Doc<"policyChangeCases"> | null;
+    if (singleWaitingCase) {
+      correlatedPolicyChangeCaseId = singleWaitingCase._id;
+    }
+  }
+
+  return {
+    existingThreadId,
+    threadRootMode,
+    matchedParentEmailMessage,
+    correlatedPolicyChangeCaseId,
+    correlatedPendingEmailId,
+  };
 }
 
 export const processInbound = internalAction({
@@ -601,7 +752,7 @@ export const processInbound = internalAction({
       );
     const isForwarded = subjectIsForward || bodyIsForward;
 
-    const mode: "direct" | "cc" | "forward" | "unknown" =
+    const mode: EmailThreadMode =
       isInternal && isForwarded
         ? "forward"
         : agentInCc
@@ -635,86 +786,22 @@ export const processInbound = internalAction({
     const references = getHeader("References");
     const subject = data.subject ?? "(no subject)";
 
-    // Resolve thread
-    let existingThreadId: Id<"threads"> | undefined;
-    let threadRootMode: "direct" | "cc" | "forward" | "unknown" | undefined;
-    let matchedParentEmailMessage: Doc<"threadMessages"> | null = null;
-    let correlatedPolicyChangeCaseId: Id<"policyChangeCases"> | undefined;
-
-    const replyMessageIdCandidates = [
+    const {
+      existingThreadId,
+      threadRootMode,
+      matchedParentEmailMessage,
+      correlatedPolicyChangeCaseId,
+      correlatedPendingEmailId,
+    } = await resolveInboundThreadAndPolicyChange(ctx, {
+      orgId,
+      fromEmail,
+      subject,
+      messageId,
       inReplyTo,
-      ...(references ? references.trim().split(/\s+/).reverse() : []),
-    ].filter((value): value is string => Boolean(value?.trim()));
-    for (const candidate of [...new Set(replyMessageIdCandidates)]) {
-      const matched = await ctx.runQuery(
-        internal.threads.findEmailMessageByMessageId,
-        { orgId, messageId: candidate },
-      ) as Doc<"threadMessages"> | null;
-      if (!matched) continue;
-      matchedParentEmailMessage = matched;
-      existingThreadId = matched.threadId;
-      const pending = matched.pendingEmailId
-        ? await ctx.runQuery(internal.pendingEmails.getInternal, {
-            id: matched.pendingEmailId,
-          }) as Doc<"pendingEmails"> | null
-        : null;
-      correlatedPolicyChangeCaseId =
-        matched.policyChangeCaseId ?? pending?.policyChangeCaseId;
-      const parentThread = await ctx.runQuery(internal.threads.getInternal, {
-        id: matched.threadId,
-      });
-      threadRootMode = parentThread?.emailMode;
-      break;
-    }
-
-    // First: try resolving via +threadSuffix in the recipient address.
-    // This is the most reliable method because threadEmail is unique per thread.
-    if (!existingThreadId && threadSuffix && agentAddressWithSuffix) {
-      const unifiedThread = await ctx.runQuery(internal.threads.findByEmail, {
-        threadEmail: agentAddressWithSuffix,
-      });
-      if (unifiedThread) {
-        existingThreadId = unifiedThread._id;
-        threadRootMode = unifiedThread.emailMode;
-      }
-    }
-
-    // Fallback: In-Reply-To header matching
-    if (!existingThreadId && inReplyTo) {
-      const parent = await ctx.runQuery(
-        internal.threads.findThreadByEmailMessageId,
-        { orgId, messageId: inReplyTo },
-      );
-      if (parent) {
-        existingThreadId = parent._id;
-        threadRootMode = parent.emailMode;
-      }
-    }
-
-    if (!existingThreadId) {
-      const subjectMatch = await ctx.runQuery(
-        internal.threads.findEmailThreadBySubject,
-        { orgId, subject, fromEmail },
-      );
-      if (subjectMatch) {
-        existingThreadId = subjectMatch._id;
-        threadRootMode = subjectMatch.emailMode;
-        const latestPolicyChangeEmail = await ctx.runQuery(
-          internal.threads.findLatestPolicyChangeEmailInThread,
-          { threadId: subjectMatch._id },
-        ) as Doc<"threadMessages"> | null;
-        if (latestPolicyChangeEmail) {
-          matchedParentEmailMessage = latestPolicyChangeEmail;
-          const pending = latestPolicyChangeEmail.pendingEmailId
-            ? await ctx.runQuery(internal.pendingEmails.getInternal, {
-                id: latestPolicyChangeEmail.pendingEmailId,
-              }) as Doc<"pendingEmails"> | null
-            : null;
-          correlatedPolicyChangeCaseId =
-            latestPolicyChangeEmail.policyChangeCaseId ?? pending?.policyChangeCaseId;
-        }
-      }
-    }
+      references,
+      threadSuffix,
+      agentAddressWithSuffix,
+    });
 
     let effectiveMode = threadRootMode ?? mode;
     if (matchedParentEmailMessage || correlatedPolicyChangeCaseId) {
@@ -788,7 +875,7 @@ export const processInbound = internalAction({
         resendEmailId: resendEmailId || undefined,
         attachments:
           attachmentRecords.length > 0 ? (attachmentRecords as any) : undefined,
-        pendingEmailId: matchedParentEmailMessage?.pendingEmailId,
+        pendingEmailId: matchedParentEmailMessage?.pendingEmailId ?? correlatedPendingEmailId,
         policyChangeCaseId: correlatedPolicyChangeCaseId,
       },
     );
@@ -1200,6 +1287,8 @@ If the broker attached an endorsement or confirmation for this change, use compl
           userId: primaryUserId,
           scope,
           org,
+          threadId: unifiedThreadId,
+          defaultPolicyChangeCaseId: correlatedPolicyChangeCaseId,
           availableFileIds,
           onPolicyReferenced: (policyId) => {
             referencedPolicySourceIds.add(String(policyId));
@@ -1922,6 +2011,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
                   data: selection,
                 }))
               : undefined,
+        policyChangeCaseId: correlatedPolicyChangeCaseId,
       });
 
       // ── Phase E: extract durable facts from this email exchange into orgMemory ──

@@ -1606,6 +1606,7 @@ export default defineSchema({
     orgId: v.id("organizations"),
     displayName: v.string(),
     normalizedName: v.string(),
+    contactName: v.optional(v.string()),
     email: v.optional(v.string()),
     normalizedEmail: v.optional(v.string()),
     phone: v.optional(v.string()),
@@ -1739,8 +1740,7 @@ export default defineSchema({
     .index("by_certificateId_versionNumber", ["certificateId", "versionNumber"])
     .index("by_policyId", ["policyId"])
     .index("by_policyVersionId", ["policyVersionId"])
-    .index("by_holderId", ["holderId"])
-    .index("by_legacyCertificateId", ["legacyCertificateId"]),
+    .index("by_holderId", ["holderId"]),
 
   certificateWorkflowSettings: defineTable({
     brokerOrgId: v.optional(v.id("organizations")),

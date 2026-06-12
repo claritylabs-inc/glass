@@ -105,6 +105,7 @@ program.command("policies:upload <filePath>")
 program.command("coi:generate")
   .requiredOption("--policy-id <policyId>")
   .requiredOption("--holder-name <holderName>")
+  .option("--holder-contact-name <holderContactName>")
   .option("--holder-email <holderEmail>")
   .option("--holder-phone <holderPhone>")
   .option("--holder-address <holderAddress>")
@@ -117,6 +118,7 @@ program.command("coi:generate")
       Boolean(opts.reissue),
       opts.holderEmail,
       opts.holderPhone,
+      opts.holderContactName,
     );
     print(res, getFormat(program.opts()));
   });
