@@ -99,6 +99,14 @@ type AckResult = {
   ok: boolean;
   leaseExpiresAt?: number;
   checkpointFileId?: string;
+  replayed?: boolean;
+};
+
+type CompletionPayloadSaveResult = {
+  storageId: string;
+  byteLength: number;
+  logSaved?: boolean;
+  logError?: string;
 };
 
 const require = createRequire(import.meta.url);
@@ -116,7 +124,7 @@ const actions = {
       policyId: string;
       payload: unknown;
     },
-    { storageId: string; byteLength: number }
+    CompletionPayloadSaveResult
   >("externalExtractionPayload:saveExternalCompletionPayload"),
   createExternalCompletionUploadUrl: makeFunctionReference<
     "action",
@@ -133,7 +141,7 @@ const actions = {
       storageId: string;
       byteLength: number;
     },
-    { storageId: string; byteLength: number }
+    CompletionPayloadSaveResult
   >("externalExtractionPayload:finalizeExternalCompletionPayload"),
   claimExternalJob: makeFunctionReference<
     "action",
@@ -210,6 +218,16 @@ const actions = {
     },
     AckResult
   >("actions/policyExtraction.js:completeExternalExtract"),
+  completeExternalExtractFromStoredPayload: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      policyId: string;
+      leaseId: string;
+      state: WorkerState;
+    },
+    AckResult
+  >("actions/policyExtraction.js:completeExternalExtractFromStoredPayload"),
   completeExternalPreview: makeFunctionReference<
     "action",
     {
@@ -2082,6 +2100,17 @@ async function processJob(job: ClaimedJob): Promise<void> {
   }, HEARTBEAT_MS);
 
   try {
+    const replayedCompletion = await convex.action(actions.completeExternalExtractFromStoredPayload, {
+      secret: SECRET,
+      policyId: job.policyId,
+      leaseId: job.leaseId,
+      state: job.state,
+    });
+    if (replayedCompletion.ok) {
+      await logJob(job, "Replayed stored external extraction completion payload");
+      return;
+    }
+
     const pdfBytes = await fetchPdfBytes(job.fileUrl);
     await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
 

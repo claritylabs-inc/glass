@@ -35,6 +35,25 @@ describe("policy extraction transient artifacts", () => {
     );
   });
 
+  it("keeps external completion payloads replayable after boundary failures", () => {
+    const externalPayload = read("convex/externalExtractionPayload.ts");
+    const extraction = read("convex/actions/policyExtraction.ts");
+    const worker = read("extraction-worker/src/index.ts");
+
+    expect(externalPayload).toContain("appendPayloadSavedLog");
+    expect(externalPayload).toContain("pipelineSaveArtifact");
+    expect(externalPayload).toContain("logSaved: false");
+
+    expect(extraction).toContain("completeExternalExtractFromStoredPayload");
+    expect(extraction).toContain("externalCompletionLeaseIsCurrent");
+    expect(extraction).toContain('"external_completion_payload"');
+    expect(extraction).toContain("hasReplayableCompletionPayload");
+    expect(extraction).toContain('status: "running"');
+
+    expect(worker).toContain("completeExternalExtractFromStoredPayload");
+    expect(worker).toContain("Replayed stored external extraction completion payload");
+  });
+
   it("represents a large pending embedding checkpoint as a compact storage pointer", () => {
     const largeText = "x".repeat(1_100_000);
     const inlineCheckpoint = {

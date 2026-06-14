@@ -259,6 +259,23 @@ type ExternalAckResult = {
   checkpointFileId?: string | undefined;
 };
 
+type ExternalCompleteArgs = {
+  policyId: string;
+  leaseId: string;
+  state: unknown;
+  payloadStorageId?: string;
+  document?: unknown;
+  chunks?: unknown[];
+  sourceSpans?: unknown[];
+  sourceChunks?: unknown[];
+  sourceTree?: unknown[];
+  operationalProfile?: unknown;
+  warnings?: string[];
+  tokenUsage?: unknown;
+  performanceReport?: unknown;
+  checkpoint?: unknown;
+};
+
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -2434,47 +2451,72 @@ export const saveExternalCheckpoint = action({
   },
 });
 
-export const completeExternalExtract = action({
-  args: {
-    secret: v.string(),
-    policyId: v.string(),
-    leaseId: v.string(),
-    state: v.any(),
-    payloadStorageId: v.optional(v.string()),
-    document: v.optional(v.any()),
-    chunks: v.optional(v.array(v.any())),
-    sourceSpans: v.optional(v.array(v.any())),
-    sourceChunks: v.optional(v.array(v.any())),
-    sourceTree: v.optional(v.array(v.any())),
-    operationalProfile: v.optional(v.any()),
-    warnings: v.optional(v.array(v.string())),
-    tokenUsage: v.optional(v.any()),
-    performanceReport: v.optional(v.any()),
-    checkpoint: v.optional(v.any()),
-  },
-  handler: async (ctx, args): Promise<ExternalAckResult> => {
-    requireExtractionWorkerSecret(args.secret);
-    const state = args.state as PolicyExtractionState;
-    const policyId = args.policyId;
-    const payload = args.payloadStorageId
-      ? await loadExternalCompletionPayload(ctx, args.payloadStorageId)
-      : undefined;
-    if (args.payloadStorageId && !payload) {
-      throw new Error("External extraction completion payload artifact is missing");
-    }
-    const document = payload?.document ?? args.document;
-    const chunks = (payload?.chunks ?? args.chunks ?? []) as Array<{ id?: string }>;
-    const sourceSpans = (payload?.sourceSpans ?? args.sourceSpans ?? []) as SourceSpanLike[];
-    const canonicalSpans = canonicalSourceSpans(sourceSpans);
-    const sourceChunks = (payload?.sourceChunks ?? args.sourceChunks ?? []) as Array<{ id?: unknown }>;
-    const rawSourceTree = payload?.sourceTree ?? args.sourceTree ?? [];
-    const operationalProfileInput = payload?.operationalProfile ?? args.operationalProfile;
-    const performanceReport = payload?.performanceReport ?? args.performanceReport;
-    const checkpoint = payload?.checkpoint ?? args.checkpoint;
-    let doc = document as Record<string, unknown>;
-    if (!state.orgId || !state.userId) {
-      throw new Error("External extraction completion missing orgId or userId");
-    }
+async function externalCompletionLeaseIsCurrent(
+  ctx: ActionCtx,
+  args: ExternalCompleteArgs,
+): Promise<boolean> {
+  const job = await ctx.runQuery(internal.policies.pipelineGetJob, {
+    jobId: args.policyId,
+  }) as {
+    status?: string;
+    checkpoint?: LeasedPolicyCheckpoint | null;
+  } | null;
+  const checkpoint = job?.checkpoint;
+  if (
+    job?.status !== "running" ||
+    checkpoint?.nextPhase !== "extract" ||
+    checkpoint.lease?.id !== args.leaseId
+  ) {
+    return false;
+  }
+  const claimedState = args.state as PolicyExtractionState;
+  const currentState = checkpoint.state as PolicyExtractionState;
+  if (
+    claimedState.traceId &&
+    currentState.traceId &&
+    claimedState.traceId !== currentState.traceId
+  ) {
+    return false;
+  }
+  return true;
+}
+
+async function completeExternalExtractFromPayload(
+  ctx: ActionCtx,
+  args: ExternalCompleteArgs,
+): Promise<ExternalAckResult> {
+  if (!await externalCompletionLeaseIsCurrent(ctx, args)) {
+    return { ok: false };
+  }
+  const state = args.state as PolicyExtractionState;
+  const policyId = args.policyId;
+  const payload = args.payloadStorageId
+    ? await loadExternalCompletionPayload(ctx, args.payloadStorageId)
+    : undefined;
+  if (args.payloadStorageId && !payload) {
+    throw new Error("External extraction completion payload artifact is missing");
+  }
+  const document = payload?.document ?? args.document;
+  const chunks = (payload?.chunks ?? args.chunks ?? []) as Array<{ id?: string }>;
+  const sourceSpans = (payload?.sourceSpans ?? args.sourceSpans ?? []) as SourceSpanLike[];
+  const canonicalSpans = canonicalSourceSpans(sourceSpans);
+  const sourceChunks = (payload?.sourceChunks ?? args.sourceChunks ?? []) as Array<{ id?: unknown }>;
+  const rawSourceTree = payload?.sourceTree ?? args.sourceTree ?? [];
+  const operationalProfileInput = payload?.operationalProfile ?? args.operationalProfile;
+  const performanceReport = (payload?.performanceReport ?? args.performanceReport) as
+    | {
+        modelCallCount?: number;
+        modelCalls?: unknown[];
+        totalModelCallDurationMs?: number;
+      }
+    | undefined;
+  const checkpoint = (payload?.checkpoint ?? args.checkpoint) as
+    | PipelineCheckpoint<ExtractionState>
+    | undefined;
+  let doc = document as Record<string, unknown>;
+  if (!state.orgId || !state.userId) {
+    throw new Error("External extraction completion missing orgId or userId");
+  }
 
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: policyId,
@@ -2485,7 +2527,7 @@ export const completeExternalExtract = action({
     });
     const modelCallCount = performanceReport?.modelCallCount ?? performanceReport?.modelCalls?.length;
     if (modelCallCount) {
-      const totalSeconds = Math.round((performanceReport.totalModelCallDurationMs ?? 0) / 1000);
+      const totalSeconds = Math.round((performanceReport?.totalModelCallDurationMs ?? 0) / 1000);
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
         timestamp: nowMs(),
@@ -2626,10 +2668,6 @@ export const completeExternalExtract = action({
       fileName: resolvedFileName,
       externalWorker: undefined,
     };
-    if (args.payloadStorageId) {
-      await clearArtifacts(ctx, policyId, "external_completion_payload");
-    }
-
     const checkpointUpdated = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
       jobId: policyId,
       leaseId: args.leaseId,
@@ -2650,6 +2688,54 @@ export const completeExternalExtract = action({
       });
     }
     return { ok: checkpointUpdated };
+}
+
+export const completeExternalExtract = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+    state: v.any(),
+    payloadStorageId: v.optional(v.string()),
+    document: v.optional(v.any()),
+    chunks: v.optional(v.array(v.any())),
+    sourceSpans: v.optional(v.array(v.any())),
+    sourceChunks: v.optional(v.array(v.any())),
+    sourceTree: v.optional(v.array(v.any())),
+    operationalProfile: v.optional(v.any()),
+    warnings: v.optional(v.array(v.string())),
+    tokenUsage: v.optional(v.any()),
+    performanceReport: v.optional(v.any()),
+    checkpoint: v.optional(v.any()),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult> => {
+    requireExtractionWorkerSecret(args.secret);
+    return await completeExternalExtractFromPayload(ctx, args);
+  },
+});
+
+export const completeExternalExtractFromStoredPayload = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+    state: v.any(),
+  },
+  handler: async (ctx, args): Promise<ExternalAckResult & { replayed?: boolean }> => {
+    requireExtractionWorkerSecret(args.secret);
+    const payloadStorageId = await getLatestArtifactStorageId(
+      ctx,
+      args.policyId,
+      "external_completion_payload",
+    );
+    if (!payloadStorageId) return { ok: false, replayed: false };
+    const result = await completeExternalExtractFromPayload(ctx, {
+      policyId: args.policyId,
+      leaseId: args.leaseId,
+      state: args.state,
+      payloadStorageId,
+    });
+    return { ...result, replayed: true };
   },
 });
 
@@ -2762,6 +2848,34 @@ export const failExternalJob = action({
           createdAt: nowMs(),
         }
       : null;
+    const hasReplayableCompletionPayload = args.error !== CANCELLED_BY_USER
+      ? Boolean(await getLatestArtifactStorageId(
+        ctx,
+        args.policyId,
+        "external_completion_payload",
+      ))
+      : false;
+    if (checkpoint && hasReplayableCompletionPayload) {
+      // Keep the same extraction run recoverable so the next worker claim can
+      // replay the stored completion payload instead of recomputing models.
+      const ok = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+        jobId: args.policyId,
+        leaseId: args.leaseId,
+        status: "running",
+        error: args.error,
+        checkpoint,
+      }) as boolean;
+      if (ok) {
+        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+          jobId: args.policyId,
+          timestamp: nowMs(),
+          message: `External extraction failed after saving completion payload; next worker claim will replay stored payload: ${args.error}`,
+          phase: "worker",
+          level: "warn",
+        });
+      }
+      return { ok, replayable: ok };
+    }
     await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
       jobId: args.policyId,
       leaseId: args.leaseId,

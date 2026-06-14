@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 
 function nowMs(): number {
   return dayjs().valueOf();
@@ -21,13 +22,42 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+async function appendPayloadSavedLog(
+  ctx: ActionCtx,
+  policyId: string,
+  byteLength: number,
+): Promise<{ logSaved: boolean; logError?: string }> {
+  try {
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+      jobId: policyId,
+      timestamp: nowMs(),
+      message: `Saved external extraction completion payload (${formatBytes(byteLength)})`,
+      phase: "worker",
+      level: byteLength >= 4 * 1024 * 1024 ? "warn" : "info",
+    });
+    return { logSaved: true };
+  } catch (error) {
+    return {
+      logSaved: false,
+      logError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+type CompletionPayloadSaveResult = {
+  storageId: string;
+  byteLength: number;
+  logSaved: boolean;
+  logError?: string;
+};
+
 export const saveExternalCompletionPayload = action({
   args: {
     secret: v.string(),
     policyId: v.string(),
     payload: v.any(),
   },
-  handler: async (ctx, args): Promise<{ storageId: string; byteLength: number }> => {
+  handler: async (ctx, args): Promise<CompletionPayloadSaveResult> => {
     requireExtractionWorkerSecret(args.secret);
     const json = JSON.stringify(args.payload);
     const byteLength = new TextEncoder().encode(json).byteLength;
@@ -39,14 +69,11 @@ export const saveExternalCompletionPayload = action({
       kind: "external_completion_payload",
       storageId: storageId as Id<"_storage">,
     });
-    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-      jobId: args.policyId,
-      timestamp: nowMs(),
-      message: `Saved external extraction completion payload (${formatBytes(byteLength)})`,
-      phase: "worker",
-      level: byteLength >= 4 * 1024 * 1024 ? "warn" : "info",
-    });
-    return { storageId, byteLength };
+    return {
+      storageId,
+      byteLength,
+      ...await appendPayloadSavedLog(ctx, args.policyId, byteLength),
+    };
   },
 });
 
@@ -67,20 +94,17 @@ export const finalizeExternalCompletionPayload = action({
     storageId: v.string(),
     byteLength: v.number(),
   },
-  handler: async (ctx, args): Promise<{ storageId: string; byteLength: number }> => {
+  handler: async (ctx, args): Promise<CompletionPayloadSaveResult> => {
     requireExtractionWorkerSecret(args.secret);
     await ctx.runMutation(internal.policies.pipelineSaveArtifact, {
       jobId: args.policyId,
       kind: "external_completion_payload",
       storageId: args.storageId as Id<"_storage">,
     });
-    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-      jobId: args.policyId,
-      timestamp: nowMs(),
-      message: `Saved external extraction completion payload (${formatBytes(args.byteLength)})`,
-      phase: "worker",
-      level: args.byteLength >= 4 * 1024 * 1024 ? "warn" : "info",
-    });
-    return { storageId: args.storageId, byteLength: args.byteLength };
+    return {
+      storageId: args.storageId,
+      byteLength: args.byteLength,
+      ...await appendPayloadSavedLog(ctx, args.policyId, args.byteLength),
+    };
   },
 });
