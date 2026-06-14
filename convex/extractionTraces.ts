@@ -6,6 +6,8 @@ import type { Id } from "./_generated/dataModel";
 
 const TRACE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const PIPELINE_LOG_LIMIT = 500;
+const TRACE_SESSION_HEARTBEAT_MS = 10_000;
+const PIPELINE_PROGRESS_LOG_MIN_INTERVAL_MS = 10_000;
 
 const traceStatusValidator = v.union(
   v.literal("running"),
@@ -94,6 +96,11 @@ function traceStatusFromPipeline(status: "complete" | "error", error?: string) {
   return error === "Cancelled by user" ? "cancelled" as const : "error" as const;
 }
 
+function isImportantProgressLog(entry: { message: string; level?: string }) {
+  if (entry.level === "warn" || entry.level === "error") return true;
+  return /\b(complete|completed|cancelled|canceled|failed|error|finished)\b/i.test(entry.message);
+}
+
 async function completeSessionDoc(
   ctx: MutationCtx,
   session: {
@@ -145,6 +152,13 @@ async function appendProgressLog(
     .first();
   if (!run) return;
   const existing = Array.isArray(run.pipelineLog) ? run.pipelineLog : [];
+  const previous = existing.at(-1);
+  const important = isImportantProgressLog(entry);
+  const phaseChanged = previous?.phase !== entry.phase;
+  const enoughTimeElapsed =
+    previous?.timestamp === undefined ||
+    entry.timestamp - previous.timestamp >= PIPELINE_PROGRESS_LOG_MIN_INTERVAL_MS;
+  if (!important && !phaseChanged && !enoughTimeElapsed) return;
   await ctx.db.patch(run._id, {
     pipelineLog: [...existing, entry].slice(-PIPELINE_LOG_LIMIT),
     updatedAt: nowMs(),
@@ -271,10 +285,9 @@ export const recordEvent = internalMutation({
       expiresAt: session.expiresAt,
     }) as any);
 
-    const patch: Record<string, unknown> = {
-      lastEventAt: timestamp,
-      updatedAt: timestamp,
-    };
+    const patch: Record<string, unknown> = {};
+    const shouldHeartbeatSession =
+      timestamp - (session.lastEventAt ?? session.startedAt) >= TRACE_SESSION_HEARTBEAT_MS;
     if (args.kind === "model_call") {
       patch.modelCallCount = (session.modelCallCount ?? 0) + 1;
       patch.modelDurationMs = (session.modelDurationMs ?? 0) + (args.durationMs ?? 0);
@@ -292,7 +305,15 @@ export const recordEvent = internalMutation({
     if (args.error) {
       patch.error = args.error;
     }
-    await ctx.db.patch(session._id, patch);
+    if (shouldHeartbeatSession || Object.keys(patch).length > 0) {
+      if (shouldHeartbeatSession) {
+        patch.lastEventAt = timestamp;
+        patch.updatedAt = timestamp;
+      } else if (Object.keys(patch).length > 0) {
+        patch.updatedAt = timestamp;
+      }
+      await ctx.db.patch(session._id, patch);
+    }
 
     const message = progressMessage(args);
     if (message) {

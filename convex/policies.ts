@@ -88,9 +88,15 @@ async function deactivatePolicyDeclarationFacts(
 }
 
 const PIPELINE_LOG_LIMIT = 500;
+const PIPELINE_LOG_MIN_INTERVAL_MS = 10_000;
 const PIPELINE_STALE_REQUEUE_MS = 5 * 60 * 1000;
 const PIPELINE_STALE_REQUEUE_BATCH_LIMIT = 25;
 const EXTERNAL_WORKER_CLAIM_BATCH_LIMIT = 10;
+
+function isImportantPipelineLog(entry: PolicyPipelineLogEntry) {
+  if (entry.level === "warn" || entry.level === "error") return true;
+  return /\b(complete|completed|cancelled|canceled|failed|error|finished)\b/i.test(entry.message);
+}
 
 function nowMs(): number {
   return dayjs().valueOf();
@@ -532,10 +538,46 @@ async function appendPolicyPipelineLog(
   const run = await ensurePolicyExtractionRun(ctx, policyId);
   if (!run) return;
   const existing = Array.isArray(run.pipelineLog) ? run.pipelineLog : [];
+  const previous = existing.at(-1);
+  const important = isImportantPipelineLog(entry);
+  const phaseChanged = previous?.phase !== entry.phase;
+  const enoughTimeElapsed =
+    previous?.timestamp === undefined ||
+    entry.timestamp - previous.timestamp >= PIPELINE_LOG_MIN_INTERVAL_MS;
+  if (!important && !phaseChanged && !enoughTimeElapsed) return;
   const next = [...existing, entry].slice(-PIPELINE_LOG_LIMIT);
   await ctx.db.patch(run._id, {
     pipelineLog: next,
     updatedAt: nowMs(),
+  });
+}
+
+async function insertPipelineTraceLog(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+  entry: PolicyPipelineLogEntry,
+) {
+  const run = await getPolicyExtractionRun(ctx, policyId);
+  const checkpoint = run?.pipelineCheckpoint as
+    | { state?: { traceId?: string } }
+    | undefined;
+  const traceId = checkpoint?.state?.traceId;
+  if (!traceId) return;
+  const session = await ctx.db
+    .query("policyExtractionTraceSessions")
+    .withIndex("by_traceId", (q: any) => q.eq("traceId", traceId))
+    .first();
+  if (!session) return;
+  await ctx.db.insert("policyExtractionTraceEvents", {
+    traceId,
+    policyId,
+    orgId: session.orgId,
+    kind: "log",
+    timestamp: entry.timestamp,
+    message: entry.message,
+    phase: entry.phase,
+    level: entry.level,
+    expiresAt: session.expiresAt,
   });
 }
 
@@ -2019,33 +2061,7 @@ export const pipelineAppendLog = internalMutation({
     if (level !== undefined) entry.level = level;
     const policyId = jobId as DataModelId<"policies">;
     await appendPolicyPipelineLog(ctx, policyId, entry);
-
-    const run = await getPolicyExtractionRun(ctx, policyId);
-    const checkpoint = run?.pipelineCheckpoint as
-      | { state?: { traceId?: string } }
-      | undefined;
-    const traceId = checkpoint?.state?.traceId;
-    if (!traceId) return;
-    const session = await ctx.db
-      .query("policyExtractionTraceSessions")
-      .withIndex("by_traceId", (q) => q.eq("traceId", traceId))
-      .first();
-    if (!session) return;
-    await ctx.db.insert("policyExtractionTraceEvents", {
-      traceId,
-      policyId,
-      orgId: session.orgId,
-      kind: "log",
-      timestamp,
-      message,
-      phase,
-      level,
-      expiresAt: session.expiresAt,
-    });
-    await ctx.db.patch(session._id, {
-      lastEventAt: timestamp,
-      updatedAt: dayjs().valueOf(),
-    });
+    await insertPipelineTraceLog(ctx, policyId, entry);
   },
 });
 
@@ -2287,7 +2303,7 @@ export const pipelineClaimExternalPreviewWorkerJob = internalMutation({
         heartbeatAt: now,
         updatedAt: now,
       });
-      await appendPolicyPipelineLog(ctx, run.policyId, {
+      await insertPipelineTraceLog(ctx, run.policyId, {
         timestamp: now,
         message: "External extraction worker claimed preview job",
         phase: "preview",
