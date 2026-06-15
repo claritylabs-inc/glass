@@ -2518,176 +2518,176 @@ async function completeExternalExtractFromPayload(
     throw new Error("External extraction completion missing orgId or userId");
   }
 
+  await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+    jobId: policyId,
+    timestamp: nowMs(),
+    message: `External extraction complete. Type: ${String(doc.type ?? "policy")}. ${chunks.length} chunks, ${sourceSpans.length} source spans.`,
+    phase: "extract",
+    level: "info",
+  });
+  const modelCallCount = performanceReport?.modelCallCount ?? performanceReport?.modelCalls?.length;
+  if (modelCallCount) {
+    const totalSeconds = Math.round((performanceReport?.totalModelCallDurationMs ?? 0) / 1000);
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: policyId,
       timestamp: nowMs(),
-      message: `External extraction complete. Type: ${String(doc.type ?? "policy")}. ${chunks.length} chunks, ${sourceSpans.length} source spans.`,
+      message: `External extraction model calls: ${modelCallCount}; total model time: ${totalSeconds}s`,
       phase: "extract",
       level: "info",
     });
-    const modelCallCount = performanceReport?.modelCallCount ?? performanceReport?.modelCalls?.length;
-    if (modelCallCount) {
-      const totalSeconds = Math.round((performanceReport?.totalModelCallDurationMs ?? 0) / 1000);
+  }
+  if (checkpoint) {
+    for (const line of summarizeExtractionCheckpoint({ checkpoint })) {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
         timestamp: nowMs(),
-        message: `External extraction model calls: ${modelCallCount}; total model time: ${totalSeconds}s`,
+        message: line,
         phase: "extract",
         level: "info",
       });
     }
-    if (checkpoint) {
-      for (const line of summarizeExtractionCheckpoint({ checkpoint })) {
-        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-          jobId: policyId,
-          timestamp: nowMs(),
-          message: line,
-          phase: "extract",
-          level: "info",
-        });
-      }
-    }
+  }
 
-    const processed = await postProcessExtractionDocument({
-      ctx,
-      orgId: state.orgId as Id<"organizations">,
-      document: doc,
-      sourceSpans: canonicalSpans,
-      log: async (message, level = "info") => {
-        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-          jobId: policyId,
-          timestamp: nowMs(),
-          message,
-          phase: "extract",
-          level,
-        });
-      },
-    });
-    doc = processed.document;
-    const sourceNodes = normalizeSourceTree(rawSourceTree, canonicalSpans, policyId);
-    const normalizedOperationalProfile = normalizeOperationalProfile(
-      operationalProfileInput,
-      sourceNodes,
-      canonicalSpans,
-      doc,
-    );
-    const validatedOperationalProfile = await validateOperationalCoverageLines({
-      ctx,
-      orgId: state.orgId as Id<"organizations">,
-      traceId: state.traceId,
-      policyId,
-      sourceTree: sourceNodes,
-      profile: normalizedOperationalProfile,
-      log: async (message, level = "info") => {
-        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-          jobId: policyId,
-          timestamp: nowMs(),
-          message,
-          phase: "extract",
-          level,
-        });
-      },
-    });
-    const operationalProfile = await extractAdditionalInsuredEligibility({
-      ctx,
-      orgId: state.orgId as Id<"organizations">,
-      traceId: state.traceId,
-      policyId,
-      sourceTree: sourceNodes,
-      profile: validatedOperationalProfile,
-      log: async (message, level = "info") => {
-        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-          jobId: policyId,
-          timestamp: nowMs(),
-          message,
-          phase: "extract",
-          level,
-        });
-      },
-    });
-    const fields = processed.fields;
-    if (processed.coverageReviewQuestionCount > 0) {
+  const processed = await postProcessExtractionDocument({
+    ctx,
+    orgId: state.orgId as Id<"organizations">,
+    document: doc,
+    sourceSpans: canonicalSpans,
+    log: async (message, level = "info") => {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
         timestamp: nowMs(),
-        message: `Extraction review has ${processed.coverageReviewQuestionCount} open question${processed.coverageReviewQuestionCount === 1 ? "" : "s"}`,
+        message,
         phase: "extract",
-        level: "warn",
+        level,
       });
-    }
-    const docName = doc.type === "quote"
-      ? (doc.quoteNumber || "quote")
-      : (doc.policyNumber || "policy");
-    const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
-
-    await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
-      id: policyId,
-      fields: {
-        fileName: resolvedFileName,
-        ...fields,
-        ...sourceTreePolicyFields({
-          sourceTree: sourceNodes,
-          operationalProfile,
-          existingDocumentMetadata: doc.documentMetadata,
-          existingDeclarations: doc.declarations,
-        }),
-        extractionDataStage: "final",
-        extractionDataStageUpdatedAt: nowMs(),
-        extractionPreviewError: undefined,
-      },
-    });
-
-    if (state.policyFileId) {
-      await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
-        id: state.policyFileId,
-        extractedData: doc,
+    },
+  });
+  doc = processed.document;
+  const sourceNodes = normalizeSourceTree(rawSourceTree, canonicalSpans, policyId);
+  const normalizedOperationalProfile = normalizeOperationalProfile(
+    operationalProfileInput,
+    sourceNodes,
+    canonicalSpans,
+    doc,
+  );
+  const validatedOperationalProfile = await validateOperationalCoverageLines({
+    ctx,
+    orgId: state.orgId as Id<"organizations">,
+    traceId: state.traceId,
+    policyId,
+    sourceTree: sourceNodes,
+    profile: normalizedOperationalProfile,
+    log: async (message, level = "info") => {
+      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+        jobId: policyId,
+        timestamp: nowMs(),
+        message,
+        phase: "extract",
+        level,
       });
-    }
-    if (state.fileId) {
-      await ctx.runMutation((internal as any).policies.updateFiles, {
-        id: policyId,
-        files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+    },
+  });
+  const operationalProfile = await extractAdditionalInsuredEligibility({
+    ctx,
+    orgId: state.orgId as Id<"organizations">,
+    traceId: state.traceId,
+    policyId,
+    sourceTree: sourceNodes,
+    profile: validatedOperationalProfile,
+    log: async (message, level = "info") => {
+      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+        jobId: policyId,
+        timestamp: nowMs(),
+        message,
+        phase: "extract",
+        level,
       });
-    }
-
-    const embeddingPayloadFileId = await storeEmbeddingPayload(ctx, policyId, {
-      documentChunksForEmbedding: chunks as PolicyExtractionState["documentChunksForEmbedding"],
-      sourceSpansForStorage: canonicalSpans as PolicyExtractionState["sourceSpansForStorage"],
-      sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
-      sourceNodesForStorage: sourceNodes,
-    });
-    const nextState: PolicyExtractionState = {
-      ...state,
-      clSdkCheckpoint: undefined,
-      clSdkCheckpointFileId: undefined,
-      embeddingPayloadFileId,
-      chunkIds: chunks.map((chunk) => String(chunk.id)),
-      sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
-      sourceChunkIds: sourceChunks.map((chunk) => String(chunk.id)),
-      operationalProfile,
-      fileName: resolvedFileName,
-      externalWorker: undefined,
-    };
-    const checkpointUpdated = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+    },
+  });
+  const fields = processed.fields;
+  if (processed.coverageReviewQuestionCount > 0) {
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: policyId,
-      leaseId: args.leaseId,
-      checkpoint: {
-        nextPhase: "embed_and_store",
-        state: nextState,
-        createdAt: nowMs(),
-      },
-    }) as boolean;
-    if (checkpointUpdated) {
-      await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.advance, { jobId: policyId });
-      await traceEvent(ctx, state.traceId, {
-        kind: "phase",
-        phase: "external_extract",
-        label: "external_extract",
-        status: "next",
-        message: "External extraction handed off to embed_and_store",
-      });
-    }
-    return { ok: checkpointUpdated };
+      timestamp: nowMs(),
+      message: `Extraction review has ${processed.coverageReviewQuestionCount} open question${processed.coverageReviewQuestionCount === 1 ? "" : "s"}`,
+      phase: "extract",
+      level: "warn",
+    });
+  }
+  const docName = doc.type === "quote"
+    ? (doc.quoteNumber || "quote")
+    : (doc.policyNumber || "policy");
+  const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
+
+  await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
+    id: policyId,
+    fields: {
+      fileName: resolvedFileName,
+      ...fields,
+      ...sourceTreePolicyFields({
+        sourceTree: sourceNodes,
+        operationalProfile,
+        existingDocumentMetadata: doc.documentMetadata,
+        existingDeclarations: doc.declarations,
+      }),
+      extractionDataStage: "final",
+      extractionDataStageUpdatedAt: nowMs(),
+      extractionPreviewError: undefined,
+    },
+  });
+
+  if (state.policyFileId) {
+    await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
+      id: state.policyFileId,
+      extractedData: doc,
+    });
+  }
+  if (state.fileId) {
+    await ctx.runMutation((internal as any).policies.updateFiles, {
+      id: policyId,
+      files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+    });
+  }
+
+  const embeddingPayloadFileId = await storeEmbeddingPayload(ctx, policyId, {
+    documentChunksForEmbedding: chunks as PolicyExtractionState["documentChunksForEmbedding"],
+    sourceSpansForStorage: canonicalSpans as PolicyExtractionState["sourceSpansForStorage"],
+    sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
+    sourceNodesForStorage: sourceNodes,
+  });
+  const nextState: PolicyExtractionState = {
+    ...state,
+    clSdkCheckpoint: undefined,
+    clSdkCheckpointFileId: undefined,
+    embeddingPayloadFileId,
+    chunkIds: chunks.map((chunk) => String(chunk.id)),
+    sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
+    sourceChunkIds: sourceChunks.map((chunk) => String(chunk.id)),
+    operationalProfile,
+    fileName: resolvedFileName,
+    externalWorker: undefined,
+  };
+  const checkpointUpdated = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+    jobId: policyId,
+    leaseId: args.leaseId,
+    checkpoint: {
+      nextPhase: "embed_and_store",
+      state: nextState,
+      createdAt: nowMs(),
+    },
+  }) as boolean;
+  if (checkpointUpdated) {
+    await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.advance, { jobId: policyId });
+    await traceEvent(ctx, state.traceId, {
+      kind: "phase",
+      phase: "external_extract",
+      label: "external_extract",
+      status: "next",
+      message: "External extraction handed off to embed_and_store",
+    });
+  }
+  return { ok: checkpointUpdated };
 }
 
 export const completeExternalExtract = action({
