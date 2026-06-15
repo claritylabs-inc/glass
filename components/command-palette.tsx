@@ -69,7 +69,7 @@ export function CommandPalette() {
       {open ? (
         <>
           <motion.div
-            className="fixed inset-0 z-50 bg-black/8 backdrop-blur-xs"
+            className="fixed inset-0 z-50 bg-transparent"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -77,7 +77,7 @@ export function CommandPalette() {
             onClick={close}
           />
           <motion.div
-            className="fixed top-[26%] left-1/2 z-50 w-[min(90vw,42rem)] -translate-x-1/2"
+            className="fixed top-[9vh] left-1/2 z-50 w-[min(92vw,45rem)] -translate-x-1/2"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
@@ -99,6 +99,7 @@ export function CommandPalette() {
               status={sending ? "submitted" : "ready"}
               agentBranding={agentBranding}
               orgId={viewerOrg?.org?._id}
+              variant="command"
             />
           </motion.div>
         </>
