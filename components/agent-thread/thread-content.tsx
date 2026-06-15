@@ -61,6 +61,11 @@ import { LogoIcon } from "@/components/ui/logo-icon";
 import { BrandIcon } from "@/components/ui/brand-icon";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
 import { scientistSurnameFor } from "@/components/agent-thread/scientist-surnames";
+import {
+  optimisticPromptAttachments,
+  promptReferenceIds,
+  uploadPromptFiles,
+} from "@/lib/thread-prompt";
 import type {
   MailboxArtifactRef,
   PolicyChangeAccess,
@@ -105,36 +110,6 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   lookup_vendor_compliance: "Checked vendor compliance",
   coordinate_mailbox_task: "Coordinated mailbox task",
 };
-
-function inferAttachmentContentType(
-  filename: string | undefined,
-  mediaType: string | undefined,
-) {
-  if (mediaType) return mediaType;
-  const lowerName = filename?.toLowerCase() ?? "";
-  if (lowerName.endsWith(".csv")) return "text/csv";
-  if (lowerName.endsWith(".tsv")) return "text/tab-separated-values";
-  if (lowerName.endsWith(".xlsx"))
-    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  if (lowerName.endsWith(".xls")) return "application/vnd.ms-excel";
-  if (lowerName.endsWith(".xlsm"))
-    return "application/vnd.ms-excel.sheet.macroEnabled.12";
-  if (lowerName.endsWith(".docx"))
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  if (lowerName.endsWith(".pptx"))
-    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg"))
-    return "image/jpeg";
-  if (lowerName.endsWith(".png")) return "image/png";
-  if (lowerName.endsWith(".gif")) return "image/gif";
-  if (lowerName.endsWith(".webp")) return "image/webp";
-  if (lowerName.endsWith(".txt")) return "text/plain";
-  if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown"))
-    return "text/markdown";
-  if (lowerName.endsWith(".json")) return "application/json";
-  if (lowerName.endsWith(".pdf")) return "application/pdf";
-  return "application/octet-stream";
-}
 
 function uniqueZipFilename(filename: string, usedNames: Set<string>) {
   const trimmed = filename.trim() || "attachment";
@@ -2224,29 +2199,7 @@ export function UnifiedThreadContent({
       setIsSubmitting(true);
       const content = text || "(attached files)";
       const clientMutationId = createClientMutationId("message");
-      const referencedPolicyIds = message.references
-        ?.filter((reference) => reference.kind === "policy")
-        .map((reference) => reference.id as Id<"policies">);
-      const referencedQuoteIds = message.references
-        ?.filter((reference) => reference.kind === "quote")
-        .map((reference) => reference.id as Id<"policies">);
-      const referencedRequirementIds = message.references
-        ?.filter((reference) => reference.kind === "requirement")
-        .map((reference) => reference.id as Id<"insuranceRequirements">);
-      const referencedMailboxIds = message.references
-        ?.filter((reference) => reference.kind === "mailbox")
-        .map((reference) => reference.id as Id<"connectedEmailAccounts">);
-      const optimisticAttachments =
-        message.files.length > 0
-          ? message.files.map((file) => ({
-              filename: file.filename ?? "file",
-              contentType: inferAttachmentContentType(
-                file.filename,
-                file.mediaType,
-              ),
-              size: 0,
-            }))
-          : undefined;
+      const referenceIds = promptReferenceIds(message.references);
 
       try {
         await appendOptimisticSend({
@@ -2256,69 +2209,31 @@ export function UnifiedThreadContent({
           clientMutationId,
           userId: viewerId as Id<"users"> | undefined,
           userName: viewerEmail ?? "You",
-          attachments: optimisticAttachments,
-          referencedPolicyIds,
-          referencedQuoteIds,
-          referencedRequirementIds,
-          referencedMailboxIds,
+          attachments: optimisticPromptAttachments(message.files),
+          ...referenceIds,
         });
         setChatError(null);
 
-        // Upload files first if any
-        const attachments: {
-          filename: string;
-          contentType: string;
-          size: number;
-          fileId: Id<"_storage">;
-        }[] = [];
-        if (message.files.length > 0) {
-          for (const file of message.files) {
-            const url = await generateUploadUrl();
-            const blob = await fetch(file.url).then((r) => r.blob());
-            const contentType = inferAttachmentContentType(
-              file.filename,
-              file.mediaType,
-            );
-            const res = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": contentType },
-              body: blob,
-            });
-            if (res.ok) {
-              const { storageId } = await res.json();
-              attachments.push({
-                filename: file.filename ?? "file",
-                contentType,
-                size: blob.size,
-                fileId: storageId as Id<"_storage">,
-              });
-            }
-          }
-        }
+        const attachments = await uploadPromptFiles(
+          message.files,
+          generateUploadUrl,
+        );
 
-        // If there are attachments, use mutation-based flow (backend handles response)
         if (attachments.length > 0) {
           await sendMessage({
             threadId,
             content,
             attachments,
-            referencedPolicyIds,
-            referencedQuoteIds,
-            referencedRequirementIds,
-            referencedMailboxIds,
+            ...referenceIds,
             clientMutationId,
           });
           return;
         }
 
-        // For text-only messages, send via Convex (processThreadChat handles the response)
         await sendMessage({
           threadId,
           content,
-          referencedPolicyIds,
-          referencedQuoteIds,
-          referencedRequirementIds,
-          referencedMailboxIds,
+          ...referenceIds,
           clientMutationId,
         });
       } catch (error) {

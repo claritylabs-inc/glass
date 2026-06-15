@@ -10,8 +10,7 @@ import {
   useRef,
   useEffect,
 } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
@@ -20,12 +19,6 @@ import {
   GlassPromptInput,
 } from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { toast } from "sonner";
-import { useCachedQuery } from "@/lib/sync/use-cached-query";
-import { createClientMutationId } from "@/lib/sync/client-mutation-id";
-import { useThreadCacheActions } from "@/lib/sync/glass-cached-queries";
 
 import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
@@ -37,39 +30,7 @@ import {
 import { EntityPreviewPanel } from "@/components/entity-preview-panel";
 import { CommandPalette } from "@/components/command-palette";
 import dynamic from "next/dynamic";
-import { getPublicAgentDomain } from "@/lib/domains";
-
-const AGENT_DOMAIN = getPublicAgentDomain();
-
-function inferAttachmentContentType(
-  filename: string | undefined,
-  mediaType: string | undefined,
-) {
-  if (mediaType) return mediaType;
-  const lowerName = filename?.toLowerCase() ?? "";
-  if (lowerName.endsWith(".csv")) return "text/csv";
-  if (lowerName.endsWith(".tsv")) return "text/tab-separated-values";
-  if (lowerName.endsWith(".xlsx"))
-    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  if (lowerName.endsWith(".xls")) return "application/vnd.ms-excel";
-  if (lowerName.endsWith(".xlsm"))
-    return "application/vnd.ms-excel.sheet.macroEnabled.12";
-  if (lowerName.endsWith(".docx"))
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  if (lowerName.endsWith(".pptx"))
-    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg"))
-    return "image/jpeg";
-  if (lowerName.endsWith(".png")) return "image/png";
-  if (lowerName.endsWith(".gif")) return "image/gif";
-  if (lowerName.endsWith(".webp")) return "image/webp";
-  if (lowerName.endsWith(".txt")) return "text/plain";
-  if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown"))
-    return "text/markdown";
-  if (lowerName.endsWith(".json")) return "application/json";
-  if (lowerName.endsWith(".pdf")) return "application/pdf";
-  return "application/octet-stream";
-}
+import { useStartAgentThread } from "@/hooks/use-start-agent-thread";
 
 const PdfPanel = dynamic(
   () =>
@@ -349,184 +310,25 @@ function ShellContent({
 
 function PersistentChatBar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { context: pageContext } = usePageContext();
-  const createThread = useMutation(api.threads.create);
-  const sendThreadMessage = useMutation(api.threads.sendMessage);
-  const generateUploadUrl = useMutation(api.threads.generateUploadUrl);
-  const {
-    appendOptimisticSend,
-    markOptimisticSendFailed,
-    seedOptimisticThread,
-  } = useThreadCacheActions();
   const [sending, setSending] = useState(false);
   const isThreadPage = pathname.startsWith("/agent/thread/");
   const hasContext = !!pageContext;
-  const viewerOrg = useCachedQuery(
-    "appShell.viewerOrg",
-    api.orgs.viewerOrg,
-    {},
-  );
-  const viewer = useCachedQuery("appShell.viewer", api.users.viewer, {});
-  const agentBranding =
-    viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
-      ? {
-          name: `${viewerOrg.brokerOrg.name} Agent`,
-          iconUrl: viewerOrg.brokerOrg.iconUrl,
-        }
-      : undefined;
+  const { agentBranding, startAgentThread, viewerOrg } =
+    useStartAgentThread("appShell");
 
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
-      const text = message.text.trim();
-      if (!text && message.files.length === 0) return;
       if (sending) return;
 
       setSending(true);
       try {
-        const messageClientMutationId = createClientMutationId("message");
-        const threadId = await createThread({
-          initialContext: pageContext ?? undefined,
-          agentDomain: AGENT_DOMAIN,
-          clientMutationId: createClientMutationId("thread"),
-        });
-        const content = text || "(attached files)";
-        const optimisticAttachments =
-          message.files.length > 0
-            ? message.files.map((file) => ({
-                filename: file.filename ?? "file",
-                contentType: inferAttachmentContentType(
-                  file.filename,
-                  file.mediaType,
-                ),
-                size: 0,
-              }))
-            : undefined;
-
-        if (viewerOrg?.org?._id && viewer?._id) {
-          await seedOptimisticThread({
-            threadId,
-            orgId: viewerOrg.org._id,
-            createdBy: viewer._id,
-            initialContext: pageContext ?? undefined,
-          });
-          await appendOptimisticSend({
-            threadId,
-            orgId: viewerOrg.org._id,
-            content,
-            clientMutationId: messageClientMutationId,
-            userId: viewer._id,
-            userName: viewer.name ?? viewer.email ?? "You",
-            attachments: optimisticAttachments,
-            referencedPolicyIds: message.references
-              ?.filter((reference) => reference.kind === "policy")
-              .map((reference) => reference.id as Id<"policies">),
-            referencedQuoteIds: message.references
-              ?.filter((reference) => reference.kind === "quote")
-              .map((reference) => reference.id as Id<"policies">),
-            referencedRequirementIds: message.references
-              ?.filter((reference) => reference.kind === "requirement")
-              .map((reference) => reference.id as Id<"insuranceRequirements">),
-            referencedMailboxIds: message.references
-              ?.filter((reference) => reference.kind === "mailbox")
-              .map((reference) => reference.id as Id<"connectedEmailAccounts">),
-          });
-        }
-
-        router.push(`/agent/thread/${threadId}`);
-        setSending(false);
-
-        void (async () => {
-          const attachments: {
-            filename: string;
-            contentType: string;
-            size: number;
-            fileId: Id<"_storage">;
-          }[] = [];
-
-          try {
-            if (message.files.length > 0) {
-              for (const file of message.files) {
-                const uploadUrl = await generateUploadUrl();
-                const blob = await fetch(file.url).then((r) => r.blob());
-                const contentType = inferAttachmentContentType(
-                  file.filename,
-                  file.mediaType,
-                );
-                const res = await fetch(uploadUrl, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": contentType,
-                  },
-                  body: blob,
-                });
-
-                if (res.ok) {
-                  const { storageId } = await res.json();
-                  attachments.push({
-                    filename: file.filename ?? "file",
-                    contentType,
-                    size: blob.size,
-                    fileId: storageId as Id<"_storage">,
-                  });
-                }
-              }
-            }
-
-            await sendThreadMessage({
-              threadId,
-              content,
-              attachments: attachments.length > 0 ? attachments : undefined,
-              referencedPolicyIds: message.references
-                ?.filter((reference) => reference.kind === "policy")
-                .map((reference) => reference.id as Id<"policies">),
-              referencedQuoteIds: message.references
-                ?.filter((reference) => reference.kind === "quote")
-                .map((reference) => reference.id as Id<"policies">),
-              referencedRequirementIds: message.references
-                ?.filter((reference) => reference.kind === "requirement")
-                .map(
-                  (reference) => reference.id as Id<"insuranceRequirements">,
-                ),
-              referencedMailboxIds: message.references
-                ?.filter((reference) => reference.kind === "mailbox")
-                .map(
-                  (reference) => reference.id as Id<"connectedEmailAccounts">,
-                ),
-              clientMutationId: messageClientMutationId,
-            });
-          } catch (error) {
-            if (viewerOrg?.org?._id) {
-              await markOptimisticSendFailed({
-                threadId,
-                clientMutationId: messageClientMutationId,
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Failed to send message",
-              });
-            }
-            toast.error("Failed to send message");
-          }
-        })();
-      } catch {
-        toast.error("Failed to start chat");
+        await startAgentThread(message, pageContext ?? undefined);
+      } finally {
         setSending(false);
       }
     },
-    [
-      appendOptimisticSend,
-      createThread,
-      generateUploadUrl,
-      markOptimisticSendFailed,
-      pageContext,
-      router,
-      seedOptimisticThread,
-      sendThreadMessage,
-      sending,
-      viewer,
-      viewerOrg,
-    ],
+    [pageContext, sending, startAgentThread],
   );
 
   if (isThreadPage || !hasContext) return null;

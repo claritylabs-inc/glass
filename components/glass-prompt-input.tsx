@@ -286,7 +286,7 @@ function PreparedInputActions({
       aria-hidden={!visible}
       data-glass-prepared-actions
       className={cn(
-        "flex min-w-0 items-center overflow-hidden transition-[max-width,opacity,transform,margin] duration-150 ease-out",
+        "flex min-w-0 items-center overflow-hidden transition-[max-width,opacity,transform,margin] duration-0 ease-linear",
         visible
           ? "mr-1 max-w-[min(24rem,100%)] translate-y-0 opacity-100"
           : "mr-0 max-w-0 -translate-y-0.5 opacity-0 pointer-events-none",
@@ -304,7 +304,7 @@ function PreparedInputActions({
               event.preventDefault();
               action.onSelect();
             }}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-label font-medium text-muted-foreground/70 transition-colors duration-100 ease-out hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-label font-medium text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
           >
             {action.icon}
             <span className="hidden sm:inline">{action.label}</span>
@@ -839,16 +839,6 @@ export const GlassPromptInput = forwardRef<
           </div>
         </div>
       ) : null}
-      <div
-        data-glass-prompt-intent-ring
-        className="pointer-events-none absolute inset-0 z-10 rounded-xl ring-1 ring-foreground/16 transition-opacity duration-100 ease-out"
-        style={{
-          opacity:
-            disabled || isDraggingFiles
-              ? 0
-              : Math.max(pointerIntent, isComposerFocused ? 0.72 : 0),
-        }}
-      />
       <PromptInput
         onSubmit={handleSubmit}
         onDragEnter={handleDragEnter}
@@ -900,7 +890,7 @@ export const GlassPromptInput = forwardRef<
             />
             <div
               className={cn(
-                "flex min-w-0 items-center gap-1.5 overflow-hidden transition-[max-width,opacity,transform,margin] duration-150 ease-out",
+                "flex min-w-0 items-center gap-1.5 overflow-hidden transition-[max-width,opacity,transform,margin] duration-0 ease-linear",
                 showPreparedActions
                   ? "ml-0 max-w-0 -translate-y-0.5 opacity-0 pointer-events-none"
                   : roomyOnMobile
