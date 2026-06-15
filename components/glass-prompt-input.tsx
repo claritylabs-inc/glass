@@ -255,7 +255,6 @@ function PreparedInputActions({
   hasRequirementTargets,
   hasMailboxTargets,
   onOpenTargetPicker,
-  variant = "compact",
 }: {
   visible: boolean;
   showAttach: boolean;
@@ -263,15 +262,12 @@ function PreparedInputActions({
   hasRequirementTargets: boolean;
   hasMailboxTargets: boolean;
   onOpenTargetPicker: (marker: "@" | "/", kinds: PromptTargetKind[]) => void;
-  variant?: "compact" | "detailed";
 }) {
   const attachments = usePromptInputAttachments();
-  const isDetailed = variant === "detailed";
 
   const actions: Array<{
     id: string;
     label: string;
-    description: string;
     icon: React.ReactNode;
     onSelect: () => void;
   }> = [];
@@ -280,7 +276,6 @@ function PreparedInputActions({
     actions.push({
       id: "policy",
       label: "Policy",
-      description: "Reference policy or quote records",
       icon: <FileText className="h-3.5 w-3.5" />,
       onSelect: () => {
         onOpenTargetPicker("@", PREPARED_POLICY_TARGET_KINDS);
@@ -292,7 +287,6 @@ function PreparedInputActions({
     actions.push({
       id: "requirement",
       label: "Requirement",
-      description: "Reference active insurance requirements",
       icon: <ClipboardList className="h-3.5 w-3.5" />,
       onSelect: () => {
         onOpenTargetPicker("@", PREPARED_REQUIREMENT_TARGET_KINDS);
@@ -304,7 +298,6 @@ function PreparedInputActions({
     actions.push({
       id: "mailbox",
       label: "Mailbox",
-      description: "Search a connected email inbox",
       icon: <Inbox className="h-3.5 w-3.5" />,
       onSelect: () => {
         onOpenTargetPicker("/", PREPARED_MAILBOX_TARGET_KINDS);
@@ -315,8 +308,7 @@ function PreparedInputActions({
   if (showAttach) {
     actions.push({
       id: "attach",
-      label: isDetailed ? "Attach files" : "Attach",
-      description: "PDFs, policies, requirements",
+      label: "Attach",
       icon: <Paperclip className="h-3.5 w-3.5" />,
       onSelect: () => {
         attachments.openFileDialog();
@@ -336,18 +328,11 @@ function PreparedInputActions({
       className={cn(
         "flex min-w-0 items-center overflow-hidden transition-[max-width,opacity,transform,margin] duration-0 ease-linear",
         visible
-          ? isDetailed
-            ? "mr-2 max-w-[min(42rem,100%)] translate-y-0 opacity-100"
-            : "mr-1 max-w-[min(24rem,100%)] translate-y-0 opacity-100"
+          ? "mr-1 max-w-[min(24rem,100%)] translate-y-0 opacity-100"
           : "mr-0 max-w-0 -translate-y-0.5 opacity-0 pointer-events-none",
       )}
     >
-      <div
-        className={cn(
-          "flex min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          isDetailed ? "gap-1.5" : "gap-1",
-        )}
-      >
+      <div className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {actions.map((action) => (
           <button
             key={action.id}
@@ -359,26 +344,10 @@ function PreparedInputActions({
               event.preventDefault();
               action.onSelect();
             }}
-            className={cn(
-              "inline-flex shrink-0 items-center border border-foreground/8 bg-card text-left font-medium text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10",
-              isDetailed
-                ? "h-11 gap-2 rounded-lg px-3"
-                : "h-7 gap-1.5 rounded-full px-2.5 text-label",
-            )}
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-label font-medium text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
           >
-            <span className="shrink-0">{action.icon}</span>
-            {isDetailed ? (
-              <span className="hidden min-w-0 sm:block">
-                <span className="block truncate text-label text-foreground/75">
-                  {action.label}
-                </span>
-                <span className="block max-w-44 truncate text-[11px] leading-3 text-muted-foreground/45">
-                  {action.description}
-                </span>
-              </span>
-            ) : (
-              <span className="hidden sm:inline">{action.label}</span>
-            )}
+            {action.icon}
+            <span className="hidden sm:inline">{action.label}</span>
           </button>
         ))}
       </div>
@@ -971,7 +940,6 @@ export const GlassPromptInput = forwardRef<
               hasRequirementTargets={hasRequirementTargets}
               hasMailboxTargets={hasMailboxTargets}
               onOpenTargetPicker={openPreparedTargetPicker}
-              variant={isCommandVariant ? "detailed" : "compact"}
             />
             <div
               className={cn(
