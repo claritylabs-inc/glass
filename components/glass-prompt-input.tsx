@@ -210,7 +210,6 @@ function TriggerHintTags({
 
 function PreparedInputActions({
   visible,
-  roomyOnMobile = false,
   showAttach,
   hasPolicyTargets,
   hasRequirementTargets,
@@ -218,7 +217,6 @@ function PreparedInputActions({
   onOpenTargetPicker,
 }: {
   visible: boolean;
-  roomyOnMobile?: boolean;
   showAttach: boolean;
   hasPolicyTargets: boolean;
   hasRequirementTargets: boolean;
@@ -278,37 +276,41 @@ function PreparedInputActions({
     });
   }
 
-  if (!visible || actions.length === 0) {
+  if (actions.length === 0) {
     return null;
   }
 
   return (
     <div
       aria-label="Prepared prompt actions"
+      aria-hidden={!visible}
       data-glass-prepared-actions
       className={cn(
-        "pointer-events-none absolute z-20 flex max-w-[calc(100%-6.25rem)] items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-        roomyOnMobile
-          ? "left-3 bottom-2 sm:left-2 sm:bottom-1.5"
-          : "left-2 bottom-1.5",
+        "flex min-w-0 items-center overflow-hidden transition-[max-width,opacity,transform,margin] duration-150 ease-out",
+        visible
+          ? "mr-1 max-w-[min(24rem,100%)] translate-y-0 opacity-100"
+          : "mr-0 max-w-0 -translate-y-0.5 opacity-0 pointer-events-none",
       )}
     >
-      {actions.map((action) => (
-        <button
-          key={action.id}
-          type="button"
-          aria-label={action.label}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={(event) => {
-            event.preventDefault();
-            action.onSelect();
-          }}
-          className="pointer-events-auto inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card/95 px-2.5 text-label font-medium text-muted-foreground/70 transition-colors hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
-        >
-          {action.icon}
-          <span className="hidden sm:inline">{action.label}</span>
-        </button>
-      ))}
+      <div className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {actions.map((action) => (
+          <button
+            key={action.id}
+            type="button"
+            aria-label={action.label}
+            tabIndex={visible ? 0 : -1}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.preventDefault();
+              action.onSelect();
+            }}
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-label font-medium text-muted-foreground/70 transition-colors duration-100 ease-out hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
+          >
+            {action.icon}
+            <span className="hidden sm:inline">{action.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -766,6 +768,20 @@ export const GlassPromptInput = forwardRef<
     },
     [],
   );
+  const hasPolicyTargets =
+    (targets?.policies.length ?? 0) + (targets?.quotes.length ?? 0) > 0;
+  const hasRequirementTargets = (targets?.requirements.length ?? 0) > 0;
+  const hasMailboxTargets = (targets?.mailboxes.length ?? 0) > 0;
+  const hasPreparedActions =
+    showAttach || hasPolicyTargets || hasRequirementTargets || hasMailboxTargets;
+  const showPreparedActions =
+    hasPreparedActions &&
+    (pointerIntent >= PREPARED_ACTION_INTENT_THRESHOLD || isComposerFocused) &&
+    textValue.trim().length === 0 &&
+    !activeTrigger &&
+    !disabled &&
+    !isGenerating &&
+    !isDraggingFiles;
 
   return (
     <div
@@ -869,18 +885,28 @@ export const GlassPromptInput = forwardRef<
         <PromptInputFooter
           className={
             roomyOnMobile
-              ? "px-3 sm:px-2 pb-2 sm:pb-1.5 pt-0.5 sm:pt-0"
-              : "px-2 pb-1.5 pt-0"
+              ? "overflow-hidden px-3 sm:px-2 pb-2 sm:pb-1.5 pt-0.5 sm:pt-0"
+              : "overflow-hidden px-2 pb-1.5 pt-0"
           }
         >
-          {/* Left side: branding + context */}
-          <PromptInputTools>
+          <PromptInputTools className="min-w-0 flex-1 overflow-hidden">
+            <PreparedInputActions
+              visible={showPreparedActions}
+              showAttach={showAttach}
+              hasPolicyTargets={hasPolicyTargets}
+              hasRequirementTargets={hasRequirementTargets}
+              hasMailboxTargets={hasMailboxTargets}
+              onOpenTargetPicker={openPreparedTargetPicker}
+            />
             <div
-              className={
-                roomyOnMobile
-                  ? "flex items-center gap-1.5 ml-1.5 sm:ml-1"
-                  : "flex items-center gap-1.5 ml-1"
-              }
+              className={cn(
+                "flex min-w-0 items-center gap-1.5 overflow-hidden transition-[max-width,opacity,transform,margin] duration-150 ease-out",
+                showPreparedActions
+                  ? "ml-0 max-w-0 -translate-y-0.5 opacity-0 pointer-events-none"
+                  : roomyOnMobile
+                    ? "ml-1.5 max-w-96 translate-y-0 opacity-100 sm:ml-1"
+                    : "ml-1 max-w-96 translate-y-0 opacity-100",
+              )}
             >
               {agentBranding?.iconUrl ? (
                 <BrandIcon
@@ -897,12 +923,12 @@ export const GlassPromptInput = forwardRef<
                   className="shrink-0"
                 />
               )}
-              <span className="hidden sm:inline text-label font-medium text-muted-foreground/40">
+              <span className="hidden min-w-0 truncate sm:inline text-label font-medium text-muted-foreground/40">
                 {agentBranding?.name ?? "Glass"}
               </span>
               {contextLabel && (
                 <span
-                  className="text-label font-medium text-muted-foreground/30 bg-foreground/3 px-1.5 py-0.5 rounded max-w-50 truncate inline-block align-middle"
+                  className="min-w-0 max-w-50 truncate rounded bg-foreground/3 px-1.5 py-0.5 text-label font-medium text-muted-foreground/30"
                   title={contextLabel}
                 >
                   {contextLabel}
@@ -911,8 +937,7 @@ export const GlassPromptInput = forwardRef<
             </div>
           </PromptInputTools>
 
-          {/* Right side: attach + submit */}
-          <PromptInputTools>
+          <PromptInputTools className="shrink-0">
             <div className="flex items-center gap-1">
               {showAttach && <AttachmentActionButtons />}
               {isGenerating && onStop ? (
@@ -974,25 +999,6 @@ export const GlassPromptInput = forwardRef<
             </div>
           </PromptInputTools>
         </PromptInputFooter>
-        <PreparedInputActions
-          visible={
-            (pointerIntent >= PREPARED_ACTION_INTENT_THRESHOLD ||
-              isComposerFocused) &&
-            textValue.trim().length === 0 &&
-            !activeTrigger &&
-            !disabled &&
-            !isGenerating &&
-            !isDraggingFiles
-          }
-          roomyOnMobile={roomyOnMobile}
-          showAttach={showAttach}
-          hasPolicyTargets={
-            (targets?.policies.length ?? 0) + (targets?.quotes.length ?? 0) > 0
-          }
-          hasRequirementTargets={(targets?.requirements.length ?? 0) > 0}
-          hasMailboxTargets={(targets?.mailboxes.length ?? 0) > 0}
-          onOpenTargetPicker={openPreparedTargetPicker}
-        />
       </PromptInput>
     </div>
   );
