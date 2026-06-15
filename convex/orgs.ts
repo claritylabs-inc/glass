@@ -477,6 +477,7 @@ export const createBrokerOrg = mutation({
       type: "broker",
       partnerType: args.partnerType ?? "broker",
       slug: normalized,
+      primaryInsuranceContactId: userId,
       ...(args.website && { website: args.website }),
       ...(args.whiteLabelingEnabled !== undefined && {
         whiteLabelingEnabled: args.whiteLabelingEnabled,
@@ -513,6 +514,7 @@ export const createPartnerOrg = mutation({
       name: args.name.trim(),
       type: "partner",
       partnerKind: "program_admin",
+      primaryInsuranceContactId: userId,
       ...(args.website && { website: args.website }),
     });
 
@@ -560,6 +562,7 @@ export const createClientOrg = mutation({
     const orgId = await ctx.db.insert("organizations", {
       name: args.name,
       type: "client",
+      primaryInsuranceContactId: userId,
       ...(args.website && { website: args.website }),
     });
 
@@ -1185,22 +1188,40 @@ export const acceptInvitation = mutation({
 export const removeMember = mutation({
   args: { membershipId: v.id("orgMemberships") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdmin(ctx);
+    const { orgId, org } = await requireOrgAdmin(ctx);
 
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
 
-    // Can't remove the last admin
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .collect();
+
     if (membership.role === "admin") {
-      const admins = await ctx.db
-        .query("orgMemberships")
-        .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
-        .collect();
-      const adminCount = admins.filter((m) => m.role === "admin").length;
+      const adminCount = memberships.filter((m) => m.role === "admin").length;
       if (adminCount <= 1) throw new Error("Cannot remove the last admin");
     }
 
     await ctx.db.delete(args.membershipId);
+
+    const remainingMemberships = memberships.filter(
+      (m) => m._id !== args.membershipId,
+    );
+    let primaryInsuranceContactId = org.primaryInsuranceContactId;
+    if (
+      org.primaryInsuranceContactId === membership.userId ||
+      (!org.primaryInsuranceContactId && remainingMemberships.length === 1)
+    ) {
+      primaryInsuranceContactId =
+        remainingMemberships.length === 1
+          ? remainingMemberships[0].userId
+          : undefined;
+      await ctx.db.patch(orgId, {
+        primaryInsuranceContactId,
+      });
+    }
+    return { primaryInsuranceContactId: primaryInsuranceContactId ?? null };
   },
 });
 
@@ -1288,7 +1309,6 @@ export const setPrimaryInsuranceContact = mutation({
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAdmin(ctx);
 
-    // Verify the user is a member of this org
     const membership = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", args.userId))
@@ -1296,6 +1316,37 @@ export const setPrimaryInsuranceContact = mutation({
     if (!membership) throw new Error("User is not a member of this organization");
 
     await ctx.db.patch(orgId, { primaryInsuranceContactId: args.userId });
+  },
+});
+
+export const ensurePrimaryInsuranceContact = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { orgId } = await requireOrgAccess(ctx);
+    const org = await ctx.db.get(orgId);
+    if (!org) throw new Error("Organization not found");
+
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .collect();
+
+    const currentPrimaryStillMember = org.primaryInsuranceContactId
+      ? memberships.some(
+          (membership) => membership.userId === org.primaryInsuranceContactId,
+        )
+      : false;
+    if (currentPrimaryStillMember) {
+      return { userId: org.primaryInsuranceContactId, updated: false };
+    }
+
+    if (memberships.length !== 1) {
+      return { userId: null, updated: false };
+    }
+
+    const userId = memberships[0].userId;
+    await ctx.db.patch(orgId, { primaryInsuranceContactId: userId });
+    return { userId, updated: true };
   },
 });
 

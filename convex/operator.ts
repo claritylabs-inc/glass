@@ -1567,6 +1567,7 @@ export const createSoloClientInternal = internalMutation({
       agentHandle,
       allowedEmails: [args.adminEmail],
       emailVerification: "strict",
+      primaryInsuranceContactId: args.adminUserId,
       primaryContactName: args.adminName?.trim() || undefined,
       primaryContactEmail: args.adminEmail,
       primaryContactPhone: adminPhone,
@@ -1637,6 +1638,7 @@ export const createMGAInternal = internalMutation({
       website: args.mga.website?.trim() || undefined,
       allowedEmails: [args.adminEmail],
       emailVerification: "strict",
+      primaryInsuranceContactId: args.adminUserId,
       onboardingComplete: true,
       operatorStatus: "onboarding",
     });

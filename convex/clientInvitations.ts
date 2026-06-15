@@ -163,6 +163,7 @@ async function ensureClientMembership(
       name: resolvedName,
       inviteStatus: undefined,
       draftCreatedByUserId: undefined,
+      primaryInsuranceContactId: args.userId,
     });
     await ctx.db.insert("orgMemberships", {
       orgId: args.draftOrgId,
@@ -176,6 +177,7 @@ async function ensureClientMembership(
     name: resolvedName,
     type: "client",
     brokerOrgId: args.brokerOrgId,
+    primaryInsuranceContactId: args.userId,
   });
   await ctx.db.insert("orgMemberships", {
     orgId: clientOrgId,
