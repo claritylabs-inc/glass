@@ -522,6 +522,7 @@ export const acceptInvitation = mutation({
         vendorOrgId = await ctx.db.insert("organizations", {
           name: companyNameFromEmail(inv.vendorEmail),
           type: "client",
+          primaryInsuranceContactId: userId,
         });
         await ctx.db.insert("orgMemberships", { orgId: vendorOrgId, userId, role: "admin" });
       }

@@ -361,6 +361,7 @@ export const upsertProvisionedBroker = internalMutation({
       whiteLabelingEnabled: args.broker.whiteLabelingEnabled,
       agentDisplayName: args.broker.agentDisplayName?.trim() || undefined,
       agentHandle,
+      primaryInsuranceContactId: existingBySlug?.primaryInsuranceContactId ?? args.adminUserId,
       onboardingComplete: args.markOnboardingComplete,
       operatorStatus: existingBySlug?.operatorStatus ?? ("onboarding" as const),
     };
