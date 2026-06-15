@@ -299,6 +299,20 @@
   transition: width var(--motion-medium) var(--motion-ease);
 }
 
+@media (max-width: 600px) {
+  [data-sonner-toaster][data-x-position="right"] {
+    left: auto;
+    right: var(--mobile-offset-right);
+    width: var(--width);
+  }
+
+  [data-sonner-toaster][data-x-position="right"]
+    [data-sonner-toast][data-x-position="right"] {
+    left: auto;
+    right: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

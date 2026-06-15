@@ -38,6 +38,12 @@ describe("agent steering surfaces", () => {
     expect(promptInput).toContain("openPreparedTargetPicker");
     expect(promptInput).toContain("attachments.openFileDialog()");
     expect(promptInput).toContain("useCachedAgentTargets(orgId)");
+    expect(promptInput).toContain(
+      '<PromptInputTools className="min-w-0 flex-1 overflow-hidden">',
+    );
+    expect(promptInput).toContain("transition-[max-width,opacity,transform,margin]");
+    expect(promptInput).toContain("max-w-0");
+    expect(promptInput).not.toContain("pointer-events-none absolute z-20");
   });
 
   it("persists selected targets and routes them into agent context", () => {
