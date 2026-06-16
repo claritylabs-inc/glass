@@ -172,11 +172,29 @@ function AttachmentTags({
 type PromptReference = NonNullable<PromptInputMessage["references"]>[number];
 type PromptTargetKind = PromptReference["kind"];
 
+type PromptTextToken = {
+  type: "text";
+  id: string;
+  text: string;
+};
+
+type PromptReferenceToken = {
+  type: "reference";
+  id: string;
+  reference: PromptReference;
+};
+
+type PromptToken = PromptTextToken | PromptReferenceToken;
+type PromptTokensAction =
+  | PromptToken[]
+  | ((current: PromptToken[]) => PromptToken[]);
+
 type PromptTrigger = {
   marker: "@" | "/";
   query: string;
   start: number;
   end: number;
+  textTokenId: string;
   preparedKinds?: PromptTargetKind[];
 };
 
@@ -187,6 +205,95 @@ type MentionTarget = PromptReference & {
 const PREPARED_POLICY_TARGET_KINDS: PromptTargetKind[] = ["policy", "quote"];
 const PREPARED_REQUIREMENT_TARGET_KINDS: PromptTargetKind[] = ["requirement"];
 const PREPARED_MAILBOX_TARGET_KINDS: PromptTargetKind[] = ["mailbox"];
+
+let promptTokenIdCounter = 0;
+
+function nextPromptTokenId(prefix: string) {
+  promptTokenIdCounter += 1;
+  return `${prefix}-${promptTokenIdCounter}`;
+}
+
+function createTextToken(
+  text = "",
+  id = nextPromptTokenId("text"),
+): PromptTextToken {
+  return { type: "text", id, text };
+}
+
+function createReferenceToken(
+  reference: PromptReference,
+  id = nextPromptTokenId("reference"),
+): PromptReferenceToken {
+  return {
+    type: "reference",
+    id,
+    reference,
+  };
+}
+
+function initialPromptTokens(defaultReferences?: PromptReference[]) {
+  if (!defaultReferences || defaultReferences.length === 0) {
+    return [createTextToken("", "initial-text-0")];
+  }
+
+  const tokens: PromptToken[] = [createTextToken("", "initial-text-0")];
+  defaultReferences.forEach((reference, index) => {
+    tokens.push(
+      createReferenceToken(reference, `initial-reference-${index}`),
+      createTextToken("", `initial-text-${index + 1}`),
+    );
+  });
+  return tokens;
+}
+
+function firstTextTokenId(tokens: PromptToken[]) {
+  return tokens.find((token) => token.type === "text")?.id ?? "";
+}
+
+function referenceMarker(kind: PromptReference["kind"]) {
+  return kind === "mailbox" ? "/" : "@";
+}
+
+function referenceKey(reference: PromptReference) {
+  return `${reference.kind}:${reference.id}`;
+}
+
+function promptTokensToReferences(tokens: PromptToken[]) {
+  const seen = new Set<string>();
+  const references: PromptReference[] = [];
+
+  tokens.forEach((token) => {
+    if (token.type !== "reference") return;
+    const key = referenceKey(token.reference);
+    if (seen.has(key)) return;
+    seen.add(key);
+    references.push(token.reference);
+  });
+
+  return references;
+}
+
+function shouldSeparatePromptPieces(current: string, next: string) {
+  if (!current || !next) return false;
+  return !/\s$/.test(current) && !/^[\s,.;:!?)]/.test(next);
+}
+
+function promptTokensToText(tokens: PromptToken[]) {
+  return tokens.reduce((text, token) => {
+    const piece =
+      token.type === "text"
+        ? token.text
+        : `${referenceMarker(token.reference.kind)}${token.reference.label}`;
+    if (!piece) return text;
+    return `${text}${shouldSeparatePromptPieces(text, piece) ? " " : ""}${piece}`;
+  }, "");
+}
+
+function promptTokensAreTextEmpty(tokens: PromptToken[]) {
+  return tokens.every(
+    (token) => token.type !== "text" || token.text.trim().length === 0,
+  );
+}
 
 function targetKindsForTrigger(trigger: PromptTrigger): PromptTargetKind[] {
   if (trigger.preparedKinds) return trigger.preparedKinds;
@@ -214,42 +321,110 @@ function referenceIcon(kind: PromptReference["kind"]) {
   return <FileText className="h-3.5 w-3.5" />;
 }
 
-function InlineReferenceTags({
-  references,
+function InlineReferenceTag({
+  reference,
   onRemove,
 }: {
-  references: PromptReference[];
-  onRemove: (index: number) => void;
+  reference: PromptReference;
+  onRemove: () => void;
 }) {
-  if (references.length === 0) return null;
+  return (
+    <span className="inline-flex h-6 max-w-[min(16rem,100%)] shrink-0 items-center gap-1.5 self-center rounded-full bg-foreground/5 px-2.5 text-label font-medium text-foreground/75">
+      <span className="text-muted-foreground/45">
+        {referenceMarker(reference.kind)}
+      </span>
+      <span
+        className="min-w-0 truncate"
+        title={reference.label}
+      >
+        {reference.label}
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        title={`Remove ${reference.label}`}
+        className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
+function textSegmentWidth(text: string) {
+  if (!text) return "1ch";
+  return `${Math.min(Math.max(text.length, 1), 72)}ch`;
+}
+
+function mergeTextAroundReference(
+  tokens: PromptToken[],
+  referenceIndex: number,
+): { tokens: PromptToken[]; focus?: { textTokenId: string; cursor: number } } {
+  const before = tokens[referenceIndex - 1];
+  const after = tokens[referenceIndex + 1];
+
+  if (before?.type === "text" && after?.type === "text") {
+    const merged = createTextToken(`${before.text}${after.text}`);
+    return {
+      tokens: [
+        ...tokens.slice(0, referenceIndex - 1),
+        merged,
+        ...tokens.slice(referenceIndex + 2),
+      ],
+      focus: { textTokenId: merged.id, cursor: before.text.length },
+    };
+  }
+
+  const nextTokens = tokens.filter((_, index) => index !== referenceIndex);
+  return {
+    tokens: nextTokens.length > 0 ? nextTokens : [createTextToken()],
+  };
+}
+
+function PromptTextSegment({
+  token,
+  placeholder,
+  isCommandVariant,
+  roomyOnMobile,
+  registerRef,
+  onFocus,
+  onChange,
+  onKeyDown,
+}: {
+  token: PromptTextToken;
+  placeholder?: string;
+  isCommandVariant: boolean;
+  roomyOnMobile: boolean;
+  registerRef: (id: string, node: HTMLTextAreaElement | null) => void;
+  onFocus: () => void;
+  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+}) {
+  const isPlaceholderSegment = Boolean(placeholder);
 
   return (
-    <>
-      {references.map((reference, index) => (
-        <span
-          key={`${reference.kind}-${reference.id}`}
-          className="inline-flex h-6 max-w-[min(16rem,100%)] shrink-0 items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 text-label font-medium text-foreground/75"
-        >
-          <span className="text-muted-foreground/45">
-            {reference.kind === "mailbox" ? "/" : "@"}
-          </span>
-          <span
-            className="min-w-0 truncate"
-            title={reference.label}
-          >
-            {reference.label}
-          </span>
-          <button
-            type="button"
-            onClick={() => onRemove(index)}
-            title={`Remove ${reference.label}`}
-            className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </span>
-      ))}
-    </>
+    <PromptInputTextarea
+      ref={(node) => registerRef(token.id, node)}
+      name={`prompt-segment-${token.id}`}
+      placeholder={placeholder ?? ""}
+      value={token.text}
+      onChange={onChange}
+      onFocus={onFocus}
+      onKeyDown={onKeyDown}
+      style={
+        isPlaceholderSegment ? undefined : { width: textSegmentWidth(token.text) }
+      }
+      className={cn(
+        "max-w-full p-0 text-base placeholder:text-muted-foreground/40",
+        isPlaceholderSegment
+          ? isCommandVariant
+            ? "min-h-24 min-w-56 flex-[1_1_14rem] leading-5"
+            : roomyOnMobile
+              ? "min-h-14 min-w-36 flex-[1_1_12rem] leading-6 sm:min-h-5.5 sm:leading-5"
+              : "min-h-5.5 min-w-36 flex-[1_1_12rem] leading-5"
+          : "h-6 min-h-6 min-w-[1ch] flex-none self-center overflow-hidden leading-6",
+      )}
+    />
   );
 }
 
@@ -345,7 +520,11 @@ function PreparedInputActions({
   );
 }
 
-function findActiveTrigger(value: string, cursor: number): PromptTrigger | null {
+function findActiveTrigger(
+  value: string,
+  cursor: number,
+  textTokenId: string,
+): PromptTrigger | null {
   const prefix = value.slice(0, cursor);
   const match = prefix.match(/(^|\s)([@/])([^\s@/]*)$/);
   if (!match) return null;
@@ -356,6 +535,7 @@ function findActiveTrigger(value: string, cursor: number): PromptTrigger | null 
     query,
     start: prefix.length - marker.length - query.length,
     end: cursor,
+    textTokenId,
   };
 }
 
@@ -397,21 +577,44 @@ export const GlassPromptInput = forwardRef<
   ref,
 ) {
   const isCommandVariant = variant === "command";
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const textAreaRefs = useRef(new Map<string, HTMLTextAreaElement>());
+  const pendingFocusRef = useRef<{
+    textTokenId: string;
+    cursor: number;
+  } | null>(null);
   const pointerFrameRef = useRef<number | null>(null);
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [pointerIntent, setPointerIntent] = useState(0);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
-  const [textValue, setTextValue] = useState("");
+  const [tokenState, setTokenState] = useState(() => {
+    const initialTokens = initialPromptTokens(defaultReferences);
+    return {
+      tokens: initialTokens,
+      activeTextTokenId: firstTextTokenId(initialTokens),
+    };
+  });
+  const tokens = tokenState.tokens;
+  const activeTextTokenId = tokenState.activeTextTokenId;
+  const setTokens = useCallback((action: PromptTokensAction) => {
+    setTokenState((current) => ({
+      ...current,
+      tokens:
+        typeof action === "function" ? action(current.tokens) : action,
+    }));
+  }, []);
+  const setActiveTextTokenId = useCallback((textTokenId: string) => {
+    setTokenState((current) =>
+      current.activeTextTokenId === textTokenId
+        ? current
+        : { ...current, activeTextTokenId: textTokenId },
+    );
+  }, []);
   const [activeTrigger, setActiveTrigger] = useState<PromptTrigger | null>(
     null,
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [references, setReferences] = useState<PromptReference[]>(
-    () => defaultReferences ?? [],
-  );
   const [pickerRect, setPickerRect] = useState<{
     left: number;
     width: number;
@@ -420,6 +623,10 @@ export const GlassPromptInput = forwardRef<
     maxHeight: number;
   } | null>(null);
   const targets = useCachedAgentTargets(orgId);
+  const references = useMemo(() => promptTokensToReferences(tokens), [tokens]);
+  const messageText = useMemo(() => promptTokensToText(tokens), [tokens]);
+  const isPromptEmpty =
+    references.length === 0 && promptTokensAreTextEmpty(tokens);
 
   const mentionTargets = useMemo<MentionTarget[]>(() => {
     if (!targets) return [];
@@ -478,7 +685,7 @@ export const GlassPromptInput = forwardRef<
 
   useEffect(() => {
     updatePickerRect();
-  }, [updatePickerRect, textValue, references.length]);
+  }, [updatePickerRect, tokens, references.length]);
 
   useEffect(() => {
     if (!activeTrigger || suggestions.length === 0) return;
@@ -490,18 +697,48 @@ export const GlassPromptInput = forwardRef<
     };
   }, [activeTrigger, suggestions.length, updatePickerRect]);
 
+  const registerTextAreaRef = useCallback(
+    (id: string, node: HTMLTextAreaElement | null) => {
+      if (node) {
+        textAreaRefs.current.set(id, node);
+      } else {
+        textAreaRefs.current.delete(id);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (!pending) return;
+    const textArea = textAreaRefs.current.get(pending.textTokenId);
+    if (!textArea) return;
+
+    pendingFocusRef.current = null;
+    requestAnimationFrame(() => {
+      textArea.focus();
+      textArea.setSelectionRange(pending.cursor, pending.cursor);
+    });
+  }, [tokens]);
+
+  const queueTextFocus = useCallback((textTokenId: string, cursor: number) => {
+    pendingFocusRef.current = { textTokenId, cursor };
+  }, []);
+
   const updateTriggerFromTextarea = useCallback(
-    (textarea: HTMLTextAreaElement) => {
+    (textarea: HTMLTextAreaElement, textTokenId: string) => {
       const trigger = findActiveTrigger(
         textarea.value,
         textarea.selectionStart,
+        textTokenId,
       );
       setActiveTrigger((current) => {
         if (!trigger) return null;
         if (
           current?.preparedKinds &&
           current.marker === trigger.marker &&
-          current.start === trigger.start
+          current.start === trigger.start &&
+          current.textTokenId === trigger.textTokenId
         ) {
           return { ...trigger, preparedKinds: current.preparedKinds };
         }
@@ -512,76 +749,225 @@ export const GlassPromptInput = forwardRef<
     [],
   );
 
-  const setTextareaValue = useCallback(
-    (next: string, cursor?: number, nextTrigger?: PromptTrigger | null) => {
-      const el = textareaRef.current;
-      if (!el) return;
-      const nativeSetter = Object.getOwnPropertyDescriptor(
-        HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
-      nativeSetter?.call(el, next);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      if (nextTrigger !== undefined) {
-        setActiveTrigger(nextTrigger);
-        setSelectedIndex(0);
-      }
-      const nextCursor = cursor ?? next.length;
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(nextCursor, nextCursor);
-        if (nextTrigger !== undefined) {
-          setActiveTrigger(nextTrigger);
-          setSelectedIndex(0);
-        } else {
-          updateTriggerFromTextarea(el);
-        }
-      });
-    },
-    [updateTriggerFromTextarea],
-  );
-
   const openPreparedTargetPicker = useCallback(
     (marker: "@" | "/", kinds: PromptTargetKind[]) => {
+      const textToken =
+        tokens.find(
+          (token): token is PromptTextToken =>
+            token.type === "text" && token.id === activeTextTokenId,
+        ) ??
+        tokens.find(
+          (token): token is PromptTextToken => token.type === "text",
+        );
+      if (!textToken) return;
       const trigger: PromptTrigger = {
         marker,
         query: "",
         start: 0,
         end: marker.length,
+        textTokenId: textToken.id,
         preparedKinds: kinds,
       };
-      setTextValue(marker);
-      setTextareaValue(marker, marker.length, trigger);
+      setTokens((current) =>
+        current.map((token) =>
+          token.type === "text" && token.id === textToken.id
+            ? { ...token, text: marker }
+            : token,
+        ),
+      );
+      setActiveTextTokenId(textToken.id);
+      setActiveTrigger(trigger);
+      setSelectedIndex(0);
+      queueTextFocus(textToken.id, marker.length);
     },
-    [setTextareaValue],
+    [activeTextTokenId, queueTextFocus, setActiveTextTokenId, setTokens, tokens],
   );
 
   const selectTarget = useCallback(
     (target: MentionTarget) => {
       if (!activeTrigger) return;
-      const before = textValue.slice(0, activeTrigger.start).trimEnd();
-      const after = textValue.slice(activeTrigger.end).trimStart();
-      const joiner = before && after ? " " : "";
-      const nextText = `${before}${joiner}${after}`;
-      const nextCursor = before.length + joiner.length;
-      setReferences((current) => {
-        if (
-          current.some(
-            (item) => item.kind === target.kind && item.id === target.id,
-          )
-        ) {
-          return current;
+      setTokens((current) => {
+        const textIndex = current.findIndex(
+          (token) =>
+            token.type === "text" && token.id === activeTrigger.textTokenId,
+        );
+        const textToken = current[textIndex];
+        if (textIndex === -1 || textToken?.type !== "text") return current;
+
+        const before = textToken.text.slice(0, activeTrigger.start);
+        const after = textToken.text.slice(activeTrigger.end);
+        const reference: PromptReference = {
+          kind: target.kind,
+          id: target.id,
+          label: target.label,
+        };
+        const existingReference = current.some(
+          (token) =>
+            token.type === "reference" &&
+            referenceKey(token.reference) === referenceKey(reference),
+        );
+
+        if (existingReference) {
+          const nextText = `${before}${after}`;
+          queueTextFocus(textToken.id, before.length);
+          return current.map((token) =>
+            token.type === "text" && token.id === textToken.id
+              ? { ...token, text: nextText }
+              : token,
+          );
         }
+
+        const beforeToken = createTextToken(before);
+        const referenceToken = createReferenceToken(reference);
+        const afterToken = createTextToken(after);
+        queueTextFocus(afterToken.id, 0);
         return [
-          ...current,
-          { kind: target.kind, id: target.id, label: target.label },
+          ...current.slice(0, textIndex),
+          beforeToken,
+          referenceToken,
+          afterToken,
+          ...current.slice(textIndex + 1),
         ];
       });
-      setTextValue(nextText);
       setActiveTrigger(null);
-      setTextareaValue(nextText, nextCursor);
+      setSelectedIndex(0);
     },
-    [activeTrigger, setTextareaValue, textValue],
+    [activeTrigger, queueTextFocus, setTokens],
+  );
+
+  const removeReferenceToken = useCallback(
+    (referenceTokenId: string) => {
+      setTokens((current) => {
+        const referenceIndex = current.findIndex(
+          (token) => token.type === "reference" && token.id === referenceTokenId,
+        );
+        if (referenceIndex === -1) return current;
+        const result = mergeTextAroundReference(current, referenceIndex);
+        if (result.focus) {
+          queueTextFocus(result.focus.textTokenId, result.focus.cursor);
+        }
+        return result.tokens;
+      });
+      setActiveTrigger(null);
+    },
+    [queueTextFocus, setTokens],
+  );
+
+  const handleTextChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>, textTokenId: string) => {
+      const nextText = event.currentTarget.value;
+      setTokens((current) =>
+        current.map((token) =>
+          token.type === "text" && token.id === textTokenId
+            ? { ...token, text: nextText }
+            : token,
+        ),
+      );
+      updateTriggerFromTextarea(event.currentTarget, textTokenId);
+    },
+    [setTokens, updateTriggerFromTextarea],
+  );
+
+  const handleTextKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>, textTokenId: string) => {
+      setActiveTextTokenId(textTokenId);
+
+      const cursorStart = event.currentTarget.selectionStart;
+      const cursorEnd = event.currentTarget.selectionEnd;
+      const isCollapsedSelection = cursorStart === cursorEnd;
+      const currentText = event.currentTarget.value;
+
+      if (
+        !activeTrigger &&
+        isCollapsedSelection &&
+        event.key === "Backspace" &&
+        cursorStart === 0
+      ) {
+        const textIndex = tokens.findIndex(
+          (token) => token.type === "text" && token.id === textTokenId,
+        );
+        const previousToken = tokens[textIndex - 1];
+        if (previousToken?.type === "reference") {
+          event.preventDefault();
+          const result = mergeTextAroundReference(tokens, textIndex - 1);
+          if (result.focus) {
+            queueTextFocus(result.focus.textTokenId, result.focus.cursor);
+          }
+          setTokens(result.tokens);
+          return;
+        }
+      }
+
+      if (
+        !activeTrigger &&
+        isCollapsedSelection &&
+        event.key === "Delete" &&
+        cursorStart === currentText.length
+      ) {
+        const textIndex = tokens.findIndex(
+          (token) => token.type === "text" && token.id === textTokenId,
+        );
+        const nextToken = tokens[textIndex + 1];
+        if (nextToken?.type === "reference") {
+          event.preventDefault();
+          const result = mergeTextAroundReference(tokens, textIndex + 1);
+          if (result.focus) {
+            queueTextFocus(result.focus.textTokenId, result.focus.cursor);
+          }
+          setTokens(result.tokens);
+          return;
+        }
+      }
+
+      if (
+        !activeTrigger ||
+        activeTrigger.textTokenId !== textTokenId ||
+        suggestions.length === 0
+      ) {
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSelectedIndex((index) => (index + 1) % suggestions.length);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSelectedIndex(
+          (index) => (index - 1 + suggestions.length) % suggestions.length,
+        );
+      } else if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const target = suggestions[selectedIndex] ?? suggestions[0];
+        if (target) selectTarget(target);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        if (
+          activeTrigger.preparedKinds &&
+          currentText === activeTrigger.marker
+        ) {
+          setTokens((current) =>
+            current.map((token) =>
+              token.type === "text" && token.id === textTokenId
+                ? { ...token, text: "" }
+                : token,
+            ),
+          );
+          queueTextFocus(textTokenId, 0);
+          setActiveTrigger(null);
+          return;
+        }
+        setActiveTrigger(null);
+      }
+    },
+    [
+      activeTrigger,
+      queueTextFocus,
+      selectTarget,
+      selectedIndex,
+      setActiveTextTokenId,
+      setTokens,
+      suggestions,
+      tokens,
+    ],
   );
 
   const handleDragState = useCallback(
@@ -632,23 +1018,19 @@ export const GlassPromptInput = forwardRef<
     setIsDraggingFiles(false);
   }, []);
 
-  useImperativeHandle(ref, () => ({
-    setValueAndFocus: (v: string) => {
-      const el = textareaRef.current;
-      if (el) {
-        // Set value via native setter to trigger React's onChange
-        const nativeSetter = Object.getOwnPropertyDescriptor(
-          HTMLTextAreaElement.prototype,
-          "value",
-        )?.set;
-        nativeSetter?.call(el, v);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.focus();
-        setTextValue(v);
+  useImperativeHandle(
+    ref,
+    () => ({
+      setValueAndFocus: (v: string) => {
+        const textToken = createTextToken(v);
+        setTokens([textToken]);
+        setActiveTextTokenId(textToken.id);
         setActiveTrigger(null);
-      }
-    },
-  }));
+        queueTextFocus(textToken.id, v.length);
+      },
+    }),
+    [queueTextFocus, setActiveTextTokenId, setTokens],
+  );
 
   const isGenerating = status === "submitted" || status === "streaming";
 
@@ -661,66 +1043,12 @@ export const GlassPromptInput = forwardRef<
         references:
           selectedReferences.length > 0 ? selectedReferences : undefined,
       });
-      setReferences([]);
-      setTextValue("");
+      const textToken = createTextToken();
+      setTokens([textToken]);
+      setActiveTextTokenId(textToken.id);
       setActiveTrigger(null);
     },
-    [onSubmit, disabled, references],
-  );
-
-  const handleTextChange = useCallback(
-    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setTextValue(event.currentTarget.value);
-      updateTriggerFromTextarea(event.currentTarget);
-    },
-    [updateTriggerFromTextarea],
-  );
-
-  const handleTextKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (
-        event.key === "Backspace" &&
-        !activeTrigger &&
-        textValue.length === 0 &&
-        references.length > 0
-      ) {
-        event.preventDefault();
-        setReferences((current) => current.slice(0, -1));
-        return;
-      }
-
-      if (!activeTrigger || suggestions.length === 0) return;
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setSelectedIndex((index) => (index + 1) % suggestions.length);
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setSelectedIndex(
-          (index) => (index - 1 + suggestions.length) % suggestions.length,
-        );
-      } else if (event.key === "Enter" || event.key === "Tab") {
-        event.preventDefault();
-        const target = suggestions[selectedIndex] ?? suggestions[0];
-        if (target) selectTarget(target);
-      } else if (event.key === "Escape") {
-        event.preventDefault();
-        if (activeTrigger.preparedKinds && textValue === activeTrigger.marker) {
-          setTextValue("");
-          setTextareaValue("", 0, null);
-          return;
-        }
-        setActiveTrigger(null);
-      }
-    },
-    [
-      activeTrigger,
-      references.length,
-      suggestions,
-      selectedIndex,
-      selectTarget,
-      setTextareaValue,
-      textValue,
-    ],
+    [disabled, onSubmit, references, setActiveTextTokenId, setTokens],
   );
 
   const handleStopClick = useCallback(
@@ -824,7 +1152,7 @@ export const GlassPromptInput = forwardRef<
   const showPreparedActions =
     hasPreparedActions &&
     (pointerIntent >= PREPARED_ACTION_INTENT_THRESHOLD || isComposerFocused) &&
-    textValue.trim().length === 0 &&
+    isPromptEmpty &&
     !activeTrigger &&
     !disabled &&
     !isGenerating &&
@@ -912,36 +1240,58 @@ export const GlassPromptInput = forwardRef<
         />
         <div
           className={cn(
-            "flex w-full flex-wrap content-start items-start gap-1.5",
+            "flex w-full flex-wrap content-start items-center gap-1.5",
             isCommandVariant
               ? "min-h-28 px-4 pb-2 pt-4"
               : roomyOnMobile
                 ? "min-h-22 px-4 pb-2 pt-3 sm:min-h-5.5 sm:px-3 sm:pb-1 sm:pt-2.5"
                 : "min-h-5.5 px-3 pb-1 pt-2.5",
           )}
-          onClick={() => textareaRef.current?.focus()}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("textarea,button")) {
+              return;
+            }
+            const textTokenId = activeTextTokenId || firstTextTokenId(tokens);
+            textAreaRefs.current.get(textTokenId)?.focus();
+          }}
         >
-          <InlineReferenceTags
-            references={references}
-            onRemove={(index) =>
-              setReferences((current) =>
-                current.filter((_, itemIndex) => itemIndex !== index),
-              )
-            }
+          <input
+            readOnly
+            type="hidden"
+            name="message"
+            value={messageText}
           />
-          <PromptInputTextarea
-            ref={textareaRef}
-            placeholder={placeholder}
-            onChange={handleTextChange}
-            onKeyDown={handleTextKeyDown}
-            className={
-              isCommandVariant
-                ? "min-h-24 min-w-56 flex-[1_1_14rem] p-0 text-base leading-5 placeholder:text-muted-foreground/40"
-                : roomyOnMobile
-                  ? "min-h-14 min-w-36 flex-[1_1_12rem] p-0 text-base leading-6 placeholder:text-muted-foreground/40 sm:min-h-5.5 sm:leading-5"
-                  : "min-h-5.5 min-w-36 flex-[1_1_12rem] p-0 text-base leading-5 placeholder:text-muted-foreground/40"
-            }
-          />
+          {tokens.map((token) =>
+            token.type === "reference" ? (
+              <InlineReferenceTag
+                key={token.id}
+                reference={token.reference}
+                onRemove={() => removeReferenceToken(token.id)}
+              />
+            ) : (
+              <PromptTextSegment
+                key={token.id}
+                token={token}
+                placeholder={
+                  isPromptEmpty && token.id === firstTextTokenId(tokens)
+                    ? placeholder
+                    : undefined
+                }
+                isCommandVariant={isCommandVariant}
+                roomyOnMobile={roomyOnMobile}
+                registerRef={registerTextAreaRef}
+                onFocus={() => {
+                  setActiveTextTokenId(token.id);
+                  const textArea = textAreaRefs.current.get(token.id);
+                  if (textArea) {
+                    updateTriggerFromTextarea(textArea, token.id);
+                  }
+                }}
+                onChange={(event) => handleTextChange(event, token.id)}
+                onKeyDown={(event) => handleTextKeyDown(event, token.id)}
+              />
+            ),
+          )}
         </div>
 
         <PromptInputFooter
