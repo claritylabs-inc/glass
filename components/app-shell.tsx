@@ -10,27 +10,22 @@ import {
   useRef,
   useEffect,
 } from "react";
-import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
-import {
-  ChatInputOverlay,
-  GlassPromptInput,
-} from "@/components/glass-prompt-input";
-import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 
 import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
-import { usePageContext } from "@/hooks/use-page-context";
 import {
   EntityPreviewProvider,
   useEntityPreview,
 } from "@/hooks/use-entity-preview";
 import { EntityPreviewPanel } from "@/components/entity-preview-panel";
-import { CommandPalette } from "@/components/command-palette";
+import {
+  CommandPalette,
+  openCommandPalette,
+} from "@/components/command-palette";
 import dynamic from "next/dynamic";
-import { useStartAgentThread } from "@/hooks/use-start-agent-thread";
 
 const PdfPanel = dynamic(
   () =>
@@ -157,7 +152,6 @@ function ShellContent({
   rightPanel,
   customSidebar,
   customSidebarStorageKey = "custom-sidebar-collapsed",
-  disablePersistentChat = false,
   disableCommandPalette = false,
   showBrokerShare = true,
 }: {
@@ -171,7 +165,6 @@ function ShellContent({
     onToggleCollapse: () => void;
   }) => React.ReactNode;
   customSidebarStorageKey?: string;
-  disablePersistentChat?: boolean;
   disableCommandPalette?: boolean;
   showBrokerShare?: boolean;
 }) {
@@ -250,6 +243,9 @@ function ShellContent({
           <AppSidebar
             mobileOpen={mobileOpen}
             onMobileClose={() => setMobileOpen(false)}
+            onAskGlass={
+              disableCommandPalette ? undefined : openCommandPalette
+            }
           />
         </Suspense>
       )}
@@ -273,7 +269,6 @@ function ShellContent({
                 {children}
               </div>
             </main>
-            {disablePersistentChat ? null : <PersistentChatBar />}
             {disableCommandPalette ? null : <CommandPalette />}
           </div>
         </div>
@@ -308,48 +303,6 @@ function ShellContent({
   );
 }
 
-function PersistentChatBar() {
-  const pathname = usePathname();
-  const { context: pageContext } = usePageContext();
-  const [sending, setSending] = useState(false);
-  const isThreadPage = pathname.startsWith("/agent/thread/");
-  const hasContext = !!pageContext;
-  const { agentBranding, startAgentThread, viewerOrg } =
-    useStartAgentThread("appShell");
-
-  const handleSubmit = useCallback(
-    async (message: PromptInputMessage) => {
-      if (sending) return;
-
-      setSending(true);
-      try {
-        await startAgentThread(message, pageContext ?? undefined);
-      } finally {
-        setSending(false);
-      }
-    },
-    [pageContext, sending, startAgentThread],
-  );
-
-  if (isThreadPage || !hasContext) return null;
-
-  return (
-    <ChatInputOverlay>
-      <GlassPromptInput
-        onSubmit={handleSubmit}
-        placeholder={
-          agentBranding ? `Ask ${agentBranding.name}...` : "Ask Glass..."
-        }
-        contextLabel={pageContext?.summary}
-        disabled={sending}
-        status={sending ? "submitted" : "ready"}
-        agentBranding={agentBranding}
-        orgId={viewerOrg?.org?._id}
-      />
-    </ChatInputOverlay>
-  );
-}
-
 export function AppShell({
   children,
   actions,
@@ -358,7 +311,6 @@ export function AppShell({
   rightPanel,
   customSidebar,
   customSidebarStorageKey,
-  disablePersistentChat,
   disableCommandPalette,
   showBrokerShare,
 }: {
@@ -387,7 +339,6 @@ export function AppShell({
             rightPanel={rightPanel}
             customSidebar={customSidebar}
             customSidebarStorageKey={customSidebarStorageKey}
-            disablePersistentChat={disablePersistentChat}
             disableCommandPalette={disableCommandPalette}
             showBrokerShare={showBrokerShare}
           >

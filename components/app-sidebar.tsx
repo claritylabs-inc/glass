@@ -89,9 +89,11 @@ function sidebarHeaderBranding({
 export function AppSidebar({
   mobileOpen,
   onMobileClose,
+  onAskGlass,
 }: {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  onAskGlass?: () => void;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -400,6 +402,7 @@ export function AppSidebar({
         onToggleNotifications={() => setNotificationsPanelOpen((v) => !v)}
         onCloseNotifications={() => setNotificationsPanelOpen(false)}
         onMergeSuggestion={handleMergeSuggestion}
+        onAskGlass={onAskGlass}
         onNewChat={handleNewChat}
         onArchiveThread={handleArchiveThread}
         onSignOut={() => {

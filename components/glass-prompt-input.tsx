@@ -251,21 +251,17 @@ function TriggerHintTags({
 
 function PreparedInputActions({
   visible,
-  showAttach,
   hasPolicyTargets,
   hasRequirementTargets,
   hasMailboxTargets,
   onOpenTargetPicker,
 }: {
   visible: boolean;
-  showAttach: boolean;
   hasPolicyTargets: boolean;
   hasRequirementTargets: boolean;
   hasMailboxTargets: boolean;
   onOpenTargetPicker: (marker: "@" | "/", kinds: PromptTargetKind[]) => void;
 }) {
-  const attachments = usePromptInputAttachments();
-
   const actions: Array<{
     id: string;
     label: string;
@@ -302,17 +298,6 @@ function PreparedInputActions({
       icon: <Inbox className="h-3.5 w-3.5" />,
       onSelect: () => {
         onOpenTargetPicker("/", PREPARED_MAILBOX_TARGET_KINDS);
-      },
-    });
-  }
-
-  if (showAttach) {
-    actions.push({
-      id: "attach",
-      label: "Attach",
-      icon: <Paperclip className="h-3.5 w-3.5" />,
-      onSelect: () => {
-        attachments.openFileDialog();
       },
     });
   }
@@ -377,8 +362,8 @@ export interface GlassPromptInputHandle {
 export interface GlassPromptInputProps {
   onSubmit: (message: PromptInputMessage) => void | Promise<void>;
   placeholder?: string;
-  contextLabel?: string;
   showAttach?: boolean;
+  defaultReferences?: PromptReference[];
   roomyOnMobile?: boolean;
   disabled?: boolean;
   status?: ChatStatus;
@@ -397,8 +382,8 @@ export const GlassPromptInput = forwardRef<
   {
     onSubmit,
     placeholder = "Ask Glass...",
-    contextLabel,
     showAttach = true,
+    defaultReferences,
     roomyOnMobile = false,
     disabled = false,
     status,
@@ -423,7 +408,9 @@ export const GlassPromptInput = forwardRef<
     null,
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [references, setReferences] = useState<PromptReference[]>([]);
+  const [references, setReferences] = useState<PromptReference[]>(
+    () => defaultReferences ?? [],
+  );
   const [pickerRect, setPickerRect] = useState<{
     left: number;
     width: number;
@@ -826,7 +813,7 @@ export const GlassPromptInput = forwardRef<
   const hasRequirementTargets = (targets?.requirements.length ?? 0) > 0;
   const hasMailboxTargets = (targets?.mailboxes.length ?? 0) > 0;
   const hasPreparedActions =
-    showAttach || hasPolicyTargets || hasRequirementTargets || hasMailboxTargets;
+    hasPolicyTargets || hasRequirementTargets || hasMailboxTargets;
   const showPreparedActions =
     hasPreparedActions &&
     (pointerIntent >= PREPARED_ACTION_INTENT_THRESHOLD || isComposerFocused) &&
@@ -957,7 +944,6 @@ export const GlassPromptInput = forwardRef<
           <PromptInputTools className="min-w-0 flex-1 overflow-hidden">
             <PreparedInputActions
               visible={showPreparedActions}
-              showAttach={showAttach}
               hasPolicyTargets={hasPolicyTargets}
               hasRequirementTargets={hasRequirementTargets}
               hasMailboxTargets={hasMailboxTargets}
@@ -987,17 +973,6 @@ export const GlassPromptInput = forwardRef<
                   static
                   className="shrink-0"
                 />
-              )}
-              <span className="hidden min-w-0 truncate sm:inline text-label font-medium text-muted-foreground/40">
-                {agentBranding?.name ?? "Glass"}
-              </span>
-              {contextLabel && (
-                <span
-                  className="min-w-0 max-w-50 truncate rounded bg-foreground/3 px-1.5 py-0.5 text-label font-medium text-muted-foreground/30"
-                  title={contextLabel}
-                >
-                  {contextLabel}
-                </span>
               )}
             </div>
           </PromptInputTools>

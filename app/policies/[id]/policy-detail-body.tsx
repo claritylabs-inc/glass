@@ -306,7 +306,7 @@ export function PolicyDetailBody({
     if (policy) {
       const types = policy.policyTypes ?? [];
       setPageContext({
-        pageType: "policy",
+        pageType: policy.documentType === "quote" ? "quote" : "policy",
         entityId: policy._id,
         summary: `${policy.mga ?? policy.carrier ?? "Unknown"} ${policy.policyNumber ?? ""} — ${types.join(", ")}`,
       });

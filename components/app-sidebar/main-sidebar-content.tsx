@@ -15,6 +15,7 @@ import {
 import type { Id } from "@/convex/_generated/dataModel";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { LogoIcon } from "@/components/ui/logo-icon";
 import {
   Tooltip,
   TooltipContent,
@@ -73,6 +74,7 @@ export function MainSidebarContent({
   onToggleNotifications,
   onCloseNotifications,
   onMergeSuggestion,
+  onAskGlass,
   onNewChat,
   onArchiveThread,
   onSignOut,
@@ -99,6 +101,7 @@ export function MainSidebarContent({
   onToggleNotifications: () => void;
   onCloseNotifications: () => void;
   onMergeSuggestion: (payload: MergeSuggestionPayload) => void;
+  onAskGlass?: () => void;
   onNewChat: () => void | Promise<void>;
   onArchiveThread: (threadId: string, active: boolean) => Promise<void>;
   onSignOut: () => void;
@@ -121,6 +124,24 @@ export function MainSidebarContent({
       />
 
       <div className="relative px-2 py-2 border-b border-foreground/6">
+        {onAskGlass ? (
+          <button
+            type="button"
+            onClick={onAskGlass}
+            className={`mb-0.5 w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} ${MENU_ITEM_INACTIVE} text-base ${
+              collapsed ? "justify-center" : ""
+            }`}
+            title={collapsed ? "Ask Glass" : undefined}
+          >
+            <LogoIcon
+              size={16}
+              color="#A0D2FA"
+              static
+              className="w-4 h-4 shrink-0"
+            />
+            {!collapsed && <span className="flex-1 text-left">Ask Glass</span>}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onToggleNotifications}

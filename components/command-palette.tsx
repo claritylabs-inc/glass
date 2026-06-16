@@ -8,7 +8,43 @@ import {
   type GlassPromptInputHandle,
 } from "@/components/glass-prompt-input";
 import { usePageContext } from "@/hooks/use-page-context";
+import type { PageContext } from "@/hooks/use-page-context";
 import { useStartAgentThread } from "@/hooks/use-start-agent-thread";
+
+export const OPEN_COMMAND_PALETTE_EVENT = "glass:open-command-palette";
+
+export function openCommandPalette() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
+}
+
+type PromptReference = NonNullable<PromptInputMessage["references"]>[number];
+
+function pageContextReference(
+  pageContext: PageContext | null,
+): PromptReference | null {
+  if (!pageContext?.entityId) return null;
+
+  if (pageContext.pageType === "policy" || pageContext.pageType === "quote") {
+    return {
+      kind: pageContext.pageType,
+      id: pageContext.entityId,
+      label:
+        pageContext.summary ??
+        (pageContext.pageType === "quote" ? "Current quote" : "Current policy"),
+    };
+  }
+
+  if (pageContext.pageType === "requirement") {
+    return {
+      kind: "requirement",
+      id: pageContext.entityId,
+      label: pageContext.summary ?? "Current requirement",
+    };
+  }
+
+  return null;
+}
 
 export function CommandPalette() {
   const { context: pageContext } = usePageContext();
@@ -17,12 +53,14 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const promptRef = useRef<GlassPromptInputHandle>(null);
+  const defaultReference = pageContextReference(pageContext);
 
   const close = useCallback(() => {
     setOpen(false);
   }, []);
 
   useEffect(() => {
+    const handleOpen = () => setOpen(true);
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -34,8 +72,12 @@ export function CommandPalette() {
       }
     };
 
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpen);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpen);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [open, close]);
 
   useEffect(() => {
@@ -94,7 +136,9 @@ export function CommandPalette() {
               ref={promptRef}
               onSubmit={handleSubmit}
               placeholder="Ask Glass anything..."
-              contextLabel={pageContext?.summary}
+              defaultReferences={
+                defaultReference ? [defaultReference] : undefined
+              }
               disabled={sending}
               status={sending ? "submitted" : "ready"}
               agentBranding={agentBranding}
