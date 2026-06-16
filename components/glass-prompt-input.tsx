@@ -8,6 +8,7 @@ import {
   useState,
   useMemo,
   useEffect,
+  useLayoutEffect,
 } from "react";
 import { createPortal } from "react-dom";
 import type { DragEvent as ReactDragEvent } from "react";
@@ -48,6 +49,8 @@ const darkInputOverlayFadeStyle = {
 const INPUT_INTENT_RADIUS = 180;
 const INPUT_INTENT_EPSILON = 0.01;
 const PREPARED_ACTION_INTENT_THRESHOLD = 0.34;
+const useBrowserLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function InputOverlayFade() {
   return (
@@ -351,11 +354,6 @@ function InlineReferenceTag({
   );
 }
 
-function textSegmentWidth(text: string) {
-  if (!text) return "1ch";
-  return `${Math.min(Math.max(text.length, 1), 72)}ch`;
-}
-
 function mergeTextAroundReference(
   tokens: PromptToken[],
   referenceIndex: number,
@@ -401,30 +399,57 @@ function PromptTextSegment({
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const isPlaceholderSegment = Boolean(placeholder);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+
+  useBrowserLayoutEffect(() => {
+    if (isPlaceholderSegment) return;
+    const measure = measureRef.current;
+    if (!measure) return;
+    setMeasuredWidth(Math.ceil(measure.getBoundingClientRect().width) + 1);
+  }, [isPlaceholderSegment, token.text]);
 
   return (
-    <PromptInputTextarea
-      ref={(node) => registerRef(token.id, node)}
-      name={`prompt-segment-${token.id}`}
-      placeholder={placeholder ?? ""}
-      value={token.text}
-      onChange={onChange}
-      onFocus={onFocus}
-      onKeyDown={onKeyDown}
-      style={
-        isPlaceholderSegment ? undefined : { width: textSegmentWidth(token.text) }
-      }
-      className={cn(
-        "max-w-full p-0 text-base placeholder:text-muted-foreground/40",
-        isPlaceholderSegment
-          ? isCommandVariant
-            ? "min-h-24 min-w-56 flex-[1_1_14rem] leading-5"
-            : roomyOnMobile
-              ? "min-h-14 min-w-36 flex-[1_1_12rem] leading-6 sm:min-h-5.5 sm:leading-5"
-              : "min-h-5.5 min-w-36 flex-[1_1_12rem] leading-5"
-          : "h-6 min-h-6 min-w-[1ch] flex-none self-center overflow-hidden leading-6",
-      )}
-    />
+    <>
+      {!isPlaceholderSegment ? (
+        <span
+          ref={measureRef}
+          aria-hidden="true"
+          className="pointer-events-none fixed -left-[9999px] top-0 whitespace-pre p-0 text-base leading-6"
+          style={{
+            fontFamily: "inherit",
+            fontWeight: "inherit",
+            letterSpacing: "inherit",
+          }}
+        >
+          {token.text || " "}
+        </span>
+      ) : null}
+      <PromptInputTextarea
+        ref={(node) => registerRef(token.id, node)}
+        name={`prompt-segment-${token.id}`}
+        placeholder={placeholder ?? ""}
+        value={token.text}
+        onChange={onChange}
+        onFocus={onFocus}
+        onKeyDown={onKeyDown}
+        style={
+          isPlaceholderSegment
+            ? undefined
+            : { width: `${Math.max(measuredWidth, 1)}px` }
+        }
+        className={cn(
+          "max-w-full p-0 text-base placeholder:text-muted-foreground/40",
+          isPlaceholderSegment
+            ? isCommandVariant
+              ? "min-h-24 min-w-56 flex-[1_1_14rem] leading-5"
+              : roomyOnMobile
+                ? "min-h-14 min-w-36 flex-[1_1_12rem] leading-6 sm:min-h-5.5 sm:leading-5"
+                : "min-h-5.5 min-w-36 flex-[1_1_12rem] leading-5"
+            : "h-6 min-h-6 min-w-px !flex-none self-center overflow-hidden leading-6",
+        )}
+      />
+    </>
   );
 }
 
@@ -1240,7 +1265,7 @@ export const GlassPromptInput = forwardRef<
         />
         <div
           className={cn(
-            "flex w-full flex-wrap content-start items-center gap-1.5",
+            "flex w-full flex-wrap content-start items-center gap-0",
             isCommandVariant
               ? "min-h-28 px-4 pb-2 pt-4"
               : roomyOnMobile
