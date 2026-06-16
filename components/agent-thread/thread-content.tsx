@@ -36,7 +36,6 @@ import {
   useCachedAgentTargets,
   useThreadCacheActions,
 } from "@/lib/sync/glass-cached-queries";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ActionSurfaceLink } from "@/components/ui/action-surface";
@@ -62,8 +61,8 @@ import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { BrandIcon } from "@/components/ui/brand-icon";
 import {
-  PromptReferenceTag,
-  promptReferenceMarker,
+  PromptReferenceText,
+  type PromptReference,
   type PromptReferenceTagKind,
 } from "@/components/prompt-reference-tag";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
@@ -155,14 +154,6 @@ function messageSenderName(message: ThreadMessage) {
 }
 
 type AgentTargets = NonNullable<ReturnType<typeof useCachedAgentTargets>>;
-type MessagePromptReference = {
-  kind: PromptReferenceTagKind;
-  id: string;
-  label: string;
-};
-type MessagePromptTextPart =
-  | { type: "text"; text: string }
-  | { type: "reference"; reference: MessagePromptReference };
 
 function targetLabel(
   targets: AgentTargets | undefined,
@@ -205,7 +196,7 @@ function messagePromptReferences(
   targets: AgentTargets | undefined,
   context?: { pageType: string; entityId?: string; summary?: string },
 ) {
-  const references: MessagePromptReference[] = [];
+  const references: PromptReference[] = [];
   const seen = new Set<string>();
   const add = (kind: PromptReferenceTagKind, ids?: string[]) => {
     ids?.forEach((id) => {
@@ -226,110 +217,6 @@ function messagePromptReferences(
   add("mailbox", message.referencedMailboxIds);
 
   return references;
-}
-
-function queuedPromptReferences(
-  references: PromptInputMessage["references"],
-): MessagePromptReference[] {
-  return (references ?? []).map((reference) => ({
-    kind: reference.kind,
-    id: reference.id,
-    label: reference.label,
-  }));
-}
-
-function referenceMentionCandidates(reference: MessagePromptReference) {
-  const marker = promptReferenceMarker(reference.kind);
-  const labels = new Set([reference.label]);
-  labels.add(reference.label.replace(/\s+#/g, " "));
-  return Array.from(labels)
-    .filter(Boolean)
-    .map((label) => `${marker}${label}`);
-}
-
-function promptReferenceTextParts(
-  content: string,
-  references: MessagePromptReference[],
-): MessagePromptTextPart[] {
-  if (!content || references.length === 0) return [{ type: "text", text: content }];
-
-  const lowerContent = content.toLowerCase();
-  const matches: Array<{
-    start: number;
-    end: number;
-    reference: MessagePromptReference;
-  }> = [];
-
-  references.forEach((reference) => {
-    referenceMentionCandidates(reference).forEach((candidate) => {
-      const lowerCandidate = candidate.toLowerCase();
-      let searchFrom = 0;
-      while (lowerCandidate) {
-        const start = lowerContent.indexOf(lowerCandidate, searchFrom);
-        if (start === -1) break;
-        matches.push({
-          start,
-          end: start + candidate.length,
-          reference,
-        });
-        searchFrom = start + candidate.length;
-      }
-    });
-  });
-
-  if (matches.length === 0) return [{ type: "text", text: content }];
-
-  matches.sort((first, second) => {
-    if (first.start !== second.start) return first.start - second.start;
-    return second.end - first.end;
-  });
-
-  const parts: MessagePromptTextPart[] = [];
-  let cursor = 0;
-  matches.forEach((match) => {
-    if (match.start < cursor) return;
-    if (match.start > cursor) {
-      parts.push({ type: "text", text: content.slice(cursor, match.start) });
-    }
-    parts.push({ type: "reference", reference: match.reference });
-    cursor = match.end;
-  });
-  if (cursor < content.length) {
-    parts.push({ type: "text", text: content.slice(cursor) });
-  }
-  return parts;
-}
-
-function PromptReferenceText({
-  content,
-  references,
-  className,
-}: {
-  content: string;
-  references: MessagePromptReference[];
-  className?: string;
-}) {
-  const parts = useMemo(
-    () => promptReferenceTextParts(content, references),
-    [content, references],
-  );
-
-  return (
-    <span className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", className)}>
-      {parts.map((part, index) =>
-        part.type === "text" ? (
-          <span key={index}>{part.text}</span>
-        ) : (
-          <PromptReferenceTag
-            key={`${part.reference.kind}:${part.reference.id}:${index}`}
-            kind={part.reference.kind}
-            label={part.reference.label}
-            className="max-w-[min(16rem,100%)] whitespace-nowrap bg-background/60 [overflow-wrap:normal]"
-          />
-        ),
-      )}
-    </span>
-  );
 }
 
 const SUBAGENT_TOOL_NAMES = new Set([
@@ -2100,10 +1987,6 @@ function QueuedThreadMessage({
     (message.files.length > 0
       ? `${message.files.length} attachment${message.files.length === 1 ? "" : "s"}`
       : "Message");
-  const references = useMemo(
-    () => queuedPromptReferences(message.references),
-    [message.references],
-  );
   return (
     <div className="mb-2 flex items-center gap-2 rounded-lg border border-foreground/8 bg-card px-2.5 py-2">
       <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/35" />
@@ -2111,7 +1994,7 @@ function QueuedThreadMessage({
         Queued:{" "}
         <PromptReferenceText
           content={preview}
-          references={references}
+          references={message.references ?? []}
           className="text-foreground/75"
         />
       </p>
