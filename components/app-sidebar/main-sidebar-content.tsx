@@ -8,6 +8,7 @@ import {
   Mail,
   MessageCircle,
   MessageSquare,
+  MousePointer2,
   Plus,
   Settings,
   User,
@@ -15,7 +16,6 @@ import {
 import type { Id } from "@/convex/_generated/dataModel";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { PillButton } from "@/components/ui/pill-button";
-import { LogoIcon } from "@/components/ui/logo-icon";
 import {
   Tooltip,
   TooltipContent,
@@ -133,12 +133,7 @@ export function MainSidebarContent({
             }`}
             title={collapsed ? "Ask Glass" : undefined}
           >
-            <LogoIcon
-              size={16}
-              color="#A0D2FA"
-              static
-              className="w-4 h-4 shrink-0"
-            />
+            <MousePointer2 className="w-4 h-4 shrink-0" />
             {!collapsed && <span className="flex-1 text-left">Ask Glass</span>}
           </button>
         ) : null}
