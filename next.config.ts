@@ -6,15 +6,8 @@ const convexSiteUrl =
   process.env.NEXT_PUBLIC_CONVEX_URL?.replace(".convex.cloud", ".convex.site");
 
 const appHost = "app.glass.insure";
-const hostRedirects = [
-  {
-    host: "glass.claritylabs.inc",
-    destination: `https://${appHost}/:path*`,
-  },
-  {
-    host: "events.claritylabs.inc",
-    destination: "https://luma.com/rhoevents-xp4k",
-  },
+const appAliasHosts = [
+  "glass.claritylabs.inc",
 ];
 
 const nextConfig: NextConfig = {
@@ -23,10 +16,10 @@ const nextConfig: NextConfig = {
       process.env.VERCEL_ENV ?? process.env.NEXT_PUBLIC_VERCEL_ENV ?? "",
   },
   async redirects() {
-    return hostRedirects.map(({ host, destination }) => ({
+    return appAliasHosts.map((host) => ({
       source: "/:path*",
       has: [{ type: "host" as const, value: host }],
-      destination,
+      destination: `https://${appHost}/:path*`,
       permanent: false,
     }));
   },
