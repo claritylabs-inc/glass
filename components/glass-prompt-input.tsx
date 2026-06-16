@@ -203,34 +203,27 @@ function referenceKindLabel(kind: PromptReference["kind"]) {
   return "Mailbox";
 }
 
-function TriggerHintTags({
+function InlineReferenceTags({
   references,
   onRemove,
-  roomyOnMobile = false,
 }: {
   references: PromptReference[];
   onRemove: (index: number) => void;
-  roomyOnMobile?: boolean;
 }) {
   if (references.length === 0) return null;
 
   return (
-    <div
-      className={cn(
-        "order-first flex w-full flex-wrap justify-start self-start gap-2",
-        roomyOnMobile ? "px-4 sm:px-3 pt-3 pb-0" : "px-3 pt-3 pb-0",
-      )}
-    >
+    <>
       {references.map((reference, index) => (
         <span
           key={`${reference.kind}-${reference.id}`}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-label font-medium text-foreground/75"
+          className="inline-flex h-6 max-w-[min(16rem,100%)] shrink-0 items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 text-label font-medium text-foreground/75"
         >
           <span className="text-muted-foreground/45">
             {reference.kind === "mailbox" ? "/" : "@"}
           </span>
           <span
-            className="max-w-45 truncate sm:max-w-60"
+            className="min-w-0 truncate"
             title={reference.label}
           >
             {reference.label}
@@ -245,7 +238,7 @@ function TriggerHintTags({
           </button>
         </span>
       ))}
-    </div>
+    </>
   );
 }
 
@@ -562,13 +555,11 @@ export const GlassPromptInput = forwardRef<
   const selectTarget = useCallback(
     (target: MentionTarget) => {
       if (!activeTrigger) return;
-      const marker = target.kind === "mailbox" ? "/" : "@";
-      const replacement = `${marker}${target.label} `;
-      const nextText =
-        textValue.slice(0, activeTrigger.start) +
-        replacement +
-        textValue.slice(activeTrigger.end);
-      const nextCursor = activeTrigger.start + replacement.length;
+      const before = textValue.slice(0, activeTrigger.start).trimEnd();
+      const after = textValue.slice(activeTrigger.end).trimStart();
+      const joiner = before && after ? " " : "";
+      const nextText = `${before}${joiner}${after}`;
+      const nextCursor = before.length + joiner.length;
       setReferences((current) => {
         if (
           current.some(
@@ -683,6 +674,17 @@ export const GlassPromptInput = forwardRef<
 
   const handleTextKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (
+        event.key === "Backspace" &&
+        !activeTrigger &&
+        textValue.length === 0 &&
+        references.length > 0
+      ) {
+        event.preventDefault();
+        setReferences((current) => current.slice(0, -1));
+        return;
+      }
+
       if (!activeTrigger || suggestions.length === 0) return;
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -708,6 +710,7 @@ export const GlassPromptInput = forwardRef<
     },
     [
       activeTrigger,
+      references.length,
       suggestions,
       selectedIndex,
       selectTarget,
@@ -909,28 +912,39 @@ export const GlassPromptInput = forwardRef<
           roomyOnMobile={roomyOnMobile || isCommandVariant}
           detailed={isCommandVariant}
         />
-        <TriggerHintTags
-          references={references}
-          roomyOnMobile={roomyOnMobile || isCommandVariant}
-          onRemove={(index) =>
-            setReferences((current) =>
-              current.filter((_, itemIndex) => itemIndex !== index),
-            )
-          }
-        />
-        <PromptInputTextarea
-          ref={textareaRef}
-          placeholder={placeholder}
-          onChange={handleTextChange}
-          onKeyDown={handleTextKeyDown}
-          className={
+        <div
+          className={cn(
+            "flex w-full flex-wrap content-start items-start gap-1.5",
             isCommandVariant
-              ? "min-h-28 text-base leading-5 px-4 pt-4 pb-2 placeholder:text-muted-foreground/40"
+              ? "min-h-28 px-4 pb-2 pt-4"
               : roomyOnMobile
-              ? "min-h-22 sm:min-h-5.5 text-base leading-6 sm:leading-5 px-4 sm:px-3 pt-3 sm:pt-2.5 pb-2 sm:pb-1 placeholder:text-muted-foreground/40"
-              : "min-h-5.5 text-base leading-5 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/40"
-          }
-        />
+                ? "min-h-22 px-4 pb-2 pt-3 sm:min-h-5.5 sm:px-3 sm:pb-1 sm:pt-2.5"
+                : "min-h-5.5 px-3 pb-1 pt-2.5",
+          )}
+          onClick={() => textareaRef.current?.focus()}
+        >
+          <InlineReferenceTags
+            references={references}
+            onRemove={(index) =>
+              setReferences((current) =>
+                current.filter((_, itemIndex) => itemIndex !== index),
+              )
+            }
+          />
+          <PromptInputTextarea
+            ref={textareaRef}
+            placeholder={placeholder}
+            onChange={handleTextChange}
+            onKeyDown={handleTextKeyDown}
+            className={
+              isCommandVariant
+                ? "min-h-24 min-w-56 flex-[1_1_14rem] p-0 text-base leading-5 placeholder:text-muted-foreground/40"
+                : roomyOnMobile
+                  ? "min-h-14 min-w-36 flex-[1_1_12rem] p-0 text-base leading-6 placeholder:text-muted-foreground/40 sm:min-h-5.5 sm:leading-5"
+                  : "min-h-5.5 min-w-36 flex-[1_1_12rem] p-0 text-base leading-5 placeholder:text-muted-foreground/40"
+            }
+          />
+        </div>
 
         <PromptInputFooter
           className={
