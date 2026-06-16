@@ -9,6 +9,7 @@ import {
   useMemo,
   useEffect,
 } from "react";
+import { createPortal } from "react-dom";
 import type { DragEvent as ReactDragEvent } from "react";
 import {
   ArrowUp,
@@ -426,7 +427,8 @@ export const GlassPromptInput = forwardRef<
   const [pickerRect, setPickerRect] = useState<{
     left: number;
     width: number;
-    bottom: number;
+    top?: number;
+    bottom?: number;
     maxHeight: number;
   } | null>(null);
   const targets = useCachedAgentTargets(orgId);
@@ -473,14 +475,22 @@ export const GlassPromptInput = forwardRef<
     }
     const rect = wrapper.getBoundingClientRect();
     const gap = 8;
-    const topPadding = 16;
+    const viewportPadding = 16;
+    const availableBelow =
+      window.innerHeight - rect.bottom - gap - viewportPadding;
+    const availableAbove = rect.top - gap - viewportPadding;
     setPickerRect({
       left: rect.left,
       width: rect.width,
-      bottom: Math.max(0, window.innerHeight - rect.top + gap),
-      maxHeight: Math.max(120, rect.top - topPadding - gap),
+      ...(isCommandVariant
+        ? { top: rect.bottom + gap }
+        : { bottom: Math.max(0, window.innerHeight - rect.top + gap) }),
+      maxHeight: Math.max(
+        120,
+        isCommandVariant ? availableBelow : availableAbove,
+      ),
     });
-  }, [activeTrigger, suggestions.length]);
+  }, [activeTrigger, isCommandVariant, suggestions.length]);
 
   useEffect(() => {
     updatePickerRect();
@@ -825,6 +835,8 @@ export const GlassPromptInput = forwardRef<
     !disabled &&
     !isGenerating &&
     !isDraggingFiles;
+  const pickerPortalRoot =
+    typeof document === "undefined" ? null : document.body;
 
   return (
     <div
@@ -833,55 +845,65 @@ export const GlassPromptInput = forwardRef<
       onFocusCapture={handleWrapperFocusCapture}
       onBlurCapture={handleWrapperBlurCapture}
     >
-      {activeTrigger && suggestions.length > 0 && pickerRect ? (
-        <div
-          className="fixed z-50 overflow-hidden rounded-lg border border-foreground/8 bg-popover shadow-lg"
-          style={{
-            left: pickerRect.left,
-            width: pickerRect.width,
-            bottom: pickerRect.bottom,
-            maxHeight: pickerRect.maxHeight,
-          }}
-        >
-          <div
-            className="overflow-auto py-1"
-            style={{ maxHeight: pickerRect.maxHeight }}
-          >
-            {suggestions.map((target, index) => (
-              <button
-                key={`${target.kind}-${target.id}`}
-                type="button"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  selectTarget(target);
-                }}
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
-                  index === selectedIndex
-                    ? "bg-foreground/[0.06]"
-                    : "hover:bg-foreground/[0.04]",
-                )}
+      {pickerPortalRoot && activeTrigger && suggestions.length > 0 && pickerRect
+        ? createPortal(
+            <div
+              className="fixed z-[60] overflow-hidden rounded-lg border border-foreground/8 bg-popover shadow-lg"
+              style={{
+                left: pickerRect.left,
+                width: pickerRect.width,
+                maxHeight: pickerRect.maxHeight,
+                ...(pickerRect.top !== undefined
+                  ? { top: pickerRect.top }
+                  : { bottom: pickerRect.bottom }),
+              }}
+            >
+              <div
+                className="overflow-auto py-1"
+                style={{ maxHeight: pickerRect.maxHeight }}
               >
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
-                  {referenceIcon(target.kind)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-base font-medium text-foreground/85">
-                    {target.label}
-                  </span>
-                  <span className="block truncate text-label text-muted-foreground/45">
-                    {referenceKindLabel(target.kind)}
-                    {target.sublabel ? ` · ${target.sublabel}` : ""}
-                  </span>
-                </span>
-                <span className="shrink-0 text-label font-medium text-muted-foreground/35">
-                  {target.kind === "mailbox" ? "/" : "@"}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
+                {suggestions.map((target, index) => (
+                  <button
+                    key={`${target.kind}-${target.id}`}
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      selectTarget(target);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
+                      index === selectedIndex
+                        ? "bg-foreground/[0.06]"
+                        : "hover:bg-foreground/[0.04]",
+                    )}
+                  >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
+                      {referenceIcon(target.kind)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-base font-medium text-foreground/85">
+                        {target.label}
+                      </span>
+                      <span className="block truncate text-label text-muted-foreground/45">
+                        {referenceKindLabel(target.kind)}
+                        {target.sublabel ? ` · ${target.sublabel}` : ""}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-label font-medium text-muted-foreground/35">
+                      {target.kind === "mailbox" ? "/" : "@"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>,
+            pickerPortalRoot,
+          )
+        : null}
       <PromptInput
         onSubmit={handleSubmit}
         onDragEnter={handleDragEnter}
