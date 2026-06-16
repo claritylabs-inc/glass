@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import type { DragEvent as ReactDragEvent } from "react";
 import {
   ArrowUp,
-  ClipboardList,
+  BadgeCheck,
   FileText,
   Inbox,
   Paperclip,
@@ -190,17 +190,30 @@ const PREPARED_POLICY_TARGET_KINDS: PromptTargetKind[] = ["policy", "quote"];
 const PREPARED_REQUIREMENT_TARGET_KINDS: PromptTargetKind[] = ["requirement"];
 const PREPARED_MAILBOX_TARGET_KINDS: PromptTargetKind[] = ["mailbox"];
 
-function referenceIcon(kind: PromptReference["kind"]) {
-  if (kind === "requirement") return <ClipboardList className="h-3.5 w-3.5" />;
-  if (kind === "mailbox") return <Inbox className="h-3.5 w-3.5" />;
-  return <FileText className="h-3.5 w-3.5" />;
+function targetKindsForTrigger(trigger: PromptTrigger): PromptTargetKind[] {
+  if (trigger.preparedKinds) return trigger.preparedKinds;
+  if (trigger.marker === "/") return PREPARED_MAILBOX_TARGET_KINDS;
+  return ["policy", "quote", "requirement"];
 }
 
-function referenceKindLabel(kind: PromptReference["kind"]) {
-  if (kind === "policy") return "Policy";
-  if (kind === "quote") return "Quote";
-  if (kind === "requirement") return "Requirement";
-  return "Mailbox";
+function targetScopeLabel(kinds: PromptTargetKind[]) {
+  const hasPolicyTargets = kinds.includes("policy") || kinds.includes("quote");
+  const hasRequirementTargets = kinds.includes("requirement");
+  const hasMailboxTargets = kinds.includes("mailbox");
+
+  if (hasPolicyTargets && hasRequirementTargets) {
+    return "Policies and compliance requirements";
+  }
+  if (hasPolicyTargets) return "Policies";
+  if (hasRequirementTargets) return "Compliance requirements";
+  if (hasMailboxTargets) return "Mailboxes";
+  return null;
+}
+
+function referenceIcon(kind: PromptReference["kind"]) {
+  if (kind === "requirement") return <BadgeCheck className="h-3.5 w-3.5" />;
+  if (kind === "mailbox") return <Inbox className="h-3.5 w-3.5" />;
+  return <FileText className="h-3.5 w-3.5" />;
 }
 
 function InlineReferenceTags({
@@ -277,7 +290,7 @@ function PreparedInputActions({
     actions.push({
       id: "requirement",
       label: "Requirement",
-      icon: <ClipboardList className="h-3.5 w-3.5" />,
+      icon: <BadgeCheck className="h-3.5 w-3.5" />,
       onSelect: () => {
         onOpenTargetPicker("@", PREPARED_REQUIREMENT_TARGET_KINDS);
       },
@@ -430,11 +443,7 @@ export const GlassPromptInput = forwardRef<
 
   const suggestions = useMemo(() => {
     if (!activeTrigger) return [];
-    const allowedKinds: PromptTargetKind[] =
-      activeTrigger.preparedKinds ??
-      (activeTrigger.marker === "/"
-        ? PREPARED_MAILBOX_TARGET_KINDS
-        : ["policy", "quote", "requirement"]);
+    const allowedKinds = targetKindsForTrigger(activeTrigger);
     const query = activeTrigger.query.toLowerCase();
     return mentionTargets
       .filter((target) => allowedKinds.includes(target.kind))
@@ -454,7 +463,7 @@ export const GlassPromptInput = forwardRef<
       return;
     }
     const rect = wrapper.getBoundingClientRect();
-    const gap = 8;
+    const gap = isCommandVariant ? 6 : 8;
     const viewportPadding = 16;
     const availableBelow =
       window.innerHeight - rect.bottom - gap - viewportPadding;
@@ -825,6 +834,9 @@ export const GlassPromptInput = forwardRef<
     !disabled &&
     !isGenerating &&
     !isDraggingFiles;
+  const activeTargetScopeLabel = activeTrigger
+    ? targetScopeLabel(targetKindsForTrigger(activeTrigger))
+    : null;
   const pickerPortalRoot =
     typeof document === "undefined" ? null : document.body;
 
@@ -838,7 +850,7 @@ export const GlassPromptInput = forwardRef<
       {pickerPortalRoot && activeTrigger && suggestions.length > 0 && pickerRect
         ? createPortal(
             <div
-              className="fixed z-[60] overflow-hidden rounded-lg border border-foreground/8 bg-popover shadow-lg"
+              className="fixed z-[60] overflow-hidden rounded-xl border border-foreground/8 bg-popover p-1.5 shadow-lg shadow-black/[0.08]"
               style={{
                 left: pickerRect.left,
                 width: pickerRect.width,
@@ -849,7 +861,7 @@ export const GlassPromptInput = forwardRef<
               }}
             >
               <div
-                className="overflow-auto py-1"
+                className="overflow-auto"
                 style={{ maxHeight: pickerRect.maxHeight }}
               >
                 {suggestions.map((target, index) => (
@@ -866,26 +878,17 @@ export const GlassPromptInput = forwardRef<
                       selectTarget(target);
                     }}
                     className={cn(
-                      "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
+                      "flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors",
                       index === selectedIndex
-                        ? "bg-foreground/[0.06]"
-                        : "hover:bg-foreground/[0.04]",
+                        ? "bg-foreground/[0.06] text-foreground"
+                        : "text-foreground/85 hover:bg-foreground/[0.04] hover:text-foreground",
                     )}
                   >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
+                    <span className="flex w-5 shrink-0 items-center justify-center text-muted-foreground">
                       {referenceIcon(target.kind)}
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-base font-medium text-foreground/85">
-                        {target.label}
-                      </span>
-                      <span className="block truncate text-label text-muted-foreground/45">
-                        {referenceKindLabel(target.kind)}
-                        {target.sublabel ? ` · ${target.sublabel}` : ""}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-label font-medium text-muted-foreground/35">
-                      {target.kind === "mailbox" ? "/" : "@"}
+                    <span className="min-w-0 flex-1 truncate text-base font-medium">
+                      {target.label}
                     </span>
                   </button>
                 ))}
@@ -973,7 +976,11 @@ export const GlassPromptInput = forwardRef<
                     : "ml-1 max-w-96 translate-y-0 opacity-100",
               )}
             >
-              {agentBranding?.iconUrl ? (
+              {activeTargetScopeLabel ? (
+                <span className="min-w-0 truncate text-label font-medium text-muted-foreground/45">
+                  {activeTargetScopeLabel}
+                </span>
+              ) : agentBranding?.iconUrl ? (
                 <BrandIcon
                   src={agentBranding.iconUrl}
                   name={agentBranding.name}
