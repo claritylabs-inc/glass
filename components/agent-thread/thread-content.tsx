@@ -2457,7 +2457,6 @@ export function UnifiedThreadContent({
           onSubmit={handleSend}
           placeholder="Reply to this thread..."
           showAttach
-          agentBranding={agentBranding}
           disabled={isInputBusy}
           status={isInputBusy ? "submitted" : undefined}
           submittedLabel={inputBusyLabel}

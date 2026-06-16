@@ -48,8 +48,7 @@ function pageContextReference(
 
 export function CommandPalette() {
   const { context: pageContext } = usePageContext();
-  const { agentBranding, startAgentThread, viewerOrg } =
-    useStartAgentThread("commandPalette");
+  const { startAgentThread, viewerOrg } = useStartAgentThread("commandPalette");
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const promptRef = useRef<GlassPromptInputHandle>(null);
@@ -141,7 +140,6 @@ export function CommandPalette() {
               }
               disabled={sending}
               status={sending ? "submitted" : "ready"}
-              agentBranding={agentBranding}
               orgId={viewerOrg?.org?._id}
               variant="command"
             />

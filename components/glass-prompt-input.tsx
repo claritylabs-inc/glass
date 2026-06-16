@@ -32,8 +32,6 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
-import { LogoIcon } from "@/components/ui/logo-icon";
-import { BrandIcon } from "@/components/ui/brand-icon";
 import type { ChatStatus } from "ai";
 import { useCachedAgentTargets } from "@/lib/sync/glass-cached-queries";
 
@@ -377,8 +375,6 @@ export interface GlassPromptInputProps {
   onStop?: () => void;
   orgId?: Id<"organizations">;
   variant?: "default" | "command";
-  /** Override the default "Glass" branding shown in the footer. */
-  agentBranding?: { name: string; iconUrl?: string | null };
 }
 
 export const GlassPromptInput = forwardRef<
@@ -397,7 +393,6 @@ export const GlassPromptInput = forwardRef<
     onStop,
     orgId,
     variant = "default",
-    agentBranding,
   },
   ref,
 ) {
@@ -980,21 +975,7 @@ export const GlassPromptInput = forwardRef<
                 <span className="min-w-0 truncate text-label font-medium text-muted-foreground/45">
                   {activeTargetScopeLabel}
                 </span>
-              ) : agentBranding?.iconUrl ? (
-                <BrandIcon
-                  src={agentBranding.iconUrl}
-                  name={agentBranding.name}
-                  size="xs"
-                  className="rounded-sm"
-                />
-              ) : (
-                <LogoIcon
-                  size={14}
-                  color="#A0D2FA"
-                  static
-                  className="shrink-0"
-                />
-              )}
+              ) : null}
             </div>
           </PromptInputTools>
 
