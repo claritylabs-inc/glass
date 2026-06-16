@@ -19,6 +19,7 @@ import {
   Inbox,
   Paperclip,
   Square,
+  X,
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
