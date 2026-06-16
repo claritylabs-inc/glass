@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction, action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
 import { compareDuplicatePolicies } from "../lib/policyDuplicateDetection";
 
 export const detectDuplicates = internalAction({
@@ -16,12 +17,15 @@ export const detectDuplicates = internalAction({
     });
     if (!newPolicy) return;
 
-    const allPolicies = await ctx.runQuery(internal.policies.listAllInternal, {
-      orgId: args.orgId,
-    });
+    const allPolicies = (await ctx.runQuery(
+      internal.policies.listAllInternal,
+      {
+        orgId: args.orgId,
+      },
+    )) as Doc<"policies">[];
 
     const candidates = allPolicies.filter(
-      (policy) => policy._id !== args.policyId,
+      (policy: Doc<"policies">) => policy._id !== args.policyId,
     );
 
     if (candidates.length === 0) return;

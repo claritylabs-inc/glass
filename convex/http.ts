@@ -716,7 +716,7 @@ http.route({
       const year = getQueryParam(request, "year");
       const type = getQueryParam(request, "type");
 
-      const filtered = policies.filter((policy) =>
+      const filtered = policies.filter((policy: McpPolicySummarySource) =>
         policyMatchesMcpFilters(policy, { carrier, year, type }),
       );
 
@@ -821,7 +821,7 @@ http.route({
         },
       );
 
-      const results = policies.filter((policy) =>
+      const results = policies.filter((policy: McpPolicySummarySource) =>
         policyMatchesSearch(policy, q),
       );
 
@@ -1043,7 +1043,7 @@ http.route({
       const carrier = getQueryParam(request, "carrier");
       const year = getQueryParam(request, "year");
 
-      const filtered = quotes.filter((quote) =>
+      const filtered = quotes.filter((quote: McpQuoteSummarySource) =>
         quoteMatchesMcpFilters(quote, { carrier, year }),
       );
 
