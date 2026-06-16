@@ -39,6 +39,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
 import { useCachedConnectedVendors } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
+import {
+  requirementEvaluationTargetLabel,
+  requirementSemantics,
+  type RequirementEvaluationTarget,
+  type RequirementSemanticReviewStatus,
+} from "@/convex/lib/requirementSemantics";
 
 type Category =
   | "general_liability"
@@ -108,6 +114,9 @@ type Requirement = {
   sourceExcerpt?: string;
   sourcePageStart?: number;
   sourcePageEnd?: number;
+  evaluationTarget?: RequirementEvaluationTarget;
+  evaluationReason?: string;
+  semanticReviewStatus?: RequirementSemanticReviewStatus;
   updatedAt: number;
   complianceCheck?: {
     status: "met" | "missing" | "expiring_soon" | "expired" | "needs_review";
@@ -172,6 +181,15 @@ function CategoryBadge({ category }: { category: Category }) {
   return (
     <Badge variant="outline" className="text-label text-muted-foreground">
       {categoryLabel(category)}
+    </Badge>
+  );
+}
+
+function EvaluationTargetBadge({ requirement }: { requirement: Requirement }) {
+  const target = requirementSemantics(requirement).evaluationTarget;
+  return (
+    <Badge variant="outline" className="text-label text-muted-foreground">
+      {requirementEvaluationTargetLabel(target)}
     </Badge>
   );
 }
@@ -740,107 +758,114 @@ export function CompliancePage() {
           />
         ) : (
           <OperationalPanel>
-            {visibleRequirements.map((requirement) => (
-              <OperationalItem
-                key={requirement._id}
-                className="flex items-center justify-between gap-4 border-foreground/4 transition-colors hover:bg-muted/40"
-              >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="min-w-0 truncate text-base font-medium text-foreground">
-                      {requirement.title}
+            {visibleRequirements.map((requirement) => {
+              const semantics = requirementSemantics(requirement);
+              const canCheckCurrentPolicies =
+                activeRequirementScope === "own_org" &&
+                semantics.evaluationTarget === "own_policy" &&
+                requirement.complianceCheck;
+              return (
+                <OperationalItem
+                  key={requirement._id}
+                  className="flex items-center justify-between gap-4 border-foreground/4 transition-colors hover:bg-muted/40"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="min-w-0 truncate text-base font-medium text-foreground">
+                        {requirement.title}
+                      </p>
+                      {activeRequirementScope === "own_org" &&
+                      requirement.complianceCheck ? (
+                        <ComplianceStatusBadge
+                          status={requirement.complianceCheck.status}
+                        />
+                      ) : null}
+                      <CategoryBadge category={requirement.category} />
+                      <EvaluationTargetBadge requirement={requirement} />
+                      {requirement.limit ? (
+                        <RequirementBadge
+                          label="Limit"
+                          value={requirement.limit}
+                        />
+                      ) : null}
+                      {requirement.deductible ? (
+                        <RequirementBadge
+                          label="Deductible"
+                          value={requirement.deductible}
+                        />
+                      ) : null}
+                      {requirement.clientRequirementSource ? (
+                        <Badge
+                          variant="secondary"
+                          className="max-w-full text-label font-normal text-muted-foreground"
+                        >
+                          <span className="min-w-0 truncate">
+                            Client requirements from{" "}
+                            {requirement.clientRequirementSource.clientOrg
+                              ?.name ?? "client"}
+                          </span>
+                        </Badge>
+                      ) : null}
+                      {sourceTypeLabel(requirement.sourceType) ? (
+                        <Badge
+                          variant="secondary"
+                          className="max-w-full text-label font-normal text-muted-foreground"
+                        >
+                          <span className="min-w-0 truncate">
+                            {sourceTypeLabel(requirement.sourceType)}
+                            {requirement.sourceDocumentName
+                              ? ` · ${requirement.sourceDocumentName}`
+                              : ""}
+                            {formatSourcePage(requirement)
+                              ? ` · ${formatSourcePage(requirement)}`
+                              : ""}
+                          </span>
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="line-clamp-2 max-w-5xl text-base leading-5 text-muted-foreground">
+                      {requirement.requirementText}
                     </p>
                     {activeRequirementScope === "own_org" &&
-                    requirement.complianceCheck ? (
-                      <ComplianceStatusBadge
-                        status={requirement.complianceCheck.status}
-                      />
-                    ) : null}
-                    <CategoryBadge category={requirement.category} />
-                    {requirement.limit ? (
-                      <RequirementBadge
-                        label="Limit"
-                        value={requirement.limit}
-                      />
-                    ) : null}
-                    {requirement.deductible ? (
-                      <RequirementBadge
-                        label="Deductible"
-                        value={requirement.deductible}
-                      />
-                    ) : null}
-                    {requirement.clientRequirementSource ? (
-                      <Badge
-                        variant="secondary"
-                        className="max-w-full text-label font-normal text-muted-foreground"
-                      >
-                        <span className="min-w-0 truncate">
-                          Client requirements from{" "}
-                          {requirement.clientRequirementSource.clientOrg
-                            ?.name ?? "client"}
-                        </span>
-                      </Badge>
-                    ) : null}
-                    {sourceTypeLabel(requirement.sourceType) ? (
-                      <Badge
-                        variant="secondary"
-                        className="max-w-full text-label font-normal text-muted-foreground"
-                      >
-                        <span className="min-w-0 truncate">
-                          {sourceTypeLabel(requirement.sourceType)}
-                          {requirement.sourceDocumentName
-                            ? ` · ${requirement.sourceDocumentName}`
-                            : ""}
-                          {formatSourcePage(requirement)
-                            ? ` · ${formatSourcePage(requirement)}`
-                            : ""}
-                        </span>
-                      </Badge>
+                    requirement.complianceCheck?.notes ? (
+                      <p className="line-clamp-1 max-w-5xl text-label text-muted-foreground/70">
+                        {requirement.complianceCheck.notes}
+                      </p>
                     ) : null}
                   </div>
-                  <p className="line-clamp-2 max-w-5xl text-base leading-5 text-muted-foreground">
-                    {requirement.requirementText}
-                  </p>
-                  {activeRequirementScope === "own_org" &&
-                  requirement.complianceCheck?.notes ? (
-                    <p className="line-clamp-1 max-w-5xl text-label text-muted-foreground/70">
-                      {requirement.complianceCheck.notes}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {activeRequirementScope === "own_org" &&
-                  requirement.complianceCheck ? (
-                    <PillButton
-                      size="compact"
-                      variant="primary"
-                      disabled={recheckingRequirementId === requirement._id}
-                      onClick={() => void recheckRequirement(requirement)}
-                    >
-                      <RefreshCcw
-                        className={`h-3.5 w-3.5 ${
-                          recheckingRequirementId === requirement._id
-                            ? "animate-spin"
-                            : ""
-                        }`}
-                      />
-                      {recheckingRequirementId === requirement._id
-                        ? "Checking"
-                        : "Check compliance"}
-                    </PillButton>
-                  ) : null}
-                  {requirement.canArchive !== false ? (
-                    <PillButton
-                      size="compact"
-                      variant="secondary"
-                      onClick={() => removeRequirement(requirement._id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Archive
-                    </PillButton>
-                  ) : null}
-                </div>
-              </OperationalItem>
-            ))}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {canCheckCurrentPolicies ? (
+                      <PillButton
+                        size="compact"
+                        variant="primary"
+                        disabled={recheckingRequirementId === requirement._id}
+                        onClick={() => void recheckRequirement(requirement)}
+                      >
+                        <RefreshCcw
+                          className={`h-3.5 w-3.5 ${
+                            recheckingRequirementId === requirement._id
+                              ? "animate-spin"
+                              : ""
+                          }`}
+                        />
+                        {recheckingRequirementId === requirement._id
+                          ? "Checking"
+                          : "Check compliance"}
+                      </PillButton>
+                    ) : null}
+                    {requirement.canArchive !== false ? (
+                      <PillButton
+                        size="compact"
+                        variant="secondary"
+                        onClick={() => removeRequirement(requirement._id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Archive
+                      </PillButton>
+                    ) : null}
+                  </div>
+                </OperationalItem>
+              );
+            })}
           </OperationalPanel>
         )}
       </div>

@@ -80,6 +80,10 @@ import {
   isPendingEmailRestoreIntent,
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
+import {
+  requirementEvaluationTargetLabel,
+  requirementSemantics,
+} from "../lib/requirementSemantics";
 
 function normalizeConfidenceRepair(text: string, fallback: string): string {
   const trimmed = text.trim();
@@ -1123,10 +1127,22 @@ export const run = internalAction({
                 : "",
               selectedRequirements.length
                 ? `Requirements:\n${selectedRequirements
-                    .map(
-                      (requirement: any) =>
-                        `- ${requirement.title} (${requirement.appliesTo ?? "vendors"}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`,
-                    )
+                    .map((requirement: any) => {
+                      const semantics = requirementSemantics({
+                        appliesTo: requirement.appliesTo ?? "vendors",
+                        title: requirement.title,
+                        category: requirement.category,
+                        requirementText: requirement.requirementText,
+                        originalContent: requirement.originalContent,
+                        sourceExcerpt: requirement.sourceExcerpt,
+                        sourceType: requirement.sourceType,
+                        evaluationTarget: requirement.evaluationTarget,
+                        evaluationReason: requirement.evaluationReason,
+                        semanticReviewStatus:
+                          requirement.semanticReviewStatus,
+                      });
+                      return `- ${requirement.title} (obligationOwner:${requirement.appliesTo ?? "vendors"}, evaluationTarget:${semantics.evaluationTarget} ${requirementEvaluationTargetLabel(semantics.evaluationTarget)}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`;
+                    })
                     .join("\n")}`
                 : "",
               selectedMailboxes.length

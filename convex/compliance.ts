@@ -10,6 +10,15 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getOrgAccess, requireAuth } from "./lib/access";
 import { notify } from "./lib/notify";
+import {
+  canPolicyMatchRequirement,
+  classifyRequirementSemantics,
+  nonPolicyRequirementReviewNote,
+  requirementSemantics,
+  requirementWithSemanticDefaults,
+  shouldEvaluateConnectedVendorRequirement,
+  shouldEvaluateOwnOrgRequirement,
+} from "./lib/requirementSemantics";
 
 const requirementCategoryValidator = v.union(
   v.literal("general_liability"),
@@ -37,6 +46,20 @@ const requirementSourceTypeValidator = v.union(
   v.literal("client_contract"),
   v.literal("vendor_requirements"),
   v.literal("other"),
+);
+
+const requirementEvaluationTargetValidator = v.union(
+  v.literal("own_policy"),
+  v.literal("connected_vendor_policy"),
+  v.literal("subcontractor_policy"),
+  v.literal("manual_control"),
+  v.literal("not_policy_checkable"),
+);
+
+const requirementSemanticReviewStatusValidator = v.union(
+  v.literal("system_classified"),
+  v.literal("needs_review"),
+  v.literal("user_confirmed"),
 );
 
 const sourceDocumentTypeValidator = v.union(
@@ -67,6 +90,29 @@ const vendorComplianceMonitorRowValidator = v.object({
   expiringSoonCount: v.number(),
   checks: v.array(vendorComplianceMonitorCheckValidator),
 });
+
+type RequirementScope = "vendors" | "own_org" | "both";
+
+function semanticFieldsForRequirement(args: {
+  appliesTo: RequirementScope;
+  title: string;
+  category?: string;
+  requirementText: string;
+  name?: string;
+  coverageCode?: string;
+  limit?: string;
+  limitAmount?: number;
+  deductible?: string;
+  deductibleAmount?: number;
+  originalContent?: string;
+  sourceExcerpt?: string;
+  sourceType?: string;
+  evaluationTarget?: string;
+  evaluationReason?: string;
+  semanticReviewStatus?: string;
+}) {
+  return classifyRequirementSemantics(args);
+}
 
 function normalizeText(value: string | undefined | null) {
   return (value ?? "")
@@ -395,6 +441,17 @@ function assessRequirement(
   expectedInsuredNames?: string[],
   options?: { includePreviewPolicies?: boolean },
 ) {
+  if (!canPolicyMatchRequirement(requirement)) {
+    return {
+      requirementId: requirement._id,
+      status: "needs_review" as const,
+      matchedPolicyIds: [] as Id<"policies">[],
+      expiresAt: undefined,
+      matchedPolicy: undefined,
+      notes: nonPolicyRequirementReviewNote(requirement),
+    };
+  }
+
   const includePreviewPolicies = options?.includePreviewPolicies !== false;
   const insuredNames = expectedInsuredNames?.length
     ? expectedInsuredNames
@@ -562,6 +619,17 @@ function assessRequirementWithManualReview(
   expectedInsuredNames?: string[],
   options?: { includePreviewPolicies?: boolean },
 ) {
+  if (!canPolicyMatchRequirement(requirement)) {
+    return assessRequirement(
+      requirement,
+      policies,
+      now,
+      expectedInsuredName,
+      expectedInsuredNames,
+      options,
+    );
+  }
+
   return (
     manualReviewForRequirement(requirement) ??
     assessRequirement(
@@ -626,10 +694,7 @@ async function listRequirementsForOrg(
 function vendorScopedRequirements(
   requirements: Doc<"insuranceRequirements">[],
 ) {
-  return requirements.filter(
-    (requirement) =>
-      requirement.appliesTo === "vendors" || requirement.appliesTo === "both",
-  );
+  return requirements.filter(shouldEvaluateConnectedVendorRequirement);
 }
 
 async function listClientRequirementsForVendor(
@@ -652,9 +717,12 @@ async function listClientRequirementsForVendor(
       await listRequirementsForOrg(ctx, rel.clientOrgId),
     );
     for (const requirement of requirements) {
-      rows.push({
+      const requirementWithSemantics = requirementWithSemanticDefaults({
         ...requirement,
         appliesTo: "own_org" as const,
+      });
+      rows.push({
+        ...requirementWithSemantics,
         complianceCheck: assessRequirement(
           requirement,
           vendorPolicies,
@@ -706,9 +774,9 @@ async function listRequirementsVisibleToOrg(
   );
   return [
     ...ownRequirements.map((requirement) => ({
-      ...requirement,
+      ...requirementWithSemanticDefaults(requirement),
       complianceCheck:
-        requirement.appliesTo === "own_org" || requirement.appliesTo === "both"
+        shouldEvaluateOwnOrgRequirement(requirement)
           ? assessRequirementWithManualReview(
               requirement,
               orgPolicies,
@@ -768,6 +836,9 @@ export const upsertRequirement = mutation({
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
+    evaluationTarget: v.optional(requirementEvaluationTargetValidator),
+    evaluationReason: v.optional(v.string()),
+    semanticReviewStatus: v.optional(requirementSemanticReviewStatusValidator),
     minimumRequired: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -794,10 +865,48 @@ export const upsertRequirement = mutation({
       deductibleValueType: args.deductibleValueType,
       originalContent: args.originalContent,
     });
+    const appliesTo = args.appliesTo ?? "vendors";
+    const semantics = semanticFieldsForRequirement({
+      appliesTo,
+      title: trimmedTitle,
+      category: args.category,
+      requirementText: trimmedText,
+      ...coverage,
+      sourceExcerpt: args.sourceExcerpt,
+      sourceType: args.sourceType,
+      evaluationTarget: args.evaluationTarget,
+      evaluationReason: args.evaluationReason,
+      semanticReviewStatus: args.semanticReviewStatus,
+    });
     if (args.requirementId) {
       const existing = await ctx.db.get(args.requirementId);
       if (!existing || existing.orgId !== args.orgId)
         throw new Error("Requirement not found");
+      const updatedAppliesTo = args.appliesTo ?? existing.appliesTo ?? "vendors";
+      const updatedSemantics = semanticFieldsForRequirement({
+        appliesTo: updatedAppliesTo,
+        title: trimmedTitle,
+        category: args.category,
+        requirementText: trimmedText,
+        ...coverage,
+        sourceExcerpt: args.sourceExcerpt ?? existing.sourceExcerpt,
+        sourceType: args.sourceType ?? existing.sourceType,
+        evaluationTarget:
+          args.evaluationTarget ??
+          (existing.semanticReviewStatus === "user_confirmed"
+            ? existing.evaluationTarget
+            : undefined),
+        evaluationReason:
+          args.evaluationReason ??
+          (existing.semanticReviewStatus === "user_confirmed"
+            ? existing.evaluationReason
+            : undefined),
+        semanticReviewStatus:
+          args.semanticReviewStatus ??
+          (existing.semanticReviewStatus === "user_confirmed"
+            ? "user_confirmed"
+            : undefined),
+      });
       await ctx.db.patch(args.requirementId, {
         title: trimmedTitle,
         category: args.category,
@@ -810,7 +919,10 @@ export const upsertRequirement = mutation({
         sourceExcerpt: args.sourceExcerpt?.trim() || existing.sourceExcerpt,
         sourcePageStart: args.sourcePageStart ?? existing.sourcePageStart,
         sourcePageEnd: args.sourcePageEnd ?? existing.sourcePageEnd,
-        appliesTo: args.appliesTo ?? existing.appliesTo ?? "vendors",
+        appliesTo: updatedAppliesTo,
+        evaluationTarget: updatedSemantics.evaluationTarget,
+        evaluationReason: updatedSemantics.evaluationReason,
+        semanticReviewStatus: updatedSemantics.semanticReviewStatus,
         minimumRequired:
           args.minimumRequired ?? existing.minimumRequired ?? true,
         updatedByUserId: access.userId,
@@ -830,7 +942,10 @@ export const upsertRequirement = mutation({
       sourceExcerpt: args.sourceExcerpt?.trim() || undefined,
       sourcePageStart: args.sourcePageStart,
       sourcePageEnd: args.sourcePageEnd,
-      appliesTo: args.appliesTo ?? "vendors",
+      appliesTo,
+      evaluationTarget: semantics.evaluationTarget,
+      evaluationReason: semantics.evaluationReason,
+      semanticReviewStatus: semantics.semanticReviewStatus,
       minimumRequired: args.minimumRequired ?? true,
       status: "active",
       createdByUserId: access.userId,
@@ -905,7 +1020,7 @@ export const listVendorCompliance = query({
         policyReadableForCompliance(policy, true),
       ).length;
       const checks = requirements.map((requirement) => ({
-        requirement,
+        requirement: requirementWithSemanticDefaults(requirement),
         ...assessRequirement(
           requirement,
           policies,
@@ -915,7 +1030,10 @@ export const listVendorCompliance = query({
         ),
       }));
       const missing = checks.filter(
-        (check) => check.status === "missing" || check.status === "expired",
+        (check) =>
+          check.status === "missing" ||
+          check.status === "expired" ||
+          check.status === "needs_review",
       ).length;
       const expiringSoon = checks.filter(
         (check) => check.status === "expiring_soon",
@@ -995,7 +1113,7 @@ export const getVendorChecklist = query({
         await listRequirementsForOrg(ctx, rel.clientOrgId),
       );
       const checks = requirements.map((requirement) => ({
-        requirement,
+        requirement: requirementWithSemanticDefaults(requirement),
         ...assessRequirement(
           requirement,
           policies,
@@ -1056,6 +1174,15 @@ export const getManualComplianceReviewContextInternal = internalQuery({
         "This requirement is not checked against your organization",
       );
     }
+    const semantics = requirementSemantics(requirement);
+    if (
+      !shouldEvaluateOwnOrgRequirement(requirement) ||
+      semantics.evaluationTarget !== "own_policy"
+    ) {
+      throw new Error(
+        "Only own-policy requirements can be checked against current organization policies",
+      );
+    }
 
     const [org, policies] = await Promise.all([
       ctx.db.get(args.orgId),
@@ -1085,6 +1212,10 @@ export const getManualComplianceReviewContextInternal = internalQuery({
         limitAmount: requirement.limitAmount,
         deductible: requirement.deductible,
         deductibleAmount: requirement.deductibleAmount,
+        appliesTo: requirement.appliesTo,
+        evaluationTarget: semantics.evaluationTarget,
+        evaluationReason: semantics.evaluationReason,
+        semanticReviewStatus: semantics.semanticReviewStatus,
         sourceExcerpt: requirement.sourceExcerpt,
       },
       deterministicCheck: assessRequirement(
@@ -1186,6 +1317,9 @@ export const upsertRequirementInternal = internalMutation({
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
+    evaluationTarget: v.optional(requirementEvaluationTargetValidator),
+    evaluationReason: v.optional(v.string()),
+    semanticReviewStatus: v.optional(requirementSemanticReviewStatusValidator),
   },
   handler: async (ctx, args) => {
     await requireAdminWriteActor(
@@ -1195,33 +1329,52 @@ export const upsertRequirementInternal = internalMutation({
       "Admin role required",
     );
     const now = dayjs().valueOf();
+    const title = args.title.trim();
+    const requirementText = args.requirementText.trim();
+    const coverage = normalizeRequirementCoverage({
+      title,
+      requirementText,
+      name: args.name,
+      coverageCode: args.coverageCode,
+      limit: args.limit,
+      limitAmount: args.limitAmount,
+      limitType: args.limitType,
+      limitValueType: args.limitValueType,
+      deductible: args.deductible,
+      deductibleAmount: args.deductibleAmount,
+      deductibleType: args.deductibleType,
+      deductibleValueType: args.deductibleValueType,
+      originalContent: args.originalContent,
+    });
+    const appliesTo = args.appliesTo ?? "vendors";
+    const semantics = semanticFieldsForRequirement({
+      appliesTo,
+      title,
+      category: args.category,
+      requirementText,
+      ...coverage,
+      sourceExcerpt: args.sourceExcerpt,
+      sourceType: args.sourceType,
+      evaluationTarget: args.evaluationTarget,
+      evaluationReason: args.evaluationReason,
+      semanticReviewStatus: args.semanticReviewStatus,
+    });
     return await ctx.db.insert("insuranceRequirements", {
       orgId: args.orgId,
-      title: args.title.trim(),
+      title,
       category: args.category,
-      requirementText: args.requirementText.trim(),
-      ...normalizeRequirementCoverage({
-        title: args.title.trim(),
-        requirementText: args.requirementText.trim(),
-        name: args.name,
-        coverageCode: args.coverageCode,
-        limit: args.limit,
-        limitAmount: args.limitAmount,
-        limitType: args.limitType,
-        limitValueType: args.limitValueType,
-        deductible: args.deductible,
-        deductibleAmount: args.deductibleAmount,
-        deductibleType: args.deductibleType,
-        deductibleValueType: args.deductibleValueType,
-        originalContent: args.originalContent,
-      }),
+      requirementText,
+      ...coverage,
       sourceDocumentId: args.sourceDocumentId,
       sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
       sourceType: args.sourceType ?? "manual",
       sourceExcerpt: args.sourceExcerpt?.trim() || undefined,
       sourcePageStart: args.sourcePageStart,
       sourcePageEnd: args.sourcePageEnd,
-      appliesTo: args.appliesTo ?? "vendors",
+      appliesTo,
+      evaluationTarget: semantics.evaluationTarget,
+      evaluationReason: semantics.evaluationReason,
+      semanticReviewStatus: semantics.semanticReviewStatus,
       minimumRequired: true,
       status: "active",
       createdByUserId: args.userId,
@@ -1374,6 +1527,11 @@ export const createRequirementsInternal = internalMutation({
         sourceExcerpt: v.optional(v.string()),
         sourcePageStart: v.optional(v.number()),
         sourcePageEnd: v.optional(v.number()),
+        evaluationTarget: v.optional(requirementEvaluationTargetValidator),
+        evaluationReason: v.optional(v.string()),
+        semanticReviewStatus: v.optional(
+          requirementSemanticReviewStatusValidator,
+        ),
       }),
     ),
   },
@@ -1399,37 +1557,55 @@ export const createRequirementsInternal = internalMutation({
       const key = normalizeText(`${title} ${requirementText}`);
       if (seen.has(key)) continue;
       seen.add(key);
+      const appliesTo = args.appliesTo ?? "vendors";
+      const coverage = normalizeRequirementCoverage({
+        title,
+        requirementText,
+        name: requirement.name,
+        coverageCode: requirement.coverageCode,
+        limit: requirement.limit,
+        limitAmount: requirement.limitAmount,
+        limitType: requirement.limitType,
+        limitValueType: requirement.limitValueType,
+        deductible: requirement.deductible,
+        deductibleAmount: requirement.deductibleAmount,
+        deductibleType: requirement.deductibleType,
+        deductibleValueType: requirement.deductibleValueType,
+        originalContent: requirement.originalContent,
+      });
+      const sourceExcerpt =
+        requirement.sourceExcerpt?.trim() ||
+        requirement.originalContent?.trim() ||
+        requirementText;
+      const semantics = semanticFieldsForRequirement({
+        appliesTo,
+        title,
+        category: requirement.category,
+        requirementText,
+        ...coverage,
+        sourceExcerpt,
+        sourceType: args.sourceType,
+        evaluationTarget: requirement.evaluationTarget,
+        evaluationReason: requirement.evaluationReason,
+        semanticReviewStatus: requirement.semanticReviewStatus,
+      });
       ids.push(
         await ctx.db.insert("insuranceRequirements", {
           orgId: args.orgId,
           title,
           category: requirement.category,
           requirementText,
-          ...normalizeRequirementCoverage({
-            title,
-            requirementText,
-            name: requirement.name,
-            coverageCode: requirement.coverageCode,
-            limit: requirement.limit,
-            limitAmount: requirement.limitAmount,
-            limitType: requirement.limitType,
-            limitValueType: requirement.limitValueType,
-            deductible: requirement.deductible,
-            deductibleAmount: requirement.deductibleAmount,
-            deductibleType: requirement.deductibleType,
-            deductibleValueType: requirement.deductibleValueType,
-            originalContent: requirement.originalContent,
-          }),
+          ...coverage,
           sourceDocumentId: args.sourceDocumentId,
           sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
           sourceType: args.sourceType ?? "bulk_import",
-          sourceExcerpt:
-            requirement.sourceExcerpt?.trim() ||
-            requirement.originalContent?.trim() ||
-            requirementText,
+          sourceExcerpt,
           sourcePageStart: requirement.sourcePageStart,
           sourcePageEnd: requirement.sourcePageEnd,
-          appliesTo: args.appliesTo ?? "vendors",
+          appliesTo,
+          evaluationTarget: semantics.evaluationTarget,
+          evaluationReason: semantics.evaluationReason,
+          semanticReviewStatus: semantics.semanticReviewStatus,
           minimumRequired: true,
           status: "active",
           createdByUserId: args.userId,
@@ -1470,7 +1646,7 @@ export const listVendorComplianceInternal = internalQuery({
         policyReadableForCompliance(policy, includePreviewPolicies),
       ).length;
       const checks = requirements.map((requirement) => ({
-        requirement,
+        requirement: requirementWithSemanticDefaults(requirement),
         ...assessRequirement(
           requirement,
           policies,
@@ -1481,7 +1657,10 @@ export const listVendorComplianceInternal = internalQuery({
         ),
       }));
       const missing = checks.filter(
-        (check) => check.status === "missing" || check.status === "expired",
+        (check) =>
+          check.status === "missing" ||
+          check.status === "expired" ||
+          check.status === "needs_review",
       ).length;
       const expiringSoon = checks.filter(
         (check) => check.status === "expiring_soon",
@@ -1512,6 +1691,85 @@ export const listVendorComplianceInternal = internalQuery({
       });
     }
     return rows;
+  },
+});
+
+export const backfillRequirementSemanticsInternal = internalMutation({
+  args: {
+    orgId: v.optional(v.id("organizations")),
+    dryRun: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 500, 1), 1000);
+    const rows = args.orgId
+      ? await ctx.db
+          .query("insuranceRequirements")
+          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId!))
+          .take(limit)
+      : (await ctx.db.query("insuranceRequirements").collect()).slice(
+          0,
+          limit,
+        );
+    const changes: Array<{
+      requirementId: Id<"insuranceRequirements">;
+      title: string;
+      appliesTo: RequirementScope;
+      previous: {
+        evaluationTarget?: string;
+        semanticReviewStatus?: string;
+      };
+      next: ReturnType<typeof semanticFieldsForRequirement>;
+    }> = [];
+
+    for (const requirement of rows) {
+      if (requirement.semanticReviewStatus === "user_confirmed") continue;
+      const semantics = semanticFieldsForRequirement({
+        appliesTo: requirement.appliesTo,
+        title: requirement.title,
+        category: requirement.category,
+        requirementText: requirement.requirementText,
+        name: requirement.name,
+        coverageCode: requirement.coverageCode,
+        limit: requirement.limit,
+        limitAmount: requirement.limitAmount,
+        deductible: requirement.deductible,
+        deductibleAmount: requirement.deductibleAmount,
+        originalContent: requirement.originalContent,
+        sourceExcerpt: requirement.sourceExcerpt,
+        sourceType: requirement.sourceType,
+      });
+      const changed =
+        requirement.evaluationTarget !== semantics.evaluationTarget ||
+        requirement.evaluationReason !== semantics.evaluationReason ||
+        requirement.semanticReviewStatus !== semantics.semanticReviewStatus;
+      if (!changed) continue;
+      changes.push({
+        requirementId: requirement._id,
+        title: requirement.title,
+        appliesTo: requirement.appliesTo,
+        previous: {
+          evaluationTarget: requirement.evaluationTarget,
+          semanticReviewStatus: requirement.semanticReviewStatus,
+        },
+        next: semantics,
+      });
+      if (!args.dryRun) {
+        await ctx.db.patch(requirement._id, {
+          evaluationTarget: semantics.evaluationTarget,
+          evaluationReason: semantics.evaluationReason,
+          semanticReviewStatus: semantics.semanticReviewStatus,
+          updatedAt: dayjs().valueOf(),
+        });
+      }
+    }
+
+    return {
+      scannedCount: rows.length,
+      changedCount: changes.length,
+      dryRun: args.dryRun === true,
+      changes: changes.slice(0, 50),
+    };
   },
 });
 

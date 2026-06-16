@@ -1,6 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { PCE_REQUEST_KINDS } from "./pceIntake";
+import { REQUIREMENT_EVALUATION_TARGETS } from "./requirementSemantics";
+
+const REQUIREMENT_EVALUATION_TARGET_FILTER_VALUES = [
+  ...REQUIREMENT_EVALUATION_TARGETS,
+  "all",
+] as const;
 
 /**
  * Tool definitions for agentic chat.
@@ -36,7 +42,7 @@ export const compareCoverages = tool({
 
 export const lookupComplianceRequirements = tool({
   description:
-    "Look up the organization's saved insurance compliance requirements. Use this when the user asks what contractors/vendors must carry, asks about internal insurance standards, minimum required limits, deductibles, endorsements, certificate instructions, or compliance checklist requirements.",
+    "Look up the organization's saved insurance compliance requirements. Use this when the user asks what contractors/vendors must carry, asks about my requirements, internal insurance standards, minimum required limits, deductibles, endorsements, certificate instructions, or compliance checklist requirements. Results distinguish obligation owner from evidence target.",
   inputSchema: z.object({
     query: z
       .string()
@@ -48,7 +54,13 @@ export const lookupComplianceRequirements = tool({
       .enum(["vendors", "own_org", "both", "all"])
       .optional()
       .describe(
-        "Filter by requirement scope. Use vendors for contractor/vendor requirements, own_org for my requirements, both for shared requirements, or all to search every requirement.",
+        "Filter by obligation owner. Use vendors for contractor/vendor obligations, own_org for my requirements owned by this org, both for shared obligations, or all to search every requirement.",
+      ),
+    evaluationTarget: z
+      .enum(REQUIREMENT_EVALUATION_TARGET_FILTER_VALUES)
+      .optional()
+      .describe(
+        "Filter by evidence target: own_policy, connected_vendor_policy, subcontractor_policy, manual_control, not_policy_checkable, or all.",
       ),
   }),
 });

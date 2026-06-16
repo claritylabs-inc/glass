@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { getOrgAccessForQuery } from "./lib/access";
+import {
+  requirementEvaluationTargetLabel,
+  requirementSemantics,
+} from "./lib/requirementSemantics";
 
 function policyLabel(policy: {
   carrier?: string;
@@ -96,21 +100,25 @@ export const list = query({
           label: policyLabel(quote),
           sublabel: [quote.insuredName, quote.premium].filter(Boolean).join(" · "),
         })),
-      requirements: requirements.map((requirement) => ({
-        kind: "requirement" as const,
-        id: requirement._id,
-        label: requirement.title,
-        sublabel: [
-          requirement.appliesTo === "own_org"
-            ? "Internal"
-            : requirement.appliesTo === "both"
-              ? "Internal + vendor"
-              : "Vendor",
-          requirement.category?.replace(/_/g, " "),
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      })),
+      requirements: requirements.map((requirement) => {
+        const semantics = requirementSemantics(requirement);
+        return {
+          kind: "requirement" as const,
+          id: requirement._id,
+          label: requirement.title,
+          sublabel: [
+            requirement.appliesTo === "own_org"
+              ? "My requirement"
+              : requirement.appliesTo === "both"
+                ? "My + vendor requirement"
+                : "Vendor requirement",
+            requirementEvaluationTargetLabel(semantics.evaluationTarget),
+            requirement.category?.replace(/_/g, " "),
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        };
+      }),
       mailboxes,
     };
   },

@@ -11,6 +11,10 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModel } from "../lib/models";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
+import {
+  classifyRequirementSemantics,
+  REQUIREMENT_EVALUATION_TARGETS,
+} from "../lib/requirementSemantics";
 
 const CATEGORY_VALUES = [
   "general_liability",
@@ -41,6 +45,8 @@ const RequirementSchema = z.object({
   sourceExcerpt: z.string().min(1).max(4000).nullable(),
   sourcePageStart: z.number().int().positive().nullable(),
   sourcePageEnd: z.number().int().positive().nullable(),
+  evaluationTarget: z.enum(REQUIREMENT_EVALUATION_TARGETS).nullable(),
+  evaluationReason: z.string().min(1).max(240).nullable(),
 });
 
 const RequirementImportSchema = z.object({
@@ -88,7 +94,31 @@ function optionalNumber(value: number | null) {
     : undefined;
 }
 
-function normalizeImportedRequirement(requirement: ImportedRequirement) {
+function normalizeImportedRequirement(
+  requirement: ImportedRequirement,
+  appliesTo: "vendors" | "own_org" | "both",
+  sourceType: "lease_agreement" | "client_contract" | "vendor_requirements" | "other",
+) {
+  const sourceExcerpt =
+    optionalString(requirement.sourceExcerpt) ??
+    optionalString(requirement.originalContent);
+  const semantics = classifyRequirementSemantics({
+    appliesTo,
+    title: requirement.title,
+    category: requirement.category,
+    requirementText: requirement.requirementText,
+    name: optionalString(requirement.name),
+    coverageCode: optionalString(requirement.coverageCode),
+    limit: optionalString(requirement.limit),
+    limitAmount: optionalNumber(requirement.limitAmount),
+    deductible: optionalString(requirement.deductible),
+    deductibleAmount: optionalNumber(requirement.deductibleAmount),
+    originalContent: optionalString(requirement.originalContent),
+    sourceExcerpt,
+    sourceType,
+    evaluationTarget: requirement.evaluationTarget ?? undefined,
+    evaluationReason: optionalString(requirement.evaluationReason),
+  });
   return {
     title: requirement.title,
     category: requirement.category,
@@ -104,11 +134,12 @@ function normalizeImportedRequirement(requirement: ImportedRequirement) {
     deductibleType: optionalString(requirement.deductibleType),
     deductibleValueType: optionalString(requirement.deductibleValueType),
     originalContent: optionalString(requirement.originalContent),
-    sourceExcerpt:
-      optionalString(requirement.sourceExcerpt) ??
-      optionalString(requirement.originalContent),
+    sourceExcerpt,
     sourcePageStart: optionalNumber(requirement.sourcePageStart),
     sourcePageEnd: optionalNumber(requirement.sourcePageEnd),
+    evaluationTarget: semantics.evaluationTarget,
+    evaluationReason: semantics.evaluationReason,
+    semanticReviewStatus: semantics.semanticReviewStatus,
   };
 }
 
@@ -211,6 +242,14 @@ Rules:
 - Extract only actionable insurance compliance requirements.
 - Preserve exact limits, deductibles, endorsements, waiver, additional insured, primary/noncontributory, rating, cancellation notice, and expiration requirements when present.
 - Store each requirement in the same shape as a policy coverage: name, coverageCode, limit, limitType, limitValueType, deductible, deductibleType, deductibleValueType, and originalContent when available.
+- Treat appliesTo as who owns the obligation, not what evidence proves it. The source-level default is ${appliesTo}; preserve that ownership unless the row clearly belongs elsewhere.
+- For each row set evaluationTarget to one of: own_policy, connected_vendor_policy, subcontractor_policy, manual_control, not_policy_checkable.
+- Use own_policy when the current organization's policy evidence can prove the row, including customer-imposed E&O, cyber, GL, auto, workers comp, umbrella, property, limit, deductible, retroactive date, or coverage requirements.
+- Use connected_vendor_policy when connected vendors/contractors must prove their own policy evidence.
+- Use subcontractor_policy when the source requires approved subcontractors, downstream partners, sub-producers, or independent contractors to maintain insurance.
+- Use manual_control for certificate production, proof/evidence delivery, notice/reporting, cancellation/non-renewal notice, insurer rating, admitted/licensed/authorized insurer, or other procedural obligations that cannot be proven by one policy coverage match.
+- Use not_policy_checkable only for useful context that should not be scored as a compliance item.
+- Set evaluationReason to a short explanation of why that evidence target was chosen.
 - Set sourceExcerpt to the shortest exact source language that supports the requirement. For PDFs, set sourcePageStart/sourcePageEnd when the page is obvious from page markers; otherwise leave pages null.
 - When a minimum coverage amount is stated, set limit to the original limit text and limitAmount to the numeric dollar amount. Example: "$1M per occurrence" becomes limitAmount 1000000.
 - When a deductible or retention amount is stated, set deductible to the original deductible text and deductibleAmount to the numeric dollar amount.
@@ -311,8 +350,12 @@ async function runRequirementImport(
       sourceDocumentId,
       sourceDocumentName: args.fileName || fallbackSourceDocumentName,
       sourceType,
-      requirements: result.object.requirements.map(
-        normalizeImportedRequirement,
+      requirements: result.object.requirements.map((requirement) =>
+        normalizeImportedRequirement(
+          requirement,
+          args.appliesTo ?? "vendors",
+          sourceType,
+        ),
       ),
     },
   );

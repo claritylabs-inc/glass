@@ -876,6 +876,23 @@ export default defineSchema({
       v.literal("own_org"),
       v.literal("both"),
     ),
+    evaluationTarget: v.optional(
+      v.union(
+        v.literal("own_policy"),
+        v.literal("connected_vendor_policy"),
+        v.literal("subcontractor_policy"),
+        v.literal("manual_control"),
+        v.literal("not_policy_checkable"),
+      ),
+    ),
+    evaluationReason: v.optional(v.string()),
+    semanticReviewStatus: v.optional(
+      v.union(
+        v.literal("system_classified"),
+        v.literal("needs_review"),
+        v.literal("user_confirmed"),
+      ),
+    ),
     manualComplianceReview: v.optional(
       v.object({
         status: v.union(

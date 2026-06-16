@@ -55,19 +55,21 @@ export function registerClientTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "create_insurance_requirement",
-    "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role. Include sourceDocumentName/sourceExcerpt when creating extracted lease or contract requirements.",
+    "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role. Optionally include evaluationTarget to distinguish vendor policy evidence from subcontractor evidence, manual controls, or context-only rows. Include sourceDocumentName/sourceExcerpt when creating extracted lease or contract requirements.",
     {
       title: z.string(),
       category: z.enum(["general_liability", "auto", "workers_comp", "umbrella", "professional", "cyber", "property", "other"]),
       requirementText: z.string(),
+      evaluationTarget: z.enum(["own_policy", "connected_vendor_policy", "subcontractor_policy", "manual_control", "not_policy_checkable"]).optional(),
       sourceDocumentName: z.string().optional(),
       sourceExcerpt: z.string().optional(),
     },
-    async ({ title, category, requirementText, sourceDocumentName, sourceExcerpt }) => {
+    async ({ title, category, requirementText, evaluationTarget, sourceDocumentName, sourceExcerpt }) => {
       const data = await client.post("/api/v1/compliance/requirements", {
         title,
         category,
         requirement_text: requirementText,
+        evaluation_target: evaluationTarget,
         source_document_name: sourceDocumentName,
         source_excerpt: sourceExcerpt,
       });

@@ -1,4 +1,10 @@
 import type { Doc } from "../_generated/dataModel";
+import {
+  requirementEvaluationTargetDescription,
+  requirementEvaluationTargetLabel,
+  requirementSemantics,
+  type RequirementEvaluationTarget,
+} from "./requirementSemantics";
 
 type Requirement = Pick<
   Doc<"insuranceRequirements">,
@@ -16,6 +22,9 @@ type Requirement = Pick<
   | "sourceExcerpt"
   | "sourcePageStart"
   | "sourcePageEnd"
+  | "evaluationTarget"
+  | "evaluationReason"
+  | "semanticReviewStatus"
 > & {
   clientRequirementSource?: {
     clientOrg: {
@@ -53,9 +62,11 @@ export function filterComplianceRequirements(
   {
     query,
     appliesTo,
+    evaluationTarget,
   }: {
     query?: string;
     appliesTo?: "vendors" | "own_org" | "both" | "all";
+    evaluationTarget?: RequirementEvaluationTarget | "all";
   },
 ) {
   const normalizedQuery = normalizeText(query);
@@ -69,6 +80,14 @@ export function filterComplianceRequirements(
       appliesTo !== "all" &&
       requirement.appliesTo !== "both" &&
       requirement.appliesTo !== appliesTo
+    ) {
+      return false;
+    }
+    const semantics = requirementSemantics(requirement);
+    if (
+      evaluationTarget &&
+      evaluationTarget !== "all" &&
+      semantics.evaluationTarget !== evaluationTarget
     ) {
       return false;
     }
@@ -86,6 +105,10 @@ export function filterComplianceRequirements(
         requirement.sourceExcerpt,
         requirement.appliesTo,
         SCOPE_LABELS[requirement.appliesTo],
+        semantics.evaluationTarget,
+        requirementEvaluationTargetLabel(semantics.evaluationTarget),
+        requirementEvaluationTargetDescription(semantics.evaluationTarget),
+        semantics.evaluationReason,
       ].join(" "),
     );
     return queryTerms.some((term) => haystack.includes(term));
@@ -93,6 +116,7 @@ export function filterComplianceRequirements(
 }
 
 export function formatComplianceRequirement(requirement: Requirement) {
+  const semantics = requirementSemantics(requirement);
   const details = [
     requirement.clientRequirementSource
       ? `source: client requirements from ${requirement.clientRequirementSource.clientOrg?.name ?? "client"}`
@@ -106,7 +130,11 @@ export function formatComplianceRequirement(requirement: Requirement) {
     requirement.sourcePageStart
       ? `sourcePage: ${requirement.sourcePageEnd && requirement.sourcePageEnd !== requirement.sourcePageStart ? `${requirement.sourcePageStart}-${requirement.sourcePageEnd}` : requirement.sourcePageStart}`
       : undefined,
-    `scope: ${SCOPE_LABELS[requirement.appliesTo]}`,
+    `obligationOwner: ${SCOPE_LABELS[requirement.appliesTo]}`,
+    `evaluationTarget: ${semantics.evaluationTarget} (${requirementEvaluationTargetLabel(semantics.evaluationTarget)})`,
+    semantics.evaluationReason
+      ? `evaluationReason: ${semantics.evaluationReason}`
+      : undefined,
     `category: ${CATEGORY_LABELS[requirement.category]}`,
     requirement.limit ? `limit: ${requirement.limit}` : undefined,
     requirement.limitAmount !== undefined
@@ -157,5 +185,5 @@ export function formatComplianceRequirementsContext(
     );
   }
 
-  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are the organization's saved insurance requirements. Use them for questions about contractor/vendor requirements, the organization's own insurance standards, minimum limits, deductibles, endorsements, certificate instructions, and source/provenance back to leases, client contracts, or requirement documents. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
+  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are the organization's saved insurance requirements. appliesTo/obligationOwner says who owns the obligation; evaluationTarget says what evidence can satisfy it. "My requirements" means obligations owned by the current organization, and those obligations may still require subcontractor/downstream evidence or manual control evidence rather than the current organization's policy. Use own_policy rows for current-policy checks, connected_vendor_policy rows with vendor compliance tools, subcontractor_policy rows with subcontractor/downstream evidence, and manual_control rows with source/control evidence. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
 }

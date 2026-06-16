@@ -204,6 +204,9 @@ export function buildVendorComplianceTools(
                 return {
                   requirementId: c.requirementId,
                   title: requirement?.title ?? c.requirementTitle,
+                  appliesTo: requirement?.appliesTo,
+                  evaluationTarget: requirement?.evaluationTarget,
+                  evaluationReason: requirement?.evaluationReason,
                   status: c.status,
                   requiredLimit: requirement?.limit,
                   matchedPolicy: c.matchedPolicy,

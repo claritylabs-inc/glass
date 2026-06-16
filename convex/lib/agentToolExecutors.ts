@@ -32,6 +32,7 @@ import { evaluatePceIntake, type PceRequestKind } from "./pceIntake";
 import { searchPolicyDocumentWithSourceSpans } from "./policyLookup";
 import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
 import { buildVendorComplianceTools } from "./vendorComplianceTools";
+import type { RequirementEvaluationTarget } from "./requirementSemantics";
 
 type AgentToolSurface = "web" | "email" | "imessage" | "mcp";
 
@@ -522,6 +523,7 @@ export function buildAgentToolExecutors(
       execute: async (params: {
         query?: string;
         appliesTo?: "vendors" | "own_org" | "both" | "all";
+        evaluationTarget?: RequirementEvaluationTarget | "all";
       }) => {
         const blocks: string[] = [];
         for (const readOrgId of options.readOrgIds ??

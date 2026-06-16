@@ -1645,6 +1645,11 @@ const MCP_TOOLS = [
           description:
             "Optional exact original source language supporting the requirement",
         },
+        evaluation_target: {
+          type: "string",
+          description:
+            "Optional evidence target: own_policy, connected_vendor_policy, subcontractor_policy, manual_control, or not_policy_checkable. Defaults to connected_vendor_policy for this vendor-oriented API.",
+        },
       },
       required: ["title", "category", "requirement_text"],
     },
@@ -2326,6 +2331,9 @@ async function handleToolCall(
             ? String(args.source_excerpt)
             : undefined,
           appliesTo: "vendors",
+          evaluationTarget: args.evaluation_target
+            ? String(args.evaluation_target)
+            : undefined,
         },
       );
       return {
@@ -3485,6 +3493,11 @@ http.route({
               ? String(body.sourceExcerpt)
               : undefined,
           appliesTo: "vendors",
+          evaluationTarget: body.evaluation_target
+            ? String(body.evaluation_target)
+            : body.evaluationTarget
+              ? String(body.evaluationTarget)
+              : undefined,
         },
       );
       return jsonResponse({ id: requirementId }, 201);
