@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Activity, Building2, LogOut, ShieldCheck, SlidersHorizontal, Users } from "lucide-react";
+import { Activity, Building2, LogOut, MessageSquareText, ShieldCheck, SlidersHorizontal, Users } from "lucide-react";
 import { NavItem, SectionHeader } from "@/components/app-sidebar/nav-item";
 import { MENU_ITEM_BASE, MENU_ITEM_INACTIVE } from "@/components/app-sidebar/nav-config";
 import { SidebarHeader } from "@/components/app-sidebar/sidebar-header";
@@ -16,7 +16,7 @@ export function OperatorSidebar({
   collapsed: boolean;
   onToggleCollapse: () => void;
   email?: string;
-  active: "brokers" | "clients" | "mgas" | "models" | "extractions";
+  active: "brokers" | "clients" | "mgas" | "demo-leads" | "models" | "extractions";
 }) {
   const { signOut } = useAuthActions();
 
@@ -51,6 +51,16 @@ export function OperatorSidebar({
             label="MGAs"
             icon={ShieldCheck}
             active={active === "mgas"}
+            collapsed={collapsed}
+          />
+        </div>
+        <SectionHeader label="Sales" collapsed={collapsed} />
+        <div className="flex flex-col gap-1">
+          <NavItem
+            href="/operator/demo-leads"
+            label="Demo leads"
+            icon={MessageSquareText}
+            active={active === "demo-leads"}
             collapsed={collapsed}
           />
         </div>

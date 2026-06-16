@@ -487,6 +487,39 @@ export const listMGAs = query({
   },
 });
 
+export const listPublicDemoSalesTranscripts = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 200), 500));
+    return await ctx.db
+      .query("publicDemoSalesTranscripts")
+      .withIndex("by_lastUpdatedAt")
+      .order("desc")
+      .take(limit);
+  },
+});
+
+export const getPublicDemoSalesTranscript = query({
+  args: { id: v.id("publicDemoSalesTranscripts") },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    const transcript = await ctx.db.get(args.id);
+    if (!transcript) return null;
+    const conversation = await ctx.db.get(transcript.conversationId);
+    const logs = await ctx.db
+      .query("publicDemoChatLogs")
+      .withIndex("by_conversationId_createdAt", (q) =>
+        q.eq("conversationId", transcript.conversationId),
+      )
+      .order("asc")
+      .take(200);
+    return { transcript, conversation, logs };
+  },
+});
+
 export const listExtractionTraces = query({
   args: {
     status: v.optional(extractionTraceStatusValidator),

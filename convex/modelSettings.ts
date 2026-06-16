@@ -480,3 +480,31 @@ export const resolveForOrg = internalQuery({
     };
   },
 });
+
+export const resolvePublicDefaults = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const globalSettings = await ctx.db
+      .query("globalModelSettings")
+      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .first();
+    const routes = {} as Record<ModelTask, ModelRoute>;
+    const routeSources = {} as Record<ModelTask, Extract<RouteSource, "global" | "static">>;
+    for (const task of MODEL_TASKS) {
+      const globalRoute = globalSettings?.routes?.[task];
+      if (globalRoute && globalRoute.provider !== "moonshot") {
+        routes[task] = globalRoute;
+        routeSources[task] = "global";
+      } else {
+        routes[task] = MODEL_ROUTING[task];
+        routeSources[task] = "static";
+      }
+    }
+
+    return {
+      routes,
+      routeSources,
+      webRetrieval: normalizeWebRetrieval(globalSettings?.webRetrieval),
+    };
+  },
+});

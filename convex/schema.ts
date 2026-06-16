@@ -66,6 +66,29 @@ const notificationChannelValidator = v.union(
   v.literal("imessage"),
 );
 
+const publicDemoChannelValidator = v.union(
+  v.literal("email"),
+  v.literal("imessage"),
+);
+
+const publicDemoLeadStageValidator = v.union(
+  v.literal("new"),
+  v.literal("engaged"),
+  v.literal("qualified"),
+  v.literal("booking_intent"),
+  v.literal("cta_sent"),
+  v.literal("signup_intent"),
+  v.literal("not_fit"),
+  v.literal("rate_limited"),
+);
+
+const publicDemoCtaStatusValidator = v.union(
+  v.literal("not_shown"),
+  v.literal("asked_for_email"),
+  v.literal("cal_link_sent"),
+  v.literal("signup_link_sent"),
+);
+
 const policyDeliveryChannelValidator = v.union(
   v.literal("email"),
   v.literal("imessage"),
@@ -2508,6 +2531,91 @@ export default defineSchema({
       filterFields: ["orgId"],
     }),
 
+  publicDemoConversations: defineTable({
+    channel: publicDemoChannelValidator,
+    senderHash: v.string(),
+    senderContact: v.optional(v.string()),
+    agentAddress: v.optional(v.string()),
+    leadName: v.optional(v.string()),
+    leadCompany: v.optional(v.string()),
+    leadEmail: v.optional(v.string()),
+    leadUseCase: v.optional(v.string()),
+    stage: publicDemoLeadStageValidator,
+    ctaStatus: publicDemoCtaStatusValidator,
+    turnCount: v.number(),
+    lastMessageAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_channel_senderHash", ["channel", "senderHash"])
+    .index("by_lastMessageAt", ["lastMessageAt"])
+    .index("by_stage_lastMessageAt", ["stage", "lastMessageAt"])
+    .index("by_ctaStatus_lastMessageAt", ["ctaStatus", "lastMessageAt"])
+    .index("by_leadEmail", ["leadEmail"]),
+
+  publicDemoChatLogs: defineTable({
+    conversationId: v.id("publicDemoConversations"),
+    channel: publicDemoChannelValidator,
+    direction: v.union(
+      v.literal("inbound"),
+      v.literal("outbound"),
+      v.literal("system"),
+    ),
+    subject: v.optional(v.string()),
+    content: v.string(),
+    contentHtml: v.optional(v.string()),
+    modelProvider: v.optional(v.string()),
+    model: v.optional(v.string()),
+    routeSource: v.optional(v.string()),
+    transport: v.optional(v.string()),
+    toolCalls: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          input: v.optional(v.string()),
+          output: v.optional(v.string()),
+        }),
+      ),
+    ),
+    ctaUrl: v.optional(v.string()),
+    deliveryStatus: v.optional(v.string()),
+    deliveryId: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_conversationId_createdAt", ["conversationId", "createdAt"])
+    .index("by_channel_createdAt", ["channel", "createdAt"])
+    .index("by_createdAt", ["createdAt"]),
+
+  publicDemoSalesTranscripts: defineTable({
+    conversationId: v.id("publicDemoConversations"),
+    channel: publicDemoChannelValidator,
+    senderContact: v.optional(v.string()),
+    leadName: v.optional(v.string()),
+    leadCompany: v.optional(v.string()),
+    leadEmail: v.optional(v.string()),
+    leadUseCase: v.optional(v.string()),
+    stage: publicDemoLeadStageValidator,
+    ctaStatus: publicDemoCtaStatusValidator,
+    summary: v.string(),
+    objections: v.array(v.string()),
+    nextStep: v.string(),
+    curatedTurns: v.array(
+      v.object({
+        speaker: v.string(),
+        content: v.string(),
+        at: v.number(),
+      }),
+    ),
+    createdAt: v.number(),
+    lastUpdatedAt: v.number(),
+  })
+    .index("by_conversationId", ["conversationId"])
+    .index("by_lastUpdatedAt", ["lastUpdatedAt"])
+    .index("by_channel_lastUpdatedAt", ["channel", "lastUpdatedAt"])
+    .index("by_stage_lastUpdatedAt", ["stage", "lastUpdatedAt"]),
+
   policyAuditLog: defineTable({
     policyId: v.optional(v.id("policies")),
     quoteId: v.optional(v.id("policies")),
@@ -2860,6 +2968,13 @@ export default defineSchema({
     count: v.number(),
     lastRequestMs: v.number(),
   }).index("by_tokenId", ["tokenId"]),
+
+  publicDemoRateCounters: defineTable({
+    rateKey: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+    lastRequestAt: v.number(),
+  }).index("by_rateKey", ["rateKey"]),
 
   // ── Presence ──
 

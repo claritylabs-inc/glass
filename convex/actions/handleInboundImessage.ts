@@ -546,9 +546,19 @@ export const processInbound = internalAction({
       });
 
       if (scope.kind === "no_linked_users") {
+        const demo = await ctx.runAction(
+          internal.actions.publicDemoAgent.respond,
+          {
+            channel: "imessage",
+            senderContact: fromPhone,
+            messageText: args.messageText,
+            sourceMessageId: args.sourceMessageId,
+            chatGuid,
+          },
+        );
         await ctx.runMutation(internal.imessageChats.markLeft, { chatGuid });
         return await finish(
-          `Sign up to use Glass: ${siteUrl}/signup/client`,
+          demo.text,
           undefined,
           { leaveGroup: isGroup },
         );
@@ -558,8 +568,19 @@ export const processInbound = internalAction({
       const user = linkedUsers.find(
         (candidate) => candidate?._id === scope.primaryUserId,
       );
-      if (!user)
-        return await finish(`Sign up to use Glass: ${siteUrl}/signup/client`);
+      if (!user) {
+        const demo = await ctx.runAction(
+          internal.actions.publicDemoAgent.respond,
+          {
+            channel: "imessage",
+            senderContact: fromPhone,
+            messageText: args.messageText,
+            sourceMessageId: args.sourceMessageId,
+            chatGuid,
+          },
+        );
+        return await finish(demo.text);
+      }
       const currentParticipant = resolvedParticipants.find(
         (participant) =>
           normalizeImessageAddress(participant.address) === senderAddress,

@@ -9,6 +9,7 @@
  */
 
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
+import type * as actions_backfillRequirementSemantics from "../actions/backfillRequirementSemantics.js";
 import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
 import type * as actions_complianceReview from "../actions/complianceReview.js";
 import type * as actions_connectedEmail from "../actions/connectedEmail.js";
@@ -30,6 +31,7 @@ import type * as actions_policyChangeRequests from "../actions/policyChangeReque
 import type * as actions_policyDelivery from "../actions/policyDelivery.js";
 import type * as actions_policyExtraction from "../actions/policyExtraction.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
+import type * as actions_publicDemoAgent from "../actions/publicDemoAgent.js";
 import type * as actions_reExtractFromFile from "../actions/reExtractFromFile.js";
 import type * as actions_rechunkPolicy from "../actions/rechunkPolicy.js";
 import type * as actions_reconcilePolicy from "../actions/reconcilePolicy.js";
@@ -144,7 +146,9 @@ import type * as lib_policyPeriodExtraction from "../lib/policyPeriodExtraction.
 import type * as lib_policyToolResolution from "../lib/policyToolResolution.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_policyVersioning from "../lib/policyVersioning.js";
+import type * as lib_publicDemoAgent from "../lib/publicDemoAgent.js";
 import type * as lib_queryAgent from "../lib/queryAgent.js";
+import type * as lib_requirementSemantics from "../lib/requirementSemantics.js";
 import type * as lib_resend from "../lib/resend.js";
 import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as lib_security from "../lib/security.js";
@@ -173,6 +177,7 @@ import type * as policyDelivery from "../policyDelivery.js";
 import type * as policyFiles from "../policyFiles.js";
 import type * as policyVersions from "../policyVersions.js";
 import type * as presence from "../presence.js";
+import type * as publicDemo from "../publicDemo.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as seed from "../seed.js";
 import type * as sourceNodes from "../sourceNodes.js";
@@ -188,6 +193,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
+  "actions/backfillRequirementSemantics": typeof actions_backfillRequirementSemantics;
   "actions/complianceRequirements": typeof actions_complianceRequirements;
   "actions/complianceReview": typeof actions_complianceReview;
   "actions/connectedEmail": typeof actions_connectedEmail;
@@ -209,6 +215,7 @@ declare const fullApi: ApiFromModules<{
   "actions/policyDelivery": typeof actions_policyDelivery;
   "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/processThreadChat": typeof actions_processThreadChat;
+  "actions/publicDemoAgent": typeof actions_publicDemoAgent;
   "actions/reExtractFromFile": typeof actions_reExtractFromFile;
   "actions/rechunkPolicy": typeof actions_rechunkPolicy;
   "actions/reconcilePolicy": typeof actions_reconcilePolicy;
@@ -323,7 +330,9 @@ declare const fullApi: ApiFromModules<{
   "lib/policyToolResolution": typeof lib_policyToolResolution;
   "lib/policyTypes": typeof lib_policyTypes;
   "lib/policyVersioning": typeof lib_policyVersioning;
+  "lib/publicDemoAgent": typeof lib_publicDemoAgent;
   "lib/queryAgent": typeof lib_queryAgent;
+  "lib/requirementSemantics": typeof lib_requirementSemantics;
   "lib/resend": typeof lib_resend;
   "lib/sdkCallbacks": typeof lib_sdkCallbacks;
   "lib/security": typeof lib_security;
@@ -352,6 +361,7 @@ declare const fullApi: ApiFromModules<{
   policyFiles: typeof policyFiles;
   policyVersions: typeof policyVersions;
   presence: typeof presence;
+  publicDemo: typeof publicDemo;
   rateLimits: typeof rateLimits;
   seed: typeof seed;
   sourceNodes: typeof sourceNodes;

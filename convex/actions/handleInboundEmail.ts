@@ -33,13 +33,9 @@ import {
   sendResendEmail,
   getAgentDomain,
   getAgentDomains,
-  getAuthFromAddress,
   isGlassOutboundAddress,
 } from "../lib/resend";
-import {
-  buildGlassEmailIconHtml,
-  buildUnrecognizedInboundEmail,
-} from "../lib/emailTemplate";
+import { buildGlassEmailIconHtml } from "../lib/emailTemplate";
 import {
   buildSystemPromptForContext,
   buildBrokerPortfolioSystemPrompt,
@@ -54,7 +50,7 @@ import {
   validateEmailRecipient,
 } from "../lib/security";
 import { isWhiteLabelingEnabled } from "../lib/branding";
-import { getAuthSiteUrl, getClientPortalUrl } from "../lib/domains";
+import { getClientPortalUrl } from "../lib/domains";
 import {
   buildEmailExpertTool,
   toResendAttachments,
@@ -281,35 +277,6 @@ function buildSignature(
   ].join("\n");
 
   return { text, html };
-}
-
-async function sendUnrecognizedSenderEmail({
-  to,
-  agentEmail,
-  originalSubject,
-}: {
-  to: string;
-  agentEmail: string;
-  originalSubject?: string;
-}) {
-  const siteUrl = getAuthSiteUrl();
-  const { html, text } = buildUnrecognizedInboundEmail(agentEmail, siteUrl);
-  const subject = originalSubject
-    ? `Email address not recognized: ${originalSubject}`
-    : "Email address not recognized";
-  const result = await sendResendEmail({
-    from: getAuthFromAddress(),
-    to,
-    subject,
-    html,
-    text,
-  });
-  if (!result.ok) {
-    console.warn(
-      "Failed to send unrecognized inbound sender email:",
-      result.error,
-    );
-  }
 }
 
 interface AttachmentMeta {
@@ -649,11 +616,65 @@ export const processInbound = internalAction({
     });
     if (!resolved) {
       console.log("No organization found for handle:", handle);
-      await sendUnrecognizedSenderEmail({
+      if (handle !== "agent") return;
+      const emailContent = data.email_id
+        ? await fetchEmailContent(data.email_id)
+        : {};
+      const rawBody = emailContent.text ?? "";
+      const body = stripQuotedText(rawBody);
+      const guardedInput = enforceInputLimits(
+        [data.subject ?? "", body].join("\n\n"),
+      );
+      const injectionCheck = await classifyPromptInjection(guardedInput);
+      if (!injectionCheck.safe) {
+        console.warn("[security] Prompt injection blocked in public demo email", {
+          fromEmail,
+          reason: injectionCheck.reason,
+        });
+        return;
+      }
+
+      const agentAddress = `${handle}@${getAgentDomain()}`;
+      const demo = await ctx.runAction(
+        internal.actions.publicDemoAgent.respond,
+        {
+          channel: "email",
+          senderContact: fromEmail,
+          messageText: body || data.subject || "Tell me about Glass.",
+          subject: data.subject,
+          fromName,
+          fromEmail,
+          agentAddress,
+          sourceMessageId: data.message_id,
+          resendEmailId: resendEmailId || undefined,
+        },
+      );
+      const subject = data.subject
+        ? /^re:/i.test(data.subject)
+          ? data.subject
+          : `Re: ${data.subject}`
+        : "Re: Glass product demo";
+      const headers: Record<string, string> = {};
+      if (data.message_id) {
+        headers["In-Reply-To"] = data.message_id;
+        headers["References"] = data.message_id;
+      }
+      const result = await sendResendEmail({
+        from: `Glass from Clarity Labs <${agentAddress}>`,
         to: fromEmail,
-        agentEmail: `${handle}@${getAgentDomain()}`,
-        originalSubject: data.subject,
+        subject,
+        html: demo.html,
+        text: demo.text,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
       });
+      await ctx.runMutation(internal.publicDemo.patchChatLogDelivery, {
+        id: demo.outboundLogId,
+        deliveryStatus: result.ok ? "sent" : "failed",
+        deliveryId: result.ok ? result.id : result.error,
+      });
+      if (!result.ok) {
+        console.warn("Failed to send public demo email:", result.error);
+      }
       return;
     }
     const { brokerOrg, clientOrg } = resolved;

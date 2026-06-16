@@ -375,6 +375,35 @@ export async function getModelAndRouteForOrg(
   }
 }
 
+export async function getModelAndRouteForPublicTask(
+  ctx: ActionCtx,
+  task: ModelTask,
+): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "global" | "static" | "default"; transport: "direct" | "gateway" }> {
+  try {
+    const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
+    const route = settings?.routes?.[task] ?? MODEL_ROUTING[task];
+    const routeSource = settings?.routeSources?.[task] ?? "static";
+    const nativeModel = nativeProviderModel(route);
+    const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
+    return {
+      model: modelFromRoute(route),
+      route,
+      routeSource,
+      transport,
+    };
+  } catch (err) {
+    console.warn(
+      `Public model for task "${task}" unavailable: ${
+        err instanceof Error ? err.message : String(err)
+      }. Falling back to static routing.`,
+    );
+    const route = MODEL_ROUTING[task];
+    const nativeModel = nativeProviderModel(route);
+    const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
+    return { model: getModel(task), route, routeSource: "default", transport };
+  }
+}
+
 export async function generateTextWithFallback(
   options: Parameters<typeof import("ai").generateText>[0],
   fallbackContext: ModelFallbackContext = {},

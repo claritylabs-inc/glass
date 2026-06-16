@@ -27,6 +27,12 @@ type OperatorExtractionTraceList = FunctionReturnType<
 type OperatorExtractionTraceDetail = FunctionReturnType<
   typeof api.operator.getExtractionTrace
 >;
+type OperatorDemoSalesTranscriptList = FunctionReturnType<
+  typeof api.operator.listPublicDemoSalesTranscripts
+>;
+type OperatorDemoSalesTranscriptDetail = FunctionReturnType<
+  typeof api.operator.getPublicDemoSalesTranscript
+>;
 type GlobalRoutes = OperatorGlobalModelSettings["routes"];
 type GlobalWebRetrieval = OperatorGlobalModelSettings["webRetrieval"];
 type EmptyArgs = Record<string, never>;
@@ -43,6 +49,9 @@ type ExtractionTraceFilters = {
   status?: TraceStatus;
   orgId?: string;
   range: ExtractionRangeKey;
+  limit?: number;
+};
+type DemoSalesTranscriptListArgs = {
   limit?: number;
 };
 type GlobalRoute = GlobalRoutes[keyof GlobalRoutes];
@@ -104,6 +113,12 @@ export function operatorExtractionTraceListArgs(
   };
 }
 
+export function operatorDemoSalesTranscriptListArgs(
+  limit = 250,
+): DemoSalesTranscriptListArgs {
+  return { limit };
+}
+
 export function useCachedOperatorCurrent() {
   return useCachedQuery(
     "operator.current",
@@ -162,6 +177,26 @@ export function useCachedOperatorExtractionTraceDetail(
     api.operator.getExtractionTrace,
     traceId ? { traceId } : "skip",
   ) as OperatorExtractionTraceDetail | undefined;
+}
+
+export function useCachedOperatorDemoSalesTranscripts(
+  limit = 250,
+) {
+  return useCachedQuery(
+    "operator.listPublicDemoSalesTranscripts",
+    api.operator.listPublicDemoSalesTranscripts,
+    operatorDemoSalesTranscriptListArgs(limit),
+  ) as OperatorDemoSalesTranscriptList | undefined;
+}
+
+export function useCachedOperatorDemoSalesTranscriptDetail(
+  transcriptId: string | null,
+) {
+  return useCachedQuery(
+    "operator.getPublicDemoSalesTranscript",
+    api.operator.getPublicDemoSalesTranscript,
+    transcriptId ? { id: transcriptId as Id<"publicDemoSalesTranscripts"> } : "skip",
+  ) as OperatorDemoSalesTranscriptDetail | undefined;
 }
 
 export function useOperatorBrokerCacheActions() {
