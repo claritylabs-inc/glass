@@ -19,7 +19,6 @@ import {
   Inbox,
   Paperclip,
   Square,
-  X,
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -35,6 +34,10 @@ import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus } from "ai";
 import { useCachedAgentTargets } from "@/lib/sync/glass-cached-queries";
+import {
+  PromptReferenceTag,
+  promptReferenceMarker,
+} from "@/components/prompt-reference-tag";
 
 const lightInputOverlayFadeStyle = {
   backgroundImage:
@@ -266,10 +269,6 @@ function firstTextTokenId(tokens: PromptToken[]) {
   return tokens.find((token) => token.type === "text")?.id ?? "";
 }
 
-function referenceMarker(kind: PromptReference["kind"]) {
-  return kind === "mailbox" ? "/" : "@";
-}
-
 function referenceKey(reference: PromptReference) {
   return `${reference.kind}:${reference.id}`;
 }
@@ -299,7 +298,7 @@ function promptTokensToText(tokens: PromptToken[]) {
     const piece =
       token.type === "text"
         ? token.text
-        : `${referenceMarker(token.reference.kind)}${token.reference.label}`;
+        : `${promptReferenceMarker(token.reference.kind)}${token.reference.label}`;
     if (!piece) return text;
     return `${text}${shouldSeparatePromptPieces(text, piece) ? " " : ""}${piece}`;
   }, "");
@@ -380,36 +379,6 @@ function referenceIcon(kind: PromptReference["kind"]) {
   if (kind === "requirement") return <BadgeCheck className="h-3.5 w-3.5" />;
   if (kind === "mailbox") return <Inbox className="h-3.5 w-3.5" />;
   return <FileText className="h-3.5 w-3.5" />;
-}
-
-function InlineReferenceTag({
-  reference,
-  onRemove,
-}: {
-  reference: PromptReference;
-  onRemove: () => void;
-}) {
-  return (
-    <span className="inline-flex h-6 max-w-[min(16rem,100%)] shrink-0 items-center gap-1.5 self-center rounded-full bg-foreground/5 px-2.5 text-label font-medium text-foreground/75">
-      <span className="text-muted-foreground/45">
-        {referenceMarker(reference.kind)}
-      </span>
-      <span
-        className="min-w-0 truncate"
-        title={reference.label}
-      >
-        {reference.label}
-      </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        title={`Remove ${reference.label}`}
-        className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </span>
-  );
 }
 
 function mergeTextAroundReference(
@@ -1382,10 +1351,12 @@ export const GlassPromptInput = forwardRef<
           {tokens.map((token) =>
             token.type === "reference" ? (
               isSearchDropdownOpen ? null : (
-                <InlineReferenceTag
+                <PromptReferenceTag
                   key={token.id}
-                  reference={token.reference}
+                  kind={token.reference.kind}
+                  label={token.reference.label}
                   onRemove={() => removeReferenceToken(token.id)}
+                  className="self-center"
                 />
               )
             ) : (

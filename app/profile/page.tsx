@@ -195,6 +195,7 @@ export default function ProfilePage() {
   );
   const headerActions = (
     <>
+      {saveStatus}
       <PillButton
         size="compact"
         variant="secondary"
@@ -203,7 +204,6 @@ export default function ProfilePage() {
         <Mail className="h-3.5 w-3.5" />
         Change Email
       </PillButton>
-      {saveStatus}
     </>
   );
 

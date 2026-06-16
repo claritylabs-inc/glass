@@ -33,8 +33,10 @@ import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 import { stripConfidenceMarkers, summarizeConfidence } from "@/lib/confidence";
 import {
   useArchivedThreadCacheActions,
+  useCachedAgentTargets,
   useThreadCacheActions,
 } from "@/lib/sync/glass-cached-queries";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ActionSurfaceLink } from "@/components/ui/action-surface";
@@ -59,6 +61,11 @@ import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { BrandIcon } from "@/components/ui/brand-icon";
+import {
+  PromptReferenceTag,
+  promptReferenceMarker,
+  type PromptReferenceTagKind,
+} from "@/components/prompt-reference-tag";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
 import { scientistSurnameFor } from "@/components/agent-thread/scientist-surnames";
 import {
