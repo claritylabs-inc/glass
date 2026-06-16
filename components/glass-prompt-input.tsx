@@ -249,6 +249,19 @@ function initialPromptTokens(defaultReferences?: PromptReference[]) {
   return tokens;
 }
 
+function promptTokensWithText(
+  text: string,
+  defaultReferences?: PromptReference[],
+) {
+  const tokens = initialPromptTokens(defaultReferences);
+  const textTokenId = firstTextTokenId(tokens);
+  return tokens.map((token) =>
+    token.type === "text" && token.id === textTokenId
+      ? { ...token, text }
+      : token,
+  );
+}
+
 function firstTextTokenId(tokens: PromptToken[]) {
   return tokens.find((token) => token.type === "text")?.id ?? "";
 }
@@ -296,6 +309,51 @@ function promptTokensAreTextEmpty(tokens: PromptToken[]) {
   return tokens.every(
     (token) => token.type !== "text" || token.text.trim().length === 0,
   );
+}
+
+function mergeDefaultReferencesIntoTokens(
+  tokens: PromptToken[],
+  defaultReferences?: PromptReference[],
+) {
+  if (!defaultReferences || defaultReferences.length === 0) return tokens;
+
+  const defaultReferencesByKey = new Map(
+    defaultReferences.map((reference) => [referenceKey(reference), reference]),
+  );
+  const existingReferenceKeys = new Set<string>();
+  let changed = false;
+  const nextTokens = tokens.map((token) => {
+    if (token.type !== "reference") return token;
+    const key = referenceKey(token.reference);
+    existingReferenceKeys.add(key);
+    const defaultReference = defaultReferencesByKey.get(key);
+    if (!defaultReference || defaultReference.label === token.reference.label) {
+      return token;
+    }
+    changed = true;
+    return { ...token, reference: defaultReference };
+  });
+
+  const missingReferences = defaultReferences.filter(
+    (reference) => !existingReferenceKeys.has(referenceKey(reference)),
+  );
+  if (missingReferences.length === 0) return changed ? nextTokens : tokens;
+
+  const firstTextIndex = nextTokens.findIndex((token) => token.type === "text");
+  const insertTokens = missingReferences.flatMap((reference) => [
+    createReferenceToken(reference),
+    createTextToken(),
+  ]);
+
+  if (firstTextIndex === -1) {
+    return [createTextToken(), ...insertTokens];
+  }
+
+  return [
+    ...nextTokens.slice(0, firstTextIndex + 1),
+    ...insertTokens,
+    ...nextTokens.slice(firstTextIndex + 1),
+  ];
 }
 
 function targetKindsForTrigger(trigger: PromptTrigger): PromptTargetKind[] {
@@ -652,6 +710,17 @@ export const GlassPromptInput = forwardRef<
   const messageText = useMemo(() => promptTokensToText(tokens), [tokens]);
   const isPromptEmpty =
     references.length === 0 && promptTokensAreTextEmpty(tokens);
+  const defaultReferencesSignature = useMemo(
+    () =>
+      (defaultReferences ?? [])
+        .map(
+          (reference) =>
+            `${referenceKey(reference)}:${encodeURIComponent(reference.label)}`,
+        )
+        .join("|"),
+    [defaultReferences],
+  );
+  const defaultReferencesSignatureRef = useRef(defaultReferencesSignature);
 
   const mentionTargets = useMemo<MentionTarget[]>(() => {
     if (!targets) return [];
@@ -711,6 +780,20 @@ export const GlassPromptInput = forwardRef<
   useEffect(() => {
     updatePickerRect();
   }, [updatePickerRect, tokens, references.length]);
+
+  useEffect(() => {
+    if (!defaultReferencesSignature) {
+      defaultReferencesSignatureRef.current = "";
+      return;
+    }
+    if (defaultReferencesSignatureRef.current === defaultReferencesSignature) {
+      return;
+    }
+    defaultReferencesSignatureRef.current = defaultReferencesSignature;
+    setTokens((current) =>
+      mergeDefaultReferencesIntoTokens(current, defaultReferences),
+    );
+  }, [defaultReferences, defaultReferencesSignature, setTokens]);
 
   useEffect(() => {
     if (!activeTrigger || suggestions.length === 0) return;
@@ -1047,14 +1130,15 @@ export const GlassPromptInput = forwardRef<
     ref,
     () => ({
       setValueAndFocus: (v: string) => {
-        const textToken = createTextToken(v);
-        setTokens([textToken]);
-        setActiveTextTokenId(textToken.id);
+        const nextTokens = promptTokensWithText(v, defaultReferences);
+        const textTokenId = firstTextTokenId(nextTokens);
+        setTokens(nextTokens);
+        setActiveTextTokenId(textTokenId);
         setActiveTrigger(null);
-        queueTextFocus(textToken.id, v.length);
+        queueTextFocus(textTokenId, v.length);
       },
     }),
-    [queueTextFocus, setActiveTextTokenId, setTokens],
+    [defaultReferences, queueTextFocus, setActiveTextTokenId, setTokens],
   );
 
   const isGenerating = status === "submitted" || status === "streaming";
@@ -1068,12 +1152,20 @@ export const GlassPromptInput = forwardRef<
         references:
           selectedReferences.length > 0 ? selectedReferences : undefined,
       });
-      const textToken = createTextToken();
-      setTokens([textToken]);
-      setActiveTextTokenId(textToken.id);
+      const nextTokens = initialPromptTokens(defaultReferences);
+      const textTokenId = firstTextTokenId(nextTokens);
+      setTokens(nextTokens);
+      setActiveTextTokenId(textTokenId);
       setActiveTrigger(null);
     },
-    [disabled, onSubmit, references, setActiveTextTokenId, setTokens],
+    [
+      defaultReferences,
+      disabled,
+      onSubmit,
+      references,
+      setActiveTextTokenId,
+      setTokens,
+    ],
   );
 
   const handleStopClick = useCallback(
@@ -1185,6 +1277,7 @@ export const GlassPromptInput = forwardRef<
   const activeTargetScopeLabel = activeTrigger
     ? targetScopeLabel(targetKindsForTrigger(activeTrigger))
     : null;
+  const isSearchDropdownOpen = Boolean(activeTrigger && suggestions.length > 0);
   const pickerPortalRoot =
     typeof document === "undefined" ? null : document.body;
 
@@ -1288,11 +1381,13 @@ export const GlassPromptInput = forwardRef<
           />
           {tokens.map((token) =>
             token.type === "reference" ? (
-              <InlineReferenceTag
-                key={token.id}
-                reference={token.reference}
-                onRemove={() => removeReferenceToken(token.id)}
-              />
+              isSearchDropdownOpen ? null : (
+                <InlineReferenceTag
+                  key={token.id}
+                  reference={token.reference}
+                  onRemove={() => removeReferenceToken(token.id)}
+                />
+              )
             ) : (
               <PromptTextSegment
                 key={token.id}
