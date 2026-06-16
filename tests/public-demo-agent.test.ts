@@ -32,6 +32,24 @@ describe("public demo agent", () => {
     expect(prompt).toContain("What is your name and company?");
   });
 
+  it("keeps iMessage copy short and avoids repeated demo-only footers", () => {
+    const prompt = buildPublicDemoSystemPrompt({
+      channel: "imessage",
+      turnCount: 2,
+      latestMessage: "What can Glass do?",
+      lead: { name: "Terry Wang" },
+      hasSentSafetyNotice: true,
+    });
+    const action = read("convex/actions/publicDemoAgent.ts");
+
+    expect(prompt).toContain("Use one message bubble with 1-2 short sentences");
+    expect(prompt).toContain("No bullets, no paragraph breaks");
+    expect(prompt).toContain("Do not repeat a demo-only footer");
+    expect(action).toContain("hasPriorSafetyNotice");
+    expect(action).toContain("normalizeChannelResponse");
+    expect(action).toContain("alreadyWarned");
+  });
+
   it("prefills Cal.com with lead context and tracking params", () => {
     const url = new URL(
       buildPublicDemoBookingUrl({
@@ -100,8 +118,16 @@ describe("public demo agent", () => {
     expect(page).toContain("ActionSurfaceButton");
     expect(page).toContain("No public demo chats");
     expect(page).toContain("SettingsDrawer");
+    expect(page).toContain("formatContact");
+    expect(page).toContain("parsePhoneNumberFromString");
+    expect(page).toContain("Timeline logs");
     expect(page).not.toContain("Tabs");
     expect(page).not.toContain("Table");
+    expect(page).not.toContain("OperationalLabelValue");
+    expect(page).not.toContain("stageLabel");
+    expect(page).not.toContain("ctaLabel");
+    expect(page).not.toContain("nextStep");
+    expect(page).not.toContain("row.summary");
     expect(page).not.toContain("@/components/ui/select");
     expect(page).not.toContain("<Select");
     expect(cache).toContain("useCachedOperatorDemoSalesTranscripts");

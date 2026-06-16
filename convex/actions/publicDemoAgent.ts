@@ -194,19 +194,68 @@ function nextStep(stage: PublicDemoLeadStage, ctaStatus: PublicDemoCtaStatus) {
   return "Continue demo, capture name/company, and qualify use case.";
 }
 
-function addSimulationNotice(text: string, channel: PublicDemoChannel) {
-  if (
-    /\b(simulated|demo only|not real|not binding|no certificate was issued|not insurance advice)\b/i.test(
-      text,
+function hasSafetyNotice(text: string) {
+  return /\b(demo only|not real|not binding|no certificate was issued|not insurance advice)\b/i.test(
+    text,
+  );
+}
+
+function hasPriorSafetyNotice(logs: PublicDemoLog[]) {
+  return logs.some(
+    (log) => log.direction === "outbound" && hasSafetyNotice(log.content),
+  );
+}
+
+function removeRepeatedSafetyFooter(text: string) {
+  return text
+    .replace(/\s*Demo only[:.] No real certificate or insurance advice\.?/gi, "")
+    .replace(
+      /\s*Demo only: no certificate was issued, and this is not insurance advice\.?/gi,
+      "",
     )
-  ) {
-    return text;
+    .replace(
+      /\s*Demo only: no certificate was issued, nothing here is binding, and this is not insurance advice\.?/gi,
+      "",
+    )
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^\s*demo only[:.]/i.test(line) &&
+        !/\bno certificate was issued\b/i.test(line),
+    )
+    .join("\n")
+    .trim();
+}
+
+function normalizeChannelResponse(text: string, channel: PublicDemoChannel) {
+  if (channel === "email") return text.replace(/\n{3,}/g, "\n\n").trim();
+  return text
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*]\s+/, ""))
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.!?])/g, "$1")
+    .trim();
+}
+
+function addSimulationNotice(args: {
+  text: string;
+  channel: PublicDemoChannel;
+  alreadyWarned: boolean;
+}) {
+  if (args.alreadyWarned) {
+    return removeRepeatedSafetyFooter(args.text);
+  }
+  if (hasSafetyNotice(args.text)) {
+    return args.text;
   }
   const notice =
-    channel === "imessage"
-      ? "Demo only: no certificate was issued, and this is not insurance advice."
+    args.channel === "imessage"
+      ? "Demo only. No real certificate or insurance advice."
       : "Demo only: no certificate was issued, nothing here is binding, and this is not insurance advice.";
-  return `${text.trim()}\n\n${notice}`;
+  const separator = args.channel === "imessage" ? " " : "\n\n";
+  return `${args.text.trim()}${separator}${notice}`;
 }
 
 function mentionsRegulatedDemoTopic(text: string) {
@@ -299,6 +348,7 @@ export const respond = internalAction({
         limit: 16,
       },
     )) as PublicDemoLog[];
+    const alreadyWarned = hasPriorSafetyNotice(logs);
     const leadPatch: PublicDemoLeadContext = {};
     let ctaStatus: PublicDemoCtaStatus = conversation.ctaStatus;
     let ctaUrl: string | undefined;
@@ -419,6 +469,7 @@ export const respond = internalAction({
       lead: initialLead,
       turnCount: conversation.turnCount,
       latestMessage: args.messageText,
+      hasSentSafetyNotice: alreadyWarned,
     });
     const messages = [
       ...logsToMessages(logs.slice(0, -1)),
@@ -433,7 +484,7 @@ export const respond = internalAction({
     const result = await generateText({
       model: routed.model,
       providerOptions: getProviderOptionsForRoute(routed.route),
-      maxOutputTokens: channel === "imessage" ? 512 : 900,
+      maxOutputTokens: channel === "imessage" ? 220 : 700,
       system,
       messages,
       tools,
@@ -467,8 +518,13 @@ export const respond = internalAction({
         "What is the best email to prefill on the product-demo booking link?";
     }
     if (mentionsRegulatedDemoTopic(`${args.messageText}\n${responseText}`)) {
-      responseText = addSimulationNotice(responseText, channel);
+      responseText = addSimulationNotice({
+        text: responseText,
+        channel,
+        alreadyWarned,
+      });
     }
+    responseText = normalizeChannelResponse(responseText, channel);
 
     await ctx.runMutation(internal.publicDemo.updateConversationLead, {
       conversationId: conversation._id,

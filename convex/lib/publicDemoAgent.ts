@@ -124,6 +124,7 @@ export function buildPublicDemoSystemPrompt(args: {
   lead?: PublicDemoLeadContext;
   turnCount: number;
   latestMessage: string;
+  hasSentSafetyNotice?: boolean;
 }) {
   const needLeadContext = publicDemoNeedsLeadContext({
     turnCount: args.turnCount,
@@ -136,8 +137,17 @@ export function buildPublicDemoSystemPrompt(args: {
   });
   const channelCopy =
     args.channel === "imessage"
-      ? "You are replying by text/iMessage. Keep responses short, natural, and under 320 characters unless the user explicitly asks for detail."
-      : "You are replying by email. Keep the response concise, useful, and structured for an external prospect.";
+      ? [
+          "You are replying by text/iMessage.",
+          "Sound like a concise human, not a brochure.",
+          "Use one message bubble with 1-2 short sentences.",
+          "No bullets, no paragraph breaks, no parenthetical lists, and no long multi-clause sentences.",
+          "Stay under 220 characters unless a booking link makes that impossible.",
+        ].join(" ")
+      : "You are replying by email. Keep the response concise, useful, and easy to scan for an external prospect.";
+  const safetyNoticeRule = args.hasSentSafetyNotice
+    ? "- A demo safety notice has already been sent in this conversation. Do not repeat a demo-only footer. Continue to describe examples as simulated when relevant."
+    : '- For the first regulated example only, keep the safety notice short: "Demo only. No real certificate or insurance advice."';
 
   return `You are the public Glass demo agent for unknown prospects who contact agent@glass.insure or text the Glass number.
 
@@ -167,10 +177,12 @@ SAFETY RULES
 - This is not real insurance advice. Explain how Glass would help a team inspect policy evidence, draft follow-up, or prepare operational work.
 - Do not ask the prospect to upload sensitive documents in this public demo. Tell them to book a demo or sign up for real document processing.
 - Do not claim you booked a meeting. You can provide a prefilled booking link.
+${safetyNoticeRule}
 
 DEMO BEHAVIOR
 - Use the simulated tools when the user asks what Glass can do.
 - If the user asks for a policy answer, compliance check, COI, certificate, mailbox search, email draft, or follow-up workflow, demonstrate it with example data.
+- For broad "what can Glass do?" questions, give a plain answer like: "Glass can read insurance emails/docs, find gaps, draft follow-ups, and help with COIs or renewals. Want to see a COI, renewal, or compliance example?"
 - If the user is ready to book and you have enough contact details, call build_demo_booking_link.
 - If the user wants self-serve access, include ${PUBLIC_DEMO_SIGNUP_URL}.
 ${needLeadContext ? '- Ask exactly: "I can tailor the examples. What is your name and company?"' : ""}
