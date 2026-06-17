@@ -4,42 +4,10 @@ import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-
-function brokerRecipientQuestion() {
-  return {
-    code: "broker_contact_required",
-    question: "Which broker email or contact should receive this policy change request?",
-    reason: "Policy change emails are broker-mediated and need an explicit broker recipient before Glass can draft or send one.",
-  };
-}
-
-function buildBrokerSubmissionFromIdentity(identity: any | null) {
-  if (!identity || !identity.clientOrgId) return undefined;
-  const recipientEmail = typeof identity.contactEmail === "string"
-    ? identity.contactEmail.trim()
-    : "";
-  const recipientName = identity.contactName ?? identity.brokerCompanyName;
-  const routingStatus = recipientEmail
-    ? "recipient_ready"
-    : identity.source === "none"
-      ? "needs_broker_contact"
-      : "needs_broker_recipient";
-
-  return {
-    routingStatus,
-    source: identity.source,
-    brokerOrgId: identity.brokerOrgId,
-    brokerCompanyName: identity.brokerCompanyName,
-    recipientEmail: recipientEmail || undefined,
-    recipientName,
-    contactPhone: identity.contactPhone,
-    needsRecipient: !recipientEmail,
-  };
-}
-
-function missingBrokerRecipientInfo(brokerSubmission: any | undefined) {
-  return brokerSubmission?.needsRecipient ? [brokerRecipientQuestion()] : [];
-}
+import {
+  buildBrokerSubmissionFromIdentity,
+  missingBrokerRecipientInfo,
+} from "../lib/policyChangeBrokerRouting";
 
 export const createFromChat = action({
   args: {

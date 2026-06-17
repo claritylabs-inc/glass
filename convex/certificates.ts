@@ -17,6 +17,10 @@ import {
   type CertificateGateEvidence,
   type CertificateGateVerdict,
 } from "./lib/certificateRequestGate";
+import {
+  buildBrokerSubmissionFromIdentity,
+  missingBrokerRecipientInfo,
+} from "./lib/policyChangeBrokerRouting";
 import { makeGenerateObject } from "./lib/sdkCallbacks";
 import { z } from "zod";
 
@@ -67,37 +71,6 @@ function sourceKindForPolicyChange(source: string | undefined):
   if (source === "mcp") return "mcp";
   if (source === "chat") return "chat";
   return "manual";
-}
-
-function buildBrokerSubmissionFromIdentity(identity: any | null) {
-  if (!identity || !identity.clientOrgId) return undefined;
-  const recipientEmail = typeof identity.contactEmail === "string"
-    ? identity.contactEmail.trim()
-    : "";
-  const recipientName = identity.contactName ?? identity.brokerCompanyName;
-  return {
-    routingStatus: recipientEmail
-      ? "recipient_ready"
-      : identity.source === "none"
-        ? "needs_broker_contact"
-        : "needs_broker_recipient",
-    source: identity.source,
-    brokerOrgId: identity.brokerOrgId,
-    brokerCompanyName: identity.brokerCompanyName,
-    recipientEmail: recipientEmail || undefined,
-    recipientName,
-    contactPhone: identity.contactPhone,
-    needsRecipient: !recipientEmail,
-  };
-}
-
-function missingBrokerRecipientInfo(brokerSubmission: any | undefined) {
-  if (!brokerSubmission?.needsRecipient) return [];
-  return [{
-    code: "broker_contact_required",
-    question: "Which broker email or contact should receive this certificate change request?",
-    reason: "Certificate requests that require policy changes are broker-mediated and need a broker recipient before Glass can draft or send one.",
-  }];
 }
 
 function formatGateMessage(args: {
@@ -624,7 +597,10 @@ export const generateForOrg = internalAction({
               `Certificate request for ${holderName} requires ${gate.requiredChanges.join(", ")} before the COI can be issued.`,
             sourceKind: sourceKindForPolicyChange(args.source),
             evidenceSourceIds: gate.evidence.flatMap((item) => item.sourceSpanIds ?? []),
-            missingInfoQuestions: missingBrokerRecipientInfo(brokerSubmission),
+            missingInfoQuestions: missingBrokerRecipientInfo(
+              brokerSubmission,
+              "certificate",
+            ),
             brokerSubmission,
           },
         );

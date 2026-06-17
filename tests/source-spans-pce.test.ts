@@ -93,7 +93,7 @@ describe("source spans and PCE backend surfaces", () => {
     expect(policyChangeArtifact).toContain("Affected values");
     expect(policyChanges).toContain("assertCanManagePolicyChange");
     expect(policyChanges).toContain("assertCanCreatePolicyChange");
-    expect(read("convex/actions/policyChangeRequests.ts")).toContain("broker_contact_required");
+    expect(read("convex/lib/policyChangeBrokerRouting.ts")).toContain("broker_contact_required");
     expect(read("convex/actions/policyChangeRequests.ts")).not.toContain("STANDALONE_CLIENT_PCE_MESSAGE");
     expect(read("convex/lib/access.ts")).toContain("assertCanDraftPolicyChangeSubmission");
     expect(read("convex/policyChanges.ts")).toContain("canCreatePolicyChangeForUserInternal");

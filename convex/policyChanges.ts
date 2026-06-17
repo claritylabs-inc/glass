@@ -23,6 +23,19 @@ import {
   extractDeclarationFactsFromPolicy,
 } from "./lib/declarationFacts";
 import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
+import {
+  buildBrokerSubmissionFromIdentity,
+  brokerRecipientQuestion,
+  isBrokerRecipientQuestion,
+  normalizeMissingInfoQuestions,
+  normalizePendingQuestions,
+  pendingQuestionsFromMissingInfo,
+  reconcileBrokerRecipientSnapshot,
+  removeBrokerRecipientQuestions,
+  withBrokerRecipientQuestion,
+  type BrokerRecipientReconciliationPatch,
+  type BrokerSubmissionSnapshot,
+} from "./lib/policyChangeBrokerRouting";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 
@@ -112,30 +125,6 @@ function normalizeCaseStatus(
 function summarizeRequest(requestText: string): string {
   const firstLine = requestText.split(/[.\n]/)[0]?.trim();
   return firstLine ? firstLine.slice(0, 160) : "Policy change request";
-}
-
-function pendingQuestionsFromMissingInfo(missingInfo: unknown): string[] {
-  if (!Array.isArray(missingInfo)) return [];
-  return missingInfo
-    .map((item) => {
-      if (typeof item === "string") return item;
-      if (item && typeof item === "object" && "question" in item) {
-        const question = (item as { question?: unknown }).question;
-        return typeof question === "string" ? question : undefined;
-      }
-      return undefined;
-    })
-    .filter((item): item is string => !!item?.trim());
-}
-
-type MissingInfoQuestion = {
-  code: string;
-  question: string;
-  reason: string;
-};
-
-function normalizeMissingInfoQuestions(missingInfo: unknown): unknown[] {
-  return Array.isArray(missingInfo) ? missingInfo : [];
 }
 
 function getRecord(value: unknown): Record<string, unknown> {
@@ -242,56 +231,6 @@ function mergeRequestDetails(
   return Object.keys(compact).length > 0 ? compact : undefined;
 }
 
-function hasMissingBrokerRecipient(missingInfo: unknown[]): boolean {
-  return missingInfo.some((item) => {
-    if (item && typeof item === "object" && "code" in item) {
-      return (item as { code?: unknown }).code === "broker_contact_required";
-    }
-    return false;
-  });
-}
-
-function brokerRecipientQuestion(): MissingInfoQuestion {
-  return {
-    code: "broker_contact_required",
-    question:
-      "Which broker email or contact should receive this policy change request?",
-    reason:
-      "Policy change emails are broker-mediated and need an explicit broker recipient before Glass can draft or send one.",
-  };
-}
-
-function withBrokerRecipientQuestion(
-  missingInfo: unknown[],
-  brokerSubmission: unknown,
-): unknown[] {
-  if (
-    brokerSubmission &&
-    typeof brokerSubmission === "object" &&
-    (brokerSubmission as { needsRecipient?: unknown }).needsRecipient ===
-      true &&
-    !hasMissingBrokerRecipient(missingInfo)
-  ) {
-    return [...missingInfo, brokerRecipientQuestion()];
-  }
-  return missingInfo;
-}
-
-function isBrokerRecipientQuestion(question: unknown): boolean {
-  if (question && typeof question === "object") {
-    const record = question as { code?: unknown; question?: unknown };
-    if (record.code === "broker_contact_required") return true;
-    return (
-      typeof record.question === "string" &&
-      /broker email|broker contact/i.test(record.question)
-    );
-  }
-  return (
-    typeof question === "string" &&
-    /broker email|broker contact/i.test(question)
-  );
-}
-
 function extractEmail(text: string): string | undefined {
   return text
     .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]
@@ -380,24 +319,63 @@ async function buildInitialBrokerSubmission(
 ) {
   if ((org.type ?? "client") !== "client") return undefined;
   const identity = await resolveBrokerIdentityForClient(ctx, org);
-  const recipientEmail = identity.contactEmail?.trim();
-  const recipientName = identity.contactName ?? identity.brokerCompanyName;
-  const routingStatus = recipientEmail
-    ? "recipient_ready"
-    : identity.source === "none"
-      ? "needs_broker_contact"
-      : "needs_broker_recipient";
+  return buildBrokerSubmissionFromIdentity(identity);
+}
 
-  return {
-    routingStatus,
-    source: identity.source,
-    brokerOrgId: identity.brokerOrgId,
-    brokerCompanyName: identity.brokerCompanyName,
-    recipientEmail: recipientEmail || undefined,
-    recipientName,
-    contactPhone: identity.contactPhone,
-    needsRecipient: !recipientEmail,
-  };
+async function currentBrokerSubmissionForCase(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  changeCase: Doc<"policyChangeCases">,
+): Promise<BrokerSubmissionSnapshot | undefined> {
+  const org = await ctx.db.get(changeCase.orgId);
+  if (!org || (org.type ?? "client") !== "client") return undefined;
+  const identity = await resolveBrokerIdentityForClient(ctx, org);
+  return buildBrokerSubmissionFromIdentity(identity);
+}
+
+async function reconcileCaseBrokerRecipient(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  changeCase: Doc<"policyChangeCases">,
+) {
+  const currentBrokerSubmission = await currentBrokerSubmissionForCase(
+    ctx,
+    changeCase,
+  );
+  return reconcileBrokerRecipientSnapshot({
+    changeCase,
+    currentBrokerSubmission,
+  });
+}
+
+async function effectiveBrokerRecipientCase(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  changeCase: Doc<"policyChangeCases">,
+): Promise<Doc<"policyChangeCases">> {
+  return (await reconcileCaseBrokerRecipient(ctx, changeCase))
+    .case as Doc<"policyChangeCases">;
+}
+
+function hasBlockingValidationIssues(validationIssues: unknown): boolean {
+  if (!Array.isArray(validationIssues)) return false;
+  return validationIssues.some((issue) => {
+    if (!issue || typeof issue !== "object") return false;
+    return (issue as { severity?: unknown }).severity === "blocking";
+  });
+}
+
+function isBrokerRecipientBackfillCandidate(
+  changeCase: Doc<"policyChangeCases">,
+): boolean {
+  if (!isActiveCaseStatus(changeCase.status)) return false;
+  const brokerSubmission = getRecord(changeCase.brokerSubmission);
+  return (
+    brokerSubmission.needsRecipient === true ||
+    normalizeMissingInfoQuestions(changeCase.missingInfoQuestions).some(
+      isBrokerRecipientQuestion,
+    ) ||
+    normalizePendingQuestions(changeCase.pendingQuestions).some(
+      isBrokerRecipientQuestion,
+    )
+  );
 }
 
 async function notifyIfNeedsInfo(
@@ -1195,12 +1173,9 @@ export const draftSubmission = internalMutation({
     if (!existing) throw new Error("Policy change case not found");
 
     const now = nowMs();
-    const existingSubmission =
-      existing.brokerSubmission &&
-      typeof existing.brokerSubmission === "object" &&
-      !Array.isArray(existing.brokerSubmission)
-        ? (existing.brokerSubmission as Record<string, unknown>)
-        : {};
+    const reconciled = await reconcileCaseBrokerRecipient(ctx, existing);
+    const effectiveCase = reconciled.case;
+    const existingSubmission = getRecord(effectiveCase.brokerSubmission);
     const recipientEmail =
       args.recipientEmail?.trim() ||
       (typeof existingSubmission.recipientEmail === "string"
@@ -1234,18 +1209,38 @@ export const draftSubmission = internalMutation({
         ? "recipient_ready"
         : "needs_broker_contact",
     };
-    const existingQuestions = Array.isArray(existing.pendingQuestions)
-      ? existing.pendingQuestions
-      : [];
-    const recipientQuestion =
-      "Which broker email or contact should receive this policy change request?";
+    const existingQuestions = normalizePendingQuestions(
+      effectiveCase.pendingQuestions,
+    );
+    const pendingQuestions = recipientEmail
+      ? existingQuestions.filter(
+          (question) => !isBrokerRecipientQuestion(question),
+        )
+      : [
+          ...new Set([
+            ...existingQuestions,
+            brokerRecipientQuestion().question,
+          ]),
+        ];
+    const missingInfoQuestions = recipientEmail
+      ? removeBrokerRecipientQuestions(effectiveCase.missingInfoQuestions)
+      : withBrokerRecipientQuestion(
+          normalizeMissingInfoQuestions(effectiveCase.missingInfoQuestions),
+          brokerSubmission,
+        );
+    const status =
+      recipientEmail &&
+      pendingQuestions.length === 0 &&
+      missingInfoQuestions.length === 0 &&
+      !hasBlockingValidationIssues(effectiveCase.validationIssues)
+        ? "ready_to_submit"
+        : "needs_info";
 
     await ctx.db.patch(args.caseId, {
       brokerSubmission,
-      status: recipientEmail ? "ready_to_submit" : "needs_info",
-      pendingQuestions: recipientEmail
-        ? existingQuestions.filter((question) => question !== recipientQuestion)
-        : [...new Set([...existingQuestions, recipientQuestion])],
+      status,
+      pendingQuestions,
+      missingInfoQuestions,
       updatedAt: now,
     });
     await insertCaseMessage(ctx, {
@@ -1591,6 +1586,139 @@ export const completeFromEndorsement = internalMutation({
   },
 });
 
+type PolicyChangeBrokerRecipientBackfillResult = {
+  scannedCount: number;
+  changedCount: number;
+  dryRun: boolean;
+  changes: Array<{
+    caseId: Id<"policyChangeCases">;
+    orgId: Id<"organizations">;
+    previousStatus: string;
+    nextStatus: string;
+    previous: {
+      routingStatus?: string;
+      source?: string;
+      brokerOrgId?: Id<"organizations">;
+      brokerCompanyName?: string;
+      recipientEmail?: string;
+      needsRecipient?: boolean;
+    };
+    next: {
+      routingStatus?: string;
+      source?: string;
+      brokerOrgId?: Id<"organizations">;
+      brokerCompanyName?: string;
+      recipientEmail?: string;
+      needsRecipient?: boolean;
+    };
+    patch: BrokerRecipientReconciliationPatch;
+  }>;
+};
+
+function summarizeBrokerSubmission(value: unknown) {
+  const submission = getRecord(value);
+  return {
+    routingStatus:
+      typeof submission.routingStatus === "string"
+        ? submission.routingStatus
+        : undefined,
+    source:
+      typeof submission.source === "string" ? submission.source : undefined,
+    brokerOrgId: submission.brokerOrgId as Id<"organizations"> | undefined,
+    brokerCompanyName:
+      typeof submission.brokerCompanyName === "string"
+        ? submission.brokerCompanyName
+        : undefined,
+    recipientEmail:
+      typeof submission.recipientEmail === "string"
+        ? submission.recipientEmail
+        : undefined,
+    needsRecipient:
+      typeof submission.needsRecipient === "boolean"
+        ? submission.needsRecipient
+        : undefined,
+  };
+}
+
+export const backfillBrokerRecipientsInternal = internalMutation({
+  args: {
+    orgId: v.optional(v.id("organizations")),
+    caseIds: v.optional(v.array(v.id("policyChangeCases"))),
+    dryRun: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<PolicyChangeBrokerRecipientBackfillResult> => {
+    const limit = Math.max(1, Math.min(args.limit ?? 100, 1000));
+    const dryRun = args.dryRun === true;
+    const candidates: Array<Doc<"policyChangeCases">> = [];
+
+    if (args.caseIds?.length) {
+      for (const caseId of args.caseIds) {
+        const changeCase = await ctx.db.get(caseId);
+        if (changeCase) candidates.push(changeCase);
+      }
+    } else if (args.orgId) {
+      candidates.push(
+        ...(await ctx.db
+          .query("policyChangeCases")
+          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId!))
+          .order("desc")
+          .take(limit)),
+      );
+    } else {
+      candidates.push(
+        ...(await ctx.db
+          .query("policyChangeCases")
+          .order("desc")
+          .take(limit)),
+      );
+    }
+
+    const uniqueCandidates = Array.from(
+      new Map(candidates.map((changeCase) => [changeCase._id, changeCase]))
+        .values(),
+    );
+    const changes: PolicyChangeBrokerRecipientBackfillResult["changes"] = [];
+    let scannedCount = 0;
+    const now = nowMs();
+
+    for (const changeCase of uniqueCandidates) {
+      scannedCount += 1;
+      if (!isBrokerRecipientBackfillCandidate(changeCase)) continue;
+
+      const reconciliation = await reconcileCaseBrokerRecipient(ctx, changeCase);
+      if (!reconciliation.changed || !reconciliation.patch) continue;
+
+      changes.push({
+        caseId: changeCase._id,
+        orgId: changeCase.orgId,
+        previousStatus: changeCase.status,
+        nextStatus: reconciliation.case.status,
+        previous: summarizeBrokerSubmission(changeCase.brokerSubmission),
+        next: summarizeBrokerSubmission(reconciliation.case.brokerSubmission),
+        patch: reconciliation.patch,
+      });
+
+      if (!dryRun) {
+        await ctx.db.patch(changeCase._id, {
+          ...reconciliation.patch,
+          updatedAt: now,
+        });
+      }
+    }
+
+    return {
+      scannedCount,
+      changedCount: changes.length,
+      dryRun,
+      changes,
+    };
+  },
+});
+
 export const listByPolicy = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
@@ -1599,11 +1727,14 @@ export const listByPolicy = query({
       args.policyId,
     );
     if (!policyAccess) return [];
-    return ctx.db
+    const cases = await ctx.db
       .query("policyChangeCases")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
       .order("desc")
       .collect();
+    return await Promise.all(
+      cases.map((changeCase) => effectiveBrokerRecipientCase(ctx, changeCase)),
+    );
   },
 });
 
@@ -1615,7 +1746,10 @@ export const getCaseDetail = query({
       args.caseId,
     );
     if (!caseAccess) return null;
-    const { changeCase } = caseAccess;
+    const changeCase = await effectiveBrokerRecipientCase(
+      ctx,
+      caseAccess.changeCase,
+    );
 
     const [packets, messages, evidenceLinks, validationReports] =
       await Promise.all([
