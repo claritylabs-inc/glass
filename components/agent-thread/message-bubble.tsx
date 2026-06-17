@@ -1,0 +1,51 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
+
+export function ThreadMessageBubble({
+  role,
+  channel,
+  isOwnMessage,
+  isError,
+  children,
+}: {
+  role: "agent" | "user";
+  channel?: "chat" | "email" | "imessage";
+  isOwnMessage?: boolean;
+  isError?: boolean;
+  children: ReactNode;
+}) {
+  if (role === "agent") {
+    return (
+      <div
+        className={cn(
+          "rounded-lg border px-3.5 py-2.5",
+          isError
+            ? "border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400"
+            : "border-foreground/6 bg-popover",
+        )}
+      >
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg px-3.5 py-2.5 text-base text-foreground",
+        channel === "email"
+          ? [
+              "border border-foreground/6",
+              isOwnMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]",
+            ]
+          : isOwnMessage
+            ? "bg-foreground/[0.06]"
+            : "bg-foreground/[0.03]",
+      )}
+    >
+      {children}
+    </div>
+  );
+}

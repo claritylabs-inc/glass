@@ -66,6 +66,7 @@ import {
   type PromptReferenceTagKind,
 } from "@/components/prompt-reference-tag";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
+import { ThreadMessageBubble } from "@/components/agent-thread/message-bubble";
 import { scientistSurnameFor } from "@/components/agent-thread/scientist-surnames";
 import {
   optimisticPromptAttachments,
@@ -1587,12 +1588,10 @@ export function UnifiedMessageBubble({
               />
             ) : (
               <>
-                <div
-                  className={`rounded-lg border px-3.5 py-2.5 ${
-                    isError
-                      ? "border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400"
-                      : "border-foreground/6 bg-popover"
-                  }`}
+                <ThreadMessageBubble
+                  role="agent"
+                  channel={msg.channel}
+                  isError={isError}
                 >
                   <ProseMarkdown
                     gfm
@@ -1604,7 +1603,7 @@ export function UnifiedMessageBubble({
                   >
                     {fixedContent}
                   </ProseMarkdown>
-                </div>
+                </ThreadMessageBubble>
                 <MessageFooterActions
                   refs={allRefs}
                   citedSections={citedSections}
@@ -1770,14 +1769,10 @@ export function UnifiedMessageBubble({
             isOpen={openEmailMessageId === msg._id}
           />
         ) : (
-          <div
-            className={`rounded-lg px-3.5 py-2.5 text-base text-foreground ${
-              isEmail
-                ? `border border-foreground/6 ${isOwnMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]"}`
-                : isOwnMessage
-                  ? "bg-foreground/[0.06]"
-                  : "bg-foreground/[0.03]"
-            }`}
+          <ThreadMessageBubble
+            role="user"
+            channel={msg.channel}
+            isOwnMessage={Boolean(isOwnMessage)}
           >
             <PromptReferenceText
               content={cleanContent}
@@ -1804,7 +1799,7 @@ export function UnifiedMessageBubble({
                 />
               </div>
             )}
-          </div>
+          </ThreadMessageBubble>
         )}
         {isFirstUserMessage && threadContext && (
           <div className="mt-2">

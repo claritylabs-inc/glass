@@ -5,6 +5,12 @@ import dayjs from "dayjs";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { Mail, MessageCircle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { ThreadMessageBubble } from "@/components/agent-thread/message-bubble";
+import {
+  QuotedContent,
+  splitQuotedReply,
+} from "@/components/conversation-message";
+import { ProseMarkdown } from "@/components/prose-markdown";
 import { OperatorSidebar } from "../operator-sidebar";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { ActionSurfaceButton } from "@/components/ui/action-surface";
@@ -78,7 +84,13 @@ function drawerTitle(row?: TranscriptRow) {
   );
 }
 
-function Timeline({ logs }: { logs?: TimelineLog[] }) {
+function Timeline({
+  logs,
+  channel,
+}: {
+  logs?: TimelineLog[];
+  channel: "email" | "imessage";
+}) {
   const messages = logs?.filter((log) => log.direction !== "system") ?? [];
   if (!messages.length) {
     return <p className="text-base text-muted-foreground">No turns recorded.</p>;
@@ -86,33 +98,44 @@ function Timeline({ logs }: { logs?: TimelineLog[] }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {messages.map((log) => (
-        <div
-          key={log._id}
-          className={`flex ${log.direction === "inbound" ? "justify-end" : "justify-start"}`}
-        >
+      {messages.map((log) => {
+        const isInbound = log.direction === "inbound";
+        const { content, quoted } = isInbound
+          ? splitQuotedReply(log.content)
+          : { content: log.content, quoted: null };
+
+        return (
           <div
-            className={`max-w-[82%] ${log.direction === "inbound" ? "items-end" : "items-start"} flex flex-col`}
+            key={log._id}
+            className={`max-w-lg w-fit ${isInbound ? "ml-auto" : ""}`}
           >
-            <div className="mb-1 flex items-center gap-2 text-label text-muted-foreground/40">
-              <span>{log.direction === "inbound" ? "Prospect" : "Glass"}</span>
-              <span>{dayjs(log.createdAt).format("MMM D, h:mm A")}</span>
-            </div>
             <div
-              className={`rounded-lg px-3.5 py-2.5 text-base leading-6 ${
-                log.direction === "inbound"
-                  ? "bg-foreground text-background"
-                  : "border border-foreground/6 bg-popover text-foreground"
-              }`}
+              className={`mb-1 flex items-center gap-2 ${isInbound ? "justify-end" : ""}`}
+            >
+              <span className="text-label font-medium text-muted-foreground/50">
+                {isInbound ? "Prospect" : "Glass"}
+              </span>
+              <span className="text-muted-foreground/20">·</span>
+              <span className="text-label text-muted-foreground/25">
+                {dayjs(log.createdAt).format("MMM D, h:mm A")}
+              </span>
+            </div>
+            <ThreadMessageBubble
+              role={isInbound ? "user" : "agent"}
+              channel={channel}
+              isOwnMessage={isInbound}
             >
               {log.subject ? (
                 <p className="mb-1 font-medium">{log.subject}</p>
               ) : null}
-              <p className="whitespace-pre-wrap">{log.content}</p>
-            </div>
+              <ProseMarkdown gfm breaks compact={isInbound}>
+                {content}
+              </ProseMarkdown>
+              {quoted ? <QuotedContent text={quoted} /> : null}
+            </ThreadMessageBubble>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -137,7 +160,10 @@ export default function OperatorDemoLeadsPage() {
     >
       {transcriptDetail ? (
         <div className="pb-4">
-          <Timeline logs={transcriptDetail.logs} />
+          <Timeline
+            logs={transcriptDetail.logs}
+            channel={transcriptDetail.transcript.channel}
+          />
         </div>
       ) : (
         <p className="text-base text-muted-foreground">Loading chat.</p>

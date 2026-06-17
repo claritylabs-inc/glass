@@ -3,6 +3,7 @@ import { getClientPortalUrl } from "./domains";
 export const PUBLIC_DEMO_BOOKING_URL =
   "https://cal.com/team/claritylabs/product-demo";
 export const PUBLIC_DEMO_SIGNUP_URL = `${getClientPortalUrl()}/signup`;
+export const PUBLIC_DEMO_LOGIN_URL = `${getClientPortalUrl()}/login`;
 
 export type PublicDemoChannel = "email" | "imessage";
 export type PublicDemoLeadStage =
@@ -176,6 +177,14 @@ BOOKING
 - Ask for name and company after the first useful exchange if they are missing.
 - For email prospects, the sender email is already known when provided.
 - For text/iMessage prospects, ask for email only when they show booking or signup intent.
+
+ACCOUNT HELP
+- Do not send a standalone "unrecognized email address" rejection. This demo conversation is the response.
+- If the sender appears to be trying to use a real Glass workspace, briefly say this sender is not tied to a Glass organization yet.
+- If they already have a Glass account, tell them to resend from the email address associated with that account.
+- If they need a new account, point them to ${PUBLIC_DEMO_SIGNUP_URL}.
+- If they think the mismatch is a setup mistake, tell them to sign in with this email and finish setup at ${PUBLIC_DEMO_LOGIN_URL}.
+- Keep this account-help copy secondary unless their message is clearly about access, setup, invites, login, or a real account workflow.
 
 SIMULATED DATA
 - Example company: ${PUBLIC_DEMO_EXAMPLE_DATA.company}

@@ -6,6 +6,7 @@ import {
   buildPublicDemoSystemPrompt,
   PUBLIC_DEMO_BOOKING_URL,
   PUBLIC_DEMO_EXAMPLE_DATA,
+  PUBLIC_DEMO_LOGIN_URL,
   PUBLIC_DEMO_SIGNUP_URL,
 } from "../convex/lib/publicDemoAgent";
 
@@ -23,6 +24,7 @@ describe("public demo agent", () => {
 
     expect(prompt).toContain(PUBLIC_DEMO_BOOKING_URL);
     expect(prompt).toContain(PUBLIC_DEMO_SIGNUP_URL);
+    expect(prompt).toContain(PUBLIC_DEMO_LOGIN_URL);
     expect(prompt).toContain(PUBLIC_DEMO_EXAMPLE_DATA.company);
     expect(prompt).toContain("Adyan Tanver");
     expect(prompt).toContain("Terry Wang");
@@ -32,6 +34,9 @@ describe("public demo agent", () => {
     expect(prompt).toContain("What is your name and company?");
     expect(prompt).toContain("Use markdown bullets");
     expect(prompt).toContain("Glass signature is added automatically");
+    expect(prompt).toContain("unrecognized email address");
+    expect(prompt).toContain("resend from the email address associated");
+    expect(prompt).toContain("finish setup");
   });
 
   it("keeps iMessage copy short and avoids repeated demo-only footers", () => {
@@ -96,10 +101,13 @@ describe("public demo agent", () => {
   it("routes unknown inbound email and iMessage branches through the public demo action", () => {
     const email = read("convex/actions/handleInboundEmail.ts");
     const imessage = read("convex/actions/handleInboundImessage.ts");
+    const emailTemplate = read("convex/lib/emailTemplate.ts");
 
     expect(email).toContain("internal.actions.publicDemoAgent.respond");
     expect(email).toContain("if (handle !== \"agent\") return");
     expect(email).not.toContain("buildUnrecognizedInboundEmail");
+    expect(emailTemplate).not.toContain("buildUnrecognizedInboundEmail");
+    expect(emailTemplate).not.toContain("We couldn't recognize this email address");
     expect(imessage).toContain("scope.kind === \"no_linked_users\"");
     expect(imessage).toContain("internal.actions.publicDemoAgent.respond");
   });
@@ -135,6 +143,8 @@ describe("public demo agent", () => {
   it("adds a simple operator archive surface for demo chats", () => {
     const sidebar = read("app/operator/operator-sidebar.tsx");
     const page = read("app/operator/demo-leads/page.tsx");
+    const threadContent = read("components/agent-thread/thread-content.tsx");
+    const bubble = read("components/agent-thread/message-bubble.tsx");
     const cache = read("lib/sync/operator-cached-queries.ts");
     const operator = read("convex/operator.ts");
 
@@ -145,7 +155,11 @@ describe("public demo agent", () => {
     expect(page).toContain("SettingsDrawer");
     expect(page).toContain("formatContact");
     expect(page).toContain("parsePhoneNumberFromString");
-    expect(page).toContain("Timeline logs");
+    expect(page).toContain("ThreadMessageBubble");
+    expect(page).toContain("splitQuotedReply");
+    expect(page).not.toContain("bg-foreground text-background");
+    expect(threadContent).toContain("ThreadMessageBubble");
+    expect(bubble).toContain("export function ThreadMessageBubble");
     expect(page).not.toContain("Tabs");
     expect(page).not.toContain("Table");
     expect(page).not.toContain("OperationalLabelValue");
