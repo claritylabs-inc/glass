@@ -19,7 +19,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import {
   formatPolicyChangeStatus,
   isPolicyChangeTerminal,
-} from "@/components/policy-change-progress";
+} from "@/components/policy-change-status";
 import {
   useCachedQuery,
   useUpdateCachedQuery,

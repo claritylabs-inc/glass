@@ -22,10 +22,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  PolicyChangeProgress,
-  formatPolicyChangeStatus,
-} from "@/components/policy-change-progress";
+import { formatPolicyChangeStatus } from "@/components/policy-change-status";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -150,10 +147,6 @@ function policyChangeQuestions(value: unknown) {
       return {
         key: String(record.id ?? record.code ?? index),
         question: String(record.question ?? "Missing information"),
-        reason:
-          typeof record.reason === "string" && record.reason.trim()
-            ? record.reason
-            : undefined,
       };
     }
     return {
@@ -397,7 +390,6 @@ function PolicyChangeCaseDrawer({
   items,
   validationIssues,
   artifacts,
-  missingInfo,
   activeQuestions,
   onGeneratePacket,
   onStatus,
@@ -418,19 +410,21 @@ function PolicyChangeCaseDrawer({
   items: Record<string, unknown>[];
   validationIssues: Record<string, unknown>[];
   artifacts: Record<string, unknown>[];
-  missingInfo: Record<string, unknown>[];
-  activeQuestions: Array<{ key: string; question: string; reason?: string }>;
+  activeQuestions: Array<{ key: string; question: string }>;
   onGeneratePacket: () => void;
   onStatus: (status: "submitted" | "waiting_for_endorsement" | "completed" | "declined") => void;
   onCancel: (caseId: Id<"policyChangeCases">) => void;
   onReplyDraftChange: (caseId: Id<"policyChangeCases">, value: string) => void;
   onReplySubmit: (caseId: Id<"policyChangeCases">) => void;
 }) {
+  const caseTitle = activeCase?.summary ?? "Policy change request";
+  const requestText = activeCase?.requestText?.trim() ?? "";
+
   return (
     <SettingsDrawer
       open={open}
       onOpenChange={onOpenChange}
-      title="Policy change request"
+      title={caseTitle}
       actions={
         activeCase ? (
           <span className="rounded-full border border-foreground/8 px-2 py-0.5 text-label font-medium text-muted-foreground">
@@ -447,15 +441,17 @@ function PolicyChangeCaseDrawer({
         </div>
       ) : activeCase ? (
         <div className="flex min-h-0 flex-1 flex-col gap-5">
-          <section>
-            <p className="text-base font-medium text-foreground">
-              {activeCase.summary ?? "Policy change request"}
-            </p>
-            <p className="mt-2 text-base leading-6 text-muted-foreground">
-              {activeCase.requestText}
-            </p>
-            {canManage ? (
-              <div className="mt-3 flex flex-wrap gap-2">
+          {requestText && requestText !== caseTitle ? (
+            <section>
+              <p className="mt-2 text-base leading-6 text-muted-foreground">
+                {requestText}
+              </p>
+            </section>
+          ) : null}
+
+          {canManage ? (
+            <section>
+              <div className="flex flex-wrap gap-2">
                 <PillButton
                   variant="secondary"
                   size="compact"
@@ -528,9 +524,7 @@ function PolicyChangeCaseDrawer({
                     <PillButton
                       variant="secondary"
                       size="compact"
-                      onClick={() =>
-                        onCancel(activeCase._id)
-                      }
+                      onClick={() => onCancel(activeCase._id)}
                       disabled={cancelLoading !== null}
                     >
                       {cancelLoading === activeCase._id ? (
@@ -541,26 +535,22 @@ function PolicyChangeCaseDrawer({
                       Cancel
                     </PillButton>
                   )}
-                </div>
-            ) : null}
-          </section>
+              </div>
+            </section>
+          ) : null}
 
-          <section>
-            <PolicyChangeProgress status={String(activeCase.status ?? "")} />
-          </section>
-
-          <section>
-            <h3 className="text-label font-medium text-foreground">
-              Requested changes
-            </h3>
-            <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
-              {items.length > 0 ? (
-                items.map((item, i) => (
+          {items.length > 0 ? (
+            <section>
+              <h3 className="text-base font-medium text-foreground">
+                Requested updates
+              </h3>
+              <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
+                {items.map((item, i) => (
                   <div key={String(item.id ?? i)} className="py-3">
-                    <p className="text-label font-medium text-foreground">
+                    <p className="text-base font-medium text-foreground">
                       {displayPolicyChangeItemLabel(item)}
                     </p>
-                    <p className="mt-2 text-label text-muted-foreground">
+                    <p className="mt-1 text-base text-muted-foreground">
                       Current:{" "}
                       <span className="text-foreground">
                         {displayPolicyChangeValue(item.beforeValue)}
@@ -573,162 +563,110 @@ function PolicyChangeCaseDrawer({
                       </span>
                     </p>
                     {item.action || item.kind ? (
-                      <p className="mt-1 text-label text-muted-foreground">
+                      <p className="mt-1 text-base text-muted-foreground">
                         {[humanizeSnake(item.action), humanizeSnake(item.kind)]
                           .filter(Boolean)
                           .join(" · ")}
                       </p>
                     ) : null}
                   </div>
-                ))
-              ) : (
-                <p className="py-3 text-label text-muted-foreground">
-                  No specific policy fields have been prepared yet.
-                </p>
-              )}
-            </div>
-          </section>
-
-          <section>
-            <h3 className="text-label font-medium text-foreground">
-              Items to check
-            </h3>
-            <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
-              {validationIssues.length > 0 ? (
-                validationIssues.map((issue, i) => (
-                  <div key={`${String(issue.code ?? "issue")}-${i}`} className="py-3">
-                    <p className="text-label font-medium text-foreground">
-                      {displayValidationMessage(issue)}
-                    </p>
-                    {issue.severity ? (
-                      <p className="mt-1 text-label text-muted-foreground">
-                        {humanizeSnake(issue.severity)}
-                      </p>
-                    ) : null}
-                  </div>
-                ))
-              ) : (
-                <p className="py-3 text-label text-muted-foreground">
-                  No issues to review.
-                </p>
-              )}
-            </div>
-          </section>
-
-          {canManage ? (
-            <section>
-              <h3 className="text-label font-medium text-foreground">
-                Packet preview
-              </h3>
-              <div className="mt-2 space-y-2">
-                {artifacts.length > 0 ? (
-                  artifacts.map((artifact, i) => (
-                    <details
-                      key={`${String(artifact.kind ?? "artifact")}-${i}`}
-                      className="border-y border-foreground/6 py-3"
-                    >
-                      <summary className="text-label font-medium text-foreground transition-colors hover:text-muted-foreground">
-                        {String(
-                          artifact.title ??
-                            humanizeSnake(artifact.kind) ??
-                            "Packet draft",
-                        )}
-                      </summary>
-                      <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-label leading-5 text-muted-foreground">
-                        {String(artifact.content ?? "")}
-                      </pre>
-                    </details>
-                  ))
-                ) : (
-                  <p className="text-label text-muted-foreground">
-                    No generated packet yet.
-                  </p>
-                )}
+                ))}
               </div>
             </section>
           ) : null}
 
-          <section>
-            <h3 className="text-label font-medium text-foreground">
-              Information needed
-            </h3>
-            <div className="mt-2 space-y-3">
-              {activeQuestions.length > 0 ? (
-                <div className="rounded-lg border border-foreground/8 bg-foreground/[0.025] p-3">
-                  <div className="space-y-3">
-                    {activeQuestions.map((question) => (
-                      <div key={question.key} className="space-y-2">
-                        <p className="text-base text-foreground">
-                          {question.question}
-                        </p>
-                        {question.reason ? (
-                          <p className="text-label leading-5 text-muted-foreground">
-                            {question.reason}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))}
-                    <Textarea
-                      value={activeReplyDraft}
-                      onChange={(event) =>
-                        onReplyDraftChange(
-                          activeCase._id,
-                          event.target.value,
-                        )
-                      }
-                      placeholder="Enter the broker contact or email..."
-                      disabled={activeReplyLoading}
-                      className="min-h-20 bg-background"
-                    />
-                    <div className="flex justify-end">
-                      <PillButton
-                        type="button"
-                        size="compact"
-                        onClick={() =>
-                          onReplySubmit(activeCase._id)
-                        }
-                        disabled={activeReplyLoading || !activeReplyDraft.trim()}
-                      >
-                        {activeReplyLoading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Send className="h-3.5 w-3.5" />
-                        )}
-                        Submit response
-                      </PillButton>
-                    </div>
+          {validationIssues.length > 0 ? (
+            <section>
+              <h3 className="text-base font-medium text-foreground">
+                Review before sending
+              </h3>
+              <div className="mt-2 divide-y divide-foreground/6 border-y border-foreground/6">
+                {validationIssues.map((issue, i) => (
+                  <div
+                    key={`${String(issue.code ?? "issue")}-${i}`}
+                    className="py-3"
+                  >
+                    <p className="text-base font-medium text-foreground">
+                      {displayValidationMessage(issue)}
+                    </p>
+                    {issue.severity ? (
+                      <p className="mt-1 text-base text-muted-foreground">
+                        {humanizeSnake(issue.severity)}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {canManage && artifacts.length > 0 ? (
+            <section>
+              <h3 className="text-base font-medium text-foreground">
+                Packet preview
+              </h3>
+              <div className="mt-2 space-y-2">
+                {artifacts.map((artifact, i) => (
+                  <details
+                    key={`${String(artifact.kind ?? "artifact")}-${i}`}
+                    className="border-y border-foreground/6 py-3"
+                  >
+                    <summary className="text-base font-medium text-foreground transition-colors hover:text-muted-foreground">
+                      {String(
+                        artifact.title ??
+                          humanizeSnake(artifact.kind) ??
+                          "Packet draft",
+                      )}
+                    </summary>
+                    <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-label leading-5 text-muted-foreground">
+                      {String(artifact.content ?? "")}
+                    </pre>
+                  </details>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {activeQuestions.length > 0 ? (
+            <section>
+              <h3 className="text-base font-medium text-foreground">
+                Information needed
+              </h3>
+              <div className="mt-2 border-t border-foreground/6 pt-3">
+                <div className="space-y-3">
+                  {activeQuestions.map((question) => (
+                    <p key={question.key} className="text-base text-foreground">
+                      {question.question}
+                    </p>
+                  ))}
+                  <Textarea
+                    value={activeReplyDraft}
+                    onChange={(event) =>
+                      onReplyDraftChange(activeCase._id, event.target.value)
+                    }
+                    placeholder="Enter the broker contact or email..."
+                    disabled={activeReplyLoading}
+                    className="min-h-20 bg-background"
+                  />
+                  <div className="flex justify-end">
+                    <PillButton
+                      type="button"
+                      size="compact"
+                      onClick={() => onReplySubmit(activeCase._id)}
+                      disabled={activeReplyLoading || !activeReplyDraft.trim()}
+                    >
+                      {activeReplyLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5" />
+                      )}
+                      Submit response
+                    </PillButton>
                   </div>
                 </div>
-              ) : missingInfo.length > 0 ? (
-                <div className="divide-y divide-foreground/6 border-y border-foreground/6">
-                  {missingInfo.map((question, i) => (
-                    <div
-                      key={String(question.id ?? question.code ?? i)}
-                      className="py-3"
-                    >
-                      <p className="text-label text-foreground">
-                        {String(question.question ?? "Missing information")}
-                      </p>
-                      {question.reason ? (
-                        <p className="mt-1 text-label text-muted-foreground">
-                          {String(question.reason)}
-                        </p>
-                      ) : null}
-                      {question.answer ? (
-                        <p className="mt-2 text-label text-muted-foreground">
-                          Answer: {String(question.answer)}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-label text-muted-foreground">
-                  No open questions.
-                </p>
-              )}
-            </div>
-          </section>
+              </div>
+            </section>
+          ) : null}
         </div>
       ) : null}
     </SettingsDrawer>
@@ -945,13 +883,6 @@ export function PolicyChangesTab({
         : [],
     [activeCase],
   );
-  const missingInfo = useMemo(
-    () =>
-      Array.isArray(activeCase?.missingInfoQuestions)
-        ? (activeCase.missingInfoQuestions as Record<string, unknown>[])
-        : [],
-    [activeCase],
-  );
   const activeQuestions = useMemo(
     () => policyChangeQuestions(activeCase?.missingInfoQuestions),
     [activeCase],
@@ -1053,7 +984,6 @@ export function PolicyChangesTab({
           items={items}
           validationIssues={validationIssues}
           artifacts={artifacts}
-          missingInfo={missingInfo}
           activeQuestions={activeQuestions}
           onGeneratePacket={handleGeneratePacket}
           onStatus={handleStatus}
@@ -1087,7 +1017,6 @@ export function PolicyChangesTab({
     handleReplySubmit,
     handleStatus,
     items,
-    missingInfo,
     onRightPanel,
     packetLoading,
     selectedCaseId,
@@ -1119,12 +1048,6 @@ export function PolicyChangesTab({
         }}
       />
       {cases.map((change) => {
-        const missingInfoCount = Array.isArray(change.missingInfoQuestions)
-          ? change.missingInfoQuestions.length
-          : 0;
-        const validationIssueCount = Array.isArray(change.validationIssues)
-          ? change.validationIssues.length
-          : 0;
         const isActive = selectedCaseId === change._id;
         return (
           <button
@@ -1144,27 +1067,10 @@ export function PolicyChangesTab({
                 <p className="truncate text-base font-medium text-foreground">
                   {change.summary ?? "Policy change request"}
                 </p>
-                <p className="mt-1 line-clamp-2 text-label text-muted-foreground">
-                  {change.requestText}
-                </p>
               </div>
               <span className="shrink-0 rounded-full border border-foreground/8 px-2 py-0.5 text-label font-medium text-muted-foreground">
                 {formatPolicyChangeStatus(change.status)}
               </span>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2 text-label text-muted-foreground">
-              {missingInfoCount > 0 && (
-                <span>
-                  {missingInfoCount} answer{missingInfoCount === 1 ? "" : "s"}{" "}
-                  needed
-                </span>
-              )}
-              {validationIssueCount > 0 && (
-                <span>
-                  {validationIssueCount} item
-                  {validationIssueCount === 1 ? "" : "s"} to review
-                </span>
-              )}
             </div>
           </button>
         );
