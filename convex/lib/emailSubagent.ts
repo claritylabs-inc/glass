@@ -219,7 +219,10 @@ function formatDraft(params: {
     .join("\n");
 }
 
-function buildHtmlBody(body: string, signature: { html: string }): string {
+export function buildAgentEmailHtmlBody(
+  body: string,
+  signature: { html: string },
+): string {
   return (
     body
       .split("\n\n")
@@ -244,7 +247,9 @@ export function buildEmailPayload(params: {
   replyTo?: string;
 }) {
   const plainText = stripMarkdown(params.body) + params.signature.text;
-  const html = buildHtmlBody(params.body, { html: params.signature.html });
+  const html = buildAgentEmailHtmlBody(params.body, {
+    html: params.signature.html,
+  });
   const payload: Record<string, unknown> = {
     from: params.fromHeader,
     to: params.to,

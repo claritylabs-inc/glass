@@ -14,6 +14,10 @@ import {
 } from "../lib/models";
 import { markdownToHtml, stripMarkdown } from "../lib/aiUtils";
 import {
+  buildAgentEmailHtmlBody,
+  buildEmailSignature,
+} from "../lib/emailSubagent";
+import {
   buildPublicDemoBookingUrl,
   buildPublicDemoSystemPrompt,
   looksLikeBookingIntent,
@@ -195,7 +199,7 @@ function nextStep(stage: PublicDemoLeadStage, ctaStatus: PublicDemoCtaStatus) {
 }
 
 function hasSafetyNotice(text: string) {
-  return /\b(demo only|not real|not binding|no certificate was issued|not insurance advice)\b/i.test(
+  return /\b(demo only|demo data only|not real|not binding|no certificate (?:was )?issued|not insurance advice)\b/i.test(
     text,
   );
 }
@@ -208,6 +212,7 @@ function hasPriorSafetyNotice(logs: PublicDemoLog[]) {
 
 function removeRepeatedSafetyFooter(text: string) {
   return text
+    .replace(/\s*Demo data only, not real advice\.?/gi, "")
     .replace(/\s*Demo only[:.] No real certificate or insurance advice\.?/gi, "")
     .replace(
       /\s*Demo only: no certificate was issued, and this is not insurance advice\.?/gi,
@@ -221,14 +226,13 @@ function removeRepeatedSafetyFooter(text: string) {
     .filter(
       (line) =>
         !/^\s*demo only[:.]/i.test(line) &&
-        !/\bno certificate was issued\b/i.test(line),
+        !/\bno certificate (?:was )?issued\b/i.test(line),
     )
     .join("\n")
     .trim();
 }
 
-function normalizeChannelResponse(text: string, channel: PublicDemoChannel) {
-  if (channel === "email") return text.replace(/\n{3,}/g, "\n\n").trim();
+function flattenImessageText(text: string) {
   return text
     .split("\n")
     .map((line) => line.trim().replace(/^[-*]\s+/, ""))
@@ -236,7 +240,65 @@ function normalizeChannelResponse(text: string, channel: PublicDemoChannel) {
     .join(" ")
     .replace(/\s+/g, " ")
     .replace(/\s+([,.!?])/g, "$1")
+    .replace(/[“”]/g, '"')
     .trim();
+}
+
+function conciseImessageFallback(args: {
+  text: string;
+  latestMessage: string;
+}) {
+  const combined = `${args.latestMessage}\n${args.text}`.toLowerCase();
+  let text = args.text;
+
+  if (/\b(what can|what does).*\bglass\b|\bglass do\b/.test(combined)) {
+    text =
+      "Glass can read insurance docs/emails, spot gaps, and draft follow-ups. Want COIs, renewals, or vendor compliance?";
+  } else if (/\b(coi|certificate|cert|proof of insurance)\b/.test(combined)) {
+    text = "Glass can draft the COI request and follow-up for approval.";
+  } else if (/\b(vendor|compliance|requirement)\b/.test(combined)) {
+    text = "Glass can check vendor evidence against requirements and flag gaps.";
+  } else if (/\b(email|inbox|mailbox|renewal|follow[- ]?up)\b/.test(combined)) {
+    text = "Glass can find policy emails, pull the key details, and draft the follow-up.";
+  } else {
+    text = args.text.split(/(?<=[.!?])\s+/)[0] ?? args.text;
+  }
+
+  return text;
+}
+
+function normalizeEmailResponse(text: string) {
+  return text
+    .trim()
+    .replace(/\s+-\s+(?=[A-Z0-9])/g, "\n- ")
+    .replace(/:\n(- )/g, ":\n\n$1")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+function normalizeChannelResponse(args: {
+  text: string;
+  channel: PublicDemoChannel;
+  latestMessage: string;
+}) {
+  if (args.channel === "email") {
+    return normalizeEmailResponse(args.text);
+  }
+
+  const flattened = flattenImessageText(args.text)
+    .replace(/^hi\s+[^,!.—-]+[,!—-]\s*/i, "")
+    .replace(/\bhere(?:'|’)s a simulated example\b[:\s-]*/i, "")
+    .replace(/\bwant the matching sample [^?]+\?/gi, "")
+    .trim();
+  const artifactLike =
+    /\b(sample COI text block|COI delivery email|simulated Glass demo email|no certificate issued\/attached|no certificate was issued or attached)\b/i.test(
+      flattened,
+    );
+
+  if (flattened.length <= 240 && !artifactLike) return flattened;
+  return conciseImessageFallback({
+    text: flattened,
+    latestMessage: args.latestMessage,
+  });
 }
 
 function addSimulationNotice(args: {
@@ -244,24 +306,58 @@ function addSimulationNotice(args: {
   channel: PublicDemoChannel;
   alreadyWarned: boolean;
 }) {
+  const text = removeRepeatedSafetyFooter(args.text) || args.text.trim();
   if (args.alreadyWarned) {
-    return removeRepeatedSafetyFooter(args.text);
-  }
-  if (hasSafetyNotice(args.text)) {
-    return args.text;
+    return text;
   }
   const notice =
     args.channel === "imessage"
-      ? "Demo only. No real certificate or insurance advice."
+      ? "Demo data only, not real advice."
       : "Demo only: no certificate was issued, nothing here is binding, and this is not insurance advice.";
   const separator = args.channel === "imessage" ? " " : "\n\n";
-  return `${args.text.trim()}${separator}${notice}`;
+  return `${text}${separator}${notice}`;
 }
 
-function mentionsRegulatedDemoTopic(text: string) {
-  return /\b(certificate|coi|proof of insurance|policy|coverage|compliance|advice|insured|endorsement)\b/i.test(
+function formatPublicDemoEmail(args: {
+  body: string;
+  agentAddress?: string;
+}): { text: string; html: string } {
+  const signature = buildEmailSignature(args.agentAddress ?? "agent@glass.insure");
+  const text = stripMarkdown(args.body) + signature.text;
+  const html = buildAgentEmailHtmlBody(args.body, signature);
+  return { text, html };
+}
+
+function mentionsRealOrAdviceRisk(text: string) {
+  return /\b(real|valid|binding|official|certified|usable|issued|attached|proof of insurance|insurance advice|legal advice)\b/i.test(
     text,
   );
+}
+
+function mentionsRealLookingDemoArtifact(text: string) {
+  return (
+    /\b(sample|example|simulated|draft)\b.{0,80}\b(coi|certificate|policy answer|coverage answer|compliance result|email)\b/i.test(
+      text,
+    ) ||
+    /\b(policy number|carrier|limit|additional insured|waiver of subrogation|certificate holder|covered|not covered|compliant|noncompliant|needs attention)\b/i.test(
+      text,
+    )
+  );
+}
+
+function shouldAttachSimulationNotice(args: {
+  channel: PublicDemoChannel;
+  latestMessage: string;
+  responseText: string;
+  alreadyWarned: boolean;
+}) {
+  if (args.alreadyWarned) return false;
+  const combined = `${args.latestMessage}\n${args.responseText}`;
+  if (mentionsRealOrAdviceRisk(combined)) return true;
+  if (args.channel === "email") {
+    return mentionsRealLookingDemoArtifact(args.responseText);
+  }
+  return mentionsRealLookingDemoArtifact(args.responseText);
 }
 
 export const respond = internalAction({
@@ -317,6 +413,10 @@ export const respond = internalAction({
         channel === "imessage"
           ? "I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book here: https://cal.com/team/claritylabs/product-demo"
           : "I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book a product demo at https://cal.com/team/claritylabs/product-demo.";
+      const formatted =
+        channel === "email"
+          ? formatPublicDemoEmail({ body: text, agentAddress: args.agentAddress })
+          : { text, html: markdownToHtml(text) };
       await ctx.runMutation(internal.publicDemo.updateConversationLead, {
         conversationId: conversation._id,
         stage: "rate_limited",
@@ -329,15 +429,15 @@ export const respond = internalAction({
           direction: "outbound",
           subject: args.subject,
           content: text,
-          contentHtml: markdownToHtml(text),
+          contentHtml: formatted.html,
           deliveryStatus: "generated",
         },
       )) as Id<"publicDemoChatLogs">;
       return {
         conversationId: conversation._id,
         outboundLogId,
-        text,
-        html: markdownToHtml(text),
+        text: formatted.text,
+        html: formatted.html,
       };
     }
 
@@ -382,12 +482,21 @@ export const respond = internalAction({
         inputSchema: z.object({
           question: z.string(),
         }),
-        execute: async () => ({
-          company: PUBLIC_DEMO_EXAMPLE_DATA.company,
-          address: PUBLIC_DEMO_EXAMPLE_DATA.address,
-          policies: PUBLIC_DEMO_EXAMPLE_DATA.policies,
-          note: "Simulated demo data only. Not a real policy answer or insurance advice.",
-        }),
+        execute: async () =>
+          channel === "imessage"
+            ? {
+                summary:
+                  "Glass would pull the policy details and answer from the evidence.",
+                example:
+                  "Clarity Labs has example GL and Cyber policies in the demo data.",
+                note: "Demo data only.",
+              }
+            : {
+                company: PUBLIC_DEMO_EXAMPLE_DATA.company,
+                address: PUBLIC_DEMO_EXAMPLE_DATA.address,
+                policies: PUBLIC_DEMO_EXAMPLE_DATA.policies,
+                note: "Simulated demo data only. Not a real policy answer or insurance advice.",
+              },
       }),
       check_example_vendor_compliance: tool({
         description:
@@ -395,12 +504,19 @@ export const respond = internalAction({
         inputSchema: z.object({
           vendorName: z.string().optional(),
         }),
-        execute: async () => ({
-          vendor: PUBLIC_DEMO_EXAMPLE_DATA.vendor.name,
-          status: PUBLIC_DEMO_EXAMPLE_DATA.vendor.status,
-          gaps: PUBLIC_DEMO_EXAMPLE_DATA.vendor.gaps,
-          note: "Simulated demo result only. Glass would use connected vendor policies and saved requirements for a real customer.",
-        }),
+        execute: async () =>
+          channel === "imessage"
+            ? {
+                summary:
+                  "Glass would check the vendor evidence and flag missing cyber plus AI wording.",
+                note: "Demo data only.",
+              }
+            : {
+                vendor: PUBLIC_DEMO_EXAMPLE_DATA.vendor.name,
+                status: PUBLIC_DEMO_EXAMPLE_DATA.vendor.status,
+                gaps: PUBLIC_DEMO_EXAMPLE_DATA.vendor.gaps,
+                note: "Simulated demo result only. Glass would use connected vendor policies and saved requirements for a real customer.",
+              },
       }),
       draft_example_certificate_email: tool({
         description:
@@ -409,16 +525,23 @@ export const respond = internalAction({
           recipient: z.string().optional(),
           request: z.string().optional(),
         }),
-        execute: async (input) => ({
-          subject: "Example certificate follow-up",
-          body: [
-            `Hi ${input.recipient ?? "there"},`,
-            "",
-            "This is a simulated Glass demo email. In a real workspace, Glass would prepare the certificate request from policy evidence, flag endorsements that need review, and route the draft for approval before sending.",
-            "",
-            "Demo note: no certificate was issued or attached.",
-          ].join("\n"),
-        }),
+        execute: async (input) =>
+          channel === "imessage"
+            ? {
+                summary:
+                  "Glass can draft the COI request and follow-up for approval.",
+                note: "Demo data only. No COI is issued.",
+              }
+            : {
+                subject: "Example certificate follow-up",
+                body: [
+                  `Hi ${input.recipient ?? "there"},`,
+                  "",
+                  "This is a simulated Glass demo email. In a real workspace, Glass would prepare the certificate request from policy evidence, flag endorsements that need review, and route the draft for approval before sending.",
+                  "",
+                  "Demo note: no certificate was issued or attached.",
+                ].join("\n"),
+              },
       }),
       explain_mailbox_agent: tool({
         description:
@@ -426,14 +549,20 @@ export const respond = internalAction({
         inputSchema: z.object({
           task: z.string().optional(),
         }),
-        execute: async () => ({
-          workflow: [
-            "Search connected insurance mailboxes for policies, renewals, endorsements, and requirement packets.",
-            "Read bounded message and attachment content.",
-            "Import selected documents into first-class policy or compliance workflows after user confirmation.",
-            "Draft follow-up with evidence and approvals visible in Glass.",
-          ],
-        }),
+        execute: async () =>
+          channel === "imessage"
+            ? {
+                summary:
+                  "Glass can find policy emails, pull key details, and draft the follow-up.",
+              }
+            : {
+                workflow: [
+                  "Search connected insurance mailboxes for policies, renewals, endorsements, and requirement packets.",
+                  "Read bounded message and attachment content.",
+                  "Import selected documents into first-class policy or compliance workflows after user confirmation.",
+                  "Draft follow-up with evidence and approvals visible in Glass.",
+                ],
+              },
       }),
       build_demo_booking_link: tool({
         description:
@@ -484,7 +613,7 @@ export const respond = internalAction({
     const result = await generateText({
       model: routed.model,
       providerOptions: getProviderOptionsForRoute(routed.route),
-      maxOutputTokens: channel === "imessage" ? 220 : 700,
+      maxOutputTokens: channel === "imessage" ? 120 : 700,
       system,
       messages,
       tools,
@@ -517,14 +646,27 @@ export const respond = internalAction({
       responseText =
         "What is the best email to prefill on the product-demo booking link?";
     }
-    if (mentionsRegulatedDemoTopic(`${args.messageText}\n${responseText}`)) {
+    responseText = normalizeChannelResponse({
+      text: responseText,
+      channel,
+      latestMessage: args.messageText,
+    });
+    if (
+      shouldAttachSimulationNotice({
+        channel,
+        latestMessage: args.messageText,
+        responseText,
+        alreadyWarned,
+      })
+    ) {
       responseText = addSimulationNotice({
         text: responseText,
         channel,
         alreadyWarned,
       });
+    } else if (channel === "imessage") {
+      responseText = removeRepeatedSafetyFooter(responseText) || responseText;
     }
-    responseText = normalizeChannelResponse(responseText, channel);
 
     await ctx.runMutation(internal.publicDemo.updateConversationLead, {
       conversationId: conversation._id,
@@ -536,7 +678,13 @@ export const respond = internalAction({
       ctaStatus,
     });
     const toolCalls = collectToolAudit(result);
-    const html = markdownToHtml(responseText);
+    const formatted =
+      channel === "email"
+        ? formatPublicDemoEmail({
+            body: responseText,
+            agentAddress: args.agentAddress,
+          })
+        : { text: responseText, html: markdownToHtml(responseText) };
     const outboundLogId = (await ctx.runMutation(
       internal.publicDemo.appendChatLog,
       {
@@ -545,7 +693,7 @@ export const respond = internalAction({
         direction: "outbound",
         subject: args.subject,
         content: responseText,
-        contentHtml: html,
+        contentHtml: formatted.html,
         modelProvider: routed.route.provider,
         model: routed.route.model,
         routeSource: routed.routeSource,
@@ -591,8 +739,8 @@ export const respond = internalAction({
     return {
       conversationId: conversation._id,
       outboundLogId,
-      text: responseText,
-      html,
+      text: formatted.text,
+      html: formatted.html,
       ctaUrl,
       route: routed.route,
       routeSource: routed.routeSource,

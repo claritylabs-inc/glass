@@ -30,6 +30,8 @@ describe("public demo agent", () => {
     expect(prompt).toContain("Never imply that a demo certificate");
     expect(prompt).toContain("not real insurance advice");
     expect(prompt).toContain("What is your name and company?");
+    expect(prompt).toContain("Use markdown bullets");
+    expect(prompt).toContain("Glass signature is added automatically");
   });
 
   it("keeps iMessage copy short and avoids repeated demo-only footers", () => {
@@ -40,13 +42,29 @@ describe("public demo agent", () => {
       lead: { name: "Terry Wang" },
       hasSentSafetyNotice: true,
     });
+    const firstNoticePrompt = buildPublicDemoSystemPrompt({
+      channel: "imessage",
+      turnCount: 2,
+      latestMessage: "What can Glass do?",
+      lead: { name: "Terry Wang" },
+    });
     const action = read("convex/actions/publicDemoAgent.ts");
 
-    expect(prompt).toContain("Use one message bubble with 1-2 short sentences");
-    expect(prompt).toContain("No bullets, no paragraph breaks");
+    expect(prompt).toContain("Target 140 characters or fewer");
+    expect(prompt).toContain("Never exceed 240 characters");
+    expect(prompt).toContain("No markdown, bullets, headers");
+    expect(prompt).toContain("Do not say 'here is a simulated example'");
+    expect(firstNoticePrompt).toContain(
+      "Do not add it to ordinary capability explanations",
+    );
     expect(prompt).toContain("Do not repeat a demo-only footer");
     expect(action).toContain("hasPriorSafetyNotice");
     expect(action).toContain("normalizeChannelResponse");
+    expect(action).toContain("conciseImessageFallback");
+    expect(action).toContain("shouldAttachSimulationNotice");
+    expect(action).toContain("mentionsRealOrAdviceRisk");
+    expect(action).toContain("mentionsRealLookingDemoArtifact");
+    expect(action).toContain("Glass can draft the COI request");
     expect(action).toContain("alreadyWarned");
   });
 
@@ -100,11 +118,18 @@ describe("public demo agent", () => {
 
   it("adds deterministic public-demo safety checks after model generation", () => {
     const action = read("convex/actions/publicDemoAgent.ts");
+    const emailSubagent = read("convex/lib/emailSubagent.ts");
 
     expect(action).toContain("addSimulationNotice");
     expect(action).toContain("no certificate was issued");
     expect(action).toContain("not insurance advice");
     expect(action).toContain("responseText.includes(PUBLIC_DEMO_BOOKING_URL)");
+    expect(action).toContain("formatPublicDemoEmail");
+    expect(action).toContain("normalizeEmailResponse");
+    expect(action).toContain("buildAgentEmailHtmlBody");
+    expect(action).toContain("buildEmailSignature");
+    expect(action).toContain("contentHtml: formatted.html");
+    expect(emailSubagent).toContain("export function buildAgentEmailHtmlBody");
   });
 
   it("adds a simple operator archive surface for demo chats", () => {

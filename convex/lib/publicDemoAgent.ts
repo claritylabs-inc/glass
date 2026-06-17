@@ -139,15 +139,26 @@ export function buildPublicDemoSystemPrompt(args: {
     args.channel === "imessage"
       ? [
           "You are replying by text/iMessage.",
-          "Sound like a concise human, not a brochure.",
-          "Use one message bubble with 1-2 short sentences.",
-          "No bullets, no paragraph breaks, no parenthetical lists, and no long multi-clause sentences.",
-          "Stay under 220 characters unless a booking link makes that impossible.",
+          "Match Glass's production iMessage style.",
+          "Target 140 characters or fewer. Never exceed 240 characters unless sending a booking link.",
+          "Plain text only. No markdown, bullets, headers, quotes, email-style greetings, or sign-offs.",
+          "Write like a natural text message. Use short sentences or fragments.",
+          "Do not say 'here is a simulated example' or paste sample email/COI blocks into iMessage.",
+          "For demo examples, summarize the action in one casual line and ask at most one short follow-up.",
         ].join(" ")
-      : "You are replying by email. Keep the response concise, useful, and easy to scan for an external prospect.";
+      : [
+          "You are replying by email.",
+          "Write a polished plain email body, not a chat transcript.",
+          "Use short paragraphs with blank lines between them.",
+          "Use markdown bullets for lists of policies, gaps, workflows, or examples.",
+          "Do not cram multiple bullets into one paragraph.",
+          "Do not include a sign-off; the Glass signature is added automatically.",
+        ].join(" ");
   const safetyNoticeRule = args.hasSentSafetyNotice
-    ? "- A demo safety notice has already been sent in this conversation. Do not repeat a demo-only footer. Continue to describe examples as simulated when relevant."
-    : '- For the first regulated example only, keep the safety notice short: "Demo only. No real certificate or insurance advice."';
+    ? "- A demo safety notice has already been sent in this conversation. Do not repeat a demo-only footer."
+    : args.channel === "imessage"
+      ? '- Only add a short safety note when the reply could be mistaken for real advice, a real COI/certificate, or a binding compliance result. Do not add it to ordinary capability explanations.'
+      : '- Add a short safety notice only when showing a real-looking demo artifact, policy answer, compliance result, or certificate-related example.';
 
   return `You are the public Glass demo agent for unknown prospects who contact agent@glass.insure or text the Glass number.
 
@@ -181,8 +192,10 @@ ${safetyNoticeRule}
 
 DEMO BEHAVIOR
 - Use the simulated tools when the user asks what Glass can do.
-- If the user asks for a policy answer, compliance check, COI, certificate, mailbox search, email draft, or follow-up workflow, demonstrate it with example data.
-- For broad "what can Glass do?" questions, give a plain answer like: "Glass can read insurance emails/docs, find gaps, draft follow-ups, and help with COIs or renewals. Want to see a COI, renewal, or compliance example?"
+- For iMessage, do not paste artifact text unless the user explicitly asks for exact text. Summarize the workflow instead.
+- If the user asks for a policy answer, compliance check, COI, certificate, mailbox search, email draft, or follow-up workflow, demonstrate it with example data at the channel's natural length.
+- For broad "what can Glass do?" questions by iMessage, answer like: "Glass can read insurance docs/emails, spot gaps, and draft follow-ups. Want COIs, renewals, or vendor compliance?"
+- For COI/certificate requests by iMessage, answer like: "Glass can draft the COI request and follow-up for approval."
 - If the user is ready to book and you have enough contact details, call build_demo_booking_link.
 - If the user wants self-serve access, include ${PUBLIC_DEMO_SIGNUP_URL}.
 ${needLeadContext ? '- Ask exactly: "I can tailor the examples. What is your name and company?"' : ""}
