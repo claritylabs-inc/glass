@@ -9,6 +9,7 @@
  */
 
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
+import type * as actions_backfillPolicyChangeBrokerRecipients from "../actions/backfillPolicyChangeBrokerRecipients.js";
 import type * as actions_backfillRequirementSemantics from "../actions/backfillRequirementSemantics.js";
 import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
 import type * as actions_complianceReview from "../actions/complianceReview.js";
@@ -48,6 +49,7 @@ import type * as actions_vendorComplianceMonitor from "../actions/vendorComplian
 import type * as agentTargets from "../agentTargets.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
 import type * as apiKeys from "../apiKeys.js";
+import type * as applicationIntakes from "../applicationIntakes.js";
 import type * as auth from "../auth.js";
 import type * as brokerActivity from "../brokerActivity.js";
 import type * as certificateHolders from "../certificateHolders.js";
@@ -139,6 +141,7 @@ import type * as lib_pceIntake from "../lib/pceIntake.js";
 import type * as lib_pdfFiller from "../lib/pdfFiller.js";
 import type * as lib_pdfSourceSpans from "../lib/pdfSourceSpans.js";
 import type * as lib_pipelineMutations from "../lib/pipelineMutations.js";
+import type * as lib_policyChangeBrokerRouting from "../lib/policyChangeBrokerRouting.js";
 import type * as lib_policyDocumentStructure from "../lib/policyDocumentStructure.js";
 import type * as lib_policyDuplicateDetection from "../lib/policyDuplicateDetection.js";
 import type * as lib_policyLookup from "../lib/policyLookup.js";
@@ -193,6 +196,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
+  "actions/backfillPolicyChangeBrokerRecipients": typeof actions_backfillPolicyChangeBrokerRecipients;
   "actions/backfillRequirementSemantics": typeof actions_backfillRequirementSemantics;
   "actions/complianceRequirements": typeof actions_complianceRequirements;
   "actions/complianceReview": typeof actions_complianceReview;
@@ -232,6 +236,7 @@ declare const fullApi: ApiFromModules<{
   agentTargets: typeof agentTargets;
   apiAuditLog: typeof apiAuditLog;
   apiKeys: typeof apiKeys;
+  applicationIntakes: typeof applicationIntakes;
   auth: typeof auth;
   brokerActivity: typeof brokerActivity;
   certificateHolders: typeof certificateHolders;
@@ -323,6 +328,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pdfFiller": typeof lib_pdfFiller;
   "lib/pdfSourceSpans": typeof lib_pdfSourceSpans;
   "lib/pipelineMutations": typeof lib_pipelineMutations;
+  "lib/policyChangeBrokerRouting": typeof lib_policyChangeBrokerRouting;
   "lib/policyDocumentStructure": typeof lib_policyDocumentStructure;
   "lib/policyDuplicateDetection": typeof lib_policyDuplicateDetection;
   "lib/policyLookup": typeof lib_policyLookup;

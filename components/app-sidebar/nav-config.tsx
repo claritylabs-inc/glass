@@ -6,6 +6,7 @@ import {
   Building2,
   ClipboardCheck,
   FileText,
+  FileCheck2,
   FileStack,
   Send,
   ShieldCheck,
@@ -118,6 +119,12 @@ export const BROKER_NAV_ITEMS: NavItemConfig[] = [
     shortcut: navShortcut("c"),
   },
   {
+    href: "/applications",
+    label: "Applications",
+    icon: FileCheck2,
+    shortcut: navShortcut("i"),
+  },
+  {
     href: "/activity",
     label: "Activity",
     icon: Activity,
@@ -167,6 +174,7 @@ export const PARTNER_NAV_ITEMS: NavItemConfig[] = [
 export const CLIENT_DETAIL_NAV: NavItemConfig[] = [
   { href: "", label: "Details", icon: User },
   { href: "/policies", label: "Policies", icon: FileText },
+  { href: "/applications", label: "Applications", icon: FileCheck2 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

@@ -5,7 +5,9 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
   addPolicyChangeInfo,
+  answerApplicationQuestions,
   attachPolicyDocument,
+  checkApplicationStatus,
   compareCoverages,
   completePolicyChangeFromEndorsement,
   confirmPolicyFact,
@@ -15,7 +17,9 @@ import {
   lookupComplianceRequirements,
   lookupPolicy,
   lookupPolicySection,
+  prepareApplicationPacket,
   saveNote,
+  startApplicationIntake,
 } from "./chatTools";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
 import {
@@ -123,6 +127,11 @@ function certificateSourceForSurface(surface: AgentToolSurface) {
 function orgMemorySourceForSurface(surface: AgentToolSurface) {
   if (surface === "email" || surface === "imessage") return surface;
   return "chat" as const;
+}
+
+function applicationSourceForSurface(surface: AgentToolSurface) {
+  if (surface === "web") return "web" as const;
+  return surface;
 }
 
 function programSelectionSourceForSurface(surface: AgentToolSurface) {
@@ -602,6 +611,179 @@ export function buildAgentToolExecutors(
           policyId,
         });
         return "Note saved.";
+      },
+    },
+    start_application_intake: {
+      ...startApplicationIntake,
+      execute: async (params: {
+        targetOrgId?: string;
+        templateId?: string;
+        title?: string;
+        lineOfBusiness?: string;
+        product?: string;
+        requestText: string;
+        missingQuestions?: Array<{
+          fieldId: string;
+          label: string;
+          section?: string;
+          prompt: string;
+          required?: boolean;
+        }>;
+      }) => {
+        if (options.canWrite === false)
+          return writeUnavailable(options, "start an application intake");
+        const targetOrgId = params.targetOrgId
+          ? (params.targetOrgId as Id<"organizations">)
+          : options.scope.mode === "client"
+            ? options.orgId
+            : undefined;
+        if (!targetOrgId) {
+          return "Choose the client organization before starting an application intake.";
+        }
+        if (!canWriteOrg(options, targetOrgId)) {
+          return writeUnavailable(options, "start an application intake for that client");
+        }
+        const intake = await ctx.runMutation(
+          internal.applicationIntakes.startFromAgent,
+          {
+            orgId: targetOrgId,
+            userId: options.userId,
+            templateId: params.templateId as Id<"applicationTemplates"> | undefined,
+            sourceKind: applicationSourceForSurface(options.surface),
+            requestText: params.requestText,
+            title: params.title,
+            lineOfBusiness: params.lineOfBusiness,
+            product: params.product,
+            threadId: options.threadId,
+            missingQuestions: params.missingQuestions?.map((question) => ({
+              ...question,
+              required: question.required ?? true,
+            })),
+          },
+        );
+        const output = {
+          message: "Application intake started.",
+          applicationIntakeId: intake?._id,
+          status: intake?.status,
+          title: intake?.title,
+          missingQuestions: intake?.missingQuestions,
+        };
+        await options.onToolArtifact?.({
+          type: "application_intake",
+          data: output,
+        });
+        return output;
+      },
+    },
+    answer_application_questions: {
+      ...answerApplicationQuestions,
+      execute: async (params: {
+        applicationIntakeId: string;
+        answers: Array<{
+          fieldId: string;
+          label: string;
+          section?: string;
+          value: string;
+          sourceSpanIds?: string[];
+          userSourceSpanIds?: string[];
+        }>;
+        message?: string;
+      }) => {
+        if (options.canWrite === false)
+          return writeUnavailable(options, "answer application questions");
+        const intake = await ctx.runMutation(
+          internal.applicationIntakes.recordAnswersFromAgent,
+          {
+            applicationIntakeId: params.applicationIntakeId as Id<"applicationIntakes">,
+            userId: options.userId,
+            answers: params.answers,
+            sourceKind: applicationSourceForSurface(options.surface),
+            message: params.message,
+          },
+        );
+        const output = {
+          message: "Application answers saved.",
+          applicationIntakeId: intake?._id,
+          status: intake?.status,
+          missingQuestions: intake?.missingQuestions,
+        };
+        await options.onToolArtifact?.({
+          type: "application_intake",
+          data: output,
+        });
+        return output;
+      },
+    },
+    check_application_status: {
+      ...checkApplicationStatus,
+      execute: async (params: { applicationIntakeId?: string }) => {
+        if (params.applicationIntakeId) {
+          const intake = await ctx.runQuery(
+            internal.applicationIntakes.getForAgent,
+            {
+              applicationIntakeId: params.applicationIntakeId as Id<"applicationIntakes">,
+              userId: options.userId,
+            },
+          );
+          if (!intake) return "Application intake not found.";
+          return {
+            applicationIntakeId: intake._id,
+            title: intake.title,
+            status: intake.status,
+            missingQuestions: intake.missingQuestions,
+            answerCount: intake.normalizedAnswers.length,
+            packetId: intake.packetId,
+          };
+        }
+        const rows = await ctx.runQuery(
+          internal.applicationIntakes.listForAgent,
+          {
+            orgIds: options.writableOrgIds ?? options.scope.writableOrgIds,
+            userId: options.userId,
+          },
+        );
+        return {
+          applications: rows.map((row) => ({
+            applicationIntakeId: row._id,
+            orgId: row.orgId,
+            title: row.title,
+            status: row.status,
+            missingQuestionCount: row.missingQuestions.length,
+            answerCount: row.normalizedAnswers.length,
+            updatedAt: row.updatedAt,
+          })),
+        };
+      },
+    },
+    prepare_application_packet: {
+      ...prepareApplicationPacket,
+      execute: async (params: {
+        applicationIntakeId: string;
+        submissionNotes?: string;
+      }) => {
+        if (options.canWrite === false)
+          return writeUnavailable(options, "prepare an application packet");
+        const packet = await ctx.runMutation(
+          internal.applicationIntakes.preparePacketFromAgent,
+          {
+            applicationIntakeId: params.applicationIntakeId as Id<"applicationIntakes">,
+            userId: options.userId,
+            submissionNotes: params.submissionNotes,
+          },
+        );
+        const output = {
+          message: packet?.status === "broker_ready"
+            ? "Application packet is ready for broker review and carrier submission."
+            : "Application packet prepared, but required information is still missing.",
+          packetId: packet?._id,
+          status: packet?.status,
+          missingFieldIds: packet?.missingFieldIds,
+        };
+        await options.onToolArtifact?.({
+          type: "application_packet",
+          data: output,
+        });
+        return output;
       },
     },
     attach_policy_document: {

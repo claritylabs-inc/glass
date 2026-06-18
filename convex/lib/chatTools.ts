@@ -129,6 +129,70 @@ export const saveNote = tool({
   }),
 });
 
+export const startApplicationIntake = tool({
+  description:
+    "Start a broker/client insurance application intake when the user asks for a new policy, renewal application, carrier application, or broker submission packet. In broker portfolio mode, targetOrgId must be the specific client organization, not the broker workspace.",
+  inputSchema: z.object({
+    targetOrgId: z
+      .string()
+      .optional()
+      .describe("Client organization ID to start the application for. Required when the active scope is a broker portfolio."),
+    templateId: z.string().optional().describe("Application template ID if the broker selected one."),
+    title: z.string().optional().describe("Short application title, such as General Liability Application."),
+    lineOfBusiness: z.string().optional().describe("Line of business, such as general liability, cyber, auto, or workers comp."),
+    product: z.string().optional().describe("Specific product or carrier application name when known."),
+    requestText: z.string().describe("The user's request or intake instruction."),
+    missingQuestions: z
+      .array(
+        z.object({
+          fieldId: z.string(),
+          label: z.string(),
+          section: z.string().optional(),
+          prompt: z.string(),
+          required: z.boolean().optional(),
+        }),
+      )
+      .optional()
+      .describe("Initial questions the agent already knows must be collected."),
+  }),
+});
+
+export const answerApplicationQuestions = tool({
+  description:
+    "Record answers for an active application intake. Use when the user replies with requested application information over chat, email, iMessage/SMS, or MCP.",
+  inputSchema: z.object({
+    applicationIntakeId: z.string().describe("Application intake ID."),
+    answers: z.array(
+      z.object({
+        fieldId: z.string(),
+        label: z.string(),
+        section: z.string().optional(),
+        value: z.string(),
+        sourceSpanIds: z.array(z.string()).optional(),
+        userSourceSpanIds: z.array(z.string()).optional(),
+      }),
+    ),
+    message: z.string().optional().describe("Original user message containing the answers."),
+  }),
+});
+
+export const checkApplicationStatus = tool({
+  description:
+    "Check status for an active application intake or list recent application intakes in scope.",
+  inputSchema: z.object({
+    applicationIntakeId: z.string().optional().describe("Specific application intake ID."),
+  }),
+});
+
+export const prepareApplicationPacket = tool({
+  description:
+    "Prepare a broker-ready application packet from collected answers. This does not submit to carriers; it marks the packet ready for broker review/submission when required fields are complete.",
+  inputSchema: z.object({
+    applicationIntakeId: z.string().describe("Application intake ID."),
+    submissionNotes: z.string().optional().describe("Broker-facing notes for carrier submission."),
+  }),
+});
+
 export const confirmPolicyFact = tool({
   description:
     "Persist a policy fact that was confirmed from original PDF source evidence. Use only after lookup_policy_section returns original-PDF sourceSpanIds that directly support the fact. This can also update a small set of top-level extracted policy fields when the PDF evidence is clear.",

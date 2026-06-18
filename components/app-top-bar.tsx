@@ -15,6 +15,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/compliance": { label: "Compliance" },
   "/broker": { label: "Broker" },
   "/clients": { label: "Clients" },
+  "/applications": { label: "Applications" },
   "/certificates": { label: "Certificates" },
   "/deliveries": { label: "Document deliveries" },
   "/activity": { label: "Activity" },

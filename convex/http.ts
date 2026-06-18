@@ -574,6 +574,10 @@ function requireMcpWriteScope(identity: McpIdentity): void {
   }
 }
 
+function mcpCanWrite(identity: McpIdentity): boolean {
+  return identity.source === "api_key" || (identity.scopes ?? ["read"]).includes("write");
+}
+
 function normalizeCertificateRequest(body: Record<string, unknown>) {
   const certificateHolder =
     typeof body.certificate_holder === "string" ? body.certificate_holder.trim() : "";
@@ -2038,6 +2042,7 @@ async function handleToolCall(
         userId,
         message: args.message as string,
         threadId: (args.threadId as string) ?? undefined,
+        canWrite: mcpCanWrite(identity),
       });
       return {
         content: [
@@ -2486,6 +2491,7 @@ http.route({
         userId: identity.userId as Id<"users">,
         message,
         threadId: threadId ?? undefined,
+        canWrite: mcpCanWrite(identity),
       });
 
       return jsonResponse(result);

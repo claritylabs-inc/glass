@@ -54,6 +54,7 @@ export const run = internalAction({
     userId: v.id("users"),
     message: v.string(),
     threadId: v.optional(v.id("threads")),
+    canWrite: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
@@ -203,6 +204,11 @@ MCP MODE:
         scope,
         org,
         threadId,
+        canWrite: args.canWrite,
+        writeUnavailableMessage:
+          args.canWrite === false
+            ? "This MCP token has read-only scope. Reconnect or authorize with write scope to perform that application action."
+            : undefined,
         getCurrentPolicyChangeCaseId: () => policyChangeCaseId,
         onPolicyReferenced: (policyId) => {
           referencedPolicySourceIds.add(String(policyId));
