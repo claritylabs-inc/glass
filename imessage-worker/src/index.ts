@@ -374,7 +374,23 @@ async function main() {
   // Protected by the same IMESSAGE_WORKER_SECRET used for inbound verification.
   const httpPort = Number(process.env.WORKER_HTTP_PORT ?? "3001");
   const httpServer = http.createServer(async (req, res) => {
-    if (req.method !== "POST" || req.url !== "/send") {
+    const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+    if (req.method === "GET" && requestUrl.pathname === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: true,
+        service: "glass-imessage-worker",
+        transport: TRANSPORT,
+        imessageEnabled: IMESSAGE_ENABLED,
+        convexSiteConfigured: Boolean(CONVEX_SITE_URL),
+        workerSecretConfigured: Boolean(WORKER_SECRET),
+        photonConfigured: Boolean(PROJECT_ID && PROJECT_SECRET),
+      }));
+      return;
+    }
+
+    if (req.method !== "POST" || requestUrl.pathname !== "/send") {
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Not found" }));
       return;
