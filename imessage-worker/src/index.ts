@@ -139,6 +139,16 @@ function releaseSendIdempotencyKey(clientMessageId?: string) {
   }
 }
 
+function getHttpPort(): number {
+  const configuredPort = process.env.PORT ?? process.env.WORKER_HTTP_PORT ?? "3001";
+  const port = Number(configuredPort);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    console.error(`Invalid HTTP port: ${configuredPort}`);
+    process.exit(1);
+  }
+  return port;
+}
+
 function readStringField(value: unknown, fieldNames: string[]): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
@@ -372,7 +382,7 @@ async function main() {
   // space so status cues stay in the same iMessage conversation as final
   // responses and attachments. Otherwise it falls back to a proactive send.
   // Protected by the same IMESSAGE_WORKER_SECRET used for inbound verification.
-  const httpPort = Number(process.env.WORKER_HTTP_PORT ?? "3001");
+  const httpPort = getHttpPort();
   const httpServer = http.createServer(async (req, res) => {
     const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
