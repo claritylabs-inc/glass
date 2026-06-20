@@ -13,7 +13,6 @@ import {
   isGlassOutboundAddress,
 } from "../convex/lib/resend";
 import { getAuthSiteUrl, getPortalUrlForOrg } from "../convex/lib/domains";
-import { shouldSkipImessageStatusCueForEmailApproval } from "../convex/actions/handleInboundImessage";
 import {
   isPendingEmailCancelConfirmation,
   isPendingEmailCancelIntent,
@@ -75,7 +74,7 @@ describe("directed email sending", () => {
     expect(isGlassOutboundAddress("noreply@auth.glass.insure")).toBe(true);
   });
 
-  it("honors explicit legacy dev sending domains", () => {
+  it("normalizes explicit legacy dev agent domains while preserving legacy inbound aliases", () => {
     withEnv(
       {
         AGENT_DOMAIN: "dev.claritylabs.inc",
@@ -86,8 +85,9 @@ describe("directed email sending", () => {
       },
       () => {
         expect(getAgentDomains()).toEqual([
-          "dev.claritylabs.inc",
+          "glass.insure",
           "glass.claritylabs.inc",
+          "dev.claritylabs.inc",
         ]);
         expect(getNotificationFromAddress("Glass Notifications")).toContain(
           "<notifications@dev.claritylabs.inc>",
@@ -447,28 +447,15 @@ describe("directed email sending", () => {
     expect(source).toContain("insertImessageMessage");
   });
 
-  it("does not send a separate iMessage status cue for email-send approvals", () => {
-    const recentContext = [
-      "Glass: Draft email to terry@example.com:",
-      "",
-      "To: terry@example.com",
-      "Subject: Renewal request",
-      "",
-      "Ready to send?",
-    ].join("\n");
+  it("does not send separate canned iMessage policy status cues", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
 
-    expect(shouldSkipImessageStatusCueForEmailApproval({
-      messageText: "Yes this is good",
-      recentContext,
-    })).toBe(true);
-    expect(shouldSkipImessageStatusCueForEmailApproval({
-      messageText: "Hold up, don't send",
-      recentContext,
-    })).toBe(false);
-    expect(shouldSkipImessageStatusCueForEmailApproval({
-      messageText: "Yes, what is the E&O limit?",
-      recentContext: "Glass: The policy is active.",
-    })).toBe(false);
+    expect(source).not.toContain("generateImessageStatusCue");
+    expect(source).not.toContain("I'll check the policy");
+    expect(source).not.toContain("I'll check the attachment");
   });
 
   it("sends delayed iMessage email status before returning the inbound response", () => {

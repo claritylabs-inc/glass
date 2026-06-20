@@ -472,8 +472,8 @@ async function main() {
   // ── Outbound HTTP server ──────────────────────────────────────────────────
   // POST /send { toPhone, message } — sends proactive text via the active
   // Spectrum provider. For an active inbound exchange, this reuses the same
-  // space so status cues stay in the same iMessage conversation as final
-  // responses and attachments. Otherwise it falls back to a proactive send.
+  // space so follow-up messages stay in the same iMessage conversation as
+  // final responses and attachments. Otherwise it falls back to a proactive send.
   // Protected by the same IMESSAGE_WORKER_SECRET used for inbound verification.
   const httpPorts = getHttpPorts();
   const handleHttpRequest = async (req: http.IncomingMessage, res: http.ServerResponse) => {

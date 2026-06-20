@@ -174,43 +174,6 @@ function normalizeStatusCueText(text: string): string {
     .trim();
 }
 
-function isShortImessageConfirmation(text: string): boolean {
-  const normalized = normalizeStatusCueText(text);
-  if (!normalized) return true;
-  if (normalized.length > 80) return false;
-  return /^(y|yes|yep|yeah|correct|right|ok|okay|sure|confirmed?|approved?|approve|go ahead|do it|please do|that works|sounds good|no additional wording|no addl wording|standard only|no special wording|no extra wording)$/.test(
-    normalized,
-  );
-}
-
-function generateImessageStatusCue(params: {
-  messageText: string;
-  hasAttachments: boolean;
-}): string | null {
-  if (isShortImessageConfirmation(params.messageText)) return null;
-  const normalized = normalizeStatusCueText(params.messageText);
-  if (!normalized) return null;
-  if (/^(hi|hello|hey|thanks|thank you|thx|ok thanks|got it)$/.test(normalized)) {
-    return null;
-  }
-  if (
-    /\b(coi|certificate|cert|holder|additional insured|waiver|subrogation|endorsement)\b/.test(
-      normalized,
-    )
-  ) {
-    return "I'll check the policy and certificate details.";
-  }
-  if (
-    /\b(policy|coverage|coverages|limit|limits|deductible|premium|carrier|insured|expiration|section|change request|broker|requirement|compliance|vendor)\b/.test(
-      normalized,
-    )
-  ) {
-    return "I'll check the policy record.";
-  }
-  if (params.hasAttachments) return "I'll check the attachment.";
-  return null;
-}
-
 function isImessageStatusCue(message: { responseMessageId?: string }): boolean {
   return message.responseMessageId?.endsWith(":status") === true;
 }
@@ -235,34 +198,6 @@ function buildRecentTextContext(
     .join("\n");
 }
 
-export function shouldSkipImessageStatusCueForEmailApproval(params: {
-  messageText: string;
-  recentContext?: string;
-}): boolean {
-  const recentContext = params.recentContext ?? "";
-  if (
-    !/Ready to send\?/i.test(recentContext) &&
-    !/\bDraft email\b/i.test(recentContext)
-  ) {
-    return false;
-  }
-
-  const normalized = params.messageText
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!normalized) return false;
-
-  if (/\b(no|not|don t|dont|hold|wait|cancel|stop)\b/.test(normalized)) {
-    return false;
-  }
-
-  return /\b(yes|yep|yeah|ok|okay|good|approved|approve|send|go ahead)\b/.test(
-    normalized,
-  );
-}
-
 function hasCoiRequestIntent(messageText: string, recentContext?: string): boolean {
   const normalized = normalizeStatusCueText(
     `${messageText}\n${recentContext ?? ""}`,
@@ -283,6 +218,69 @@ function claimsCoiCompletion(messageText: string): boolean {
 function asksForInternalPolicyRecordId(messageText: string): boolean {
   return /\b(internal policy id|policy record id|internal record id|convex id|string of characters)\b/i.test(
     messageText,
+  );
+}
+
+const POLICY_DETAIL_TOOL_NAMES = new Set([
+  "lookup_policy",
+  "lookup_policy_section",
+  "compare_coverages",
+]);
+
+const POLICY_DETAIL_RESPONSE_FIELD_PATTERNS = [
+  /\bpolicy\s*(?:number)?\s*:/i,
+  /\btype\s*:/i,
+  /\bpolicy period\s*:/i,
+  /\bnamed insured\s*:/i,
+  /\bcarrier\s*:/i,
+  /\beffective(?: date)?\s*:/i,
+  /\bexpiration(?: date)?\s*:/i,
+  /\blimit\s*:/i,
+  /\bdeductible\s*:/i,
+  /\bpremium\s*:/i,
+];
+
+function looksLikePolicyDetailsResponse(text: string): boolean {
+  let matchedFields = 0;
+  for (const pattern of POLICY_DETAIL_RESPONSE_FIELD_PATTERNS) {
+    if (pattern.test(text)) matchedFields++;
+  }
+  return matchedFields >= 2;
+}
+
+export function shouldCreatePolicyDetailsAppCard(params: {
+  messageText: string;
+  responseText: string;
+  usedTools: string[];
+}): boolean {
+  if (params.usedTools.some((toolName) => POLICY_DETAIL_TOOL_NAMES.has(toolName))) {
+    return true;
+  }
+
+  const responseText = params.responseText.trim();
+  if (!responseText) return false;
+
+  const normalizedRequest = normalizeStatusCueText(params.messageText);
+  if (!normalizedRequest) return false;
+
+  const explicitPolicyLinkRequest =
+    /\b(policy|record)\b/.test(normalizedRequest) &&
+    /\b(open|link|url|app|glass|record)\b/.test(normalizedRequest);
+  if (explicitPolicyLinkRequest) return true;
+
+  const policyReference =
+    /\b(policy|coverage|coverages|carrier|insured|limit|limits|deductible|premium|expiration|effective|period)\b/.test(
+      normalizedRequest,
+    ) || /\b(that|this|the)\s+(one|record)\b/.test(normalizedRequest);
+  const detailIntent =
+    /\b(detail|details|summary|summarize|show|record|again|list|what|which|give|tell|remind|send)\b/.test(
+      normalizedRequest,
+    );
+
+  return (
+    policyReference &&
+    detailIntent &&
+    looksLikePolicyDetailsResponse(responseText)
   );
 }
 
@@ -887,34 +885,6 @@ export const processInbound = internalAction({
         );
       }
 
-      // Send a model-decided status cue before heavier retrieval/tool work so SMS
-      // users get immediate feedback when the agent needs to check policy data.
-      const statusCue = shouldSkipImessageStatusCueForEmailApproval({
-        messageText: args.messageText,
-        recentContext: recentConversationContext || undefined,
-      })
-        ? null
-        : generateImessageStatusCue({
-            messageText: args.messageText,
-            hasAttachments: attachmentRecords.length > 0,
-          });
-      if (statusCue) {
-        const sent = await sendImmediateImessage({
-          toPhone: fromPhone,
-          chatGuid,
-          message: statusCue,
-        });
-        if (sent) {
-          await ctx.runMutation(internal.threads.insertImessageMessage, {
-            threadId,
-            orgId,
-            role: "agent",
-            content: statusCue,
-            responseMessageId: `${eventKey}:status`,
-          });
-        }
-      }
-
       // ── 9. Build retrieval context ────────────────────────────────────────
       const scopedPolicySets = await Promise.all(
         readOrgIds.map(async (scopedOrgId) => ({
@@ -1504,12 +1474,14 @@ export const processInbound = internalAction({
         }
       };
 
-      const policyDetailTools = new Set([
-        "lookup_policy",
-        "lookup_policy_section",
-        "compare_coverages",
-      ]);
-      if (usedTools.some((tool) => policyDetailTools.has(tool))) {
+      if (
+        relevantPolicyIds.length > 0 &&
+        shouldCreatePolicyDetailsAppCard({
+          messageText: args.messageText,
+          responseText,
+          usedTools,
+        })
+      ) {
         for (const policyId of relevantPolicyIds.slice(0, 3)) {
           await addAppCard(
             `policy:${policyId}`,
