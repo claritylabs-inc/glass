@@ -21,13 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
-import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
-import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
-import GeminiIcon from "@lobehub/icons/es/Gemini/components/Mono";
-import GrokIcon from "@lobehub/icons/es/Grok/components/Mono";
-import MistralIcon from "@lobehub/icons/es/Mistral/components/Mono";
-import CohereIcon from "@lobehub/icons/es/Cohere/components/Mono";
-import DeepSeekIcon from "@lobehub/icons/es/DeepSeek/components/Mono";
+import { ModelProviderLogo } from "@/components/model-provider-logo";
 import { toast } from "sonner";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
@@ -117,19 +111,6 @@ const TASK_GROUPS = [
     tasks: ["triage", "security", "embeddings"],
   },
 ] as const;
-const PROVIDER_ICONS: Record<
-  ProviderId,
-  React.ComponentType<{ size?: number | string }>
-> = {
-  openai: OpenAIIcon,
-  anthropic: AnthropicIcon,
-  google: GeminiIcon,
-  xai: GrokIcon,
-  mistral: MistralIcon,
-  cohere: CohereIcon,
-  deepseek: DeepSeekIcon,
-};
-
 function ProviderLogo({
   provider,
   size = 14,
@@ -137,8 +118,7 @@ function ProviderLogo({
   provider: ProviderId;
   size?: number;
 }) {
-  const Icon = PROVIDER_ICONS[provider];
-  return <Icon size={size} />;
+  return <ModelProviderLogo provider={provider} size={size} />;
 }
 
 function ExaLogo({ size = 14 }: { size?: number }) {

@@ -32,7 +32,6 @@
     "@claritylabs/cl-sdk": "^3.1.0",
     "@claritylabs/cl-sync": "^0.1.1",
     "@convex-dev/auth": "^0.0.91",
-    "@lobehub/icons": "^5.5.4",
     "@mapbox/search-js-react": "^1.5.1",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@react-three/drei": "^10.7.7",
