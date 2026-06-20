@@ -32,6 +32,10 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.296"
   },
+  "overrides": {
+    "esbuild": "0.28.1",
+    "ws": "8.21.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.20.6",

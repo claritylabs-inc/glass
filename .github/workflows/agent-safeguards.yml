@@ -35,14 +35,15 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          package-manager-cache: false
 
       - name: Build iMessage worker
         working-directory: imessage-worker
-        run: npm ci && npm run build
+        run: npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build
 
       - name: Build extraction worker
         working-directory: extraction-worker
-        run: npm ci && npm run build
+        run: npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build
 
       - name: Syntax-check mailbox scan worker
         run: node --check mailbox-scan-worker/src/index.js
@@ -56,6 +57,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          package-manager-cache: false
 
       - name: Check production agent health
         run: node scripts/check-agent-deployment-health.mjs

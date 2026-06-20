@@ -30,7 +30,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund --loglevel=error
 
       - run: npx convex deploy --yes
         env:
@@ -52,7 +52,7 @@ jobs:
           cache-dependency-path: cli/package-lock.json
           registry-url: https://registry.npmjs.org
 
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund --loglevel=error
 
       - run: npm run typecheck
 
@@ -93,7 +93,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: "@claritylabs-inc"
 
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund --loglevel=error
 
       - run: npm run typecheck
 
