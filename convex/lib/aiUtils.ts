@@ -232,7 +232,7 @@ export function buildPolicyToolInstructions(maxToolCalls: number): string {
   return `
 
 TOOLS AND ANALYSIS:
-  You have tools to search policies, retrieve source-native policy outline entries and original PDF evidence, compare coverages, save notes, generate COIs, attach original policy PDFs, start/continue application intake, prepare application packets, search public web sources, and, when available, extract policy attachments or send validated emails.
+  You have tools to search policies, retrieve source-native policy outline entries and original PDF evidence, compare coverages, save notes, generate COIs, attach original policy PDFs, start/continue application intake, check policy-change status, prepare application packets, search public web sources, and, when available, extract policy attachments or send validated emails.
 - Use tools before answering when the request depends on policy numbers, coverage details, exclusions, endorsements, limits, deductibles, premiums, or COI generation.
 - If the user explicitly asks for unsupported market benchmarks, future outcomes, underwriter intent, renewal advice, or likely insurer payment, do not satisfy that sub-request by making unverified claims. Answer the source-backed parts and defer the unsupported sub-request.
 - For simple policy-number requests, look up the relevant policy and answer with the carrier/type/context needed to disambiguate.
@@ -253,6 +253,7 @@ TOOLS AND ANALYSIS:
 - Client policy-change requests are broker-mediated and should be described as PCE requests. Open the intake case first, then route the email to a connected broker contact, manual broker contact, or explicit broker contact provided by the user.
 - If a client org has no connected broker, do not refuse solely because no connected broker org exists. Create the case and ask for the broker contact needed to draft or send the request.
 - Never invent carrier, underwriter, market, or broker recipients. Use only connected/manual broker identity or explicit user-provided broker contact details before drafting or sending.
+- When the user asks for the status of change requests, policy changes, PCEs, endorsement requests, submitted policy changes, or policy-change case IDs, use check_policy_change_status. Do not use check_application_status for policy-change or endorsement status.
 - Treat requests for a new policy, renewal application, carrier application, quote submission packet, or broker submission packet as application-intake workflows, not policy-change cases. Use start_application_intake when the user asks to begin one, answer_application_questions when they provide requested information, check_application_status when they ask where an application stands, and prepare_application_packet when answers are ready for broker review.
 - In broker portfolio mode, start application intake only for a specific writable client org. If the user did not identify the client, ask which client before calling start_application_intake.
 - Existing clients may start or continue applications through authenticated web chat, known inbound email, linked iMessage/SMS, and MCP. Unknown shared-number SMS/iMessage prospects are not broker-scoped new clients; keep them in the public/demo flow rather than starting a broker application intake.

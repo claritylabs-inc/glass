@@ -8,6 +8,7 @@ import {
   answerApplicationQuestions,
   attachPolicyDocument,
   checkApplicationStatus,
+  checkPolicyChangeStatus,
   compareCoverages,
   completePolicyChangeFromEndorsement,
   confirmPolicyFact,
@@ -87,6 +88,10 @@ type PolicyChangeCaseForTool = {
   requestText?: string;
   updatedAt?: number;
 };
+
+type PolicyChangeStatusForTool = {
+  caseId: Id<"policyChangeCases">;
+} & Record<string, unknown>;
 
 export type BuildAgentToolExecutorsOptions = {
   surface: AgentToolSurface;
@@ -1138,6 +1143,56 @@ export function buildAgentToolExecutors(
           sourceSpanIds: params.sourceSpanIds,
         });
         return { status: "updated", caseId: params.caseId };
+      },
+    },
+    check_policy_change_status: {
+      ...checkPolicyChangeStatus,
+      execute: async (params: {
+        caseId?: string;
+        policyId?: string;
+        includeClosed?: boolean;
+      }) => {
+        let policyId: Id<"policies"> | undefined;
+        if (params.policyId) {
+          const resolved = await resolveReadablePolicy(
+            ctx,
+            options,
+            params.policyId,
+          );
+          if (!resolved.ok) return resolved.message;
+          policyId = resolved.policy._id;
+        }
+        const rows = await ctx.runQuery(
+          internal.policyChanges.listForAgentInternal,
+          {
+            orgIds: options.readOrgIds ?? options.scope.readOrgIds,
+            caseId: params.caseId,
+            policyId,
+            threadId: options.threadId,
+            includeClosed: params.includeClosed,
+            limit: 10,
+          },
+        ) as PolicyChangeStatusForTool[];
+
+        if (rows.length === 0) {
+          if (params.caseId) {
+            return "Policy change case not found in this scope.";
+          }
+          if (policyId) {
+            return "No active policy change requests found for that policy.";
+          }
+          return params.includeClosed
+            ? "No policy change requests found in this scope."
+            : "No active policy change requests found in this scope.";
+        }
+
+        if (rows.length === 1) await options.onPolicyChangeCase?.(rows[0].caseId);
+
+        return {
+          policyChangeRequests: rows,
+          count: rows.length,
+          includeClosed: params.includeClosed === true,
+        };
       },
     },
     draft_policy_change_email: {

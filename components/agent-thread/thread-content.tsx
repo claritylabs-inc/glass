@@ -112,6 +112,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   email_expert: "Prepared email",
   render_email_preview: "Rendered email preview",
   create_policy_change_request: "Created policy change request",
+  check_policy_change_status: "Checked policy change status",
   lookup_connected_vendors: "Checked vendors",
   lookup_vendor_policies: "Read vendor policies",
   lookup_vendor_compliance: "Checked vendor compliance",

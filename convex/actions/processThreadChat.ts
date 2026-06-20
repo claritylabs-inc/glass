@@ -1684,6 +1684,7 @@ export const run = internalAction({
         prepare_application_packet: "Preparing application packet...",
         create_policy_change_request: "Creating policy change request...",
         add_policy_change_info: "Updating policy change request...",
+        check_policy_change_status: "Checking policy change status...",
         draft_policy_change_email: "Drafting policy change email...",
         complete_policy_change_from_endorsement:
           "Completing policy change request...",

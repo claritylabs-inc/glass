@@ -1576,6 +1576,7 @@ export const processInbound = internalAction({
           [
             "create_policy_change_request",
             "add_policy_change_info",
+            "check_policy_change_status",
             "complete_policy_change_from_endorsement",
           ].includes(tool),
         )

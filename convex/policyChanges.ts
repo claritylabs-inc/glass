@@ -78,6 +78,16 @@ type PolicyChangeStatus =
   | "waiting_for_endorsement"
   | "completed";
 
+const ACTIVE_POLICY_CHANGE_STATUSES: PolicyChangeStatus[] = [
+  "draft",
+  "ready",
+  "needs_info",
+  "submitted",
+  "intake",
+  "ready_to_submit",
+  "waiting_for_endorsement",
+];
+
 type PolicyChangeRequestDetails = {
   entityName?: string;
   address?: string;
@@ -588,7 +598,12 @@ export const getInternal = internalQuery({
 });
 
 function isActiveCaseStatus(status: string | undefined) {
-  return status !== "completed" && status !== "declined" && status !== "cancelled";
+  const normalized = normalizeCaseStatus(status as PolicyChangeStatus | undefined);
+  return (
+    normalized !== "completed" &&
+    normalized !== "declined" &&
+    normalized !== "cancelled"
+  );
 }
 
 function caseBelongsToPolicy(
@@ -600,6 +615,122 @@ function caseBelongsToPolicy(
   return Array.isArray(changeCase.affectedPolicyIds)
     ? changeCase.affectedPolicyIds.some((id) => id === policyId)
     : false;
+}
+
+function policyChangeQuestionsForAgent(changeCase: Doc<"policyChangeCases">) {
+  return [
+    ...normalizePendingQuestions(changeCase.pendingQuestions),
+    ...normalizeMissingInfoQuestions(changeCase.missingInfoQuestions).map(
+      (question) => {
+        const record = getRecord(question);
+        return typeof record.question === "string"
+          ? record.question
+          : undefined;
+      },
+    ),
+  ].filter(
+    (question, index, questions): question is string =>
+      typeof question === "string" && questions.indexOf(question) === index,
+  );
+}
+
+function blockingValidationIssuesForAgent(validationIssues: unknown) {
+  if (!Array.isArray(validationIssues)) return [];
+  return validationIssues
+    .filter((issue) => getRecord(issue).severity === "blocking")
+    .map((issue) => {
+      const record = getRecord(issue);
+      return {
+        code: typeof record.code === "string" ? record.code : undefined,
+        message:
+          typeof record.message === "string" ? record.message : undefined,
+      };
+    });
+}
+
+function policyChangeNextActionForAgent(
+  status: PolicyChangeStatus,
+  brokerSubmission: Record<string, unknown>,
+  pendingQuestions: string[],
+) {
+  if (status === "needs_info" && pendingQuestions.length > 0) {
+    return `Needs answer: ${pendingQuestions[0]}`;
+  }
+  if (
+    status === "needs_info" ||
+    brokerSubmission.needsRecipient === true ||
+    brokerSubmission.routingStatus === "needs_broker_contact"
+  ) {
+    return "Needs missing information before broker submission.";
+  }
+  if (status === "intake") return "Review and prepare the broker submission.";
+  if (status === "ready_to_submit" || status === "ready") {
+    return "Ready to draft or send the broker submission.";
+  }
+  if (status === "submitted") {
+    return "Submitted; waiting for broker or carrier response.";
+  }
+  if (status === "waiting_for_endorsement") {
+    return "Waiting for the updated endorsement document.";
+  }
+  if (status === "completed" || status === "accepted") return "Completed.";
+  if (status === "declined") return "Declined.";
+  if (status === "cancelled") return "Cancelled.";
+  return undefined;
+}
+
+function formatPolicyChangeCaseForAgent(args: {
+  changeCase: Doc<"policyChangeCases">;
+  org: Doc<"organizations"> | null;
+  policy: Doc<"policies"> | null;
+  latestPacket: Doc<"pcePackets"> | null;
+}) {
+  const status = normalizeCaseStatus(
+    args.changeCase.status as PolicyChangeStatus,
+  );
+  const pendingQuestions = policyChangeQuestionsForAgent(args.changeCase);
+  const brokerSubmission = summarizeBrokerSubmission(
+    args.changeCase.brokerSubmission,
+  );
+  return {
+    caseId: args.changeCase._id,
+    orgId: args.changeCase.orgId,
+    orgName: args.org?.name,
+    status,
+    summary: args.changeCase.summary,
+    requestText: args.changeCase.requestText.slice(0, 500),
+    policy: args.policy
+      ? {
+          policyId: args.policy._id,
+          policyNumber: args.policy.policyNumber,
+          carrier: args.policy.security ?? args.policy.carrier,
+          insured: args.policy.insuredName,
+          type: args.policy.policyTypes.join(", "),
+        }
+      : args.changeCase.policyId
+        ? { policyId: args.changeCase.policyId }
+        : undefined,
+    pendingQuestions,
+    blockingIssues: blockingValidationIssuesForAgent(
+      args.changeCase.validationIssues,
+    ),
+    brokerSubmission,
+    latestPacket: args.latestPacket
+      ? {
+          packetId: args.latestPacket._id,
+          submittedAt: args.latestPacket.submittedAt,
+          createdAt: args.latestPacket.createdAt,
+        }
+      : undefined,
+    partnerApprovalStatus: args.changeCase.partnerApprovalStatus,
+    createdAt: args.changeCase.createdAt,
+    updatedAt: args.changeCase.updatedAt,
+    nextAction: policyChangeNextActionForAgent(
+      status,
+      brokerSubmission,
+      pendingQuestions,
+    ),
+  };
 }
 
 async function getCaseByStringId(ctx: QueryCtx, caseId: string) {
@@ -673,6 +804,107 @@ export const resolveCaseCandidatesInternal = internalQuery({
     const unique = new Map<string, Doc<"policyChangeCases">>();
     for (const changeCase of cases) unique.set(String(changeCase._id), changeCase);
     return Array.from(unique.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+  },
+});
+
+export const listForAgentInternal = internalQuery({
+  args: {
+    orgIds: v.array(v.id("organizations")),
+    caseId: v.optional(v.string()),
+    policyId: v.optional(v.id("policies")),
+    threadId: v.optional(v.id("threads")),
+    includeClosed: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 10), 25));
+    const includeClosed = args.includeClosed === true;
+    const explicitCaseId = args.caseId?.trim();
+    const allowClosed = includeClosed || Boolean(explicitCaseId);
+    const allowedOrgIds = new Set(args.orgIds.map(String));
+    const caseMap = new Map<string, Doc<"policyChangeCases">>();
+
+    const addCandidate = (changeCase: Doc<"policyChangeCases"> | null) => {
+      if (!changeCase) return;
+      if (!allowedOrgIds.has(String(changeCase.orgId))) return;
+      if (!caseBelongsToPolicy(changeCase, args.policyId)) return;
+      if (!allowClosed && !isActiveCaseStatus(changeCase.status)) return;
+      caseMap.set(String(changeCase._id), changeCase);
+    };
+
+    if (explicitCaseId) {
+      addCandidate(await getCaseByStringId(ctx, explicitCaseId));
+    }
+
+    if (!explicitCaseId && args.threadId) {
+      for (const caseId of await collectPolicyChangeCaseIdsForThread(
+        ctx,
+        args.threadId,
+      )) {
+        addCandidate(await getCaseByStringId(ctx, caseId));
+      }
+    }
+
+    if (!explicitCaseId && args.policyId) {
+      const policyCases = await ctx.db
+        .query("policyChangeCases")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId!))
+        .collect();
+      for (const changeCase of policyCases) addCandidate(changeCase);
+    }
+
+    if (!explicitCaseId && !args.policyId) {
+      for (const orgId of args.orgIds) {
+        if (includeClosed) {
+          const rows = await ctx.db
+            .query("policyChangeCases")
+            .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+            .order("desc")
+            .take(limit * 3);
+          for (const changeCase of rows) addCandidate(changeCase);
+          continue;
+        }
+
+        for (const status of ACTIVE_POLICY_CHANGE_STATUSES) {
+          const rows = await ctx.db
+            .query("policyChangeCases")
+            .withIndex("by_orgId_status", (q) =>
+              q.eq("orgId", orgId).eq("status", status),
+            )
+            .order("desc")
+            .take(limit);
+          for (const changeCase of rows) addCandidate(changeCase);
+        }
+      }
+    }
+
+    const cases = Array.from(caseMap.values())
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, limit);
+
+    return await Promise.all(
+      cases.map(async (changeCase) => {
+        const effectiveCase = await effectiveBrokerRecipientCase(
+          ctx,
+          changeCase,
+        );
+        const [org, policy, latestPacket] = await Promise.all([
+          ctx.db.get(effectiveCase.orgId),
+          effectiveCase.policyId ? ctx.db.get(effectiveCase.policyId) : null,
+          ctx.db
+            .query("pcePackets")
+            .withIndex("by_caseId", (q) => q.eq("caseId", effectiveCase._id))
+            .order("desc")
+            .first(),
+        ]);
+        return formatPolicyChangeCaseForAgent({
+          changeCase: effectiveCase,
+          org,
+          policy,
+          latestPacket,
+        });
+      }),
+    );
   },
 });
 
@@ -1632,6 +1864,10 @@ function summarizeBrokerSubmission(value: unknown) {
     recipientEmail:
       typeof submission.recipientEmail === "string"
         ? submission.recipientEmail
+        : undefined,
+    recipientName:
+      typeof submission.recipientName === "string"
+        ? submission.recipientName
         : undefined,
     needsRecipient:
       typeof submission.needsRecipient === "boolean"

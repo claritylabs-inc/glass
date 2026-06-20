@@ -178,7 +178,7 @@ export const answerApplicationQuestions = tool({
 
 export const checkApplicationStatus = tool({
   description:
-    "Check status for an active application intake or list recent application intakes in scope.",
+    "Check status for an active insurance application intake or list recent application intakes in scope. Use only for new-policy, renewal-application, carrier-application, quote-submission, or broker-submission application workflows. Do not use for policy change requests, PCEs, endorsements, or policy-record change status; use check_policy_change_status for those.",
   inputSchema: z.object({
     applicationIntakeId: z.string().optional().describe("Specific application intake ID."),
   }),
@@ -320,6 +320,25 @@ export const addPolicyChangeInfo = tool({
     caseId: z.string().describe("Existing policy change case ID"),
     infoText: z.string().describe("The additional details or clarification to add"),
     sourceSpanIds: z.array(z.string()).optional().describe("Optional source span IDs supporting the clarification"),
+  }),
+});
+
+export const checkPolicyChangeStatus = tool({
+  description:
+    "Check status for policy change requests, PCEs, endorsements, and policy-record change cases, or list recent active change requests in scope. Use this when the user asks about change request status, PCE status, endorsement status, submitted policy changes, or case IDs for policy changes. Do not use check_application_status for these requests.",
+  inputSchema: z.object({
+    caseId: z
+      .string()
+      .optional()
+      .describe("Specific policy change case ID, if the user supplied one."),
+    policyId: z
+      .string()
+      .optional()
+      .describe("Policy reference to filter by, such as a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
+    includeClosed: z
+      .boolean()
+      .optional()
+      .describe("Set true only when the user asks for completed, cancelled, declined, closed, or historical policy change requests."),
   }),
 });
 
