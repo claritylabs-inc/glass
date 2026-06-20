@@ -139,14 +139,23 @@ function releaseSendIdempotencyKey(clientMessageId?: string) {
   }
 }
 
-function getHttpPort(): number {
-  const configuredPort = process.env.PORT ?? process.env.WORKER_HTTP_PORT ?? "3001";
+function parseHttpPort(configuredPort: string): number {
   const port = Number(configuredPort);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     console.error(`Invalid HTTP port: ${configuredPort}`);
     process.exit(1);
   }
   return port;
+}
+
+function getHttpPorts(): number[] {
+  const primaryPort = parseHttpPort(
+    process.env.PORT ?? process.env.WORKER_HTTP_PORT ?? "3001",
+  );
+  if (!process.env.RAILWAY_ENVIRONMENT) return [primaryPort];
+
+  const publicDomainPort = parseHttpPort(process.env.WORKER_HTTP_PORT ?? "3001");
+  return [...new Set([primaryPort, publicDomainPort])];
 }
 
 function readStringField(value: unknown, fieldNames: string[]): string | undefined {
@@ -382,8 +391,8 @@ async function main() {
   // space so status cues stay in the same iMessage conversation as final
   // responses and attachments. Otherwise it falls back to a proactive send.
   // Protected by the same IMESSAGE_WORKER_SECRET used for inbound verification.
-  const httpPort = getHttpPort();
-  const httpServer = http.createServer(async (req, res) => {
+  const httpPorts = getHttpPorts();
+  const handleHttpRequest = async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
     if (req.method === "GET" && requestUrl.pathname === "/health") {
@@ -396,6 +405,7 @@ async function main() {
         convexSiteConfigured: Boolean(CONVEX_SITE_URL),
         workerSecretConfigured: Boolean(WORKER_SECRET),
         photonConfigured: Boolean(PROJECT_ID && PROJECT_SECRET),
+        httpPorts,
       }));
       return;
     }
@@ -586,16 +596,24 @@ async function main() {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Failed to send message" }));
     }
-  });
+  };
 
-  httpServer.listen(httpPort, () => {
-    console.log(`[glass-imessage] Outbound HTTP server listening on port ${httpPort}`);
-  });
+  const httpServers = httpPorts.map((port) => ({
+    port,
+    server: http.createServer(handleHttpRequest),
+  }));
+  for (const { port, server } of httpServers) {
+    server.listen(port, () => {
+      console.log(`[glass-imessage] Outbound HTTP server listening on port ${port}`);
+    });
+  }
 
   // Graceful shutdown
   const shutdown = async () => {
     console.log("[glass-imessage] Shutting down...");
-    httpServer.close();
+    for (const { server } of httpServers) {
+      server.close();
+    }
     await app.stop();
     process.exit(0);
   };
@@ -613,6 +631,13 @@ async function main() {
     const fromPhone = normalizePhone(senderId);
     activeSpacesByPhone.set(fromPhone, space);
     const chatSnapshot = await getChatSnapshot(app, space);
+    console.log("[glass-imessage] Received inbound message", {
+      fromPhone,
+      chatGuid: chatSnapshot.chatGuid,
+      isGroup: chatSnapshot.isGroup,
+      platform: message.platform,
+      contentType: message.content.type,
+    });
     if (chatSnapshot.chatGuid) {
       activeSpacesByChatGuid.set(chatSnapshot.chatGuid, space);
     }

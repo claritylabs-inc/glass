@@ -110,6 +110,8 @@ describe("public demo agent", () => {
     expect(emailTemplate).not.toContain("We couldn't recognize this email address");
     expect(imessage).toContain("scope.kind === \"no_linked_users\"");
     expect(imessage).toContain("internal.actions.publicDemoAgent.respond");
+    expect(imessage).toContain("if (isGroup)");
+    expect(imessage).toContain("internal.imessageChats.markLeft");
   });
 
   it("keeps public demo storage separate from tenant threads and real certificate tables", () => {

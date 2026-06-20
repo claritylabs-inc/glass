@@ -4,7 +4,7 @@ import type { ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
-import { isImessageInboundEnabled } from "./lib/imessageConfig";
+import { getImessageWorkerUrl, isImessageInboundEnabled } from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import {
@@ -34,6 +34,35 @@ import {
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
+
+http.route({
+  path: "/agent-health",
+  method: "GET",
+  handler: httpAction(async () => {
+    const checks = {
+      imessageInboundEnabled: isImessageInboundEnabled(),
+      imessageWorkerUrlConfigured: Boolean(getImessageWorkerUrl()),
+      imessageWorkerSecretConfigured: Boolean(process.env.IMESSAGE_WORKER_SECRET),
+      emailInboundWebhookSecretConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET),
+      emailScanCronSecretConfigured: Boolean(process.env.EMAIL_SCAN_CRON_SECRET),
+      connectedEmailEncryptionConfigured: Boolean(
+        process.env.EMAIL_CONNECTIONS_ENCRYPTION_KEY,
+      ),
+    };
+    const ok = Object.values(checks).every(Boolean);
+    return new Response(
+      JSON.stringify({
+        ok,
+        service: "glass-convex-agent-health",
+        checks,
+      }),
+      {
+        status: ok ? 200 : 503,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }),
+});
 
 http.route({
   path: "/resend-inbound",

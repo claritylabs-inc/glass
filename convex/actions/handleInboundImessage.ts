@@ -556,7 +556,9 @@ export const processInbound = internalAction({
             chatGuid,
           },
         );
-        await ctx.runMutation(internal.imessageChats.markLeft, { chatGuid });
+        if (isGroup) {
+          await ctx.runMutation(internal.imessageChats.markLeft, { chatGuid });
+        }
         return await finish(
           demo.text,
           undefined,

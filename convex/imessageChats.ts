@@ -25,9 +25,13 @@ export const syncChat = internalMutation({
       .first();
 
     if (existing) {
+      const status =
+        existing.status === "left" && args.isGroup && !args.primaryOrgId
+          ? "left"
+          : "active";
       await ctx.db.patch(existing._id, {
         isGroup: args.isGroup,
-        status: existing.status === "left" ? "left" : "active",
+        status,
         primaryOrgId: args.primaryOrgId,
         title: args.title,
         participantCount: args.participants.length,

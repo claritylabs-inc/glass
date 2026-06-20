@@ -20,6 +20,8 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - `npm run lint` — repo-wide ESLint
 - `npx tsc --noEmit` — TypeScript validation (Next.js)
 - `npx convex typecheck` — TypeScript validation (Convex functions)
+- `npm run check:agent-workers` — build/syntax-check mission-critical Railway agent workers before deployment
+- `npm run check:agent-health` — smoke-check production Convex agent config plus iMessage and extraction worker health
 - `npm run operator:provision-broker -- --name "Broker Name" --admin-email "admin@example.com"` — repo wrapper around the private installable operator CLI for provisioning broker orgs/accounts without using the web app
 - `npx convex run seed:seed` — seed demo data
 - `npx convex run actions/backfillChunks:backfill --args '{"orgId":"..."}'` — embed existing documents for vector search
@@ -61,6 +63,7 @@ Audit commands:
 - `npx convex env list --prod | sed -E 's/=.*$//' | sort` — production Convex env keys only.
 - `railway status --json | jq '{project:{id,name}, environments:[.environments.edges[].node | {name, services:[.serviceInstances.edges[].node | {serviceName, source, latestDeployment:(.latestDeployment | {status, meta:{repo:.meta.repo, rootDirectory:.meta.rootDirectory, branch:.meta.branch, commitHash:.meta.commitHash, configFile:.meta.configFile}})}]}]}'` — Railway source/root/deployment audit.
 - `curl -fsS https://glass-extraction-worker-dev.up.railway.app/health | jq .` and `curl -fsS https://glass-extraction-worker-production.up.railway.app/health | jq .` — extraction worker health, protocol, SDK spec, and Convex target.
+- `curl -fsS https://glass-production-4618.up.railway.app/health | jq .` — production iMessage worker health, transport, Photon/secret/Convex config, and Railway listener ports.
 - `railway variable list --json -e dev -s glass-extraction-worker | jq -r 'keys[]' | sort` — Railway env key audit without printing values; change environment/service as needed.
 
 ## High-Level Architecture (v0.2.0)

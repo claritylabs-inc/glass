@@ -31,6 +31,7 @@ describe("iMessage group chat surfaces", () => {
     expect(inbound).toContain("resolveImessageConversationScope");
     expect(inbound).toContain("I couldn't confirm who is in this group chat yet");
     expect(inbound).toContain("scope.kind === \"no_linked_users\"");
+    expect(inbound).toContain("if (isGroup)");
     expect(inbound).toContain("leaveGroup: isGroup");
     expect(inbound).toContain("findOrCreateByImessageChat");
   });
@@ -75,6 +76,10 @@ describe("iMessage group chat surfaces", () => {
     expect(worker).toContain("payload.attachments");
     expect(worker).toContain("sendOutboundAttachments");
     expect(worker).toContain("sendByChatGuid");
+    expect(worker).toContain("getHttpPorts");
+    expect(worker).toContain('process.env.WORKER_HTTP_PORT ?? "3001"');
+    expect(worker).toContain("const httpPorts = getHttpPorts()");
+    expect(worker).toContain("new Set([primaryPort, publicDomainPort])");
     expect(agents).toContain("mirrors the web user message and Glass reply back");
   });
 
@@ -133,6 +138,13 @@ describe("iMessage group chat surfaces", () => {
 
     expect(threads).toContain("existingThreads.find");
     expect(threads).toContain("(thread.imessageIsGroup ?? false) === args.isGroup");
+  });
+
+  it("reactivates linked direct chats instead of leaving them in demo-left state", () => {
+    const chats = read("convex/imessageChats.ts");
+
+    expect(chats).toContain('existing.status === "left" && args.isGroup && !args.primaryOrgId');
+    expect(chats).toContain(': "active"');
   });
 
   it("fails closed for mixed-org write actions", () => {

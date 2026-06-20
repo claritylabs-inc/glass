@@ -1,0 +1,64 @@
+name: Agent Safeguards
+
+on:
+  pull_request:
+    paths:
+      - "convex/**"
+      - "extraction-worker/**"
+      - "imessage-worker/**"
+      - "mailbox-scan-worker/**"
+      - "scripts/check-agent-deployment-health.mjs"
+      - ".github/workflows/agent-safeguards.yml"
+  push:
+    branches: [main]
+    paths:
+      - "convex/**"
+      - "extraction-worker/**"
+      - "imessage-worker/**"
+      - "mailbox-scan-worker/**"
+      - "scripts/check-agent-deployment-health.mjs"
+      - ".github/workflows/agent-safeguards.yml"
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-builds:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build iMessage worker
+        working-directory: imessage-worker
+        run: npm ci && npm run build
+
+      - name: Build extraction worker
+        working-directory: extraction-worker
+        run: npm ci && npm run build
+
+      - name: Syntax-check mailbox scan worker
+        run: node --check mailbox-scan-worker/src/index.js
+
+  production-agent-health:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check production agent health
+        run: node scripts/check-agent-deployment-health.mjs
+        env:
+          AGENT_HEALTH_ATTEMPTS: 30
+          AGENT_HEALTH_RETRY_DELAY_MS: 10000
