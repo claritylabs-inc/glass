@@ -9,7 +9,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci --include=optional
+RUN npm ci --include=optional --no-audit --no-fund --loglevel=error
 RUN set -eux; \
   native_tgz="$(npm pack @llamaindex/liteparse-linux-x64-gnu@2.0.3 --pack-destination /tmp)"; \
   mkdir -p node_modules/@llamaindex/liteparse-linux-x64-gnu; \
