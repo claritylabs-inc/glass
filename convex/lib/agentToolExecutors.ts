@@ -930,6 +930,19 @@ export function buildAgentToolExecutors(
             return output;
           }
           if (generated.status === "pending_approval") {
+            await options.onToolArtifact?.({
+              type: "certificate_result",
+              data: {
+                status: generated.status,
+                policyId: policy._id,
+                certificateRequestId: generated.requestId,
+                holderName:
+                  params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+                  "Certificate holder",
+                authorityType: generated.authorityType,
+                certificationStatus: generated.certificationStatus,
+              },
+            });
             return {
               message:
                 "Certified COI request created and sent to the program administrator for approval.",
@@ -979,7 +992,7 @@ export function buildAgentToolExecutors(
           };
           await options.onResponseAttachment?.(attachment);
           if (generated.status === "existing") {
-            return {
+            const output = {
               message:
                 generated.authorityType === "certified"
                   ? "I found an existing certified COI for this holder and current policy version and attached it to this response."
@@ -991,14 +1004,49 @@ export function buildAgentToolExecutors(
               policyVersionId: generated.policyVersionId,
               versionNumber: generated.versionNumber,
             };
+            await options.onToolArtifact?.({
+              type: "certificate_result",
+              data: {
+                status: generated.status,
+                policyId: policy._id,
+                policyCertificateId: generated.policyCertificateId,
+                certificateVersionId: generated.certificateVersionId,
+                holderId: generated.holderId,
+                versionNumber: generated.versionNumber,
+                authorityType: generated.authorityType,
+                certificationStatus: generated.certificationStatus,
+              },
+            });
+            return output;
           }
-          return {
+          const output = {
             message:
               generated.authorityType === "certified"
                 ? "Certified COI generated and attached to this response."
                 : "Non-binding COI generated and attached to this response.",
             attachment,
+            certificateId: generated.certificateId,
+            holderId: generated.holderId,
+            policyCertificateId: generated.policyCertificateId,
+            certificateVersionId: generated.certificateVersionId,
+            policyVersionId: generated.policyVersionId,
+            versionNumber: generated.versionNumber,
           };
+          await options.onToolArtifact?.({
+            type: "certificate_result",
+            data: {
+              status: generated.status,
+              policyId: policy._id,
+              certificateId: generated.certificateId,
+              policyCertificateId: generated.policyCertificateId,
+              certificateVersionId: generated.certificateVersionId,
+              holderId: generated.holderId,
+              versionNumber: generated.versionNumber,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            },
+          });
+          return output;
         } catch (err) {
           console.error("[agentToolExecutors] COI generation failed:", err);
           return COI_GENERATION_FAILED_MESSAGE;
@@ -1185,6 +1233,15 @@ export function buildAgentToolExecutors(
           })),
           summary: params.summary,
           fieldUpdates: params.fieldUpdates,
+        });
+        await options.onPolicyChangeCase?.(resolvedCase.caseId);
+        await options.onToolArtifact?.({
+          type: "policy_change_result",
+          data: {
+            status: "completed",
+            caseId: resolvedCase.caseId,
+            policyId: resolved.policy._id,
+          },
         });
         return { status: "completed", caseId: resolvedCase.caseId, ...result };
       },

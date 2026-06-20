@@ -49,6 +49,7 @@ import type * as actions_vendorComplianceMonitor from "../actions/vendorComplian
 import type * as agentTargets from "../agentTargets.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
 import type * as apiKeys from "../apiKeys.js";
+import type * as appCardLinks from "../appCardLinks.js";
 import type * as applicationIntakes from "../applicationIntakes.js";
 import type * as auth from "../auth.js";
 import type * as brokerActivity from "../brokerActivity.js";
@@ -236,6 +237,7 @@ declare const fullApi: ApiFromModules<{
   agentTargets: typeof agentTargets;
   apiAuditLog: typeof apiAuditLog;
   apiKeys: typeof apiKeys;
+  appCardLinks: typeof appCardLinks;
   applicationIntakes: typeof applicationIntakes;
   auth: typeof auth;
   brokerActivity: typeof brokerActivity;

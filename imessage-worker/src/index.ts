@@ -1,10 +1,19 @@
 import http from "node:http";
-import { Spectrum, attachment, type Space, type SpectrumInstance } from "spectrum-ts";
-import { imessage } from "spectrum-ts/providers/imessage";
-import { terminal } from "spectrum-ts/providers/terminal";
+import {
+  Spectrum,
+  app as appCard,
+  attachment,
+  type ContentInput,
+  type Message,
+  type Space,
+  type SpectrumInstance,
+} from "spectrum-ts";
+import { imessage } from "@spectrum-ts/imessage";
+import { terminal } from "@spectrum-ts/terminal";
 import {
   sendToConvex,
   type ImessageAttachment,
+  type ImessageAppCard,
   type ImessageResponseAttachment,
 } from "./convex.js";
 
@@ -213,6 +222,48 @@ async function sendOutboundAttachments(
   }
 }
 
+function appCardFallbackText(card: ImessageAppCard) {
+  return [card.title, card.subtitle, card.url]
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join("\n");
+}
+
+async function sendReplyOrFallback(
+  space: Space,
+  message: Message,
+  content: ContentInput,
+  fallbackText?: string,
+) {
+  try {
+    const replied = await message.reply(content);
+    if (replied) return;
+  } catch (err) {
+    console.warn("[glass-imessage] Failed to send threaded reply:", err);
+  }
+  await space.send(fallbackText ?? content);
+}
+
+async function sendOutboundAppCards(
+  space: Space,
+  appCards?: ImessageAppCard[],
+  targetMessage?: Message,
+) {
+  for (const card of appCards ?? []) {
+    if (!card.url) continue;
+    const content = appCard(card.url);
+    try {
+      if (targetMessage) {
+        await sendReplyOrFallback(space, targetMessage, content, appCardFallbackText(card));
+      } else {
+        await space.send(content);
+      }
+    } catch (err) {
+      console.warn(`[glass-imessage] Failed to send app card ${card.url}:`, err);
+      await space.send(appCardFallbackText(card));
+    }
+  }
+}
+
 async function sendAttachmentsThroughClient(
   client: AdvancedImessageClient,
   chatGuid: string,
@@ -247,11 +298,38 @@ async function sendAttachmentsThroughClient(
   }
 }
 
+async function sendAppCardsThroughClient(
+  client: AdvancedImessageClient,
+  chatGuid: string,
+  appCards?: ImessageAppCard[],
+  clientMessageId?: string,
+) {
+  if (!appCards?.length) return;
+  if (!client.messages?.sendText) {
+    console.warn("[glass-imessage] App card fallback send by chat GUID is not available");
+    return;
+  }
+
+  for (const [index, card] of appCards.entries()) {
+    if (!card.url) continue;
+    try {
+      await client.messages.sendText(chatGuid, appCardFallbackText(card), {
+        clientMessageId: clientMessageId
+          ? `${clientMessageId}:app-card:${index}`
+          : undefined,
+      });
+    } catch (err) {
+      console.warn(`[glass-imessage] Failed to send app card fallback ${card.url}:`, err);
+    }
+  }
+}
+
 async function sendByChatGuid(params: {
   app: SpectrumInstance;
   chatGuid: string;
   message: string;
   attachments?: ImessageResponseAttachment[];
+  appCards?: ImessageAppCard[];
   clientMessageId?: string;
 }) {
   if (TRANSPORT !== "imessage") return false;
@@ -262,6 +340,12 @@ async function sendByChatGuid(params: {
     await client.messages.sendText(params.chatGuid, params.message, {
       clientMessageId: params.clientMessageId,
     });
+    await sendAppCardsThroughClient(
+      client,
+      params.chatGuid,
+      params.appCards,
+      params.clientMessageId,
+    );
     await sendAttachmentsThroughClient(
       client,
       params.chatGuid,
@@ -438,6 +522,7 @@ async function main() {
       title?: string;
       clientMessageId?: string;
       attachments?: ImessageResponseAttachment[];
+      appCards?: ImessageAppCard[];
     };
     try {
       payload = JSON.parse(body);
@@ -447,9 +532,15 @@ async function main() {
       return;
     }
 
-    if ((!payload.toPhone && !payload.chatGuid && !payload.participants?.length) || !payload.message) {
+    const messageText = payload.message?.trim() ||
+      (payload.appCards?.length
+        ? "Glass shared a link."
+        : payload.attachments?.length
+          ? "Glass shared attachment(s)."
+          : "");
+    if ((!payload.toPhone && !payload.chatGuid && !payload.participants?.length) || !messageText) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "toPhone, chatGuid, or participants and message are required" }));
+      res.end(JSON.stringify({ error: "toPhone, chatGuid, or participants and message/appCards/attachments are required" }));
       return;
     }
 
@@ -471,8 +562,9 @@ async function main() {
 
         if (TRANSPORT === "terminal") {
           const terminalClient = terminal(app);
-          const space = await terminalClient.space({ id: TERMINAL_SPACE_ID });
-          await space.send(`[new group: ${participants.join(", ")}] ${payload.message}`);
+          const space = await terminalClient.space.get(TERMINAL_SPACE_ID);
+          await space.send(`[new group: ${participants.join(", ")}] ${messageText}`);
+          await sendOutboundAppCards(space, payload.appCards);
           await sendOutboundAttachments(space, payload.attachments);
           const chatGuid = deterministicTerminalGroupGuid(participants);
           res.writeHead(200, { "Content-Type": "application/json" });
@@ -495,9 +587,12 @@ async function main() {
         }
 
         const created = await imessageClient.chats.create(participants, {
-          message: payload.message,
+          message: messageText,
           clientMessageId: payload.clientMessageId,
         });
+        if (payload.appCards?.length) {
+          console.warn("[glass-imessage] App cards are not available during new group creation");
+        }
         if (payload.attachments?.length) {
           console.warn("[glass-imessage] Attachment send is not available during new group creation");
         }
@@ -529,7 +624,8 @@ async function main() {
         ? activeSpacesByChatGuid.get(payload.chatGuid)
         : undefined;
       if (activeChatSpace) {
-        await activeChatSpace.send(payload.message);
+        await activeChatSpace.send(messageText);
+        await sendOutboundAppCards(activeChatSpace, payload.appCards);
         await sendOutboundAttachments(activeChatSpace, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -541,8 +637,9 @@ async function main() {
         const sentByChatGuid = await sendByChatGuid({
           app,
           chatGuid: payload.chatGuid,
-          message: payload.message,
+          message: messageText,
           attachments: payload.attachments,
+          appCards: payload.appCards,
           clientMessageId: payload.clientMessageId,
         });
         if (sentByChatGuid) {
@@ -563,7 +660,8 @@ async function main() {
       const toPhone = normalizePhone(payload.toPhone);
       const activeSpace = activeSpacesByPhone.get(toPhone);
       if (activeSpace) {
-        await activeSpace.send(payload.message);
+        await activeSpace.send(messageText);
+        await sendOutboundAppCards(activeSpace, payload.appCards);
         await sendOutboundAttachments(activeSpace, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -573,8 +671,9 @@ async function main() {
 
       if (TRANSPORT === "terminal") {
         const terminalClient = terminal(app);
-        const space = await terminalClient.space({ id: TERMINAL_SPACE_ID });
-        await space.send(payload.message);
+        const space = await terminalClient.space.get(TERMINAL_SPACE_ID);
+        await space.send(messageText);
+        await sendOutboundAppCards(space, payload.appCards);
         await sendOutboundAttachments(space, payload.attachments);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -584,8 +683,9 @@ async function main() {
 
       const imessageClient = imessage(app);
       const user = await imessageClient.user(payload.toPhone);
-      const space = await imessageClient.space(user);
-      await space.send(payload.message);
+      const space = await imessageClient.space.create(user);
+      await space.send(messageText);
+      await sendOutboundAppCards(space, payload.appCards);
       await sendOutboundAttachments(space, payload.attachments);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -624,10 +724,15 @@ async function main() {
     if (TRANSPORT === "imessage" && message.platform !== "iMessage") continue;
     if (TRANSPORT === "terminal" && message.platform !== "terminal") continue;
 
+    const rawSenderId = message.sender?.id;
+    if (!rawSenderId) {
+      console.warn("[glass-imessage] Ignoring inbound message without sender");
+      continue;
+    }
     const senderId =
       TRANSPORT === "terminal"
-        ? (TERMINAL_FROM_PHONE || message.sender.id)
-        : message.sender.id;
+        ? (TERMINAL_FROM_PHONE || rawSenderId)
+        : rawSenderId;
     const fromPhone = normalizePhone(senderId);
     activeSpacesByPhone.set(fromPhone, space);
     const chatSnapshot = await getChatSnapshot(app, space);
@@ -711,8 +816,10 @@ async function main() {
 
           // Send the text response
           if (result.response) {
-            await space.send(result.response);
+            await sendReplyOrFallback(space, message, result.response);
           }
+
+          await sendOutboundAppCards(space, result.appCards, message);
 
           // Send any file attachments (e.g. COI PDFs)
           await sendOutboundAttachments(space, result.attachments);

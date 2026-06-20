@@ -51,6 +51,7 @@ const PUBLIC_PATHS = [
   "/oauth/authorize",
   "/weather",
   "/invite",
+  "/share/imessage",
   "/connect/request",
   "/connected-orgs/request",
 ];

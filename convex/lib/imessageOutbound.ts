@@ -11,6 +11,13 @@ export type ImessageOutboundAttachment = {
   mimeType: string;
 };
 
+export type ImessageOutboundAppCard = {
+  url: string;
+  title?: string;
+  subtitle?: string;
+  summary?: string;
+};
+
 export type StoredThreadAttachment = {
   filename: string;
   contentType: string;
@@ -106,6 +113,7 @@ export async function sendOutboundImessage(params: {
   chatGuid?: string;
   message: string;
   attachments?: ImessageOutboundAttachment[];
+  appCards?: ImessageOutboundAppCard[];
   clientMessageId?: string;
   logPrefix?: string;
 }): Promise<boolean> {
@@ -115,9 +123,14 @@ export async function sendOutboundImessage(params: {
 
   const attachments =
     params.attachments?.filter((attachment) => attachment.url) ?? [];
+  const appCards = params.appCards?.filter((card) => card.url) ?? [];
   const message =
     params.message.trim() ||
-    (attachments.length > 0 ? "Glass shared attachment(s)." : "");
+    (appCards.length > 0
+      ? "Glass shared a link."
+      : attachments.length > 0
+        ? "Glass shared attachment(s)."
+        : "");
   if (!message) return false;
 
   try {
@@ -133,6 +146,7 @@ export async function sendOutboundImessage(params: {
         message,
         clientMessageId: params.clientMessageId,
         attachments: attachments.length > 0 ? attachments : undefined,
+        appCards: appCards.length > 0 ? appCards : undefined,
       }),
     });
 
@@ -166,6 +180,7 @@ export async function sendIdempotentOutboundImessage(
     chatGuid?: string;
     message: string;
     attachments?: ImessageOutboundAttachment[];
+    appCards?: ImessageOutboundAppCard[];
     logPrefix?: string;
   },
 ): Promise<boolean> {
@@ -182,6 +197,7 @@ export async function sendIdempotentOutboundImessage(
     chatGuid: params.chatGuid,
     message: params.message,
     attachments: params.attachments,
+    appCards: params.appCards,
     clientMessageId: params.idempotencyKey,
     logPrefix: params.logPrefix,
   });

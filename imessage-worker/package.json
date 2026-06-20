@@ -14,7 +14,9 @@
     "dev:terminal": "npm run build && npm run start:terminal"
   },
   "dependencies": {
-    "spectrum-ts": "^1.5.0"
+    "@spectrum-ts/imessage": "^5.0.0",
+    "@spectrum-ts/terminal": "^5.0.0",
+    "spectrum-ts": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

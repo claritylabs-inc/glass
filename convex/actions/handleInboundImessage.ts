@@ -131,9 +131,17 @@ const SUPPORTED_MIME_TYPES = new Set([
 ]);
 
 /** Response shape returned to the HTTP route (and hence to the worker). */
+type ImessageAppCard = {
+  url: string;
+  title?: string;
+  subtitle?: string;
+  summary?: string;
+};
+
 type ImessageResponse = {
   response: string;
   attachments?: Array<{ url: string; filename: string; mimeType: string }>;
+  appCards?: ImessageAppCard[];
   leaveGroup?: boolean;
   chatGuid?: string;
 };
@@ -367,6 +375,18 @@ function collectToolAudit(result: unknown): {
   return { usedTools, toolCalls };
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function idString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
+}
+
 export const processInbound = internalAction({
   args: {
     fromPhone: v.string(),
@@ -444,7 +464,7 @@ export const processInbound = internalAction({
     const finish = async (
       response: string,
       attachments?: ImessageResponse["attachments"],
-      options?: { leaveGroup?: boolean },
+      options?: { leaveGroup?: boolean; appCards?: ImessageAppCard[] },
     ) => {
       await ctx.runMutation(internal.imessageInboundEvents.complete, {
         eventKey,
@@ -453,6 +473,7 @@ export const processInbound = internalAction({
       return {
         response,
         attachments,
+        appCards: options?.appCards,
         leaveGroup: options?.leaveGroup,
         chatGuid,
       };
@@ -1421,8 +1442,9 @@ export const processInbound = internalAction({
         size: 0,
         fileId: c.storageId,
       }));
+      let agentResponseMessageId: Id<"threadMessages"> | undefined;
       if (!responseAlreadySent && responseText.trim()) {
-        await ctx.runMutation(internal.threads.insertImessageMessage, {
+        agentResponseMessageId = await ctx.runMutation(internal.threads.insertImessageMessage, {
           threadId,
           orgId,
           role: "agent",
@@ -1450,7 +1472,157 @@ export const processInbound = internalAction({
         });
       }
 
-      // ── 17. Post-exchange orgMemory extraction ────────────────────────────
+      // ── 17. Mint narrow app-card links for completed iMessage work ────────
+      const appCards: ImessageAppCard[] = [];
+      const appCardKeys = new Set<string>();
+      const addAppCard = async (
+        key: string,
+        args: {
+          kind: "policy" | "certificate" | "certificate_request" | "policy_change";
+          policyId?: Id<"policies">;
+          certificateId?: Id<"certificates">;
+          policyCertificateId?: Id<"policyCertificates">;
+          certificateVersionId?: Id<"certificateVersions">;
+          certificateRequestId?: Id<"certificateRequests">;
+          policyChangeCaseId?: Id<"policyChangeCases">;
+          label?: string;
+        },
+        card: Omit<ImessageAppCard, "url">,
+      ) => {
+        if (appCardKeys.has(key)) return;
+        appCardKeys.add(key);
+        try {
+          const link = await ctx.runMutation(internal.appCardLinks.createInternal, {
+            ...args,
+            sourceThreadId: threadId,
+            sourceThreadMessageId: agentResponseMessageId,
+            createdByUserId: user._id,
+          });
+          if (link.url) appCards.push({ ...card, url: link.url });
+        } catch (err) {
+          console.warn(`[imessage] Failed to create app card ${key}:`, err);
+        }
+      };
+
+      const policyDetailTools = new Set([
+        "lookup_policy",
+        "lookup_policy_section",
+        "compare_coverages",
+      ]);
+      if (usedTools.some((tool) => policyDetailTools.has(tool))) {
+        for (const policyId of relevantPolicyIds.slice(0, 3)) {
+          await addAppCard(
+            `policy:${policyId}`,
+            {
+              kind: "policy",
+              policyId,
+              label: "Policy details",
+            },
+            {
+              title: "Policy details",
+              subtitle: "Open the policy record in Glass",
+            },
+          );
+        }
+      }
+
+      for (const artifact of imessageToolArtifacts) {
+        const data = objectRecord(artifact.data);
+        if (!data) continue;
+
+        if (artifact.type === "certificate_result") {
+          const certificateId = idString(data.certificateId) as
+            | Id<"certificates">
+            | undefined;
+          const policyCertificateId = idString(data.policyCertificateId) as
+            | Id<"policyCertificates">
+            | undefined;
+          const certificateVersionId = idString(data.certificateVersionId) as
+            | Id<"certificateVersions">
+            | undefined;
+          const certificateRequestId = idString(data.certificateRequestId) as
+            | Id<"certificateRequests">
+            | undefined;
+          if (certificateRequestId) {
+            await addAppCard(
+              `certificate_request:${certificateRequestId}`,
+              {
+                kind: "certificate_request",
+                certificateRequestId,
+                label: "Certificate request",
+              },
+              {
+                title: "Certificate request",
+                subtitle: "Open the approval request in Glass",
+              },
+            );
+          } else if (certificateId || policyCertificateId || certificateVersionId) {
+            await addAppCard(
+              `certificate:${certificateId ?? policyCertificateId ?? certificateVersionId}`,
+              {
+                kind: "certificate",
+                certificateId,
+                policyCertificateId,
+                certificateVersionId,
+                label: "Certificate",
+              },
+              {
+                title: "Certificate",
+                subtitle: "Open the certificate in Glass",
+              },
+            );
+          }
+        }
+
+        if (
+          artifact.type === "certificate_hold" ||
+          artifact.type === "policy_change_result"
+        ) {
+          const caseId = idString(data.policyChangeCaseId ?? data.caseId) as
+            | Id<"policyChangeCases">
+            | undefined;
+          if (caseId) {
+            await addAppCard(
+              `policy_change:${caseId}`,
+              {
+                kind: "policy_change",
+                policyChangeCaseId: caseId,
+                label: "Policy change request",
+              },
+              {
+                title: "Policy change request",
+                subtitle: "Open the request in Glass",
+              },
+            );
+          }
+        }
+      }
+
+      if (
+        policyChangeCaseId &&
+        usedTools.some((tool) =>
+          [
+            "create_policy_change_request",
+            "add_policy_change_info",
+            "complete_policy_change_from_endorsement",
+          ].includes(tool),
+        )
+      ) {
+        await addAppCard(
+          `policy_change:${policyChangeCaseId}`,
+          {
+            kind: "policy_change",
+            policyChangeCaseId,
+            label: "Policy change request",
+          },
+          {
+            title: "Policy change request",
+            subtitle: "Open the request in Glass",
+          },
+        );
+      }
+
+      // ── 18. Post-exchange orgMemory extraction ────────────────────────────
       if (currentSenderIsLinked)
         try {
           const memoryExtraction = await generateText({
@@ -1509,6 +1681,7 @@ Only include items worth remembering long-term. Skip pleasantries and one-off qu
       return await finish(
         responseAlreadySent ? "" : responseText,
         responseAttachments.length > 0 ? responseAttachments : undefined,
+        appCards.length > 0 ? { appCards } : undefined,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

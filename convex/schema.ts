@@ -3002,6 +3002,36 @@ export default defineSchema({
     .index("by_idempotencyKey", ["idempotencyKey"])
     .index("by_threadMessageId", ["threadMessageId"]),
 
+  appCardAccessLinks: defineTable({
+    orgId: v.id("organizations"),
+    tokenHash: v.string(),
+    kind: v.union(
+      v.literal("policy"),
+      v.literal("certificate"),
+      v.literal("certificate_request"),
+      v.literal("policy_change"),
+    ),
+    policyId: v.optional(v.id("policies")),
+    certificateId: v.optional(v.id("certificates")),
+    policyCertificateId: v.optional(v.id("policyCertificates")),
+    certificateVersionId: v.optional(v.id("certificateVersions")),
+    certificateRequestId: v.optional(v.id("certificateRequests")),
+    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
+    label: v.optional(v.string()),
+    sourceThreadId: v.optional(v.id("threads")),
+    sourceThreadMessageId: v.optional(v.id("threadMessages")),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_orgId", ["orgId"])
+    .index("by_policyId", ["policyId"])
+    .index("by_certificateId", ["certificateId"])
+    .index("by_policyCertificateId", ["policyCertificateId"])
+    .index("by_certificateRequestId", ["certificateRequestId"])
+    .index("by_policyChangeCaseId", ["policyChangeCaseId"]),
+
   imessageChats: defineTable({
     chatGuid: v.string(),
     isGroup: v.boolean(),

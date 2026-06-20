@@ -25,9 +25,17 @@ export interface ImessageResponseAttachment {
   mimeType: string;
 }
 
+export interface ImessageAppCard {
+  url: string;
+  title?: string;
+  subtitle?: string;
+  summary?: string;
+}
+
 export interface ImessageResponse {
   response: string;
   attachments?: ImessageResponseAttachment[];
+  appCards?: ImessageAppCard[];
   leaveGroup?: boolean;
   chatGuid?: string;
 }
