@@ -10,11 +10,49 @@ describe("agent deployment safeguards", () => {
     const workflow = read(".github/workflows/agent-safeguards.yml");
     const packageJson = read("package.json");
 
-    expect(workflow).toContain("npm ci && npm run build");
+    expect(workflow).toContain(
+      "npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build",
+    );
     expect(workflow).toContain("working-directory: imessage-worker");
     expect(workflow).toContain("working-directory: extraction-worker");
     expect(workflow).toContain("node --check mailbox-scan-worker/src/index.js");
     expect(packageJson).toContain("check:agent-workers");
+  });
+
+  it("requires validation gates before Convex deploy and package publish", () => {
+    const ci = read(".github/workflows/ci.yml");
+    const deploy = read(".github/workflows/deploy-convex.yml");
+
+    for (const gate of [
+      "npm run check:cl-sdk-version",
+      "npm run lint",
+      "npm test",
+      "npx tsc --noEmit --incremental false",
+      "npx convex typecheck",
+      "npm run build",
+      "working-directory: extraction-worker",
+      "working-directory: imessage-worker",
+      "working-directory: mcp-server",
+      "node --check mailbox-scan-worker/src/index.js",
+      "package:\n          - cli\n          - operator-cli",
+    ]) {
+      expect(ci).toContain(gate);
+      expect(deploy).toContain(gate);
+    }
+
+    expect(deploy).toContain("validate-root:");
+    expect(deploy).toContain("validate-workers:");
+    expect(deploy).toContain("validate-packages:");
+    expect(deploy).toContain("needs:\n      - validate-root\n      - validate-workers\n      - validate-packages");
+    expect(deploy).toContain("publish-cli:");
+    expect(deploy).toContain("publish-operator-cli:");
+    const publishCli = deploy.slice(
+      deploy.indexOf("publish-cli:"),
+      deploy.indexOf("publish-operator-cli:"),
+    );
+    const publishOperatorCli = deploy.slice(deploy.indexOf("publish-operator-cli:"));
+    expect(publishCli).toContain("needs: deploy");
+    expect(publishOperatorCli).toContain("needs: deploy");
   });
 
   it("smoke-checks production agent health on a schedule", () => {

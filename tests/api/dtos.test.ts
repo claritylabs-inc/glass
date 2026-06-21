@@ -244,6 +244,7 @@ describe("certificate lifecycle DTOs", () => {
     expect(toCertificateVersionDto(version)).toMatchObject({
       id: "cv-1",
       certificate_id: "pc-1",
+      policy_certificate_id: "pc-1",
       holder_id: "holder-1",
       policy_version_id: "pv-1",
       version_number: 3,
@@ -268,6 +269,8 @@ describe("certificate lifecycle DTOs", () => {
       certificateVersion: version,
     })).toMatchObject({
       id: "job-1",
+      certificate_id: "pc-1",
+      policy_certificate_id: "pc-1",
       kind: "renewal_reissue",
       status: "review_required",
       recipient_email: "ops@example.com",

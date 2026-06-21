@@ -25,20 +25,21 @@ describe("chat duplicate prevention and COI preview UI", () => {
   it("uses client mutation ids so local-first retries do not duplicate chat work", () => {
     const schema = read("convex/schema.ts");
     const threads = read("convex/threads.ts");
-    const appShell = read("components/app-shell.tsx");
+    const appSidebar = read("components/app-sidebar.tsx");
     const threadContent = read("components/agent-thread/thread-content.tsx");
     const commandPalette = read("components/command-palette.tsx");
+    const startAgentThread = read("hooks/use-start-agent-thread.ts");
 
     expect(schema).toContain("clientMutationId: v.optional(v.string())");
     expect(schema).toContain('.index("by_orgId_clientMutationId", ["orgId", "clientMutationId"])');
     expect(threads).toContain("args.clientMutationId");
     expect(threads).toContain('withIndex("by_orgId_clientMutationId"');
     expect(threads).toContain("agentMessageId");
-    expect(appShell).toContain("createClientMutationId(\"thread\")");
-    expect(appShell).toContain("createClientMutationId(\"message\")");
+    expect(appSidebar).toContain("createClientMutationId(\"thread\")");
     expect(threadContent).toContain("createClientMutationId(\"message\")");
-    expect(commandPalette).toContain("createClientMutationId(\"thread\")");
-    expect(commandPalette).toContain("createClientMutationId(\"message\")");
+    expect(commandPalette).toContain("useStartAgentThread(\"commandPalette\")");
+    expect(startAgentThread).toContain("createClientMutationId(\"thread\")");
+    expect(startAgentThread).toContain("createClientMutationId(\"message\")");
   });
 
   it("queues steering messages and allows sending immediately to cancel in-flight work", () => {
@@ -91,29 +92,21 @@ describe("chat duplicate prevention and COI preview UI", () => {
 
   it("reads common file attachments for agent context by filename and content type", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
-    const appShell = read("components/app-shell.tsx");
+    const threadPrompt = read("lib/thread-prompt.ts");
     const processThreadChat = read("convex/actions/processThreadChat.ts");
 
-    expect(threadContent).toContain('lowerName.endsWith(".csv")');
-    expect(threadContent).toContain('"text/csv"');
-    expect(appShell).toContain('lowerName.endsWith(".csv")');
-    expect(appShell).toContain('"text/csv"');
-    expect(threadContent).toContain('lowerName.endsWith(".xlsx")');
-    expect(threadContent).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    expect(threadContent).toContain('lowerName.endsWith(".docx")');
-    expect(threadContent).toContain("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    expect(threadContent).toContain('lowerName.endsWith(".pptx")');
-    expect(threadContent).toContain("application/vnd.openxmlformats-officedocument.presentationml.presentation");
-    expect(threadContent).toContain('lowerName.endsWith(".jpg")');
-    expect(threadContent).toContain('"image/png"');
-    expect(appShell).toContain('lowerName.endsWith(".xlsx")');
-    expect(appShell).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    expect(appShell).toContain('lowerName.endsWith(".docx")');
-    expect(appShell).toContain("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    expect(appShell).toContain('lowerName.endsWith(".pptx")');
-    expect(appShell).toContain("application/vnd.openxmlformats-officedocument.presentationml.presentation");
-    expect(appShell).toContain('lowerName.endsWith(".jpg")');
-    expect(appShell).toContain('"image/png"');
+    expect(threadContent).toContain("uploadPromptFiles");
+    expect(threadPrompt).toContain("function inferAttachmentContentType");
+    expect(threadPrompt).toContain('lowerName.endsWith(".csv")');
+    expect(threadPrompt).toContain('"text/csv"');
+    expect(threadPrompt).toContain('lowerName.endsWith(".xlsx")');
+    expect(threadPrompt).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(threadPrompt).toContain('lowerName.endsWith(".docx")');
+    expect(threadPrompt).toContain("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(threadPrompt).toContain('lowerName.endsWith(".pptx")');
+    expect(threadPrompt).toContain("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    expect(threadPrompt).toContain('lowerName.endsWith(".jpg")');
+    expect(threadPrompt).toContain('"image/png"');
     expect(processThreadChat).toContain("function isTextLikeAttachment");
     expect(processThreadChat).toContain("function isPdfAttachment");
     expect(processThreadChat).toContain("function isImageAttachment");
@@ -134,7 +127,7 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(processThreadChat).toContain('type.includes("csv")');
     expect(processThreadChat).toContain('type.includes("spreadsheet")');
     expect(processThreadChat).toContain("XLSX.read");
-    expect(processThreadChat).toContain("XLSX.utils.sheet_to_csv");
+    expect(processThreadChat).toContain("sheet_to_csv");
     expect(processThreadChat).toContain("mammoth.extractRawText");
     expect(processThreadChat).toContain("JSZip.loadAsync");
     expect(processThreadChat).toContain("buffer.toString(\"utf-8\")");

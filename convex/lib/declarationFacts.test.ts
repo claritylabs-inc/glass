@@ -16,6 +16,27 @@ function fact(overrides: Partial<DeclarationFactInput> & { policyId: string }): 
 }
 
 describe("findDeclarationDiscrepancies", () => {
+  const duplicatePolicies = [
+    {
+      _id: "policy1",
+      policyNumber: "GL-2026",
+      carrier: "Saint Lawrence Specialty Insurance",
+      insuredName: "Acme Services LLC",
+      effectiveDate: "2026-01-01",
+      expirationDate: "2027-01-01",
+      policyTypes: ["general_liability"],
+    },
+    {
+      _id: "policy2",
+      policyNumber: "GL-2026",
+      carrier: "Saint Lawrence Specialty Insurance Company",
+      insuredName: "Acme Services LLC",
+      effectiveDate: "2026-01-01",
+      expirationDate: "2027-01-01",
+      policyTypes: ["general_liability"],
+    },
+  ];
+
   test("does not flag conflicting values from a single policy", () => {
     const discrepancies = findDeclarationDiscrepancies([
       fact({ policyId: "policy1", displayValue: "ReLease Coverage Company Inc.", normalizedValue: "release coverage company inc" }),
@@ -50,7 +71,7 @@ describe("findDeclarationDiscrepancies", () => {
     const discrepancies = findDeclarationDiscrepancies([
       fact({ policyId: "policy1", displayValue: "Saint Lawrence Specialty Insurance", normalizedValue: "saint lawrence specialty insurance", fieldGroup: "carrier", fieldPath: "carrier" }),
       fact({ policyId: "policy2", displayValue: "Saint Lawrence Specialty Insurance Company", normalizedValue: "saint lawrence specialty insurance company", fieldGroup: "carrier", fieldPath: "carrier" }),
-    ]);
+    ], duplicatePolicies);
 
     expect(discrepancies).toHaveLength(1);
     expect(discrepancies[0].fieldGroup).toBe("carrier");

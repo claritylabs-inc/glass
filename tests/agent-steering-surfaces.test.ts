@@ -13,9 +13,10 @@ describe("agent steering surfaces", () => {
     expect(messageType).toContain('"policy" | "quote" | "requirement" | "mailbox"');
     expect(promptInput).toContain("findActiveTrigger");
     expect(promptInput).toContain("useCachedAgentTargets");
-    expect(promptInput).toContain('activeTrigger.marker === "/"');
+    expect(promptInput).toContain("targetKindsForTrigger(activeTrigger)");
+    expect(promptInput).toContain('trigger.marker === "/"');
     expect(promptInput).toContain('["policy", "quote", "requirement"]');
-    expect(promptInput).toContain("TriggerHintTags");
+    expect(promptInput).toContain("PromptReferenceTag");
     expect(promptInput).toContain("selectTarget");
   });
 
@@ -23,7 +24,8 @@ describe("agent steering surfaces", () => {
     const promptInput = read("components/glass-prompt-input.tsx");
 
     expect(promptInput).toContain("PreparedInputActions");
-    expect(promptInput).toContain("data-glass-prompt-intent-ring");
+    expect(promptInput).toContain("PREPARED_ACTION_INTENT_THRESHOLD");
+    expect(promptInput).toContain("pointerIntent >= PREPARED_ACTION_INTENT_THRESHOLD");
     expect(promptInput).toContain("data-glass-prepared-actions");
     expect(promptInput).toContain('window.matchMedia("(pointer: fine)")');
     expect(promptInput).toContain("Math.hypot(dx, dy)");
