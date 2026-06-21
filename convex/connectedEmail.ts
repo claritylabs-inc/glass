@@ -202,6 +202,9 @@ export const updateScope = mutation({
     if (account.userId !== userId && access.role !== "admin") {
       throw new Error("Only the account owner or an org admin can update scope");
     }
+    if (args.scope === "org" && access.role !== "admin") {
+      throw new Error("Only org admins can make a mailbox available to the organization");
+    }
     await ctx.db.patch(account._id, {
       scope: args.scope,
       updatedAt: dayjs().valueOf(),

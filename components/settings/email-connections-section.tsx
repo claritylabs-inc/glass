@@ -155,23 +155,33 @@ function iconForMailboxHost(host: string) {
 function EmailScopeSelect({
   value,
   onValueChange,
+  allowOrgScope = true,
+  disabled = false,
   className,
 }: {
   value: EmailScope;
   onValueChange: (value: EmailScope) => void;
+  allowOrgScope?: boolean;
+  disabled?: boolean;
   className?: string;
 }) {
   return (
     <Select
       value={value}
-      onValueChange={(nextValue) => onValueChange(nextValue as EmailScope)}
+      disabled={disabled}
+      onValueChange={(nextValue) => {
+        if (nextValue === "org" && !allowOrgScope) return;
+        onValueChange(nextValue as EmailScope);
+      }}
     >
       <SelectTrigger className={className}>
         <SelectValue>{EMAIL_SCOPE_LABELS[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="user">Only me</SelectItem>
-        <SelectItem value="org">Organization</SelectItem>
+        <SelectItem value="org" disabled={!allowOrgScope}>
+          Organization
+        </SelectItem>
       </SelectContent>
     </Select>
   );
@@ -179,6 +189,7 @@ function EmailScopeSelect({
 
 export function EmailConnectionsSection() {
   const currentOrg = useCurrentOrg();
+  const canManageOrgMailboxes = currentOrg?.role === "admin";
   const connectedEmailAccounts = useCachedQuery(
     "connectedEmail.list",
     api.connectedEmail.list,
@@ -255,6 +266,7 @@ export function EmailConnectionsSection() {
 
   async function handleConnectEmail() {
     if (!currentOrg?.orgId) return;
+    const scope = canManageOrgMailboxes ? form.scope : "user";
     setConnecting(true);
     try {
       const accountId = await connectEmail({
@@ -265,7 +277,7 @@ export function EmailConnectionsSection() {
         secure: form.secure,
         username: form.emailAddress.trim(),
         password: form.password,
-        scope: form.scope,
+        scope,
       }) as Id<"connectedEmailAccounts">;
       const now = dayjs().valueOf();
       await upsertConnectedEmailAccounts(
@@ -274,7 +286,7 @@ export function EmailConnectionsSection() {
           {
             _id: accountId,
             orgId: currentOrg.orgId,
-            scope: form.scope,
+            scope,
             emailAddress: form.emailAddress.trim().toLowerCase(),
             host: form.host.trim(),
             port: Number(form.port),
@@ -442,6 +454,8 @@ export function EmailConnectionsSection() {
                 onValueChange={(scope) =>
                   setForm((current) => ({ ...current, scope }))
                 }
+                allowOrgScope={canManageOrgMailboxes}
+                disabled={!canManageOrgMailboxes}
                 className="h-9 w-full border-foreground/8 bg-popover text-base"
               />
             </label>
@@ -473,6 +487,7 @@ export function EmailConnectionsSection() {
   }, [
     addMailboxOpen,
     canConnect,
+    canManageOrgMailboxes,
     connecting,
     form,
     selectedPreset,
@@ -499,6 +514,8 @@ export function EmailConnectionsSection() {
             {connectedEmailAccounts.map((account) => (
               (() => {
                 const ProviderIcon = iconForMailboxHost(account.host);
+                const canDisconnectMailbox =
+                  canManageOrgMailboxes || account.scope === "user";
                 return (
                   <div
                     key={account._id}
@@ -517,56 +534,64 @@ export function EmailConnectionsSection() {
                         </p>
                       </div>
                     </div>
-                    <EmailScopeSelect
-                      value={account.scope}
-                      onValueChange={(scope) =>
-                        updateConnectedEmailScope({
-                          accountId: account._id,
-                          scope,
-                        })
-                          .then(() =>
-                            currentOrg?.orgId
-                              ? updateConnectedEmailAccounts(
-                                  { orgId: currentOrg.orgId },
-                                  (current) =>
-                                    current.map((row) =>
-                                      row._id === account._id
-                                        ? {
-                                            ...row,
-                                            scope,
-                                            updatedAt: dayjs().valueOf(),
-                                          }
-                                        : row,
-                                    ),
-                                )
-                              : undefined,
-                          )
-                          .catch(() => toast.error("Failed to update scope"))
-                      }
-                      className="h-8 w-32 rounded-md border-foreground/8 bg-popover text-label"
-                    />
-                    <PillButton
-                      variant="destructive"
-                      size="compact"
-                      onClick={() =>
-                        revokeConnectedEmail({ accountId: account._id })
-                          .then(() =>
-                            currentOrg?.orgId
-                              ? updateConnectedEmailAccounts(
-                                  { orgId: currentOrg.orgId },
-                                  (current) =>
-                                    current.filter(
-                                      (row) => row._id !== account._id,
-                                    ),
-                                )
-                              : undefined,
-                          )
-                          .catch(() => toast.error("Failed to disconnect email"))
-                      }
-                    >
-                      <Trash2 className="size-3.5" />
-                      Disconnect
-                    </PillButton>
+                    {canManageOrgMailboxes ? (
+                      <EmailScopeSelect
+                        value={account.scope}
+                        onValueChange={(scope) =>
+                          updateConnectedEmailScope({
+                            accountId: account._id,
+                            scope,
+                          })
+                            .then(() =>
+                              currentOrg?.orgId
+                                ? updateConnectedEmailAccounts(
+                                    { orgId: currentOrg.orgId },
+                                    (current) =>
+                                      current.map((row) =>
+                                        row._id === account._id
+                                          ? {
+                                              ...row,
+                                              scope,
+                                              updatedAt: dayjs().valueOf(),
+                                            }
+                                          : row,
+                                      ),
+                                  )
+                                : undefined,
+                            )
+                            .catch(() => toast.error("Failed to update scope"))
+                        }
+                        className="h-8 w-32 rounded-md border-foreground/8 bg-popover text-label"
+                      />
+                    ) : (
+                      <span className="rounded-md border border-foreground/8 bg-popover px-2.5 py-1.5 text-label text-muted-foreground">
+                        {EMAIL_SCOPE_LABELS[account.scope]}
+                      </span>
+                    )}
+                    {canDisconnectMailbox ? (
+                      <PillButton
+                        variant="destructive"
+                        size="compact"
+                        onClick={() =>
+                          revokeConnectedEmail({ accountId: account._id })
+                            .then(() =>
+                              currentOrg?.orgId
+                                ? updateConnectedEmailAccounts(
+                                    { orgId: currentOrg.orgId },
+                                    (current) =>
+                                      current.filter(
+                                        (row) => row._id !== account._id,
+                                      ),
+                                  )
+                                : undefined,
+                            )
+                            .catch(() => toast.error("Failed to disconnect email"))
+                        }
+                      >
+                        <Trash2 className="size-3.5" />
+                        Disconnect
+                      </PillButton>
+                    ) : null}
                   </div>
                 );
               })()

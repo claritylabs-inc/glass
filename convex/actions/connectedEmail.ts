@@ -14,6 +14,10 @@ import { api, internal } from "../_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Id } from "../_generated/dataModel";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
+import {
+  resolveImapDestination,
+  type ResolvedImapDestination,
+} from "../lib/imapDestination";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
 
@@ -177,10 +181,18 @@ async function requireOrgMember(ctx: any, orgId: Id<"organizations">, userId: Id
 async function withClient<T>(
   account: ConnectedEmailAccount,
   fn: (client: ImapFlow) => Promise<T>,
+  destination?: ResolvedImapDestination,
 ): Promise<T> {
+  const resolvedDestination =
+    destination ??
+    await resolveImapDestination({
+      host: account.host,
+      port: account.port,
+    });
   const client = new ImapFlow({
-    host: account.host,
-    port: account.port,
+    host: resolvedDestination.connectionHost,
+    port: resolvedDestination.port,
+    servername: resolvedDestination.servername,
     secure: account.secure,
     connectionTimeout: IMAP_CONNECTION_TIMEOUT_MS,
     greetingTimeout: IMAP_GREETING_TIMEOUT_MS,
@@ -444,17 +456,25 @@ export const connect = action({
   handler: async (ctx, args): Promise<Id<"connectedEmailAccounts">> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
-    await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
+    const membership = await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
+    const scope = args.scope ?? "user";
+    if (scope === "org" && membership.role !== "admin") {
+      throw new Error("Only org admins can connect organization-scoped mailboxes");
+    }
 
+    const destination = await resolveImapDestination({
+      host: args.host,
+      port: args.port,
+    });
     const encryptedPassword = encryptPassword(args.password);
     const testAccount: ConnectedEmailAccount = {
       _id: "test" as Id<"connectedEmailAccounts">,
       orgId: args.orgId,
       userId: userId as Id<"users">,
-      scope: args.scope ?? "user",
+      scope,
       emailAddress: args.emailAddress.trim().toLowerCase(),
-      host: args.host.trim(),
-      port: args.port,
+      host: destination.normalizedHost,
+      port: destination.port,
       secure: args.secure,
       username: args.username.trim(),
       encryptedPassword,
@@ -462,16 +482,16 @@ export const connect = action({
     await withClient(testAccount, async (client) => {
       await client.mailboxOpen("INBOX");
       return true;
-    });
+    }, destination);
 
     return await ctx.runMutation(internal.connectedEmail.upsertInternal, {
       orgId: args.orgId,
       userId: userId as Id<"users">,
-      scope: args.scope ?? "user",
+      scope,
       label: args.label?.trim() || undefined,
       emailAddress: args.emailAddress.trim().toLowerCase(),
-      host: args.host.trim(),
-      port: args.port,
+      host: destination.normalizedHost,
+      port: destination.port,
       secure: args.secure,
       username: args.username.trim(),
       encryptedPassword,

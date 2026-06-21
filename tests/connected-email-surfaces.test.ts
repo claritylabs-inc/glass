@@ -171,8 +171,26 @@ describe("connected email surfaces", () => {
     expect(emailSettings).toContain("https://myaccount.google.com/apppasswords");
     expect(emailSettings).toContain("Add your first inbox");
     expect(emailSettings).toContain("EmailScopeSelect");
+    expect(emailSettings).toContain("canManageOrgMailboxes");
+    expect(emailSettings).toContain("allowOrgScope={canManageOrgMailboxes}");
     expect(emailSettings).not.toContain("<select");
     expect(emailSettings).not.toContain("Username");
+  });
+
+  it("guards connected email IMAP destinations and org-scoped mailboxes", () => {
+    const action = read("convex/actions/connectedEmail.ts");
+    const mutation = read("convex/connectedEmail.ts");
+    const guard = read("convex/lib/imapDestination.ts");
+
+    expect(action).toContain("resolveImapDestination");
+    expect(action).toContain("destination.normalizedHost");
+    expect(action).toContain("Only org admins can connect organization-scoped mailboxes");
+    expect(guard).toContain("Connected email supports IMAP ports 993 and 143 only");
+    expect(guard).toContain("IMAP host resolves to a private or reserved network address");
+    expect(guard).toContain("BlockList");
+    expect(mutation).toContain(
+      "Only org admins can make a mailbox available to the organization",
+    );
   });
 
   it("has a cron-callable previous-day attention scan that does not persist messages", () => {
