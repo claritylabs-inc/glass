@@ -282,21 +282,14 @@ export const generateUploadUrl = mutation({
 });
 
 export const getAttachmentUrl = query({
-  args: { threadId: v.optional(v.id("threads")), fileId: v.id("_storage") },
+  args: { threadId: v.id("threads"), fileId: v.id("_storage") },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAccess(ctx);
-    // Backwards compatibility for the currently deployed frontend, which calls this
-    // query with only fileId. The thread-scoped path below should be preferred once
-    // the Next.js bundle containing threadId is deployed.
-    if (!args.threadId) {
-      return await ctx.storage.getUrl(args.fileId);
-    }
-    const threadId = args.threadId;
-    const thread = await ctx.db.get(threadId);
+    const thread = await ctx.db.get(args.threadId);
     if (!thread || thread.orgId !== orgId) return null;
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
       .collect();
     const isThreadAttachment = messages.some((message) =>
       message.orgId === orgId &&
