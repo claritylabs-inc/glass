@@ -15,6 +15,7 @@ import {
   buildExtractor,
   summarizeExtractionCheckpoint,
 } from "../lib/extraction";
+import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
 import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
 import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
@@ -535,20 +536,6 @@ async function embedAndStoreBatch<T>({
   }
 
   return { embedded, failures };
-}
-
-async function deletePolicyRowsInBatches(
-  ctx: ActionCtx,
-  mutationRef: any,
-  policyId: Id<"policies">,
-): Promise<number> {
-  let totalDeleted = 0;
-  for (;;) {
-    const result = await ctx.runMutation(mutationRef, { policyId });
-    const deleted = typeof result?.deleted === "number" ? result.deleted : 0;
-    totalDeleted += deleted;
-    if (deleted === 0) return totalDeleted;
-  }
 }
 
 async function isExtractionCancelled(

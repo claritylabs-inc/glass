@@ -68,7 +68,7 @@ export const listAllForOrg = internalQuery({
   },
 });
 
-/** Delete all chunks for a policy (used when re-extracting). */
+/** Delete one batch of chunks for a policy. Call until it returns 0 deleted rows. */
 export const deleteByPolicy = internalMutation({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {

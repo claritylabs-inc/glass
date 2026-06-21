@@ -8,10 +8,12 @@
  */
 
 import { v } from "convex/values";
+import dayjs from "dayjs";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText } from "ai";
 import { getModelForOrg } from "../lib/models";
+import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
 import { insuranceDocToPolicy } from "../lib/documentMapping";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
@@ -123,9 +125,11 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
       });
 
       // 6. Delete existing document chunks for this policy
-      await ctx.runMutation(internal.documentChunks.deleteByPolicy, {
-        policyId: args.policyId,
-      });
+      await deletePolicyRowsInBatches(
+        ctx,
+        internal.documentChunks.deleteByPolicy,
+        args.policyId,
+      );
 
       // 7. Re-chunk from the reconciled extraction
       // Use cl-sdk chunkDocument if available, otherwise create a simple chunk
@@ -155,7 +159,7 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
               text: chunk.text,
               metadata: chunk.metadata,
               embedding,
-              createdAt: Date.now(),
+              createdAt: dayjs().valueOf(),
             });
           } catch (embedErr: any) {
             await log(`Warning: failed to embed chunk ${chunk.id}: ${embedErr.message}`);

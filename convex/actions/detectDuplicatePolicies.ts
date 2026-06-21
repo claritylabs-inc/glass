@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction, action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
+import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
 import { compareDuplicatePolicies } from "../lib/policyDuplicateDetection";
 
 export const detectDuplicates = internalAction({
@@ -139,9 +140,11 @@ export const mergePolicies = action({
     });
 
     // 8. Delete document chunks from secondary (reconciliation will regenerate primary's)
-    await ctx.runMutation(internal.documentChunks.deleteByPolicy, {
-      policyId: args.secondaryPolicyId,
-    });
+    await deletePolicyRowsInBatches(
+      ctx,
+      internal.documentChunks.deleteByPolicy,
+      args.secondaryPolicyId,
+    );
 
     // 9. Soft-delete the secondary policy
     await ctx.runMutation(internal.policies.softDeleteInternal, {
