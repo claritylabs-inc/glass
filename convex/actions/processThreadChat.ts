@@ -8,7 +8,6 @@ import type { Id } from "../_generated/dataModel";
 import { streamText, stepCountIs, type ModelMessage } from "ai";
 import mammoth from "mammoth";
 import JSZip from "jszip";
-import * as XLSX from "xlsx";
 import {
   fallbackRouteForCall,
   generateTextWithFallback,
@@ -84,6 +83,11 @@ import {
   requirementEvaluationTargetLabel,
   requirementSemantics,
 } from "../lib/requirementSemantics";
+import {
+  isUnsupportedSpreadsheetAttachment,
+  isXlsxSpreadsheetAttachment,
+  spreadsheetBufferToText,
+} from "../lib/spreadsheetText";
 
 function normalizeConfidenceRepair(text: string, fallback: string): string {
   const trimmed = text.trim();
@@ -338,20 +342,6 @@ function isImageAttachment(filename: string, contentType: string) {
   );
 }
 
-function isSpreadsheetAttachment(filename: string, contentType: string) {
-  const lowerName = filename.toLowerCase();
-  const type = contentType.toLowerCase();
-  if (lowerName.endsWith(".csv") || lowerName.endsWith(".tsv")) return false;
-  return (
-    type.includes("spreadsheet") ||
-    type.includes("excel") ||
-    type === "application/vnd.ms-excel" ||
-    lowerName.endsWith(".xlsx") ||
-    lowerName.endsWith(".xls") ||
-    lowerName.endsWith(".xlsm")
-  );
-}
-
 function isDocxAttachment(filename: string, contentType: string) {
   const lowerName = filename.toLowerCase();
   const type = contentType.toLowerCase();
@@ -369,29 +359,6 @@ function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
     buffer.byteOffset,
     buffer.byteOffset + buffer.byteLength,
   ) as ArrayBuffer;
-}
-
-function spreadsheetBufferToText(buffer: Buffer): string {
-  const workbook = XLSX.read(buffer, {
-    type: "buffer",
-    cellDates: true,
-    cellText: false,
-  });
-  const sections: string[] = [];
-  for (const sheetName of workbook.SheetNames) {
-    const worksheet = workbook.Sheets[sheetName];
-    if (!worksheet) continue;
-    const csv = XLSX.utils
-      .sheet_to_csv(worksheet, {
-        blankrows: false,
-        FS: ",",
-        RS: "\n",
-      })
-      .trim();
-    if (!csv) continue;
-    sections.push(`Sheet: ${sheetName}\n${csv}`);
-  }
-  return sections.join("\n\n");
 }
 
 async function docxBufferToText(buffer: Buffer): Promise<string> {
@@ -506,8 +473,8 @@ async function buildAttachmentParts(
           mediaType,
         });
         names.push(att.filename);
-      } else if (isSpreadsheetAttachment(att.filename, att.contentType)) {
-        const text = spreadsheetBufferToText(buffer);
+      } else if (isXlsxSpreadsheetAttachment(att.filename, att.contentType)) {
+        const text = await spreadsheetBufferToText(buffer);
         const remaining = options.remainingTextChars.value;
         if (remaining <= 0 || !text.trim()) continue;
         const clipped =
@@ -520,6 +487,14 @@ async function buildAttachmentParts(
         parts.push({
           type: "text",
           text: `--- Spreadsheet attachment: ${att.filename} ---\n${clipped}${suffix}\n--- End spreadsheet attachment ---`,
+        });
+        names.push(att.filename);
+      } else if (
+        isUnsupportedSpreadsheetAttachment(att.filename, att.contentType)
+      ) {
+        parts.push({
+          type: "text",
+          text: `--- Unsupported spreadsheet attachment: ${att.filename} ---\nThis spreadsheet was not read. Glass currently reads .xlsx and text-based CSV/TSV attachments for chat context; please re-upload this file as .xlsx, .csv, or .tsv.\n--- End unsupported spreadsheet attachment ---`,
         });
         names.push(att.filename);
       } else if (isDocxAttachment(att.filename, att.contentType)) {

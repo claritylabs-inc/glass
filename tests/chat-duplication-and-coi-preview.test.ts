@@ -94,6 +94,8 @@ describe("chat duplicate prevention and COI preview UI", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
     const threadPrompt = read("lib/thread-prompt.ts");
     const processThreadChat = read("convex/actions/processThreadChat.ts");
+    const spreadsheetText = read("convex/lib/spreadsheetText.ts");
+    const packageJson = read("package.json");
 
     expect(threadContent).toContain("uploadPromptFiles");
     expect(threadPrompt).toContain("function inferAttachmentContentType");
@@ -110,7 +112,8 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(processThreadChat).toContain("function isTextLikeAttachment");
     expect(processThreadChat).toContain("function isPdfAttachment");
     expect(processThreadChat).toContain("function isImageAttachment");
-    expect(processThreadChat).toContain("function isSpreadsheetAttachment");
+    expect(processThreadChat).toContain("isXlsxSpreadsheetAttachment");
+    expect(processThreadChat).toContain("isUnsupportedSpreadsheetAttachment");
     expect(processThreadChat).toContain("function isDocxAttachment");
     expect(processThreadChat).toContain("function isPresentationAttachment");
     expect(processThreadChat).toContain("spreadsheetBufferToText");
@@ -119,15 +122,26 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(processThreadChat).toContain("buildMessageHistoryWithAttachmentContext");
     expect(processThreadChat).toContain("RECENT_ATTACHMENT_MESSAGE_LIMIT");
     expect(processThreadChat).toContain('lowerName.endsWith(".csv")');
-    expect(processThreadChat).toContain('lowerName.endsWith(".xlsx")');
+    expect(processThreadChat).toContain("Unsupported spreadsheet attachment");
     expect(processThreadChat).toContain('lowerName.endsWith(".docx")');
     expect(processThreadChat).toContain('lowerName.endsWith(".pptx")');
     expect(processThreadChat).toContain("isImageAttachment(att.filename, att.contentType)");
     expect(processThreadChat).toContain("isPdfAttachment(att.filename, att.contentType)");
     expect(processThreadChat).toContain('type.includes("csv")');
-    expect(processThreadChat).toContain('type.includes("spreadsheet")');
-    expect(processThreadChat).toContain("XLSX.read");
-    expect(processThreadChat).toContain("sheet_to_csv");
+    expect(processThreadChat).not.toContain("XLSX.read");
+    expect(processThreadChat).not.toContain("sheet_to_csv");
+    expect(spreadsheetText).toContain("read-excel-file/node");
+    expect(spreadsheetText).toContain("function isXlsxSpreadsheetAttachment");
+    expect(spreadsheetText).toContain(
+      "function isUnsupportedSpreadsheetAttachment",
+    );
+    expect(spreadsheetText).toContain('lowerName.endsWith(".xlsx")');
+    expect(spreadsheetText).toContain("spreadsheetRowsToCsv");
+    expect(spreadsheetText).toContain("readXlsxFile(buffer)");
+    expect(spreadsheetText).not.toContain("XLSX.read");
+    expect(spreadsheetText).not.toContain("sheet_to_csv");
+    expect(packageJson).toContain("read-excel-file");
+    expect(packageJson).not.toContain('"xlsx"');
     expect(processThreadChat).toContain("mammoth.extractRawText");
     expect(processThreadChat).toContain("JSZip.loadAsync");
     expect(processThreadChat).toContain("buffer.toString(\"utf-8\")");
