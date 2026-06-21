@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import dayjs from "dayjs";
 import {
   query,
   mutation,
@@ -7,6 +8,11 @@ import {
 } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { requireOrgAccess } from "./lib/orgAuth";
+import {
+  normalizeRequestedScopes,
+  parseScopesFromToken,
+  stringifyScopes,
+} from "./lib/apiAuth";
 
 // ── Helpers ──
 
@@ -49,7 +55,7 @@ export const registerClient = internalMutation({
       clientName: args.clientName,
       redirectUris: args.redirectUris,
       tokenEndpointAuthMethod: args.tokenEndpointAuthMethod ?? "none",
-      createdAt: Date.now(),
+      createdAt: dayjs().valueOf(),
     });
     return {
       client_id: clientId,
@@ -86,7 +92,7 @@ export const exchangeAuthCode = internalMutation({
 
     if (!codeRecord) throw new Error("invalid_grant");
     if (codeRecord.usedAt) throw new Error("invalid_grant");
-    if (codeRecord.expiresAt < Date.now()) throw new Error("invalid_grant");
+    if (codeRecord.expiresAt < dayjs().valueOf()) throw new Error("invalid_grant");
     if (codeRecord.clientId !== args.clientId) throw new Error("invalid_grant");
     if (codeRecord.redirectUri !== args.redirectUri) throw new Error("invalid_grant");
 
@@ -101,25 +107,25 @@ export const exchangeAuthCode = internalMutation({
       throw new Error("invalid_grant");
     }
 
-    // Mark code as used
-    await ctx.db.patch(codeRecord._id, { usedAt: Date.now() });
+    const now = dayjs().valueOf();
+    const scopes = parseScopesFromToken(codeRecord.scopes, codeRecord.scope);
+    await ctx.db.patch(codeRecord._id, { usedAt: now });
 
-    // Generate access + refresh tokens
     const accessTokenRaw = "prsm_at_" + randomHex(48);
     const refreshTokenRaw = "prsm_rt_" + randomHex(48);
     const tokenHash = await sha256Hex(accessTokenRaw);
     const refreshTokenHash = await sha256Hex(refreshTokenRaw);
 
-    const now = Date.now();
     await ctx.db.insert("oauthTokens", {
       tokenHash,
       refreshTokenHash,
       clientId: args.clientId,
       userId: codeRecord.userId,
       orgId: codeRecord.orgId,
-      scope: codeRecord.scope,
-      expiresAt: now + 60 * 60 * 1000, // 1 hour
-      refreshExpiresAt: now + 30 * 24 * 60 * 60 * 1000, // 30 days
+      scope: stringifyScopes(scopes),
+      scopes,
+      expiresAt: now + 60 * 60 * 1000,
+      refreshExpiresAt: now + 30 * 24 * 60 * 60 * 1000,
       createdAt: now,
     });
 
@@ -142,7 +148,7 @@ export const validateAccessToken = internalQuery({
 
     if (!token) return null;
     if (token.revokedAt) return null;
-    if (token.expiresAt < Date.now()) return null;
+    if (token.expiresAt < dayjs().valueOf()) return null;
 
     return {
       userId: token.userId,
@@ -162,14 +168,14 @@ export const validateAccessTokenWithScopes = internalQuery({
 
     if (!token) return null;
     if (token.revokedAt) return null;
-    if (token.expiresAt < Date.now()) return null;
+    if (token.expiresAt < dayjs().valueOf()) return null;
 
     return {
       userId: token.userId,
       orgId: token.orgId,
       clientId: token.clientId,
       tokenId: token._id,
-      scopes: token.scopes ?? (["read"] as ("read" | "write")[]),
+      scopes: parseScopesFromToken(token.scopes, token.scope),
     };
   },
 });
@@ -190,28 +196,28 @@ export const refreshAccessToken = internalMutation({
 
     if (!token) throw new Error("invalid_grant");
     if (token.revokedAt) throw new Error("invalid_grant");
-    if (token.refreshExpiresAt && token.refreshExpiresAt < Date.now()) {
+    const now = dayjs().valueOf();
+    if (token.refreshExpiresAt && token.refreshExpiresAt < now) {
       throw new Error("invalid_grant");
     }
     if (token.clientId !== args.clientId) throw new Error("invalid_grant");
 
-    // Revoke old token pair
-    await ctx.db.patch(token._id, { revokedAt: Date.now() });
+    const scopes = parseScopesFromToken(token.scopes, token.scope);
+    await ctx.db.patch(token._id, { revokedAt: now });
 
-    // Issue new pair
     const accessTokenRaw = "prsm_at_" + randomHex(48);
     const refreshTokenRaw = "prsm_rt_" + randomHex(48);
     const tokenHash = await sha256Hex(accessTokenRaw);
     const refreshTokenHash = await sha256Hex(refreshTokenRaw);
 
-    const now = Date.now();
     await ctx.db.insert("oauthTokens", {
       tokenHash,
       refreshTokenHash,
       clientId: args.clientId,
       userId: token.userId,
       orgId: token.orgId,
-      scope: token.scope,
+      scope: stringifyScopes(scopes),
+      scopes,
       expiresAt: now + 60 * 60 * 1000,
       refreshExpiresAt: now + 30 * 24 * 60 * 60 * 1000,
       createdAt: now,
@@ -234,7 +240,7 @@ export const revokeTokenInternal = internalMutation({
       .withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash))
       .first();
     if (token && !token.revokedAt) {
-      await ctx.db.patch(token._id, { revokedAt: Date.now() });
+      await ctx.db.patch(token._id, { revokedAt: dayjs().valueOf() });
     }
   },
 });
@@ -276,6 +282,7 @@ export const createAuthorizationCode = mutation({
   },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireOrgAccess(ctx);
+    const scopes = normalizeRequestedScopes(args.scope);
 
     // Verify client exists and redirect_uri matches
     const client = await ctx.db
@@ -298,8 +305,9 @@ export const createAuthorizationCode = mutation({
       orgId,
       redirectUri: args.redirectUri,
       codeChallenge: args.codeChallenge,
-      scope: args.scope,
-      expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+      scope: stringifyScopes(scopes),
+      scopes,
+      expiresAt: dayjs().add(10, "minute").valueOf(),
     });
 
     return codeRaw;
@@ -367,7 +375,7 @@ export const revokeApp = mutation({
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
 
-    const now = Date.now();
+    const now = dayjs().valueOf();
     for (const t of tokens) {
       if (t.clientId === args.clientId && !t.revokedAt) {
         await ctx.db.patch(t._id, { revokedAt: now });

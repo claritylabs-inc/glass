@@ -225,7 +225,7 @@ http.route({
       JSON.stringify({
         resource: `${issuer}/mcp`,
         authorization_servers: [issuer],
-        scopes_supported: [],
+        scopes_supported: ["read", "write"],
       }),
       { headers: { "Content-Type": "application/json" } },
     );
@@ -250,6 +250,7 @@ http.route({
         revocation_endpoint: `${issuer}/oauth/revoke`,
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code", "refresh_token"],
+        scopes_supported: ["read", "write"],
         code_challenge_methods_supported: ["S256"],
         token_endpoint_auth_methods_supported: ["none"],
         service_documentation: `${siteUrl}`,
