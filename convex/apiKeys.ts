@@ -1,11 +1,12 @@
 import { v } from "convex/values";
+import dayjs from "dayjs";
 import {
   query,
   mutation,
   internalQuery,
   internalMutation,
 } from "./_generated/server";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireOrgAdmin } from "./lib/orgAuth";
 
 async function sha256Hex(input: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -24,17 +25,14 @@ function randomHex(bytes: number): string {
     .join("");
 }
 
-// ── Public (auth-scoped) ──
-
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { orgId } = await requireOrgAdmin(ctx);
     const keys = await ctx.db
       .query("apiKeys")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
-    // Return without the hash, sorted newest first
     return keys
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((k) => ({
@@ -51,10 +49,10 @@ export const list = query({
 export const generate = mutation({
   args: { name: v.string() },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
-    const rawKey = "glass_" + randomHex(32); // glass_ + 64 hex chars
+    const { userId, orgId } = await requireOrgAdmin(ctx);
+    const rawKey = "glass_" + randomHex(32);
     const keyHash = await sha256Hex(rawKey);
-    const keyPrefix = rawKey.slice(0, 14); // "glass_" + 8 hex chars
+    const keyPrefix = rawKey.slice(0, 14);
 
     await ctx.db.insert("apiKeys", {
       orgId,
@@ -62,10 +60,9 @@ export const generate = mutation({
       name: args.name,
       keyHash,
       keyPrefix,
-      createdAt: Date.now(),
+      createdAt: dayjs().valueOf(),
     });
 
-    // Return the full key — this is the only time it's visible
     return rawKey;
   },
 });
@@ -73,26 +70,24 @@ export const generate = mutation({
 export const revoke = mutation({
   args: { id: v.id("apiKeys") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { orgId } = await requireOrgAdmin(ctx);
     const key = await ctx.db.get(args.id);
     if (!key || key.orgId !== orgId) throw new Error("Not found");
     if (key.revokedAt) throw new Error("Already revoked");
-    await ctx.db.patch(args.id, { revokedAt: Date.now() });
+    await ctx.db.patch(args.id, { revokedAt: dayjs().valueOf() });
   },
 });
 
 export const remove = mutation({
   args: { id: v.id("apiKeys") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { orgId } = await requireOrgAdmin(ctx);
     const key = await ctx.db.get(args.id);
     if (!key || key.orgId !== orgId) throw new Error("Not found");
     if (!key.revokedAt) throw new Error("Must revoke before removing");
     await ctx.db.delete(args.id);
   },
 });
-
-// ── Internal (for HTTP action auth) ──
 
 export const validateKey = internalQuery({
   args: { keyHash: v.string() },
@@ -109,6 +104,6 @@ export const validateKey = internalQuery({
 export const touchLastUsed = internalMutation({
   args: { id: v.id("apiKeys") },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { lastUsedAt: Date.now() });
+    await ctx.db.patch(args.id, { lastUsedAt: dayjs().valueOf() });
   },
 });

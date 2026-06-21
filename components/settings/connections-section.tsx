@@ -28,6 +28,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg } from "@/hooks/use-current-org";
 import {
   useCachedQuery,
   useUpdateCachedQuery,
@@ -51,6 +52,9 @@ type ApiKeyRow = {
 };
 
 export function ConnectionsSection() {
+  const currentOrg = useCurrentOrg();
+  const canManageApiKeys = currentOrg?.role === "admin";
+  const apiKeyRoleKnown = currentOrg !== null;
   const connectedApps = useCachedQuery(
     "oauth.listConnectedApps",
     api.oauth.listConnectedApps,
@@ -62,9 +66,11 @@ export function ConnectionsSection() {
   >("oauth.listConnectedApps");
   const revokeApp = useMutation(api.oauth.revokeApp);
 
-  const apiKeys = useCachedQuery("apiKeys.list", api.apiKeys.list, {}) as
-    | ApiKeyRow[]
-    | undefined;
+  const apiKeys = useCachedQuery(
+    "apiKeys.list",
+    api.apiKeys.list,
+    canManageApiKeys ? {} : "skip",
+  ) as ApiKeyRow[] | undefined;
   const updateApiKeys = useUpdateCachedQuery<ApiKeyRow[], Record<string, never>>(
     "apiKeys.list",
   );
@@ -301,6 +307,7 @@ export function ConnectionsSection() {
   }
 
   function openGenerateDialog() {
+    if (!canManageApiKeys) return;
     setShowGenerateKeyDialog(true);
     setGeneratedKey(null);
     setNewKeyName("");
@@ -312,7 +319,7 @@ export function ConnectionsSection() {
   }
 
   async function handleGenerate() {
-    if (!newKeyName) return;
+    if (!newKeyName || !canManageApiKeys) return;
     setGeneratingKey(true);
     try {
       const key = await generateApiKey({ name: newKeyName });
@@ -491,12 +498,25 @@ export function ConnectionsSection() {
                   interactive tools.
                 </p>
               </div>
-              <PillButton size="compact" variant="secondary" onClick={openGenerateDialog}>
-                <Plus className="w-3.5 h-3.5" />
-                Generate key
-              </PillButton>
+              {canManageApiKeys && (
+                <PillButton size="compact" variant="secondary" onClick={openGenerateDialog}>
+                  <Plus className="w-3.5 h-3.5" />
+                  Generate key
+                </PillButton>
+              )}
             </div>
-            {apiKeys === undefined ? (
+            {!apiKeyRoleKnown ? (
+              <div className="px-5 py-8 text-center">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mx-auto" />
+              </div>
+            ) : !canManageApiKeys ? (
+              <div className="px-5 py-8 text-center">
+                <Key className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
+                <p className="text-base text-muted-foreground">
+                  API keys are managed by organization admins.
+                </p>
+              </div>
+            ) : apiKeys === undefined ? (
               <div className="px-5 py-8 text-center">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mx-auto" />
               </div>
