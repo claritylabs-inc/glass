@@ -28,6 +28,8 @@ import {
   buildScopedOrgMemoryContext,
   buildScopedRequirementsContext,
   buildScopedVendorComplianceContext,
+  documentContextOrgIdsForScope,
+  documentContextPolicyLimitForOrg,
 } from "../lib/agentPrompts";
 import {
   buildSystemPromptForContext,
@@ -971,11 +973,16 @@ export const run = internalAction({
         string,
         { policies: any[]; quotes: any[] }
       >();
+      const documentContextOrgIds = documentContextOrgIdsForScope(scope);
       await Promise.all(
-        scope.readOrgIds.map(async (readOrgId) => {
-          const docs = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, {
-            orgId: readOrgId,
-          });
+        documentContextOrgIds.map(async (readOrgId) => {
+          const docs = await ctx.runQuery(
+            internal.policies.listPreviewReadableForAgentContextInternal,
+            {
+              orgId: readOrgId,
+              limit: documentContextPolicyLimitForOrg(scope, readOrgId),
+            },
+          );
           policiesByOrg.set(String(readOrgId), {
             policies: (docs as any[]).filter(
               (policy) => policy.documentType !== "quote",

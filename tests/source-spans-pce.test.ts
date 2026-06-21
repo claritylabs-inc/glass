@@ -105,10 +105,21 @@ describe("source spans and PCE backend surfaces", () => {
     const prompts = read("convex/lib/agentPrompts.ts");
     const queryAgent = read("convex/lib/queryAgent.ts");
     const sourceRetriever = read("convex/lib/convexSourceRetriever.ts");
+    const threadChat = read("convex/actions/processThreadChat.ts");
+    const policies = read("convex/policies.ts");
 
     expect(prompts).toContain("SOURCE-TREE EVIDENCE");
     expect(prompts).toContain("sourceSpanIds");
-    expect(prompts).toContain("sourceNodes.listByPolicyInternal");
+    expect(prompts).toContain("SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG");
+    expect(prompts).toContain("MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS");
+    expect(prompts).toContain("DOCUMENT CONTEXT BOUNDS");
+    expect(prompts).toContain("sourceNodes.listByOrgInternal");
+    expect(prompts).toContain("sourceNodes.listByPolicyCandidatesInternal");
+    expect(prompts).toContain("sourceNodes.listContextByPolicyAndNodeIdsInternal");
+    expect(prompts).not.toContain("sourceNodes.listByPolicyInternal");
+    expect(threadChat).toContain("documentContextOrgIdsForScope");
+    expect(threadChat).toContain("listPreviewReadableForAgentContextInternal");
+    expect(policies).toContain("listPreviewReadableForAgentContextInternal");
     expect(sourceRetriever).toContain("createConvexSourceRetriever");
     expect(sourceRetriever).toContain("searchSourceNodes");
     expect(sourceRetriever).toContain("sourceNodes.listByOrgInternal");

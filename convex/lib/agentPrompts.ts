@@ -33,6 +33,37 @@ import { makeEmbedText } from "./sdkCallbacks";
 import { formatComplianceRequirementsContext } from "./complianceAgent";
 import { formatDocumentStructureForPrompt } from "./policyDocumentStructure";
 import { formatCoverageBreakdownForPrompt } from "./coverageBreakdown";
+import type { AgentScope } from "./agentScope";
+import { formatAgentScopePortfolioIndex, orgLabelForScope } from "./agentScope";
+
+export const MAX_DIRECT_DOCUMENT_CONTEXT_POLICIES = 120;
+export const MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS = 8;
+export const MAX_PORTFOLIO_POLICIES_PER_ORG = 32;
+export const MAX_FOCUSED_PORTFOLIO_POLICIES = 80;
+
+const DOCUMENT_CHUNK_VECTOR_LIMIT = 30;
+export const SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG = 600;
+const SOURCE_NODE_CANDIDATE_POLICIES_FROM_CHUNKS = 6;
+const SOURCE_NODE_CANDIDATES_PER_CHUNK_POLICY = 120;
+export const SOURCE_NODE_MATCH_LIMIT = 18;
+const SOURCE_NODE_MATCHES_PER_POLICY = 8;
+
+type SourceNodeRecord = Record<string, unknown> & {
+  _id?: string;
+  _score?: number;
+  policyId?: Id<"policies"> | string;
+  nodeId?: string;
+  parentNodeId?: string;
+  title?: string;
+  kind?: string;
+  path?: string;
+  description?: string;
+  textExcerpt?: string;
+  sourceSpanIds?: string[];
+  pageStart?: number;
+  pageEnd?: number;
+  order?: number;
+};
 
 /**
  * Build document context using vector search over pre-embedded chunks.
@@ -166,7 +197,7 @@ function sourceQueryTerms(query: string): string[] {
   ));
 }
 
-function scoreSourceNode(query: string, terms: string[], node: Record<string, any>): number {
+function scoreSourceNode(query: string, terms: string[], node: SourceNodeRecord): number {
   const text = [
     node.title,
     node.kind,
@@ -180,6 +211,58 @@ function scoreSourceNode(query: string, terms: string[], node: Record<string, an
   }
   if (node.kind === "table_row" || node.kind === "schedule") score += 1.5;
   return score;
+}
+
+export function rankSourceNodesForQuery(
+  queryText: string,
+  nodes: SourceNodeRecord[],
+  limit = SOURCE_NODE_MATCH_LIMIT,
+): SourceNodeRecord[] {
+  const terms = sourceQueryTerms(queryText);
+  const seen = new Set<string>();
+  return nodes
+    .map((node): SourceNodeRecord => ({
+      ...node,
+      _score: scoreSourceNode(queryText, terms, node),
+    }))
+    .filter((node) => Number(node._score ?? 0) > 0)
+    .filter((node) => {
+      const key = `${String(node.policyId ?? "")}:${String(node.nodeId ?? node._id ?? "")}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((left, right) => {
+      const scoreDelta = Number(right._score ?? 0) - Number(left._score ?? 0);
+      if (scoreDelta !== 0) return scoreDelta;
+      return Number(left.order ?? 0) - Number(right.order ?? 0);
+    })
+    .slice(0, Math.max(0, Math.min(Math.floor(limit), SOURCE_NODE_MATCH_LIMIT)));
+}
+
+export function documentContextOrgIdsForScope(
+  scope: AgentScope,
+): Id<"organizations">[] {
+  if (scope.mode !== "broker_portfolio") return scope.readOrgIds;
+  const ordered = [
+    ...(scope.focusedOrgId ? [scope.focusedOrgId] : []),
+    ...scope.readOrgIds.filter(
+      (orgId) => String(orgId) !== String(scope.focusedOrgId),
+    ),
+  ];
+  return ordered.slice(0, MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS);
+}
+
+export function documentContextPolicyLimitForOrg(
+  scope: AgentScope,
+  orgId: Id<"organizations">,
+): number {
+  if (scope.mode !== "broker_portfolio") {
+    return MAX_DIRECT_DOCUMENT_CONTEXT_POLICIES;
+  }
+  return scope.focusedOrgId && String(scope.focusedOrgId) === String(orgId)
+    ? MAX_FOCUSED_PORTFOLIO_POLICIES
+    : MAX_PORTFOLIO_POLICIES_PER_ORG;
 }
 
 /**
@@ -202,30 +285,14 @@ async function buildVectorContext(
   const queryEmbedding = await embed(queryText);
   const allDocs = [...policies, ...quotes];
   const policyMap = new Map(allDocs.map((p) => [p._id, p]));
-  const terms = sourceQueryTerms(queryText);
 
   const results = await ctx.vectorSearch("documentChunks", "by_embedding", {
     vector: queryEmbedding,
-    limit: 30,
+    limit: DOCUMENT_CHUNK_VECTOR_LIMIT,
     filter: (q) => q.eq("orgId", orgId),
   });
 
   // Hydrate chunks
-  const sourceNodeDocs: Array<Record<string, any>> = [];
-  const allSourceNodesByPolicy = new Map<string, Array<Record<string, any>>>();
-  for (const policy of allDocs.slice(0, 60)) {
-    const nodes = await ctx.runQuery((internal as any).sourceNodes.listByPolicyInternal, {
-      policyId: policy._id,
-    }) as Array<Record<string, any>>;
-    allSourceNodesByPolicy.set(String(policy._id), nodes);
-    for (const node of nodes) {
-      const score = scoreSourceNode(queryText, terms, node);
-      if (score > 0) sourceNodeDocs.push({ ...node, _score: score });
-    }
-  }
-  sourceNodeDocs.sort((left, right) => Number(right._score ?? 0) - Number(left._score ?? 0));
-  sourceNodeDocs.splice(18);
-
   const chunkDocs = [];
   for (const result of results) {
     const doc = await ctx.runQuery(internal.documentChunks.get, {
@@ -233,6 +300,54 @@ async function buildVectorContext(
     });
     if (doc && isStructuredFactChunk(doc)) chunkDocs.push({ ...doc, _score: result._score });
   }
+
+  const chunkPolicyIds = Array.from(
+    new Set(chunkDocs.map((chunk) => String(chunk.policyId))),
+  ).slice(0, SOURCE_NODE_CANDIDATE_POLICIES_FROM_CHUNKS);
+  const [orgSourceCandidates, policySourceCandidateGroups] = await Promise.all([
+    ctx.runQuery((internal as any).sourceNodes.listByOrgInternal, {
+      orgId,
+      limit: SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG,
+    }) as Promise<SourceNodeRecord[]>,
+    Promise.all(
+      chunkPolicyIds.map((policyId) =>
+        ctx.runQuery((internal as any).sourceNodes.listByPolicyCandidatesInternal, {
+          policyId: policyId as Id<"policies">,
+          limit: SOURCE_NODE_CANDIDATES_PER_CHUNK_POLICY,
+        }) as Promise<SourceNodeRecord[]>,
+      ),
+    ),
+  ]);
+  const sourceNodeDocs = rankSourceNodesForQuery(
+    queryText,
+    [...orgSourceCandidates, ...policySourceCandidateGroups.flat()],
+    SOURCE_NODE_MATCH_LIMIT,
+  );
+  const sourceNodeIdsByPolicy = new Map<string, string[]>();
+  for (const node of sourceNodeDocs) {
+    if (!node.policyId || !node.nodeId) continue;
+    const key = String(node.policyId);
+    if (!policyMap.has(key as Id<"policies">)) continue;
+    if (!sourceNodeIdsByPolicy.has(key)) sourceNodeIdsByPolicy.set(key, []);
+    const nodeIds = sourceNodeIdsByPolicy.get(key)!;
+    if (nodeIds.length < SOURCE_NODE_MATCHES_PER_POLICY) {
+      nodeIds.push(String(node.nodeId));
+    }
+  }
+  const sourceContextEntries = await Promise.all(
+    [...sourceNodeIdsByPolicy.entries()].map(async ([policyId, nodeIds]) => {
+      const nodes = await ctx.runQuery(
+        (internal as any).sourceNodes.listContextByPolicyAndNodeIdsInternal,
+        {
+          policyId: policyId as Id<"policies">,
+          nodeIds,
+          maxChildrenPerNode: 8,
+        },
+      ) as SourceNodeRecord[];
+      return [policyId, nodes] as const;
+    }),
+  );
+  const sourceContextByPolicy = new Map(sourceContextEntries);
   const sourceChunkDocs: Array<Record<string, any>> = [];
 
   // Group by policy
@@ -284,7 +399,10 @@ async function buildVectorContext(
       relevantPolicyIdSet.add(policyId as Id<"policies">);
     }
 
-    const allNodes = allSourceNodesByPolicy.get(policyId) ?? [];
+    const contextNodes = sourceContextByPolicy.get(policyId) ?? matchedNodes;
+    const contextByNodeId = new Map(
+      contextNodes.map((node) => [String(node.nodeId), node]),
+    );
     const carrier = policy.mga || policy.carrier || policy.security;
     const docLabel = isQuote ? "QUOTE" : "POLICY";
     const number = isQuote
@@ -296,7 +414,8 @@ async function buildVectorContext(
       : "";
     if (profile) section += `\nOperational profile:\n${profile}`;
     for (const node of matchedNodes.slice(0, 8)) {
-      const hierarchy = expandSourceNodeContext(allNodes, node as Record<string, any>);
+      const target = contextByNodeId.get(String(node.nodeId)) ?? node;
+      const hierarchy = expandSourceNodeContext(contextNodes, target);
       section += `\n\n[sourceNode:${node.nodeId} kind:${node.kind} path:${node.path} sourceSpanIds:${(node.sourceSpanIds ?? []).join(",")} score:${Number(node._score ?? 0).toFixed(3)}]`;
       section += `\n${hierarchy.map(formatSourceNodePromptLine).join("\n")}`;
     }
@@ -707,9 +826,6 @@ export function buildConversationMemoryFromList(
   return `\n\nCONVERSATION MEMORY (past conversations from this organization):\n${entries.join("\n\n")}`;
 }
 
-import type { AgentScope } from "./agentScope";
-import { formatAgentScopePortfolioIndex, orgLabelForScope } from "./agentScope";
-
 export async function buildScopedDocumentContext(
   ctx: ActionCtx,
   scope: AgentScope,
@@ -728,10 +844,16 @@ export async function buildScopedDocumentContext(
   const relevantPolicyIds: Id<"policies">[] = [];
   const relevantQuoteIds: Id<"policies">[] = [];
   const parts = [formatAgentScopePortfolioIndex(scope)];
-  const orderedOrgIds = [
-    ...(scope.focusedOrgId ? [scope.focusedOrgId] : []),
-    ...scope.readOrgIds.filter((orgId) => String(orgId) !== String(scope.focusedOrgId)),
-  ];
+  const loadedOrgIds = new Set(policiesByOrg.keys());
+  const orderedOrgIds = documentContextOrgIdsForScope(scope).filter((orgId) =>
+    loadedOrgIds.has(String(orgId)),
+  );
+  const omittedOrgCount = Math.max(0, scope.readOrgIds.length - orderedOrgIds.length);
+  if (omittedOrgCount > 0) {
+    parts.push(
+      `\n\nDOCUMENT CONTEXT BOUNDS: Source retrieval is limited to ${orderedOrgIds.length} orgs for this portfolio query; ${omittedOrgCount} additional readable orgs remain available through follow-up focused questions or lookup tools.`,
+    );
+  }
 
   for (const orgId of orderedOrgIds) {
     const docs = policiesByOrg.get(String(orgId)) ?? { policies: [], quotes: [] };

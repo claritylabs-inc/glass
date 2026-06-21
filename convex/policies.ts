@@ -712,6 +712,27 @@ export const listAllPreviewReadableInternal = internalQuery({
   },
 });
 
+export const listPreviewReadableForAgentContextInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 120), 160));
+    const candidates = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .take(limit * 3);
+    return candidates
+      .filter(isPreviewReadablePolicy)
+      .slice(0, limit)
+      .map((policy) => ({
+        ...policy,
+        extractionDataStage: effectiveExtractionDataStage(policy),
+      }));
+  },
+});
+
 // All complete, non-deleted quotes for an org (used by agent action)
 export const listAllQuotesInternal = internalQuery({
   args: { orgId: v.id("organizations") },

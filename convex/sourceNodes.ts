@@ -406,6 +406,74 @@ export const listByPolicyInternal = internalQuery({
   },
 });
 
+export const listByPolicyCandidatesInternal = internalQuery({
+  args: {
+    policyId: v.id("policies"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 120), 250));
+    return ctx.db
+      .query("sourceNodes")
+      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .take(limit);
+  },
+});
+
+export const listContextByPolicyAndNodeIdsInternal = internalQuery({
+  args: {
+    policyId: v.id("policies"),
+    nodeIds: v.array(v.string()),
+    maxChildrenPerNode: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const wanted = Array.from(new Set(args.nodeIds)).slice(0, 12);
+    if (wanted.length === 0) return [];
+    const maxChildren = Math.max(
+      0,
+      Math.min(Math.floor(args.maxChildrenPerNode ?? 8), 16),
+    );
+
+    const byNodeId = new Map<string, SourceNodeDoc>();
+    const addNode = (node: SourceNodeDoc | null) => {
+      if (node) byNodeId.set(node.nodeId, node);
+      return node;
+    };
+    const loadNode = async (nodeId: string) => {
+      if (byNodeId.has(nodeId)) return byNodeId.get(nodeId);
+      return addNode(
+        await ctx.db
+          .query("sourceNodes")
+          .withIndex("by_policyId_nodeId", (q) =>
+            q.eq("policyId", args.policyId).eq("nodeId", nodeId),
+          )
+          .first(),
+      );
+    };
+
+    for (const nodeId of wanted) {
+      let node = await loadNode(nodeId);
+      while (node?.parentNodeId) {
+        node = await loadNode(node.parentNodeId);
+      }
+    }
+
+    if (maxChildren > 0) {
+      for (const nodeId of wanted) {
+        const children = await ctx.db
+          .query("sourceNodes")
+          .withIndex("by_policyId_parentNodeId", (q) =>
+            q.eq("policyId", args.policyId).eq("parentNodeId", nodeId),
+          )
+          .take(maxChildren);
+        for (const child of children) addNode(child);
+      }
+    }
+
+    return [...byNodeId.values()].sort((left, right) => left.order - right.order);
+  },
+});
+
 export const listByOrgInternal = internalQuery({
   args: {
     orgId: v.id("organizations"),
