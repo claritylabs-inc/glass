@@ -49,10 +49,6 @@ type MGARow = {
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
-function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | null; website?: string | null }) {
-  return <OrgBrandIcon name={name} iconUrl={iconUrl} website={website} size="md" />;
-}
-
 export default function OperatorMGAsPage() {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(null);
@@ -350,7 +346,12 @@ export default function OperatorMGAsPage() {
                   >
                     <TableCell className="px-4">
                       <div className="flex min-w-0 items-center gap-2.5">
-                        <OrgMark name={mga.name} iconUrl={mga.iconUrl} website={mga.website} />
+                        <OrgBrandIcon
+                          name={mga.name}
+                          iconUrl={mga.iconUrl}
+                          website={mga.website}
+                          size="md"
+                        />
                         <p className="truncate font-medium text-foreground">{mga.name}</p>
                       </div>
                     </TableCell>

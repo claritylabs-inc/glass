@@ -139,6 +139,7 @@ import type * as lib_notificationTypes from "../lib/notificationTypes.js";
 import type * as lib_notify from "../lib/notify.js";
 import type * as lib_operatorIdentity from "../lib/operatorIdentity.js";
 import type * as lib_orgAuth from "../lib/orgAuth.js";
+import type * as lib_orgBranding from "../lib/orgBranding.js";
 import type * as lib_orgMemoryContext from "../lib/orgMemoryContext.js";
 import type * as lib_orgRelationships from "../lib/orgRelationships.js";
 import type * as lib_pceIntake from "../lib/pceIntake.js";
@@ -331,6 +332,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notify": typeof lib_notify;
   "lib/operatorIdentity": typeof lib_operatorIdentity;
   "lib/orgAuth": typeof lib_orgAuth;
+  "lib/orgBranding": typeof lib_orgBranding;
   "lib/orgMemoryContext": typeof lib_orgMemoryContext;
   "lib/orgRelationships": typeof lib_orgRelationships;
   "lib/pceIntake": typeof lib_pceIntake;

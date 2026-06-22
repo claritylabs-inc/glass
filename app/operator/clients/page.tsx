@@ -122,21 +122,6 @@ function Field({
   );
 }
 
-function OrgMark({
-  name,
-  iconUrl,
-  website,
-  size = "md",
-}: {
-  name: string;
-  iconUrl?: string | null;
-  website?: string | null;
-  size?: "sm" | "select" | "md";
-}) {
-  const iconSize = size === "sm" ? "xs" : size === "select" ? "sm" : "md";
-  return <OrgBrandIcon name={name} iconUrl={iconUrl} website={website} size={iconSize} />;
-}
-
 export default function OperatorClientsPage() {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(null);
@@ -541,11 +526,11 @@ export default function OperatorClientsPage() {
                 <SelectValue>
                   {selectedBroker ? (
                     <span className="flex min-w-0 items-center gap-2">
-                      <OrgMark
+                      <OrgBrandIcon
                         name={selectedBroker.name}
                         iconUrl={selectedBroker.iconUrl}
                         website={selectedBroker.website}
-                        size="select"
+                        size="sm"
                       />
                       <span className="truncate">{selectedBroker.name}</span>
                     </span>
@@ -559,7 +544,12 @@ export default function OperatorClientsPage() {
                 {(brokers ?? []).map((broker) => (
                   <SelectItem key={broker._id} value={broker._id}>
                     <span className="flex min-w-0 items-center gap-2">
-                      <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="select" />
+                      <OrgBrandIcon
+                        name={broker.name}
+                        iconUrl={broker.iconUrl}
+                        website={broker.website}
+                        size="sm"
+                      />
                       <span className="truncate">{broker.name}</span>
                     </span>
                   </SelectItem>
@@ -641,11 +631,11 @@ export default function OperatorClientsPage() {
                   <SelectValue>
                     {selectedEditBroker ? (
                       <span className="flex min-w-0 items-center gap-2">
-                        <OrgMark
+                        <OrgBrandIcon
                           name={selectedEditBroker.name}
                           iconUrl={selectedEditBroker.iconUrl}
                           website={selectedEditBroker.website}
-                          size="select"
+                          size="sm"
                         />
                         <span className="truncate">{selectedEditBroker.name}</span>
                       </span>
@@ -659,7 +649,12 @@ export default function OperatorClientsPage() {
                   {(brokers ?? []).map((broker) => (
                     <SelectItem key={broker._id} value={broker._id}>
                       <span className="flex min-w-0 items-center gap-2">
-                        <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="select" />
+                        <OrgBrandIcon
+                          name={broker.name}
+                          iconUrl={broker.iconUrl}
+                          website={broker.website}
+                          size="sm"
+                        />
                         <span className="truncate">{broker.name}</span>
                       </span>
                     </SelectItem>
@@ -801,7 +796,12 @@ export default function OperatorClientsPage() {
                   >
                     <TableCell className="px-4">
                       <div className="flex min-w-0 items-center gap-2.5">
-                        <OrgMark name={client.name} iconUrl={client.iconUrl} website={client.website} />
+                        <OrgBrandIcon
+                          name={client.name}
+                          iconUrl={client.iconUrl}
+                          website={client.website}
+                          size="md"
+                        />
                         <p className="truncate font-medium text-foreground">{client.name}</p>
                       </div>
                     </TableCell>

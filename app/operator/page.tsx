@@ -97,10 +97,6 @@ function Field({
   );
 }
 
-function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | null; website?: string | null }) {
-  return <OrgBrandIcon name={name} iconUrl={iconUrl} website={website} size="md" />;
-}
-
 export default function OperatorPage() {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(null);
@@ -653,7 +649,12 @@ export default function OperatorPage() {
                   >
                     <TableCell className="px-4">
                       <div className="flex min-w-0 items-center gap-2.5">
-                      <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} />
+                        <OrgBrandIcon
+                          name={broker.name}
+                          iconUrl={broker.iconUrl}
+                          website={broker.website}
+                          size="md"
+                        />
                         <p className="truncate font-medium text-foreground">{broker.name}</p>
                       </div>
                     </TableCell>

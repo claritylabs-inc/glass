@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
-import { BrandIcon } from "@/components/ui/brand-icon";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 
 const BRAND_BLUE = "#A0D2FA";
 
@@ -16,18 +16,6 @@ export function BrandWordmark() {
   );
 }
 
-function faviconFromWebsite(website?: string | null) {
-  if (!website) return null;
-  try {
-    const withProtocol = /^https?:\/\//i.test(website) ? website : `https://${website}`;
-    const hostname = new URL(withProtocol).hostname;
-    if (!hostname) return null;
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`;
-  } catch {
-    return null;
-  }
-}
-
 export function PartnerWordmark({
   name,
   iconUrl,
@@ -37,17 +25,15 @@ export function PartnerWordmark({
   iconUrl?: string | null;
   website?: string | null;
 }) {
-  const fallbackFavicon = faviconFromWebsite(website);
-  const source = iconUrl ?? fallbackFavicon;
-
   return (
     <div className="flex items-center gap-2.5 text-foreground">
       <div className="h-6 w-6 overflow-hidden rounded-md">
-        {source ? (
-          <BrandIcon src={source} name={name} size="sm" />
-        ) : (
-          <LogoIcon size={24} color={BRAND_BLUE} static />
-        )}
+        <OrgBrandIcon
+          name={name}
+          iconUrl={iconUrl}
+          website={website}
+          size="sm"
+        />
       </div>
       <span className="text-base font-medium tracking-tight">{name?.trim() || "Glass from Clarity Labs"}</span>
     </div>

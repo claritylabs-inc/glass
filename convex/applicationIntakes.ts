@@ -33,6 +33,7 @@ import {
   type OrgAccess,
 } from "./lib/access";
 import { notify } from "./lib/notify";
+import { orgBrandFields } from "./lib/orgBranding";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -710,13 +711,13 @@ export const get = query({
         fileUrl: packet.fileId ? await ctx.storage.getUrl(packet.fileId) : null,
       })),
     );
+    const clientBrand = await orgBrandFields(ctx, clientOrg);
     return {
       ...intake,
       clientName: clientOrg?.name,
-      clientWebsite: clientOrg?.website,
-      clientIconUrl: clientOrg?.iconStorageId
-        ? await ctx.storage.getUrl(clientOrg.iconStorageId)
-        : null,
+      clientWebsite: clientBrand.website,
+      clientIconStorageId: clientBrand.iconStorageId,
+      clientIconUrl: clientBrand.iconUrl,
       packets: packetsWithFiles,
     };
   },
@@ -1111,13 +1112,13 @@ async function attachClientNames(
   return await Promise.all(
     rows.map(async (row) => {
       const org = knownOrg ?? await ctx.db.get(row.orgId);
+      const brand = await orgBrandFields(ctx, org);
       return {
         ...row,
         clientName: org?.name ?? "Client",
-        clientWebsite: org?.website,
-        clientIconUrl: org?.iconStorageId
-          ? await ctx.storage.getUrl(org.iconStorageId)
-          : null,
+        clientWebsite: brand.website,
+        clientIconStorageId: brand.iconStorageId,
+        clientIconUrl: brand.iconUrl,
       };
     }),
   );
