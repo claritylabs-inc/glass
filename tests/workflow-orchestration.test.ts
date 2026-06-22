@@ -1,0 +1,177 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  applicationIntakeOutcome,
+} from "../convex/lib/workflows/applicationIntake";
+import {
+  brokerFollowUpOutcome,
+} from "../convex/lib/workflows/brokerFollowUp";
+import {
+  certificateAddressRequiredOutcome,
+  certificateGeneratedOutcome,
+  shouldCollectCertificateHolderAddress,
+} from "../convex/lib/workflows/certificateRequest";
+import { mailboxTaskOutcome } from "../convex/lib/workflows/mailboxTasks";
+
+const root = join(__dirname, "..");
+const read = (path: string) => readFileSync(join(root, path), "utf8");
+
+describe("workflow orchestration contract", () => {
+  it("asks only for holder address on a new holder-only certificate request", () => {
+    const result = certificateAddressRequiredOutcome({
+      policyId: "policy-1",
+      holderName: "Blank Ventures",
+      certificateHolder: "Blank Ventures",
+      requestText: "Can you issue a new certificate with Blank Ventures as the holder?",
+    });
+
+    expect(result.workflowOutcome.workflowKind).toBe("certificate_request");
+    expect(result.workflowOutcome.status).toBe("needs_input");
+    expect(result.workflowOutcome.nextAction).toBe("ask_for_holder_address");
+    expect(result.workflowOutcome.requiredSlots).toEqual([
+      expect.objectContaining({ key: "holderAddress" }),
+    ]);
+    expect(result.workflowOutcome.forbiddenQuestions).toEqual(
+      expect.arrayContaining(["holderEmail", "specialWording"]),
+    );
+    expect(result.message).toContain("certificate holder address");
+    expect(result.message).not.toMatch(/holder email|renewal delivery|special wording/i);
+  });
+
+  it("detects holder address from an already supplied holder block", () => {
+    expect(
+      shouldCollectCertificateHolderAddress({
+        policyId: "policy-1",
+        holderName: "Blank Ventures",
+        certificateHolder: "Blank Ventures\n100 Main St\nNew York, NY 10001",
+      }),
+    ).toBe(false);
+  });
+
+  it("marks existing certificate reuse as a completed file-return side effect", () => {
+    const outcome = certificateGeneratedOutcome({
+      params: {
+        policyId: "policy-1",
+        holderName: "Blank Ventures",
+        certificateHolder: "Blank Ventures",
+      },
+      generated: {
+        status: "existing",
+        certificateVersionId: "version-1",
+      },
+      attachment: {
+        filename: "COI - Blank Ventures.pdf",
+        contentType: "application/pdf",
+      },
+      artifactData: {
+        status: "existing",
+        certificateVersionId: "version-1",
+      },
+    });
+
+    expect(outcome.status).toBe("completed");
+    expect(outcome.nextAction).toBe("return_existing_certificate");
+    expect(outcome.sideEffects).toEqual([
+      expect.objectContaining({ kind: "existing_file_returned" }),
+    ]);
+  });
+
+  it("keeps application packets broker-ready without claiming carrier submission", () => {
+    const result = applicationIntakeOutcome({
+      action: "packet_prepared",
+      applicationIntakeId: "intake-1",
+      packetId: "packet-1",
+      status: "broker_ready",
+    });
+
+    expect(result.workflowOutcome.status).toBe("completed");
+    expect(result.message).toContain("broker review");
+    expect(result.message).not.toMatch(/submitted to carrier/i);
+    expect(result.workflowOutcome.forbiddenClaims).toContain("carrier_submitted");
+  });
+
+  it("captures broker follow-ups before blocking on missing recipient", () => {
+    const result = brokerFollowUpOutcome({
+      action: "email_drafted",
+      caseId: "case-1",
+      status: "needs_recipient",
+      needsRecipient: true,
+    });
+
+    expect(result.workflowOutcome.status).toBe("needs_input");
+    expect(result.workflowOutcome.requiredSlots).toEqual([
+      expect.objectContaining({ key: "brokerRecipientEmail" }),
+    ]);
+    expect(result.workflowOutcome.sideEffects).toEqual([
+      expect.objectContaining({ targetType: "policyChangeCase" }),
+    ]);
+  });
+
+  it("normalizes no-mailbox coordinator results into connection-needed workflow state", () => {
+    const outcome = mailboxTaskOutcome({
+      mailboxErrors: [{ message: "No connected email account is available" }],
+      searches: [],
+      text: "No mailbox connected.",
+    });
+
+    expect(outcome.status).toBe("needs_input");
+    expect(outcome.nextAction).toBe("connect_mailbox");
+    expect(outcome.requiredSlots).toEqual([
+      expect.objectContaining({ key: "connectedMailbox" }),
+    ]);
+  });
+});
+
+describe("workflow orchestration wiring", () => {
+  it("keeps certificate workflow sequencing in code rather than prompt-only behavior", () => {
+    const executors = read("convex/lib/agentToolExecutors.ts");
+    const existingLookup = executors.indexOf(
+      "findReusableIssuedVersionByHolderNameInternal",
+    );
+    const addressGate = executors.indexOf("certificateAddressRequiredOutcome");
+    const generator = executors.indexOf("internal.certificates.generateForOrg");
+
+    expect(existingLookup).toBeGreaterThan(-1);
+    expect(addressGate).toBeGreaterThan(-1);
+    expect(generator).toBeGreaterThan(-1);
+    expect(existingLookup).toBeLessThan(generator);
+    expect(addressGate).toBeLessThan(generator);
+  });
+
+  it("does not expose special wording as proactive COI intake", () => {
+    const chatTools = read("convex/lib/chatTools.ts");
+    const generateCoiBlock = chatTools.slice(
+      chatTools.indexOf("export const generateCoi"),
+      chatTools.indexOf("export const createPolicyChangeRequest"),
+    );
+
+    expect(generateCoiBlock).not.toMatch(/renewal delivery/i);
+    expect(generateCoiBlock).not.toMatch(/special wording/i);
+    expect(generateCoiBlock).toContain("holder email address only when the user explicitly asks");
+  });
+
+  it("stores workflow outcomes from web, inbound email, and iMessage tool results", () => {
+    expect(read("convex/actions/processThreadChat.ts")).toContain(
+      'type: "workflow_outcome"',
+    );
+    expect(read("convex/actions/handleInboundEmail.ts")).toContain(
+      "collectWorkflowOutcomes(result)",
+    );
+    expect(read("convex/actions/handleInboundImessage.ts")).toContain(
+      "workflowOutcomes",
+    );
+  });
+
+  it("lets the email COI attachment path pass holder address fields through", () => {
+    const emailSubagent = read("convex/lib/emailSubagent.ts");
+
+    expect(emailSubagent).toContain("addressLine1: z.string().optional()");
+    expect(emailSubagent).toContain("addressLine2: z.string().optional()");
+    expect(emailSubagent).toContain("postalCode: z.string().optional()");
+    expect(emailSubagent).toContain("addressLine1,");
+    expect(read("convex/lib/coiAttachmentGuards.ts")).toContain(
+      "addressLine1?: string",
+    );
+  });
+});

@@ -28,6 +28,22 @@ import {
   normalizeSelectedPartnerProgramId,
 } from "./certificateProgramSelection";
 import {
+  applicationIntakeOutcome,
+} from "./workflows/applicationIntake";
+import {
+  brokerFollowUpOutcome,
+} from "./workflows/brokerFollowUp";
+import {
+  certificateAddressRequiredOutcome,
+  certificateGeneratedOutcome,
+  certificateHeldOutcome,
+  certificatePendingApprovalOutcome,
+  certificateRecoverableOutcome,
+  certificateRequestRequiresEndorsementReview,
+  shouldCollectCertificateHolderAddress,
+  type CertificateRequestWorkflowParams,
+} from "./workflows/certificateRequest";
+import {
   filterComplianceRequirements,
   formatComplianceRequirement,
 } from "./complianceAgent";
@@ -666,13 +682,13 @@ export function buildAgentToolExecutors(
             })),
           },
         );
-        const output = {
-          message: "Application intake started.",
+        const output = applicationIntakeOutcome({
+          action: "started",
           applicationIntakeId: intake?._id,
           status: intake?.status,
           title: intake?.title,
           missingQuestions: intake?.missingQuestions,
-        };
+        });
         await options.onToolArtifact?.({
           type: "application_intake",
           data: output,
@@ -706,12 +722,12 @@ export function buildAgentToolExecutors(
             message: params.message,
           },
         );
-        const output = {
-          message: "Application answers saved.",
+        const output = applicationIntakeOutcome({
+          action: "answers_saved",
           applicationIntakeId: intake?._id,
           status: intake?.status,
           missingQuestions: intake?.missingQuestions,
-        };
+        });
         await options.onToolArtifact?.({
           type: "application_intake",
           data: output,
@@ -731,14 +747,15 @@ export function buildAgentToolExecutors(
             },
           );
           if (!intake) return "Application intake not found.";
-          return {
+          return applicationIntakeOutcome({
+            action: "status_checked",
             applicationIntakeId: intake._id,
             title: intake.title,
             status: intake.status,
             missingQuestions: intake.missingQuestions,
             answerCount: intake.normalizedAnswers.length,
             packetId: intake.packetId,
-          };
+          });
         }
         const rows = await ctx.runQuery(
           internal.applicationIntakes.listForAgent,
@@ -776,14 +793,12 @@ export function buildAgentToolExecutors(
             submissionNotes: params.submissionNotes,
           },
         );
-        const output = {
-          message: packet?.status === "broker_ready"
-            ? "Application packet is ready for broker review and carrier submission."
-            : "Application packet prepared, but required information is still missing.",
+        const output = applicationIntakeOutcome({
+          action: "packet_prepared",
           packetId: packet?._id,
           status: packet?.status,
           missingFieldIds: packet?.missingFieldIds,
-        };
+        });
         await options.onToolArtifact?.({
           type: "application_packet",
           data: output,
@@ -867,6 +882,11 @@ export function buildAgentToolExecutors(
         holderContactName?: string;
         holderEmail?: string;
         holderPhone?: string;
+        addressLine1?: string;
+        addressLine2?: string;
+        city?: string;
+        state?: string;
+        postalCode?: string;
         requestText?: string;
         requestedEndorsements?: string[];
         partnerProgramId?: string;
@@ -890,18 +910,166 @@ export function buildAgentToolExecutors(
         }
         try {
           const policy = resolved.policy;
+          const holderName =
+            params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
+            "Certificate holder";
+          const holderAddress =
+            [
+              params.addressLine1,
+              params.addressLine2,
+              params.city,
+              params.state,
+              params.postalCode,
+            ].some((value) => value?.trim())
+              ? {
+                  line1: params.addressLine1,
+                  line2: params.addressLine2,
+                  city: params.city,
+                  state: params.state,
+                  postalCode: params.postalCode,
+                }
+              : undefined;
+          const workflowParams: CertificateRequestWorkflowParams = {
+            policyId: String(policy._id),
+            holderName,
+            certificateHolder: params.certificateHolder,
+            holderContactName: params.holderContactName,
+            holderEmail: params.holderEmail,
+            holderPhone: params.holderPhone,
+            holderAddress,
+            requestText: params.requestText,
+            requestedEndorsements: params.requestedEndorsements,
+          };
+          if (!params.explicitReissue) {
+            const reusable = await ctx.runQuery(
+              (internal as any).certificateLifecycle
+                .findReusableIssuedVersionByHolderNameInternal,
+              {
+                orgId: policy.orgId,
+                policyId: policy._id,
+                holderName,
+              },
+            );
+            if (reusable?.fileId) {
+              const attachment = {
+                filename: reusable.fileName ?? "certificate-of-insurance.pdf",
+                contentType: "application/pdf",
+                size: reusable.fileSize ?? 0,
+                fileId: reusable.fileId as Id<"_storage">,
+              };
+              await options.onResponseAttachment?.(attachment);
+              const artifactData = {
+                status: "existing",
+                policyId: policy._id,
+                policyCertificateId: reusable.policyCertificateId,
+                certificateVersionId: reusable._id,
+                holderId: reusable.holderId,
+                versionNumber: reusable.versionNumber,
+                authorityType: reusable.authorityType,
+                certificationStatus: reusable.certificationStatus,
+              };
+              const workflowOutcome = certificateGeneratedOutcome({
+                params: workflowParams,
+                generated: {
+                  status: "existing",
+                  certificateVersionId: reusable._id,
+                },
+                attachment,
+                artifactData,
+              });
+              const output = {
+                message: workflowOutcome.comms.headline,
+                attachment,
+                holderId: reusable.holderId,
+                policyCertificateId: reusable.policyCertificateId,
+                certificateVersionId: reusable._id,
+                policyVersionId: reusable.policyVersionId,
+                versionNumber: reusable.versionNumber,
+                workflowOutcome,
+              };
+              await options.onToolArtifact?.({
+                type: "certificate_result",
+                data: artifactData,
+              });
+              return output;
+            }
+          }
+          const hasEndorsementReview =
+            certificateRequestRequiresEndorsementReview(workflowParams);
+          if (
+            !hasEndorsementReview &&
+            shouldCollectCertificateHolderAddress(workflowParams)
+          ) {
+            return certificateAddressRequiredOutcome(workflowParams);
+          }
+          if (
+            hasEndorsementReview &&
+            shouldCollectCertificateHolderAddress(workflowParams)
+          ) {
+            const dryRun = await ctx.runAction(
+              internal.certificates.generateForOrg,
+              {
+                policyId: policy._id,
+                orgId: policy.orgId,
+                holderName,
+                certificateHolder: params.certificateHolder,
+                holderContactName: params.holderContactName,
+                holderEmail: params.holderEmail,
+                holderPhone: params.holderPhone,
+                requestText: params.requestText,
+                requestedEndorsements: params.requestedEndorsements,
+                selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
+                  params.partnerProgramId,
+                ),
+                forceReissue: params.explicitReissue,
+                source: certificateSourceForSurface(options.surface),
+                createdByUserId: options.userId,
+                dryRun: true,
+              },
+            );
+            if (dryRun?.status === "gate_allowed") {
+              return certificateAddressRequiredOutcome(workflowParams);
+            }
+            if (
+              dryRun?.status === "source_tree_rebuild_required" ||
+              dryRun?.status === "extraction_in_progress"
+            ) {
+              const workflowOutcome = certificateRecoverableOutcome({
+                params: workflowParams,
+                status: dryRun.status,
+                message: dryRun.message,
+                nextAction:
+                  dryRun.status === "source_tree_rebuild_required"
+                    ? "wait_for_source_tree"
+                    : "wait_for_extraction",
+                artifactData: {
+                  status: dryRun.status,
+                  policyId: policy._id,
+                },
+              });
+              return {
+                message: dryRun.message,
+                status: dryRun.status,
+                policyId: policy._id,
+                workflowOutcome,
+              };
+            }
+          }
           const generated = await ctx.runAction(
             internal.certificates.generateForOrg,
             {
               policyId: policy._id,
               orgId: policy.orgId,
-              holderName:
-                params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                "Certificate holder",
+              holderName,
               certificateHolder: params.certificateHolder,
               holderContactName: params.holderContactName,
               holderEmail: params.holderEmail,
               holderPhone: params.holderPhone,
+              addressLine1: params.addressLine1,
+              addressLine2: params.addressLine2,
+              city: params.city,
+              state: params.state,
+              postalCode: params.postalCode,
               requestText: params.requestText,
               requestedEndorsements: params.requestedEndorsements,
               selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
@@ -922,6 +1090,19 @@ export function buildAgentToolExecutors(
               reasonCode: generated.reasonCode,
               evidence: generated.evidence,
               brokerHandoffOffered: generated.brokerHandoffOffered,
+              workflowOutcome: certificateHeldOutcome({
+                params: workflowParams,
+                generated,
+                artifactData: {
+                  status: generated.status,
+                  holdId: generated.holdId,
+                  policyChangeCaseId: generated.policyChangeCaseId,
+                  requiredChanges: generated.requiredChanges,
+                  reasonCode: generated.reasonCode,
+                  evidence: generated.evidence,
+                  brokerHandoffOffered: generated.brokerHandoffOffered,
+                },
+              }),
             };
             await options.onToolArtifact?.({
               type: "certificate_hold",
@@ -935,18 +1116,17 @@ export function buildAgentToolExecutors(
             return output;
           }
           if (generated.status === "pending_approval") {
+            const artifactData = {
+              status: generated.status,
+              policyId: policy._id,
+              certificateRequestId: generated.requestId,
+              holderName,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            };
             await options.onToolArtifact?.({
               type: "certificate_result",
-              data: {
-                status: generated.status,
-                policyId: policy._id,
-                certificateRequestId: generated.requestId,
-                holderName:
-                  params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                  "Certificate holder",
-                authorityType: generated.authorityType,
-                certificationStatus: generated.certificationStatus,
-              },
+              data: artifactData,
             });
             return {
               message:
@@ -954,14 +1134,17 @@ export function buildAgentToolExecutors(
               requestId: generated.requestId,
               authorityType: generated.authorityType,
               certificationStatus: generated.certificationStatus,
+              workflowOutcome: certificatePendingApprovalOutcome({
+                params: workflowParams,
+                generated,
+                artifactData,
+              }),
             };
           }
           if (generated.status === "needs_program_selection") {
             const selection = buildCertificateProgramSelection({
               policyId: String(policy._id),
-              holderName:
-                params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-                "Certificate holder",
+              holderName,
               certificateHolder: params.certificateHolder,
               candidates: generated.matchCandidates,
               source: programSelectionSourceForSurface(options.surface),
@@ -973,6 +1156,19 @@ export function buildAgentToolExecutors(
               programSelection: selection,
               authorityType: generated.authorityType,
               certificationStatus: generated.certificationStatus,
+              workflowOutcome: certificateRecoverableOutcome({
+                params: workflowParams,
+                status: generated.status,
+                message:
+                  "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
+                nextAction: "choose_program",
+                artifactData: {
+                  status: generated.status,
+                  policyId: policy._id,
+                  programSelection: selection,
+                  candidates: generated.matchCandidates,
+                },
+              }),
             };
             if (selection) {
               await options.onToolArtifact?.({
@@ -983,10 +1179,41 @@ export function buildAgentToolExecutors(
             return output;
           }
           if (generated.status === "extraction_in_progress") {
+            const workflowOutcome = certificateRecoverableOutcome({
+              params: workflowParams,
+              status: generated.status,
+              message: generated.message,
+              nextAction: "wait_for_extraction",
+              artifactData: {
+                status: generated.status,
+                policyId: policy._id,
+              },
+            });
             return {
               message: generated.message,
               status: generated.status,
               policyId: policy._id,
+              workflowOutcome,
+            };
+          }
+          if (generated.status === "source_tree_rebuild_required") {
+            const workflowOutcome = certificateRecoverableOutcome({
+              params: workflowParams,
+              status: generated.status,
+              message: generated.message,
+              nextAction: "wait_for_source_tree",
+              artifactData: {
+                status: generated.status,
+                policyId: policy._id,
+                rebuildStatus: generated.rebuildStatus,
+              },
+            });
+            return {
+              message: generated.message,
+              status: generated.status,
+              policyId: policy._id,
+              rebuildStatus: generated.rebuildStatus,
+              workflowOutcome,
             };
           }
           const attachment = {
@@ -997,6 +1224,16 @@ export function buildAgentToolExecutors(
           };
           await options.onResponseAttachment?.(attachment);
           if (generated.status === "existing") {
+            const artifactData = {
+              status: generated.status,
+              policyId: policy._id,
+              policyCertificateId: generated.policyCertificateId,
+              certificateVersionId: generated.certificateVersionId,
+              holderId: generated.holderId,
+              versionNumber: generated.versionNumber,
+              authorityType: generated.authorityType,
+              certificationStatus: generated.certificationStatus,
+            };
             const output = {
               message:
                 generated.authorityType === "certified"
@@ -1008,22 +1245,30 @@ export function buildAgentToolExecutors(
               certificateVersionId: generated.certificateVersionId,
               policyVersionId: generated.policyVersionId,
               versionNumber: generated.versionNumber,
+              workflowOutcome: certificateGeneratedOutcome({
+                params: workflowParams,
+                generated,
+                attachment,
+                artifactData,
+              }),
             };
             await options.onToolArtifact?.({
               type: "certificate_result",
-              data: {
-                status: generated.status,
-                policyId: policy._id,
-                policyCertificateId: generated.policyCertificateId,
-                certificateVersionId: generated.certificateVersionId,
-                holderId: generated.holderId,
-                versionNumber: generated.versionNumber,
-                authorityType: generated.authorityType,
-                certificationStatus: generated.certificationStatus,
-              },
+              data: artifactData,
             });
             return output;
           }
+          const artifactData = {
+            status: generated.status,
+            policyId: policy._id,
+            certificateId: generated.certificateId,
+            policyCertificateId: generated.policyCertificateId,
+            certificateVersionId: generated.certificateVersionId,
+            holderId: generated.holderId,
+            versionNumber: generated.versionNumber,
+            authorityType: generated.authorityType,
+            certificationStatus: generated.certificationStatus,
+          };
           const output = {
             message:
               generated.authorityType === "certified"
@@ -1036,20 +1281,16 @@ export function buildAgentToolExecutors(
             certificateVersionId: generated.certificateVersionId,
             policyVersionId: generated.policyVersionId,
             versionNumber: generated.versionNumber,
+            workflowOutcome: certificateGeneratedOutcome({
+              params: workflowParams,
+              generated,
+              attachment,
+              artifactData,
+            }),
           };
           await options.onToolArtifact?.({
             type: "certificate_result",
-            data: {
-              status: generated.status,
-              policyId: policy._id,
-              certificateId: generated.certificateId,
-              policyCertificateId: generated.policyCertificateId,
-              certificateVersionId: generated.certificateVersionId,
-              holderId: generated.holderId,
-              versionNumber: generated.versionNumber,
-              authorityType: generated.authorityType,
-              certificationStatus: generated.certificationStatus,
-            },
+            data: artifactData,
           });
           return output;
         } catch (err) {
@@ -1118,13 +1359,18 @@ export function buildAgentToolExecutors(
         if (result?.error) return result.error;
         const caseId = result?.caseId as Id<"policyChangeCases"> | undefined;
         if (caseId) await options.onPolicyChangeCase?.(caseId);
-        return {
-          message: "Broker follow-up captured.",
+        return brokerFollowUpOutcome({
+          action: "created",
           status: "created",
           caseId,
           requestKind: intake.kind,
-          usedSdkPce: Boolean(result?.usedSdkPce),
-        };
+          data: {
+            status: "created",
+            caseId,
+            requestKind: intake.kind,
+            usedSdkPce: Boolean(result?.usedSdkPce),
+          },
+        });
       },
     },
     add_policy_change_info: {
@@ -1142,7 +1388,12 @@ export function buildAgentToolExecutors(
           infoText: params.infoText,
           sourceSpanIds: params.sourceSpanIds,
         });
-        return { status: "updated", caseId: params.caseId };
+        return brokerFollowUpOutcome({
+          action: "updated",
+          status: "updated",
+          caseId: params.caseId,
+          data: { status: "updated", caseId: params.caseId },
+        });
       },
     },
     check_policy_change_status: {
@@ -1228,23 +1479,31 @@ export function buildAgentToolExecutors(
             ? callbackResult.pendingEmailId
             : undefined;
         const draftWithOptionalAddresses = draft as PolicyChangeDraftResult;
-        return {
+        return brokerFollowUpOutcome({
+          action: "email_drafted",
           status: draft.needsRecipient ? "needs_recipient" : "drafted",
           caseId: resolvedCase.caseId,
-          readyToSend: !draft.needsRecipient,
-          nextAction: draft.needsRecipient
-            ? "Ask for the broker email address."
-            : "Show the email details and ask for approval before sending.",
+          needsRecipient: draft.needsRecipient,
           pendingEmailId,
-          emailDraft: {
-            recipientEmail: draft.recipientEmail,
-            recipientName: draft.recipientName,
-            ccAddresses: draftWithOptionalAddresses.ccAddresses,
-            bccAddresses: draftWithOptionalAddresses.bccAddresses,
-            subject: draft.subject,
-            body: draft.body,
+          recipientEmail: draft.recipientEmail,
+          data: {
+            status: draft.needsRecipient ? "needs_recipient" : "drafted",
+            caseId: resolvedCase.caseId,
+            readyToSend: !draft.needsRecipient,
+            nextAction: draft.needsRecipient
+              ? "Ask for the broker email address."
+              : "Show the email details and ask for approval before sending.",
+            pendingEmailId,
+            emailDraft: {
+              recipientEmail: draft.recipientEmail,
+              recipientName: draft.recipientName,
+              ccAddresses: draftWithOptionalAddresses.ccAddresses,
+              bccAddresses: draftWithOptionalAddresses.bccAddresses,
+              subject: draft.subject,
+              body: draft.body,
+            },
           },
-        };
+        });
       },
     },
     complete_policy_change_from_endorsement: {
@@ -1298,7 +1557,13 @@ export function buildAgentToolExecutors(
             policyId: resolved.policy._id,
           },
         });
-        return { status: "completed", caseId: resolvedCase.caseId, ...result };
+        return brokerFollowUpOutcome({
+          action: "completed_from_endorsement",
+          status: "completed",
+          caseId: resolvedCase.caseId,
+          policyId: resolved.policy._id,
+          data: { status: "completed", caseId: resolvedCase.caseId, ...result },
+        });
       },
     },
   };

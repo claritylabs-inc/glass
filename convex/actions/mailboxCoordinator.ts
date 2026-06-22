@@ -19,6 +19,7 @@ import {
   searchConnectedEmail,
   sendConnectedVendorInvite,
 } from "../lib/chatTools";
+import { mailboxTaskOutcome } from "../lib/workflows/mailboxTasks";
 
 const MailboxPlanSchema = z.object({
   summary: z.string(),
@@ -483,13 +484,17 @@ Rules:
           })
         : undefined;
 
-    return {
+    const output = {
       plan,
       evidence: evidenceResult?.object ?? { emails: [] },
       searches: mailboxSearches,
       mailboxErrors,
       text: result.text,
       toolCalls: result.toolCalls.map((call) => call.toolName),
+    };
+    return {
+      ...output,
+      workflowOutcome: mailboxTaskOutcome(output),
     };
   },
 });

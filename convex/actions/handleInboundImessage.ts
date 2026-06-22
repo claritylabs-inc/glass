@@ -296,9 +296,11 @@ function serializeToolAuditValue(value: unknown): string | undefined {
 function collectToolAudit(result: unknown): {
   usedTools: string[];
   toolCalls: Array<{ name: string; input?: string; output?: string }>;
+  workflowOutcomes: unknown[];
 } {
   const usedTools: string[] = [];
   const toolCalls: Array<{ name: string; input?: string; output?: string }> = [];
+  const workflowOutcomes: unknown[] = [];
   const seen = new Set<string>();
 
   const addUsedTool = (name: string) => {
@@ -325,6 +327,9 @@ function collectToolAudit(result: unknown): {
     addUsedTool(name);
     const output =
       resultPart.output ?? resultPart.result ?? resultPart.value ?? undefined;
+    if (output && typeof output === "object" && "workflowOutcome" in output) {
+      workflowOutcomes.push((output as Record<string, unknown>).workflowOutcome);
+    }
     const target = [...toolCalls]
       .reverse()
       .find((candidate) => candidate.name === name && !candidate.output);
@@ -370,7 +375,7 @@ function collectToolAudit(result: unknown): {
     }
   }
 
-  return { usedTools, toolCalls };
+  return { usedTools, toolCalls, workflowOutcomes };
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | null {
@@ -1312,7 +1317,13 @@ export const processInbound = internalAction({
         stopWhen: stepCountIs(8),
       });
 
-      const { usedTools, toolCalls } = collectToolAudit(result);
+      const { usedTools, toolCalls, workflowOutcomes } = collectToolAudit(result);
+      for (const workflowOutcome of workflowOutcomes) {
+        imessageToolArtifacts.push({
+          type: "workflow_outcome",
+          data: workflowOutcome,
+        });
+      }
       let responseText = result.text;
       let responseAlreadySent = false;
       let pendingEmailIdForResponse: Id<"pendingEmails"> | undefined;

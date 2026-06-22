@@ -129,6 +129,32 @@ function extractPendingEmailIdsFromHeaders(values: Array<string | undefined>) {
   return [...ids];
 }
 
+function collectWorkflowOutcomes(result: unknown) {
+  const outcomes: unknown[] = [];
+  const collectFromResults = (results: unknown[]) => {
+    for (const item of results) {
+      if (!item || typeof item !== "object") continue;
+      const record = item as Record<string, unknown>;
+      const output = record.output ?? record.result ?? record.value;
+      if (output && typeof output === "object" && "workflowOutcome" in output) {
+        outcomes.push((output as Record<string, unknown>).workflowOutcome);
+      }
+    }
+  };
+  if (!result || typeof result !== "object") return outcomes;
+  const root = result as Record<string, unknown>;
+  collectFromResults(Array.isArray(root.toolResults) ? root.toolResults : []);
+  const steps = Array.isArray(root.steps) ? root.steps : [];
+  for (const step of steps) {
+    if (!step || typeof step !== "object") continue;
+    const stepRecord = step as Record<string, unknown>;
+    collectFromResults(
+      Array.isArray(stepRecord.toolResults) ? stepRecord.toolResults : [],
+    );
+  }
+  return outcomes;
+}
+
 interface WebhookPayload {
   type: string;
   created_at: string;
@@ -1694,6 +1720,12 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           tools: emailTools,
           stopWhen: stepCountIs(10),
         });
+        for (const workflowOutcome of collectWorkflowOutcomes(result)) {
+          emailToolArtifacts.push({
+            type: "workflow_outcome",
+            data: workflowOutcome,
+          });
+        }
         responseBody = result.text;
       }
 
