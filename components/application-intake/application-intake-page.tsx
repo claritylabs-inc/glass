@@ -27,6 +27,7 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { FileDropZone } from "@/components/ui/file-drop";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import {
   Select,
   SelectContent,
@@ -60,6 +61,8 @@ type ApplicationRow = {
   _id: Id<"applicationIntakes">;
   orgId: string;
   clientName?: string;
+  clientWebsite?: string;
+  clientIconUrl?: string | null;
   title: string;
   status: ApplicationStatus;
   lineOfBusiness?: string;
@@ -125,6 +128,8 @@ type ApplicationPanelBusy = "answers" | "submit" | null;
 type ClientRow = {
   clientOrgId?: string;
   name?: string;
+  website?: string;
+  iconUrl?: string | null;
   primaryContactEmail?: string;
   onboardingStatus?: string;
 };
@@ -174,6 +179,28 @@ function applicationSubtitle(row: ApplicationRow) {
 
 function rowOwnerLabel(row: ApplicationRow, mode: "broker" | "client") {
   return row.clientName ?? (mode === "client" ? "This workspace" : "Client");
+}
+
+function OrgNameCell({
+  name,
+  iconUrl,
+  website,
+  fallback = "Client",
+  size = "sm",
+}: {
+  name?: string | null;
+  iconUrl?: string | null;
+  website?: string | null;
+  fallback?: string;
+  size?: "xs" | "sm" | "md";
+}) {
+  const label = name?.trim() || fallback;
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <OrgBrandIcon name={label} iconUrl={iconUrl} website={website} size={size} />
+      <span className="min-w-0 truncate">{label}</span>
+    </span>
+  );
 }
 
 function parseTemplateFields(text: string): ApplicationField[] {
@@ -473,6 +500,7 @@ function ApplicationCreateDrawer({
   const targetOrgId = fixedClientOrgId ?? clientOrgId;
   const activeTemplates = templates.filter((template) => template.status === "active");
   const selectedTemplate = activeTemplates.find((template) => template._id === templateId);
+  const selectedClient = clients.find((client) => client.clientOrgId === clientOrgId);
   const selectedTemplateId = selectedTemplate?._id;
   const hasQuestionSource = Boolean(
     questionText.trim() || questionFile || formattedQuestions.length > 0,
@@ -668,14 +696,28 @@ function ApplicationCreateDrawer({
             <span className="text-label font-medium text-muted-foreground">Client</span>
             <Select value={clientOrgId} onValueChange={(value) => setClientOrgId(value ?? "")}>
               <SelectTrigger className="w-full">
-                <SelectValue>{clients.find((client) => client.clientOrgId === clientOrgId)?.name ?? "Choose client"}</SelectValue>
+                <SelectValue>
+                  {selectedClient ? (
+                    <OrgNameCell
+                      name={selectedClient.name}
+                      iconUrl={selectedClient.iconUrl}
+                      website={selectedClient.website}
+                    />
+                  ) : (
+                    "Choose client"
+                  )}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {clients
                   .filter((client) => client.clientOrgId)
                   .map((client) => (
                     <SelectItem key={client.clientOrgId} value={client.clientOrgId!}>
-                      {client.name ?? "Client"}
+                      <OrgNameCell
+                        name={client.name}
+                        iconUrl={client.iconUrl}
+                        website={client.website}
+                      />
                     </SelectItem>
                   ))}
               </SelectContent>
@@ -1309,7 +1351,13 @@ export function ApplicationIntakePage({
                     <Badge variant={statusVariant(row.status)}>{STATUS_LABELS[row.status]}</Badge>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-base text-muted-foreground">
-                    <span className="min-w-0 truncate">{rowOwnerLabel(row, ownerLabelMode)}</span>
+                    <OrgNameCell
+                      name={rowOwnerLabel(row, ownerLabelMode)}
+                      iconUrl={row.clientIconUrl}
+                      website={row.clientWebsite}
+                      fallback={ownerLabelMode === "broker" ? "Client" : "Workspace"}
+                      size="xs"
+                    />
                     <span className="shrink-0">
                       {row.normalizedAnswers.length} /{" "}
                       {row.normalizedAnswers.length + row.missingQuestions.length}
@@ -1346,7 +1394,14 @@ export function ApplicationIntakePage({
                             </p>
                           </div>
                         </TableCell>
-                        <TableCell>{rowOwnerLabel(row, ownerLabelMode)}</TableCell>
+                        <TableCell>
+                          <OrgNameCell
+                            name={rowOwnerLabel(row, ownerLabelMode)}
+                            iconUrl={row.clientIconUrl}
+                            website={row.clientWebsite}
+                            fallback={ownerLabelMode === "broker" ? "Client" : "Workspace"}
+                          />
+                        </TableCell>
                         <TableCell>
                           <Badge variant={statusVariant(row.status)}>{STATUS_LABELS[row.status]}</Badge>
                         </TableCell>

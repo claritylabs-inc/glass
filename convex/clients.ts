@@ -24,6 +24,7 @@ async function getClientDetailRecord(ctx: QueryCtx, clientOrgId: Id<"organizatio
     name: org.name?.trim() || "Client",
     legalName: org.name,
     website: org.website,
+    iconUrl: org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null,
     industry: org.industry,
     context: org.context,
     onboardingComplete: !!org.onboardingComplete,
@@ -60,7 +61,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
 
   const clientRows = await Promise.all(
     acceptedOrgs.map(async (org) => {
-      const [activePolicies, lastActivityEvent, assignments] = await Promise.all([
+      const [activePolicies, lastActivityEvent, assignments, iconUrl] = await Promise.all([
         ctx.db
           .query("policies")
           .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
@@ -83,6 +84,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
           .query("brokerClientAssignments")
           .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", org._id))
           .collect(),
+        org.iconStorageId ? ctx.storage.getUrl(org.iconStorageId) : Promise.resolve(null),
       ]);
 
       const firstMembership = await ctx.db
@@ -103,6 +105,8 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
       return {
         clientOrgId: org._id,
         name: displayName,
+        website: org.website,
+        iconUrl,
         primaryContactName,
         primaryContactEmail: primaryUser?.email,
         onboardingStatus,
@@ -122,6 +126,8 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
       return {
         clientOrgId: org._id,
         name: org.name,
+        website: org.website,
+        iconUrl: org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null,
         primaryContactName: org.primaryContactName,
         primaryContactEmail: org.primaryContactEmail,
         onboardingStatus: status as "invited" | "draft",
@@ -136,6 +142,8 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
   const inviteRows = activeInvites.map((inv) => ({
     invitationId: inv._id,
     name: inv.clientOrgName ?? "Invited client",
+    website: undefined,
+    iconUrl: null,
     primaryContactName: inv.primaryContactName,
     primaryContactEmail: inv.primaryContactEmail,
     onboardingStatus: "invited" as const,

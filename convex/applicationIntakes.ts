@@ -684,7 +684,7 @@ export const listForClient = query({
       .withIndex("by_orgId_updatedAt", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(100);
-    return await attachClientNames(ctx, rows, access.org.name);
+    return await attachClientNames(ctx, rows, access.org);
   },
 });
 
@@ -713,6 +713,10 @@ export const get = query({
     return {
       ...intake,
       clientName: clientOrg?.name,
+      clientWebsite: clientOrg?.website,
+      clientIconUrl: clientOrg?.iconStorageId
+        ? await ctx.storage.getUrl(clientOrg.iconStorageId)
+        : null,
       packets: packetsWithFiles,
     };
   },
@@ -1102,14 +1106,18 @@ async function preparePacketForIntake(
 async function attachClientNames(
   ctx: QueryCtx,
   rows: Doc<"applicationIntakes">[],
-  knownName?: string,
+  knownOrg?: Pick<Doc<"organizations">, "name" | "website" | "iconStorageId">,
 ) {
   return await Promise.all(
     rows.map(async (row) => {
-      const org = knownName ? null : await ctx.db.get(row.orgId);
+      const org = knownOrg ?? await ctx.db.get(row.orgId);
       return {
         ...row,
-        clientName: knownName ?? org?.name ?? "Client",
+        clientName: org?.name ?? "Client",
+        clientWebsite: org?.website,
+        clientIconUrl: org?.iconStorageId
+          ? await ctx.storage.getUrl(org.iconStorageId)
+          : null,
       };
     }),
   );

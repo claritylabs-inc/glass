@@ -5,6 +5,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -18,6 +19,8 @@ export type ClientRow =
       kind: "client";
       clientOrgId: Id<"organizations">;
       name: string;
+      website?: string;
+      iconUrl?: string | null;
       primaryContactName?: string;
       primaryContactEmail?: string;
       onboardingStatus: "onboarding" | "active";
@@ -36,6 +39,8 @@ export type ClientRow =
       partnerOrgId: Id<"organizations">;
       clientOrgId: Id<"organizations">;
       name: string;
+      website?: string;
+      iconUrl?: string | null;
       primaryContactName?: string;
       primaryContactEmail?: string;
       onboardingStatus: "draft" | "invited";
@@ -48,6 +53,8 @@ export type ClientRow =
       partnerOrgId: Id<"organizations">;
       invitationId: Id<"clientInvitations">;
       name: string;
+      website?: string;
+      iconUrl?: string | null;
       primaryContactName?: string;
       primaryContactEmail?: string;
       onboardingStatus: "invited";
@@ -106,14 +113,17 @@ export function ClientListRow({ row }: { row: ClientRow }) {
     "flex items-center gap-4 px-4 py-3 border-b border-foreground/6 last:border-0 hover:bg-muted/50 transition-colors";
 
   const nameBlock = (
-    <div className="flex-1 min-w-0">
-      <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
-        <p className="text-base font-medium text-foreground truncate">{row.name}</p>
-        <p className="text-base text-muted-foreground truncate">
-          {row.kind === "client"
-            ? (row.primaryContactName ?? "No primary contact")
-            : (row.primaryContactEmail ?? "No email")}
-        </p>
+    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+      <OrgBrandIcon name={row.name} iconUrl={row.iconUrl} website={row.website} size="md" />
+      <div className="min-w-0">
+        <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
+          <p className="truncate text-base font-medium text-foreground">{row.name}</p>
+          <p className="truncate text-base text-muted-foreground">
+            {row.kind === "client"
+              ? (row.primaryContactName ?? "No primary contact")
+              : (row.primaryContactEmail ?? "No email")}
+          </p>
+        </div>
       </div>
     </div>
   );

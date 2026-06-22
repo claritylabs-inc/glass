@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { CLIENT_PORTAL_HOST, getPublicAgentDomain } from "@/lib/domains";
 import {
   Table,
@@ -96,40 +97,8 @@ function Field({
   );
 }
 
-function faviconFromWebsite(website?: string | null) {
-  if (!website) return null;
-  try {
-    const withProtocol = /^https?:\/\//i.test(website) ? website : `https://${website}`;
-    const hostname = new URL(withProtocol).hostname;
-    if (!hostname) return null;
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`;
-  } catch {
-    return null;
-  }
-}
-
 function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | null; website?: string | null }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const source = iconUrl ?? faviconFromWebsite(website);
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-  return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label font-medium text-foreground">
-      {source && !imageFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={source}
-          alt=""
-          className="h-full w-full object-contain"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-            setImageFailed(true);
-          }}
-        />
-      ) : (
-        initial
-      )}
-    </div>
-  );
+  return <OrgBrandIcon name={name} iconUrl={iconUrl} website={website} size="md" />;
 }
 
 export default function OperatorPage() {

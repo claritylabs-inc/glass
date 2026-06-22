@@ -9,6 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import {
   OperationalLabelValueList,
   OperationalLabelValueRow,
@@ -48,40 +49,8 @@ type MGARow = {
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
-function faviconFromWebsite(website?: string | null) {
-  if (!website) return null;
-  try {
-    const withProtocol = /^https?:\/\//i.test(website) ? website : `https://${website}`;
-    const hostname = new URL(withProtocol).hostname;
-    if (!hostname) return null;
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`;
-  } catch {
-    return null;
-  }
-}
-
 function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | null; website?: string | null }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const source = iconUrl ?? faviconFromWebsite(website);
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-  return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label font-medium text-foreground">
-      {source && !imageFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={source}
-          alt=""
-          className="h-full w-full object-contain"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-            setImageFailed(true);
-          }}
-        />
-      ) : (
-        initial
-      )}
-    </div>
-  );
+  return <OrgBrandIcon name={name} iconUrl={iconUrl} website={website} size="md" />;
 }
 
 export default function OperatorMGAsPage() {
