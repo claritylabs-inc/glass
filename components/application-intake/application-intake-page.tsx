@@ -145,6 +145,17 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
   stale: "Stale",
 };
 
+const CLIENT_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  draft: "Draft",
+  collecting: "In progress",
+  waiting_on_client: "Needs answers",
+  needs_broker_review: "With broker",
+  broker_ready: "Ready",
+  submitted: "Submitted",
+  cancelled: "Cancelled",
+  stale: "Needs update",
+};
+
 const TEMPLATE_STATUS_LABELS: Record<ApplicationTemplateStatus, string> = {
   draft: "Draft",
   active: "Active",
@@ -181,6 +192,34 @@ function rowOwnerLabel(row: ApplicationRow, mode: "broker" | "client") {
   return row.clientName ?? (mode === "client" ? "This workspace" : "Client");
 }
 
+function ApplicationListItem({
+  row,
+  onSelect,
+}: {
+  row: ApplicationRow;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-application-id={row._id}
+      onClick={onSelect}
+      className="flex w-full items-center justify-between gap-4 border-t border-foreground/4 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-muted/40"
+    >
+      <div className="min-w-0 space-y-1">
+        <p className="truncate text-base font-medium text-foreground">{row.title}</p>
+        <p className="truncate text-label text-muted-foreground">{applicationSubtitle(row)}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="hidden text-label text-muted-foreground sm:block">
+          Updated {formatTime(row.updatedAt)}
+        </span>
+        <Badge variant={statusVariant(row.status)}>{CLIENT_STATUS_LABELS[row.status]}</Badge>
+      </div>
+    </button>
+  );
+}
+
 function OrgNameCell({
   name,
   iconUrl,
@@ -203,20 +242,6 @@ function OrgNameCell({
   );
 }
 
-function parseTemplateFields(text: string): ApplicationField[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => ({
-      id: `field_${index + 1}`,
-      label: line.replace(/[?.:]+$/g, "").slice(0, 100),
-      section: "Application",
-      fieldType: "text" as const,
-      required: true,
-    }));
-}
-
 function templateFields(template?: ApplicationTemplateRow | null) {
   if (!template?.questionGraph) return [];
   try {
@@ -231,15 +256,263 @@ function buildTemplateQuestionGraph(args: {
   title: string;
   applicationType?: string;
   fields: ApplicationField[];
+  source: ApplicationTemplateRow["sourceKind"];
 }) {
   const graph = extractQuestionGraphFromFields(args.fields, {
     id: `${args.templateId}:graph`,
     version: "v1",
     title: args.title,
     applicationType: args.applicationType ?? null,
-    source: "manual",
+    source: args.source,
   });
   return JSON.parse(JSON.stringify(graph)) as ApplicationQuestionGraph;
+}
+
+function questionsFromFields(fields: ApplicationField[]): ApplicationQuestionRow[] {
+  return fields.map((field, index) => ({
+    fieldId: field.id || `field_${index + 1}`,
+    label: field.label,
+    prompt: field.label,
+    required: field.required ?? true,
+    section: field.section,
+  }));
+}
+
+function fieldsFromQuestions(questions: ApplicationQuestionRow[]): ApplicationField[] {
+  return questions.map((question) => ({
+    id: question.fieldId,
+    label: question.prompt || question.label,
+    section: question.section ?? "Application",
+    fieldType: "text" as const,
+    required: question.required,
+  }));
+}
+
+function sourceKindForTemplate(file: File | null): ApplicationTemplateRow["sourceKind"] {
+  if (!file) return "generated";
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  return type.includes("pdf") || name.endsWith(".pdf") ? "pdf" : "imported";
+}
+
+function useApplicationQuestionFormatter({
+  disabled,
+  initialQuestions = [],
+  lineOfBusiness,
+  open,
+  orgId,
+  product,
+}: {
+  disabled?: boolean;
+  initialQuestions?: ApplicationQuestionRow[];
+  lineOfBusiness: string;
+  open: boolean;
+  orgId?: string;
+  product: string;
+}) {
+  const generateUploadUrl = useMutation(api.applicationIntakes.generateUploadUrl);
+  const formatQuestions = useAction(api.actions.applicationIntakeAuthoring.formatQuestions);
+  const [questionText, setQuestionText] = useState("");
+  const [questionFile, setQuestionFile] = useState<File | null>(null);
+  const [formattedQuestions, setFormattedQuestions] =
+    useState<ApplicationQuestionRow[]>(initialQuestions);
+  const [uploadedFileId, setUploadedFileId] = useState<Id<"_storage"> | undefined>();
+  const [formatError, setFormatError] = useState<string | null>(null);
+  const [formatting, setFormatting] = useState(false);
+  const formatRunRef = useRef(0);
+  const sourceSignatureRef = useRef("");
+  const lastFormattedSignatureRef = useRef<string | null>(null);
+  const sourceText = questionText.trim();
+  const sourceSignature =
+    !orgId || disabled || (!sourceText && !questionFile)
+      ? ""
+      : JSON.stringify({
+          orgId,
+          sourceText,
+          fileName: questionFile?.name ?? "",
+          fileSize: questionFile?.size ?? 0,
+          fileLastModified: questionFile?.lastModified ?? 0,
+          lineOfBusiness: lineOfBusiness.trim(),
+          product: product.trim(),
+        });
+
+  useEffect(() => {
+    sourceSignatureRef.current = sourceSignature;
+  }, [sourceSignature]);
+
+  const reset = useCallback(() => {
+    setQuestionText("");
+    setQuestionFile(null);
+    setFormattedQuestions([]);
+    setUploadedFileId(undefined);
+    setFormatError(null);
+    lastFormattedSignatureRef.current = null;
+  }, []);
+
+  const updateQuestionText = useCallback((value: string) => {
+    setQuestionText(value);
+    setFormattedQuestions([]);
+    setUploadedFileId(undefined);
+    setFormatError(null);
+    lastFormattedSignatureRef.current = null;
+  }, []);
+
+  const updateQuestionFile = useCallback((file: File | null) => {
+    setQuestionFile(file);
+    setFormattedQuestions([]);
+    setUploadedFileId(undefined);
+    setFormatError(null);
+    lastFormattedSignatureRef.current = null;
+  }, []);
+
+  const formatQuestionSource = useCallback(
+    async ({ signature = sourceSignatureRef.current }: { signature?: string } = {}) => {
+      if (!orgId) throw new Error("Choose a client first");
+      if (!questionText.trim() && !questionFile) {
+        throw new Error("Paste questions or upload an application document first");
+      }
+
+      const runId = formatRunRef.current + 1;
+      formatRunRef.current = runId;
+      setFormatting(true);
+      setFormatError(null);
+      try {
+        let fileId: Id<"_storage"> | undefined;
+        if (questionFile) {
+          const uploadUrl = await generateUploadUrl({
+            orgId: orgId as Id<"organizations">,
+          });
+          const response = await fetch(uploadUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": questionFile.type || "application/octet-stream",
+            },
+            body: questionFile,
+          });
+          if (!response.ok) throw new Error("Application document upload failed");
+          const payload = (await response.json()) as { storageId: string };
+          fileId = payload.storageId as Id<"_storage">;
+        }
+
+        const result = await formatQuestions({
+          orgId: orgId as Id<"organizations">,
+          pastedText: questionText.trim() || undefined,
+          fileId,
+          fileName: questionFile?.name,
+          contentType: questionFile?.type,
+          lineOfBusiness: lineOfBusiness.trim() || undefined,
+          product: product.trim() || undefined,
+        }) as { questions: ApplicationQuestionRow[] };
+        if (!signature || signature === sourceSignatureRef.current) {
+          setFormattedQuestions(result.questions);
+          setUploadedFileId(fileId);
+          lastFormattedSignatureRef.current = signature || sourceSignatureRef.current;
+        }
+        return { questions: result.questions, fileId };
+      } catch (error) {
+        if (!signature || signature === sourceSignatureRef.current) {
+          setFormatError(error instanceof Error ? error.message : "Unable to format questions");
+        }
+        throw error;
+      } finally {
+        if (runId === formatRunRef.current) {
+          setFormatting(false);
+        }
+      }
+    },
+    [
+      formatQuestions,
+      generateUploadUrl,
+      lineOfBusiness,
+      orgId,
+      product,
+      questionFile,
+      questionText,
+    ],
+  );
+
+  useEffect(() => {
+    if (!open || disabled || !sourceSignature) return;
+    if (lastFormattedSignatureRef.current === sourceSignature) return;
+    const timeout = window.setTimeout(() => {
+      void formatQuestionSource({ signature: sourceSignature }).catch(() => {});
+    }, questionFile ? 250 : 1200);
+    return () => window.clearTimeout(timeout);
+  }, [disabled, formatQuestionSource, open, questionFile, sourceSignature]);
+
+  return {
+    formatError,
+    formattedQuestions,
+    formatting,
+    formatQuestionSource,
+    hasQuestionSource: Boolean(questionText.trim() || questionFile || formattedQuestions.length > 0),
+    questionFile,
+    questionText,
+    reset,
+    updateQuestionFile,
+    updateQuestionText,
+    uploadedFileId,
+  };
+}
+
+function QuestionSourceFilePanel({
+  disabled,
+  file,
+  onRemove,
+}: {
+  disabled?: boolean;
+  file: File;
+  onRemove: () => void;
+}) {
+  return (
+    <OperationalPanel as="div" className="flex items-center justify-between gap-3 px-3 py-2">
+      <div className="min-w-0">
+        <p className="truncate text-base font-medium text-foreground">{file.name}</p>
+        <p className="text-label text-muted-foreground">
+          {(file.size / 1024).toFixed(1)} KB
+        </p>
+      </div>
+      <PillButton
+        type="button"
+        size="compact"
+        variant="secondary"
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        Remove
+      </PillButton>
+    </OperationalPanel>
+  );
+}
+
+function FormattedQuestionsPanel({ questions }: { questions: ApplicationQuestionRow[] }) {
+  if (questions.length === 0) return null;
+
+  return (
+    <OperationalPanel>
+      <OperationalPanelHeader title="Questions" />
+      {questions.map((question, index) => (
+        <OperationalItem
+          key={question.fieldId}
+          className={index === 0 ? "border-t-0" : undefined}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-base font-medium text-foreground">{question.label}</p>
+              {question.prompt !== question.label ? (
+                <p className="mt-1 text-base text-muted-foreground">{question.prompt}</p>
+              ) : null}
+            </div>
+            {question.section ? (
+              <span className="shrink-0 text-label text-muted-foreground">
+                {question.section}
+              </span>
+            ) : null}
+          </div>
+        </OperationalItem>
+      ))}
+    </OperationalPanel>
+  );
 }
 
 function answerFields(detail: {
@@ -311,28 +584,6 @@ function jsonFileName(detail: ApplicationDetail) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
   return `${safeTitle || "application"}-answers.json`;
-}
-
-function DownloadLink({
-  children,
-  download,
-  href,
-}: {
-  children: ReactNode;
-  download?: string;
-  href: string;
-}) {
-  return (
-    <a
-      className="inline-flex min-h-8 w-full shrink-0 items-center justify-center rounded-full border border-foreground/8 bg-transparent px-5 py-2 text-label font-medium leading-none text-muted-foreground transition-colors hover:border-foreground/14 hover:bg-foreground/[0.03] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10 sm:min-h-7 sm:w-auto sm:py-1"
-      download={download}
-      href={href}
-      rel="noreferrer"
-      target={download ? undefined : "_blank"}
-    >
-      {children}
-    </a>
-  );
 }
 
 function ApplicationAnswersPanel({
@@ -484,61 +735,32 @@ function ApplicationCreateDrawer({
   const [title, setTitle] = useState("Insurance application");
   const [lineOfBusiness, setLineOfBusiness] = useState("");
   const [product, setProduct] = useState("");
-  const [questionText, setQuestionText] = useState("");
-  const [questionFile, setQuestionFile] = useState<File | null>(null);
-  const [formattedQuestions, setFormattedQuestions] = useState<ApplicationQuestionRow[]>([]);
-  const [questionFormatError, setQuestionFormatError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [formatting, setFormatting] = useState(false);
-  const formatRunRef = useRef(0);
-  const sourceSignatureRef = useRef("");
-  const lastFormattedSignatureRef = useRef<string | null>(null);
   const start = useMutation(api.applicationIntakes.start);
-  const generateUploadUrl = useMutation(api.applicationIntakes.generateUploadUrl);
-  const formatQuestions = useAction(api.actions.applicationIntakeAuthoring.formatQuestions);
 
   const targetOrgId = fixedClientOrgId ?? clientOrgId;
   const activeTemplates = templates.filter((template) => template.status === "active");
   const selectedTemplate = activeTemplates.find((template) => template._id === templateId);
   const selectedClient = clients.find((client) => client.clientOrgId === clientOrgId);
   const selectedTemplateId = selectedTemplate?._id;
-  const hasQuestionSource = Boolean(
-    questionText.trim() || questionFile || formattedQuestions.length > 0,
-  );
+  const questionSource = useApplicationQuestionFormatter({
+    disabled: Boolean(selectedTemplateId || submitting),
+    lineOfBusiness,
+    open,
+    orgId: targetOrgId,
+    product,
+  });
   const canSubmit = Boolean(
-    targetOrgId && title.trim() && (selectedTemplate || hasQuestionSource),
+    targetOrgId && title.trim() && (selectedTemplate || questionSource.hasQuestionSource),
   );
-  const questionSourceText = questionText.trim();
-  const sourceSignature =
-    !targetOrgId || selectedTemplateId || (!questionSourceText && !questionFile)
-      ? ""
-      : JSON.stringify({
-          orgId: targetOrgId,
-          sourceText: questionSourceText,
-          fileName: questionFile?.name ?? "",
-          fileSize: questionFile?.size ?? 0,
-          fileLastModified: questionFile?.lastModified ?? 0,
-          lineOfBusiness: lineOfBusiness.trim(),
-          product: product.trim(),
-        });
-
-  useEffect(() => {
-    sourceSignatureRef.current = sourceSignature;
-  }, [sourceSignature]);
 
   function chooseTemplate(nextTemplateId: string) {
     if (nextTemplateId === AD_HOC_TEMPLATE_VALUE) {
       setTemplateId("");
-      setQuestionFormatError(null);
-      lastFormattedSignatureRef.current = null;
       return;
     }
     setTemplateId(nextTemplateId);
-    setQuestionText("");
-    setQuestionFile(null);
-    setFormattedQuestions([]);
-    setQuestionFormatError(null);
-    lastFormattedSignatureRef.current = null;
+    questionSource.reset();
     const template = activeTemplates.find((item) => item._id === nextTemplateId);
     if (!template) return;
     setTitle(template.title);
@@ -546,110 +768,15 @@ function ApplicationCreateDrawer({
     setProduct(template.product ?? "");
   }
 
-  function updateQuestionText(value: string) {
-    setQuestionText(value);
-    setFormattedQuestions([]);
-    setQuestionFormatError(null);
-    lastFormattedSignatureRef.current = null;
-  }
-
-  function updateQuestionFile(file: File | null) {
-    setQuestionFile(file);
-    setFormattedQuestions([]);
-    setQuestionFormatError(null);
-    lastFormattedSignatureRef.current = null;
-  }
-
-  const formatQuestionSource = useCallback(
-    async ({ signature = sourceSignatureRef.current }: { signature?: string } = {}) => {
-      if (!targetOrgId) throw new Error("Choose a client first");
-      if (!questionText.trim() && !questionFile) {
-        throw new Error("Paste questions or upload an application document first");
-      }
-
-      const runId = formatRunRef.current + 1;
-      formatRunRef.current = runId;
-      setFormatting(true);
-      setQuestionFormatError(null);
-      try {
-        let fileId: Id<"_storage"> | undefined;
-        if (questionFile) {
-          const uploadUrl = await generateUploadUrl({
-            orgId: targetOrgId as Id<"organizations">,
-          });
-          const response = await fetch(uploadUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": questionFile.type || "application/octet-stream",
-            },
-            body: questionFile,
-          });
-          if (!response.ok) throw new Error("Application document upload failed");
-          const payload = (await response.json()) as { storageId: string };
-          fileId = payload.storageId as Id<"_storage">;
-        }
-
-        const result = await formatQuestions({
-          orgId: targetOrgId as Id<"organizations">,
-          pastedText: questionText.trim() || undefined,
-          fileId,
-          fileName: questionFile?.name,
-          contentType: questionFile?.type,
-          lineOfBusiness: lineOfBusiness.trim() || undefined,
-          product: product.trim() || undefined,
-        }) as { questions: ApplicationQuestionRow[] };
-        if (!signature || signature === sourceSignatureRef.current) {
-          setFormattedQuestions(result.questions);
-          lastFormattedSignatureRef.current = signature || sourceSignatureRef.current;
-        }
-        return result.questions;
-      } catch (error) {
-        if (!signature || signature === sourceSignatureRef.current) {
-          setQuestionFormatError(error instanceof Error ? error.message : "Unable to format questions");
-        }
-        throw error;
-      } finally {
-        if (runId === formatRunRef.current) {
-          setFormatting(false);
-        }
-      }
-    },
-    [
-      formatQuestions,
-      generateUploadUrl,
-      lineOfBusiness,
-      product,
-      questionFile,
-      questionText,
-      targetOrgId,
-    ],
-  );
-
-  useEffect(() => {
-    if (!open || selectedTemplateId || submitting || !sourceSignature) return;
-    if (lastFormattedSignatureRef.current === sourceSignature) return;
-    const timeout = window.setTimeout(() => {
-      void formatQuestionSource({ signature: sourceSignature }).catch(() => {});
-    }, questionFile ? 250 : 1200);
-    return () => window.clearTimeout(timeout);
-  }, [
-    formatQuestionSource,
-    open,
-    questionFile,
-    selectedTemplateId,
-    sourceSignature,
-    submitting,
-  ]);
-
   async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
       const missingQuestions = selectedTemplate
         ? undefined
-        : formattedQuestions.length > 0
-          ? formattedQuestions
-          : await formatQuestionSource();
+        : questionSource.formattedQuestions.length > 0
+          ? questionSource.formattedQuestions
+          : (await questionSource.formatQuestionSource()).questions;
       await start({
         orgId: targetOrgId as Id<"organizations">,
         templateId: selectedTemplate?._id,
@@ -661,10 +788,7 @@ function ApplicationCreateDrawer({
       });
       toast.success("Application intake started");
       onOpenChange(false);
-      setQuestionText("");
-      setQuestionFile(null);
-      setFormattedQuestions([]);
-      setQuestionFormatError(null);
+      questionSource.reset();
       setTemplateId("");
       if (!fixedClientOrgId) setClientOrgId("");
     } catch (error) {
@@ -684,7 +808,11 @@ function ApplicationCreateDrawer({
           <PillButton type="button" variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </PillButton>
-          <PillButton type="button" disabled={!canSubmit || submitting || formatting} onClick={submit}>
+          <PillButton
+            type="button"
+            disabled={!canSubmit || submitting || questionSource.formatting}
+            onClick={submit}
+          >
             Start intake
           </PillButton>
         </>
@@ -790,8 +918,8 @@ function ApplicationCreateDrawer({
             <label className="flex flex-col gap-1.5">
               <span className="text-label font-medium text-muted-foreground">Questions</span>
               <Textarea
-                value={questionText}
-                onChange={(event) => updateQuestionText(event.target.value)}
+                value={questionSource.questionText}
+                onChange={(event) => questionSource.updateQuestionText(event.target.value)}
                 rows={8}
                 placeholder="Paste application questions or carrier application text"
                 className="min-h-40 resize-none"
@@ -805,60 +933,21 @@ function ApplicationCreateDrawer({
               busyLabel="Starting intake..."
               hint="PDF, DOCX, TXT, Markdown, CSV, or JSON"
               padding="px-4 py-5"
-              onFile={updateQuestionFile}
+              onFile={questionSource.updateQuestionFile}
             />
-            {questionFile ? (
-              <OperationalPanel as="div" className="flex items-center justify-between gap-3 px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-base font-medium text-foreground">{questionFile.name}</p>
-                  <p className="text-label text-muted-foreground">
-                    {(questionFile.size / 1024).toFixed(1)} KB
-                  </p>
-                </div>
-                <PillButton
-                  type="button"
-                  size="compact"
-                  variant="secondary"
-                  disabled={submitting}
-                  onClick={() => updateQuestionFile(null)}
-                >
-                  Remove
-                </PillButton>
-              </OperationalPanel>
+            {questionSource.questionFile ? (
+              <QuestionSourceFilePanel
+                disabled={submitting}
+                file={questionSource.questionFile}
+                onRemove={() => questionSource.updateQuestionFile(null)}
+              />
             ) : null}
-            {formatting ? (
+            {questionSource.formatting ? (
               <p className="text-label text-muted-foreground">Formatting questions...</p>
-            ) : questionFormatError ? (
-              <p className="text-label text-destructive">{questionFormatError}</p>
+            ) : questionSource.formatError ? (
+              <p className="text-label text-destructive">{questionSource.formatError}</p>
             ) : null}
-            {formattedQuestions.length > 0 ? (
-              <OperationalPanel>
-                <OperationalPanelHeader
-                  title="Formatted questions"
-                  description={`${formattedQuestions.length} question${formattedQuestions.length === 1 ? "" : "s"}`}
-                />
-                {formattedQuestions.map((question, index) => (
-                  <OperationalItem
-                    key={question.fieldId}
-                    className={index === 0 ? "border-t-0" : undefined}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-base font-medium text-foreground">{question.label}</p>
-                        {question.prompt !== question.label ? (
-                          <p className="mt-1 text-base text-muted-foreground">{question.prompt}</p>
-                        ) : null}
-                      </div>
-                      {question.section ? (
-                        <span className="shrink-0 text-label text-muted-foreground">
-                          {question.section}
-                        </span>
-                      ) : null}
-                    </div>
-                  </OperationalItem>
-                ))}
-              </OperationalPanel>
-            ) : null}
+            <FormattedQuestionsPanel questions={questionSource.formattedQuestions} />
           </>
         )}
       </div>
@@ -875,23 +964,38 @@ function ApplicationTemplateDrawer({
   onOpenChange: (open: boolean) => void;
   template?: ApplicationTemplateRow | null;
 }) {
+  const currentOrg = useCurrentOrg();
   const saveTemplate = useMutation(api.applicationIntakes.saveTemplate);
-  const existingFields = templateFields(template);
+  const existingQuestions = questionsFromFields(templateFields(template));
   const [title, setTitle] = useState(template?.title ?? "General liability application");
   const [lineOfBusiness, setLineOfBusiness] = useState(template?.lineOfBusiness ?? "");
   const [product, setProduct] = useState(template?.product ?? "");
   const [status, setStatus] = useState<ApplicationTemplateStatus>(template?.status ?? "active");
-  const [questionText, setQuestionText] = useState(
-    existingFields.map((field) => field.label).join("\n"),
-  );
   const [submitting, setSubmitting] = useState(false);
-  const fields = parseTemplateFields(questionText);
-  const canSubmit = Boolean(title.trim() && fields.length > 0);
+  const questionSource = useApplicationQuestionFormatter({
+    disabled: submitting,
+    initialQuestions: existingQuestions,
+    lineOfBusiness,
+    open,
+    orgId: currentOrg?.orgId,
+    product,
+  });
+  const canSubmit = Boolean(title.trim() && questionSource.hasQuestionSource);
 
   async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
+      const formatted =
+        questionSource.formattedQuestions.length > 0
+          ? {
+              questions: questionSource.formattedQuestions,
+              fileId: questionSource.uploadedFileId,
+            }
+          : await questionSource.formatQuestionSource();
+      const sourceKind = questionSource.questionFile
+        ? sourceKindForTemplate(questionSource.questionFile)
+        : template?.sourceKind ?? "generated";
       await saveTemplate({
         templateId: template?._id,
         title: title.trim(),
@@ -900,16 +1004,19 @@ function ApplicationTemplateDrawer({
         lineOfBusiness: lineOfBusiness.trim() || undefined,
         product: product.trim() || undefined,
         status,
-        sourceKind: "manual",
+        sourceKind,
+        sourceFileId: formatted.fileId,
         questionGraph: buildTemplateQuestionGraph({
           templateId: template?._id ?? `manual:${dayjs().valueOf()}`,
           title: title.trim(),
           applicationType: lineOfBusiness.trim() || undefined,
-          fields,
+          fields: fieldsFromQuestions(formatted.questions),
+          source: sourceKind,
         }),
       });
       toast.success(template ? "Template updated" : "Template created");
       onOpenChange(false);
+      if (!template) questionSource.reset();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to save template");
     } finally {
@@ -927,7 +1034,11 @@ function ApplicationTemplateDrawer({
           <PillButton type="button" variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </PillButton>
-          <PillButton type="button" disabled={!canSubmit || submitting} onClick={submit}>
+          <PillButton
+            type="button"
+            disabled={!canSubmit || submitting || questionSource.formatting}
+            onClick={submit}
+          >
             Save template
           </PillButton>
         </>
@@ -979,14 +1090,37 @@ function ApplicationTemplateDrawer({
         </label>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-label font-medium text-muted-foreground">Fields</span>
+          <span className="text-label font-medium text-muted-foreground">Questions</span>
           <Textarea
-            value={questionText}
-            onChange={(event) => setQuestionText(event.target.value)}
-            placeholder="One required field per line"
+            value={questionSource.questionText}
+            onChange={(event) => questionSource.updateQuestionText(event.target.value)}
+            placeholder="Paste application questions or carrier application text"
             className="min-h-40 resize-none"
+            disabled={submitting}
           />
         </label>
+        <FileDropZone
+          accept={APPLICATION_SOURCE_ACCEPT}
+          disabled={submitting}
+          idleLabel="Upload application document"
+          busyLabel="Saving template..."
+          hint="PDF, DOCX, TXT, Markdown, CSV, or JSON"
+          padding="px-4 py-5"
+          onFile={questionSource.updateQuestionFile}
+        />
+        {questionSource.questionFile ? (
+          <QuestionSourceFilePanel
+            disabled={submitting}
+            file={questionSource.questionFile}
+            onRemove={() => questionSource.updateQuestionFile(null)}
+          />
+        ) : null}
+        {questionSource.formatting ? (
+          <p className="text-label text-muted-foreground">Formatting questions...</p>
+        ) : questionSource.formatError ? (
+          <p className="text-label text-destructive">{questionSource.formatError}</p>
+        ) : null}
+        <FormattedQuestionsPanel questions={questionSource.formattedQuestions} />
       </div>
     </SettingsDrawer>
   );
@@ -1017,14 +1151,14 @@ function ApplicationReviewDrawer({
   const footer = detail && viewerIsBroker && detail.normalizedAnswers.length > 0 ? (
     <>
       {packet?.fileUrl ? (
-        <DownloadLink href={packet.fileUrl}>
+        <PillButton href={packet.fileUrl} rel="noreferrer" target="_blank" variant="secondary">
           Download filled PDF
-        </DownloadLink>
+        </PillButton>
       ) : null}
       {jsonHref ? (
-        <DownloadLink download={jsonFileName(detail)} href={jsonHref}>
+        <PillButton download={jsonFileName(detail)} href={jsonHref} variant="secondary">
           Download JSON
-        </DownloadLink>
+        </PillButton>
       ) : null}
     </>
   ) : detail && !viewerIsBroker && !["broker_ready", "submitted", "cancelled"].includes(detail.status) ? (
@@ -1330,6 +1464,16 @@ export function ApplicationIntakePage({
                 : "Start an intake from a broker request, client email, chat, or MCP workflow."
             }
           />
+        ) : mode === "client" ? (
+          <OperationalPanel as="div" data-applications-client-list>
+            {applicationRows.map((row) => (
+              <ApplicationListItem
+                key={row._id}
+                row={row}
+                onSelect={() => setSelectedId(row._id)}
+              />
+            ))}
+          </OperationalPanel>
         ) : (
           <>
             <OperationalPanel data-applications-mobile-list className="block sm:hidden">

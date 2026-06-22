@@ -611,7 +611,7 @@ export const saveTemplate = mutation({
         product: args.product,
         status: args.status ?? existing.status,
         sourceKind: args.sourceKind,
-        sourceFileId: args.sourceFileId,
+        sourceFileId: args.sourceFileId ?? existing.sourceFileId,
         questionGraph,
         fieldCount,
         updatedAt: now,

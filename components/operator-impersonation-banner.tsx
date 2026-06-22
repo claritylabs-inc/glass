@@ -2,6 +2,7 @@
 
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
+import { PillButton } from "@/components/ui/pill-button";
 import { api } from "@/convex/_generated/api";
 
 type OperatorImpersonationContext = {
@@ -39,15 +40,16 @@ export function OperatorImpersonationBanner() {
             Viewing {impersonation.targetOrgName ?? "organization"} as{" "}
             {impersonation.targetRole}
           </p>
-          <button
+          <PillButton
             type="button"
+            variant="secondary"
             onClick={async () => {
               await stopOperatorImpersonation();
             }}
-            className="inline-flex h-8 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white px-4 text-label font-medium text-black transition-colors hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 dark:border-black/15 dark:bg-black dark:text-white dark:hover:bg-black/85 dark:focus-visible:ring-black/30"
+            className="!border-white/20 !bg-white !text-black hover:!bg-white/90 focus-visible:!ring-white/35 dark:!border-black/15 dark:!bg-black dark:!text-white dark:hover:!bg-black/85 dark:focus-visible:!ring-black/30"
           >
             Stop
-          </button>
+          </PillButton>
         </div>
       </div>
     </div>
