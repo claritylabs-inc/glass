@@ -33,37 +33,28 @@ export async function GET(
     return new Response("Application not found", { status: 404 });
   }
 
-  const submission = detail.packetId
-    ? detail.packets?.find((packet) => packet._id === detail.packetId)
-    : null;
   const payload = {
-    applicationId: detail._id,
-    title: detail.title,
-    clientName: detail.clientName ?? null,
-    status: detail.status,
-    lineOfBusiness: detail.lineOfBusiness ?? null,
-    product: detail.product ?? null,
-    answeredAt: detail.updatedAt,
-    submittedAt: detail.submittedAt ?? null,
+    application: {
+      id: detail._id,
+      title: detail.title,
+      ...(detail.clientName ? { client: detail.clientName } : {}),
+      status: detail.status,
+      ...(detail.lineOfBusiness ? { lineOfBusiness: detail.lineOfBusiness } : {}),
+      ...(detail.product ? { product: detail.product } : {}),
+    },
     answers: detail.normalizedAnswers.map((answer) => ({
       fieldId: answer.fieldId,
-      label: answer.label,
-      section: answer.section ?? null,
-      value: answer.value,
-      source: answer.source ?? null,
-      updatedAt: answer.updatedAt ?? null,
+      question: answer.label,
+      answer: answer.value,
+      ...(answer.section ? { section: answer.section } : {}),
     })),
     missingQuestions: detail.missingQuestions.map((question) => ({
       fieldId: question.fieldId,
       label: question.label,
       prompt: question.prompt,
       required: question.required,
-      section: question.section ?? null,
+      ...(question.section ? { section: question.section } : {}),
     })),
-    applicationData: Object.fromEntries(
-      detail.normalizedAnswers.map((answer) => [answer.fieldId, answer.value]),
-    ),
-    submissionAnswers: submission?.answers ?? null,
   };
 
   return new Response(`${JSON.stringify(payload, null, 2)}\n`, {
