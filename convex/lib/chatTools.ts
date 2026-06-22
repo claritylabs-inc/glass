@@ -131,7 +131,7 @@ export const saveNote = tool({
 
 export const startApplicationIntake = tool({
   description:
-    "Start a broker/client insurance application intake when the user asks for a new policy, renewal application, carrier application, or broker submission packet. In broker portfolio mode, targetOrgId must be the specific client organization, not the broker workspace.",
+    "Start a broker/client insurance application intake when the user asks for a new policy, renewal application, carrier application, broker submission, or sends/uploads an application PDF/form to complete. Standalone client orgs without a connected broker can start their own intake. In broker portfolio mode, targetOrgId must be the specific client organization, not the broker workspace.",
   inputSchema: z.object({
     targetOrgId: z
       .string()
@@ -186,7 +186,7 @@ export const checkApplicationStatus = tool({
 
 export const prepareApplicationPacket = tool({
   description:
-    "Prepare a broker-ready application packet from collected answers. This does not submit to carriers; it marks the packet ready for broker review/submission when required fields are complete.",
+    "Prepare collected application answers for broker review/submission. This does not submit to carriers; it marks the application ready for broker review/submission when required fields are complete.",
   inputSchema: z.object({
     applicationIntakeId: z.string().describe("Application intake ID."),
     submissionNotes: z.string().optional().describe("Broker-facing notes for carrier submission."),

@@ -73,6 +73,15 @@ function nowMs() {
   return dayjs().valueOf();
 }
 
+function toJsonValue(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
 function assertCanWriteApplication(access: OrgAccess) {
   if (access.accessType === "connected_client") {
     throw new Error("Connected clients have read-only access");
@@ -143,8 +152,9 @@ type ApplicationAnswerInput = {
 };
 
 function parseQuestionGraph(questionGraph: unknown): ApplicationQuestionGraph | undefined {
-  if (!questionGraph) return undefined;
-  const parsed = ApplicationQuestionGraphSchema.safeParse(questionGraph);
+  const jsonGraph = toJsonValue(questionGraph);
+  if (!jsonGraph) return undefined;
+  const parsed = ApplicationQuestionGraphSchema.safeParse(jsonGraph);
   return parsed.success ? parsed.data : undefined;
 }
 
@@ -584,7 +594,8 @@ export const saveTemplate = mutation({
     const access = await requireCurrentOrgAccess(ctx);
     assertBrokerOrg(access);
     const now = nowMs();
-    const parsedGraph = parseQuestionGraph(args.questionGraph);
+    const questionGraph = toJsonValue(args.questionGraph);
+    const parsedGraph = parseQuestionGraph(questionGraph);
     const fieldCount = parsedGraph ? flattenQuestionGraph(parsedGraph).length : 0;
     if (args.templateId) {
       const existing = await ctx.db.get(args.templateId);
@@ -600,7 +611,7 @@ export const saveTemplate = mutation({
         status: args.status ?? existing.status,
         sourceKind: args.sourceKind,
         sourceFileId: args.sourceFileId,
-        questionGraph: args.questionGraph,
+        questionGraph,
         fieldCount,
         updatedAt: now,
       });
@@ -617,7 +628,7 @@ export const saveTemplate = mutation({
       status: args.status ?? "draft",
       sourceKind: args.sourceKind,
       sourceFileId: args.sourceFileId,
-      questionGraph: args.questionGraph,
+      questionGraph,
       fieldCount,
       createdByUserId: access.userId,
       createdAt: now,
@@ -786,7 +797,7 @@ export const markSubmitted = mutation({
     if (!intake) throw new Error("Application intake not found");
     const { access } = await getWritableApplicationAccess(ctx, intake.orgId);
     if (access.accessType !== "broker_of_client" && access.orgType !== "broker") {
-      throw new Error("Only brokers can mark application packets submitted");
+      throw new Error("Only brokers can mark applications submitted");
     }
     const now = nowMs();
     await ctx.db.patch(intake._id, {
@@ -967,6 +978,7 @@ async function recordAnswersForIntake(
     normalizedAnswers,
     missingQuestions,
     status,
+    packetId: undefined,
     updatedAt: now,
     lastActivityAt: now,
   });
@@ -1071,8 +1083,8 @@ async function preparePacketForIntake(
     userId: args.userId,
     type: "application_completed",
     summary: packet.status === "broker_ready"
-      ? "Application packet ready for broker submission"
-      : "Application packet prepared with missing required fields",
+      ? "Application ready for broker review"
+      : "Application review prepared with missing required fields",
     payload: { applicationIntakeId: args.intake._id, packetId },
     now,
   });
@@ -1083,7 +1095,7 @@ async function preparePacketForIntake(
       clientOrgId: args.intake.orgId,
       intakeId: args.intake._id,
       type: "application_packet_ready",
-      title: "Application packet ready",
+      title: "Application ready for review",
       body: args.intake.title,
       now,
     });

@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation } from "convex/react";
 import dayjs from "dayjs";
-import { FileCheck2, FileText, PackageCheck, Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import {
+  extractQuestionGraphFromFields,
+  flattenQuestionGraph,
+  type ApplicationField,
+  type ApplicationQuestionGraph,
+} from "@claritylabs/cl-sdk/application";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -18,6 +25,7 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -55,13 +63,77 @@ type ApplicationRow = {
   status: ApplicationStatus;
   lineOfBusiness?: string;
   product?: string;
-  normalizedAnswers: Array<{ fieldId: string; label: string; value: string; section?: string }>;
-  missingQuestions: Array<{ fieldId: string; label: string; prompt: string; required: boolean; section?: string }>;
+  normalizedAnswers: ApplicationAnswerRow[];
+  missingQuestions: ApplicationQuestionRow[];
   packetId?: string;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;
 };
+
+type ApplicationAnswerRow = {
+  fieldId: string;
+  label: string;
+  value: string;
+  section?: string;
+  source?: string;
+  updatedAt?: number;
+};
+
+type ApplicationQuestionRow = {
+  fieldId: string;
+  label: string;
+  prompt: string;
+  required: boolean;
+  section?: string;
+};
+
+type ApplicationMessageRow = {
+  _id: string;
+  content: string;
+  createdAt: number;
+  role: string;
+};
+
+type ApplicationContextProposalRow = {
+  _id: Id<"applicationContextProposals">;
+  key: string;
+  value: string;
+  status: string;
+};
+
+type ApplicationPacketRow = {
+  _id: string;
+  status: "draft" | "broker_ready" | "submitted";
+  missingFieldIds: string[];
+  createdAt: number;
+  updatedAt?: number;
+  submittedAt?: number;
+};
+
+type ApplicationTemplateStatus = "draft" | "active" | "archived";
+
+type ApplicationTemplateRow = {
+  _id: Id<"applicationTemplates">;
+  title: string;
+  version: string;
+  applicationType?: string;
+  lineOfBusiness?: string;
+  product?: string;
+  status: ApplicationTemplateStatus;
+  sourceKind: "manual" | "pdf" | "imported" | "generated";
+  questionGraph?: unknown;
+  fieldCount: number;
+  updatedAt: number;
+};
+
+type ApplicationDetail = ApplicationRow & {
+  messages?: ApplicationMessageRow[];
+  contextProposals?: ApplicationContextProposalRow[];
+  packets?: ApplicationPacketRow[];
+};
+
+type ApplicationReviewBusy = "answers" | "packet" | "submit" | null;
 
 type ClientRow = {
   clientOrgId?: string;
@@ -75,23 +147,43 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
   collecting: "Collecting",
   waiting_on_client: "Waiting",
   needs_broker_review: "Review",
-  broker_ready: "Packet ready",
+  broker_ready: "Ready",
   submitted: "Submitted",
   cancelled: "Cancelled",
   stale: "Stale",
 };
 
-const STATUS_TABS = [
-  { value: "all", label: "All" },
-  { value: "collecting", label: "Collecting" },
-  { value: "needs_broker_review", label: "Review" },
-  { value: "broker_ready", label: "Ready" },
-  { value: "submitted", label: "Submitted" },
-] as const;
+const REVIEW_STATUS_LABELS: Record<ApplicationPacketRow["status"], string> = {
+  draft: "Draft",
+  broker_ready: "Ready",
+  submitted: "Submitted",
+};
+
+const TEMPLATE_STATUS_LABELS: Record<ApplicationTemplateStatus, string> = {
+  draft: "Draft",
+  active: "Active",
+  archived: "Archived",
+};
+
+const AD_HOC_TEMPLATE_VALUE = "__ad_hoc__";
+
+type BrokerApplicationTab = "applications" | "templates";
 
 function statusVariant(status: ApplicationStatus): "default" | "secondary" | "outline" {
   if (status === "broker_ready") return "default";
   if (status === "submitted") return "outline";
+  return "secondary";
+}
+
+function packetStatusVariant(status: ApplicationPacketRow["status"]): "default" | "secondary" | "outline" {
+  if (status === "broker_ready") return "default";
+  if (status === "submitted") return "outline";
+  return "secondary";
+}
+
+function templateStatusVariant(status: ApplicationTemplateStatus): "default" | "secondary" | "outline" {
+  if (status === "active") return "default";
+  if (status === "archived") return "outline";
   return "secondary";
 }
 
@@ -101,6 +193,10 @@ function formatTime(value: number) {
 
 function applicationSubtitle(row: ApplicationRow) {
   return [row.lineOfBusiness, row.product].filter(Boolean).join(" · ") || "Application";
+}
+
+function rowOwnerLabel(row: ApplicationRow, mode: "broker" | "client") {
+  return row.clientName ?? (mode === "client" ? "This workspace" : "Client");
 }
 
 function parseQuestions(text: string) {
@@ -116,20 +212,231 @@ function parseQuestions(text: string) {
     }));
 }
 
+function parseTemplateFields(text: string): ApplicationField[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => ({
+      id: `field_${index + 1}`,
+      label: line.replace(/[?.:]+$/g, "").slice(0, 100),
+      section: "Application",
+      fieldType: "text" as const,
+      required: true,
+    }));
+}
+
+function templateFields(template?: ApplicationTemplateRow | null) {
+  if (!template?.questionGraph) return [];
+  try {
+    return flattenQuestionGraph(template.questionGraph as ApplicationQuestionGraph);
+  } catch {
+    return [];
+  }
+}
+
+function buildTemplateQuestionGraph(args: {
+  templateId: string;
+  title: string;
+  applicationType?: string;
+  fields: ApplicationField[];
+}) {
+  const graph = extractQuestionGraphFromFields(args.fields, {
+    id: `${args.templateId}:graph`,
+    version: "v1",
+    title: args.title,
+    applicationType: args.applicationType ?? null,
+    source: "manual",
+  });
+  return JSON.parse(JSON.stringify(graph)) as ApplicationQuestionGraph;
+}
+
+function answerFields(detail: {
+  normalizedAnswers: ApplicationAnswerRow[];
+  missingQuestions: ApplicationQuestionRow[];
+}) {
+  const fields = new Map<
+    string,
+    {
+      fieldId: string;
+      label: string;
+      section?: string;
+      prompt?: string;
+      currentValue: string;
+    }
+  >();
+
+  for (const answer of detail.normalizedAnswers) {
+    fields.set(answer.fieldId, {
+      fieldId: answer.fieldId,
+      label: answer.label,
+      section: answer.section,
+      currentValue: answer.value,
+    });
+  }
+  for (const question of detail.missingQuestions) {
+    fields.set(question.fieldId, {
+      fieldId: question.fieldId,
+      label: question.label,
+      section: question.section,
+      prompt: question.prompt,
+      currentValue: fields.get(question.fieldId)?.currentValue ?? "",
+    });
+  }
+
+  return [...fields.values()];
+}
+
+function currentPacket(packets: ApplicationPacketRow[] | undefined, packetId?: string) {
+  if (!packetId || !packets?.length) return null;
+  return packets.find((packet) => packet._id === packetId) ?? null;
+}
+
+function reviewDescription(review: ApplicationPacketRow) {
+  const missingText = review.missingFieldIds.length > 0
+    ? `${review.missingFieldIds.length} missing field${review.missingFieldIds.length === 1 ? "" : "s"}`
+    : "Complete";
+  return `${missingText} · ${formatTime(review.updatedAt ?? review.createdAt)}`;
+}
+
+function ApplicationAnswerPanel({
+  applicationId,
+  detail,
+  fields,
+  busy,
+  setBusy,
+}: {
+  applicationId: Id<"applicationIntakes">;
+  detail: ApplicationDetail;
+  fields: ReturnType<typeof answerFields>;
+  busy: ApplicationReviewBusy;
+  setBusy: (busy: ApplicationReviewBusy) => void;
+}) {
+  const recordAnswers = useMutation(api.applicationIntakes.recordAnswers);
+  const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fields.map((field) => [field.fieldId, field.currentValue])),
+  );
+  const [answerMessage, setAnswerMessage] = useState("");
+  const [autosaveError, setAutosaveError] = useState<string | null>(null);
+  const lastSubmittedSignatureRef = useRef<string | null>(null);
+  const changedAnswers = useMemo(() => {
+    const existing = new Map(detail.normalizedAnswers.map((answer) => [answer.fieldId, answer.value]));
+    return fields
+      .map((field) => ({
+        field,
+        value: (answerDrafts[field.fieldId] ?? "").trim(),
+      }))
+      .filter(({ field, value }) => value && value !== (existing.get(field.fieldId) ?? ""))
+      .map(({ field, value }) => ({
+        fieldId: field.fieldId,
+        label: field.label,
+        section: field.section,
+        value,
+        source: "broker_portal",
+      }));
+  }, [answerDrafts, detail.normalizedAnswers, fields]);
+
+  useEffect(() => {
+    if (changedAnswers.length === 0 || busy !== null) return;
+    const signature = JSON.stringify({
+      answers: changedAnswers,
+      message: answerMessage.trim(),
+    });
+    if (lastSubmittedSignatureRef.current === signature) return;
+    const timeout = window.setTimeout(() => {
+      lastSubmittedSignatureRef.current = signature;
+      setAutosaveError(null);
+      setBusy("answers");
+      void recordAnswers({
+        applicationIntakeId: applicationId,
+        sourceKind: "broker_portal",
+        answers: changedAnswers,
+        message: answerMessage.trim() || undefined,
+      })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : "Unable to save answers";
+          setAutosaveError(message);
+          toast.error(message);
+        })
+        .finally(() => {
+          setBusy(null);
+        });
+    }, 700);
+    return () => window.clearTimeout(timeout);
+  }, [answerMessage, applicationId, busy, changedAnswers, recordAnswers, setBusy]);
+
+  const description = autosaveError
+    ? autosaveError
+    : busy === "answers"
+      ? "Saving changes"
+      : detail.missingQuestions.length > 0
+        ? `${detail.missingQuestions.length} open question${detail.missingQuestions.length === 1 ? "" : "s"}`
+        : "Ready for broker review";
+
+  return (
+    <OperationalPanel>
+      <OperationalPanelHeader
+        title="Collect answers"
+        description={description}
+      />
+      {fields.length > 0 ? (
+        fields.map((field) => (
+          <OperationalItem key={field.fieldId}>
+            <label className="flex flex-col gap-2">
+              <span className="text-base font-medium text-foreground">
+                {field.label}
+              </span>
+              {field.prompt && field.prompt !== field.label ? (
+                <span className="text-base text-muted-foreground">{field.prompt}</span>
+              ) : null}
+              <Textarea
+                value={answerDrafts[field.fieldId] ?? ""}
+                onChange={(event) =>
+                  setAnswerDrafts((drafts) => ({
+                    ...drafts,
+                    [field.fieldId]: event.target.value,
+                  }))
+                }
+                className="min-h-20 resize-none"
+              />
+            </label>
+          </OperationalItem>
+        ))
+      ) : null}
+      {fields.length > 0 ? (
+        <OperationalItem>
+          <label className="flex flex-col gap-2">
+            <span className="text-base font-medium text-foreground">Note</span>
+            <Textarea
+              value={answerMessage}
+              onChange={(event) => setAnswerMessage(event.target.value)}
+              placeholder="Optional note for history"
+              className="min-h-16 resize-none"
+            />
+          </label>
+        </OperationalItem>
+      ) : null}
+    </OperationalPanel>
+  );
+}
+
 function ApplicationCreateDrawer({
   open,
   onOpenChange,
   mode,
   fixedClientOrgId,
   clients,
+  templates,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: "broker" | "client";
   fixedClientOrgId?: string;
   clients: ClientRow[];
+  templates: ApplicationTemplateRow[];
 }) {
   const [clientOrgId, setClientOrgId] = useState(fixedClientOrgId ?? "");
+  const [templateId, setTemplateId] = useState("");
   const [title, setTitle] = useState("Insurance application");
   const [lineOfBusiness, setLineOfBusiness] = useState("");
   const [product, setProduct] = useState("");
@@ -139,7 +446,26 @@ function ApplicationCreateDrawer({
   const start = useMutation(api.applicationIntakes.start);
 
   const targetOrgId = fixedClientOrgId ?? clientOrgId;
-  const canSubmit = Boolean(targetOrgId && title.trim() && requestText.trim());
+  const activeTemplates = templates.filter((template) => template.status === "active");
+  const selectedTemplate = activeTemplates.find((template) => template._id === templateId);
+  const canSubmit = Boolean(
+    targetOrgId &&
+      title.trim() &&
+      (templateId || requestText.trim() || questionText.trim()),
+  );
+
+  function chooseTemplate(nextTemplateId: string) {
+    if (nextTemplateId === AD_HOC_TEMPLATE_VALUE) {
+      setTemplateId("");
+      return;
+    }
+    setTemplateId(nextTemplateId);
+    const template = activeTemplates.find((item) => item._id === nextTemplateId);
+    if (!template) return;
+    setTitle(template.title);
+    setLineOfBusiness(template.lineOfBusiness ?? "");
+    setProduct(template.product ?? "");
+  }
 
   async function submit() {
     if (!canSubmit) return;
@@ -147,17 +473,19 @@ function ApplicationCreateDrawer({
     try {
       await start({
         orgId: targetOrgId as Id<"organizations">,
+        templateId: selectedTemplate?._id,
         sourceKind: "broker_portal",
         title: title.trim(),
         lineOfBusiness: lineOfBusiness.trim() || undefined,
         product: product.trim() || undefined,
-        requestText: requestText.trim(),
-        missingQuestions: parseQuestions(questionText),
+        requestText: requestText.trim() || undefined,
+        missingQuestions: selectedTemplate ? undefined : parseQuestions(questionText),
       });
       toast.success("Application intake started");
       onOpenChange(false);
       setRequestText("");
       setQuestionText("");
+      setTemplateId("");
       if (!fixedClientOrgId) setClientOrgId("");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start application");
@@ -203,6 +531,28 @@ function ApplicationCreateDrawer({
           </label>
         ) : null}
 
+        {activeTemplates.length > 0 ? (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-label font-medium text-muted-foreground">Template</span>
+            <Select
+              value={templateId || AD_HOC_TEMPLATE_VALUE}
+              onValueChange={(value) => chooseTemplate(value ?? AD_HOC_TEMPLATE_VALUE)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>{selectedTemplate?.title ?? "Ad hoc intake"}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AD_HOC_TEMPLATE_VALUE}>Ad hoc intake</SelectItem>
+                {activeTemplates.map((template) => (
+                  <SelectItem key={template._id} value={template._id}>
+                    {template.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        ) : null}
+
         <label className="flex flex-col gap-1.5">
           <span className="text-label font-medium text-muted-foreground">Title</span>
           <input
@@ -243,14 +593,150 @@ function ApplicationCreateDrawer({
           />
         </label>
 
+        {selectedTemplate ? (
+          <OperationalPanel>
+            <OperationalPanelHeader
+              title={selectedTemplate.title}
+              description={`${selectedTemplate.fieldCount} field${selectedTemplate.fieldCount === 1 ? "" : "s"}`}
+              action={<Badge variant={templateStatusVariant(selectedTemplate.status)}>Active</Badge>}
+            />
+          </OperationalPanel>
+        ) : (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-label font-medium text-muted-foreground">Initial questions</span>
+            <textarea
+              value={questionText}
+              onChange={(event) => setQuestionText(event.target.value)}
+              rows={5}
+              placeholder={"One question per line"}
+              className="resize-none rounded-md border border-foreground/10 bg-background px-3 py-2 text-base outline-none focus:border-foreground/30"
+            />
+          </label>
+        )}
+      </div>
+    </SettingsDrawer>
+  );
+}
+
+function ApplicationTemplateDrawer({
+  open,
+  onOpenChange,
+  template,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  template?: ApplicationTemplateRow | null;
+}) {
+  const saveTemplate = useMutation(api.applicationIntakes.saveTemplate);
+  const existingFields = templateFields(template);
+  const [title, setTitle] = useState(template?.title ?? "General liability application");
+  const [lineOfBusiness, setLineOfBusiness] = useState(template?.lineOfBusiness ?? "");
+  const [product, setProduct] = useState(template?.product ?? "");
+  const [status, setStatus] = useState<ApplicationTemplateStatus>(template?.status ?? "active");
+  const [questionText, setQuestionText] = useState(
+    existingFields.map((field) => field.label).join("\n"),
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const fields = parseTemplateFields(questionText);
+  const canSubmit = Boolean(title.trim() && fields.length > 0);
+
+  async function submit() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      await saveTemplate({
+        templateId: template?._id,
+        title: title.trim(),
+        version: template?.version,
+        applicationType: lineOfBusiness.trim() || undefined,
+        lineOfBusiness: lineOfBusiness.trim() || undefined,
+        product: product.trim() || undefined,
+        status,
+        sourceKind: "manual",
+        questionGraph: buildTemplateQuestionGraph({
+          templateId: template?._id ?? `manual:${dayjs().valueOf()}`,
+          title: title.trim(),
+          applicationType: lineOfBusiness.trim() || undefined,
+          fields,
+        }),
+      });
+      toast.success(template ? "Template updated" : "Template created");
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save template");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <SettingsDrawer
+      open={open}
+      onOpenChange={onOpenChange}
+      title={template ? "Edit template" : "New template"}
+      footer={
+        <>
+          <PillButton type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            Cancel
+          </PillButton>
+          <PillButton type="button" disabled={!canSubmit || submitting} onClick={submit}>
+            Save template
+          </PillButton>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
-          <span className="text-label font-medium text-muted-foreground">Initial questions</span>
-          <textarea
+          <span className="text-label font-medium text-muted-foreground">Title</span>
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+          />
+        </label>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-label font-medium text-muted-foreground">Line</span>
+            <input
+              value={lineOfBusiness}
+              onChange={(event) => setLineOfBusiness(event.target.value)}
+              placeholder="General liability"
+              className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-label font-medium text-muted-foreground">Product</span>
+            <input
+              value={product}
+              onChange={(event) => setProduct(event.target.value)}
+              placeholder="Primary GL"
+              className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+            />
+          </label>
+        </div>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-label font-medium text-muted-foreground">Status</span>
+          <Select value={status} onValueChange={(value) => setStatus(value as ApplicationTemplateStatus)}>
+            <SelectTrigger className="w-full">
+              <SelectValue>{TEMPLATE_STATUS_LABELS[status]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-label font-medium text-muted-foreground">Fields</span>
+          <Textarea
             value={questionText}
             onChange={(event) => setQuestionText(event.target.value)}
-            rows={5}
-            placeholder={"One question per line"}
-            className="resize-none rounded-md border border-foreground/10 bg-background px-3 py-2 text-base outline-none focus:border-foreground/30"
+            placeholder="One required field per line"
+            className="min-h-40 resize-none"
           />
         </label>
       </div>
@@ -260,32 +746,32 @@ function ApplicationCreateDrawer({
 
 function ApplicationReviewDrawer({
   applicationId,
+  canMarkSubmitted,
   onClose,
 }: {
   applicationId: Id<"applicationIntakes"> | null;
+  canMarkSubmitted: boolean;
   onClose: () => void;
 }) {
   const detail = useCachedQuery(
     "applicationIntakes.get",
     api.applicationIntakes.get,
     applicationId ? { applicationIntakeId: applicationId } : "skip",
-  ) as (ApplicationRow & {
-    messages?: Array<{ _id: string; content: string; createdAt: number; role: string }>;
-    contextProposals?: Array<{ _id: string; key: string; value: string; status: string }>;
-    packets?: Array<{ _id: string; status: string; missingFieldIds: string[]; createdAt: number }>;
-  }) | undefined;
+  ) as ApplicationDetail | undefined;
   const preparePacket = useMutation(api.applicationIntakes.preparePacket);
   const markSubmitted = useMutation(api.applicationIntakes.markSubmitted);
-  const [busy, setBusy] = useState<"packet" | "submit" | null>(null);
+  const [busy, setBusy] = useState<ApplicationReviewBusy>(null);
+  const fields = useMemo(() => (detail ? answerFields(detail) : []), [detail]);
+  const packet = currentPacket(detail?.packets, detail?.packetId);
 
   async function runPacket() {
     if (!applicationId) return;
     setBusy("packet");
     try {
       await preparePacket({ applicationIntakeId: applicationId });
-      toast.success("Application packet prepared");
+      toast.success("Application review prepared");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to prepare packet");
+      toast.error(error instanceof Error ? error.message : "Unable to prepare review");
     } finally {
       setBusy(null);
     }
@@ -316,15 +802,15 @@ function ApplicationReviewDrawer({
           <PillButton type="button" variant="secondary" onClick={onClose}>
             Close
           </PillButton>
-          {detail?.status === "broker_ready" ? (
+          {detail?.status === "broker_ready" && canMarkSubmitted ? (
             <PillButton type="button" disabled={busy !== null} onClick={submitPacket}>
               Mark submitted
             </PillButton>
-          ) : (
+          ) : detail?.status !== "broker_ready" ? (
             <PillButton type="button" disabled={!detail || busy !== null} onClick={runPacket}>
-              Prepare packet
+              Prepare review
             </PillButton>
-          )}
+          ) : null}
         </>
       }
     >
@@ -340,30 +826,19 @@ function ApplicationReviewDrawer({
             />
           </OperationalPanel>
 
-          <OperationalPanel>
-            <OperationalPanelHeader title="Missing information" />
-            {detail.missingQuestions.length === 0 ? (
-              <OperationalItem>
-                <p className="text-base text-muted-foreground">No active missing questions.</p>
-              </OperationalItem>
-            ) : (
-              detail.missingQuestions.map((question) => (
-                <OperationalItem key={question.fieldId}>
-                  <p className="text-base font-medium text-foreground">{question.label}</p>
-                  <p className="mt-1 text-base text-muted-foreground">{question.prompt}</p>
-                </OperationalItem>
-              ))
-            )}
-          </OperationalPanel>
+          <ApplicationAnswerPanel
+            key={`${detail._id}:${detail.updatedAt}`}
+            applicationId={detail._id}
+            detail={detail}
+            fields={fields}
+            busy={busy}
+            setBusy={setBusy}
+          />
 
-          <OperationalPanel>
-            <OperationalPanelHeader title="Answers" />
-            {detail.normalizedAnswers.length === 0 ? (
-              <OperationalItem>
-                <p className="text-base text-muted-foreground">No answers recorded yet.</p>
-              </OperationalItem>
-            ) : (
-              detail.normalizedAnswers.map((answer) => (
+          {detail.normalizedAnswers.length > 0 ? (
+            <OperationalPanel>
+              <OperationalPanelHeader title="Recorded answers" />
+              {detail.normalizedAnswers.map((answer) => (
                 <OperationalItem key={answer.fieldId}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -375,9 +850,56 @@ function ApplicationReviewDrawer({
                     ) : null}
                   </div>
                 </OperationalItem>
-              ))
-            )}
-          </OperationalPanel>
+              ))}
+            </OperationalPanel>
+          ) : null}
+
+          {packet ? (
+            <OperationalPanel>
+              <OperationalPanelHeader
+                title="Application review"
+                description={reviewDescription(packet)}
+                action={<Badge variant={packetStatusVariant(packet.status)}>{REVIEW_STATUS_LABELS[packet.status]}</Badge>}
+              />
+              {packet.missingFieldIds.length > 0 ? (
+                <OperationalItem>
+                  <p className="break-words text-base text-muted-foreground">
+                    {packet.missingFieldIds.join(", ")}
+                  </p>
+                </OperationalItem>
+              ) : null}
+            </OperationalPanel>
+          ) : null}
+
+          {detail.contextProposals?.length ? (
+            <OperationalPanel>
+              <OperationalPanelHeader title="Suggested facts" />
+              {detail.contextProposals.map((proposal) => (
+                <OperationalItem key={proposal._id}>
+                  <div className="min-w-0">
+                    <p className="text-base font-medium text-foreground">{proposal.key}</p>
+                    <p className="mt-1 break-words text-base text-muted-foreground">{proposal.value}</p>
+                  </div>
+                </OperationalItem>
+              ))}
+            </OperationalPanel>
+          ) : null}
+
+          {detail.messages?.length ? (
+            <OperationalPanel>
+              <OperationalPanelHeader title="History" />
+              {detail.messages.slice(-5).map((message) => (
+                <OperationalItem key={message._id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 break-words text-base text-foreground">{message.content}</p>
+                    <span className="shrink-0 text-label text-muted-foreground">
+                      {formatTime(message.createdAt)}
+                    </span>
+                  </div>
+                </OperationalItem>
+              ))}
+            </OperationalPanel>
+          ) : null}
         </div>
       )}
     </SettingsDrawer>
@@ -396,9 +918,14 @@ export function ApplicationIntakePage({
   onActionsChange?: (node: ReactNode) => void;
 }) {
   const currentOrg = useCurrentOrg();
+  const searchParams = useSearchParams();
+  const requestedApplicationId = searchParams.get("applicationId");
   const [createOpen, setCreateOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<ApplicationTemplateRow | null>(null);
   const [selectedId, setSelectedId] = useState<Id<"applicationIntakes"> | null>(null);
-  const [status, setStatus] = useState<(typeof STATUS_TABS)[number]["value"]>("all");
+  const [dismissedApplicationParam, setDismissedApplicationParam] = useState<string | null>(null);
+  const [brokerTab, setBrokerTab] = useState<BrokerApplicationTab>("applications");
 
   const clients = useCachedQuery(
     "clients.listForBroker.applications",
@@ -415,25 +942,44 @@ export function ApplicationIntakePage({
       : api.applicationIntakes.listForClient,
     mode === "broker"
       ? currentOrg?.isBroker
-        ? { status: status === "all" ? undefined : status }
+        ? {}
         : "skip"
       : clientOrgId
         ? { orgId: clientOrgId as Id<"organizations"> }
         : "skip",
   ) as ApplicationRow[] | undefined;
 
-  const filteredRows = useMemo(() => {
-    const source = rows ?? [];
-    if (mode === "client" && status !== "all") {
-      return source.filter((row) => row.status === status);
-    }
-    return source;
-  }, [mode, rows, status]);
+  const templates = useCachedQuery(
+    "applicationIntakes.listTemplates.applications",
+    api.applicationIntakes.listTemplates,
+    currentOrg?.isBroker ? {} : "skip",
+  ) as ApplicationTemplateRow[] | undefined;
 
-  const readyCount = (rows ?? []).filter((row) => row.status === "broker_ready").length;
-  const reviewCount = (rows ?? []).filter((row) => row.status === "needs_broker_review").length;
+  const applicationRows = rows ?? [];
   const clientRows = useMemo(() => clients ?? [], [clients]);
+  const templateRows = useMemo(() => templates ?? [], [templates]);
+  const ownerLabelMode = currentOrg?.isBroker ? "broker" : "client";
+  const showBrokerTabs = mode === "broker" && Boolean(currentOrg?.isBroker);
+  const routeSelectedId = useMemo(() => {
+    if (!requestedApplicationId || dismissedApplicationParam === requestedApplicationId) return null;
+    return rows?.find((row) => String(row._id) === requestedApplicationId)?._id ?? null;
+  }, [dismissedApplicationParam, requestedApplicationId, rows]);
+  const activeSelectedId = selectedId ?? routeSelectedId;
+
   const rightPanel = useMemo(() => {
+    if (templateOpen) {
+      return (
+        <ApplicationTemplateDrawer
+          key={editingTemplate?._id ?? "new-template"}
+          open={templateOpen}
+          onOpenChange={(open) => {
+            setTemplateOpen(open);
+            if (!open) setEditingTemplate(null);
+          }}
+          template={editingTemplate}
+        />
+      );
+    }
     if (createOpen) {
       return (
         <ApplicationCreateDrawer
@@ -442,14 +988,38 @@ export function ApplicationIntakePage({
           mode={mode}
           fixedClientOrgId={clientOrgId}
           clients={clientRows}
+          templates={templateRows}
         />
       );
     }
-    if (selectedId) {
-      return <ApplicationReviewDrawer applicationId={selectedId} onClose={() => setSelectedId(null)} />;
+    if (activeSelectedId) {
+      return (
+        <ApplicationReviewDrawer
+          applicationId={activeSelectedId}
+          canMarkSubmitted={Boolean(currentOrg?.isBroker)}
+          onClose={() => {
+            if (routeSelectedId && requestedApplicationId) {
+              setDismissedApplicationParam(requestedApplicationId);
+            }
+            setSelectedId(null);
+          }}
+        />
+      );
     }
     return null;
-  }, [clientOrgId, clientRows, createOpen, mode, selectedId]);
+  }, [
+    clientOrgId,
+    clientRows,
+    createOpen,
+    currentOrg?.isBroker,
+    editingTemplate,
+    mode,
+    activeSelectedId,
+    requestedApplicationId,
+    routeSelectedId,
+    templateOpen,
+    templateRows,
+  ]);
 
   useEffect(() => {
     onRightPanelChange?.(rightPanel);
@@ -459,8 +1029,23 @@ export function ApplicationIntakePage({
     return () => onRightPanelChange?.(null);
   }, [onRightPanelChange]);
 
-  const canStartApplication = mode === "client" || Boolean(currentOrg?.isBroker);
   const headerActions = useMemo(() => {
+    if (mode === "broker" && currentOrg?.isBroker && brokerTab === "templates") {
+      return (
+        <PillButton
+          size="compact"
+          variant="primary"
+          onClick={() => {
+            setEditingTemplate(null);
+            setTemplateOpen(true);
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New template
+        </PillButton>
+      );
+    }
+    const canStartApplication = mode === "client" ? Boolean(clientOrgId) : Boolean(currentOrg?.isBroker);
     if (!canStartApplication) return null;
     return (
       <PillButton size="compact" variant="primary" onClick={() => setCreateOpen(true)}>
@@ -468,7 +1053,7 @@ export function ApplicationIntakePage({
         Start application
       </PillButton>
     );
-  }, [canStartApplication]);
+  }, [brokerTab, clientOrgId, currentOrg?.isBroker, mode]);
 
   useEffect(() => {
     onActionsChange?.(headerActions);
@@ -492,40 +1077,83 @@ export function ApplicationIntakePage({
   return (
     <>
       <div className="flex flex-col gap-4">
-        <Tabs value={status} onValueChange={(value) => setStatus(value as typeof status)}>
-          <TabsList variant="pill" className="scrollbar-hide max-w-full overflow-x-auto py-1">
-            {STATUS_TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
-                {tab.label}
-                {tab.value === "all" ? (
-                  <span className="text-muted-foreground/60">
-                    {(rows ?? []).length}
-                  </span>
-                ) : tab.value === "broker_ready" ? (
-                  <span className="text-muted-foreground/60">{readyCount}</span>
-                ) : tab.value === "needs_broker_review" ? (
-                  <span className="text-muted-foreground/60">{reviewCount}</span>
-                ) : null}
+        {showBrokerTabs ? (
+          <Tabs value={brokerTab} onValueChange={(value) => setBrokerTab(value as BrokerApplicationTab)}>
+            <TabsList variant="pill" className="max-w-full">
+              <TabsTrigger value="applications">
+                Applications
+                <span className="text-muted-foreground/60">{applicationRows.length}</span>
               </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+              <TabsTrigger value="templates">
+                Templates
+                <span className="text-muted-foreground/60">{templateRows.length}</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : null}
 
-        {rows === undefined ? (
+        {showBrokerTabs && brokerTab === "templates" ? (
+          templates === undefined ? (
+            <OperationalSkeletonList rows={3} showTrailing={false} />
+          ) : templateRows.length === 0 ? (
+            <EmptyStateCard
+              icon={<FileText className="h-7 w-7" />}
+              title="No templates"
+              description="Create reusable field sets for carrier applications, renewal requests, and broker submissions."
+            />
+          ) : (
+            <OperationalPanel>
+              {templateRows.slice(0, 100).map((template) => (
+                <OperationalItem key={template._id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-medium text-foreground">{template.title}</p>
+                      <p className="mt-0.5 truncate text-base text-muted-foreground">
+                        {[template.lineOfBusiness, template.product].filter(Boolean).join(" · ") ||
+                          `${template.fieldCount} field${template.fieldCount === 1 ? "" : "s"}`}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge variant={templateStatusVariant(template.status)}>
+                        {TEMPLATE_STATUS_LABELS[template.status]}
+                      </Badge>
+                      <PillButton
+                        type="button"
+                        size="compact"
+                        variant="secondary"
+                        onClick={() => {
+                          setEditingTemplate(template);
+                          setTemplateOpen(true);
+                        }}
+                      >
+                        Edit
+                      </PillButton>
+                    </div>
+                  </div>
+                </OperationalItem>
+              ))}
+            </OperationalPanel>
+          )
+        ) : rows === undefined ? (
           <OperationalSkeletonList rows={7} />
-        ) : filteredRows.length === 0 ? (
+        ) : applicationRows.length === 0 ? (
           <EmptyStateCard
             icon={<FileText className="h-7 w-7" />}
             title="No applications"
-            description="Start an intake from a broker request, client email, chat, or MCP workflow."
+            description={
+              mode === "client"
+                ? "Start an intake from an application PDF, email, text, web chat, or portal request."
+                : "Start an intake from a broker request, client email, chat, or MCP workflow."
+            }
           />
         ) : (
           <>
             <OperationalPanel data-applications-mobile-list className="block sm:hidden">
-              {filteredRows.map((row) => (
+              {applicationRows.map((row) => (
                 <button
                   key={row._id}
                   type="button"
+                  data-application-id={row._id}
                   onClick={() => setSelectedId(row._id)}
                   className="flex w-full flex-col gap-3 border-t border-foreground/6 px-4 py-3 text-left first:border-t-0"
                 >
@@ -539,7 +1167,7 @@ export function ApplicationIntakePage({
                     <Badge variant={statusVariant(row.status)}>{STATUS_LABELS[row.status]}</Badge>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-base text-muted-foreground">
-                    <span className="min-w-0 truncate">{row.clientName ?? "Client"}</span>
+                    <span className="min-w-0 truncate">{rowOwnerLabel(row, ownerLabelMode)}</span>
                     <span className="shrink-0">
                       {row.normalizedAnswers.length} /{" "}
                       {row.normalizedAnswers.length + row.missingQuestions.length}
@@ -554,16 +1182,20 @@ export function ApplicationIntakePage({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Application</TableHead>
-                      <TableHead>Client</TableHead>
+                      <TableHead>{ownerLabelMode === "broker" ? "Client" : "Workspace"}</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Answers</TableHead>
                       <TableHead>Updated</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRows.map((row) => (
-                      <TableRow key={row._id} className="cursor-pointer" onClick={() => setSelectedId(row._id)}>
+                    {applicationRows.map((row) => (
+                      <TableRow
+                        key={row._id}
+                        data-application-id={row._id}
+                        className="cursor-pointer"
+                        onClick={() => setSelectedId(row._id)}
+                      >
                         <TableCell>
                           <div className="min-w-48">
                             <p className="font-medium text-foreground">{row.title}</p>
@@ -572,7 +1204,7 @@ export function ApplicationIntakePage({
                             </p>
                           </div>
                         </TableCell>
-                        <TableCell>{row.clientName ?? "Client"}</TableCell>
+                        <TableCell>{rowOwnerLabel(row, ownerLabelMode)}</TableCell>
                         <TableCell>
                           <Badge variant={statusVariant(row.status)}>{STATUS_LABELS[row.status]}</Badge>
                         </TableCell>
@@ -580,13 +1212,6 @@ export function ApplicationIntakePage({
                           {row.normalizedAnswers.length} / {row.normalizedAnswers.length + row.missingQuestions.length}
                         </TableCell>
                         <TableCell>{formatTime(row.updatedAt)}</TableCell>
-                        <TableCell className="text-right">
-                          {row.status === "broker_ready" ? (
-                            <PackageCheck className="ml-auto h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <FileCheck2 className="ml-auto h-4 w-4 text-muted-foreground" />
-                          )}
-                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
