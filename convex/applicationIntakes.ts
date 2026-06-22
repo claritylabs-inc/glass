@@ -556,17 +556,29 @@ export const listTemplates = query({
   },
   handler: async (ctx, args) => {
     const access = await requireCurrentOrgAccess(ctx);
-    assertBrokerOrg(access);
-    const queryBuilder = args.status
+    const brokerOrgId =
+      access.orgType === "broker"
+        ? access.orgId
+        : access.orgType === "client"
+          ? (access.org.brokerOrgId as Id<"organizations"> | undefined)
+          : undefined;
+
+    if (!brokerOrgId) return [];
+
+    const status =
+      access.orgType === "client" ? args.status ?? "active" : args.status;
+    if (access.orgType === "client" && status !== "active") return [];
+
+    const queryBuilder = status
       ? ctx.db
           .query("applicationTemplates")
           .withIndex("by_brokerOrgId_status", (q) =>
-            q.eq("brokerOrgId", access.orgId).eq("status", args.status!),
+            q.eq("brokerOrgId", brokerOrgId).eq("status", status!),
           )
       : ctx.db
           .query("applicationTemplates")
           .withIndex("by_brokerOrgId_updatedAt", (q) =>
-            q.eq("brokerOrgId", access.orgId),
+            q.eq("brokerOrgId", brokerOrgId),
           )
           .order("desc");
     return await queryBuilder.take(100);

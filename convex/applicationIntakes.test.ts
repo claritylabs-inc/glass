@@ -9,6 +9,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const startFn = api.applicationIntakes.start as any;
 const saveTemplateFn = api.applicationIntakes.saveTemplate as any;
+const listTemplatesFn = api.applicationIntakes.listTemplates as any;
 const recordAnswersFn = api.applicationIntakes.recordAnswers as any;
 const preparePacketFn = api.applicationIntakes.preparePacket as any;
 const markSubmittedFn = api.applicationIntakes.markSubmitted as any;
@@ -33,12 +34,21 @@ async function seedBrokerClient() {
       name: "Broker Admin",
       email: "broker@example.com",
     });
+    const clientUserId = await ctx.db.insert("users", {
+      name: "Client Admin",
+      email: "client@example.com",
+    });
     await ctx.db.insert("orgMemberships", {
       orgId: brokerOrgId,
       userId: brokerUserId,
       role: "admin",
     });
-    return { brokerUserId, clientOrgId };
+    await ctx.db.insert("orgMemberships", {
+      orgId: clientOrgId,
+      userId: clientUserId,
+      role: "admin",
+    });
+    return { brokerUserId, clientOrgId, clientUserId };
   });
   return { t, ...ids };
 }
@@ -279,6 +289,35 @@ describe("applicationIntakes portal lifecycle", () => {
       "annual_revenue",
       "employee_count",
     ]);
+  });
+
+  test("lets client members list only active broker templates", async () => {
+    const { t, brokerUserId, clientUserId } = await seedBrokerClient();
+    const brokerSession = sessionFor(brokerUserId);
+    const clientSession = sessionFor(clientUserId);
+
+    await t.withIdentity(brokerSession).mutation(saveTemplateFn, {
+      title: "Active GL application",
+      lineOfBusiness: "General liability",
+      status: "active",
+      sourceKind: "manual",
+    });
+    await t.withIdentity(brokerSession).mutation(saveTemplateFn, {
+      title: "Draft cyber application",
+      lineOfBusiness: "Cyber",
+      status: "draft",
+      sourceKind: "manual",
+    });
+
+    const clientTemplates = await t.withIdentity(clientSession).query(listTemplatesFn, {});
+    expect(clientTemplates.map((template: { title: string }) => template.title)).toEqual([
+      "Active GL application",
+    ]);
+
+    const draftTemplates = await t.withIdentity(clientSession).query(listTemplatesFn, {
+      status: "draft",
+    });
+    expect(draftTemplates).toEqual([]);
   });
 
   test("lets standalone clients start from an uploaded application context without a broker", async () => {

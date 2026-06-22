@@ -722,6 +722,7 @@ function ApplicationCreateDrawer({
   fixedClientOrgId,
   clients,
   templates,
+  viewerIsBroker,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -729,6 +730,7 @@ function ApplicationCreateDrawer({
   fixedClientOrgId?: string;
   clients: ClientRow[];
   templates: ApplicationTemplateRow[];
+  viewerIsBroker: boolean;
 }) {
   const [clientOrgId, setClientOrgId] = useState(fixedClientOrgId ?? "");
   const [templateId, setTemplateId] = useState("");
@@ -739,23 +741,28 @@ function ApplicationCreateDrawer({
   const start = useMutation(api.applicationIntakes.start);
 
   const targetOrgId = fixedClientOrgId ?? clientOrgId;
+  const canUseAdHoc = mode === "broker";
   const activeTemplates = templates.filter((template) => template.status === "active");
-  const selectedTemplate = activeTemplates.find((template) => template._id === templateId);
+  const selectedTemplate =
+    activeTemplates.find((template) => template._id === templateId) ??
+    (!canUseAdHoc ? activeTemplates[0] : undefined);
   const selectedClient = clients.find((client) => client.clientOrgId === clientOrgId);
   const selectedTemplateId = selectedTemplate?._id;
   const questionSource = useApplicationQuestionFormatter({
-    disabled: Boolean(selectedTemplateId || submitting),
+    disabled: Boolean(selectedTemplateId || submitting || !canUseAdHoc),
     lineOfBusiness,
     open,
     orgId: targetOrgId,
     product,
   });
   const canSubmit = Boolean(
-    targetOrgId && title.trim() && (selectedTemplate || questionSource.hasQuestionSource),
+    targetOrgId &&
+      (selectedTemplate || (canUseAdHoc && title.trim() && questionSource.hasQuestionSource)),
   );
 
   function chooseTemplate(nextTemplateId: string) {
     if (nextTemplateId === AD_HOC_TEMPLATE_VALUE) {
+      if (!canUseAdHoc) return;
       setTemplateId("");
       return;
     }
@@ -780,10 +787,10 @@ function ApplicationCreateDrawer({
       await start({
         orgId: targetOrgId as Id<"organizations">,
         templateId: selectedTemplate?._id,
-        sourceKind: "broker_portal",
-        title: title.trim(),
-        lineOfBusiness: lineOfBusiness.trim() || undefined,
-        product: product.trim() || undefined,
+        sourceKind: viewerIsBroker ? "broker_portal" : "web",
+        title: canUseAdHoc ? title.trim() : undefined,
+        lineOfBusiness: canUseAdHoc ? lineOfBusiness.trim() || undefined : undefined,
+        product: canUseAdHoc ? product.trim() || undefined : undefined,
         missingQuestions,
       });
       toast.success("Application intake started");
@@ -857,14 +864,18 @@ function ApplicationCreateDrawer({
           <label className="flex flex-col gap-1.5">
             <span className="text-label font-medium text-muted-foreground">Template</span>
             <Select
-              value={templateId || AD_HOC_TEMPLATE_VALUE}
-              onValueChange={(value) => chooseTemplate(value ?? AD_HOC_TEMPLATE_VALUE)}
+              value={selectedTemplateId ?? (canUseAdHoc ? AD_HOC_TEMPLATE_VALUE : "")}
+              onValueChange={(value) =>
+                chooseTemplate(value ?? (canUseAdHoc ? AD_HOC_TEMPLATE_VALUE : ""))
+              }
             >
               <SelectTrigger className="w-full">
-                <SelectValue>{selectedTemplate?.title ?? "Ad hoc intake"}</SelectValue>
+                <SelectValue>
+                  {selectedTemplate?.title ?? (canUseAdHoc ? "Ad hoc intake" : "Choose template")}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={AD_HOC_TEMPLATE_VALUE}>Ad hoc intake</SelectItem>
+                {canUseAdHoc ? <SelectItem value={AD_HOC_TEMPLATE_VALUE}>Ad hoc intake</SelectItem> : null}
                 {activeTemplates.map((template) => (
                   <SelectItem key={template._id} value={template._id}>
                     {template.title}
@@ -875,35 +886,39 @@ function ApplicationCreateDrawer({
           </label>
         ) : null}
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-label font-medium text-muted-foreground">Title</span>
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
-          />
-        </label>
+        {canUseAdHoc ? (
+          <>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-medium text-muted-foreground">Title</span>
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+              />
+            </label>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-label font-medium text-muted-foreground">Line</span>
-            <input
-              value={lineOfBusiness}
-              onChange={(event) => setLineOfBusiness(event.target.value)}
-              placeholder="General liability"
-              className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-label font-medium text-muted-foreground">Product</span>
-            <input
-              value={product}
-              onChange={(event) => setProduct(event.target.value)}
-              placeholder="Carrier or product"
-              className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
-            />
-          </label>
-        </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-medium text-muted-foreground">Line</span>
+                <input
+                  value={lineOfBusiness}
+                  onChange={(event) => setLineOfBusiness(event.target.value)}
+                  placeholder="General liability"
+                  className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-medium text-muted-foreground">Product</span>
+                <input
+                  value={product}
+                  onChange={(event) => setProduct(event.target.value)}
+                  placeholder="Carrier or product"
+                  className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+                />
+              </label>
+            </div>
+          </>
+        ) : null}
 
         {selectedTemplate ? (
           <OperationalPanel>
@@ -913,7 +928,7 @@ function ApplicationCreateDrawer({
               action={<Badge variant={templateStatusVariant(selectedTemplate.status)}>Active</Badge>}
             />
           </OperationalPanel>
-        ) : (
+        ) : canUseAdHoc ? (
           <>
             <label className="flex flex-col gap-1.5">
               <span className="text-label font-medium text-muted-foreground">Questions</span>
@@ -949,7 +964,7 @@ function ApplicationCreateDrawer({
             ) : null}
             <FormattedQuestionsPanel questions={questionSource.formattedQuestions} />
           </>
-        )}
+        ) : null}
       </div>
     </SettingsDrawer>
   );
@@ -1270,12 +1285,22 @@ export function ApplicationIntakePage({
   const templates = useCachedQuery(
     "applicationIntakes.listTemplates.applications",
     api.applicationIntakes.listTemplates,
-    currentOrg?.isBroker ? {} : "skip",
+    mode === "broker"
+      ? currentOrg?.isBroker
+        ? {}
+        : "skip"
+      : currentOrg && clientOrgId
+        ? { status: "active" }
+        : "skip",
   ) as ApplicationTemplateRow[] | undefined;
 
   const applicationRows = rows ?? [];
   const clientRows = useMemo(() => clients ?? [], [clients]);
   const templateRows = useMemo(() => templates ?? [], [templates]);
+  const activeTemplateRows = useMemo(
+    () => templateRows.filter((template) => template.status === "active"),
+    [templateRows],
+  );
   const ownerLabelMode = currentOrg?.isBroker ? "broker" : "client";
   const showBrokerTabs = mode === "broker" && Boolean(currentOrg?.isBroker);
   const routeSelectedId = useMemo(() => {
@@ -1306,7 +1331,8 @@ export function ApplicationIntakePage({
           mode={mode}
           fixedClientOrgId={clientOrgId}
           clients={clientRows}
-          templates={templateRows}
+          templates={mode === "client" ? activeTemplateRows : templateRows}
+          viewerIsBroker={Boolean(currentOrg?.isBroker)}
         />
       );
     }
@@ -1336,6 +1362,7 @@ export function ApplicationIntakePage({
     requestedApplicationId,
     routeSelectedId,
     templateOpen,
+    activeTemplateRows,
     templateRows,
   ]);
 
@@ -1363,7 +1390,10 @@ export function ApplicationIntakePage({
         </PillButton>
       );
     }
-    const canStartApplication = mode === "client" ? Boolean(clientOrgId) : Boolean(currentOrg?.isBroker);
+    const canStartApplication =
+      mode === "client"
+        ? Boolean(clientOrgId && templates && activeTemplateRows.length > 0)
+        : Boolean(currentOrg?.isBroker);
     if (!canStartApplication) return null;
     return (
       <PillButton size="compact" variant="primary" onClick={() => setCreateOpen(true)}>
@@ -1371,7 +1401,7 @@ export function ApplicationIntakePage({
         Start application
       </PillButton>
     );
-  }, [brokerTab, clientOrgId, currentOrg?.isBroker, mode]);
+  }, [activeTemplateRows.length, brokerTab, clientOrgId, currentOrg?.isBroker, mode, templates]);
 
   useEffect(() => {
     onActionsChange?.(headerActions);
