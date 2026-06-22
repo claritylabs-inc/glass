@@ -164,8 +164,9 @@ export function BrandIcon({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-md border border-foreground/12 bg-transparent text-foreground",
+        "inline-flex shrink-0 items-center justify-center rounded-md bg-transparent text-foreground",
         sizeClasses[size],
+        showImage ? "overflow-hidden" : "border border-foreground/12",
         className,
       )}
       style={showImage ? { backgroundColor: imageBackgroundColor } : undefined}
@@ -176,7 +177,7 @@ export function BrandIcon({
           src={imageSrc}
           alt={alt}
           className={cn(
-            "h-full w-full object-contain",
+            "h-full w-full rounded-[inherit] object-contain",
             imageClassName,
           )}
           onError={() => {
