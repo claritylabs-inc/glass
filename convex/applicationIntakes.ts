@@ -1042,7 +1042,6 @@ async function preparePacketForIntake(
     orgId: args.intake.orgId,
     brokerOrgId: args.intake.brokerOrgId,
     status: packet.status,
-    answers: packet.answers,
     missingFieldIds: packet.missingFieldIds,
     qualityReport,
     submissionNotes: args.submissionNotes,

@@ -92,7 +92,6 @@ type ApplicationQuestionRow = {
 type ApplicationPacketRow = {
   _id: string;
   status: "draft" | "broker_ready" | "submitted";
-  answers?: unknown;
   missingFieldIds: string[];
   fileUrl?: string | null;
   createdAt: number;

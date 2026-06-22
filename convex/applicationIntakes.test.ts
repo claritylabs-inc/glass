@@ -148,6 +148,7 @@ describe("applicationIntakes portal lifecycle", () => {
       ctx.db.get(packet!._id as Id<"applicationPackets">),
     );
     expect(storedPacket?.status).toBe("submitted");
+    expect(storedPacket).not.toHaveProperty("answers");
     expect(storedPacket?.submittedAt).toEqual(expect.any(Number));
   });
 

@@ -814,7 +814,6 @@ export default defineSchema({
     orgId: v.id("organizations"),
     brokerOrgId: v.optional(v.id("organizations")),
     status: applicationPacketStatusValidator,
-    answers: v.any(),
     missingFieldIds: v.array(v.string()),
     qualityReport: v.optional(v.any()),
     submissionNotes: v.optional(v.string()),
