@@ -54,7 +54,6 @@ import {
   PolicyExtractionReview,
 } from "./policy-extraction-review-tab";
 import { PolicyBreakdownEditor } from "./policy-breakdown-editor";
-import { PolicyChangesTab } from "./policy-changes-tab";
 import {
   CertificateCreatePanel,
   CertificatesTab,
@@ -82,15 +81,13 @@ type PolicyDetailTab =
   | "details"
   | "review"
   | "certificates"
-  | "history"
-  | "changes";
+  | "history";
 
 function parsePolicyDetailTab(value: string | null): PolicyDetailTab {
   if (
     value === "review" ||
     value === "certificates" ||
-    value === "history" ||
-    value === "changes"
+    value === "history"
   ) {
     return value;
   }
@@ -443,8 +440,6 @@ export function PolicyDetailBody({
   const displayName = administratorName || carrierName;
   const policyNumber = (p.policyNumber as string | undefined) ?? "";
   const isDeleted = !!p.deletedAt;
-  const canManagePolicyChanges =
-    (viewerOrg?.org as { type?: "broker" } | undefined)?.type === "broker";
   const canEditExtractedFields =
     (viewerOrg?.org as { type?: "broker" } | undefined)?.type === "broker";
   const canRequestBrokerExtractionHelp =
@@ -585,7 +580,7 @@ export function PolicyDetailBody({
   const explainFinalExtractionGate = useCallback(() => {
     toast.message("Enrichment is still running", {
       description:
-        "Policy details are available now. COIs, policy changes, endorsements, and source-backed actions unlock when enrichment finishes.",
+        "Policy details are available now. COIs, endorsements, and source-backed actions unlock when enrichment finishes.",
     });
   }, []);
 
@@ -710,9 +705,6 @@ export function PolicyDetailBody({
       );
       return () => onRightPanel(null);
     }
-    if (visibleActiveTab === "changes") {
-      return;
-    }
     onRightPanel(null);
     return () => onRightPanel(null);
   }, [
@@ -726,7 +718,6 @@ export function PolicyDetailBody({
     selectedCertificateForPanel,
     canEditExtractedFields,
     isDeleted,
-    visibleActiveTab,
   ]);
 
   if (policy === undefined) {
@@ -878,7 +869,6 @@ export function PolicyDetailBody({
                 : []),
               { id: "certificates" as const, label: "Certificates" },
               { id: "history" as const, label: "History" },
-              { id: "changes" as const, label: "Tasks" },
             ] as const
           ).map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id}>
@@ -913,21 +903,6 @@ export function PolicyDetailBody({
             canRequestBrokerHelp={canRequestBrokerExtractionHelp}
           />
         </FadeIn>
-      )}
-
-      {visibleActiveTab === "changes" && !isPolicyFinal && (
-        <ProvisionalPolicyGate
-          title="Policy changes unavailable"
-          description="Policy changes and endorsements require enrichment to finish for this policy."
-        />
-      )}
-
-      {visibleActiveTab === "changes" && isPolicyFinal && (
-        <PolicyChangesTab
-          policyId={id}
-          canManage={canManagePolicyChanges}
-          onRightPanel={onRightPanel}
-        />
       )}
 
       {visibleActiveTab === "certificates" && !isPolicyFinal && (

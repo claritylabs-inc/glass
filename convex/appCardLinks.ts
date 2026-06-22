@@ -381,7 +381,7 @@ export const getByToken = query({
     return {
       kind: link.kind,
       orgName: org.name,
-      title: "Policy change request",
+      title: "Broker follow-up",
       subtitle: policy ? policyTitle(policy) : undefined,
       label: link.label,
       policyChange: publicPolicyChange(changeCase),

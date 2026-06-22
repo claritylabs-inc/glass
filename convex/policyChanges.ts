@@ -9,8 +9,6 @@ import {
 import { internal } from "./_generated/api";
 import {
   assertCanCreatePolicyChange,
-  assertCanDraftPolicyChangeSubmission,
-  assertCanManagePolicyChange,
   assertCanReadPolicyChange,
   getPolicyChangeAccessForQuery,
   getPolicyChangeCaseAccessForQuery,
@@ -47,22 +45,6 @@ const caseSourceKindValidator = v.union(
   v.literal("cli"),
   v.literal("uploaded_document"),
   v.literal("manual"),
-);
-
-const caseStatusValidator = v.union(
-  // Legacy statuses kept during the widened migration window.
-  v.literal("draft"),
-  v.literal("ready"),
-  v.literal("accepted"),
-  v.literal("needs_info"),
-  v.literal("submitted"),
-  v.literal("declined"),
-  v.literal("cancelled"),
-  // Current lightweight case workflow.
-  v.literal("intake"),
-  v.literal("ready_to_submit"),
-  v.literal("waiting_for_endorsement"),
-  v.literal("completed"),
 );
 
 type PolicyChangeStatus =
@@ -134,7 +116,7 @@ function normalizeCaseStatus(
 
 function summarizeRequest(requestText: string): string {
   const firstLine = requestText.split(/[.\n]/)[0]?.trim();
-  return firstLine ? firstLine.slice(0, 160) : "Policy change request";
+  return firstLine ? firstLine.slice(0, 160) : "Broker follow-up";
 }
 
 function getRecord(value: unknown): Record<string, unknown> {
@@ -402,13 +384,13 @@ async function notifyIfNeedsInfo(
   await notify(ctx, {
     orgId: args.orgId,
     type: "policy_change_needs_info",
-    title: "Policy change needs more information",
+    title: "Broker follow-up needs info",
     body:
       args.pendingQuestions[0] ??
-      "Glass needs more information to continue this policy change request.",
+      "Glass needs more information before it can continue the broker follow-up.",
     actionType: args.policyId ? "view_policy" : undefined,
     actionPayload: args.policyId
-      ? { policyId: args.policyId, tab: "changes" }
+      ? { policyId: args.policyId }
       : undefined,
     sourceRef: { caseId: args.caseId, policyId: args.policyId },
     coalesceKeyParts: [
@@ -428,7 +410,7 @@ function buildInitialValidation(args: {
     issues.push({
       code: "request_text_missing",
       severity: "blocking",
-      message: "Policy change request text is required.",
+      message: "Requested policy update text is required.",
     });
   }
   if (
@@ -585,7 +567,7 @@ export const canCreatePolicyChangeForUserInternal = internalQuery({
     return {
       allowed: false,
       error:
-        "Policy change requests require direct org membership or broker access",
+        "Broker follow-ups require direct org membership or broker access",
     };
   },
 });
@@ -757,6 +739,19 @@ async function collectPolicyChangeCaseIdsForThread(
     if (pending?.policyChangeCaseId) caseIds.add(String(pending.policyChangeCaseId));
   }
   return caseIds;
+}
+
+async function linkedCertificateHoldForCase(
+  ctx: QueryCtx,
+  caseId: Id<"policyChangeCases">,
+) {
+  return await ctx.db
+    .query("certificateRequestHolds")
+    .withIndex("by_policyChangeCaseId", (q) =>
+      q.eq("policyChangeCaseId", caseId),
+    )
+    .order("desc")
+    .first();
 }
 
 export const resolveCaseCandidatesInternal = internalQuery({
@@ -1292,64 +1287,6 @@ export const processReply = mutation({
   },
 });
 
-export const generateCarrierPacket = mutation({
-  args: { caseId: v.id("policyChangeCases") },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.get(args.caseId);
-    if (!existing) throw new Error("Policy change case not found");
-    const access = await getOrgAccess(ctx, existing.orgId);
-    assertCanDraftPolicyChangeSubmission(access);
-    const now = nowMs();
-    const artifacts = [
-      {
-        kind: "broker_request_packet",
-        title: "Broker change request",
-        content: `Please process this policy change request:\n\n${existing.requestText}`,
-      },
-      {
-        kind: "validation_report",
-        title: "Validation report",
-        content: JSON.stringify(existing.validationIssues ?? [], null, 2),
-      },
-    ];
-    const packetId = await ctx.db.insert("pcePackets", {
-      orgId: existing.orgId,
-      caseId: args.caseId,
-      policyId: existing.policyId,
-      artifacts,
-      validationIssues: existing.validationIssues,
-      createdAt: now,
-    });
-    await ctx.db.patch(args.caseId, {
-      packetId,
-      status: (
-        existing.validationIssues as Array<{ severity?: string }> | undefined
-      )?.some((issue) => issue.severity === "blocking")
-        ? "needs_info"
-        : "ready_to_submit",
-      updatedAt: now,
-    });
-    return packetId;
-  },
-});
-
-export const markStatus = mutation({
-  args: {
-    caseId: v.id("policyChangeCases"),
-    status: caseStatusValidator,
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.get(args.caseId);
-    if (!existing) throw new Error("Policy change case not found");
-    const access = await getOrgAccess(ctx, existing.orgId);
-    assertCanManagePolicyChange(access);
-    await ctx.db.patch(args.caseId, {
-      status: normalizeCaseStatus(args.status as PolicyChangeStatus),
-      updatedAt: nowMs(),
-    });
-  },
-});
-
 export const cancelRequest = mutation({
   args: { caseId: v.id("policyChangeCases") },
   handler: async (ctx, args) => {
@@ -1362,7 +1299,7 @@ export const cancelRequest = mutation({
       existing.status as PolicyChangeStatus,
     );
     if (normalizedStatus === "completed" || normalizedStatus === "declined") {
-      throw new Error("Completed policy change requests cannot be cancelled");
+      throw new Error("Completed broker follow-ups cannot be cancelled");
     }
     if (normalizedStatus === "cancelled") return;
 
@@ -1373,7 +1310,7 @@ export const cancelRequest = mutation({
       caseId: args.caseId,
       direction: "system",
       channel: "manual",
-      content: "Policy change request cancelled.",
+      content: "Broker follow-up cancelled.",
       createdByUserId: access.userId,
       createdAt: now,
     });
@@ -1419,7 +1356,7 @@ export const draftSubmission = internalMutation({
         ? existingSubmission.recipientName.trim()
         : undefined);
     const body = [
-      "Please process this policy change request:",
+      "Please help with this policy update:",
       "",
       existing.summary || summarizeRequest(existing.requestText),
       "",
@@ -1432,7 +1369,7 @@ export const draftSubmission = internalMutation({
       ...existingSubmission,
       recipientEmail: recipientEmail || undefined,
       recipientName,
-      subject: `Policy change request${existing.policyId ? ` for ${String(existing.policyId)}` : ""}`,
+      subject: `Policy update request${existing.policyId ? ` for ${String(existing.policyId)}` : ""}`,
       body,
       draftedAt: now,
       draftedByUserId: args.userId,
@@ -1787,10 +1724,10 @@ export const completeFromEndorsement = internalMutation({
     await notify(ctx, {
       orgId: policy.orgId,
       type: "policy_change_completed",
-      title: "Policy change completed",
+      title: "Policy update completed",
       body:
         args.summary ??
-        "An endorsement was added to the policy and the change request was marked complete.",
+        "An endorsement was added to the policy and the broker follow-up was marked done.",
       actionType: "view_policy",
       actionPayload: { policyId: args.policyId, caseId: args.caseId },
       sourceRef: {
@@ -1969,7 +1906,16 @@ export const listByPolicy = query({
       .order("desc")
       .collect();
     return await Promise.all(
-      cases.map((changeCase) => effectiveBrokerRecipientCase(ctx, changeCase)),
+      cases.map(async (changeCase) => {
+        const effectiveCase = await effectiveBrokerRecipientCase(ctx, changeCase);
+        const linkedCertificateHold = await linkedCertificateHoldForCase(
+          ctx,
+          effectiveCase._id,
+        );
+        return linkedCertificateHold
+          ? { ...effectiveCase, linkedCertificateHold }
+          : effectiveCase;
+      }),
     );
   },
 });
@@ -1987,7 +1933,13 @@ export const getCaseDetail = query({
       caseAccess.changeCase,
     );
 
-    const [packets, messages, evidenceLinks, validationReports] =
+    const [
+      packets,
+      messages,
+      evidenceLinks,
+      validationReports,
+      linkedCertificateHold,
+    ] =
       await Promise.all([
         ctx.db
           .query("pcePackets")
@@ -2008,6 +1960,7 @@ export const getCaseDetail = query({
           .withIndex("by_caseId", (q) => q.eq("caseId", args.caseId))
           .order("desc")
           .collect(),
+        linkedCertificateHoldForCase(ctx, args.caseId),
       ]);
     const policy = changeCase.policyId
       ? await ctx.db.get(changeCase.policyId)
@@ -2041,6 +1994,7 @@ export const getCaseDetail = query({
       messages,
       evidenceLinks,
       validationReports,
+      linkedCertificateHold,
     };
   },
 });

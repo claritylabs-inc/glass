@@ -1067,7 +1067,7 @@ export function buildAgentToolExecutors(
         evidenceSourceIds?: string[];
       }) => {
         if (options.canWrite === false)
-          return writeUnavailable(options, "create a policy change request");
+          return writeUnavailable(options, "capture a broker follow-up");
         const intake = evaluatePceIntake({
           requestKind: params.requestKind,
           requestText: params.requestText,
@@ -1080,7 +1080,7 @@ export function buildAgentToolExecutors(
             ctx,
             options,
             params.policyId,
-            "policy change requests",
+            "broker follow-ups",
           );
           if (!resolved.ok) return resolved.message;
           targetOrgId = resolved.policy.orgId;
@@ -1119,7 +1119,7 @@ export function buildAgentToolExecutors(
         const caseId = result?.caseId as Id<"policyChangeCases"> | undefined;
         if (caseId) await options.onPolicyChangeCase?.(caseId);
         return {
-          message: "Policy change request created.",
+          message: "Broker follow-up captured.",
           status: "created",
           caseId,
           requestKind: intake.kind,
@@ -1135,7 +1135,7 @@ export function buildAgentToolExecutors(
         sourceSpanIds?: string[];
       }) => {
         if (options.canWrite === false)
-          return writeUnavailable(options, "update a policy change request");
+          return writeUnavailable(options, "update a broker follow-up");
         await ctx.runMutation(internal.policyChanges.addInfo, {
           caseId: params.caseId as Id<"policyChangeCases">,
           userId: options.userId,
@@ -1179,17 +1179,17 @@ export function buildAgentToolExecutors(
             return "Policy change case not found in this scope.";
           }
           if (policyId) {
-            return "No active policy change requests found for that policy.";
+            return "No active broker follow-ups found for that policy.";
           }
           return params.includeClosed
-            ? "No policy change requests found in this scope."
-            : "No active policy change requests found in this scope.";
+            ? "No broker follow-ups found in this scope."
+            : "No active broker follow-ups found in this scope.";
         }
 
         if (rows.length === 1) await options.onPolicyChangeCase?.(rows[0].caseId);
 
         return {
-          policyChangeRequests: rows,
+          brokerFollowUps: rows,
           count: rows.length,
           includeClosed: params.includeClosed === true,
         };
@@ -1204,12 +1204,12 @@ export function buildAgentToolExecutors(
         instructions?: string;
       }) => {
         if (options.canWrite === false)
-          return writeUnavailable(options, "draft a policy change email");
+          return writeUnavailable(options, "draft a broker email");
         const resolvedCase = await resolvePolicyChangeCaseForTool(ctx, options, {
           caseId: params.caseId,
           orgId: options.orgId,
           activeOnly: true,
-          actionLabel: "draft a policy change email",
+          actionLabel: "draft a broker email",
         });
         if (!resolvedCase.ok) return resolvedCase.response;
         const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
@@ -1268,7 +1268,7 @@ export function buildAgentToolExecutors(
           orgId: resolved.policy.orgId,
           policyId: resolved.policy._id,
           activeOnly: true,
-          actionLabel: "complete a policy change request",
+          actionLabel: "attach an endorsement",
         });
         if (!resolvedCase.ok) return resolvedCase.response;
         if (options.availableFileIds) {

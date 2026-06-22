@@ -328,7 +328,6 @@ export const scanOrgInternal = internalMutation({
           actionType: "view_policy",
           actionPayload: {
             policyId: discrepancy.affectedPolicyIds[0],
-            tab: "changes",
           },
           sourceRef: { declarationDiscrepancyId: discrepancyId },
           coalesceKeyParts: ["policy_declaration_discrepancy", args.orgId, discrepancy.fieldGroup],
@@ -410,7 +409,6 @@ export const notifyCopyInternal = internalMutation({
       actionType: "view_policy",
       actionPayload: {
         policyId,
-        tab: "changes",
       },
       sourceRef: { declarationDiscrepancyId: args.discrepancyId },
       coalesceKeyParts: [

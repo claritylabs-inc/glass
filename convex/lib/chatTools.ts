@@ -178,7 +178,7 @@ export const answerApplicationQuestions = tool({
 
 export const checkApplicationStatus = tool({
   description:
-    "Check status for an active insurance application intake or list recent application intakes in scope. Use only for new-policy, renewal-application, carrier-application, quote-submission, or broker-submission application workflows. Do not use for policy change requests, PCEs, endorsements, or policy-record change status; use check_policy_change_status for those.",
+    "Check status for an active insurance application intake or list recent application intakes in scope. Use only for new-policy, renewal-application, carrier-application, quote-submission, or broker-submission application workflows. Do not use for broker follow-ups about policy updates or endorsements; use check_policy_change_status for those.",
   inputSchema: z.object({
     applicationIntakeId: z.string().optional().describe("Specific application intake ID."),
   }),
@@ -291,17 +291,17 @@ export const generateCoi = tool({
 
 export const createPolicyChangeRequest = tool({
   description:
-    "Create a policy change endorsement (PCE) request from the user's instructions. Use this immediately for actual policy-record changes: named insured changes, DBA/entity/FEIN changes, mailing address or location changes, additional insured/endorsement requests, limit or deductible changes, vehicle changes, cancellations, nonrenewals, renewal update packets, or certificate-driven endorsement requirements. A policy number plus the requested new value is enough to open the intake case; missing broker recipient details should be handled later by draft_policy_change_email. Do not use this for ordinary COI generation or certificate-holder-only instructions.",
+    "Capture a simple broker follow-up for a requested policy update. Use this when the user asks to change the policy record or asks for an endorsement, such as named insured, additional insured, waiver of subrogation, primary and non-contributory wording, limits, deductibles, locations, vehicles, cancellation, nonrenewal, or renewal updates. A policy number plus the requested new value is enough. Do not use this for ordinary COI generation or certificate-holder-only instructions.",
   inputSchema: z.object({
     requestKind: z
       .enum(PCE_REQUEST_KINDS)
       .describe(
-        "Classify the request. Use certificate_holder_only for ordinary COI holder changes with no requested endorsement. Use unclear when the user has not actually asked to change the policy record.",
+        "Classify the user intent. Use certificate_holder_only for ordinary COI holder changes with no requested endorsement. Use unclear when the user has not actually asked to change the policy record.",
       ),
     requestText: z
       .string()
       .describe(
-        "The user's policy change or endorsement request, including requested values and effective date if provided",
+        "The user's requested policy update in their own words, including requested values and effective date if provided",
       ),
     policyId: z.string().optional().describe("Related policy reference, if known. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     evidenceSourceIds: z
@@ -315,9 +315,9 @@ export const createPolicyChangeRequest = tool({
 
 export const addPolicyChangeInfo = tool({
   description:
-    "Add missing or corrected information to an existing policy change request. Use this when the user answers Glass's follow-up questions or clarifies what changed.",
+    "Add missing or corrected information to an existing broker follow-up. Use this when the user answers a question or clarifies what should change.",
   inputSchema: z.object({
-    caseId: z.string().describe("Existing policy change case ID"),
+    caseId: z.string().describe("Existing follow-up ID"),
     infoText: z.string().describe("The additional details or clarification to add"),
     sourceSpanIds: z.array(z.string()).optional().describe("Optional source span IDs supporting the clarification"),
   }),
@@ -325,12 +325,12 @@ export const addPolicyChangeInfo = tool({
 
 export const checkPolicyChangeStatus = tool({
   description:
-    "Check status for policy change requests, PCEs, endorsements, and policy-record change cases, or list recent active change requests in scope. Use this when the user asks about change request status, PCE status, endorsement status, submitted policy changes, or case IDs for policy changes. Do not use check_application_status for these requests.",
+    "Check status for broker follow-ups about policy updates or endorsements. Use this when the user asks whether a requested policy update was sent, is waiting on the broker, or is done. Do not use check_application_status for these requests.",
   inputSchema: z.object({
     caseId: z
       .string()
       .optional()
-      .describe("Specific policy change case ID, if the user supplied one."),
+      .describe("Specific follow-up ID, if the user supplied one."),
     policyId: z
       .string()
       .optional()
@@ -338,15 +338,15 @@ export const checkPolicyChangeStatus = tool({
     includeClosed: z
       .boolean()
       .optional()
-      .describe("Set true only when the user asks for completed, cancelled, declined, closed, or historical policy change requests."),
+      .describe("Set true only when the user asks for completed, cancelled, declined, closed, or historical follow-ups."),
   }),
 });
 
 export const draftPolicyChangeSubmission = tool({
   description:
-    "Draft the broker email for an existing policy change request. Use the current conversation's policy change case when a case ID is not explicitly known. If the recipient is unknown, draft the email and ask for the recipient instead of inventing an email address.",
+    "Draft the broker email for an existing policy update follow-up. Use the current conversation's follow-up when an ID is not explicitly known. If the recipient is unknown, draft the email and ask for the recipient instead of inventing an email address.",
   inputSchema: z.object({
-    caseId: z.string().optional().describe("Existing policy change case ID, if known"),
+    caseId: z.string().optional().describe("Existing follow-up ID, if known"),
     recipientEmail: z.string().optional().describe("Known recipient email, if explicitly provided or already known"),
     recipientName: z.string().optional().describe("Known recipient name, if available"),
     instructions: z.string().optional().describe("Extra instructions to include in the draft"),
@@ -355,9 +355,9 @@ export const draftPolicyChangeSubmission = tool({
 
 export const completePolicyChangeFromEndorsement = tool({
   description:
-    "Complete a policy change after the updated endorsement has been received. Use only with actual endorsement files already stored in the current thread or inbound message. This appends the endorsement to the existing policy and marks the case complete.",
+    "Attach the received endorsement to the existing policy and mark the broker follow-up done. Use only with actual endorsement files already stored in the current thread or inbound message.",
   inputSchema: z.object({
-    caseId: z.string().optional().describe("Policy change case ID, if known"),
+    caseId: z.string().optional().describe("Follow-up ID, if known"),
     policyId: z.string().describe("Existing policy reference to append the endorsement to. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     files: z
       .array(z.object({

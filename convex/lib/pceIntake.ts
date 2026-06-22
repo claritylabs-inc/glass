@@ -39,7 +39,7 @@ export function evaluatePceIntake(params: {
       allowed: false,
       kind,
       message:
-        "I need one detail before I can prepare the change request: what should be changed on the policy?",
+        "I need one detail before I can prepare the policy update: what should be changed?",
     };
   }
 
@@ -48,7 +48,7 @@ export function evaluatePceIntake(params: {
       allowed: false,
       kind,
       message:
-        "Use the requested organization as the certificate holder on the COI. No separate change request is needed for that.",
+        "Use the requested organization as the certificate holder on the COI. No separate broker follow-up is needed for that.",
     };
   }
 
@@ -57,7 +57,7 @@ export function evaluatePceIntake(params: {
       allowed: false,
       kind: "certificate_holder_only",
       message:
-        "Use the requested organization as the certificate holder on the COI. Ask for clarification only if the user also wants an endorsement such as additional insured, waiver of subrogation, primary and non-contributory wording, or another policy-record change.",
+        "Use the requested organization as the certificate holder on the COI. Ask for clarification only if the user also wants an endorsement such as additional insured, waiver of subrogation, primary and non-contributory wording, or another policy-record update.",
     };
   }
 

@@ -140,7 +140,7 @@ export function CertificateHoldArtifacts({
                   onClick={() => onOpenPolicyChange?.(policyChangeCaseId)}
                   className="text-muted-foreground/70"
                 >
-                  Review change request
+                  Open broker follow-up
                 </PillButton>
               </div>
             ) : null}

@@ -22,7 +22,7 @@ describe("centralized agent tool execution", () => {
     expect(chatTools).not.toContain("generateForOrg");
   });
 
-  it("owns shared policy, COI, compliance, and PCE execution in one module", () => {
+  it("owns shared policy, COI, compliance, and policy-update execution in one module", () => {
     const executors = read("convex/lib/agentToolExecutors.ts");
 
     expect(executors).toContain("export function buildAgentToolExecutors");

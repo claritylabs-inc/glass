@@ -100,7 +100,7 @@ async function createPolicyChangeCase(
     }
     return {
       usedSdkPce: false,
-      error: createAccess?.error ?? "Policy change requests require direct org membership or broker access",
+      error: createAccess?.error ?? "Broker follow-ups require direct org membership or broker access",
     };
   }
   return await createPolicyChangeCaseAfterAccess(ctx, args, org);

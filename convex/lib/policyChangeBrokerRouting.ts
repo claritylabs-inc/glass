@@ -46,10 +46,10 @@ export type BrokerRecipientReconciliationResult<
 };
 
 const POLICY_CHANGE_BROKER_CONTACT_QUESTION =
-  "Which broker email or contact should receive this policy change request?";
+  "Which broker email or contact should receive this follow-up?";
 
 const CERTIFICATE_BROKER_CONTACT_QUESTION =
-  "Which broker email or contact should receive this certificate change request?";
+  "Which broker email or contact should receive this held-COI follow-up?";
 
 function cleanText(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -129,7 +129,7 @@ export function brokerRecipientQuestion(
       code: BROKER_CONTACT_REQUIRED_CODE,
       question: CERTIFICATE_BROKER_CONTACT_QUESTION,
       reason:
-        "Certificate requests that require policy changes are broker-mediated and need a broker recipient before Glass can draft or send one.",
+        "Certificates that need endorsements require a broker contact before Glass can draft or send the follow-up.",
     };
   }
 
@@ -137,7 +137,7 @@ export function brokerRecipientQuestion(
     code: BROKER_CONTACT_REQUIRED_CODE,
     question: POLICY_CHANGE_BROKER_CONTACT_QUESTION,
     reason:
-      "Policy change emails are broker-mediated and need an explicit broker recipient before Glass can draft or send one.",
+      "Broker follow-up emails need an explicit recipient before Glass can draft or send one.",
   };
 }
 

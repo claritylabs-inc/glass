@@ -912,7 +912,7 @@ export const markPolicyChangePendingPartnerInternal = internalMutation({
       orgId: args.partnerOrgId,
       type: "program_admin_pce_request",
       title: "Policy change approval requested",
-      body: changeCase.summary ?? "A policy change request is waiting for approval.",
+      body: changeCase.summary ?? "A policy update is waiting for approval.",
       actionType: "review_program_admin_pce",
       actionPayload: {
         caseId: args.caseId,
@@ -1182,9 +1182,9 @@ export const approvePolicyChangeCase = mutation({
       orgId: changeCase.orgId,
       type: "policy_change_completed",
       title: "Policy change approved",
-      body: changeCase.summary ?? "A policy change request was approved by the program administrator.",
+      body: changeCase.summary ?? "A policy update was approved by the program administrator.",
       actionType: changeCase.policyId ? "view_policy" : undefined,
-      actionPayload: changeCase.policyId ? { policyId: changeCase.policyId, tab: "changes" } : undefined,
+      actionPayload: changeCase.policyId ? { policyId: changeCase.policyId } : undefined,
       sourceRef: { caseId: args.caseId, policyId: changeCase.policyId },
       coalesceKeyParts: ["policy_change_completed", String(changeCase.orgId), String(args.caseId)],
     });

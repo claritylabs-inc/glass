@@ -185,8 +185,8 @@ export default function ProgramAdminApprovalsPage() {
   ) as ApprovalQueue | undefined;
   const approveCertificate = useAction(api.partnerPrograms.approveCertificateRequest);
   const declineCertificate = useMutation(api.partnerPrograms.declineCertificateRequest);
-  const approvePce = useMutation(api.partnerPrograms.approvePolicyChangeCase);
-  const declinePce = useMutation(api.partnerPrograms.declinePolicyChangeCase);
+  const approvePolicyChange = useMutation(api.partnerPrograms.approvePolicyChangeCase);
+  const declinePolicyChange = useMutation(api.partnerPrograms.declinePolicyChangeCase);
   const updateQueue = useUpdateCachedQuery<ApprovalQueue, Record<string, never>>(
     "partnerPrograms.listApprovalQueue",
   );
@@ -242,7 +242,7 @@ export default function ProgramAdminApprovalsPage() {
           <EmptyStateCard
             icon={<ShieldCheck className="size-5" />}
             title="No pending approvals"
-            description="Certified COI and policy change requests assigned to this program administrator will appear here."
+            description="Certified COIs and policy updates assigned to this program administrator will appear here."
           />
         ) : (
           <>
@@ -253,7 +253,7 @@ export default function ProgramAdminApprovalsPage() {
                   Certified COIs {certificateRequests.length}
                 </TabsTrigger>
                 <TabsTrigger value="policy_changes">
-                  Policy changes {policyChangeCases.length}
+                  Policy updates {policyChangeCases.length}
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -291,7 +291,7 @@ export default function ProgramAdminApprovalsPage() {
                 <ApprovalRow
                   key={changeCase._id}
                   kind="policy_change"
-                  title={changeCase.summary ?? "Policy change request"}
+                  title={changeCase.summary ?? "Policy update"}
                   subtitle={policyLabel(changeCase.policy)}
                   description={changeCase.requestText}
                   programName={changeCase.program?.name}
@@ -300,16 +300,16 @@ export default function ProgramAdminApprovalsPage() {
                   onDecline={() =>
                     run(
                       changeCase._id,
-                      () => declinePce({ caseId: changeCase._id }),
-                      "Policy change declined",
+                      () => declinePolicyChange({ caseId: changeCase._id }),
+                      "Policy update declined",
                       "policy_change",
                     )
                   }
                   onApprove={() =>
                     run(
                       changeCase._id,
-                      () => approvePce({ caseId: changeCase._id }),
-                      "Policy change approved and staged",
+                      () => approvePolicyChange({ caseId: changeCase._id }),
+                      "Policy update approved and staged",
                       "policy_change",
                     )
                   }

@@ -80,8 +80,8 @@ function formatGateMessage(args: {
   policyChangeRequestsEnabled: boolean;
 }) {
   const nextStep = args.policyChangeRequestsEnabled
-    ? "I opened a policy change request so the broker can process the endorsement before this certificate is issued."
-    : "Your broker has turned off Glass policy-change requests, so I can help loop the broker in by email or iMessage instead.";
+    ? "I prepared a broker follow-up so the endorsement can be handled before this certificate is issued."
+    : "I can help loop the broker in by email or iMessage.";
   return `${args.reasonMessage} I put the certificate for ${args.holderName} on hold. ${nextStep}`;
 }
 

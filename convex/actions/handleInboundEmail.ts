@@ -1218,12 +1218,12 @@ export const processInbound = internalAction({
       }
       if (correlatedPolicyChangeCase) {
         systemContext += `\n\nPOLICY CHANGE EMAIL REPLY:
-This inbound email is a reply to a broker email for policy change case ${correlatedPolicyChangeCase._id}.
-Case status: ${correlatedPolicyChangeCase.status}.
-Case request: ${correlatedPolicyChangeCase.requestText}
+This inbound email is a reply to a broker follow-up for policy update ${correlatedPolicyChangeCase._id}.
+Follow-up status: ${correlatedPolicyChangeCase.status}.
+Requested update: ${correlatedPolicyChangeCase.requestText}
 ${correlatedPolicyChangeCase.policyId ? `Policy ID: ${correlatedPolicyChangeCase.policyId}` : "Policy ID: not set"}
 
-If the broker attached an endorsement or confirmation for this change, use complete_policy_change_from_endorsement with the known case ID and policy ID. Do not import an endorsement as a separate policy unless it is clearly a standalone policy document. If the attachment is only a note or the policy ID is missing, summarize the broker reply and ask for the missing information.`;
+If the broker attached an endorsement or confirmation for this change, use complete_policy_change_from_endorsement with the known follow-up ID and policy ID. Do not import an endorsement as a separate policy unless it is clearly a standalone policy document. If the attachment is only a note or the policy ID is missing, summarize the broker reply and ask for the missing information.`;
       }
 
       // ── Build agentic tool set — the model decides whether to answer,
@@ -1619,7 +1619,7 @@ If the broker attached an endorsement or confirmation for this change, use compl
         if (pdfAttachments.length > 0) {
           attachmentToolHint = correlatedPolicyChangeCase
             ? `\n\nATTACHMENT TOOLS:
-This email is linked to policy change case ${correlatedPolicyChangeCase._id}. If any attached PDF is an endorsement or confirmation of the requested change, call complete_policy_change_from_endorsement with caseId "${correlatedPolicyChangeCase._id}"${correlatedPolicyChangeCase.policyId ? ` and policyId "${correlatedPolicyChangeCase.policyId}"` : ""}. Only use extract_policy_attachment if the PDF is clearly a new standalone policy, quote, binder, or COI that should be added to the library separately.
+This email is linked to broker follow-up ${correlatedPolicyChangeCase._id}. If any attached PDF is an endorsement or confirmation of the requested change, call complete_policy_change_from_endorsement with caseId "${correlatedPolicyChangeCase._id}"${correlatedPolicyChangeCase.policyId ? ` and policyId "${correlatedPolicyChangeCase.policyId}"` : ""}. Only use extract_policy_attachment if the PDF is clearly a new standalone policy, quote, binder, or COI that should be added to the library separately.
 
 PDF ATTACHMENT MANIFEST (storageId -> fileName):
 ${pdfAttachments.join("\n")}`

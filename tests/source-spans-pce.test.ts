@@ -8,7 +8,7 @@ function read(path: string) {
   return readFileSync(join(root, path), "utf8");
 }
 
-describe("source spans and PCE backend surfaces", () => {
+describe("source spans and policy update backend surfaces", () => {
   it("defines persistent source span and source chunk tables", () => {
     const schema = read("convex/schema.ts");
 
@@ -31,8 +31,8 @@ describe("source spans and PCE backend surfaces", () => {
     expect(policyChanges).toContain("createFromChat");
     expect(policyChanges).toContain("createFromEmail");
     expect(policyChanges).toContain("createFromUploadedDocument");
-    expect(policyChanges).toContain("generateCarrierPacket");
-    expect(policyChanges).toContain("markStatus");
+    expect(policyChanges).toContain("draftSubmission");
+    expect(policyChanges).toContain("cancelRequest");
   });
 
   it("wires the create_policy_change_request agent tool", () => {
@@ -44,9 +44,9 @@ describe("source spans and PCE backend surfaces", () => {
     expect(chatTools).toContain("createPolicyChangeRequest");
     expect(chatTools).toContain("certificate_holder_only");
     expect(chatTools).toContain("requestKind");
-    expect(chatTools).toContain("policy number plus the requested new value is enough");
+    expect(chatTools).toContain("A policy number plus the requested new value is enough");
     expect(aiUtils).toContain("Do not ask \"if you want me to proceed\"");
-    expect(aiUtils).toContain("Missing recipient information should not block creating the case");
+    expect(aiUtils).toContain("Missing recipient information should not block capturing the follow-up");
     expect(threadChat).toContain("create_policy_change_request");
     expect(threadChat).toContain("add_policy_change_info");
     expect(threadChat).toContain("draft_policy_change_email");
@@ -82,23 +82,22 @@ describe("source spans and PCE backend surfaces", () => {
     expect(inboundEmail).toContain("policyChangeCaseId: correlatedPolicyChangeCaseId");
   });
 
-  it("renders policy change request artifacts in chat", () => {
+  it("renders broker follow-up artifacts in chat", () => {
     const policyChangeArtifact = read("components/agent-thread/artifacts/policy-change.tsx");
     const policyChanges = read("convex/policyChanges.ts");
 
     expect(policyChangeArtifact).toContain("function PolicyChangeSummaryCard");
     expect(policyChangeArtifact).toContain("function PolicyChangeThreadSidebar");
-    expect(policyChangeArtifact).toContain("Policy change request");
-    expect(policyChangeArtifact).toContain("Review request");
-    expect(policyChangeArtifact).toContain("Affected values");
-    expect(policyChanges).toContain("assertCanManagePolicyChange");
+    expect(policyChangeArtifact).toContain("Broker follow-up");
+    expect(policyChangeArtifact).not.toContain("Review request");
+    expect(policyChangeArtifact).not.toContain("Requested updates");
     expect(policyChanges).toContain("assertCanCreatePolicyChange");
     expect(read("convex/lib/policyChangeBrokerRouting.ts")).toContain("broker_contact_required");
     expect(read("convex/actions/policyChangeRequests.ts")).not.toContain("STANDALONE_CLIENT_PCE_MESSAGE");
     expect(read("convex/lib/access.ts")).toContain("assertCanDraftPolicyChangeSubmission");
     expect(read("convex/policyChanges.ts")).toContain("canCreatePolicyChangeForUserInternal");
-    expect(read("convex/policyChanges.ts")).toContain("Policy change requests require direct org membership or broker access");
-    expect(read("convex/lib/aiUtils.ts")).toContain("Create the case and ask for the broker contact");
+    expect(read("convex/policyChanges.ts")).toContain("Broker follow-ups require direct org membership or broker access");
+    expect(read("convex/lib/aiUtils.ts")).toContain("Capture the follow-up and ask for the broker contact");
   });
 
   it("prefers source nodes in agent retrieval context", () => {

@@ -1559,11 +1559,11 @@ export const processInbound = internalAction({
               {
                 kind: "policy_change",
                 policyChangeCaseId: caseId,
-                label: "Policy change request",
+                label: "Broker follow-up",
               },
               {
-                title: "Policy change request",
-                subtitle: "Open the request in Glass",
+                title: "Broker follow-up",
+                subtitle: "Open the follow-up in Glass",
               },
             );
           }
@@ -1586,11 +1586,11 @@ export const processInbound = internalAction({
           {
             kind: "policy_change",
             policyChangeCaseId,
-            label: "Policy change request",
+            label: "Broker follow-up",
           },
           {
-            title: "Policy change request",
-            subtitle: "Open the request in Glass",
+            title: "Broker follow-up",
+            subtitle: "Open the follow-up in Glass",
           },
         );
       }

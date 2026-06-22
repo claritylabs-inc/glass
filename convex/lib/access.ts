@@ -398,7 +398,7 @@ export function assertCanCreatePolicyChange(access: OrgAccess): void {
   if (access.accessType === "broker_of_client") return;
   if (access.orgType === "broker") return;
   if (access.orgType === "client" && access.accessType === "member") return;
-  throw new Error("Policy change requests require direct org membership or broker access");
+  throw new Error("Broker follow-ups require direct org membership or broker access");
 }
 
 export function assertCanDraftPolicyChangeSubmission(access: OrgAccess): void {

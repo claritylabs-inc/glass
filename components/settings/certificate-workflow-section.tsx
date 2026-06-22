@@ -251,11 +251,11 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
             })}
           />
           <ToggleRow
-            title="Held certificate policy changes"
-            description="Open a linked policy change case when a certificate request requires an endorsement before issuance."
+            title="Held COI broker handoff"
+            description="Prepare a broker follow-up when a certificate request requires an endorsement before issuance."
             checked={draft.policyChangeRequestsForHeldCertificatesEnabled}
             disabled={!editable}
-            label="Toggle held certificate policy changes"
+            label="Toggle held COI broker handoff"
             onToggle={() => setDraft({
               ...draft,
               policyChangeRequestsForHeldCertificatesEnabled:

@@ -350,8 +350,8 @@ export function BrokerAgentTab() {
           <OperationalPanelHeader title="Certificate safeguards" />
           <OperationalPanelBody className="divide-y divide-foreground/6 px-5 py-2">
             <AgentSwitchRow
-              title="Policy change requests"
-              description="Allow Glass to open broker-mediated policy change requests when certificates require endorsements."
+              title="Broker change handoff"
+              description="Let Glass draft broker follow-ups when a policy update or endorsement is needed."
               checked={policyChangeRequestsEnabled}
               onCheckedChange={() => {
                 setPolicyChangeRequestsEnabled((value) => {
@@ -360,11 +360,11 @@ export function BrokerAgentTab() {
                   return next;
                 });
               }}
-              label="Toggle policy change requests"
+              label="Toggle broker change handoff"
             />
             <AgentSwitchRow
-              title="Certificate change requests"
-              description="Held certificate requests create a linked policy change case when this is on. When off, Glass keeps the hold and offers broker email or iMessage handoff."
+              title="Held COI handoff"
+              description="When a COI needs an endorsement, Glass keeps it held and prepares the broker follow-up."
               checked={
                 policyChangeRequestsEnabled && certificateChangeRequestsEnabled
               }
@@ -373,7 +373,7 @@ export function BrokerAgentTab() {
                   policyChangeRequestsEnabled ? !value : false,
                 )
               }
-              label="Toggle certificate change requests"
+              label="Toggle held COI handoff"
             />
           </OperationalPanelBody>
         </OperationalPanel>
