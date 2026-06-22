@@ -502,7 +502,7 @@ async function startIntake(
     threadId: args.threadId,
     threadMessageId: args.threadMessageId,
     createdByUserId: args.userId,
-    status: missingQuestions.length > 0 ? "collecting" : "needs_broker_review",
+    status: "collecting",
     requestText: args.requestText,
     questionGraph: sdkState.questionGraph,
     normalizedAnswers: [],
@@ -694,19 +694,7 @@ export const get = query({
     const intake = await ctx.db.get(args.applicationIntakeId);
     if (!intake) return null;
     await getWritableApplicationAccess(ctx, intake.orgId);
-    const [messages, proposals, packets, clientOrg] = await Promise.all([
-      ctx.db
-        .query("applicationMessages")
-        .withIndex("by_applicationIntakeId_createdAt", (q) =>
-          q.eq("applicationIntakeId", intake._id),
-        )
-        .take(100),
-      ctx.db
-        .query("applicationContextProposals")
-        .withIndex("by_applicationIntakeId_status", (q) =>
-          q.eq("applicationIntakeId", intake._id).eq("status", "pending"),
-        )
-        .take(100),
+    const [packets, clientOrg] = await Promise.all([
       ctx.db
         .query("applicationPackets")
         .withIndex("by_applicationIntakeId", (q) =>
@@ -716,12 +704,16 @@ export const get = query({
         .take(10),
       ctx.db.get(intake.orgId),
     ]);
+    const packetsWithFiles = await Promise.all(
+      packets.map(async (packet) => ({
+        ...packet,
+        fileUrl: packet.fileId ? await ctx.storage.getUrl(packet.fileId) : null,
+      })),
+    );
     return {
       ...intake,
       clientName: clientOrg?.name,
-      messages,
-      contextProposals: proposals,
-      packets,
+      packets: packetsWithFiles,
     };
   },
 });
@@ -971,7 +963,7 @@ async function recordAnswersForIntake(
   );
   const normalizedAnswers = answerRowsFromState(nextState, now, args.intake.normalizedAnswers);
   const missingQuestions = missingQuestionsFromState(nextState);
-  const status = missingQuestions.length > 0 ? "collecting" : "needs_broker_review";
+  const status = "collecting";
   const contextProposals = contextProposalsForAnswers(nextState, args.answers);
 
   await ctx.db.patch(args.intake._id, {
@@ -1028,18 +1020,6 @@ async function recordAnswersForIntake(
     now,
   });
 
-  if (missingQuestions.length === 0) {
-    await notifyBroker(ctx, {
-      brokerOrgId: args.intake.brokerOrgId,
-      clientOrgId: args.intake.orgId,
-      intakeId: args.intake._id,
-      type: "application_intake_needs_review",
-      title: "Application needs broker review",
-      body: args.intake.title,
-      now,
-    });
-  }
-
   return await ctx.db.get(args.intake._id);
 }
 
@@ -1084,7 +1064,7 @@ async function preparePacketForIntake(
     type: "application_completed",
     summary: packet.status === "broker_ready"
       ? "Application ready for broker review"
-      : "Application review prepared with missing required fields",
+      : "Application submitted with missing required fields",
     payload: { applicationIntakeId: args.intake._id, packetId },
     now,
   });

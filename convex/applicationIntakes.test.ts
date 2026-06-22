@@ -126,7 +126,7 @@ describe("applicationIntakes portal lifecycle", () => {
       message: "Client confirmed remaining locations.",
     });
 
-    expect(fullyAnswered?.status).toBe("needs_broker_review");
+    expect(fullyAnswered?.status).toBe("collecting");
     expect(fullyAnswered?.missingQuestions).toHaveLength(0);
     expect(fullyAnswered?.normalizedAnswers).toHaveLength(2);
 
@@ -206,7 +206,7 @@ describe("applicationIntakes portal lifecycle", () => {
     });
 
     expect(edited?.packetId).toBeUndefined();
-    expect(edited?.status).toBe("needs_broker_review");
+    expect(edited?.status).toBe("collecting");
     expect(edited?.normalizedAnswers).toMatchObject([
       {
         fieldId: "revenue",
@@ -316,7 +316,7 @@ describe("applicationIntakes portal lifecycle", () => {
       message: "Revenue is $1.5M.",
     });
 
-    expect(answered?.status).toBe("needs_broker_review");
+    expect(answered?.status).toBe("collecting");
     expect(answered?.brokerOrgId).toBeUndefined();
 
     const packet = await t.withIdentity(clientSession).mutation(preparePacketFn, {

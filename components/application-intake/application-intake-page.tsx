@@ -69,6 +69,7 @@ type ApplicationRow = {
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;
+  submittedAt?: number;
 };
 
 type ApplicationAnswerRow = {
@@ -88,24 +89,12 @@ type ApplicationQuestionRow = {
   section?: string;
 };
 
-type ApplicationMessageRow = {
-  _id: string;
-  content: string;
-  createdAt: number;
-  role: string;
-};
-
-type ApplicationContextProposalRow = {
-  _id: Id<"applicationContextProposals">;
-  key: string;
-  value: string;
-  status: string;
-};
-
 type ApplicationPacketRow = {
   _id: string;
   status: "draft" | "broker_ready" | "submitted";
+  answers?: unknown;
   missingFieldIds: string[];
+  fileUrl?: string | null;
   createdAt: number;
   updatedAt?: number;
   submittedAt?: number;
@@ -128,12 +117,10 @@ type ApplicationTemplateRow = {
 };
 
 type ApplicationDetail = ApplicationRow & {
-  messages?: ApplicationMessageRow[];
-  contextProposals?: ApplicationContextProposalRow[];
   packets?: ApplicationPacketRow[];
 };
 
-type ApplicationReviewBusy = "answers" | "packet" | "submit" | null;
+type ApplicationPanelBusy = "answers" | "submit" | null;
 
 type ClientRow = {
   clientOrgId?: string;
@@ -146,17 +133,11 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
   draft: "Draft",
   collecting: "Collecting",
   waiting_on_client: "Waiting",
-  needs_broker_review: "Review",
+  needs_broker_review: "Broker review",
   broker_ready: "Ready",
   submitted: "Submitted",
   cancelled: "Cancelled",
   stale: "Stale",
-};
-
-const REVIEW_STATUS_LABELS: Record<ApplicationPacketRow["status"], string> = {
-  draft: "Draft",
-  broker_ready: "Ready",
-  submitted: "Submitted",
 };
 
 const TEMPLATE_STATUS_LABELS: Record<ApplicationTemplateStatus, string> = {
@@ -170,12 +151,6 @@ const AD_HOC_TEMPLATE_VALUE = "__ad_hoc__";
 type BrokerApplicationTab = "applications" | "templates";
 
 function statusVariant(status: ApplicationStatus): "default" | "secondary" | "outline" {
-  if (status === "broker_ready") return "default";
-  if (status === "submitted") return "outline";
-  return "secondary";
-}
-
-function packetStatusVariant(status: ApplicationPacketRow["status"]): "default" | "secondary" | "outline" {
   if (status === "broker_ready") return "default";
   if (status === "submitted") return "outline";
   return "secondary";
@@ -292,32 +267,77 @@ function currentPacket(packets: ApplicationPacketRow[] | undefined, packetId?: s
   return packets.find((packet) => packet._id === packetId) ?? null;
 }
 
-function reviewDescription(review: ApplicationPacketRow) {
-  const missingText = review.missingFieldIds.length > 0
-    ? `${review.missingFieldIds.length} missing field${review.missingFieldIds.length === 1 ? "" : "s"}`
-    : "Complete";
-  return `${missingText} · ${formatTime(review.updatedAt ?? review.createdAt)}`;
+function applicationHeaderInfo(detail: ApplicationDetail) {
+  return [
+    detail.clientName ?? "Client",
+    applicationSubtitle(detail),
+    `Updated ${formatTime(detail.updatedAt)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
-function ApplicationAnswerPanel({
+function canEditApplicationAnswers(detail: ApplicationDetail, viewerIsBroker: boolean) {
+  if (viewerIsBroker) return false;
+  return !["broker_ready", "submitted", "cancelled"].includes(detail.status);
+}
+
+function canSubmitApplicationAnswers(detail: ApplicationDetail, viewerIsBroker: boolean) {
+  if (viewerIsBroker) return false;
+  if (["broker_ready", "submitted", "cancelled"].includes(detail.status)) return false;
+  return detail.missingQuestions.length === 0 && answerFields(detail).length > 0;
+}
+
+function jsonFileName(detail: ApplicationDetail) {
+  const safeTitle = detail.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return `${safeTitle || "application"}-answers.json`;
+}
+
+function DownloadLink({
+  children,
+  download,
+  href,
+}: {
+  children: ReactNode;
+  download?: string;
+  href: string;
+}) {
+  return (
+    <a
+      className="inline-flex min-h-8 w-full shrink-0 items-center justify-center rounded-full border border-foreground/8 bg-transparent px-5 py-2 text-label font-medium leading-none text-muted-foreground transition-colors hover:border-foreground/14 hover:bg-foreground/[0.03] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10 sm:min-h-7 sm:w-auto sm:py-1"
+      download={download}
+      href={href}
+      rel="noreferrer"
+      target={download ? undefined : "_blank"}
+    >
+      {children}
+    </a>
+  );
+}
+
+function ApplicationAnswersPanel({
   applicationId,
   detail,
   fields,
+  editable,
   busy,
   setBusy,
 }: {
   applicationId: Id<"applicationIntakes">;
   detail: ApplicationDetail;
   fields: ReturnType<typeof answerFields>;
-  busy: ApplicationReviewBusy;
-  setBusy: (busy: ApplicationReviewBusy) => void;
+  editable: boolean;
+  busy: ApplicationPanelBusy;
+  setBusy: (busy: ApplicationPanelBusy) => void;
 }) {
   const recordAnswers = useMutation(api.applicationIntakes.recordAnswers);
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>(() =>
     Object.fromEntries(fields.map((field) => [field.fieldId, field.currentValue])),
   );
-  const [answerMessage, setAnswerMessage] = useState("");
-  const [autosaveError, setAutosaveError] = useState<string | null>(null);
   const lastSubmittedSignatureRef = useRef<string | null>(null);
   const changedAnswers = useMemo(() => {
     const existing = new Map(detail.normalizedAnswers.map((answer) => [answer.fieldId, answer.value]));
@@ -332,30 +352,26 @@ function ApplicationAnswerPanel({
         label: field.label,
         section: field.section,
         value,
-        source: "broker_portal",
+        source: "client_portal",
       }));
   }, [answerDrafts, detail.normalizedAnswers, fields]);
 
   useEffect(() => {
-    if (changedAnswers.length === 0 || busy !== null) return;
+    if (!editable || changedAnswers.length === 0 || busy !== null) return;
     const signature = JSON.stringify({
       answers: changedAnswers,
-      message: answerMessage.trim(),
     });
     if (lastSubmittedSignatureRef.current === signature) return;
     const timeout = window.setTimeout(() => {
       lastSubmittedSignatureRef.current = signature;
-      setAutosaveError(null);
       setBusy("answers");
       void recordAnswers({
         applicationIntakeId: applicationId,
-        sourceKind: "broker_portal",
+        sourceKind: "web",
         answers: changedAnswers,
-        message: answerMessage.trim() || undefined,
       })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : "Unable to save answers";
-          setAutosaveError(message);
           toast.error(message);
         })
         .finally(() => {
@@ -363,25 +379,14 @@ function ApplicationAnswerPanel({
         });
     }, 700);
     return () => window.clearTimeout(timeout);
-  }, [answerMessage, applicationId, busy, changedAnswers, recordAnswers, setBusy]);
-
-  const description = autosaveError
-    ? autosaveError
-    : busy === "answers"
-      ? "Saving changes"
-      : detail.missingQuestions.length > 0
-        ? `${detail.missingQuestions.length} open question${detail.missingQuestions.length === 1 ? "" : "s"}`
-        : "Ready for broker review";
+  }, [applicationId, busy, changedAnswers, editable, recordAnswers, setBusy]);
 
   return (
     <OperationalPanel>
-      <OperationalPanelHeader
-        title="Collect answers"
-        description={description}
-      />
-      {fields.length > 0 ? (
-        fields.map((field) => (
-          <OperationalItem key={field.fieldId}>
+      <OperationalPanelHeader title="Answers" />
+      {editable && fields.length > 0 ? (
+        fields.map((field, index) => (
+          <OperationalItem key={field.fieldId} className={index === 0 ? "border-t-0" : undefined}>
             <label className="flex flex-col gap-2">
               <span className="text-base font-medium text-foreground">
                 {field.label}
@@ -402,20 +407,43 @@ function ApplicationAnswerPanel({
             </label>
           </OperationalItem>
         ))
-      ) : null}
-      {fields.length > 0 ? (
-        <OperationalItem>
-          <label className="flex flex-col gap-2">
-            <span className="text-base font-medium text-foreground">Note</span>
-            <Textarea
-              value={answerMessage}
-              onChange={(event) => setAnswerMessage(event.target.value)}
-              placeholder="Optional note for history"
-              className="min-h-16 resize-none"
-            />
-          </label>
+      ) : detail.normalizedAnswers.length > 0 || detail.missingQuestions.length > 0 ? (
+        <>
+          {detail.normalizedAnswers.map((answer, index) => (
+            <OperationalItem key={answer.fieldId} className={index === 0 ? "border-t-0" : undefined}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-base font-medium text-foreground">{answer.label}</p>
+                  <p className="mt-1 break-words text-base text-muted-foreground">{answer.value}</p>
+                </div>
+                {answer.section ? (
+                  <span className="shrink-0 text-label text-muted-foreground">{answer.section}</span>
+                ) : null}
+              </div>
+            </OperationalItem>
+          ))}
+          {detail.missingQuestions.map((question, index) => (
+            <OperationalItem
+              key={question.fieldId}
+              className={detail.normalizedAnswers.length === 0 && index === 0 ? "border-t-0" : undefined}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-base font-medium text-foreground">{question.label}</p>
+                  <p className="mt-1 break-words text-base text-muted-foreground">Not answered</p>
+                </div>
+                {question.section ? (
+                  <span className="shrink-0 text-label text-muted-foreground">{question.section}</span>
+                ) : null}
+              </div>
+            </OperationalItem>
+          ))}
+        </>
+      ) : (
+        <OperationalItem className="border-t-0">
+          <p className="text-base text-muted-foreground">No answers recorded.</p>
         </OperationalItem>
-      ) : null}
+      )}
     </OperationalPanel>
   );
 }
@@ -746,11 +774,11 @@ function ApplicationTemplateDrawer({
 
 function ApplicationReviewDrawer({
   applicationId,
-  canMarkSubmitted,
+  viewerIsBroker,
   onClose,
 }: {
   applicationId: Id<"applicationIntakes"> | null;
-  canMarkSubmitted: boolean;
+  viewerIsBroker: boolean;
   onClose: () => void;
 }) {
   const detail = useCachedQuery(
@@ -759,32 +787,40 @@ function ApplicationReviewDrawer({
     applicationId ? { applicationIntakeId: applicationId } : "skip",
   ) as ApplicationDetail | undefined;
   const preparePacket = useMutation(api.applicationIntakes.preparePacket);
-  const markSubmitted = useMutation(api.applicationIntakes.markSubmitted);
-  const [busy, setBusy] = useState<ApplicationReviewBusy>(null);
+  const [busy, setBusy] = useState<ApplicationPanelBusy>(null);
   const fields = useMemo(() => (detail ? answerFields(detail) : []), [detail]);
   const packet = currentPacket(detail?.packets, detail?.packetId);
+  const editableAnswers = detail ? canEditApplicationAnswers(detail, viewerIsBroker) : false;
+  const canSubmitAnswers = detail ? canSubmitApplicationAnswers(detail, viewerIsBroker) : false;
+  const jsonHref = detail ? `/api/application-intakes/${detail._id}/answers` : null;
 
-  async function runPacket() {
-    if (!applicationId) return;
-    setBusy("packet");
-    try {
-      await preparePacket({ applicationIntakeId: applicationId });
-      toast.success("Application review prepared");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to prepare review");
-    } finally {
-      setBusy(null);
-    }
-  }
+  const footer = detail && viewerIsBroker && detail.normalizedAnswers.length > 0 ? (
+    <>
+      {packet?.fileUrl ? (
+        <DownloadLink href={packet.fileUrl}>
+          Download filled PDF
+        </DownloadLink>
+      ) : null}
+      {jsonHref ? (
+        <DownloadLink download={jsonFileName(detail)} href={jsonHref}>
+          Download JSON
+        </DownloadLink>
+      ) : null}
+    </>
+  ) : detail && !viewerIsBroker && !["broker_ready", "submitted", "cancelled"].includes(detail.status) ? (
+    <PillButton type="button" disabled={!canSubmitAnswers || busy !== null} onClick={submitAnswers}>
+      Submit answers
+    </PillButton>
+  ) : null;
 
-  async function submitPacket() {
+  async function submitAnswers() {
     if (!applicationId) return;
     setBusy("submit");
     try {
-      await markSubmitted({ applicationIntakeId: applicationId });
-      toast.success("Application marked submitted");
+      await preparePacket({ applicationIntakeId: applicationId });
+      toast.success("Answers submitted");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to mark submitted");
+      toast.error(error instanceof Error ? error.message : "Unable to submit answers");
     } finally {
       setBusy(null);
     }
@@ -796,110 +832,38 @@ function ApplicationReviewDrawer({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={detail?.title ?? "Application"}
-      footer={
-        <>
-          <PillButton type="button" variant="secondary" onClick={onClose}>
-            Close
-          </PillButton>
-          {detail?.status === "broker_ready" && canMarkSubmitted ? (
-            <PillButton type="button" disabled={busy !== null} onClick={submitPacket}>
-              Mark submitted
-            </PillButton>
-          ) : detail?.status !== "broker_ready" ? (
-            <PillButton type="button" disabled={!detail || busy !== null} onClick={runPacket}>
-              Prepare review
-            </PillButton>
-          ) : null}
-        </>
+      title={
+        detail ? (
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-base font-medium text-foreground">{detail.title}</span>
+            <span className="truncate text-base font-normal text-muted-foreground">
+              {applicationHeaderInfo(detail)}
+            </span>
+          </div>
+        ) : (
+          "Application"
+        )
       }
+      actions={
+        detail ? (
+          <Badge variant={statusVariant(detail.status)}>{STATUS_LABELS[detail.status]}</Badge>
+        ) : null
+      }
+      footer={footer}
     >
       {!detail ? (
         <OperationalSkeletonList rows={5} showTrailing={false} />
       ) : (
         <div className="flex flex-col gap-4">
-          <OperationalPanel>
-            <OperationalPanelHeader
-              title="Status"
-              action={<Badge variant={statusVariant(detail.status)}>{STATUS_LABELS[detail.status]}</Badge>}
-              description={`${detail.clientName ?? "Client"} · ${formatTime(detail.updatedAt)}`}
-            />
-          </OperationalPanel>
-
-          <ApplicationAnswerPanel
+          <ApplicationAnswersPanel
             key={`${detail._id}:${detail.updatedAt}`}
             applicationId={detail._id}
             detail={detail}
             fields={fields}
+            editable={editableAnswers}
             busy={busy}
             setBusy={setBusy}
           />
-
-          {detail.normalizedAnswers.length > 0 ? (
-            <OperationalPanel>
-              <OperationalPanelHeader title="Recorded answers" />
-              {detail.normalizedAnswers.map((answer) => (
-                <OperationalItem key={answer.fieldId}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-base font-medium text-foreground">{answer.label}</p>
-                      <p className="mt-1 break-words text-base text-muted-foreground">{answer.value}</p>
-                    </div>
-                    {answer.section ? (
-                      <span className="shrink-0 text-label text-muted-foreground">{answer.section}</span>
-                    ) : null}
-                  </div>
-                </OperationalItem>
-              ))}
-            </OperationalPanel>
-          ) : null}
-
-          {packet ? (
-            <OperationalPanel>
-              <OperationalPanelHeader
-                title="Application review"
-                description={reviewDescription(packet)}
-                action={<Badge variant={packetStatusVariant(packet.status)}>{REVIEW_STATUS_LABELS[packet.status]}</Badge>}
-              />
-              {packet.missingFieldIds.length > 0 ? (
-                <OperationalItem>
-                  <p className="break-words text-base text-muted-foreground">
-                    {packet.missingFieldIds.join(", ")}
-                  </p>
-                </OperationalItem>
-              ) : null}
-            </OperationalPanel>
-          ) : null}
-
-          {detail.contextProposals?.length ? (
-            <OperationalPanel>
-              <OperationalPanelHeader title="Suggested facts" />
-              {detail.contextProposals.map((proposal) => (
-                <OperationalItem key={proposal._id}>
-                  <div className="min-w-0">
-                    <p className="text-base font-medium text-foreground">{proposal.key}</p>
-                    <p className="mt-1 break-words text-base text-muted-foreground">{proposal.value}</p>
-                  </div>
-                </OperationalItem>
-              ))}
-            </OperationalPanel>
-          ) : null}
-
-          {detail.messages?.length ? (
-            <OperationalPanel>
-              <OperationalPanelHeader title="History" />
-              {detail.messages.slice(-5).map((message) => (
-                <OperationalItem key={message._id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="min-w-0 break-words text-base text-foreground">{message.content}</p>
-                    <span className="shrink-0 text-label text-muted-foreground">
-                      {formatTime(message.createdAt)}
-                    </span>
-                  </div>
-                </OperationalItem>
-              ))}
-            </OperationalPanel>
-          ) : null}
         </div>
       )}
     </SettingsDrawer>
@@ -996,7 +960,7 @@ export function ApplicationIntakePage({
       return (
         <ApplicationReviewDrawer
           applicationId={activeSelectedId}
-          canMarkSubmitted={Boolean(currentOrg?.isBroker)}
+          viewerIsBroker={Boolean(currentOrg?.isBroker)}
           onClose={() => {
             if (routeSelectedId && requestedApplicationId) {
               setDismissedApplicationParam(requestedApplicationId);
