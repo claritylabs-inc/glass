@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as actions_applicationIntakeAuthoring from "../actions/applicationIntakeAuthoring.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_backfillPolicyChangeBrokerRecipients from "../actions/backfillPolicyChangeBrokerRecipients.js";
 import type * as actions_backfillRequirementSemantics from "../actions/backfillRequirementSemantics.js";
@@ -109,6 +110,7 @@ import type * as lib_coverageBreakdown from "../lib/coverageBreakdown.js";
 import type * as lib_coverageNames from "../lib/coverageNames.js";
 import type * as lib_coverageScoping from "../lib/coverageScoping.js";
 import type * as lib_declarationFacts from "../lib/declarationFacts.js";
+import type * as lib_deletePolicyRowsInBatches from "../lib/deletePolicyRowsInBatches.js";
 import type * as lib_documentMapping from "../lib/documentMapping.js";
 import type * as lib_domains from "../lib/domains.js";
 import type * as lib_emailAddress from "../lib/emailAddress.js";
@@ -122,6 +124,7 @@ import type * as lib_emailTemplate from "../lib/emailTemplate.js";
 import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_extractionFieldReview from "../lib/extractionFieldReview.js";
 import type * as lib_extractionPostProcess from "../lib/extractionPostProcess.js";
+import type * as lib_imapDestination from "../lib/imapDestination.js";
 import type * as lib_imessageConfig from "../lib/imessageConfig.js";
 import type * as lib_imessageGroupResolution from "../lib/imessageGroupResolution.js";
 import type * as lib_imessageOutbound from "../lib/imessageOutbound.js";
@@ -157,6 +160,7 @@ import type * as lib_resend from "../lib/resend.js";
 import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as lib_security from "../lib/security.js";
 import type * as lib_sourceTree from "../lib/sourceTree.js";
+import type * as lib_spreadsheetText from "../lib/spreadsheetText.js";
 import type * as lib_threadAccess from "../lib/threadAccess.js";
 import type * as lib_userPhone from "../lib/userPhone.js";
 import type * as lib_valueNormalization from "../lib/valueNormalization.js";
@@ -196,6 +200,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "actions/applicationIntakeAuthoring": typeof actions_applicationIntakeAuthoring;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/backfillPolicyChangeBrokerRecipients": typeof actions_backfillPolicyChangeBrokerRecipients;
   "actions/backfillRequirementSemantics": typeof actions_backfillRequirementSemantics;
@@ -297,6 +302,7 @@ declare const fullApi: ApiFromModules<{
   "lib/coverageNames": typeof lib_coverageNames;
   "lib/coverageScoping": typeof lib_coverageScoping;
   "lib/declarationFacts": typeof lib_declarationFacts;
+  "lib/deletePolicyRowsInBatches": typeof lib_deletePolicyRowsInBatches;
   "lib/documentMapping": typeof lib_documentMapping;
   "lib/domains": typeof lib_domains;
   "lib/emailAddress": typeof lib_emailAddress;
@@ -310,6 +316,7 @@ declare const fullApi: ApiFromModules<{
   "lib/extraction": typeof lib_extraction;
   "lib/extractionFieldReview": typeof lib_extractionFieldReview;
   "lib/extractionPostProcess": typeof lib_extractionPostProcess;
+  "lib/imapDestination": typeof lib_imapDestination;
   "lib/imessageConfig": typeof lib_imessageConfig;
   "lib/imessageGroupResolution": typeof lib_imessageGroupResolution;
   "lib/imessageOutbound": typeof lib_imessageOutbound;
@@ -345,6 +352,7 @@ declare const fullApi: ApiFromModules<{
   "lib/sdkCallbacks": typeof lib_sdkCallbacks;
   "lib/security": typeof lib_security;
   "lib/sourceTree": typeof lib_sourceTree;
+  "lib/spreadsheetText": typeof lib_spreadsheetText;
   "lib/threadAccess": typeof lib_threadAccess;
   "lib/userPhone": typeof lib_userPhone;
   "lib/valueNormalization": typeof lib_valueNormalization;

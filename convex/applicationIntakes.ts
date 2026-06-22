@@ -718,6 +718,22 @@ export const get = query({
   },
 });
 
+export const generateUploadUrl = mutation({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    await getWritableApplicationAccess(ctx, args.orgId);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const assertQuestionAuthoringAccess = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    await getWritableApplicationAccess(ctx, args.orgId);
+    return null;
+  },
+});
+
 export const start = mutation({
   args: {
     orgId: v.id("organizations"),
