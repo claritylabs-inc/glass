@@ -13,8 +13,7 @@ import {
 export function useStopOperatorImpersonation() {
   const router = useRouter();
   const { clearScope } = useGlassSync();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stopImpersonation = useMutation((api as any).operator.stopImpersonation);
+  const stopImpersonation = useMutation(api.operator.stopImpersonation);
 
   return useCallback(async () => {
     beginOperatorImpersonationStop();

@@ -3,6 +3,7 @@ import { query, internalQuery } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getOrgAccess, assertBrokerOrg } from "./lib/access";
+import { orgBrandFields } from "./lib/orgBranding";
 
 function isEmailLike(value: string | undefined): boolean {
   if (!value) return false;
@@ -23,7 +24,7 @@ async function getClientDetailRecord(ctx: QueryCtx, clientOrgId: Id<"organizatio
     clientOrgId: org._id,
     name: org.name?.trim() || "Client",
     legalName: org.name,
-    website: org.website,
+    ...(await orgBrandFields(ctx, org)),
     industry: org.industry,
     context: org.context,
     onboardingComplete: !!org.onboardingComplete,
@@ -60,7 +61,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
 
   const clientRows = await Promise.all(
     acceptedOrgs.map(async (org) => {
-      const [activePolicies, lastActivityEvent, assignments] = await Promise.all([
+      const [activePolicies, lastActivityEvent, assignments, brand] = await Promise.all([
         ctx.db
           .query("policies")
           .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
@@ -83,6 +84,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
           .query("brokerClientAssignments")
           .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", org._id))
           .collect(),
+        orgBrandFields(ctx, org),
       ]);
 
       const firstMembership = await ctx.db
@@ -103,6 +105,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
       return {
         clientOrgId: org._id,
         name: displayName,
+        ...brand,
         primaryContactName,
         primaryContactEmail: primaryUser?.email,
         onboardingStatus,
@@ -122,6 +125,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
       return {
         clientOrgId: org._id,
         name: org.name,
+        ...(await orgBrandFields(ctx, org)),
         primaryContactName: org.primaryContactName,
         primaryContactEmail: org.primaryContactEmail,
         onboardingStatus: status as "invited" | "draft",
@@ -136,6 +140,8 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
   const inviteRows = activeInvites.map((inv) => ({
     invitationId: inv._id,
     name: inv.clientOrgName ?? "Invited client",
+    website: undefined,
+    iconUrl: null,
     primaryContactName: inv.primaryContactName,
     primaryContactEmail: inv.primaryContactEmail,
     onboardingStatus: "invited" as const,

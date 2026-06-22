@@ -11,13 +11,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { usePageContext } from "@/hooks/use-page-context";
-import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
 import { MergePolicyDialog } from "@/components/merge-policy-dialog";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { ClientDetailSidebarContent } from "@/components/app-sidebar/client-detail-sidebar-content";
 import { MainSidebarContent } from "@/components/app-sidebar/main-sidebar-content";
-import { LogoIcon } from "@/components/ui/logo-icon";
-import { PillButton } from "@/components/ui/pill-button";
 import {
   AGENT_DOMAIN,
   ALL_NAV_ITEMS,
@@ -42,14 +39,6 @@ import {
 import { useCachedQuery, useSetCachedQuery } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 import { useArchivedThreadCacheActions } from "@/lib/sync/glass-cached-queries";
-
-type OperatorImpersonationContext = {
-  user?: { email?: string };
-  activeImpersonation?: {
-    targetOrgName?: string;
-    targetRole: "admin" | "member";
-  } | null;
-};
 
 function sidebarHeaderBranding({
   viewerOrg,
@@ -126,8 +115,7 @@ export function AppSidebar({
   >("threads.get.current");
   const clientThreads = useCachedQuery(
     "threads.listForClient.sidebar",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).threads.listForClient,
+    api.threads.listForClient,
     clientDetailId
       ? { clientOrgId: clientDetailId as Id<"organizations">, archived: false }
       : "skip",
@@ -135,7 +123,6 @@ export function AppSidebar({
   const createThread = useMutation(api.threads.create);
   const archiveThread = useMutation(api.threads.archive);
   const { archiveThreadLocally } = useArchivedThreadCacheActions();
-  const stopOperatorImpersonation = useStopOperatorImpersonation();
   const { signOut } = useAuthActions();
   const { clearCache: clearOnboardingCache } = useOnboardingCache();
   const { context: pageContext } = usePageContext();
@@ -200,19 +187,9 @@ export function AppSidebar({
   }>({ open: false, primaryPolicyId: "", secondaryPolicyId: "" });
   const unreadCount = useCachedQuery(
     "notifications.unreadCount.sidebar",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).notifications.unreadCount,
+    api.notifications.unreadCount,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as number | undefined;
-  const operatorContext = useCachedQuery(
-    "operator.current.sidebar",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.current,
-    viewer?.accountKind === "operator" ? {} : "skip",
-  ) as OperatorImpersonationContext | undefined;
-  const impersonation = operatorContext?.activeImpersonation ?? null;
-  const isOperatorImpersonating = !!impersonation;
-
   const conversations = useMemo(() => {
     return (unifiedThreads ?? []).slice(0, 8).map(
       (t): ConversationItem => ({
@@ -442,77 +419,15 @@ export function AppSidebar({
     return renderSidebarContent(contentCollapsed);
   }
 
-  function renderActiveContent(contentCollapsed: boolean) {
-    const baseContent = renderBaseActiveContent(contentCollapsed);
-
-    if (!isOperatorImpersonating) {
-      return baseContent;
-    }
-
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <div
-          className={`shrink-0 border-b text-amber-950 dark:text-amber-100 ${
-            contentCollapsed
-              ? "flex h-12 items-center justify-center border-foreground/6 bg-amber-100 dark:bg-amber-400/10"
-              : "border-amber-300/70 bg-amber-100 px-2 py-2 dark:border-amber-400/25 dark:bg-amber-400/10"
-          }`}
-        >
-          {contentCollapsed ? (
-            <button
-              type="button"
-              onClick={async () => {
-                await stopOperatorImpersonation();
-              }}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-amber-950 transition-colors hover:bg-amber-200 dark:text-amber-100 dark:hover:bg-amber-300/20"
-              title={`Stop viewing ${impersonation?.targetOrgName ?? "organization"}`}
-              aria-label="Stop operator mode"
-            >
-              <LogoIcon size={17} static />
-            </button>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-row gap-3 items-center pl-2">
-                <LogoIcon static />
-                <div className="min-w-0">
-                  <p className="truncate text-base font-medium">Operator mode</p>
-                  <p className="mt-0.5 truncate text-label text-amber-950/70 dark:text-amber-100/65">
-                    {operatorContext?.user?.email}
-                  </p>
-                </div>
-              </div>
-              <PillButton
-                type="button"
-                variant="secondary"
-                size="compact"
-                onClick={async () => {
-                  await stopOperatorImpersonation();
-                }}
-                className="w-full"
-              >
-                Stop
-              </PillButton>
-            </div>
-          )}
-        </div>
-        <div className="min-h-0 flex-1">{baseContent}</div>
-      </div>
-    );
-  }
-
-  const activeContent = renderActiveContent(collapsed);
-  const mobileActiveContent = renderActiveContent(false);
+  const activeContent = renderBaseActiveContent(collapsed);
+  const mobileActiveContent = renderBaseActiveContent(false);
 
   return (
     <>
       <aside
         className={`hidden lg:flex flex-col shrink-0 h-full border-r sidebar-transition ${
           collapsed ? "w-14" : "w-[220px]"
-        } ${
-          isOperatorImpersonating
-            ? "border-amber-300/70 bg-amber-50 dark:border-amber-400/25 dark:bg-background"
-            : "border-foreground/6 bg-background"
-        }`}
+        } border-foreground/6 bg-background`}
       >
         {activeContent}
       </aside>
@@ -544,11 +459,7 @@ export function AppSidebar({
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
-              className={`fixed left-0 top-0 bottom-0 w-[260px] z-50 border-r lg:hidden ${
-                isOperatorImpersonating
-                  ? "border-amber-300/70 bg-amber-50 dark:border-amber-400/25 dark:bg-background"
-                  : "border-foreground/6 bg-background"
-              }`}
+              className="fixed left-0 top-0 bottom-0 w-[260px] z-50 border-r border-foreground/6 bg-background lg:hidden"
             >
               {mobileActiveContent}
             </motion.aside>

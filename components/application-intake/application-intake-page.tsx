@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useMutation } from "convex/react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useAction, useMutation } from "convex/react";
 import dayjs from "dayjs";
-import { FileCheck2, FileText, PackageCheck, Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import {
+  extractQuestionGraphFromFields,
+  flattenQuestionGraph,
+  type ApplicationField,
+  type ApplicationQuestionGraph,
+} from "@claritylabs/cl-sdk/application";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -18,6 +25,9 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { FileDropZone } from "@/components/ui/file-drop";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import {
   Select,
   SelectContent,
@@ -51,21 +61,75 @@ type ApplicationRow = {
   _id: Id<"applicationIntakes">;
   orgId: string;
   clientName?: string;
+  clientWebsite?: string;
+  clientIconUrl?: string | null;
   title: string;
   status: ApplicationStatus;
   lineOfBusiness?: string;
   product?: string;
-  normalizedAnswers: Array<{ fieldId: string; label: string; value: string; section?: string }>;
-  missingQuestions: Array<{ fieldId: string; label: string; prompt: string; required: boolean; section?: string }>;
+  normalizedAnswers: ApplicationAnswerRow[];
+  missingQuestions: ApplicationQuestionRow[];
   packetId?: string;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;
+  submittedAt?: number;
 };
+
+type ApplicationAnswerRow = {
+  fieldId: string;
+  label: string;
+  value: string;
+  section?: string;
+  source?: string;
+  updatedAt?: number;
+};
+
+type ApplicationQuestionRow = {
+  fieldId: string;
+  label: string;
+  prompt: string;
+  required: boolean;
+  section?: string;
+};
+
+type ApplicationPacketRow = {
+  _id: string;
+  status: "draft" | "broker_ready" | "submitted";
+  missingFieldIds: string[];
+  fileUrl?: string | null;
+  createdAt: number;
+  updatedAt?: number;
+  submittedAt?: number;
+};
+
+type ApplicationTemplateStatus = "draft" | "active" | "archived";
+
+type ApplicationTemplateRow = {
+  _id: Id<"applicationTemplates">;
+  title: string;
+  version: string;
+  applicationType?: string;
+  lineOfBusiness?: string;
+  product?: string;
+  status: ApplicationTemplateStatus;
+  sourceKind: "manual" | "pdf" | "imported" | "generated";
+  questionGraph?: unknown;
+  fieldCount: number;
+  updatedAt: number;
+};
+
+type ApplicationDetail = ApplicationRow & {
+  packets?: ApplicationPacketRow[];
+};
+
+type ApplicationPanelBusy = "answers" | "submit" | null;
 
 type ClientRow = {
   clientOrgId?: string;
   name?: string;
+  website?: string;
+  iconUrl?: string | null;
   primaryContactEmail?: string;
   onboardingStatus?: string;
 };
@@ -74,24 +138,45 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
   draft: "Draft",
   collecting: "Collecting",
   waiting_on_client: "Waiting",
-  needs_broker_review: "Review",
-  broker_ready: "Packet ready",
+  needs_broker_review: "Broker review",
+  broker_ready: "Ready",
   submitted: "Submitted",
   cancelled: "Cancelled",
   stale: "Stale",
 };
 
-const STATUS_TABS = [
-  { value: "all", label: "All" },
-  { value: "collecting", label: "Collecting" },
-  { value: "needs_broker_review", label: "Review" },
-  { value: "broker_ready", label: "Ready" },
-  { value: "submitted", label: "Submitted" },
-] as const;
+const CLIENT_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  draft: "Draft",
+  collecting: "In progress",
+  waiting_on_client: "Needs answers",
+  needs_broker_review: "With broker",
+  broker_ready: "Ready",
+  submitted: "Submitted",
+  cancelled: "Cancelled",
+  stale: "Needs update",
+};
+
+const TEMPLATE_STATUS_LABELS: Record<ApplicationTemplateStatus, string> = {
+  draft: "Draft",
+  active: "Active",
+  archived: "Archived",
+};
+
+const AD_HOC_TEMPLATE_VALUE = "__ad_hoc__";
+const APPLICATION_SOURCE_ACCEPT =
+  ".txt,.md,.markdown,.pdf,.docx,.csv,.json,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,application/json";
+
+type BrokerApplicationTab = "applications" | "templates";
 
 function statusVariant(status: ApplicationStatus): "default" | "secondary" | "outline" {
   if (status === "broker_ready") return "default";
   if (status === "submitted") return "outline";
+  return "secondary";
+}
+
+function templateStatusVariant(status: ApplicationTemplateStatus): "default" | "secondary" | "outline" {
+  if (status === "active") return "default";
+  if (status === "archived") return "outline";
   return "secondary";
 }
 
@@ -103,17 +188,531 @@ function applicationSubtitle(row: ApplicationRow) {
   return [row.lineOfBusiness, row.product].filter(Boolean).join(" · ") || "Application";
 }
 
-function parseQuestions(text: string) {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
+function rowOwnerLabel(row: ApplicationRow, mode: "broker" | "client") {
+  return row.clientName ?? (mode === "client" ? "This workspace" : "Client");
+}
+
+function ApplicationListItem({
+  row,
+  onSelect,
+}: {
+  row: ApplicationRow;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-application-id={row._id}
+      onClick={onSelect}
+      className="flex w-full items-center justify-between gap-4 border-t border-foreground/4 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-muted/40"
+    >
+      <div className="min-w-0 space-y-1">
+        <p className="truncate text-base font-medium text-foreground">{row.title}</p>
+        <p className="truncate text-label text-muted-foreground">{applicationSubtitle(row)}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="hidden text-label text-muted-foreground sm:block">
+          Updated {formatTime(row.updatedAt)}
+        </span>
+        <Badge variant={statusVariant(row.status)}>{CLIENT_STATUS_LABELS[row.status]}</Badge>
+      </div>
+    </button>
+  );
+}
+
+function OrgNameCell({
+  name,
+  iconUrl,
+  website,
+  fallback = "Client",
+  size = "sm",
+}: {
+  name?: string | null;
+  iconUrl?: string | null;
+  website?: string | null;
+  fallback?: string;
+  size?: "xs" | "sm" | "md";
+}) {
+  const label = name?.trim() || fallback;
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <OrgBrandIcon name={label} iconUrl={iconUrl} website={website} size={size} />
+      <span className="min-w-0 truncate">{label}</span>
+    </span>
+  );
+}
+
+function templateFields(template?: ApplicationTemplateRow | null) {
+  if (!template?.questionGraph) return [];
+  try {
+    return flattenQuestionGraph(template.questionGraph as ApplicationQuestionGraph);
+  } catch {
+    return [];
+  }
+}
+
+function buildTemplateQuestionGraph(args: {
+  templateId: string;
+  title: string;
+  applicationType?: string;
+  fields: ApplicationField[];
+  source: ApplicationTemplateRow["sourceKind"];
+}) {
+  const graph = extractQuestionGraphFromFields(args.fields, {
+    id: `${args.templateId}:graph`,
+    version: "v1",
+    title: args.title,
+    applicationType: args.applicationType ?? null,
+    source: args.source,
+  });
+  return JSON.parse(JSON.stringify(graph)) as ApplicationQuestionGraph;
+}
+
+function questionsFromFields(fields: ApplicationField[]): ApplicationQuestionRow[] {
+  return fields.map((field, index) => ({
+    fieldId: field.id || `field_${index + 1}`,
+    label: field.label,
+    prompt: field.label,
+    required: field.required ?? true,
+    section: field.section,
+  }));
+}
+
+function fieldsFromQuestions(questions: ApplicationQuestionRow[]): ApplicationField[] {
+  return questions.map((question) => ({
+    id: question.fieldId,
+    label: question.prompt || question.label,
+    section: question.section ?? "Application",
+    fieldType: "text" as const,
+    required: question.required,
+  }));
+}
+
+function sourceKindForTemplate(file: File | null): ApplicationTemplateRow["sourceKind"] {
+  if (!file) return "generated";
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  return type.includes("pdf") || name.endsWith(".pdf") ? "pdf" : "imported";
+}
+
+function useApplicationQuestionFormatter({
+  disabled,
+  initialQuestions = [],
+  lineOfBusiness,
+  open,
+  orgId,
+  product,
+}: {
+  disabled?: boolean;
+  initialQuestions?: ApplicationQuestionRow[];
+  lineOfBusiness: string;
+  open: boolean;
+  orgId?: string;
+  product: string;
+}) {
+  const generateUploadUrl = useMutation(api.applicationIntakes.generateUploadUrl);
+  const formatQuestions = useAction(api.actions.applicationIntakeAuthoring.formatQuestions);
+  const [questionText, setQuestionText] = useState("");
+  const [questionFile, setQuestionFile] = useState<File | null>(null);
+  const [formattedQuestions, setFormattedQuestions] =
+    useState<ApplicationQuestionRow[]>(initialQuestions);
+  const [uploadedFileId, setUploadedFileId] = useState<Id<"_storage"> | undefined>();
+  const [formatError, setFormatError] = useState<string | null>(null);
+  const [formatting, setFormatting] = useState(false);
+  const formatRunRef = useRef(0);
+  const sourceSignatureRef = useRef("");
+  const lastFormattedSignatureRef = useRef<string | null>(null);
+  const sourceText = questionText.trim();
+  const sourceSignature =
+    !orgId || disabled || (!sourceText && !questionFile)
+      ? ""
+      : JSON.stringify({
+          orgId,
+          sourceText,
+          fileName: questionFile?.name ?? "",
+          fileSize: questionFile?.size ?? 0,
+          fileLastModified: questionFile?.lastModified ?? 0,
+          lineOfBusiness: lineOfBusiness.trim(),
+          product: product.trim(),
+        });
+
+  useEffect(() => {
+    sourceSignatureRef.current = sourceSignature;
+  }, [sourceSignature]);
+
+  const reset = useCallback(() => {
+    setQuestionText("");
+    setQuestionFile(null);
+    setFormattedQuestions([]);
+    setUploadedFileId(undefined);
+    setFormatError(null);
+    lastFormattedSignatureRef.current = null;
+  }, []);
+
+  const updateQuestionText = useCallback((value: string) => {
+    setQuestionText(value);
+    setFormattedQuestions([]);
+    setUploadedFileId(undefined);
+    setFormatError(null);
+    lastFormattedSignatureRef.current = null;
+  }, []);
+
+  const updateQuestionFile = useCallback((file: File | null) => {
+    setQuestionFile(file);
+    setFormattedQuestions([]);
+    setUploadedFileId(undefined);
+    setFormatError(null);
+    lastFormattedSignatureRef.current = null;
+  }, []);
+
+  const formatQuestionSource = useCallback(
+    async ({ signature = sourceSignatureRef.current }: { signature?: string } = {}) => {
+      if (!orgId) throw new Error("Choose a client first");
+      if (!questionText.trim() && !questionFile) {
+        throw new Error("Paste questions or upload an application document first");
+      }
+
+      const runId = formatRunRef.current + 1;
+      formatRunRef.current = runId;
+      setFormatting(true);
+      setFormatError(null);
+      try {
+        let fileId: Id<"_storage"> | undefined;
+        if (questionFile) {
+          const uploadUrl = await generateUploadUrl({
+            orgId: orgId as Id<"organizations">,
+          });
+          const response = await fetch(uploadUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": questionFile.type || "application/octet-stream",
+            },
+            body: questionFile,
+          });
+          if (!response.ok) throw new Error("Application document upload failed");
+          const payload = (await response.json()) as { storageId: string };
+          fileId = payload.storageId as Id<"_storage">;
+        }
+
+        const result = await formatQuestions({
+          orgId: orgId as Id<"organizations">,
+          pastedText: questionText.trim() || undefined,
+          fileId,
+          fileName: questionFile?.name,
+          contentType: questionFile?.type,
+          lineOfBusiness: lineOfBusiness.trim() || undefined,
+          product: product.trim() || undefined,
+        }) as { questions: ApplicationQuestionRow[] };
+        if (!signature || signature === sourceSignatureRef.current) {
+          setFormattedQuestions(result.questions);
+          setUploadedFileId(fileId);
+          lastFormattedSignatureRef.current = signature || sourceSignatureRef.current;
+        }
+        return { questions: result.questions, fileId };
+      } catch (error) {
+        if (!signature || signature === sourceSignatureRef.current) {
+          setFormatError(error instanceof Error ? error.message : "Unable to format questions");
+        }
+        throw error;
+      } finally {
+        if (runId === formatRunRef.current) {
+          setFormatting(false);
+        }
+      }
+    },
+    [
+      formatQuestions,
+      generateUploadUrl,
+      lineOfBusiness,
+      orgId,
+      product,
+      questionFile,
+      questionText,
+    ],
+  );
+
+  useEffect(() => {
+    if (!open || disabled || !sourceSignature) return;
+    if (lastFormattedSignatureRef.current === sourceSignature) return;
+    const timeout = window.setTimeout(() => {
+      void formatQuestionSource({ signature: sourceSignature }).catch(() => {});
+    }, questionFile ? 250 : 1200);
+    return () => window.clearTimeout(timeout);
+  }, [disabled, formatQuestionSource, open, questionFile, sourceSignature]);
+
+  return {
+    formatError,
+    formattedQuestions,
+    formatting,
+    formatQuestionSource,
+    hasQuestionSource: Boolean(questionText.trim() || questionFile || formattedQuestions.length > 0),
+    questionFile,
+    questionText,
+    reset,
+    updateQuestionFile,
+    updateQuestionText,
+    uploadedFileId,
+  };
+}
+
+function QuestionSourceFilePanel({
+  disabled,
+  file,
+  onRemove,
+}: {
+  disabled?: boolean;
+  file: File;
+  onRemove: () => void;
+}) {
+  return (
+    <OperationalPanel as="div" className="flex items-center justify-between gap-3 px-3 py-2">
+      <div className="min-w-0">
+        <p className="truncate text-base font-medium text-foreground">{file.name}</p>
+        <p className="text-label text-muted-foreground">
+          {(file.size / 1024).toFixed(1)} KB
+        </p>
+      </div>
+      <PillButton
+        type="button"
+        size="compact"
+        variant="secondary"
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        Remove
+      </PillButton>
+    </OperationalPanel>
+  );
+}
+
+function FormattedQuestionsPanel({ questions }: { questions: ApplicationQuestionRow[] }) {
+  if (questions.length === 0) return null;
+
+  return (
+    <OperationalPanel>
+      <OperationalPanelHeader title="Questions" />
+      {questions.map((question, index) => (
+        <OperationalItem
+          key={question.fieldId}
+          className={index === 0 ? "border-t-0" : undefined}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-base font-medium text-foreground">{question.label}</p>
+              {question.prompt !== question.label ? (
+                <p className="mt-1 text-base text-muted-foreground">{question.prompt}</p>
+              ) : null}
+            </div>
+            {question.section ? (
+              <span className="shrink-0 text-label text-muted-foreground">
+                {question.section}
+              </span>
+            ) : null}
+          </div>
+        </OperationalItem>
+      ))}
+    </OperationalPanel>
+  );
+}
+
+function answerFields(detail: {
+  normalizedAnswers: ApplicationAnswerRow[];
+  missingQuestions: ApplicationQuestionRow[];
+}) {
+  const fields = new Map<
+    string,
+    {
+      fieldId: string;
+      label: string;
+      section?: string;
+      prompt?: string;
+      currentValue: string;
+    }
+  >();
+
+  for (const answer of detail.normalizedAnswers) {
+    fields.set(answer.fieldId, {
+      fieldId: answer.fieldId,
+      label: answer.label,
+      section: answer.section,
+      currentValue: answer.value,
+    });
+  }
+  for (const question of detail.missingQuestions) {
+    fields.set(question.fieldId, {
+      fieldId: question.fieldId,
+      label: question.label,
+      section: question.section,
+      prompt: question.prompt,
+      currentValue: fields.get(question.fieldId)?.currentValue ?? "",
+    });
+  }
+
+  return [...fields.values()];
+}
+
+function currentPacket(packets: ApplicationPacketRow[] | undefined, packetId?: string) {
+  if (!packetId || !packets?.length) return null;
+  return packets.find((packet) => packet._id === packetId) ?? null;
+}
+
+function applicationHeaderInfo(detail: ApplicationDetail) {
+  return [
+    detail.clientName ?? "Client",
+    applicationSubtitle(detail),
+    `Updated ${formatTime(detail.updatedAt)}`,
+  ]
     .filter(Boolean)
-    .map((line, index) => ({
-      fieldId: `manual_${index + 1}`,
-      label: line.replace(/[?.:]+$/g, "").slice(0, 80),
-      prompt: line,
-      required: true,
-    }));
+    .join(" · ");
+}
+
+function canEditApplicationAnswers(detail: ApplicationDetail, viewerIsBroker: boolean) {
+  if (viewerIsBroker) return false;
+  return !["broker_ready", "submitted", "cancelled"].includes(detail.status);
+}
+
+function canSubmitApplicationAnswers(detail: ApplicationDetail, viewerIsBroker: boolean) {
+  if (viewerIsBroker) return false;
+  if (["broker_ready", "submitted", "cancelled"].includes(detail.status)) return false;
+  return detail.missingQuestions.length === 0 && answerFields(detail).length > 0;
+}
+
+function jsonFileName(detail: ApplicationDetail) {
+  const safeTitle = detail.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return `${safeTitle || "application"}-answers.json`;
+}
+
+function ApplicationAnswersPanel({
+  applicationId,
+  detail,
+  fields,
+  editable,
+  busy,
+  setBusy,
+}: {
+  applicationId: Id<"applicationIntakes">;
+  detail: ApplicationDetail;
+  fields: ReturnType<typeof answerFields>;
+  editable: boolean;
+  busy: ApplicationPanelBusy;
+  setBusy: (busy: ApplicationPanelBusy) => void;
+}) {
+  const recordAnswers = useMutation(api.applicationIntakes.recordAnswers);
+  const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fields.map((field) => [field.fieldId, field.currentValue])),
+  );
+  const lastSubmittedSignatureRef = useRef<string | null>(null);
+  const changedAnswers = useMemo(() => {
+    const existing = new Map(detail.normalizedAnswers.map((answer) => [answer.fieldId, answer.value]));
+    return fields
+      .map((field) => ({
+        field,
+        value: (answerDrafts[field.fieldId] ?? "").trim(),
+      }))
+      .filter(({ field, value }) => value && value !== (existing.get(field.fieldId) ?? ""))
+      .map(({ field, value }) => ({
+        fieldId: field.fieldId,
+        label: field.label,
+        section: field.section,
+        value,
+        source: "client_portal",
+      }));
+  }, [answerDrafts, detail.normalizedAnswers, fields]);
+
+  useEffect(() => {
+    if (!editable || changedAnswers.length === 0 || busy !== null) return;
+    const signature = JSON.stringify({
+      answers: changedAnswers,
+    });
+    if (lastSubmittedSignatureRef.current === signature) return;
+    const timeout = window.setTimeout(() => {
+      lastSubmittedSignatureRef.current = signature;
+      setBusy("answers");
+      void recordAnswers({
+        applicationIntakeId: applicationId,
+        sourceKind: "web",
+        answers: changedAnswers,
+      })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : "Unable to save answers";
+          toast.error(message);
+        })
+        .finally(() => {
+          setBusy(null);
+        });
+    }, 700);
+    return () => window.clearTimeout(timeout);
+  }, [applicationId, busy, changedAnswers, editable, recordAnswers, setBusy]);
+
+  return (
+    <OperationalPanel>
+      <OperationalPanelHeader title="Answers" />
+      {editable && fields.length > 0 ? (
+        fields.map((field, index) => (
+          <OperationalItem key={field.fieldId} className={index === 0 ? "border-t-0" : undefined}>
+            <label className="flex flex-col gap-2">
+              <span className="text-base font-medium text-foreground">
+                {field.label}
+              </span>
+              {field.prompt && field.prompt !== field.label ? (
+                <span className="text-base text-muted-foreground">{field.prompt}</span>
+              ) : null}
+              <Textarea
+                value={answerDrafts[field.fieldId] ?? ""}
+                onChange={(event) =>
+                  setAnswerDrafts((drafts) => ({
+                    ...drafts,
+                    [field.fieldId]: event.target.value,
+                  }))
+                }
+                className="min-h-20 resize-none"
+              />
+            </label>
+          </OperationalItem>
+        ))
+      ) : detail.normalizedAnswers.length > 0 || detail.missingQuestions.length > 0 ? (
+        <>
+          {detail.normalizedAnswers.map((answer, index) => (
+            <OperationalItem key={answer.fieldId} className={index === 0 ? "border-t-0" : undefined}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-base font-medium text-foreground">{answer.label}</p>
+                  <p className="mt-1 break-words text-base text-muted-foreground">{answer.value}</p>
+                </div>
+                {answer.section ? (
+                  <span className="shrink-0 text-label text-muted-foreground">{answer.section}</span>
+                ) : null}
+              </div>
+            </OperationalItem>
+          ))}
+          {detail.missingQuestions.map((question, index) => (
+            <OperationalItem
+              key={question.fieldId}
+              className={detail.normalizedAnswers.length === 0 && index === 0 ? "border-t-0" : undefined}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-base font-medium text-foreground">{question.label}</p>
+                  <p className="mt-1 break-words text-base text-muted-foreground">Not answered</p>
+                </div>
+                {question.section ? (
+                  <span className="shrink-0 text-label text-muted-foreground">{question.section}</span>
+                ) : null}
+              </div>
+            </OperationalItem>
+          ))}
+        </>
+      ) : (
+        <OperationalItem className="border-t-0">
+          <p className="text-base text-muted-foreground">No answers recorded.</p>
+        </OperationalItem>
+      )}
+    </OperationalPanel>
+  );
 }
 
 function ApplicationCreateDrawer({
@@ -122,42 +721,82 @@ function ApplicationCreateDrawer({
   mode,
   fixedClientOrgId,
   clients,
+  templates,
+  viewerIsBroker,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: "broker" | "client";
   fixedClientOrgId?: string;
   clients: ClientRow[];
+  templates: ApplicationTemplateRow[];
+  viewerIsBroker: boolean;
 }) {
   const [clientOrgId, setClientOrgId] = useState(fixedClientOrgId ?? "");
+  const [templateId, setTemplateId] = useState("");
   const [title, setTitle] = useState("Insurance application");
   const [lineOfBusiness, setLineOfBusiness] = useState("");
   const [product, setProduct] = useState("");
-  const [requestText, setRequestText] = useState("");
-  const [questionText, setQuestionText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const start = useMutation(api.applicationIntakes.start);
 
   const targetOrgId = fixedClientOrgId ?? clientOrgId;
-  const canSubmit = Boolean(targetOrgId && title.trim() && requestText.trim());
+  const canUseAdHoc = mode === "broker";
+  const activeTemplates = templates.filter((template) => template.status === "active");
+  const selectedTemplate =
+    activeTemplates.find((template) => template._id === templateId) ??
+    (!canUseAdHoc ? activeTemplates[0] : undefined);
+  const selectedClient = clients.find((client) => client.clientOrgId === clientOrgId);
+  const selectedTemplateId = selectedTemplate?._id;
+  const questionSource = useApplicationQuestionFormatter({
+    disabled: Boolean(selectedTemplateId || submitting || !canUseAdHoc),
+    lineOfBusiness,
+    open,
+    orgId: targetOrgId,
+    product,
+  });
+  const canSubmit = Boolean(
+    targetOrgId &&
+      (selectedTemplate || (canUseAdHoc && title.trim() && questionSource.hasQuestionSource)),
+  );
+
+  function chooseTemplate(nextTemplateId: string) {
+    if (nextTemplateId === AD_HOC_TEMPLATE_VALUE) {
+      if (!canUseAdHoc) return;
+      setTemplateId("");
+      return;
+    }
+    setTemplateId(nextTemplateId);
+    questionSource.reset();
+    const template = activeTemplates.find((item) => item._id === nextTemplateId);
+    if (!template) return;
+    setTitle(template.title);
+    setLineOfBusiness(template.lineOfBusiness ?? "");
+    setProduct(template.product ?? "");
+  }
 
   async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
+      const missingQuestions = selectedTemplate
+        ? undefined
+        : questionSource.formattedQuestions.length > 0
+          ? questionSource.formattedQuestions
+          : (await questionSource.formatQuestionSource()).questions;
       await start({
         orgId: targetOrgId as Id<"organizations">,
-        sourceKind: "broker_portal",
-        title: title.trim(),
-        lineOfBusiness: lineOfBusiness.trim() || undefined,
-        product: product.trim() || undefined,
-        requestText: requestText.trim(),
-        missingQuestions: parseQuestions(questionText),
+        templateId: selectedTemplate?._id,
+        sourceKind: viewerIsBroker ? "broker_portal" : "web",
+        title: canUseAdHoc ? title.trim() : undefined,
+        lineOfBusiness: canUseAdHoc ? lineOfBusiness.trim() || undefined : undefined,
+        product: canUseAdHoc ? product.trim() || undefined : undefined,
+        missingQuestions,
       });
       toast.success("Application intake started");
       onOpenChange(false);
-      setRequestText("");
-      setQuestionText("");
+      questionSource.reset();
+      setTemplateId("");
       if (!fixedClientOrgId) setClientOrgId("");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start application");
@@ -176,7 +815,11 @@ function ApplicationCreateDrawer({
           <PillButton type="button" variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </PillButton>
-          <PillButton type="button" disabled={!canSubmit || submitting} onClick={submit}>
+          <PillButton
+            type="button"
+            disabled={!canSubmit || submitting || questionSource.formatting}
+            onClick={submit}
+          >
             Start intake
           </PillButton>
         </>
@@ -188,14 +831,28 @@ function ApplicationCreateDrawer({
             <span className="text-label font-medium text-muted-foreground">Client</span>
             <Select value={clientOrgId} onValueChange={(value) => setClientOrgId(value ?? "")}>
               <SelectTrigger className="w-full">
-                <SelectValue>{clients.find((client) => client.clientOrgId === clientOrgId)?.name ?? "Choose client"}</SelectValue>
+                <SelectValue>
+                  {selectedClient ? (
+                    <OrgNameCell
+                      name={selectedClient.name}
+                      iconUrl={selectedClient.iconUrl}
+                      website={selectedClient.website}
+                    />
+                  ) : (
+                    "Choose client"
+                  )}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {clients
                   .filter((client) => client.clientOrgId)
                   .map((client) => (
                     <SelectItem key={client.clientOrgId} value={client.clientOrgId!}>
-                      {client.name ?? "Client"}
+                      <OrgNameCell
+                        name={client.name}
+                        iconUrl={client.iconUrl}
+                        website={client.website}
+                      />
                     </SelectItem>
                   ))}
               </SelectContent>
@@ -203,6 +860,206 @@ function ApplicationCreateDrawer({
           </label>
         ) : null}
 
+        {activeTemplates.length > 0 ? (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-label font-medium text-muted-foreground">Template</span>
+            <Select
+              value={selectedTemplateId ?? (canUseAdHoc ? AD_HOC_TEMPLATE_VALUE : "")}
+              onValueChange={(value) =>
+                chooseTemplate(value ?? (canUseAdHoc ? AD_HOC_TEMPLATE_VALUE : ""))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {selectedTemplate?.title ?? (canUseAdHoc ? "Ad hoc intake" : "Choose template")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {canUseAdHoc ? <SelectItem value={AD_HOC_TEMPLATE_VALUE}>Ad hoc intake</SelectItem> : null}
+                {activeTemplates.map((template) => (
+                  <SelectItem key={template._id} value={template._id}>
+                    {template.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        ) : null}
+
+        {canUseAdHoc ? (
+          <>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-medium text-muted-foreground">Title</span>
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+              />
+            </label>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-medium text-muted-foreground">Line</span>
+                <input
+                  value={lineOfBusiness}
+                  onChange={(event) => setLineOfBusiness(event.target.value)}
+                  placeholder="General liability"
+                  className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-label font-medium text-muted-foreground">Product</span>
+                <input
+                  value={product}
+                  onChange={(event) => setProduct(event.target.value)}
+                  placeholder="Carrier or product"
+                  className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
+                />
+              </label>
+            </div>
+          </>
+        ) : null}
+
+        {selectedTemplate ? (
+          <OperationalPanel>
+            <OperationalPanelHeader
+              title={selectedTemplate.title}
+              description={`${selectedTemplate.fieldCount} field${selectedTemplate.fieldCount === 1 ? "" : "s"}`}
+              action={<Badge variant={templateStatusVariant(selectedTemplate.status)}>Active</Badge>}
+            />
+          </OperationalPanel>
+        ) : canUseAdHoc ? (
+          <>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-medium text-muted-foreground">Questions</span>
+              <Textarea
+                value={questionSource.questionText}
+                onChange={(event) => questionSource.updateQuestionText(event.target.value)}
+                rows={8}
+                placeholder="Paste application questions or carrier application text"
+                className="min-h-40 resize-none"
+                disabled={submitting}
+              />
+            </label>
+            <FileDropZone
+              accept={APPLICATION_SOURCE_ACCEPT}
+              disabled={submitting}
+              idleLabel="Upload application document"
+              busyLabel="Starting intake..."
+              hint="PDF, DOCX, TXT, Markdown, CSV, or JSON"
+              padding="px-4 py-5"
+              onFile={questionSource.updateQuestionFile}
+            />
+            {questionSource.questionFile ? (
+              <QuestionSourceFilePanel
+                disabled={submitting}
+                file={questionSource.questionFile}
+                onRemove={() => questionSource.updateQuestionFile(null)}
+              />
+            ) : null}
+            {questionSource.formatting ? (
+              <p className="text-label text-muted-foreground">Formatting questions...</p>
+            ) : questionSource.formatError ? (
+              <p className="text-label text-destructive">{questionSource.formatError}</p>
+            ) : null}
+            <FormattedQuestionsPanel questions={questionSource.formattedQuestions} />
+          </>
+        ) : null}
+      </div>
+    </SettingsDrawer>
+  );
+}
+
+function ApplicationTemplateDrawer({
+  open,
+  onOpenChange,
+  template,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  template?: ApplicationTemplateRow | null;
+}) {
+  const currentOrg = useCurrentOrg();
+  const saveTemplate = useMutation(api.applicationIntakes.saveTemplate);
+  const existingQuestions = questionsFromFields(templateFields(template));
+  const [title, setTitle] = useState(template?.title ?? "General liability application");
+  const [lineOfBusiness, setLineOfBusiness] = useState(template?.lineOfBusiness ?? "");
+  const [product, setProduct] = useState(template?.product ?? "");
+  const [status, setStatus] = useState<ApplicationTemplateStatus>(template?.status ?? "active");
+  const [submitting, setSubmitting] = useState(false);
+  const questionSource = useApplicationQuestionFormatter({
+    disabled: submitting,
+    initialQuestions: existingQuestions,
+    lineOfBusiness,
+    open,
+    orgId: currentOrg?.orgId,
+    product,
+  });
+  const canSubmit = Boolean(title.trim() && questionSource.hasQuestionSource);
+
+  async function submit() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      const formatted =
+        questionSource.formattedQuestions.length > 0
+          ? {
+              questions: questionSource.formattedQuestions,
+              fileId: questionSource.uploadedFileId,
+            }
+          : await questionSource.formatQuestionSource();
+      const sourceKind = questionSource.questionFile
+        ? sourceKindForTemplate(questionSource.questionFile)
+        : template?.sourceKind ?? "generated";
+      await saveTemplate({
+        templateId: template?._id,
+        title: title.trim(),
+        version: template?.version,
+        applicationType: lineOfBusiness.trim() || undefined,
+        lineOfBusiness: lineOfBusiness.trim() || undefined,
+        product: product.trim() || undefined,
+        status,
+        sourceKind,
+        sourceFileId: formatted.fileId,
+        questionGraph: buildTemplateQuestionGraph({
+          templateId: template?._id ?? `manual:${dayjs().valueOf()}`,
+          title: title.trim(),
+          applicationType: lineOfBusiness.trim() || undefined,
+          fields: fieldsFromQuestions(formatted.questions),
+          source: sourceKind,
+        }),
+      });
+      toast.success(template ? "Template updated" : "Template created");
+      onOpenChange(false);
+      if (!template) questionSource.reset();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save template");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <SettingsDrawer
+      open={open}
+      onOpenChange={onOpenChange}
+      title={template ? "Edit template" : "New template"}
+      footer={
+        <>
+          <PillButton type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            Cancel
+          </PillButton>
+          <PillButton
+            type="button"
+            disabled={!canSubmit || submitting || questionSource.formatting}
+            onClick={submit}
+          >
+            Save template
+          </PillButton>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
           <span className="text-label font-medium text-muted-foreground">Title</span>
           <input
@@ -227,32 +1084,58 @@ function ApplicationCreateDrawer({
             <input
               value={product}
               onChange={(event) => setProduct(event.target.value)}
-              placeholder="Carrier or product"
+              placeholder="Primary GL"
               className="h-9 rounded-md border border-foreground/10 bg-background px-3 text-base outline-none focus:border-foreground/30"
             />
           </label>
         </div>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-label font-medium text-muted-foreground">Request</span>
-          <textarea
-            value={requestText}
-            onChange={(event) => setRequestText(event.target.value)}
-            rows={4}
-            className="resize-none rounded-md border border-foreground/10 bg-background px-3 py-2 text-base outline-none focus:border-foreground/30"
-          />
+          <span className="text-label font-medium text-muted-foreground">Status</span>
+          <Select value={status} onValueChange={(value) => setStatus(value as ApplicationTemplateStatus)}>
+            <SelectTrigger className="w-full">
+              <SelectValue>{TEMPLATE_STATUS_LABELS[status]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-label font-medium text-muted-foreground">Initial questions</span>
-          <textarea
-            value={questionText}
-            onChange={(event) => setQuestionText(event.target.value)}
-            rows={5}
-            placeholder={"One question per line"}
-            className="resize-none rounded-md border border-foreground/10 bg-background px-3 py-2 text-base outline-none focus:border-foreground/30"
+          <span className="text-label font-medium text-muted-foreground">Questions</span>
+          <Textarea
+            value={questionSource.questionText}
+            onChange={(event) => questionSource.updateQuestionText(event.target.value)}
+            placeholder="Paste application questions or carrier application text"
+            className="min-h-40 resize-none"
+            disabled={submitting}
           />
         </label>
+        <FileDropZone
+          accept={APPLICATION_SOURCE_ACCEPT}
+          disabled={submitting}
+          idleLabel="Upload application document"
+          busyLabel="Saving template..."
+          hint="PDF, DOCX, TXT, Markdown, CSV, or JSON"
+          padding="px-4 py-5"
+          onFile={questionSource.updateQuestionFile}
+        />
+        {questionSource.questionFile ? (
+          <QuestionSourceFilePanel
+            disabled={submitting}
+            file={questionSource.questionFile}
+            onRemove={() => questionSource.updateQuestionFile(null)}
+          />
+        ) : null}
+        {questionSource.formatting ? (
+          <p className="text-label text-muted-foreground">Formatting questions...</p>
+        ) : questionSource.formatError ? (
+          <p className="text-label text-destructive">{questionSource.formatError}</p>
+        ) : null}
+        <FormattedQuestionsPanel questions={questionSource.formattedQuestions} />
       </div>
     </SettingsDrawer>
   );
@@ -260,45 +1143,53 @@ function ApplicationCreateDrawer({
 
 function ApplicationReviewDrawer({
   applicationId,
+  viewerIsBroker,
   onClose,
 }: {
   applicationId: Id<"applicationIntakes"> | null;
+  viewerIsBroker: boolean;
   onClose: () => void;
 }) {
   const detail = useCachedQuery(
     "applicationIntakes.get",
     api.applicationIntakes.get,
     applicationId ? { applicationIntakeId: applicationId } : "skip",
-  ) as (ApplicationRow & {
-    messages?: Array<{ _id: string; content: string; createdAt: number; role: string }>;
-    contextProposals?: Array<{ _id: string; key: string; value: string; status: string }>;
-    packets?: Array<{ _id: string; status: string; missingFieldIds: string[]; createdAt: number }>;
-  }) | undefined;
+  ) as ApplicationDetail | undefined;
   const preparePacket = useMutation(api.applicationIntakes.preparePacket);
-  const markSubmitted = useMutation(api.applicationIntakes.markSubmitted);
-  const [busy, setBusy] = useState<"packet" | "submit" | null>(null);
+  const [busy, setBusy] = useState<ApplicationPanelBusy>(null);
+  const fields = useMemo(() => (detail ? answerFields(detail) : []), [detail]);
+  const packet = currentPacket(detail?.packets, detail?.packetId);
+  const editableAnswers = detail ? canEditApplicationAnswers(detail, viewerIsBroker) : false;
+  const canSubmitAnswers = detail ? canSubmitApplicationAnswers(detail, viewerIsBroker) : false;
+  const jsonHref = detail ? `/api/application-intakes/${detail._id}/answers` : null;
 
-  async function runPacket() {
-    if (!applicationId) return;
-    setBusy("packet");
-    try {
-      await preparePacket({ applicationIntakeId: applicationId });
-      toast.success("Application packet prepared");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to prepare packet");
-    } finally {
-      setBusy(null);
-    }
-  }
+  const footer = detail && viewerIsBroker && detail.normalizedAnswers.length > 0 ? (
+    <>
+      {packet?.fileUrl ? (
+        <PillButton href={packet.fileUrl} rel="noreferrer" target="_blank" variant="secondary">
+          Download filled PDF
+        </PillButton>
+      ) : null}
+      {jsonHref ? (
+        <PillButton download={jsonFileName(detail)} href={jsonHref} variant="secondary">
+          Download JSON
+        </PillButton>
+      ) : null}
+    </>
+  ) : detail && !viewerIsBroker && !["broker_ready", "submitted", "cancelled"].includes(detail.status) ? (
+    <PillButton type="button" disabled={!canSubmitAnswers || busy !== null} onClick={submitAnswers}>
+      Submit answers
+    </PillButton>
+  ) : null;
 
-  async function submitPacket() {
+  async function submitAnswers() {
     if (!applicationId) return;
     setBusy("submit");
     try {
-      await markSubmitted({ applicationIntakeId: applicationId });
-      toast.success("Application marked submitted");
+      await preparePacket({ applicationIntakeId: applicationId });
+      toast.success("Answers submitted");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to mark submitted");
+      toast.error(error instanceof Error ? error.message : "Unable to submit answers");
     } finally {
       setBusy(null);
     }
@@ -310,74 +1201,38 @@ function ApplicationReviewDrawer({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={detail?.title ?? "Application"}
-      footer={
-        <>
-          <PillButton type="button" variant="secondary" onClick={onClose}>
-            Close
-          </PillButton>
-          {detail?.status === "broker_ready" ? (
-            <PillButton type="button" disabled={busy !== null} onClick={submitPacket}>
-              Mark submitted
-            </PillButton>
-          ) : (
-            <PillButton type="button" disabled={!detail || busy !== null} onClick={runPacket}>
-              Prepare packet
-            </PillButton>
-          )}
-        </>
+      title={
+        detail ? (
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-base font-medium text-foreground">{detail.title}</span>
+            <span className="truncate text-base font-normal text-muted-foreground">
+              {applicationHeaderInfo(detail)}
+            </span>
+          </div>
+        ) : (
+          "Application"
+        )
       }
+      actions={
+        detail ? (
+          <Badge variant={statusVariant(detail.status)}>{STATUS_LABELS[detail.status]}</Badge>
+        ) : null
+      }
+      footer={footer}
     >
       {!detail ? (
         <OperationalSkeletonList rows={5} showTrailing={false} />
       ) : (
         <div className="flex flex-col gap-4">
-          <OperationalPanel>
-            <OperationalPanelHeader
-              title="Status"
-              action={<Badge variant={statusVariant(detail.status)}>{STATUS_LABELS[detail.status]}</Badge>}
-              description={`${detail.clientName ?? "Client"} · ${formatTime(detail.updatedAt)}`}
-            />
-          </OperationalPanel>
-
-          <OperationalPanel>
-            <OperationalPanelHeader title="Missing information" />
-            {detail.missingQuestions.length === 0 ? (
-              <OperationalItem>
-                <p className="text-base text-muted-foreground">No active missing questions.</p>
-              </OperationalItem>
-            ) : (
-              detail.missingQuestions.map((question) => (
-                <OperationalItem key={question.fieldId}>
-                  <p className="text-base font-medium text-foreground">{question.label}</p>
-                  <p className="mt-1 text-base text-muted-foreground">{question.prompt}</p>
-                </OperationalItem>
-              ))
-            )}
-          </OperationalPanel>
-
-          <OperationalPanel>
-            <OperationalPanelHeader title="Answers" />
-            {detail.normalizedAnswers.length === 0 ? (
-              <OperationalItem>
-                <p className="text-base text-muted-foreground">No answers recorded yet.</p>
-              </OperationalItem>
-            ) : (
-              detail.normalizedAnswers.map((answer) => (
-                <OperationalItem key={answer.fieldId}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-base font-medium text-foreground">{answer.label}</p>
-                      <p className="mt-1 break-words text-base text-muted-foreground">{answer.value}</p>
-                    </div>
-                    {answer.section ? (
-                      <span className="shrink-0 text-label text-muted-foreground">{answer.section}</span>
-                    ) : null}
-                  </div>
-                </OperationalItem>
-              ))
-            )}
-          </OperationalPanel>
+          <ApplicationAnswersPanel
+            key={`${detail._id}:${detail.updatedAt}`}
+            applicationId={detail._id}
+            detail={detail}
+            fields={fields}
+            editable={editableAnswers}
+            busy={busy}
+            setBusy={setBusy}
+          />
         </div>
       )}
     </SettingsDrawer>
@@ -396,9 +1251,14 @@ export function ApplicationIntakePage({
   onActionsChange?: (node: ReactNode) => void;
 }) {
   const currentOrg = useCurrentOrg();
+  const searchParams = useSearchParams();
+  const requestedApplicationId = searchParams.get("applicationId");
   const [createOpen, setCreateOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<ApplicationTemplateRow | null>(null);
   const [selectedId, setSelectedId] = useState<Id<"applicationIntakes"> | null>(null);
-  const [status, setStatus] = useState<(typeof STATUS_TABS)[number]["value"]>("all");
+  const [dismissedApplicationParam, setDismissedApplicationParam] = useState<string | null>(null);
+  const [brokerTab, setBrokerTab] = useState<BrokerApplicationTab>("applications");
 
   const clients = useCachedQuery(
     "clients.listForBroker.applications",
@@ -415,25 +1275,54 @@ export function ApplicationIntakePage({
       : api.applicationIntakes.listForClient,
     mode === "broker"
       ? currentOrg?.isBroker
-        ? { status: status === "all" ? undefined : status }
+        ? {}
         : "skip"
       : clientOrgId
         ? { orgId: clientOrgId as Id<"organizations"> }
         : "skip",
   ) as ApplicationRow[] | undefined;
 
-  const filteredRows = useMemo(() => {
-    const source = rows ?? [];
-    if (mode === "client" && status !== "all") {
-      return source.filter((row) => row.status === status);
-    }
-    return source;
-  }, [mode, rows, status]);
+  const templates = useCachedQuery(
+    "applicationIntakes.listTemplates.applications",
+    api.applicationIntakes.listTemplates,
+    mode === "broker"
+      ? currentOrg?.isBroker
+        ? {}
+        : "skip"
+      : currentOrg && clientOrgId
+        ? { status: "active" }
+        : "skip",
+  ) as ApplicationTemplateRow[] | undefined;
 
-  const readyCount = (rows ?? []).filter((row) => row.status === "broker_ready").length;
-  const reviewCount = (rows ?? []).filter((row) => row.status === "needs_broker_review").length;
+  const applicationRows = rows ?? [];
   const clientRows = useMemo(() => clients ?? [], [clients]);
+  const templateRows = useMemo(() => templates ?? [], [templates]);
+  const activeTemplateRows = useMemo(
+    () => templateRows.filter((template) => template.status === "active"),
+    [templateRows],
+  );
+  const ownerLabelMode = currentOrg?.isBroker ? "broker" : "client";
+  const showBrokerTabs = mode === "broker" && Boolean(currentOrg?.isBroker);
+  const routeSelectedId = useMemo(() => {
+    if (!requestedApplicationId || dismissedApplicationParam === requestedApplicationId) return null;
+    return rows?.find((row) => String(row._id) === requestedApplicationId)?._id ?? null;
+  }, [dismissedApplicationParam, requestedApplicationId, rows]);
+  const activeSelectedId = selectedId ?? routeSelectedId;
+
   const rightPanel = useMemo(() => {
+    if (templateOpen) {
+      return (
+        <ApplicationTemplateDrawer
+          key={editingTemplate?._id ?? "new-template"}
+          open={templateOpen}
+          onOpenChange={(open) => {
+            setTemplateOpen(open);
+            if (!open) setEditingTemplate(null);
+          }}
+          template={editingTemplate}
+        />
+      );
+    }
     if (createOpen) {
       return (
         <ApplicationCreateDrawer
@@ -442,14 +1331,40 @@ export function ApplicationIntakePage({
           mode={mode}
           fixedClientOrgId={clientOrgId}
           clients={clientRows}
+          templates={mode === "client" ? activeTemplateRows : templateRows}
+          viewerIsBroker={Boolean(currentOrg?.isBroker)}
         />
       );
     }
-    if (selectedId) {
-      return <ApplicationReviewDrawer applicationId={selectedId} onClose={() => setSelectedId(null)} />;
+    if (activeSelectedId) {
+      return (
+        <ApplicationReviewDrawer
+          applicationId={activeSelectedId}
+          viewerIsBroker={Boolean(currentOrg?.isBroker)}
+          onClose={() => {
+            if (routeSelectedId && requestedApplicationId) {
+              setDismissedApplicationParam(requestedApplicationId);
+            }
+            setSelectedId(null);
+          }}
+        />
+      );
     }
     return null;
-  }, [clientOrgId, clientRows, createOpen, mode, selectedId]);
+  }, [
+    clientOrgId,
+    clientRows,
+    createOpen,
+    currentOrg?.isBroker,
+    editingTemplate,
+    mode,
+    activeSelectedId,
+    requestedApplicationId,
+    routeSelectedId,
+    templateOpen,
+    activeTemplateRows,
+    templateRows,
+  ]);
 
   useEffect(() => {
     onRightPanelChange?.(rightPanel);
@@ -459,8 +1374,26 @@ export function ApplicationIntakePage({
     return () => onRightPanelChange?.(null);
   }, [onRightPanelChange]);
 
-  const canStartApplication = mode === "client" || Boolean(currentOrg?.isBroker);
   const headerActions = useMemo(() => {
+    if (mode === "broker" && currentOrg?.isBroker && brokerTab === "templates") {
+      return (
+        <PillButton
+          size="compact"
+          variant="primary"
+          onClick={() => {
+            setEditingTemplate(null);
+            setTemplateOpen(true);
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New template
+        </PillButton>
+      );
+    }
+    const canStartApplication =
+      mode === "client"
+        ? Boolean(clientOrgId && templates && activeTemplateRows.length > 0)
+        : Boolean(currentOrg?.isBroker);
     if (!canStartApplication) return null;
     return (
       <PillButton size="compact" variant="primary" onClick={() => setCreateOpen(true)}>
@@ -468,7 +1401,7 @@ export function ApplicationIntakePage({
         Start application
       </PillButton>
     );
-  }, [canStartApplication]);
+  }, [activeTemplateRows.length, brokerTab, clientOrgId, currentOrg?.isBroker, mode, templates]);
 
   useEffect(() => {
     onActionsChange?.(headerActions);
@@ -492,40 +1425,93 @@ export function ApplicationIntakePage({
   return (
     <>
       <div className="flex flex-col gap-4">
-        <Tabs value={status} onValueChange={(value) => setStatus(value as typeof status)}>
-          <TabsList variant="pill" className="scrollbar-hide max-w-full overflow-x-auto py-1">
-            {STATUS_TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
-                {tab.label}
-                {tab.value === "all" ? (
-                  <span className="text-muted-foreground/60">
-                    {(rows ?? []).length}
-                  </span>
-                ) : tab.value === "broker_ready" ? (
-                  <span className="text-muted-foreground/60">{readyCount}</span>
-                ) : tab.value === "needs_broker_review" ? (
-                  <span className="text-muted-foreground/60">{reviewCount}</span>
-                ) : null}
+        {showBrokerTabs ? (
+          <Tabs value={brokerTab} onValueChange={(value) => setBrokerTab(value as BrokerApplicationTab)}>
+            <TabsList variant="pill" className="max-w-full">
+              <TabsTrigger value="applications">
+                Applications
+                <span className="text-muted-foreground/60">{applicationRows.length}</span>
               </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+              <TabsTrigger value="templates">
+                Templates
+                <span className="text-muted-foreground/60">{templateRows.length}</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : null}
 
-        {rows === undefined ? (
+        {showBrokerTabs && brokerTab === "templates" ? (
+          templates === undefined ? (
+            <OperationalSkeletonList rows={3} showTrailing={false} />
+          ) : templateRows.length === 0 ? (
+            <EmptyStateCard
+              icon={<FileText className="h-7 w-7" />}
+              title="No templates"
+              description="Create reusable field sets for carrier applications, renewal requests, and broker submissions."
+            />
+          ) : (
+            <OperationalPanel>
+              {templateRows.slice(0, 100).map((template) => (
+                <OperationalItem key={template._id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-medium text-foreground">{template.title}</p>
+                      <p className="mt-0.5 truncate text-base text-muted-foreground">
+                        {[template.lineOfBusiness, template.product].filter(Boolean).join(" · ") ||
+                          `${template.fieldCount} field${template.fieldCount === 1 ? "" : "s"}`}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge variant={templateStatusVariant(template.status)}>
+                        {TEMPLATE_STATUS_LABELS[template.status]}
+                      </Badge>
+                      <PillButton
+                        type="button"
+                        size="compact"
+                        variant="secondary"
+                        onClick={() => {
+                          setEditingTemplate(template);
+                          setTemplateOpen(true);
+                        }}
+                      >
+                        Edit
+                      </PillButton>
+                    </div>
+                  </div>
+                </OperationalItem>
+              ))}
+            </OperationalPanel>
+          )
+        ) : rows === undefined ? (
           <OperationalSkeletonList rows={7} />
-        ) : filteredRows.length === 0 ? (
+        ) : applicationRows.length === 0 ? (
           <EmptyStateCard
             icon={<FileText className="h-7 w-7" />}
             title="No applications"
-            description="Start an intake from a broker request, client email, chat, or MCP workflow."
+            description={
+              mode === "client"
+                ? "Start an intake from an application PDF, email, text, web chat, or portal request."
+                : "Start an intake from a broker request, client email, chat, or MCP workflow."
+            }
           />
+        ) : mode === "client" ? (
+          <OperationalPanel as="div" data-applications-client-list>
+            {applicationRows.map((row) => (
+              <ApplicationListItem
+                key={row._id}
+                row={row}
+                onSelect={() => setSelectedId(row._id)}
+              />
+            ))}
+          </OperationalPanel>
         ) : (
           <>
             <OperationalPanel data-applications-mobile-list className="block sm:hidden">
-              {filteredRows.map((row) => (
+              {applicationRows.map((row) => (
                 <button
                   key={row._id}
                   type="button"
+                  data-application-id={row._id}
                   onClick={() => setSelectedId(row._id)}
                   className="flex w-full flex-col gap-3 border-t border-foreground/6 px-4 py-3 text-left first:border-t-0"
                 >
@@ -539,7 +1525,13 @@ export function ApplicationIntakePage({
                     <Badge variant={statusVariant(row.status)}>{STATUS_LABELS[row.status]}</Badge>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-base text-muted-foreground">
-                    <span className="min-w-0 truncate">{row.clientName ?? "Client"}</span>
+                    <OrgNameCell
+                      name={rowOwnerLabel(row, ownerLabelMode)}
+                      iconUrl={row.clientIconUrl}
+                      website={row.clientWebsite}
+                      fallback={ownerLabelMode === "broker" ? "Client" : "Workspace"}
+                      size="xs"
+                    />
                     <span className="shrink-0">
                       {row.normalizedAnswers.length} /{" "}
                       {row.normalizedAnswers.length + row.missingQuestions.length}
@@ -554,16 +1546,20 @@ export function ApplicationIntakePage({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Application</TableHead>
-                      <TableHead>Client</TableHead>
+                      <TableHead>{ownerLabelMode === "broker" ? "Client" : "Workspace"}</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Answers</TableHead>
                       <TableHead>Updated</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRows.map((row) => (
-                      <TableRow key={row._id} className="cursor-pointer" onClick={() => setSelectedId(row._id)}>
+                    {applicationRows.map((row) => (
+                      <TableRow
+                        key={row._id}
+                        data-application-id={row._id}
+                        className="cursor-pointer"
+                        onClick={() => setSelectedId(row._id)}
+                      >
                         <TableCell>
                           <div className="min-w-48">
                             <p className="font-medium text-foreground">{row.title}</p>
@@ -572,7 +1568,14 @@ export function ApplicationIntakePage({
                             </p>
                           </div>
                         </TableCell>
-                        <TableCell>{row.clientName ?? "Client"}</TableCell>
+                        <TableCell>
+                          <OrgNameCell
+                            name={rowOwnerLabel(row, ownerLabelMode)}
+                            iconUrl={row.clientIconUrl}
+                            website={row.clientWebsite}
+                            fallback={ownerLabelMode === "broker" ? "Client" : "Workspace"}
+                          />
+                        </TableCell>
                         <TableCell>
                           <Badge variant={statusVariant(row.status)}>{STATUS_LABELS[row.status]}</Badge>
                         </TableCell>
@@ -580,13 +1583,6 @@ export function ApplicationIntakePage({
                           {row.normalizedAnswers.length} / {row.normalizedAnswers.length + row.missingQuestions.length}
                         </TableCell>
                         <TableCell>{formatTime(row.updatedAt)}</TableCell>
-                        <TableCell className="text-right">
-                          {row.status === "broker_ready" ? (
-                            <PackageCheck className="ml-auto h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <FileCheck2 className="ml-auto h-4 w-4 text-muted-foreground" />
-                          )}
-                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

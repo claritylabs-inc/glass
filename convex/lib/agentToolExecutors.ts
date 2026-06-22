@@ -767,7 +767,7 @@ export function buildAgentToolExecutors(
         submissionNotes?: string;
       }) => {
         if (options.canWrite === false)
-          return writeUnavailable(options, "prepare an application packet");
+          return writeUnavailable(options, "prepare an application for review");
         const packet = await ctx.runMutation(
           internal.applicationIntakes.preparePacketFromAgent,
           {
@@ -778,8 +778,8 @@ export function buildAgentToolExecutors(
         );
         const output = {
           message: packet?.status === "broker_ready"
-            ? "Application packet is ready for broker review and carrier submission."
-            : "Application packet prepared, but required information is still missing.",
+            ? "Application is ready for broker review and carrier submission."
+            : "Application review prepared, but required information is still missing.",
           packetId: packet?._id,
           status: packet?.status,
           missingFieldIds: packet?.missingFieldIds,

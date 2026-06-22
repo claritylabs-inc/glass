@@ -8,6 +8,7 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - Prefer documenting current behavior over planned behavior.
 - Treat the Convex worktree as potentially dirty. Do not revert unrelated user changes.
 - Use `dayjs` for date parsing, formatting, comparisons, and timestamps in new or touched code instead of raw `Date.now()`, `Date.parse()`, or `new Date(...)`.
+- Use the shared `PillButton` primitive for pill-shaped action buttons across app surfaces, including primary, secondary, destructive, footer, and app-shell actions. When an action needs native link or download behavior, render `PillButton` with `href`, `target`, `rel`, or `download` instead of hand-rolling rounded anchor/button classes. Raw `<button>` elements are for non-pill structural controls such as row targets, tabs, menu triggers, and icon/navigation controls.
 
 ## Commands
 
