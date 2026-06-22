@@ -12,7 +12,14 @@ import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Clock3, Loader2, Plus, RotateCw, Trash2, X } from "lucide-react";
+import {
+  Clock3,
+  Loader2,
+  Plus,
+  RotateCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dayjs from "dayjs";
@@ -111,10 +118,12 @@ type PolicyVersionRow = {
   expirationDate?: string;
   policyNumber?: string;
   summary?: string;
-  fieldDiffs?: unknown[];
-  sourcePolicyFileIds?: Id<"policyFiles">[];
-  sourceFileIds?: Id<"_storage">[];
+  fieldDiffs?: PolicyVersionFieldDiff[];
   createdAt: number;
+};
+
+type PolicyVersionFieldDiff = {
+  fieldPath?: string;
 };
 
 const POLICY_VERSION_LABELS: Record<PolicyVersionRow["versionKind"], string> = {
@@ -123,6 +132,80 @@ const POLICY_VERSION_LABELS: Record<PolicyVersionRow["versionKind"], string> = {
   re_extraction: "Re-extraction",
   renewal: "Renewal",
 };
+
+const POLICY_VERSION_FIELD_LABEL_OVERRIDES: Record<string, string> = {
+  insuredDba: "Insured DBA",
+  mga: "Administrator",
+  isRenewal: "Renewal flag",
+  partnerOrgId: "Partner org",
+  partnerProgramId: "Partner program",
+};
+
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function changedFieldLabel(count: number) {
+  return count > 0 ? pluralize(count, "field change") : "No field changes";
+}
+
+function formatVersionDate(value: number) {
+  return dayjs(value).format("MMM D, YYYY h:mm A");
+}
+
+function formatPolicyTerm(version: PolicyVersionRow) {
+  if (version.effectiveDate && version.expirationDate) {
+    return `${version.effectiveDate} - ${version.expirationDate}`;
+  }
+  return version.effectiveDate ?? version.expirationDate ?? "Not recorded";
+}
+
+function meaningfulVersionSummary(version: PolicyVersionRow) {
+  const summary = version.summary?.trim();
+  if (!summary) return undefined;
+  if (
+    version.versionKind === "new_policy" &&
+    summary.startsWith("Initial policy - ")
+  ) {
+    return undefined;
+  }
+  return summary;
+}
+
+function formatFieldLabel(fieldPath: string) {
+  const knownLabel = POLICY_VERSION_FIELD_LABEL_OVERRIDES[fieldPath];
+  if (knownLabel) return knownLabel;
+  return fieldPath
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function changedFieldLabels(version: PolicyVersionRow) {
+  return (version.fieldDiffs ?? [])
+    .map((diff) => diff.fieldPath)
+    .filter((fieldPath): fieldPath is string => !!fieldPath)
+    .map(formatFieldLabel);
+}
+
+function HistoryDatum({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-label text-muted-foreground">{label}</p>
+      <p className="mt-0.5 min-w-0 break-words text-base leading-5 text-foreground">
+        {value}
+      </p>
+    </div>
+  );
+}
 
 function policyDataStage(policy: Record<string, unknown>) {
   const stage = policy.extractionDataStage;
@@ -178,56 +261,83 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
     );
   }
 
+  const currentPolicyNumber = versions[0]?.policyNumber;
+
   return (
     <OperationalPanel as="div">
-      <OperationalPanelHeader
-        title="Policy history"
-        description="Document-event versions for this policy. Current policy answers use the latest version by default."
-      />
       {versions.map((version, index) => {
-        const diffCount = version.fieldDiffs?.length ?? 0;
-        const sourceFileCount =
-          (version.sourcePolicyFileIds?.length ?? 0) +
-          (version.sourceFileIds?.length ?? 0);
-        const dateRange = [version.effectiveDate, version.expirationDate]
-          .filter(Boolean)
-          .join(" - ");
+        const fields = changedFieldLabels(version);
+        const diffCount = fields.length;
+        const summary = meaningfulVersionSummary(version);
+        const showChangeCount =
+          diffCount > 0 || version.versionKind !== "new_policy";
+        const showEventKind = version.versionKind !== "new_policy";
+        const showPolicyNumber =
+          !!version.policyNumber &&
+          versions.length > 1 &&
+          version.policyNumber !== currentPolicyNumber;
         return (
-          <OperationalItem key={version._id}>
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-base font-medium text-foreground">
-                    Version {version.versionNumber}
-                  </p>
-                  {index === 0 ? (
-                    <Badge variant="secondary">Current</Badge>
-                  ) : null}
-                  <Badge variant="outline">
+          <OperationalItem key={version._id} className="py-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <h3 className="text-base font-medium text-foreground">
+                  Version {version.versionNumber}
+                </h3>
+                {showEventKind ? (
+                  <span className="text-base text-muted-foreground">
                     {POLICY_VERSION_LABELS[version.versionKind]}
+                  </span>
+                ) : null}
+                {index === 0 ? (
+                  <Badge variant="secondary" className="text-label">
+                    Current
                   </Badge>
-                </div>
-                <p className="mt-1 text-base text-muted-foreground">
-                  {version.summary ?? "No summary recorded"}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2 text-label text-muted-foreground">
-                  <span>
-                    {dayjs(version.createdAt).format("MMM D, YYYY h:mm A")}
-                  </span>
-                  {dateRange ? <span>{dateRange}</span> : null}
-                  {version.policyNumber ? (
-                    <span>{version.policyNumber}</span>
-                  ) : null}
-                  <span>
-                    {diffCount === 1
-                      ? "1 changed field"
-                      : `${diffCount} changed fields`}
-                  </span>
-                  {sourceFileCount > 0 ? (
-                    <span>{sourceFileCount} source files</span>
-                  ) : null}
-                </div>
+                ) : null}
+                <span className="text-label text-muted-foreground sm:ml-auto">
+                  {formatVersionDate(version.createdAt)}
+                </span>
               </div>
+              {summary ? (
+                <p className="mt-1 max-w-4xl text-base leading-5 text-foreground">
+                  {summary}
+                </p>
+              ) : null}
+              <div className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.8fr)]">
+                {showPolicyNumber ? (
+                  <HistoryDatum
+                    label="Policy number"
+                    value={version.policyNumber}
+                  />
+                ) : null}
+                <HistoryDatum label="Term" value={formatPolicyTerm(version)} />
+                {showChangeCount ? (
+                  <HistoryDatum
+                    label="Changes"
+                    value={changedFieldLabel(diffCount)}
+                  />
+                ) : null}
+              </div>
+              {fields.length > 0 ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-label text-muted-foreground">
+                    Changed
+                  </span>
+                  {fields.slice(0, 5).map((field) => (
+                    <Badge
+                      key={`${version._id}-${field}`}
+                      variant="ghost"
+                      className="text-label text-muted-foreground"
+                    >
+                      {field}
+                    </Badge>
+                  ))}
+                  {fields.length > 5 ? (
+                    <span className="text-label text-muted-foreground">
+                      +{fields.length - 5} more
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </OperationalItem>
         );
