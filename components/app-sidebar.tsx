@@ -451,32 +451,27 @@ export function AppSidebar({
 
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div
-          className={`shrink-0 border-b text-amber-950 dark:text-amber-100 ${
-            contentCollapsed
-              ? "flex h-12 items-center justify-center border-foreground/6 bg-amber-100 dark:bg-amber-400/10"
-              : "border-amber-300/70 bg-amber-100 px-2 py-2 dark:border-amber-400/25 dark:bg-amber-400/10"
-          }`}
-        >
+        <div className="min-h-0 flex-1">{baseContent}</div>
+        <div className="shrink-0 border-t border-foreground/6 bg-muted/30 px-2 py-2 text-foreground">
           {contentCollapsed ? (
             <button
               type="button"
               onClick={async () => {
                 await stopOperatorImpersonation();
               }}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-amber-950 transition-colors hover:bg-amber-200 dark:text-amber-100 dark:hover:bg-amber-300/20"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               title={`Stop viewing ${impersonation?.targetOrgName ?? "organization"}`}
               aria-label="Stop operator mode"
             >
-              <LogoIcon size={17} static />
+              <LogoIcon size={16} static />
             </button>
           ) : (
-            <div className="space-y-3">
-              <div className="flex flex-row gap-3 items-center pl-2">
-                <LogoIcon static />
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-1">
+                <LogoIcon size={18} static />
                 <div className="min-w-0">
                   <p className="truncate text-base font-medium">Operator mode</p>
-                  <p className="mt-0.5 truncate text-label text-amber-950/70 dark:text-amber-100/65">
+                  <p className="mt-0.5 truncate text-label text-muted-foreground">
                     {operatorContext?.user?.email}
                   </p>
                 </div>
@@ -495,7 +490,6 @@ export function AppSidebar({
             </div>
           )}
         </div>
-        <div className="min-h-0 flex-1">{baseContent}</div>
       </div>
     );
   }
@@ -508,11 +502,7 @@ export function AppSidebar({
       <aside
         className={`hidden lg:flex flex-col shrink-0 h-full border-r sidebar-transition ${
           collapsed ? "w-14" : "w-[220px]"
-        } ${
-          isOperatorImpersonating
-            ? "border-amber-300/70 bg-amber-50 dark:border-amber-400/25 dark:bg-background"
-            : "border-foreground/6 bg-background"
-        }`}
+        } border-foreground/6 bg-background`}
       >
         {activeContent}
       </aside>
@@ -544,11 +534,7 @@ export function AppSidebar({
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
-              className={`fixed left-0 top-0 bottom-0 w-[260px] z-50 border-r lg:hidden ${
-                isOperatorImpersonating
-                  ? "border-amber-300/70 bg-amber-50 dark:border-amber-400/25 dark:bg-background"
-                  : "border-foreground/6 bg-background"
-              }`}
+              className="fixed left-0 top-0 bottom-0 w-[260px] z-50 border-r border-foreground/6 bg-background lg:hidden"
             >
               {mobileActiveContent}
             </motion.aside>
