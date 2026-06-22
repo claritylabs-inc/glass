@@ -160,15 +160,11 @@ export default function OperatorClientsPage() {
     api.operator.checkUserPhoneAvailability,
     createShouldCheckPhone ? { phone: debouncedAdminPhone } : "skip",
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createClient = useAction((api as any).operator.createSoloClient);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const launchClient = useAction((api as any).operator.launchSoloClient);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setClientStatus = useMutation((api as any).operator.setSoloClientStatus);
+  const createClient = useAction(api.operator.createSoloClient);
+  const launchClient = useAction(api.operator.launchSoloClient);
+  const setClientStatus = useMutation(api.operator.setSoloClientStatus);
   const updateClientSettings = useMutation(api.operator.updateClientSettings);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const startImpersonation = useMutation((api as any).operator.startImpersonation);
+  const startImpersonation = useMutation(api.operator.startImpersonation);
   const stopOperatorImpersonation = useStopOperatorImpersonation();
 
   const selected = useMemo(

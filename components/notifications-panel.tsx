@@ -119,8 +119,6 @@ export function NotificationsPanel({
   onMergeSuggestion,
   variant = "popover",
 }: NotificationsPanelProps) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const _api = api as any;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"unread" | "read">("unread");
   const unreadNotifications = useCachedNotifications(orgId, "unread") as
@@ -132,8 +130,8 @@ export function NotificationsPanel({
   const actionedNotifications = useCachedNotifications(orgId, "actioned") as
     | (Notification & { relatedOrgName?: string })[]
     | undefined;
-  const markRead = useMutation(_api.notifications.markRead);
-  const markAllRead = useMutation(_api.notifications.markAllRead);
+  const markRead = useMutation(api.notifications.markRead);
+  const markAllRead = useMutation(api.notifications.markAllRead);
   const { markReadLocally } = useNotificationCacheActions(orgId);
   const panelRef = useRef<HTMLDivElement>(null);
 

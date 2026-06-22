@@ -17,8 +17,7 @@ export function OperatorImpersonationBanner() {
   const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
   const operatorContext = useCachedQuery(
     "operator.current.banner",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.current,
+    api.operator.current,
     viewer?.accountKind === "operator" ? {} : "skip",
   ) as OperatorImpersonationContext | undefined;
   const stopOperatorImpersonation = useStopOperatorImpersonation();

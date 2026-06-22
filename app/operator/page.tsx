@@ -123,8 +123,7 @@ export default function OperatorPage() {
   const brokers = useCachedOperatorBrokers() as BrokerRow[] | undefined;
   const { seedBroker, patchBrokerStatus, patchBrokerSettings } = useOperatorBrokerCacheActions();
   const identifierCheck = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.checkBrokerSetupIdentifiers,
+    api.operator.checkBrokerSetupIdentifiers,
     slug || agentHandle
       ? {
           slug: debouncedSlug || undefined,
@@ -132,15 +131,11 @@ export default function OperatorPage() {
         }
       : "skip",
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createBroker = useAction((api as any).operator.createBroker);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const launchBroker = useAction((api as any).operator.launchBroker);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setBrokerStatus = useMutation((api as any).operator.setBrokerStatus);
+  const createBroker = useAction(api.operator.createBroker);
+  const launchBroker = useAction(api.operator.launchBroker);
+  const setBrokerStatus = useMutation(api.operator.setBrokerStatus);
   const updateBrokerSettings = useMutation(api.operator.updateBrokerSettings);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const startImpersonation = useMutation((api as any).operator.startImpersonation);
+  const startImpersonation = useMutation(api.operator.startImpersonation);
   const stopOperatorImpersonation = useStopOperatorImpersonation();
 
   const selected = useMemo(

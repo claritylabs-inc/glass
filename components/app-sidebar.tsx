@@ -115,8 +115,7 @@ export function AppSidebar({
   >("threads.get.current");
   const clientThreads = useCachedQuery(
     "threads.listForClient.sidebar",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).threads.listForClient,
+    api.threads.listForClient,
     clientDetailId
       ? { clientOrgId: clientDetailId as Id<"organizations">, archived: false }
       : "skip",
@@ -188,8 +187,7 @@ export function AppSidebar({
   }>({ open: false, primaryPolicyId: "", secondaryPolicyId: "" });
   const unreadCount = useCachedQuery(
     "notifications.unreadCount.sidebar",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).notifications.unreadCount,
+    api.notifications.unreadCount,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as number | undefined;
   const conversations = useMemo(() => {

@@ -63,14 +63,10 @@ export default function OperatorMGAsPage() {
   const current = useCachedOperatorCurrent();
   const mgas = useCachedOperatorMGAs() as MGARow[] | undefined;
   const { seedMGA, patchMGAStatus } = useOperatorMGACacheActions();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createMGA = useAction((api as any).operator.createMGA);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const launchMGA = useAction((api as any).operator.launchMGA);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setMGAStatus = useMutation((api as any).operator.setMGAStatus);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const startImpersonation = useMutation((api as any).operator.startImpersonation);
+  const createMGA = useAction(api.operator.createMGA);
+  const launchMGA = useAction(api.operator.launchMGA);
+  const setMGAStatus = useMutation(api.operator.setMGAStatus);
+  const startImpersonation = useMutation(api.operator.startImpersonation);
   const stopOperatorImpersonation = useStopOperatorImpersonation();
 
   const selected = useMemo(

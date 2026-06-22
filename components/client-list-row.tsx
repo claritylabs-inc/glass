@@ -76,10 +76,8 @@ const STATUS_VARIANTS: Record<string, "secondary" | "outline" | "default"> = {
 };
 
 export function ClientListRow({ row }: { row: ClientRow }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const revokeInvite = useMutation((api as any).clientInvitations.revoke);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const deleteDraft = useMutation((api as any).clientInvitations.deleteDraftClient);
+  const revokeInvite = useMutation(api.clientInvitations.revoke);
+  const deleteDraft = useMutation(api.clientInvitations.deleteDraftClient);
   const updateBrokerClients = useUpdateCachedQuery<
     Array<{
       invitationId?: Id<"clientInvitations">;
