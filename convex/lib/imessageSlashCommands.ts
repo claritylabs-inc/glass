@@ -1,6 +1,7 @@
 import type { ActionCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
+import type { AgentScope } from "./agentScope";
 import {
   parseTextChannelCommand,
   TEXT_CHANNEL_COMMAND_HELP,
@@ -23,6 +24,14 @@ export type ImessageSlashCommandResult = {
   leaveGroup?: boolean;
 };
 
+type KnownTextChannelCommand = Extract<
+  ParsedTextChannelCommand,
+  { kind: "known" }
+>;
+
+export const IMESSAGE_LINKED_SENDER_REQUIRED =
+  "Only a linked Glass user in this chat can do that.";
+
 function truncate(text: string | undefined, max: number) {
   const value = (text ?? "").replace(/\s+/g, " ").trim();
   if (value.length <= max) return value;
@@ -31,6 +40,10 @@ function truncate(text: string | undefined, max: number) {
 
 function plural(count: number, singular: string, pluralText = `${singular}s`) {
   return count === 1 ? `1 ${singular}` : `${count} ${pluralText}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
 }
 
 function formatDrafts(
@@ -138,14 +151,20 @@ function latestWorkflowSummary(history: ImessageCommandHistoryMessage[]) {
   for (const message of [...history].reverse()) {
     for (const artifact of [...(message.toolArtifacts ?? [])].reverse()) {
       if (artifact.type !== "workflow_outcome") continue;
-      const data = artifact.data as Record<string, unknown> | null;
-      if (!data || typeof data !== "object") continue;
-      const comms = data.comms as Record<string, unknown> | undefined;
+      if (!isRecord(artifact.data)) continue;
+      const comms = isRecord(artifact.data.comms)
+        ? artifact.data.comms
+        : undefined;
       const headline =
         typeof comms?.headline === "string" ? comms.headline : undefined;
       const workflowKind =
-        typeof data.workflowKind === "string" ? data.workflowKind : "workflow";
-      const status = typeof data.status === "string" ? data.status : undefined;
+        typeof artifact.data.workflowKind === "string"
+          ? artifact.data.workflowKind
+          : "workflow";
+      const status =
+        typeof artifact.data.status === "string"
+          ? artifact.data.status
+          : undefined;
       return (
         headline ??
         `${workflowKind.replace(/_/g, " ")} ${status ?? ""}`.trim()
@@ -181,7 +200,7 @@ function whoamiText(args: {
   userEmail?: string;
   orgName: string;
   isGroup: boolean;
-  scopeMode: string;
+  scopeMode: AgentScope["mode"];
 }) {
   const identity = args.userName || args.userEmail || "your linked Glass user";
   const chatKind = args.isGroup ? "group chat" : "direct chat";
@@ -190,15 +209,19 @@ function whoamiText(args: {
   return `${identity}. Org: ${args.orgName}. Chat: ${chatKind}. Scope: ${scope}.`;
 }
 
+function requiresLinkedSender(command: KnownTextChannelCommand) {
+  return command.name !== "help";
+}
+
 async function runKnownCommand(
   ctx: ActionCtx,
-  command: Extract<ParsedTextChannelCommand, { kind: "known" }>,
+  command: KnownTextChannelCommand,
   args: {
     orgName: string;
     userName?: string;
     userEmail?: string;
     isGroup: boolean;
-    scopeMode: string;
+    scopeMode: AgentScope["mode"];
     draftEmails: PendingEmailForCommand[];
     pendingEmails: PendingEmailForCommand[];
     history: ImessageCommandHistoryMessage[];
@@ -254,7 +277,8 @@ export async function runImessageSlashCommand(
     userName?: string;
     userEmail?: string;
     isGroup: boolean;
-    scopeMode: string;
+    scopeMode: AgentScope["mode"];
+    currentSenderIsLinked: boolean;
     draftEmails: PendingEmailForCommand[];
     pendingEmails: PendingEmailForCommand[];
     history: ImessageCommandHistoryMessage[];
@@ -269,5 +293,9 @@ export async function runImessageSlashCommand(
     };
   }
 
-  return await runKnownCommand(ctx, command, args);
+  if (requiresLinkedSender(command) && !args.currentSenderIsLinked) {
+    return { response: IMESSAGE_LINKED_SENDER_REQUIRED };
+  }
+
+  return runKnownCommand(ctx, command, args);
 }

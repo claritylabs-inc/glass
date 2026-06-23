@@ -2,12 +2,40 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  IMESSAGE_LINKED_SENDER_REQUIRED,
+  runImessageSlashCommand,
+} from "../convex/lib/imessageSlashCommands";
+import type { Id } from "../convex/_generated/dataModel";
+import {
   parseTextChannelCommand,
   TEXT_CHANNEL_COMMAND_HELP,
 } from "../convex/lib/textChannelCommands";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
+const commandCtx = {} as Parameters<typeof runImessageSlashCommand>[0];
+
+async function runCommand(messageText: string, currentSenderIsLinked: boolean) {
+  const args: Parameters<typeof runImessageSlashCommand>[1] = {
+    messageText,
+    orgName: "Acme Co",
+    userName: "Linked User",
+    userEmail: "linked@example.com",
+    isGroup: true,
+    scopeMode: "client",
+    currentSenderIsLinked,
+    draftEmails: [
+      {
+        _id: "draft-1" as Id<"pendingEmails">,
+        recipientEmail: "broker@example.com",
+        subject: "Sensitive renewal",
+      },
+    ],
+    pendingEmails: [],
+    history: [],
+  };
+  return runImessageSlashCommand(commandCtx, args);
+}
 
 describe("text channel slash commands", () => {
   it("parses the deterministic iMessage command set and aliases", () => {
@@ -63,6 +91,24 @@ describe("text channel slash commands", () => {
     }
   });
 
+  it("does not let anonymous group participants use tenant-scoped slash commands", async () => {
+    await expect(runCommand("/help", false)).resolves.toMatchObject({
+      response: TEXT_CHANNEL_COMMAND_HELP,
+    });
+    await expect(runCommand("/drafts", false)).resolves.toMatchObject({
+      response: IMESSAGE_LINKED_SENDER_REQUIRED,
+    });
+    await expect(runCommand("/whoami", false)).resolves.toMatchObject({
+      response: IMESSAGE_LINKED_SENDER_REQUIRED,
+    });
+  });
+
+  it("allows linked senders to inspect their slash command state", async () => {
+    const result = await runCommand("/whoami", true);
+    expect(result?.response).toContain("Linked User");
+    expect(result?.response).toContain("Acme Co");
+  });
+
   it("routes slash commands before natural-language controls and model generation", () => {
     const inbound = read("convex/actions/handleInboundImessage.ts");
     const executor = read("convex/lib/imessageSlashCommands.ts");
@@ -76,6 +122,15 @@ describe("text channel slash commands", () => {
     expect(slashGate).toBeLessThan(inbound.indexOf("const taskControlIntent"));
     expect(slashGate).toBeLessThan(inbound.indexOf("generateText({"));
     expect(inbound).toContain("internal.imessageChats.markLeft");
+    expect(inbound).toContain("currentSenderIsLinked,");
+    const emailControlBlock = inbound.slice(
+      inbound.indexOf("currentSenderIsLinked &&\n        latestCancelledEmail"),
+      inbound.indexOf("const taskControlIntent"),
+    );
+    expect(
+      emailControlBlock.match(/currentSenderIsLinked &&/g),
+    ).toHaveLength(7);
+    expect(executor).toContain("requiresLinkedSender");
     expect(executor).toContain("sendDraftInternal");
     expect(executor).toContain("cancelInternal");
     expect(executor).toContain("Unknown command");

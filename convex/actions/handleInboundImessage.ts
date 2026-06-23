@@ -646,12 +646,16 @@ export const processInbound = internalAction({
       // ── 5. Fetch org context ──────────────────────────────────────────────
       const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
       if (!org) return await finish("Unable to find your account.");
-      const agentScope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
-        orgId,
-        userId: user._id,
-        surface: "imessage",
-        allowBrokerPortfolio: org.type === "broker" && scope.kind === "single_org",
-      })) as AgentScope;
+      const agentScope = (await ctx.runQuery(
+        internal.lib.agentScope.resolveForAction,
+        {
+          orgId,
+          userId: user._id,
+          surface: "imessage",
+          allowBrokerPortfolio:
+            org.type === "broker" && scope.kind === "single_org",
+        },
+      )) as AgentScope;
       const readOrgIds = agentScope.mode === "broker_portfolio" ? agentScope.readOrgIds : scope.orgIds;
       const scopedOrgs = await Promise.all(
         readOrgIds.map((scopedOrgId) =>
@@ -787,6 +791,7 @@ export const processInbound = internalAction({
         userEmail: user.email,
         isGroup,
         scopeMode: agentScope.mode,
+        currentSenderIsLinked,
         draftEmails,
         pendingEmails,
         history: historyForContext,
@@ -808,6 +813,7 @@ export const processInbound = internalAction({
       }
 
       if (
+        currentSenderIsLinked &&
         latestCancelledEmail &&
         shortText &&
         isPendingEmailRestoreIntent(args.messageText)
@@ -824,6 +830,7 @@ export const processInbound = internalAction({
       }
 
       if (
+        currentSenderIsLinked &&
         draftEmails.length > 0 &&
         shortText &&
         isCancelConfirmationContext &&
@@ -843,13 +850,19 @@ export const processInbound = internalAction({
         );
       }
 
-      if (draftEmails.length > 0 && shortText && isPendingEmailCancelIntent(args.messageText)) {
+      if (
+        currentSenderIsLinked &&
+        draftEmails.length > 0 &&
+        shortText &&
+        isPendingEmailCancelIntent(args.messageText)
+      ) {
         return await replyWithEmailCancelStatus(
           pendingEmailCancelConfirmationMessage("draft", draftEmails.length),
         );
       }
 
       if (
+        currentSenderIsLinked &&
         draftEmails.length > 0 &&
         shortText &&
         isShowMoreEmailDraftIntent(args.messageText)
@@ -863,6 +876,7 @@ export const processInbound = internalAction({
       }
 
       if (
+        currentSenderIsLinked &&
         draftEmails.length > 0 &&
         shortText &&
         isSendAllEmailDraftsIntent(args.messageText)
@@ -891,6 +905,7 @@ export const processInbound = internalAction({
       }
 
       if (
+        currentSenderIsLinked &&
         pendingEmails.length > 0 &&
         shortText &&
         isCancelConfirmationContext &&
@@ -911,6 +926,7 @@ export const processInbound = internalAction({
       }
 
       if (
+        currentSenderIsLinked &&
         pendingEmails.length > 0 &&
         shortText &&
         isPendingEmailCancelIntent(args.messageText)
