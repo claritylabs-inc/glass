@@ -2,9 +2,10 @@
 
 import { createHash } from "node:crypto";
 import { v } from "convex/values";
-import { internalAction } from "../_generated/server";
+import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, stepCountIs, type ModelMessage } from "ai";
+import { generateObject, generateText, stepCountIs, type ModelMessage } from "ai";
+import { z } from "zod";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import { haikuModel } from "../lib/ai";
 import {
@@ -243,12 +244,32 @@ const POLICY_DETAIL_RESPONSE_FIELD_PATTERNS = [
   /\bpremium\s*:/i,
 ];
 
+const PolicyAppCardDecisionSchema = z.object({
+  shouldCreate: z.boolean(),
+  confidence: z.number().min(0).max(1),
+});
+
 function looksLikePolicyDetailsResponse(text: string): boolean {
   let matchedFields = 0;
   for (const pattern of POLICY_DETAIL_RESPONSE_FIELD_PATTERNS) {
     if (pattern.test(text)) matchedFields++;
   }
   return matchedFields >= 2;
+}
+
+function looksLikePolicyInventoryResponse(text: string): boolean {
+  const normalized = normalizeStatusCueText(text);
+  const hasInventoryLanguage =
+    /\b(active\s+)?polic(?:y|ies)\b/.test(normalized) &&
+    /\b(on file|have|found|active|effective|expires?|expiration)\b/.test(normalized);
+  const hasPolicyIdentifier =
+    /\bpolicy\s+(?:number\s+)?[a-z0-9][a-z0-9-]{5,}\b/i.test(text) ||
+    /\b[A-Z]{2,}[A-Z0-9]*-[A-Z0-9-]{6,}\b/.test(text);
+  const hasPolicyPeriod =
+    /\b\d{1,2}\/\d{1,2}\/\d{2,4}\s+(?:to|-|through)\s+\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(
+      text,
+    );
+  return hasInventoryLanguage && (hasPolicyIdentifier || hasPolicyPeriod);
 }
 
 export function shouldCreatePolicyDetailsAppCard(params: {
@@ -272,7 +293,7 @@ export function shouldCreatePolicyDetailsAppCard(params: {
   if (explicitPolicyLinkRequest) return true;
 
   const policyReference =
-    /\b(policy|coverage|coverages|carrier|insured|limit|limits|deductible|premium|expiration|effective|period)\b/.test(
+    /\b(policy|policies|coverage|coverages|carrier|insured|limit|limits|deductible|premium|expiration|effective|period)\b/.test(
       normalizedRequest,
     ) || /\b(that|this|the)\s+(one|record)\b/.test(normalizedRequest);
   const detailIntent =
@@ -283,8 +304,59 @@ export function shouldCreatePolicyDetailsAppCard(params: {
   return (
     policyReference &&
     detailIntent &&
-    looksLikePolicyDetailsResponse(responseText)
+    (looksLikePolicyDetailsResponse(responseText) ||
+      looksLikePolicyInventoryResponse(responseText))
   );
+}
+
+async function decidePolicyAppCardCreation(
+  ctx: ActionCtx,
+  params: {
+    orgId: Id<"organizations">;
+    messageText: string;
+    responseText: string;
+    usedTools: string[];
+    candidatePolicyCount: number;
+  },
+): Promise<boolean> {
+  if (!params.responseText.trim()) return false;
+
+  const fallback = () =>
+    shouldCreatePolicyDetailsAppCard({
+      messageText: params.messageText,
+      responseText: params.responseText,
+      usedTools: params.usedTools,
+    });
+
+  try {
+    const result = await generateObject({
+      model: await getModelForOrg(ctx, params.orgId, "classification"),
+      providerOptions: getProviderOptionsForTask("classification"),
+      schema: PolicyAppCardDecisionSchema,
+      maxOutputTokens: 160,
+      system: `Decide whether this Glass iMessage response should include app-card links to candidate policy records.
+
+Return shouldCreate true when the response discusses real policy records in a way the user would plausibly open: inventories, lists, summaries, details, coverage, dates, carrier, insured, limits, deductibles, premium, or policy lookup/comparison results.
+Return false for command acknowledgements, greetings, errors, clarification questions, email draft status, or unrelated conversation.
+If unsure, set confidence below 0.55. Return only the structured object.`,
+      prompt: JSON.stringify({
+        userMessage: params.messageText.slice(0, 1200),
+        assistantResponse: params.responseText.slice(0, 1800),
+        usedTools: params.usedTools.slice(0, 12),
+        candidatePolicyCount: params.candidatePolicyCount,
+      }),
+    });
+
+    if (result.object.confidence >= 0.55) {
+      return result.object.shouldCreate;
+    }
+    return fallback();
+  } catch (err) {
+    console.warn("[imessage] Policy app-card model decision failed:", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return fallback();
+  }
 }
 
 function serializeToolAuditValue(value: unknown): string | undefined {
@@ -1545,14 +1617,17 @@ export const processInbound = internalAction({
         }
       };
 
-      if (
-        relevantPolicyIds.length > 0 &&
-        shouldCreatePolicyDetailsAppCard({
-          messageText: args.messageText,
-          responseText,
-          usedTools,
-        })
-      ) {
+      const shouldCreatePolicyAppCards =
+        relevantPolicyIds.length > 0
+          ? await decidePolicyAppCardCreation(ctx, {
+              orgId,
+              messageText: args.messageText,
+              responseText,
+              usedTools,
+              candidatePolicyCount: relevantPolicyIds.length,
+            })
+          : false;
+      if (shouldCreatePolicyAppCards) {
         for (const policyId of relevantPolicyIds.slice(0, 3)) {
           await addAppCard(
             `policy:${policyId}`,
