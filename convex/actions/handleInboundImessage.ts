@@ -59,6 +59,7 @@ import {
 } from "../lib/emailCancelIntent";
 import { resolveTaskControlIntent } from "../lib/taskControlDecision";
 import { taskControlResponse } from "../lib/taskControlIntent";
+import { runImessageSlashCommand } from "../lib/imessageSlashCommands";
 import {
   buildEmailDraftTextSummary,
   isSendAllEmailDraftsIntent,
@@ -759,7 +760,7 @@ export const processInbound = internalAction({
       const pendingEmails = await ctx.runQuery(
         internal.pendingEmails.findPendingByThread,
         { threadId },
-      ) as Array<{ _id: Id<"pendingEmails"> }>;
+      ) as Array<Doc<"pendingEmails">>;
       const latestCancelledEmail = await ctx.runQuery(
         internal.pendingEmails.findLatestCancelledByThread,
         { threadId, orgId },
@@ -778,6 +779,33 @@ export const processInbound = internalAction({
         });
         return await finish(response);
       };
+
+      const slashCommandResult = await runImessageSlashCommand(ctx, {
+        messageText: args.messageText,
+        orgName: org.name,
+        userName: user.name,
+        userEmail: user.email,
+        isGroup,
+        scopeMode: agentScope.mode,
+        draftEmails,
+        pendingEmails,
+        history: historyForContext,
+      });
+      if (slashCommandResult) {
+        await ctx.runMutation(internal.threads.insertImessageMessage, {
+          threadId,
+          orgId,
+          role: "agent",
+          content: slashCommandResult.response,
+          responseMessageId: `${eventKey}:response`,
+        });
+        if (slashCommandResult.leaveGroup && isGroup) {
+          await ctx.runMutation(internal.imessageChats.markLeft, { chatGuid });
+        }
+        return await finish(slashCommandResult.response, undefined, {
+          leaveGroup: slashCommandResult.leaveGroup,
+        });
+      }
 
       if (
         latestCancelledEmail &&
