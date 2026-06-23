@@ -46,7 +46,7 @@ describe("policy preview extraction", () => {
       "convex/lib/agentToolExecutors.ts",
       "convex/lib/policyToolResolution.ts",
       "convex/actions/handleInboundEmail.ts",
-      "convex/actions/handleInboundImessage.ts",
+      "convex/lib/imessageAgentContext.ts",
       "convex/actions/mcpChat.ts",
       "convex/http.ts",
       "convex/lib/vendorComplianceTools.ts",

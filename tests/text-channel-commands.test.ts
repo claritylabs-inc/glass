@@ -123,25 +123,34 @@ describe("text channel slash commands", () => {
 
   it("routes slash commands before natural-language controls and model generation", () => {
     const inbound = read("convex/actions/handleInboundImessage.ts");
+    const controls = read("convex/lib/imessageDeterministicControls.ts");
     const executor = read("convex/lib/imessageSlashCommands.ts");
-    const slashGate = inbound.indexOf("const slashCommandResult");
+    const deterministicGate = inbound.indexOf(
+      "const deterministicControlResult",
+    );
+    const slashGate = controls.indexOf("const slashCommandResult");
+    const emailControlGate = controls.indexOf("const emailControl =");
+    const taskControlGate = controls.indexOf("const taskControlIntent");
 
-    expect(inbound).toContain("runImessageSlashCommand");
+    expect(inbound).toContain("runImessageDeterministicControls");
+    expect(deterministicGate).toBeGreaterThan(-1);
+    expect(deterministicGate).toBeLessThan(inbound.indexOf("generateText({"));
+    expect(controls).toContain("runImessageSlashCommand");
     expect(slashGate).toBeGreaterThan(-1);
-    expect(slashGate).toBeLessThan(
-      inbound.indexOf("isPendingEmailRestoreIntent(args.messageText)"),
+    expect(emailControlGate).toBeGreaterThan(-1);
+    expect(slashGate).toBeLessThan(emailControlGate);
+    expect(taskControlGate).toBeGreaterThan(-1);
+    expect(emailControlGate).toBeLessThan(taskControlGate);
+    expect(controls).toContain("internal.imessageChats.markLeft");
+    expect(controls).toContain("currentSenderIsLinked,");
+    const emailControlBlock = controls.slice(
+      emailControlGate,
+      taskControlGate,
     );
-    expect(slashGate).toBeLessThan(inbound.indexOf("const taskControlIntent"));
-    expect(slashGate).toBeLessThan(inbound.indexOf("generateText({"));
-    expect(inbound).toContain("internal.imessageChats.markLeft");
-    expect(inbound).toContain("currentSenderIsLinked,");
-    const emailControlBlock = inbound.slice(
-      inbound.indexOf("currentSenderIsLinked &&\n        latestCancelledEmail"),
-      inbound.indexOf("const taskControlIntent"),
-    );
-    expect(
-      emailControlBlock.match(/currentSenderIsLinked &&/g),
-    ).toHaveLength(7);
+    expect(emailControlBlock).toContain("resolveTextChannelEmailControl");
+    expect(emailControlBlock).toContain("restoreAsDraftInternal");
+    expect(emailControlBlock).toContain("sendDraftInternal");
+    expect(emailControlBlock).toContain("cancelInternal");
     expect(executor).toContain("requiresLinkedSender");
     expect(executor).toContain("sendDraftInternal");
     expect(executor).toContain("cancelInternal");

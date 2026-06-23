@@ -73,6 +73,7 @@ describe("centralized agent tool execution", () => {
 
   it("does not use canned iMessage status cues and avoids internal ID copy", () => {
     const inbound = read("convex/actions/handleInboundImessage.ts");
+    const postProcessing = read("convex/lib/imessageResponsePostProcessing.ts");
     const internalIdGuardBlock = inbound.slice(
       inbound.indexOf("if (asksForInternalPolicyRecordId(responseText))"),
       inbound.indexOf("// ── 15. Resolve response attachment URLs"),
@@ -81,8 +82,9 @@ describe("centralized agent tool execution", () => {
     expect(inbound).not.toContain("function generateImessageStatusCue");
     expect(inbound).not.toContain("I'll check the policy");
     expect(inbound).not.toContain("I'll check the attachment");
-    expect(inbound).toContain("usedTools.includes(\"generate_coi\")");
-    expect(inbound).toContain("I haven't generated that COI yet");
+    expect(inbound).toContain("postProcessImessageResponseText");
+    expect(postProcessing).toContain("usedTools.includes(\"generate_coi\")");
+    expect(postProcessing).toContain("I haven't generated that COI yet");
     expect(internalIdGuardBlock).not.toMatch(/internal policy|policy record ID|string of characters/i);
   });
 });

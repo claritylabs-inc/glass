@@ -89,18 +89,26 @@ describe("task control intent", () => {
 
   it("runs before stale COI context can trigger COI guard rewrites", () => {
     const imessage = read("convex/actions/handleInboundImessage.ts");
+    const imessageControls = read("convex/lib/imessageDeterministicControls.ts");
     const webChat = read("convex/actions/processThreadChat.ts");
+    const webChatControls = read("convex/lib/webChatDeterministicControls.ts");
     const decision = read("convex/lib/taskControlDecision.ts");
 
     expect(decision).toContain("generateObject");
     expect(decision).toContain("rankTaskControlCandidates");
     expect(decision).toContain("shouldAskConfirmation");
-    expect(imessage.indexOf("resolveTaskControlIntent")).toBeGreaterThan(-1);
-    expect(imessage.indexOf("const taskControlIntent")).toBeLessThan(
-      imessage.indexOf("hasCoiRequestIntent(args.messageText"),
+    expect(imessageControls).toContain("resolveTaskControlIntent");
+    const imessageControlCall = imessage.indexOf(
+      "const deterministicControlResult = await runImessageDeterministicControls",
     );
-    expect(webChat.indexOf("resolveTaskControlIntent")).toBeGreaterThan(-1);
-    expect(webChat.indexOf("const taskControlIntent")).toBeLessThan(
+    expect(imessageControlCall).toBeGreaterThan(-1);
+    expect(imessageControlCall).toBeLessThan(
+      imessage.indexOf("buildImessageKnowledgeContext(ctx"),
+    );
+    expect(webChatControls).toContain("resolveTaskControlIntent");
+    const webTaskControlCall = webChat.indexOf("await runWebChatTaskControl(ctx");
+    expect(webTaskControlCall).toBeGreaterThan(-1);
+    expect(webTaskControlCall).toBeLessThan(
       webChat.indexOf("hasCoiEmailIntent(latestUserContent"),
     );
   });

@@ -3,7 +3,6 @@ import {
   Spectrum,
   app as appCard,
   attachment,
-  type ContentInput,
   type Message,
   type Space,
   type SpectrumInstance,
@@ -16,6 +15,26 @@ import {
   type ImessageAppCard,
   type ImessageResponseAttachment,
 } from "./convex.js";
+
+type MiniAppLayout = {
+  caption?: string;
+  subcaption?: string;
+  trailingCaption?: string;
+  trailingSubcaption?: string;
+  image?: Uint8Array;
+  imageTitle?: string;
+  imageSubtitle?: string;
+  summary?: string;
+};
+
+type CustomizedMiniAppMessage = {
+  appName: string;
+  appStoreId?: number;
+  extensionBundleId: string;
+  layout: MiniAppLayout;
+  teamId: string;
+  url: string;
+};
 
 type AdvancedImessageClient = {
   attachments?: {
@@ -54,6 +73,11 @@ type AdvancedImessageClient = {
       attachmentGuid: string,
       options?: Record<string, unknown>,
     ): Promise<unknown>;
+    sendCustomizedMiniApp(
+      chatGuid: string,
+      message: CustomizedMiniAppMessage,
+      options?: Record<string, unknown>,
+    ): Promise<unknown>;
     sendText(
       chatGuid: string,
       text: string,
@@ -80,6 +104,14 @@ const TERMINAL_FROM_PHONE =
   "";
 const TERMINAL_SPACE_ID = process.env.IMESSAGE_TERMINAL_SPACE_ID ?? "chat-1";
 const SEND_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
+const TYPING_REFRESH_MS = 4_000;
+const RESPONSE_SEGMENT_MAX_CHARS = 520;
+const SPECTRUM_MINI_APP = {
+  appName: "Spectrum",
+  extensionBundleId: "codes.photon.Spectrum.MessagesExtension",
+  teamId: "P8XT6232SL",
+  appStoreId: 6777616651,
+} satisfies Omit<CustomizedMiniAppMessage, "layout" | "url">;
 const sendIdempotencyKeys = new Map<
   string,
   { status: "sending" | "sent"; expiresAt: number }
@@ -223,40 +255,157 @@ async function sendOutboundAttachments(
 }
 
 function appCardFallbackText(card: ImessageAppCard) {
-  return [card.title, card.subtitle, card.url]
+  const intro =
+    card.summary ?? [card.title, card.subtitle].filter(Boolean).join(" - ");
+  return [intro, card.url]
     .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
     .join("\n");
+}
+
+function fallbackMiniAppLayout(card: ImessageAppCard): MiniAppLayout {
+  const caption = card.title?.trim() || "Glass";
+  const subcaption = card.subtitle?.trim() || undefined;
+  return {
+    caption,
+    subcaption,
+    summary: card.summary?.trim() || caption,
+  };
+}
+
+async function buildSpectrumMiniApp(
+  card: ImessageAppCard,
+): Promise<CustomizedMiniAppMessage> {
+  try {
+    const content = await appCard(card.url).build();
+    if (content.type === "app") {
+      return {
+        ...SPECTRUM_MINI_APP,
+        url: await content.url(),
+        layout: await content.layout(),
+      };
+    }
+  } catch (err) {
+    console.warn(
+      `[glass-imessage] Failed to build app card layout ${card.url}:`,
+      err,
+    );
+  }
+  return {
+    ...SPECTRUM_MINI_APP,
+    url: card.url,
+    layout: fallbackMiniAppLayout(card),
+  };
 }
 
 async function sendReplyOrFallback(
   space: Space,
   message: Message,
-  content: ContentInput,
-  fallbackText?: string,
+  text: string,
 ) {
   try {
-    const replied = await message.reply(content);
+    const replied = await message.reply(text);
     if (replied) return;
   } catch (err) {
     console.warn("[glass-imessage] Failed to send threaded reply:", err);
   }
-  await space.send(fallbackText ?? content);
+  await space.send(text);
+}
+
+function splitLongTextLine(line: string): string[] {
+  if (line.length <= RESPONSE_SEGMENT_MAX_CHARS) return [line];
+
+  const chunks: string[] = [];
+  let current = "";
+  for (const word of line.split(/\s+/).filter(Boolean)) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= RESPONSE_SEGMENT_MAX_CHARS) {
+      current = next;
+      continue;
+    }
+    if (current) chunks.push(current);
+    current = word;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function splitBlock(block: string): string[] {
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const rawLine of block.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    for (const part of splitLongTextLine(line)) {
+      const next = current ? `${current}\n${part}` : part;
+      if (next.length <= RESPONSE_SEGMENT_MAX_CHARS) {
+        current = next;
+        continue;
+      }
+      if (current) chunks.push(current);
+      current = part;
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function splitImessageResponse(text: string): string[] {
+  return text
+    .replace(/\r/g, "")
+    .trim()
+    .split(/\n{2,}/)
+    .flatMap((block) => splitBlock(block))
+    .filter(Boolean);
+}
+
+async function sendResponseText(
+  space: Space,
+  message: Message,
+  responseText: string,
+) {
+  const segments = splitImessageResponse(responseText);
+  for (const [index, segment] of segments.entries()) {
+    if (index === 0) {
+      await sendReplyOrFallback(space, message, segment);
+    } else {
+      await space.send(segment);
+    }
+  }
+}
+
+async function withTypingIndicator<T>(
+  space: Space,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const pulse = () => {
+    void Promise.resolve(space.startTyping()).catch((err) => {
+      console.warn("[glass-imessage] Failed to refresh typing indicator:", err);
+    });
+  };
+  pulse();
+  const interval = setInterval(pulse, TYPING_REFRESH_MS);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(interval);
+    await Promise.resolve(space.stopTyping()).catch((err) => {
+      console.warn("[glass-imessage] Failed to stop typing indicator:", err);
+    });
+  }
 }
 
 async function sendOutboundAppCards(
   space: Space,
   appCards?: ImessageAppCard[],
-  targetMessage?: Message,
 ) {
   for (const card of appCards ?? []) {
     if (!card.url) continue;
     const content = appCard(card.url);
     try {
-      if (targetMessage) {
-        await sendReplyOrFallback(space, targetMessage, content, appCardFallbackText(card));
-      } else {
-        await space.send(content);
-      }
+      await space.send(content);
     } catch (err) {
       console.warn(`[glass-imessage] Failed to send app card ${card.url}:`, err);
       await space.send(appCardFallbackText(card));
@@ -305,21 +454,43 @@ async function sendAppCardsThroughClient(
   clientMessageId?: string,
 ) {
   if (!appCards?.length) return;
-  if (!client.messages?.sendText) {
-    console.warn("[glass-imessage] App card fallback send by chat GUID is not available");
+  if (!client.messages?.sendCustomizedMiniApp) {
+    console.warn("[glass-imessage] Mini app send by chat GUID is not available");
+    if (!client.messages?.sendText) return;
+    for (const [index, card] of appCards.entries()) {
+      if (!card.url) continue;
+      await client.messages.sendText(chatGuid, appCardFallbackText(card), {
+        clientMessageId: clientMessageId
+          ? `${clientMessageId}:app-card:${index}`
+          : undefined,
+      });
+    }
     return;
   }
 
   for (const [index, card] of appCards.entries()) {
     if (!card.url) continue;
     try {
+      await client.messages.sendCustomizedMiniApp(
+        chatGuid,
+        await buildSpectrumMiniApp(card),
+        {
+          clientMessageId: clientMessageId
+            ? `${clientMessageId}:app-card:${index}`
+            : undefined,
+        },
+      );
+    } catch (err) {
+      console.warn(
+        `[glass-imessage] Failed to send mini app card ${card.url}:`,
+        err,
+      );
+      if (!client.messages.sendText) continue;
       await client.messages.sendText(chatGuid, appCardFallbackText(card), {
         clientMessageId: clientMessageId
-          ? `${clientMessageId}:app-card:${index}`
+          ? `${clientMessageId}:app-card-fallback:${index}`
           : undefined,
       });
-    } catch (err) {
-      console.warn(`[glass-imessage] Failed to send app card fallback ${card.url}:`, err);
     }
   }
 }
@@ -783,7 +954,7 @@ async function main() {
           return;
         }
 
-        await space.responding(async () => {
+        await withTypingIndicator(space, async () => {
           // Collect attachment if present
           const attachments: ImessageAttachment[] = [];
           if (message.content.type === "attachment") {
@@ -816,10 +987,10 @@ async function main() {
 
           // Send the text response
           if (result.response) {
-            await sendReplyOrFallback(space, message, result.response);
+            await sendResponseText(space, message, result.response);
           }
 
-          await sendOutboundAppCards(space, result.appCards, message);
+          await sendOutboundAppCards(space, result.appCards);
 
           // Send any file attachments (e.g. COI PDFs)
           await sendOutboundAttachments(space, result.attachments);
