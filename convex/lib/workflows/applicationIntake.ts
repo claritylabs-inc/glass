@@ -29,11 +29,20 @@ export function applicationIntakeOutcome(args: {
   packetId?: string;
   missingFieldIds?: string[];
 }): WorkflowToolResult {
-  const requiredSlots = slotsFromQuestions(args.missingQuestions);
+  const questionSlots = slotsFromQuestions(args.missingQuestions);
+  const missingFieldSlots: WorkflowSlot[] = args.action === "packet_prepared"
+    ? (args.missingFieldIds ?? []).map((fieldId) => ({
+        key: fieldId,
+        label: fieldId,
+        prompt: `Please provide the missing application field: ${fieldId}.`,
+        required: true,
+      }))
+    : [];
+  const requiredSlots = [...questionSlots, ...missingFieldSlots];
   const packetReady = args.action === "packet_prepared" && args.status === "broker_ready";
   const status = requiredSlots.length > 0
     ? "needs_input"
-    : packetReady || args.action === "packet_prepared"
+    : packetReady
       ? "completed"
       : "running";
   const outcome: WorkflowOutcome<"application_intake"> = {

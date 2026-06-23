@@ -9,6 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Badge } from "@/components/ui/badge";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import {
   OperationalLabelValueList,
   OperationalLabelValueRow,
@@ -48,42 +49,6 @@ type MGARow = {
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
-function faviconFromWebsite(website?: string | null) {
-  if (!website) return null;
-  try {
-    const withProtocol = /^https?:\/\//i.test(website) ? website : `https://${website}`;
-    const hostname = new URL(withProtocol).hostname;
-    if (!hostname) return null;
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`;
-  } catch {
-    return null;
-  }
-}
-
-function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | null; website?: string | null }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const source = iconUrl ?? faviconFromWebsite(website);
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-  return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label font-medium text-foreground">
-      {source && !imageFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={source}
-          alt=""
-          className="h-full w-full object-contain"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-            setImageFailed(true);
-          }}
-        />
-      ) : (
-        initial
-      )}
-    </div>
-  );
-}
-
 export default function OperatorMGAsPage() {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(null);
@@ -98,14 +63,10 @@ export default function OperatorMGAsPage() {
   const current = useCachedOperatorCurrent();
   const mgas = useCachedOperatorMGAs() as MGARow[] | undefined;
   const { seedMGA, patchMGAStatus } = useOperatorMGACacheActions();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createMGA = useAction((api as any).operator.createMGA);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const launchMGA = useAction((api as any).operator.launchMGA);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setMGAStatus = useMutation((api as any).operator.setMGAStatus);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const startImpersonation = useMutation((api as any).operator.startImpersonation);
+  const createMGA = useAction(api.operator.createMGA);
+  const launchMGA = useAction(api.operator.launchMGA);
+  const setMGAStatus = useMutation(api.operator.setMGAStatus);
+  const startImpersonation = useMutation(api.operator.startImpersonation);
   const stopOperatorImpersonation = useStopOperatorImpersonation();
 
   const selected = useMemo(
@@ -381,7 +342,12 @@ export default function OperatorMGAsPage() {
                   >
                     <TableCell className="px-4">
                       <div className="flex min-w-0 items-center gap-2.5">
-                        <OrgMark name={mga.name} iconUrl={mga.iconUrl} website={mga.website} />
+                        <OrgBrandIcon
+                          name={mga.name}
+                          iconUrl={mga.iconUrl}
+                          website={mga.website}
+                          size="md"
+                        />
                         <p className="truncate font-medium text-foreground">{mga.name}</p>
                       </div>
                     </TableCell>

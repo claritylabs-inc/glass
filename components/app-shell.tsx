@@ -13,6 +13,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
+import { OperatorImpersonationBanner } from "@/components/operator-impersonation-banner";
 
 import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
@@ -204,101 +205,104 @@ function ShellContent({
   });
 
   return (
-    <div className="flex h-dvh w-full min-w-0 overflow-hidden">
-      {customSidebar ? (
-        <>
-          <aside
-            className={`hidden h-full shrink-0 flex-col border-r border-foreground/6 bg-background sidebar-transition lg:flex ${
-              customSidebarCollapsed ? "w-14" : "w-[220px]"
+    <div className="flex h-dvh w-full min-w-0 flex-col overflow-hidden">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">
+        {customSidebar ? (
+          <>
+            <aside
+              className={`hidden h-full shrink-0 flex-col border-r border-foreground/6 bg-background sidebar-transition lg:flex ${
+                customSidebarCollapsed ? "w-14" : "w-[220px]"
+              }`}
+            >
+              {renderedCustomSidebar}
+            </aside>
+            <AnimatePresence>
+              {mobileOpen ? (
+                <>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="fixed inset-0 z-40 bg-black/20 lg:hidden"
+                    onClick={() => setMobileOpen(false)}
+                  />
+                  <motion.aside
+                    initial={{ x: -280 }}
+                    animate={{ x: 0 }}
+                    exit={{ x: -280 }}
+                    transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
+                    className="fixed bottom-0 left-0 top-0 z-50 w-[260px] border-r border-foreground/6 bg-background lg:hidden"
+                  >
+                    {renderedMobileCustomSidebar}
+                  </motion.aside>
+                </>
+              ) : null}
+            </AnimatePresence>
+          </>
+        ) : (
+          <Suspense fallback={null}>
+            <AppSidebar
+              mobileOpen={mobileOpen}
+              onMobileClose={() => setMobileOpen(false)}
+              onAskGlass={
+                disableCommandPalette ? undefined : openCommandPalette
+              }
+            />
+          </Suspense>
+        )}
+        <div className="flex min-w-0 flex-1 overflow-hidden">
+          {/* Main content column */}
+          <div
+            className={`flex flex-col min-w-0 overflow-hidden ${
+              useEqualPanelLayout ? "flex-1 basis-0" : "flex-1"
             }`}
           >
-            {renderedCustomSidebar}
-          </aside>
-          <AnimatePresence>
-            {mobileOpen ? (
-              <>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="fixed inset-0 z-40 bg-black/20 lg:hidden"
-                  onClick={() => setMobileOpen(false)}
-                />
-                <motion.aside
-                  initial={{ x: -280 }}
-                  animate={{ x: 0 }}
-                  exit={{ x: -280 }}
-                  transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
-                  className="fixed bottom-0 left-0 top-0 z-50 w-[260px] border-r border-foreground/6 bg-background lg:hidden"
-                >
-                  {renderedMobileCustomSidebar}
-                </motion.aside>
-              </>
-            ) : null}
-          </AnimatePresence>
-        </>
-      ) : (
-        <Suspense fallback={null}>
-          <AppSidebar
-            mobileOpen={mobileOpen}
-            onMobileClose={() => setMobileOpen(false)}
-            onAskGlass={
-              disableCommandPalette ? undefined : openCommandPalette
-            }
-          />
-        </Suspense>
-      )}
-      <div className="flex min-w-0 flex-1 overflow-hidden">
-        {/* Main content column */}
-        <div
-          className={`flex flex-col min-w-0 overflow-hidden ${
-            useEqualPanelLayout ? "flex-1 basis-0" : "flex-1"
-          }`}
-        >
-          <AppTopBar
-            actions={actions}
-            breadcrumbDetail={breadcrumbDetail}
-            presenceUsers={presenceUsers}
-            showBrokerShare={showBrokerShare}
-            onMobileMenuToggle={() => setMobileOpen((v) => !v)}
-          />
-          <div className="relative min-w-0 flex-1 overflow-hidden">
-            <main className="absolute inset-0 min-w-0 overflow-y-auto scrollbar-hide">
-              <div className="w-full min-w-0 px-6 py-6 pb-32 lg:px-8">
-                {children}
-              </div>
-            </main>
-            {disableCommandPalette ? null : <CommandPalette />}
+            <AppTopBar
+              actions={actions}
+              breadcrumbDetail={breadcrumbDetail}
+              presenceUsers={presenceUsers}
+              showBrokerShare={showBrokerShare}
+              onMobileMenuToggle={() => setMobileOpen((v) => !v)}
+            />
+            <div className="relative min-w-0 flex-1 overflow-hidden">
+              <main className="absolute inset-0 min-w-0 overflow-y-auto scrollbar-hide">
+                <div className="w-full min-w-0 px-6 py-6 pb-32 lg:px-8">
+                  {children}
+                </div>
+              </main>
+              {disableCommandPalette ? null : <CommandPalette />}
+            </div>
           </div>
+          {/* Right-side panels can stack: policy, email/drawer, then PDF. */}
+          {hasEntityPanel &&
+            (useEqualPanelLayout ? (
+              <ResizableRightPanelSlot equalLayout>
+                <EntityPreviewPanel fitContainer />
+              </ResizableRightPanelSlot>
+            ) : (
+              <div className="hidden h-full min-w-0 shrink-0 lg:flex">
+                <EntityPreviewPanel />
+              </div>
+            ))}
+          {hasRightPanel && rightPanel && (
+            <ResizableRightPanelSlot equalLayout={useEqualPanelLayout}>
+              {rightPanel}
+            </ResizableRightPanelSlot>
+          )}
+          {hasPdfPanel &&
+            (useEqualPanelLayout ? (
+              <ResizableRightPanelSlot equalLayout>
+                <PdfPanel fitContainer />
+              </ResizableRightPanelSlot>
+            ) : (
+              <div className="hidden h-full min-w-0 shrink-0 lg:flex">
+                <PdfPanel />
+              </div>
+            ))}
         </div>
-        {/* Right-side panels can stack: policy, email/drawer, then PDF. */}
-        {hasEntityPanel &&
-          (useEqualPanelLayout ? (
-            <ResizableRightPanelSlot equalLayout>
-              <EntityPreviewPanel fitContainer />
-            </ResizableRightPanelSlot>
-          ) : (
-            <div className="hidden h-full min-w-0 shrink-0 lg:flex">
-              <EntityPreviewPanel />
-            </div>
-          ))}
-        {hasRightPanel && rightPanel && (
-          <ResizableRightPanelSlot equalLayout={useEqualPanelLayout}>
-            {rightPanel}
-          </ResizableRightPanelSlot>
-        )}
-        {hasPdfPanel &&
-          (useEqualPanelLayout ? (
-            <ResizableRightPanelSlot equalLayout>
-              <PdfPanel fitContainer />
-            </ResizableRightPanelSlot>
-          ) : (
-            <div className="hidden h-full min-w-0 shrink-0 lg:flex">
-              <PdfPanel />
-            </div>
-          ))}
       </div>
+      <OperatorImpersonationBanner />
     </div>
   );
 }

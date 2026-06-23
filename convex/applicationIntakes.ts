@@ -33,6 +33,7 @@ import {
   type OrgAccess,
 } from "./lib/access";
 import { notify } from "./lib/notify";
+import { orgBrandFields } from "./lib/orgBranding";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -71,6 +72,15 @@ const missingQuestionValidator = v.object({
 
 function nowMs() {
   return dayjs().valueOf();
+}
+
+function toJsonValue(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
 }
 
 function assertCanWriteApplication(access: OrgAccess) {
@@ -143,8 +153,9 @@ type ApplicationAnswerInput = {
 };
 
 function parseQuestionGraph(questionGraph: unknown): ApplicationQuestionGraph | undefined {
-  if (!questionGraph) return undefined;
-  const parsed = ApplicationQuestionGraphSchema.safeParse(questionGraph);
+  const jsonGraph = toJsonValue(questionGraph);
+  if (!jsonGraph) return undefined;
+  const parsed = ApplicationQuestionGraphSchema.safeParse(jsonGraph);
   return parsed.success ? parsed.data : undefined;
 }
 
@@ -492,7 +503,7 @@ async function startIntake(
     threadId: args.threadId,
     threadMessageId: args.threadMessageId,
     createdByUserId: args.userId,
-    status: missingQuestions.length > 0 ? "collecting" : "needs_broker_review",
+    status: "collecting",
     requestText: args.requestText,
     questionGraph: sdkState.questionGraph,
     normalizedAnswers: [],
@@ -545,17 +556,29 @@ export const listTemplates = query({
   },
   handler: async (ctx, args) => {
     const access = await requireCurrentOrgAccess(ctx);
-    assertBrokerOrg(access);
-    const queryBuilder = args.status
+    const brokerOrgId =
+      access.orgType === "broker"
+        ? access.orgId
+        : access.orgType === "client"
+          ? (access.org.brokerOrgId as Id<"organizations"> | undefined)
+          : undefined;
+
+    if (!brokerOrgId) return [];
+
+    const status =
+      access.orgType === "client" ? args.status ?? "active" : args.status;
+    if (access.orgType === "client" && status !== "active") return [];
+
+    const queryBuilder = status
       ? ctx.db
           .query("applicationTemplates")
           .withIndex("by_brokerOrgId_status", (q) =>
-            q.eq("brokerOrgId", access.orgId).eq("status", args.status!),
+            q.eq("brokerOrgId", brokerOrgId).eq("status", status!),
           )
       : ctx.db
           .query("applicationTemplates")
           .withIndex("by_brokerOrgId_updatedAt", (q) =>
-            q.eq("brokerOrgId", access.orgId),
+            q.eq("brokerOrgId", brokerOrgId),
           )
           .order("desc");
     return await queryBuilder.take(100);
@@ -584,7 +607,8 @@ export const saveTemplate = mutation({
     const access = await requireCurrentOrgAccess(ctx);
     assertBrokerOrg(access);
     const now = nowMs();
-    const parsedGraph = parseQuestionGraph(args.questionGraph);
+    const questionGraph = toJsonValue(args.questionGraph);
+    const parsedGraph = parseQuestionGraph(questionGraph);
     const fieldCount = parsedGraph ? flattenQuestionGraph(parsedGraph).length : 0;
     if (args.templateId) {
       const existing = await ctx.db.get(args.templateId);
@@ -599,8 +623,8 @@ export const saveTemplate = mutation({
         product: args.product,
         status: args.status ?? existing.status,
         sourceKind: args.sourceKind,
-        sourceFileId: args.sourceFileId,
-        questionGraph: args.questionGraph,
+        sourceFileId: args.sourceFileId ?? existing.sourceFileId,
+        questionGraph,
         fieldCount,
         updatedAt: now,
       });
@@ -617,7 +641,7 @@ export const saveTemplate = mutation({
       status: args.status ?? "draft",
       sourceKind: args.sourceKind,
       sourceFileId: args.sourceFileId,
-      questionGraph: args.questionGraph,
+      questionGraph,
       fieldCount,
       createdByUserId: access.userId,
       createdAt: now,
@@ -673,7 +697,7 @@ export const listForClient = query({
       .withIndex("by_orgId_updatedAt", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(100);
-    return await attachClientNames(ctx, rows, access.org.name);
+    return await attachClientNames(ctx, rows, access.org);
   },
 });
 
@@ -683,19 +707,7 @@ export const get = query({
     const intake = await ctx.db.get(args.applicationIntakeId);
     if (!intake) return null;
     await getWritableApplicationAccess(ctx, intake.orgId);
-    const [messages, proposals, packets, clientOrg] = await Promise.all([
-      ctx.db
-        .query("applicationMessages")
-        .withIndex("by_applicationIntakeId_createdAt", (q) =>
-          q.eq("applicationIntakeId", intake._id),
-        )
-        .take(100),
-      ctx.db
-        .query("applicationContextProposals")
-        .withIndex("by_applicationIntakeId_status", (q) =>
-          q.eq("applicationIntakeId", intake._id).eq("status", "pending"),
-        )
-        .take(100),
+    const [packets, clientOrg] = await Promise.all([
       ctx.db
         .query("applicationPackets")
         .withIndex("by_applicationIntakeId", (q) =>
@@ -705,13 +717,37 @@ export const get = query({
         .take(10),
       ctx.db.get(intake.orgId),
     ]);
+    const packetsWithFiles = await Promise.all(
+      packets.map(async (packet) => ({
+        ...packet,
+        fileUrl: packet.fileId ? await ctx.storage.getUrl(packet.fileId) : null,
+      })),
+    );
+    const clientBrand = await orgBrandFields(ctx, clientOrg);
     return {
       ...intake,
       clientName: clientOrg?.name,
-      messages,
-      contextProposals: proposals,
-      packets,
+      clientWebsite: clientBrand.website,
+      clientIconStorageId: clientBrand.iconStorageId,
+      clientIconUrl: clientBrand.iconUrl,
+      packets: packetsWithFiles,
     };
+  },
+});
+
+export const generateUploadUrl = mutation({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    await getWritableApplicationAccess(ctx, args.orgId);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const assertQuestionAuthoringAccess = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    await getWritableApplicationAccess(ctx, args.orgId);
+    return null;
   },
 });
 
@@ -786,7 +822,7 @@ export const markSubmitted = mutation({
     if (!intake) throw new Error("Application intake not found");
     const { access } = await getWritableApplicationAccess(ctx, intake.orgId);
     if (access.accessType !== "broker_of_client" && access.orgType !== "broker") {
-      throw new Error("Only brokers can mark application packets submitted");
+      throw new Error("Only brokers can mark applications submitted");
     }
     const now = nowMs();
     await ctx.db.patch(intake._id, {
@@ -960,13 +996,14 @@ async function recordAnswersForIntake(
   );
   const normalizedAnswers = answerRowsFromState(nextState, now, args.intake.normalizedAnswers);
   const missingQuestions = missingQuestionsFromState(nextState);
-  const status = missingQuestions.length > 0 ? "collecting" : "needs_broker_review";
+  const status = "collecting";
   const contextProposals = contextProposalsForAnswers(nextState, args.answers);
 
   await ctx.db.patch(args.intake._id, {
     normalizedAnswers,
     missingQuestions,
     status,
+    packetId: undefined,
     updatedAt: now,
     lastActivityAt: now,
   });
@@ -1016,18 +1053,6 @@ async function recordAnswersForIntake(
     now,
   });
 
-  if (missingQuestions.length === 0) {
-    await notifyBroker(ctx, {
-      brokerOrgId: args.intake.brokerOrgId,
-      clientOrgId: args.intake.orgId,
-      intakeId: args.intake._id,
-      type: "application_intake_needs_review",
-      title: "Application needs broker review",
-      body: args.intake.title,
-      now,
-    });
-  }
-
   return await ctx.db.get(args.intake._id);
 }
 
@@ -1050,7 +1075,6 @@ async function preparePacketForIntake(
     orgId: args.intake.orgId,
     brokerOrgId: args.intake.brokerOrgId,
     status: packet.status,
-    answers: packet.answers,
     missingFieldIds: packet.missingFieldIds,
     qualityReport,
     submissionNotes: args.submissionNotes,
@@ -1071,8 +1095,8 @@ async function preparePacketForIntake(
     userId: args.userId,
     type: "application_completed",
     summary: packet.status === "broker_ready"
-      ? "Application packet ready for broker submission"
-      : "Application packet prepared with missing required fields",
+      ? "Application ready for broker review"
+      : "Application submitted with missing required fields",
     payload: { applicationIntakeId: args.intake._id, packetId },
     now,
   });
@@ -1083,7 +1107,7 @@ async function preparePacketForIntake(
       clientOrgId: args.intake.orgId,
       intakeId: args.intake._id,
       type: "application_packet_ready",
-      title: "Application packet ready",
+      title: "Application ready for review",
       body: args.intake.title,
       now,
     });
@@ -1095,14 +1119,18 @@ async function preparePacketForIntake(
 async function attachClientNames(
   ctx: QueryCtx,
   rows: Doc<"applicationIntakes">[],
-  knownName?: string,
+  knownOrg?: Pick<Doc<"organizations">, "name" | "website" | "iconStorageId">,
 ) {
   return await Promise.all(
     rows.map(async (row) => {
-      const org = knownName ? null : await ctx.db.get(row.orgId);
+      const org = knownOrg ?? await ctx.db.get(row.orgId);
+      const brand = await orgBrandFields(ctx, org);
       return {
         ...row,
-        clientName: knownName ?? org?.name ?? "Client",
+        clientName: org?.name ?? "Client",
+        clientWebsite: brand.website,
+        clientIconStorageId: brand.iconStorageId,
+        clientIconUrl: brand.iconUrl,
       };
     }),
   );

@@ -91,6 +91,23 @@ describe("workflow orchestration contract", () => {
     expect(result.workflowOutcome.forbiddenClaims).toContain("carrier_submitted");
   });
 
+  it("keeps incomplete application packets in the input-needed path", () => {
+    const result = applicationIntakeOutcome({
+      action: "packet_prepared",
+      applicationIntakeId: "intake-1",
+      packetId: "packet-1",
+      status: "needs_broker_review",
+      missingFieldIds: ["payroll"],
+    });
+
+    expect(result.workflowOutcome.status).toBe("needs_input");
+    expect(result.workflowOutcome.nextAction).toBe("ask_application_questions");
+    expect(result.workflowOutcome.requiredSlots).toEqual([
+      expect.objectContaining({ key: "payroll" }),
+    ]);
+    expect(result.message).toContain("required information is still missing");
+  });
+
   it("captures broker follow-ups before blocking on missing recipient", () => {
     const result = brokerFollowUpOutcome({
       action: "email_drafted",

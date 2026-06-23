@@ -22,6 +22,7 @@ import {
   requireOperator,
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
+import { orgBrandFields } from "./lib/orgBranding";
 
 const brokerStatusValidator = v.union(v.literal("onboarding"), v.literal("live"));
 const orgRoleValidator = v.union(v.literal("admin"), v.literal("member"));
@@ -389,8 +390,7 @@ export const listBrokers = query({
           _id: broker._id,
           name: broker.name,
           slug: broker.slug,
-          website: broker.website,
-          iconUrl: broker.iconStorageId ? await ctx.storage.getUrl(broker.iconStorageId) : null,
+          ...(await orgBrandFields(ctx, broker)),
           agentHandle: broker.agentHandle,
           operatorStatus: broker.operatorStatus ?? "live",
           onboardingComplete: broker.onboardingComplete,
@@ -417,8 +417,7 @@ async function listOperatorClientRows(ctx: QueryCtx) {
       return {
         _id: client._id,
         name: client.name,
-        website: client.website,
-        iconUrl: client.iconStorageId ? await ctx.storage.getUrl(client.iconStorageId) : null,
+        ...(await orgBrandFields(ctx, client)),
         agentHandle: client.agentHandle,
         operatorStatus: client.operatorStatus ?? "live",
         onboardingComplete: client.onboardingComplete,
@@ -473,8 +472,7 @@ export const listMGAs = query({
         return {
           _id: mga._id,
           name: mga.name,
-          website: mga.website,
-          iconUrl: mga.iconStorageId ? await ctx.storage.getUrl(mga.iconStorageId) : null,
+          ...(await orgBrandFields(ctx, mga)),
           programName: program?.name,
           operatorStatus: mga.operatorStatus ?? "live",
           onboardingComplete: mga.onboardingComplete,

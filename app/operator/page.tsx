@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { CLIENT_PORTAL_HOST, getPublicAgentDomain } from "@/lib/domains";
 import {
   Table,
@@ -96,42 +97,6 @@ function Field({
   );
 }
 
-function faviconFromWebsite(website?: string | null) {
-  if (!website) return null;
-  try {
-    const withProtocol = /^https?:\/\//i.test(website) ? website : `https://${website}`;
-    const hostname = new URL(withProtocol).hostname;
-    if (!hostname) return null;
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`;
-  } catch {
-    return null;
-  }
-}
-
-function OrgMark({ name, iconUrl, website }: { name: string; iconUrl?: string | null; website?: string | null }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const source = iconUrl ?? faviconFromWebsite(website);
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-  return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-foreground/8 bg-white text-label font-medium text-foreground">
-      {source && !imageFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={source}
-          alt=""
-          className="h-full w-full object-contain"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-            setImageFailed(true);
-          }}
-        />
-      ) : (
-        initial
-      )}
-    </div>
-  );
-}
-
 export default function OperatorPage() {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(null);
@@ -158,8 +123,7 @@ export default function OperatorPage() {
   const brokers = useCachedOperatorBrokers() as BrokerRow[] | undefined;
   const { seedBroker, patchBrokerStatus, patchBrokerSettings } = useOperatorBrokerCacheActions();
   const identifierCheck = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api as any).operator.checkBrokerSetupIdentifiers,
+    api.operator.checkBrokerSetupIdentifiers,
     slug || agentHandle
       ? {
           slug: debouncedSlug || undefined,
@@ -167,15 +131,11 @@ export default function OperatorPage() {
         }
       : "skip",
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createBroker = useAction((api as any).operator.createBroker);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const launchBroker = useAction((api as any).operator.launchBroker);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setBrokerStatus = useMutation((api as any).operator.setBrokerStatus);
+  const createBroker = useAction(api.operator.createBroker);
+  const launchBroker = useAction(api.operator.launchBroker);
+  const setBrokerStatus = useMutation(api.operator.setBrokerStatus);
   const updateBrokerSettings = useMutation(api.operator.updateBrokerSettings);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const startImpersonation = useMutation((api as any).operator.startImpersonation);
+  const startImpersonation = useMutation(api.operator.startImpersonation);
   const stopOperatorImpersonation = useStopOperatorImpersonation();
 
   const selected = useMemo(
@@ -684,7 +644,12 @@ export default function OperatorPage() {
                   >
                     <TableCell className="px-4">
                       <div className="flex min-w-0 items-center gap-2.5">
-                      <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} />
+                        <OrgBrandIcon
+                          name={broker.name}
+                          iconUrl={broker.iconUrl}
+                          website={broker.website}
+                          size="md"
+                        />
                         <p className="truncate font-medium text-foreground">{broker.name}</p>
                       </div>
                     </TableCell>

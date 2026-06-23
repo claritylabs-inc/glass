@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import {
   Select,
   SelectContent,
@@ -121,58 +122,6 @@ function Field({
   );
 }
 
-function faviconFromWebsite(website?: string | null) {
-  if (!website) return null;
-  try {
-    const withProtocol = /^https?:\/\//i.test(website) ? website : `https://${website}`;
-    const hostname = new URL(withProtocol).hostname;
-    if (!hostname) return null;
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`;
-  } catch {
-    return null;
-  }
-}
-
-function OrgMark({
-  name,
-  iconUrl,
-  website,
-  size = "md",
-}: {
-  name: string;
-  iconUrl?: string | null;
-  website?: string | null;
-  size?: "sm" | "select" | "md";
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const source = iconUrl ?? faviconFromWebsite(website);
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-  const sizeClass =
-    size === "sm"
-      ? "h-3.5 w-3.5 rounded-sm text-label"
-      : size === "select"
-        ? "h-6 w-6 rounded-sm text-label"
-        : "h-7 w-7 rounded-md text-label";
-  return (
-    <div className={`flex shrink-0 items-center justify-center overflow-hidden border border-foreground/8 bg-white font-medium text-foreground ${sizeClass}`}>
-      {source && !imageFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={source}
-          alt=""
-          className="h-full w-full object-contain"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-            setImageFailed(true);
-          }}
-        />
-      ) : (
-        initial
-      )}
-    </div>
-  );
-}
-
 export default function OperatorClientsPage() {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(null);
@@ -211,15 +160,11 @@ export default function OperatorClientsPage() {
     api.operator.checkUserPhoneAvailability,
     createShouldCheckPhone ? { phone: debouncedAdminPhone } : "skip",
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createClient = useAction((api as any).operator.createSoloClient);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const launchClient = useAction((api as any).operator.launchSoloClient);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setClientStatus = useMutation((api as any).operator.setSoloClientStatus);
+  const createClient = useAction(api.operator.createSoloClient);
+  const launchClient = useAction(api.operator.launchSoloClient);
+  const setClientStatus = useMutation(api.operator.setSoloClientStatus);
   const updateClientSettings = useMutation(api.operator.updateClientSettings);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const startImpersonation = useMutation((api as any).operator.startImpersonation);
+  const startImpersonation = useMutation(api.operator.startImpersonation);
   const stopOperatorImpersonation = useStopOperatorImpersonation();
 
   const selected = useMemo(
@@ -577,11 +522,11 @@ export default function OperatorClientsPage() {
                 <SelectValue>
                   {selectedBroker ? (
                     <span className="flex min-w-0 items-center gap-2">
-                      <OrgMark
+                      <OrgBrandIcon
                         name={selectedBroker.name}
                         iconUrl={selectedBroker.iconUrl}
                         website={selectedBroker.website}
-                        size="select"
+                        size="sm"
                       />
                       <span className="truncate">{selectedBroker.name}</span>
                     </span>
@@ -595,7 +540,12 @@ export default function OperatorClientsPage() {
                 {(brokers ?? []).map((broker) => (
                   <SelectItem key={broker._id} value={broker._id}>
                     <span className="flex min-w-0 items-center gap-2">
-                      <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="select" />
+                      <OrgBrandIcon
+                        name={broker.name}
+                        iconUrl={broker.iconUrl}
+                        website={broker.website}
+                        size="sm"
+                      />
                       <span className="truncate">{broker.name}</span>
                     </span>
                   </SelectItem>
@@ -677,11 +627,11 @@ export default function OperatorClientsPage() {
                   <SelectValue>
                     {selectedEditBroker ? (
                       <span className="flex min-w-0 items-center gap-2">
-                        <OrgMark
+                        <OrgBrandIcon
                           name={selectedEditBroker.name}
                           iconUrl={selectedEditBroker.iconUrl}
                           website={selectedEditBroker.website}
-                          size="select"
+                          size="sm"
                         />
                         <span className="truncate">{selectedEditBroker.name}</span>
                       </span>
@@ -695,7 +645,12 @@ export default function OperatorClientsPage() {
                   {(brokers ?? []).map((broker) => (
                     <SelectItem key={broker._id} value={broker._id}>
                       <span className="flex min-w-0 items-center gap-2">
-                        <OrgMark name={broker.name} iconUrl={broker.iconUrl} website={broker.website} size="select" />
+                        <OrgBrandIcon
+                          name={broker.name}
+                          iconUrl={broker.iconUrl}
+                          website={broker.website}
+                          size="sm"
+                        />
                         <span className="truncate">{broker.name}</span>
                       </span>
                     </SelectItem>
@@ -837,7 +792,12 @@ export default function OperatorClientsPage() {
                   >
                     <TableCell className="px-4">
                       <div className="flex min-w-0 items-center gap-2.5">
-                        <OrgMark name={client.name} iconUrl={client.iconUrl} website={client.website} />
+                        <OrgBrandIcon
+                          name={client.name}
+                          iconUrl={client.iconUrl}
+                          website={client.website}
+                          size="md"
+                        />
                         <p className="truncate font-medium text-foreground">{client.name}</p>
                       </div>
                     </TableCell>

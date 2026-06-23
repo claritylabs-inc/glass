@@ -1663,7 +1663,7 @@ export const run = internalAction({
         start_application_intake: "Starting application intake...",
         answer_application_questions: "Saving application answers...",
         check_application_status: "Checking application status...",
-        prepare_application_packet: "Preparing application packet...",
+        prepare_application_packet: "Preparing application review...",
         create_policy_change_request: "Capturing broker follow-up...",
         add_policy_change_info: "Updating broker follow-up...",
         check_policy_change_status: "Checking broker follow-up...",

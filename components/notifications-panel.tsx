@@ -42,7 +42,10 @@ type NotificationType =
   | "program_admin_pce_request"
   | "policy_declaration_discrepancy"
   | "policy_change_needs_info"
-  | "policy_change_completed";
+  | "policy_change_completed"
+  | "application_intake_started"
+  | "application_intake_needs_review"
+  | "application_packet_ready";
 
 interface Notification {
   _id: Id<"notifications">;
@@ -81,9 +84,33 @@ function notificationActionLabel(notification: Notification) {
       return "Open thread";
     case "view_vendor_compliance":
       return "Open vendor compliance";
+    case "view_application_intake":
+      return "Open application";
     default:
       return undefined;
   }
+}
+
+function notificationDisplayTitle(notification: Notification) {
+  if (
+    notification.type === "application_packet_ready" &&
+    notification.title === "Application packet ready"
+  ) {
+    return "Application ready for review";
+  }
+  return notification.title;
+}
+
+function applicationNotificationHref(payload: Record<string, unknown>) {
+  const applicationIntakeId =
+    typeof payload.applicationIntakeId === "string" ? payload.applicationIntakeId : "";
+  const clientOrgId = typeof payload.clientOrgId === "string" ? payload.clientOrgId : "";
+  const suffix = applicationIntakeId
+    ? `?applicationId=${encodeURIComponent(applicationIntakeId)}`
+    : "";
+  return clientOrgId
+    ? `/clients/${clientOrgId}/applications${suffix}`
+    : `/applications${suffix}`;
 }
 
 export function NotificationsPanel({
@@ -92,8 +119,6 @@ export function NotificationsPanel({
   onMergeSuggestion,
   variant = "popover",
 }: NotificationsPanelProps) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const _api = api as any;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"unread" | "read">("unread");
   const unreadNotifications = useCachedNotifications(orgId, "unread") as
@@ -105,8 +130,8 @@ export function NotificationsPanel({
   const actionedNotifications = useCachedNotifications(orgId, "actioned") as
     | (Notification & { relatedOrgName?: string })[]
     | undefined;
-  const markRead = useMutation(_api.notifications.markRead);
-  const markAllRead = useMutation(_api.notifications.markAllRead);
+  const markRead = useMutation(api.notifications.markRead);
+  const markAllRead = useMutation(api.notifications.markAllRead);
   const { markReadLocally } = useNotificationCacheActions(orgId);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -140,11 +165,11 @@ export function NotificationsPanel({
 
     // Deep link navigation
     if (notification.actionType && notification.actionPayload) {
-      const p = notification.actionPayload as Record<string, string>;
+      const p = notification.actionPayload as Record<string, unknown>;
       switch (notification.actionType) {
         case "view_policy":
           router.push(
-            `/policies/${p.policyId}${p.tab ? `?tab=${encodeURIComponent(p.tab)}` : ""}`,
+            `/policies/${p.policyId}${p.tab ? `?tab=${encodeURIComponent(String(p.tab))}` : ""}`,
           );
           break;
         case "view_thread":
@@ -153,9 +178,13 @@ export function NotificationsPanel({
         case "view_vendor_compliance":
           router.push("/connect/vendors");
           break;
+        case "view_application_intake":
+          router.push(applicationNotificationHref(p));
+          break;
         default:
           break;
       }
+      onClose();
       return;
     }
 
@@ -298,7 +327,7 @@ export function NotificationsPanel({
                 <div className="flex-1 min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <p className="min-w-0 flex-1 truncate text-base text-foreground">
-                      {notification.title}
+                      {notificationDisplayTitle(notification)}
                     </p>
                     {(notification.coalescedCount ?? 1) > 1 && (
                       <span className="inline-flex items-center px-1 py-0 rounded text-label font-medium bg-foreground/8 text-muted-foreground">

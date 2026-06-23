@@ -784,7 +784,7 @@ export function buildAgentToolExecutors(
         submissionNotes?: string;
       }) => {
         if (options.canWrite === false)
-          return writeUnavailable(options, "prepare an application packet");
+          return writeUnavailable(options, "prepare an application for review");
         const packet = await ctx.runMutation(
           internal.applicationIntakes.preparePacketFromAgent,
           {
