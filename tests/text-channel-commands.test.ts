@@ -74,6 +74,18 @@ describe("text channel slash commands", () => {
   });
 
   it("keeps the public help text aligned with the implemented commands", () => {
+    expect(TEXT_CHANNEL_COMMAND_HELP.split("\n")).toEqual([
+      "Commands:",
+      "/help, /commands",
+      "/status",
+      "/drafts",
+      "/send 1, /send all",
+      "/discard 1, /discard all",
+      "/cancel, /reset, /new",
+      "/leave, /whoami",
+      "",
+      "Try /drafts then /send 1.",
+    ]);
     for (const command of [
       "/help",
       "/commands",
