@@ -39,8 +39,18 @@ const COMMAND_ALIASES: Record<string, TextChannelCommandName> = {
   "/whoami": "whoami",
 };
 
-export const TEXT_CHANNEL_COMMAND_HELP =
-  "Commands: /help, /commands, /status, /drafts, /send 1|all, /discard 1|all, /cancel, /reset, /new, /leave, /whoami. Try /drafts then /send 1.";
+export const TEXT_CHANNEL_COMMAND_HELP = [
+  "Commands:",
+  "/help, /commands",
+  "/status",
+  "/drafts",
+  "/send 1, /send all",
+  "/discard 1, /discard all",
+  "/cancel, /reset, /new",
+  "/leave, /whoami",
+  "",
+  "Try /drafts then /send 1.",
+].join("\n");
 
 function parseTarget(args: string[]): TextChannelCommandTarget | undefined {
   const first = args[0]?.trim().toLowerCase();
