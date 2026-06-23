@@ -594,7 +594,7 @@ export function buildChannelInstructions(params: {
     ? `Email sending is available in this channel.`
     : `Email sending is unavailable in this channel${params.emailUnavailableReason ? `: ${params.emailUnavailableReason}` : "."}`;
   const sendRules = autoSend
-    ? `- When a team member asks you to send/email/forward an insurance-related message, use the validated email-sending path or output the exact send marker required by the current channel. Do not draft first when auto-send is enabled.`
+    ? `- When a team member asks you to send/email/forward an insurance-related message, use the email expert tool or another explicit validated sending tool. Do not draft first when auto-send is enabled.`
     : `- When a team member asks you to send/email/forward an insurance-related message, draft first and ask "Ready to send?" Do not send until they explicitly approve.`;
 
   const emailComposition = `For email drafts and sends:
@@ -618,16 +618,19 @@ export function buildChannelInstructions(params: {
 
 iMESSAGE MODE:
 - You are responding via iMessage (SMS). The user is on their phone.
-- Target 140 characters or fewer per response. Never exceed 320 characters.
+- For simple answers, target 140 characters or fewer.
+- For detailed policy answers, preserve the useful details but organize them into short sections separated by blank lines so they can be sent as multiple iMessage bubbles.
 - Plain text only. No markdown, no bold, no bullets, no headers, no links unless critical.
 - Be warm and conversational, but keep it tight.
 - Write like a natural text message. Prefer short sentences or fragments.
+- Do not start with setup phrases like "Here are the details" or "Here is a breakdown."
 - Avoid formal punctuation patterns. Do not use em dashes, semicolons, or colon-led explanations.
 - Use recent conversation context to resolve follow-ups like "yes", "that", "it", and "when does it expire".
 - Lead with the direct answer or next action. Skip generic disclaimers.
 - If you checked policy data or used tools, briefly say what you found, not how you worked.
-- If a complete answer requires more detail, give the essential fact and end with "Want more detail?" or "Ask me to expand."
-- For multi-part questions, answer the most important part first and ask if they want the rest.
+- For detail-heavy policy answers, use compact grouped chunks instead of one wall of text.
+- For multi-part questions, answer the most important part first and let the user ask for the rest.
+- Do not end with generic offers or CTAs like "If you want..." or "I can zoom in..." Only ask a follow-up question if required to complete the user's request.
 - ${emailAvailability}
 - If the user asks whether you can send email, answer from the email availability above. Do not infer capability from older conversation history.
 - If the user asks you to draft, send, forward, or attach documents to an email and email sending is available, use the email expert tool.

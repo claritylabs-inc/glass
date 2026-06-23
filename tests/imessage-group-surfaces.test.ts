@@ -83,6 +83,24 @@ describe("iMessage group chat surfaces", () => {
     expect(agents).toContain("mirrors the web user message and Glass reply back");
   });
 
+  it("sends iMessage app cards as native mini app cards before text fallback", () => {
+    const worker = read("imessage-worker/src/index.ts");
+    const appCardBlock = worker.slice(
+      worker.indexOf("async function sendOutboundAppCards"),
+      worker.indexOf("async function sendAttachmentsThroughClient"),
+    );
+    const chatGuidBlock = worker.slice(
+      worker.indexOf("async function sendAppCardsThroughClient"),
+      worker.indexOf("async function sendByChatGuid"),
+    );
+
+    expect(appCardBlock).toContain("await space.send(content)");
+    expect(appCardBlock).not.toContain("sendReplyOrFallback");
+    expect(chatGuidBlock).toContain("sendCustomizedMiniApp");
+    expect(chatGuidBlock).toContain("buildSpectrumMiniApp");
+    expect(chatGuidBlock).toContain("sendText(chatGuid, appCardFallbackText(card)");
+  });
+
   it("uses non-committal timeout copy for late Convex iMessage responses", () => {
     const worker = read("imessage-worker/src/index.ts");
     const fallbackBlock = worker.slice(

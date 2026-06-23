@@ -5,7 +5,6 @@ import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { generateText, stepCountIs, type ModelMessage } from "ai";
-import { haikuModel } from "../lib/ai";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import {
   extractPolicyAttachment,
@@ -47,7 +46,6 @@ import {
   classifyPromptInjection,
   collectAllowedRecipients,
   enforceInputLimits,
-  validateEmailRecipient,
 } from "../lib/security";
 import { isWhiteLabelingEnabled } from "../lib/branding";
 import { getClientPortalUrl } from "../lib/domains";
@@ -59,16 +57,14 @@ import {
 } from "../lib/emailSubagent";
 import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
-import {
-  formatCertificateProgramSelectionForModel,
-  type CertificateProgramSelection,
-} from "../lib/certificateProgramSelection";
+import { buildAssistantMessageContentWithArtifacts } from "../lib/agentMessageHistory";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
   buildEmailDraftTextSummary,
-  isSendAllEmailDraftsIntent,
-  isShowMoreEmailDraftIntent,
 } from "../lib/emailDraftSummary";
+import { extractOrgMemoryFromExchange } from "../lib/orgMemoryExtraction";
+import { collectToolAudit } from "../lib/agentToolAudit";
+import { runInboundEmailDeterministicControls } from "../lib/inboundEmailDeterministicControls";
 
 const GLASS_PUBLIC_URL = getClientPortalUrl();
 const GLASS_PENDING_MESSAGE_ID_RE = /<?glass-pending-([^@\s>]+)@[^>\s]+>?/gi;
@@ -127,32 +123,6 @@ function extractPendingEmailIdsFromHeaders(values: Array<string | undefined>) {
     }
   }
   return [...ids];
-}
-
-function collectWorkflowOutcomes(result: unknown) {
-  const outcomes: unknown[] = [];
-  const collectFromResults = (results: unknown[]) => {
-    for (const item of results) {
-      if (!item || typeof item !== "object") continue;
-      const record = item as Record<string, unknown>;
-      const output = record.output ?? record.result ?? record.value;
-      if (output && typeof output === "object" && "workflowOutcome" in output) {
-        outcomes.push((output as Record<string, unknown>).workflowOutcome);
-      }
-    }
-  };
-  if (!result || typeof result !== "object") return outcomes;
-  const root = result as Record<string, unknown>;
-  collectFromResults(Array.isArray(root.toolResults) ? root.toolResults : []);
-  const steps = Array.isArray(root.steps) ? root.steps : [];
-  for (const step of steps) {
-    if (!step || typeof step !== "object") continue;
-    const stepRecord = step as Record<string, unknown>;
-    collectFromResults(
-      Array.isArray(stepRecord.toolResults) ? stepRecord.toolResults : [],
-    );
-  }
-  return outcomes;
 }
 
 interface WebhookPayload {
@@ -1144,26 +1114,12 @@ export const processInbound = internalAction({
               content: `Subject: ${msg.subject ?? subject}\n\nFrom: ${msg.fromName ? `${msg.fromName} <${msg.fromEmail}>` : msg.fromEmail}\n\n${msg.content}`,
             });
           } else if (msg.role === "agent") {
-            const pendingSelections = Array.isArray(msg.toolArtifacts)
-              ? msg.toolArtifacts
-                  .filter(
-                    (artifact: { type?: string; data?: unknown }) =>
-                      artifact.type === "certificate_program_selection",
-                  )
-                  .map((artifact: { data?: unknown }) => artifact.data)
-              : [];
-            const selectionContext = pendingSelections
-              .map((selection: unknown) =>
-                formatCertificateProgramSelectionForModel(
-                  selection as CertificateProgramSelection,
-                ),
-              )
-              .join("\n\n");
             messages.push({
               role: "assistant",
-              content: selectionContext
-                ? `${msg.content}\n\n${selectionContext}`
-                : msg.content,
+              content: buildAssistantMessageContentWithArtifacts({
+                content: msg.content,
+                toolArtifacts: msg.toolArtifacts,
+              }),
             });
           }
         }
@@ -1252,9 +1208,6 @@ ${correlatedPolicyChangeCase.policyId ? `Policy ID: ${correlatedPolicyChangeCase
 If the broker attached an endorsement or confirmation for this change, use complete_policy_change_from_endorsement with the known follow-up ID and policy ID. Do not import an endorsement as a separate policy unless it is clearly a standalone policy document. If the attachment is only a note or the policy ID is missing, summarize the broker reply and ask for the missing information.`;
       }
 
-      // ── Build agentic tool set — the model decides whether to answer,
-      // generate a COI, or extract an uploaded policy from attachments. ──
-      // Map attachment filenames -> storageIds so the agent can reference them.
       const attachmentIndex: Record<
         string,
         { fileId: string; contentType: string }
@@ -1268,40 +1221,9 @@ If the broker attached an endorsement or confirmation for this change, use compl
         }
       }
 
-      const validateThirdPartyRecipient = (recipient: string) => {
-        const recipientDomain = recipient.split("@")[1]?.toLowerCase();
-        if (recipientDomain && companyDomains.includes(recipientDomain)) {
-          return;
-        }
-        const allowedRecipients = collectAllowedRecipients(
-          [
-            ...threadMessagesForGuards.map((m) => ({ ...m, channel: "email" })),
-            {
-              channel: "email",
-              fromEmail,
-              toAddresses,
-              ccAddresses,
-            },
-          ],
-          memberEmails,
-        );
-        const recipientCheck = validateEmailRecipient(
-          recipient,
-          allowedRecipients,
-        );
-        if (!recipientCheck.allowed) {
-          console.warn("[security] Inbound email recipient blocked", {
-            inboundMessageId,
-            recipient,
-            reason: recipientCheck.reason,
-          });
-          throw new Error(recipientCheck.reason!);
-        }
-      };
       let toolSentEmail: ToolSentEmail | null = null;
       const generatedCoiAttachments: EmailAttachmentMeta[] = [];
       const emailToolArtifacts: Array<{ type: string; data: unknown }> = [];
-      const certificateProgramSelectionArtifacts: CertificateProgramSelection[] = [];
       const availableEmailAttachments = attachmentRecords
         .filter(
           (rec): rec is typeof rec & { fileId: Id<"_storage"> } =>
@@ -1350,11 +1272,6 @@ If the broker attached an endorsement or confirmation for this change, use compl
           },
           onToolArtifact: (artifact) => {
             emailToolArtifacts.push(artifact);
-            if (artifact.type === "certificate_program_selection") {
-              certificateProgramSelectionArtifacts.push(
-                artifact.data as CertificateProgramSelection,
-              );
-            }
           },
         }),
         ...(isInternal && effectiveMode === "direct"
@@ -1674,43 +1591,14 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       systemContext += `\n\nYou have tools to look up policies, search policy source evidence and document outlines, compare coverages, check compliance requirements, look up connected vendors, inspect vendor policies, inspect requirement-by-requirement vendor compliance, save notes, generate COIs, and extract uploaded policy attachments. Use them as needed before answering. Decide yourself whether the email requires answering a question, generating a COI, and/or extracting an attached policy — you may do more than one.`;
 
       let responseBody: string;
-      const emailCommandText = stripQuotedText(body).trim();
-      const shortEmailCommand = emailCommandText.length < 120;
-      if (
-        currentDraftEmails.length > 0 &&
-        shortEmailCommand &&
-        isShowMoreEmailDraftIntent(emailCommandText)
-      ) {
-        responseBody = buildEmailDraftTextSummary(currentDraftEmails, {
-          sampleSize: currentDraftEmails.length,
-          includeBodyPreview: true,
-          commands: "chat",
+      const deterministicControlResult =
+        await runInboundEmailDeterministicControls(ctx, {
+          messageText: stripQuotedText(body),
+          draftEmails: currentDraftEmails,
         });
-      } else if (
-        currentDraftEmails.length > 0 &&
-        shortEmailCommand &&
-        isSendAllEmailDraftsIntent(emailCommandText)
-      ) {
-        let sentCount = 0;
-        const failed: string[] = [];
-        for (const draftEmail of currentDraftEmails) {
-          try {
-            await ctx.runAction(
-              internal.actions.sendPendingEmail.sendDraftInternal,
-              { id: draftEmail._id },
-            );
-            sentCount++;
-          } catch (err) {
-            failed.push(err instanceof Error ? err.message : String(err));
-          }
-        }
-        responseBody = failed.length === 0
-          ? sentCount === 1
-            ? "Sent the draft email."
-            : `Sent ${sentCount} draft emails.`
-          : `Sent ${sentCount} draft email${sentCount === 1 ? "" : "s"}; ${failed.length} failed. ${failed[0]}`;
+      if (deterministicControlResult) {
+        responseBody = deterministicControlResult.responseBody;
       } else {
-        // Agentic loop — the model decides tools (COI, policy extraction, Q&A)
         const result = await generateText({
           model: await getModelForOrg(ctx, orgId, "email_reply"),
           providerOptions: getProviderOptionsForTask("email_reply"),
@@ -1720,7 +1608,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           tools: emailTools,
           stopWhen: stepCountIs(10),
         });
-        for (const workflowOutcome of collectWorkflowOutcomes(result)) {
+        for (const workflowOutcome of collectToolAudit(result).workflowOutcomes) {
           emailToolArtifacts.push({
             type: "workflow_outcome",
             data: workflowOutcome,
@@ -1732,160 +1620,6 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       const sentByTool = toolSentEmail as ToolSentEmail | null;
       if (sentByTool) {
         return;
-      }
-
-      // ── Detect "Sending email to..." pattern for third-party sends ──
-      const sendMatch = responseBody.match(
-        /\*?\*?Sending email to (.+?)\.\.\.\*?\*?\s*\n([\s\S]+)$/i,
-      );
-      if (isInternal && sendMatch) {
-        try {
-          const emailBody = sendMatch[2].trim();
-          const recipientHint = sendMatch[1].trim();
-          const hintEmailMatch = recipientHint.match(/[\w.+-]+@[\w.-]+\.\w+/);
-          const thirdPartyEmail = hintEmailMatch?.[0];
-          if (!thirdPartyEmail)
-            throw new Error("No recipient email found in agent output");
-          validateThirdPartyRecipient(thirdPartyEmail);
-
-          const stripMd = (text: string) => {
-            let r = text;
-            r = r.replace(/^#{1,6}\s+(.+)$/gm, "$1");
-            r = r.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
-            r = r.replace(/\*\*(.+?)\*\*/g, "$1");
-            r = r.replace(/\*(.+?)\*/g, "$1");
-            return r;
-          };
-          const mdToHtml = (text: string) => {
-            const ls = 'style="color:#2563eb;text-decoration:underline"';
-            let r = text;
-            r = r.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
-            r = r.replace(
-              /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-              `<a href="$2" ${ls}>$1</a>`,
-            );
-            r = r.replace(
-              /(?<!href=")(https?:\/\/[^\s<)]+)/g,
-              `<a href="$1" ${ls}>$1</a>`,
-            );
-            r = r.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-            r = r.replace(/\*(.+?)\*/g, "<em>$1</em>");
-            return r;
-          };
-
-          const sig = buildSignature(agentAddress, brokerBranding);
-          const plainText = stripMd(emailBody) + sig.text;
-          const htmlBody =
-            emailBody
-              .split("\n\n")
-              .map(
-                (p) =>
-                  `<p style="margin:0 0 12px;line-height:1.5">${mdToHtml(p.replace(/\n/g, "<br>"))}</p>`,
-              )
-              .join("\n") + sig.html;
-
-          const sendSubject = subject.replace(
-            /^\[Glass\]\s*Help needed:\s*/i,
-            "",
-          );
-          const replySub = sendSubject.startsWith("Re:")
-            ? sendSubject
-            : `Re: ${sendSubject}`;
-
-          const sendCc = [fromEmail]; // CC the internal user who gave the instruction
-
-          const sendPayload: Record<string, unknown> = {
-            from: fromHeader,
-            to: thirdPartyEmail,
-            cc: sendCc,
-            subject: replySub,
-            text: plainText,
-            html: htmlBody,
-          };
-          if (messageId) {
-            sendPayload.headers = {
-              "In-Reply-To": messageId,
-              References: messageId,
-            };
-          }
-
-          // Check send delay setting
-          const sendDelay = org?.emailSendDelay ?? 5; // default 5 seconds
-
-          if (sendDelay > 0 && unifiedThreadId) {
-            // Queue email with delay
-            const scheduledSendTime = Date.now() + sendDelay * 1000;
-            const pendingEmailId = await ctx.runMutation(
-              internal.pendingEmails.create,
-              {
-                orgId,
-                threadId: unifiedThreadId,
-                emailPayload: JSON.stringify(sendPayload),
-                scheduledSendTime,
-                recipientEmail: thirdPartyEmail,
-                ccAddresses: sendCc,
-                subject: replySub,
-                emailBody,
-                attachments:
-                  generatedCoiAttachments.length > 0
-                    ? generatedCoiAttachments
-                    : undefined,
-                referencedPolicyIds:
-                  referencedPolicySourceIds.size > 0
-                    ? ([...referencedPolicySourceIds] as Id<"policies">[])
-                    : undefined,
-                referencedQuoteIds:
-                  relevantQuoteIds.length > 0
-                    ? (relevantQuoteIds as Id<"policies">[])
-                    : undefined,
-              },
-            );
-
-            // Schedule the actual send
-            await ctx.scheduler.runAfter(
-              sendDelay * 1000,
-              internal.actions.sendPendingEmail.sendPending,
-              { id: pendingEmailId },
-            );
-          } else {
-            // Send immediately (delay = 0 or no unified thread)
-            if (generatedCoiAttachments.length > 0) {
-              sendPayload.attachments = await toResendAttachments(
-                ctx,
-                generatedCoiAttachments,
-              );
-            }
-            const sendOutcome = await sendResendEmail(
-              sendPayload as Parameters<typeof sendResendEmail>[0],
-            );
-            if (!sendOutcome.ok)
-              throw new Error(`Failed to send email: ${sendOutcome.error}`);
-            const sentMsgId = sendOutcome.id;
-
-            await ctx.runMutation(internal.threads.insertEmailMessage, {
-              threadId: unifiedThreadId,
-              orgId,
-              role: "agent",
-              content: emailBody,
-              toAddresses: [thirdPartyEmail],
-              ccAddresses: sendCc,
-              subject: replySub,
-              responseMessageId: sentMsgId,
-              referencedPolicyIds:
-                referencedPolicySourceIds.size > 0
-                  ? ([...referencedPolicySourceIds] as Id<"policies">[])
-                  : undefined,
-              referencedQuoteIds:
-                relevantQuoteIds.length > 0
-                  ? (relevantQuoteIds as Id<"policies">[])
-                  : undefined,
-            });
-          }
-          return; // done — third-party send handled
-        } catch (err) {
-          console.error("Third-party email send failed:", err);
-          // Fall through to normal reply with the agent's response
-        }
       }
 
       // Domain guard: strip internal URLs from customer-facing replies
@@ -2057,71 +1791,17 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         toolArtifacts:
           emailToolArtifacts.length > 0
             ? emailToolArtifacts
-            : certificateProgramSelectionArtifacts.length > 0
-              ? certificateProgramSelectionArtifacts.map((selection) => ({
-                  type: "certificate_program_selection",
-                  data: selection,
-                }))
-              : undefined,
+            : undefined,
         policyChangeCaseId: correlatedPolicyChangeCaseId,
       });
 
-      // ── Phase E: extract durable facts from this email exchange into orgMemory ──
-      try {
-        const memoryExtraction = await generateText({
-          model: haikuModel,
-          maxOutputTokens: 600,
-          system: `You extract durable facts, preferences, risk notes, or observations about an organization from a single email exchange to persist across conversations.
-Output a strict JSON array of up to 5 items, each: {"type": "fact"|"preference"|"risk_note"|"observation", "content": string}.
-Only include items worth remembering long-term (company details, operational facts, stated preferences, noted risks, decisions made). Skip pleasantries, one-off questions, and anything ephemeral. If nothing is worth saving, output [].
-Output ONLY the JSON array — no prose, no code fences.`,
-          messages: [
-            {
-              role: "user",
-              content: `INBOUND EMAIL (from ${fromEmail}):\nSubject: ${subject}\n\n${body}\n\n---\nAGENT REPLY:\n${responseBody}`,
-            },
-          ],
-        });
-        let parsed: Array<{ type: string; content: string }> = [];
-        try {
-          const cleaned = memoryExtraction.text
-            .trim()
-            .replace(/^```(?:json)?\s*/i, "")
-            .replace(/\s*```$/i, "");
-          const arr = JSON.parse(cleaned);
-          if (Array.isArray(arr)) parsed = arr;
-        } catch {
-          // ignore parse failures
-        }
-        const allowedTypes = new Set([
-          "fact",
-          "preference",
-          "risk_note",
-          "observation",
-        ]);
-        const items = parsed
-          .filter(
-            (it) =>
-              it && typeof it.content === "string" && allowedTypes.has(it.type),
-          )
-          .slice(0, 5)
-          .map((it) => ({
-            orgId,
-            type: it.type as
-              | "fact"
-              | "preference"
-              | "risk_note"
-              | "observation",
-            content: it.content.trim(),
-            source: "email" as const,
-          }))
-          .filter((it) => it.content.length > 0);
-        if (items.length > 0) {
-          await ctx.runMutation(internal.orgMemory.bulkInsert, { items });
-        }
-      } catch (err) {
-        console.warn("orgMemory extraction (email) failed:", err);
-      }
+      await extractOrgMemoryFromExchange(ctx, {
+        orgId,
+        source: "email",
+        itemLimit: 5,
+        logPrefix: "[email]",
+        exchangeText: `INBOUND EMAIL (from ${fromEmail}):\nSubject: ${subject}\n\n${body}\n\n---\nAGENT REPLY:\n${responseBody}`,
+      });
 
       // Audit: log agent references to policies
       for (const pId of relevantPolicyIds) {

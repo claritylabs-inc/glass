@@ -208,6 +208,10 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/actions/processThreadChat.ts"),
       "utf-8",
     );
+    const webChatControlsSource = readFileSync(
+      join(__dirname, "..", "convex/lib/webChatDeterministicControls.ts"),
+      "utf-8",
+    );
     const subagentSource = readFileSync(
       join(__dirname, "..", "convex/lib/emailSubagent.ts"),
       "utf-8",
@@ -225,22 +229,30 @@ describe("directed email sending", () => {
       "utf-8",
     );
     const imessageSource = readFileSync(
-      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      join(__dirname, "..", "convex/lib/imessageDeterministicControls.ts"),
       "utf-8",
     );
 
     expect(subagentSource).toContain("upsertEmailDraftArtifact");
     expect(subagentSource).toContain("findDraftByThreadAndRecipient");
     expect(subagentSource).toContain("attachPendingEmailToAgentMessage");
-    expect(processSource).toContain("sendDraftInternal");
-    expect(processSource).toContain("isPendingEmailCancelIntent");
-    expect(processSource).toContain("pendingEmailCancelConfirmationMessage");
-    expect(processSource).toContain("isPendingEmailCancelConfirmationPrompt");
-    expect(processSource).toContain("restoreAsDraftInternal");
+    expect(processSource).toContain("runWebChatEmailControls");
+    expect(webChatControlsSource).toContain("sendDraftInternal");
+    expect(webChatControlsSource).toContain("resolveTextChannelEmailControl");
+    expect(webChatControlsSource).toContain(
+      "pendingEmailCancelConfirmationMessage",
+    );
+    expect(webChatControlsSource).toContain(
+      "isPendingEmailCancelConfirmationPrompt",
+    );
+    expect(webChatControlsSource).toContain("restoreAsDraftInternal");
+    expect(cancelIntentSource).toContain("isPendingEmailCancelIntent");
     expect(cancelIntentSource).toContain('/^(cancel|undo|stop|abort|nevermind|never mind|hold on|wait|no)$/');
     expect(cancelIntentSource).toContain("isPendingEmailRestoreIntent");
     expect(cancelIntentSource).not.toContain("\\b(cancel|undo|stop|don'?t send|abort");
-    expect(processSource).not.toContain("\\b(cancel|undo|stop|don'?t send|abort");
+    expect(webChatControlsSource).not.toContain(
+      "\\b(cancel|undo|stop|don'?t send|abort",
+    );
     expect(imessageSource).toContain("isPendingEmailCancelConfirmationPrompt");
     expect(imessageSource).toContain("pendingEmailCancelConfirmationMessage");
     expect(imessageSource).toContain("restoreAsDraftInternal");
@@ -375,11 +387,15 @@ describe("directed email sending", () => {
       "utf-8",
     );
     const imessageSource = readFileSync(
-      join(__dirname, "..", "convex/actions/handleInboundImessage.ts"),
+      join(__dirname, "..", "convex/lib/imessageDeterministicControls.ts"),
       "utf-8",
     );
     const inboundEmailSource = readFileSync(
       join(__dirname, "..", "convex/actions/handleInboundEmail.ts"),
+      "utf-8",
+    );
+    const inboundEmailControlsSource = readFileSync(
+      join(__dirname, "..", "convex/lib/inboundEmailDeterministicControls.ts"),
       "utf-8",
     );
     const httpSource = readFileSync(
@@ -396,15 +412,37 @@ describe("directed email sending", () => {
     expect(summarySource).toContain('Reply "show more"');
     expect(summarySource).toContain("isShowMoreEmailDraftIntent");
     expect(summarySource).toContain("isSendAllEmailDraftsIntent");
+    expect(inboundEmailSource).toContain("runInboundEmailDeterministicControls");
+    expect(inboundEmailControlsSource).toContain("isShowMoreEmailDraftIntent");
+    expect(inboundEmailControlsSource).toContain("isSendAllEmailDraftsIntent");
+    expect(inboundEmailControlsSource).toContain("sendDraftInternal");
     expect(imessageSource).toContain("buildEmailDraftTextSummary");
-    expect(imessageSource).toContain("isShowMoreEmailDraftIntent");
-    expect(imessageSource).toContain("isSendAllEmailDraftsIntent");
+    expect(imessageSource).toContain("resolveTextChannelEmailControl");
+    expect(imessageSource).toContain("allowDraftList: true");
+    expect(imessageSource).toContain("allowDraftSendAll: true");
     expect(inboundEmailSource).toContain("CURRENT EMAIL DRAFTS");
     expect(inboundEmailSource).toContain("show a short sample first");
     expect(httpSource).toContain("send_email_drafts");
     expect(httpSource).toContain("/mcp/email/drafts/send-batch");
     expect(emailDraftsSource).toContain("sendManyForMcp");
     expect(emailDraftsSource).toContain("summarizeForMcp");
+  });
+
+  it("requires inbound email sends to go through explicit tools, not assistant prose markers", () => {
+    const inboundEmailSource = readFileSync(
+      join(__dirname, "..", "convex/actions/handleInboundEmail.ts"),
+      "utf-8",
+    );
+    const promptSource = readFileSync(
+      join(__dirname, "..", "convex/lib/aiUtils.ts"),
+      "utf-8",
+    );
+
+    expect(inboundEmailSource).toContain("email_expert: buildEmailExpertTool");
+    expect(inboundEmailSource).not.toContain("const sendMatch = responseBody.match");
+    expect(inboundEmailSource).not.toContain("Third-party email send failed");
+    expect(promptSource).toContain("use the email expert tool or another explicit validated sending tool");
+    expect(promptSource).not.toContain("exact send marker");
   });
 
   it("does not append policy source blocks to outbound emails", () => {
