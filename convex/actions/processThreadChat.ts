@@ -82,9 +82,9 @@ import {
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
 import {
-  detectTaskControlIntent,
-  taskControlResponse,
-} from "../lib/taskControlIntent";
+  resolveTaskControlDecision,
+} from "../lib/taskControlDecision";
+import { taskControlResponse } from "../lib/taskControlIntent";
 import {
   requirementEvaluationTargetLabel,
   requirementSemantics,
@@ -860,16 +860,6 @@ export const run = internalAction({
         }
       }
 
-      const taskControlIntent =
-        text.length < 100 ? detectTaskControlIntent(text) : null;
-      if (taskControlIntent) {
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: agentMsgId,
-          content: taskControlResponse(taskControlIntent),
-        });
-        return;
-      }
-
       // Load org
       const org = await ctx.runQuery(internal.orgs.getInternal, {
         id: args.orgId,
@@ -898,6 +888,27 @@ export const run = internalAction({
           });
           return;
         }
+      }
+
+      const taskControlDecision =
+        text.length < 100
+          ? await resolveTaskControlDecision(ctx, {
+              orgId: args.orgId,
+              messageText: text,
+              recentContext: threadMessagesForIntent
+                .filter((message) => message._id !== args.userMessageId)
+                .slice(-8)
+                .map((message) => `${message.role}: ${message.content}`)
+                .join("\n"),
+              channel: "web",
+            })
+          : null;
+      if (taskControlDecision) {
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content: taskControlResponse(taskControlDecision.intent),
+        });
+        return;
       }
 
       const selectedPolicyIds = new Set<string>(
