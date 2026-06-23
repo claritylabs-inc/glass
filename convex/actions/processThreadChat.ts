@@ -81,9 +81,7 @@ import {
   isPendingEmailRestoreIntent,
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
-import {
-  resolveTaskControlDecision,
-} from "../lib/taskControlDecision";
+import { resolveTaskControlIntent } from "../lib/taskControlDecision";
 import { taskControlResponse } from "../lib/taskControlIntent";
 import {
   requirementEvaluationTargetLabel,
@@ -890,9 +888,9 @@ export const run = internalAction({
         }
       }
 
-      const taskControlDecision =
+      const taskControlIntent =
         text.length < 100
-          ? await resolveTaskControlDecision(ctx, {
+          ? await resolveTaskControlIntent(ctx, {
               orgId: args.orgId,
               messageText: text,
               recentContext: threadMessagesForIntent
@@ -903,10 +901,10 @@ export const run = internalAction({
               channel: "web",
             })
           : null;
-      if (taskControlDecision) {
+      if (taskControlIntent) {
         await ctx.runMutation(internal.threads.updateAgentMessage, {
           id: agentMsgId,
-          content: taskControlResponse(taskControlDecision.intent),
+          content: taskControlResponse(taskControlIntent),
         });
         return;
       }

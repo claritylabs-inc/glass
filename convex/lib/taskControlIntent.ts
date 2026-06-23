@@ -5,17 +5,13 @@ export type TaskControlCandidate = {
   intent: TaskControlIntent;
   example: string;
   score: number;
-  matchedTokens: string[];
   fuzzyMatches: Array<{ queryToken: string; exampleToken: string }>;
 };
 
 export type TaskControlRanking = {
-  normalizedText: string;
-  tokens: string[];
   candidates: TaskControlCandidate[];
   topCandidate?: TaskControlCandidate;
-  margin: number;
-  domainConflict: boolean;
+  contentConflict: boolean;
   highConfidence: boolean;
   shouldUseModel: boolean;
 };
@@ -100,11 +96,14 @@ const DOMAIN_CONFLICT_TOKENS = new Set([
   "policies",
 ]);
 
-const TASK_CONTEXT_TOKENS = new Set([
-  "coi",
-  "certificate",
-  "request",
-  "task",
+const CONTINUATION_TOKENS = new Set([
+  "attach",
+  "create",
+  "find",
+  "generate",
+  "issue",
+  "search",
+  "send",
 ]);
 
 const HIGH_CONFIDENCE_SCORE = 0.82;
@@ -172,21 +171,11 @@ function tokenSimilarity(queryToken: string, exampleToken: string): number {
   return 0;
 }
 
-function domainConflict(tokens: string[]): boolean {
-  const tokenSet = new Set(tokens);
-  const hasDomainConflict = tokens.some((token) =>
-    DOMAIN_CONFLICT_TOKENS.has(token),
+function hasTaskControlContentConflict(tokens: string[]): boolean {
+  return tokens.some(
+    (token) =>
+      DOMAIN_CONFLICT_TOKENS.has(token) || CONTINUATION_TOKENS.has(token),
   );
-  if (!hasDomainConflict) return false;
-  return !tokens.some((token) => TASK_CONTEXT_TOKENS.has(token)) ||
-    tokenSet.has("policy") ||
-    tokenSet.has("policies") ||
-    tokenSet.has("email") ||
-    tokenSet.has("draft") ||
-    tokenSet.has("document") ||
-    tokenSet.has("notice") ||
-    tokenSet.has("attachment") ||
-    tokenSet.has("attachments");
 }
 
 function scoreCandidate(
@@ -196,7 +185,6 @@ function scoreCandidate(
 ): TaskControlCandidate {
   const exampleTokens = uniqueTokens(tokenizeTaskControlText(example));
   const uniqueQueryTokens = uniqueTokens(queryTokens);
-  const matchedTokens: string[] = [];
   const fuzzyMatches: Array<{ queryToken: string; exampleToken: string }> = [];
   let weightedMatchScore = 0;
   let possibleScore = 0;
@@ -215,7 +203,6 @@ function scoreCandidate(
     }
     if (bestMatch > 0) {
       weightedMatchScore += weight * bestMatch;
-      matchedTokens.push(exampleToken);
       if (bestMatch < 1) {
         fuzzyMatches.push({ queryToken: bestQueryToken, exampleToken });
       }
@@ -226,22 +213,29 @@ function scoreCandidate(
   const exampleCompact = compactTaskControlText(exampleTokens);
   const exactPhraseBoost = queryCompact === exampleCompact ? 0.32 : 0;
   const containmentBoost =
-    queryCompact.includes(exampleCompact) || exampleCompact.includes(queryCompact)
+    queryCompact !== exampleCompact && queryCompact.includes(exampleCompact)
       ? 0.18
       : 0;
   const coverage = possibleScore > 0 ? weightedMatchScore / possibleScore : 0;
-  const brevityPenalty = uniqueQueryTokens.length > exampleTokens.length + 4 ? 0.2 : 0;
+  const brevityPenalty =
+    uniqueQueryTokens.length > exampleTokens.length + 4 ? 0.2 : 0;
   const fuzzyPenalty = fuzzyMatches.length > 0 ? 0.06 : 0;
   const score = Math.max(
     0,
-    Math.min(1, coverage + exactPhraseBoost + containmentBoost - brevityPenalty - fuzzyPenalty),
+    Math.min(
+      1,
+      coverage +
+        exactPhraseBoost +
+        containmentBoost -
+        brevityPenalty -
+        fuzzyPenalty,
+    ),
   );
 
   return {
     intent,
     example,
     score,
-    matchedTokens,
     fuzzyMatches,
   };
 }
@@ -251,11 +245,8 @@ export function rankTaskControlCandidates(text: string): TaskControlRanking {
   const tokens = tokenizeTaskControlText(text);
   if (!normalizedText || tokens.length === 0 || normalizedText.length > 180) {
     return {
-      normalizedText,
-      tokens,
       candidates: [],
-      margin: 0,
-      domainConflict: false,
+      contentConflict: false,
       highConfidence: false,
       shouldUseModel: false,
     };
@@ -276,25 +267,22 @@ export function rankTaskControlCandidates(text: string): TaskControlRanking {
   const margin = topCandidate
     ? topCandidate.score - (runnerUpDifferentIntent?.score ?? 0)
     : 0;
-  const conflict = domainConflict(tokens);
+  const contentConflict = hasTaskControlContentConflict(tokens);
   const highConfidence = Boolean(
     topCandidate &&
-      !conflict &&
+      !contentConflict &&
       topCandidate.score >= HIGH_CONFIDENCE_SCORE &&
       margin >= MIN_HIGH_CONFIDENCE_MARGIN,
   );
 
   return {
-    normalizedText,
-    tokens,
     candidates,
     topCandidate,
-    margin,
-    domainConflict: conflict,
+    contentConflict,
     highConfidence,
     shouldUseModel: Boolean(
       topCandidate &&
-        !conflict &&
+        !contentConflict &&
         !highConfidence &&
         topCandidate.score >= MODEL_FALLBACK_SCORE,
     ),

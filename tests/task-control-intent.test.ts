@@ -66,6 +66,27 @@ describe("task control intent", () => {
     expect(ranking.shouldUseModel).toBe(true);
   });
 
+  it("does not treat one-word fragments as deterministic exits", () => {
+    for (const text of ["drop", "leave"]) {
+      const ranking = rankTaskControlCandidates(text);
+      expect(ranking.topCandidate?.intent, text).toBe("cancel_task");
+      expect(ranking.highConfidence, text).toBe(false);
+      expect(ranking.shouldUseModel, text).toBe(true);
+    }
+  });
+
+  it("does not swallow continuation commands with task-control phrases", () => {
+    for (const text of [
+      "no thanks send the certificate",
+      "no thanks generate it",
+      "start over and issue it",
+    ]) {
+      const ranking = rankTaskControlCandidates(text);
+      expect(ranking.highConfidence, text).toBe(false);
+      expect(ranking.shouldUseModel, text).toBe(false);
+    }
+  });
+
   it("runs before stale COI context can trigger COI guard rewrites", () => {
     const imessage = read("convex/actions/handleInboundImessage.ts");
     const webChat = read("convex/actions/processThreadChat.ts");
@@ -74,12 +95,12 @@ describe("task control intent", () => {
     expect(decision).toContain("generateObject");
     expect(decision).toContain("rankTaskControlCandidates");
     expect(decision).toContain("shouldAskConfirmation");
-    expect(imessage.indexOf("resolveTaskControlDecision")).toBeGreaterThan(-1);
-    expect(imessage.indexOf("const taskControlDecision")).toBeLessThan(
+    expect(imessage.indexOf("resolveTaskControlIntent")).toBeGreaterThan(-1);
+    expect(imessage.indexOf("const taskControlIntent")).toBeLessThan(
       imessage.indexOf("hasCoiRequestIntent(args.messageText"),
     );
-    expect(webChat.indexOf("resolveTaskControlDecision")).toBeGreaterThan(-1);
-    expect(webChat.indexOf("const taskControlDecision")).toBeLessThan(
+    expect(webChat.indexOf("resolveTaskControlIntent")).toBeGreaterThan(-1);
+    expect(webChat.indexOf("const taskControlIntent")).toBeLessThan(
       webChat.indexOf("hasCoiEmailIntent(latestUserContent"),
     );
   });
