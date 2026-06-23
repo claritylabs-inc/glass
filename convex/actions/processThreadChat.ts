@@ -1837,6 +1837,17 @@ export const run = internalAction({
                 data: (part as Record<string, unknown>).output,
               });
             }
+            const workflowOutput = (part as Record<string, unknown>).output;
+            if (
+              workflowOutput &&
+              typeof workflowOutput === "object" &&
+              "workflowOutcome" in workflowOutput
+            ) {
+              toolArtifacts.push({
+                type: "workflow_outcome",
+                data: (workflowOutput as Record<string, unknown>).workflowOutcome,
+              });
+            }
             // Capture cited source/outline titles and policy IDs from lookup_policy_section results
             if (
               lastToolName === "lookup_policy_section" &&

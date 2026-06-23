@@ -251,13 +251,13 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate a Certificate of Insurance (COI) PDF for a specific policy. Include requestedEndorsements/requestText when the user asks for additional insured, waiver of subrogation, primary and non-contributory, loss payee, mortgagee, special wording, or another endorsement-bearing certificate.",
+    "Generate or retrieve a Certificate of Insurance (COI) PDF for a specific policy. Include requestedEndorsements/requestText only when the user explicitly asks for additional insured, waiver of subrogation, primary and non-contributory, loss payee, mortgagee, or another endorsement-bearing certificate.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     certificateHolder: z
       .string()
       .optional()
-      .describe("Name/address of the certificate holder"),
+      .describe("Certificate holder name. Include the address in this block only when the user already provided it."),
     holderContactName: z
       .string()
       .optional()
@@ -265,19 +265,30 @@ export const generateCoi = tool({
     holderEmail: z
       .string()
       .optional()
-      .describe("Certificate holder email address for renewal delivery when the user provides one"),
+      .describe("Certificate holder email address only when the user explicitly asks Glass to email/send the certificate or already provides the email. Do not ask for this for ordinary certificate generation."),
     holderPhone: z
       .string()
       .optional()
-      .describe("Certificate holder phone number for renewal delivery when the user provides one"),
+      .describe("Certificate holder phone number only when the user provides one"),
+    addressLine1: z
+      .string()
+      .optional()
+      .describe("Certificate holder street address line 1 when the user provides it."),
+    addressLine2: z
+      .string()
+      .optional()
+      .describe("Certificate holder street address line 2 when the user provides it."),
+    city: z.string().optional().describe("Certificate holder city when provided."),
+    state: z.string().optional().describe("Certificate holder state/province when provided."),
+    postalCode: z.string().optional().describe("Certificate holder postal code when provided."),
     requestText: z
       .string()
       .optional()
-      .describe("The user's full certificate request, especially any requested endorsement or special wording"),
+      .describe("The user's full certificate request. Include explicit endorsement-bearing wording only if the user asked for it."),
     requestedEndorsements: z
       .array(z.string())
       .optional()
-      .describe("Specific endorsement or special wording requests, such as additional insured, waiver of subrogation, primary and non-contributory, loss payee, or mortgagee"),
+      .describe("Specific endorsement requests only when the user explicitly asks for them, such as additional insured, waiver of subrogation, primary and non-contributory, loss payee, or mortgagee. Do not invent extra wording."),
     partnerProgramId: z
       .string()
       .optional()

@@ -6,6 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
 import {
   holderSnapshot,
+  normalizeCertificateHolderName,
   policyCertificateDedupeKey,
 } from "./lib/certificateIdentity";
 
@@ -231,6 +232,86 @@ export const findReusableIssuedVersionInternal = internalQuery({
     return {
       ...version,
       url: await ctx.storage.getUrl(version.fileId),
+    };
+  },
+});
+
+export const findReusableIssuedVersionByHolderNameInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    holderName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const normalizedName = normalizeCertificateHolderName(args.holderName);
+    if (!normalizedName) return null;
+
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy || policy.orgId !== args.orgId) return null;
+    let currentPolicyVersionId = policy.currentPolicyVersionId;
+    if (!currentPolicyVersionId) {
+      const latest = await ctx.db
+        .query("policyVersions")
+        .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", args.policyId))
+        .order("desc")
+        .first();
+      currentPolicyVersionId = latest?._id;
+    }
+
+    const holders = await ctx.db
+      .query("certificateHolders")
+      .withIndex("by_orgId_normalizedName", (q) =>
+        q.eq("orgId", args.orgId).eq("normalizedName", normalizedName),
+      )
+      .collect();
+    const reusable = [];
+    for (const holder of holders) {
+      const parents = await ctx.db
+        .query("policyCertificates")
+        .withIndex("by_holderId", (q) => q.eq("holderId", holder._id))
+        .collect();
+      for (const parent of parents) {
+        if (
+          parent.orgId !== args.orgId ||
+          parent.policyId !== args.policyId ||
+          parent.status !== "active" ||
+          !parent.latestIssuedVersionId
+        ) {
+          continue;
+        }
+        const version = await ctx.db.get(parent.latestIssuedVersionId);
+        if (
+          !version ||
+          version.status !== "issued" ||
+          !version.fileId ||
+          version.policyId !== args.policyId
+        ) {
+          continue;
+        }
+        if (currentPolicyVersionId && version.policyVersionId !== currentPolicyVersionId) {
+          continue;
+        }
+        reusable.push({
+          parent,
+          holder,
+          version,
+        });
+      }
+    }
+
+    reusable.sort((left, right) =>
+      (right.version.issuedAt ?? right.version.createdAt) -
+      (left.version.issuedAt ?? left.version.createdAt),
+    );
+    const match = reusable[0];
+    if (!match) return null;
+    const fileId = match.version.fileId;
+    if (!fileId) return null;
+    return {
+      ...match.version,
+      holder: match.holder,
+      policyCertificateId: match.parent._id,
+      url: await ctx.storage.getUrl(fileId),
     };
   },
 });

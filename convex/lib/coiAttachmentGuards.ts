@@ -16,6 +16,11 @@ export type RequestedEmailAttachment = {
   holderContactName?: string;
   holderEmail?: string;
   holderPhone?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
   requestText?: string;
   requestedEndorsements?: string[];
 };
