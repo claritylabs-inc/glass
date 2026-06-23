@@ -81,6 +81,8 @@ import {
   isPendingEmailRestoreIntent,
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
+import { resolveTaskControlIntent } from "../lib/taskControlDecision";
+import { taskControlResponse } from "../lib/taskControlIntent";
 import {
   requirementEvaluationTargetLabel,
   requirementSemantics,
@@ -884,6 +886,27 @@ export const run = internalAction({
           });
           return;
         }
+      }
+
+      const taskControlIntent =
+        text.length < 100
+          ? await resolveTaskControlIntent(ctx, {
+              orgId: args.orgId,
+              messageText: text,
+              recentContext: threadMessagesForIntent
+                .filter((message) => message._id !== args.userMessageId)
+                .slice(-8)
+                .map((message) => `${message.role}: ${message.content}`)
+                .join("\n"),
+              channel: "web",
+            })
+          : null;
+      if (taskControlIntent) {
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content: taskControlResponse(taskControlIntent),
+        });
+        return;
       }
 
       const selectedPolicyIds = new Set<string>(

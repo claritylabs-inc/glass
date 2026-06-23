@@ -57,6 +57,8 @@ import {
   isPendingEmailRestoreIntent,
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
+import { resolveTaskControlIntent } from "../lib/taskControlDecision";
+import { taskControlResponse } from "../lib/taskControlIntent";
 import {
   buildEmailDraftTextSummary,
   isSendAllEmailDraftsIntent,
@@ -887,6 +889,20 @@ export const processInbound = internalAction({
       ) {
         return await replyWithEmailCancelStatus(
           pendingEmailCancelConfirmationMessage("pending", pendingEmails.length),
+        );
+      }
+
+      const taskControlIntent = shortText
+        ? await resolveTaskControlIntent(ctx, {
+            orgId,
+            messageText: args.messageText,
+            recentContext: recentConversationContext,
+            channel: "imessage",
+          })
+        : null;
+      if (taskControlIntent) {
+        return await replyWithEmailCancelStatus(
+          taskControlResponse(taskControlIntent),
         );
       }
 
