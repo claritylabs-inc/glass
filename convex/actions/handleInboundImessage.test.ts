@@ -28,6 +28,17 @@ describe("shouldCreatePolicyDetailsAppCard", () => {
     ).toBe(true);
   });
 
+  test("creates a card for compact policy inventory responses", () => {
+    expect(
+      shouldCreatePolicyDetailsAppCard({
+        messageText: "What policies do I have on file?",
+        responseText:
+          "You have 1 active policy on file: Sentinel Pacific Specialty Insurance Company (Cyber: Tech Prof & Cyber Liability) SPS-TPC-2026-00481-04, effective 05/01/2026 to 05/01/2027.",
+        usedTools: [],
+      }),
+    ).toBe(true);
+  });
+
   test("does not create a card for unrelated short responses", () => {
     expect(
       shouldCreatePolicyDetailsAppCard({
