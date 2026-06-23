@@ -82,6 +82,10 @@ import {
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
 import {
+  detectTaskControlIntent,
+  taskControlResponse,
+} from "../lib/taskControlIntent";
+import {
   requirementEvaluationTargetLabel,
   requirementSemantics,
 } from "../lib/requirementSemantics";
@@ -854,6 +858,16 @@ export const run = internalAction({
           });
           return;
         }
+      }
+
+      const taskControlIntent =
+        text.length < 100 ? detectTaskControlIntent(text) : null;
+      if (taskControlIntent) {
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content: taskControlResponse(taskControlIntent),
+        });
+        return;
       }
 
       // Load org

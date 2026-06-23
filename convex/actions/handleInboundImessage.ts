@@ -58,6 +58,10 @@ import {
   pendingEmailCancelConfirmationMessage,
 } from "../lib/emailCancelIntent";
 import {
+  detectTaskControlIntent,
+  taskControlResponse,
+} from "../lib/taskControlIntent";
+import {
   buildEmailDraftTextSummary,
   isSendAllEmailDraftsIntent,
   isShowMoreEmailDraftIntent,
@@ -887,6 +891,15 @@ export const processInbound = internalAction({
       ) {
         return await replyWithEmailCancelStatus(
           pendingEmailCancelConfirmationMessage("pending", pendingEmails.length),
+        );
+      }
+
+      const taskControlIntent = shortText
+        ? detectTaskControlIntent(args.messageText)
+        : null;
+      if (taskControlIntent) {
+        return await replyWithEmailCancelStatus(
+          taskControlResponse(taskControlIntent),
         );
       }
 
