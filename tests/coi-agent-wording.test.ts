@@ -16,6 +16,15 @@ describe("COI agent wording", () => {
 });
 
 describe("policy advice guardrails", () => {
+  it("keeps broad policy detail requests at a basic-summary depth by default", () => {
+    const instructions = buildPolicyToolInstructions(8);
+
+    expect(instructions).toContain('For broad policy "details" or "summary" requests');
+    expect(instructions).toContain("keep the final answer to the basic policy card");
+    expect(instructions).toContain("unless the user asks for a comprehensive breakdown");
+    expect(instructions).toContain("specific section such as endorsements");
+  });
+
   it("keeps unsupported market, future, and advisory claims out of policy answers", () => {
     const instructions = buildPolicyToolInstructions(8);
 
