@@ -1,78 +1,13 @@
 import type { Metadata } from "next";
-import dayjs from "dayjs";
-import { fetchQuery } from "convex/nextjs";
-import { api } from "@/convex/_generated/api";
+import {
+  formatDate,
+  labelForStatus,
+  loadAppCardView,
+  metadataDescription,
+  type Policy,
+} from "./view";
 
 export const dynamic = "force-dynamic";
-
-type Policy = {
-  title: string;
-  insuredName: string;
-  carrier?: string;
-  policyNumber: string;
-  policyTypes: string[];
-  effectiveDate: string;
-  expirationDate: string;
-  dataStage?: string;
-  coverages: Array<{
-    name: string;
-    limit?: string;
-    deductible?: string;
-    origin?: string;
-  }>;
-};
-
-type AppCardView = {
-  kind: "policy" | "certificate" | "certificate_request" | "policy_change";
-  orgName: string;
-  title: string;
-  subtitle?: string;
-  label?: string;
-  policy?: Policy | null;
-  certificate?: {
-    holderName: string;
-    fileName: string;
-    fileUrl?: string | null;
-    authorityType?: string;
-    certificationStatus?: string;
-    versionNumber?: number;
-    createdAt: number;
-  };
-  certificateRequest?: {
-    holderName: string;
-    status: string;
-    partnerName?: string;
-    createdAt: number;
-    updatedAt: number;
-  };
-  policyChange?: {
-    status: string;
-    requestText?: string;
-    summary?: string;
-    pendingQuestions: string[];
-    createdAt: number;
-    updatedAt: number;
-  };
-};
-
-async function loadView(token: string): Promise<AppCardView | null> {
-  return await fetchQuery(api.appCardLinks.getByToken, { token }) as AppCardView | null;
-}
-
-function formatDate(value?: string | number) {
-  if (!value) return "Not listed";
-  const parsed = dayjs(value);
-  return parsed.isValid() ? parsed.format("MMM D, YYYY") : String(value);
-}
-
-function labelForStatus(status?: string) {
-  if (!status) return "Not listed";
-  return status
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join(" ");
-}
 
 export async function generateMetadata({
   params,
@@ -80,19 +15,32 @@ export async function generateMetadata({
   params: Promise<{ token: string }>;
 }): Promise<Metadata> {
   const { token } = await params;
-  const view = await loadView(token).catch(() => null);
+  const view = await loadAppCardView(token).catch(() => null);
   if (!view) return { title: { absolute: "Glass" } };
+  const description = metadataDescription(view);
+  const image = `/share/imessage/${token}/opengraph-image`;
   return {
     title: { absolute: view.title },
-    description: view.subtitle ?? view.orgName,
+    description,
     openGraph: {
       title: view.title,
-      description: view.subtitle ?? view.orgName,
+      description,
       siteName: "Glass",
+      type: "website",
+      images: [
+        {
+          url: image,
+          width: 1200,
+          height: 630,
+          alt: view.title,
+        },
+      ],
     },
     twitter: {
+      card: "summary_large_image",
       title: view.title,
-      description: view.subtitle ?? view.orgName,
+      description,
+      images: [image],
     },
   };
 }
@@ -154,7 +102,7 @@ export default async function ImessageSharePage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const view = await loadView(token).catch(() => null);
+  const view = await loadAppCardView(token).catch(() => null);
 
   if (!view) {
     return (

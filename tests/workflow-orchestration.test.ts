@@ -169,11 +169,15 @@ describe("workflow orchestration wiring", () => {
   });
 
   it("stores workflow outcomes from web, inbound email, and iMessage tool results", () => {
+    const audit = read("convex/lib/agentToolAudit.ts");
+
     expect(read("convex/actions/processThreadChat.ts")).toContain(
       'type: "workflow_outcome"',
     );
+    expect(audit).toContain("workflowOutcomes");
+    expect(audit).toContain("workflowOutcome");
     expect(read("convex/actions/handleInboundEmail.ts")).toContain(
-      "collectWorkflowOutcomes(result)",
+      "collectToolAudit(result).workflowOutcomes",
     );
     expect(read("convex/actions/handleInboundImessage.ts")).toContain(
       "workflowOutcomes",

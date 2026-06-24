@@ -191,7 +191,7 @@ describe("chat duplicate prevention and COI preview UI", () => {
   it("shows the email draft artifact every time a message references that draft", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
     const pendingEmails = read("convex/pendingEmails.ts");
-    const processThreadChat = read("convex/actions/processThreadChat.ts");
+    const webControls = read("convex/lib/webChatDeterministicControls.ts");
 
     const pendingEmailLinkBlock = threadContent.slice(
       threadContent.indexOf("if (message.pendingEmailId)"),
@@ -200,7 +200,7 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(pendingEmailLinkBlock).toContain("candidate.pendingEmailId === message.pendingEmailId");
     expect(pendingEmailLinkBlock).toContain("!attachedEmailMessageIds.has(linked._id)");
     expect(pendingEmails).toContain("return restored ? { id: args.id } : null");
-    expect(processThreadChat).toContain("pendingEmailId: restored?.id");
+    expect(webControls).toContain("pendingEmailId: restored?.id");
   });
 
   it("shows email attachments as a compact labeled section", () => {

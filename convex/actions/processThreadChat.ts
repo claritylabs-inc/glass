@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { streamText, stepCountIs, type ModelMessage } from "ai";
 import mammoth from "mammoth";
 import JSZip from "jszip";
@@ -69,20 +69,13 @@ import {
   enforceInputLimits,
 } from "../lib/security";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
-import {
-  formatCertificateProgramSelectionForModel,
-  type CertificateProgramSelection,
-} from "../lib/certificateProgramSelection";
+import { buildAssistantMessageContentWithArtifacts } from "../lib/agentMessageHistory";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
-  isPendingEmailCancelConfirmation,
-  isPendingEmailCancelConfirmationPrompt,
-  isPendingEmailCancelIntent,
-  isPendingEmailRestoreIntent,
-  pendingEmailCancelConfirmationMessage,
-} from "../lib/emailCancelIntent";
-import { resolveTaskControlIntent } from "../lib/taskControlDecision";
-import { taskControlResponse } from "../lib/taskControlIntent";
+  loadWebChatDeterministicControlState,
+  runWebChatEmailControls,
+  runWebChatTaskControl,
+} from "../lib/webChatDeterministicControls";
 import {
   requirementEvaluationTargetLabel,
   requirementSemantics,
@@ -614,25 +607,12 @@ async function buildMessageHistoryWithAttachmentContext(
 
       history.push({ role: "user", content: text });
     } else if (msg.role === "agent" && content) {
-      const pendingSelections = Array.isArray(msg.toolArtifacts)
-        ? (msg.toolArtifacts as Array<{ type?: string; data?: unknown }>)
-            .filter(
-              (artifact) => artifact.type === "certificate_program_selection",
-            )
-            .map((artifact) => artifact.data)
-        : [];
-      const selectionContext = pendingSelections
-        .map((selection) =>
-          formatCertificateProgramSelectionForModel(
-            selection as CertificateProgramSelection,
-          ),
-        )
-        .join("\n\n");
       history.push({
         role: "assistant",
-        content: selectionContext
-          ? `${content}\n\n${selectionContext}`
-          : content,
+        content: buildAssistantMessageContentWithArtifacts({
+          content,
+          toolArtifacts: msg.toolArtifacts,
+        }),
       });
     }
   }
@@ -702,160 +682,20 @@ export const run = internalAction({
     };
 
     try {
-      // ── Check for cancel/undo intent targeting a pending email ──
-      // First check if there are any pending emails in this thread
-      const pendingEmails = await ctx.runQuery(
-        internal.pendingEmails.findPendingByThread,
-        { threadId: args.threadId },
-      );
-      const draftEmails = (await ctx.runQuery(
-        internal.pendingEmails.listDraftsInternal,
-        { threadId: args.threadId, orgId: args.orgId },
-      )) as Array<{ _id: Id<"pendingEmails"> }>;
-      const latestCancelledEmail = await ctx.runQuery(
-        internal.pendingEmails.findLatestCancelledByThread,
-        { threadId: args.threadId, orgId: args.orgId },
-      );
-      const userMsg = await ctx.runQuery(internal.threads.getMessageInternal, {
-        id: args.userMessageId,
+      const controlState = await loadWebChatDeterministicControlState(ctx, {
+        threadId: args.threadId,
+        orgId: args.orgId,
+        userMessageId: args.userMessageId,
       });
-      const text = userMsg?.content.trim() ?? "";
-      const threadMessagesForIntent = (await ctx.runQuery(
-        internal.threads.messagesInternal,
-        { threadId: args.threadId },
-      )) as Array<{
-        _id: Id<"threadMessages">;
-        role: string;
-        content: string;
-        status?: string;
-      }>;
-      const previousAgentMessage = threadMessagesForIntent
-        .filter(
-          (message) =>
-            message._id !== agentMsgId && message._id !== args.userMessageId,
-        )
-        .filter((message) => message.role === "agent" && message.content)
-        .at(-1);
-      const isCancelConfirmationContext =
-        isPendingEmailCancelConfirmationPrompt(previousAgentMessage?.content);
-      const approvalWords =
-        /^(yes|yep|yeah|ok|okay|approved|approve|confirmed|confirm|send|send it|looks good|this is good|go ahead|do it|please send)\.?!?$/i;
-
+      const text = controlState.messageText;
       if (
-        latestCancelledEmail &&
-        text.length < 100 &&
-        isPendingEmailRestoreIntent(text)
+        await runWebChatEmailControls(ctx, {
+          ...controlState,
+          agentMessageId: agentMsgId,
+          userMessageId: args.userMessageId,
+        })
       ) {
-        const restored = await ctx.runMutation(
-          internal.pendingEmails.restoreAsDraftInternal,
-          { id: latestCancelledEmail._id },
-        );
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: agentMsgId,
-          content: restored
-            ? "Email restored as a draft. Review it in the email draft card."
-            : "I couldn't restore that email.",
-          pendingEmailId: restored?.id,
-        });
         return;
-      }
-
-      if (
-        draftEmails.length > 0 &&
-        text.length < 100 &&
-        isCancelConfirmationContext &&
-        isPendingEmailCancelConfirmation(text)
-      ) {
-        for (const draftEmail of draftEmails) {
-          await ctx.runMutation(internal.pendingEmails.cancelInternal, {
-            id: draftEmail._id,
-          });
-        }
-        await ctx.runMutation(internal.threads.deleteMessageInternal, {
-          id: agentMsgId,
-        });
-        return;
-      }
-
-      if (
-        draftEmails.length > 0 &&
-        text.length < 100 &&
-        isPendingEmailCancelIntent(text)
-      ) {
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: agentMsgId,
-          content: pendingEmailCancelConfirmationMessage(
-            "draft",
-            draftEmails.length,
-          ),
-        });
-        return;
-      }
-
-      if (
-        draftEmails.length > 0 &&
-        text.length < 100 &&
-        approvalWords.test(text)
-      ) {
-        try {
-          for (const draftEmail of draftEmails) {
-            await ctx.runAction(
-              internal.actions.sendPendingEmail.sendDraftInternal,
-              { id: draftEmail._id },
-            );
-          }
-          await ctx.runMutation(internal.threads.deleteMessageInternal, {
-            id: agentMsgId,
-          });
-          return;
-        } catch (err) {
-          await ctx.runMutation(internal.threads.updateAgentError, {
-            id: agentMsgId,
-            error: err instanceof Error ? err.message : String(err),
-            content:
-              draftEmails.length === 1
-                ? "Failed to send the draft email."
-                : "Failed to send one or more draft emails.",
-          });
-          return;
-        }
-      }
-
-      if (pendingEmails.length > 0) {
-        if (
-          text.length < 100 &&
-          isCancelConfirmationContext &&
-          isPendingEmailCancelConfirmation(text)
-        ) {
-          let cancelledCount = 0;
-          for (const pe of pendingEmails) {
-            const ok = await ctx.runMutation(
-              internal.pendingEmails.cancelInternal,
-              { id: pe._id },
-            );
-            if (ok) cancelledCount++;
-          }
-          if (cancelledCount > 0) {
-            await ctx.runMutation(internal.threads.updateAgentMessage, {
-              id: agentMsgId,
-              content:
-                cancelledCount === 1
-                  ? "Done - email cancelled."
-                  : `Done - ${cancelledCount} pending emails cancelled.`,
-            });
-            return;
-          }
-        }
-        if (text.length < 100 && isPendingEmailCancelIntent(text)) {
-          await ctx.runMutation(internal.threads.updateAgentMessage, {
-            id: agentMsgId,
-            content: pendingEmailCancelConfirmationMessage(
-              "pending",
-              pendingEmails.length,
-            ),
-          });
-          return;
-        }
       }
 
       // Load org
@@ -888,24 +728,15 @@ export const run = internalAction({
         }
       }
 
-      const taskControlIntent =
-        text.length < 100
-          ? await resolveTaskControlIntent(ctx, {
-              orgId: args.orgId,
-              messageText: text,
-              recentContext: threadMessagesForIntent
-                .filter((message) => message._id !== args.userMessageId)
-                .slice(-8)
-                .map((message) => `${message.role}: ${message.content}`)
-                .join("\n"),
-              channel: "web",
-            })
-          : null;
-      if (taskControlIntent) {
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: agentMsgId,
-          content: taskControlResponse(taskControlIntent),
-        });
+      if (
+        await runWebChatTaskControl(ctx, {
+          orgId: args.orgId,
+          agentMessageId: agentMsgId,
+          userMessageId: args.userMessageId,
+          messageText: text,
+          threadMessages: controlState.threadMessages,
+        })
+      ) {
         return;
       }
 
@@ -1243,12 +1074,13 @@ export const run = internalAction({
         attachmentNote +
         buildConfidenceInstructions();
 
-      const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, {
-        orgId: args.orgId,
-      });
+      const orgMembers = (await ctx.runQuery(
+        internal.users.listByOrgInternal,
+        { orgId: args.orgId },
+      )) as Array<Doc<"users">>;
       const orgMemberEmails = orgMembers
-        .map((m: any) => m?.email)
-        .filter(Boolean) as string[];
+        .map((member) => member.email)
+        .filter((email): email is string => Boolean(email));
       const baseAllowedRecipients = collectAllowedRecipients(
         allMessages as Parameters<typeof collectAllowedRecipients>[0],
         orgMemberEmails,
