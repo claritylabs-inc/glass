@@ -22,4 +22,4 @@ RUN npm run build --ignore-scripts
 RUN node --input-type=module -e "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url); require('@llamaindex/liteparse-linux-x64-gnu'); console.log('LiteParse Linux native package OK')"
 RUN node -e "import('@llamaindex/liteparse').then(() => console.log('LiteParse native module OK'))"
 
-CMD ["npm", "run", "start"]
+CMD ["node", "dist/index.js"]

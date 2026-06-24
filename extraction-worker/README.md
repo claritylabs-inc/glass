@@ -31,7 +31,7 @@ Set `EXTRACTION_WORKER_URL` and the same `EXTRACTION_WORKER_SECRET` on Convex to
 Create a Railway service rooted at `extraction-worker/`. The included `railway.json` builds the Dockerfile with Node and the native `@llamaindex/liteparse` package:
 
 ```bash
-npm run start
+node dist/index.js
 ```
 
 Run at least one worker replica. Multiple replicas are safe because jobs are claimed with Convex-backed leases and periodic heartbeats.

@@ -39,6 +39,49 @@ Then open `http://localhost:3000`.
 - `npx tsc --noEmit` - Next.js TypeScript check
 - `npx convex typecheck` - Convex type check
 - `npx convex deploy --yes` - deploy Convex functions to prod
+- `npm run container:doctor` - verify local Apple `container` prerequisites and installation
+- `npm run container:system:start` - start or initialize Apple's local container service
+- `npm run container:build:workers` - build all Railway worker images locally with Apple's `container` CLI for `linux/amd64`
+- `npm run container:run:extraction-worker` / `npm run container:run:imessage-worker` / `npm run container:run:mailbox-scan-worker` - run a locally built worker image with the worker's `.env`
+
+## Local Worker Containers
+
+Production Railway worker services are Dockerfile-backed. Local worker image tests should use the same Dockerfiles through Apple's `container` CLI on Apple silicon Macs so local builds exercise the production container path.
+
+Prerequisites:
+
+- Apple silicon Mac
+- macOS 26 or newer
+- Apple `container` installed from the signed package at <https://github.com/apple/container/releases/latest>
+
+Install or verify the CLI:
+
+```bash
+curl -fL -o /tmp/container-installer-signed.pkg \
+  https://github.com/apple/container/releases/download/1.0.0/container-1.0.0-installer-signed.pkg
+spctl --assess --type install -vv /tmp/container-installer-signed.pkg
+pkgutil --check-signature /tmp/container-installer-signed.pkg
+sudo installer -pkg /tmp/container-installer-signed.pkg -target /
+npm run container:doctor
+npm run container:system:start
+```
+
+The first `container system start` may prompt to install Apple's recommended Kata Linux kernel. In a non-interactive shell, run `yes | container system start`.
+
+Build all worker images:
+
+```bash
+npm run container:build:workers
+```
+
+Run one worker image locally:
+
+```bash
+cp extraction-worker/.env.template extraction-worker/.env
+npm run container:run:extraction-worker
+```
+
+Repeat with `imessage-worker/.env` or `mailbox-scan-worker/.env` for those services. The build scripts target `linux/amd64` and the run scripts use `--arch amd64`; this is intentional because production Railway runs Linux containers and the extraction worker currently validates the Linux x64 LiteParse native package.
 
 ## Environment
 
