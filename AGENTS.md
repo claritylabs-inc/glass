@@ -23,6 +23,10 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - `npx convex typecheck` — TypeScript validation (Convex functions)
 - `npm run check:agent-workers` — build/syntax-check mission-critical Railway agent workers before deployment
 - `npm run check:agent-health` — smoke-check production Convex agent config plus iMessage and extraction worker health
+- `npm run container:doctor` — verify local Apple `container` prerequisites and installation
+- `npm run container:system:start` — start or initialize Apple's local container service
+- `npm run container:build:workers` — build all Railway worker Dockerfiles locally with Apple's `container` CLI for `linux/amd64` production parity
+- `npm run container:run:extraction-worker`, `npm run container:run:imessage-worker`, `npm run container:run:mailbox-scan-worker` — run locally built worker images with each worker's `.env`
 - `npm run operator:provision-broker -- --name "Broker Name" --admin-email "admin@example.com"` — repo wrapper around the private installable operator CLI for provisioning broker orgs/accounts without using the web app
 - `npx convex run seed:seed` — seed demo data
 - `npx convex run actions/backfillChunks:backfill --args '{"orgId":"..."}'` — embed existing documents for vector search
@@ -46,10 +50,13 @@ Railway project `Glass` (`21798fb8-c164-4eed-800c-c964978a9639`):
 
 - Environment `dev` (`e71ed18f-c387-4b34-a9ca-4f900a4ed25f`) is wired to Convex dev.
 - Environment `production` (`b661c376-3de6-4b4e-a7ec-62ca7a9ffacf`) is wired to Convex production.
-- `glass-extraction-worker` (`e8a4f55a-ae25-4d5e-ba0d-e18ea11271ac`) is rooted at `/extraction-worker`, uses `extraction-worker/railway.json`, serves HTTP on port `8080`, and should deploy with Dockerfile builder. Public worker health URLs are `https://glass-extraction-worker-dev.up.railway.app/health` and `https://glass-extraction-worker-production.up.railway.app/health`.
-- `glass-mailbox-scan-worker` (`b368a536-816b-43f8-8aed-89d2e5163ace`) is rooted at `/mailbox-scan-worker`, uses `mailbox-scan-worker/railway.json`, and runs the `0 15 * * *` UTC cron against the matching Convex site URL.
-- `imessage-worker` (`e2f0798e-f97e-48a7-9f35-145b75e93e09`) is rooted at `imessage-worker`, uses `imessage-worker/railway.json`, serves the Railway-provided `PORT` with local fallback `3001`, runs terminal mode in dev, and real Photon/iMessage mode only in production.
-- Every Railway worker service should have a service-local `railway.json` with `build.watchPatterns` scoped to its repo-root path (for example `/extraction-worker/**`). Without watch paths, docs-only and unrelated app pushes trigger unnecessary worker rebuilds.
+- `glass-extraction-worker` (`e8a4f55a-ae25-4d5e-ba0d-e18ea11271ac`) is rooted at `/extraction-worker`, uses `extraction-worker/railway.json`, deploys with `extraction-worker/Dockerfile`, serves HTTP on port `8080`, and starts with `node dist/index.js`. Public worker health URLs are `https://glass-extraction-worker-dev.up.railway.app/health` and `https://glass-extraction-worker-production.up.railway.app/health`.
+- `glass-mailbox-scan-worker` (`b368a536-816b-43f8-8aed-89d2e5163ace`) is rooted at `/mailbox-scan-worker`, uses `mailbox-scan-worker/railway.json`, deploys with `mailbox-scan-worker/Dockerfile`, and runs the `0 15 * * *` UTC cron against the matching Convex site URL with `node src/index.js`.
+- `imessage-worker` (`e2f0798e-f97e-48a7-9f35-145b75e93e09`) is rooted at `imessage-worker`, uses `imessage-worker/railway.json`, deploys with `imessage-worker/Dockerfile`, serves the Railway-provided `PORT` with local fallback `3001`, runs terminal mode in dev, and real Photon/iMessage mode only in production.
+- Every Railway worker service should have a service-local `Dockerfile` and `railway.json` with `build.watchPatterns` scoped to its repo-root path (for example `/extraction-worker/**`). Without watch paths, docs-only and unrelated app pushes trigger unnecessary worker rebuilds.
+- Local worker-image testing should use Apple's official `container` CLI installed from the signed package at `apple/container` releases. Do not manually extract the package payload as a substitute for installation; the package is non-relocatable, root-authenticated, and installs under `/usr/local`.
+- First-time `container system start` may prompt to install the recommended Kata Linux kernel; use `yes | container system start` only in non-interactive agent shells.
+- The local Apple `container` build scripts intentionally target `linux/amd64` and run with `--arch amd64` so the extraction worker validates the same Linux x64 LiteParse native package used by production containers.
 
 Railway worker env wiring:
 
