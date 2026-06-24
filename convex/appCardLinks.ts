@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internalMutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { buildCoverageBreakdown } from "./lib/coverageBreakdown";
 import { getClientPortalUrl } from "./lib/domains";
 
 const appCardKindValidator = v.union(
@@ -69,6 +70,7 @@ function publicPolicy(policy: Doc<"policies">) {
     dataStage: policy.extractionDataStage ?? (
       policy.pipelineStatus === "complete" ? "final" : "placeholder"
     ),
+    coverageBreakdown: buildCoverageBreakdown(policy),
     coverages: policy.coverages.slice(0, 12).map(formatCoverage),
   };
 }
