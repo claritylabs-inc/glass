@@ -36,6 +36,18 @@ describe("email concision instructions", () => {
     );
   });
 
+  it("keeps broad iMessage policy detail requests from becoming exhaustive breakdowns", () => {
+    const instructions = buildChannelInstructions({
+      platform: "imessage",
+      canSendEmail: true,
+      autoSendEmails: false,
+    });
+
+    expect(instructions).toContain("Broad policy-detail requests are not automatically detail-heavy");
+    expect(instructions).toContain("Default to the basic policy card");
+    expect(instructions).toContain("unless the user asks for full details or a specific section");
+  });
+
   it("routes inbound email through the email_reply model route", () => {
     const source = readFileSync(
       join(__dirname, "..", "convex/actions/handleInboundEmail.ts"),

@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import { buildAgentCapabilityPrompt, buildRuntimeFacts } from "../convex/lib/aiUtils";
 
 describe("agent runtime facts", () => {
+  it("keeps broad policy-detail answers concise without keyword-gating depth", () => {
+    const prompt = buildAgentCapabilityPrompt({
+      companyName: "Acme",
+      mode: "direct",
+      platform: "web",
+    });
+
+    expect(prompt).toContain("For broad policy-detail or summary requests");
+    expect(prompt).toContain("default to a basic policy card");
+    expect(prompt).toContain("Infer answer depth from the whole request and conversation");
+    expect(prompt).toContain("do not treat them as a deterministic keyword list");
+  });
+
   it("includes current date and timezone in the shared base prompt", () => {
     const prompt = buildAgentCapabilityPrompt({
       companyName: "Acme",
