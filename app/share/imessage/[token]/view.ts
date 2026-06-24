@@ -1,8 +1,10 @@
 import dayjs from "dayjs";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
+import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 
 export type Policy = {
+  id: string;
   title: string;
   insuredName: string;
   carrier?: string;
@@ -11,6 +13,7 @@ export type Policy = {
   effectiveDate: string;
   expirationDate: string;
   dataStage?: string;
+  coverageBreakdown?: CoverageBreakdown;
   coverages: Array<{
     name: string;
     limit?: string;

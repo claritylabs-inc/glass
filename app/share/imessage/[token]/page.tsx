@@ -1,4 +1,13 @@
 import type { Metadata } from "next";
+import Image from "next/image";
+import { FileText } from "lucide-react";
+import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+} from "@/components/ui/operational-panel";
+import { PillButton } from "@/components/ui/pill-button";
+import { buildCoverageBreakdown } from "@/convex/lib/coverageBreakdown";
+import { CoverageBreakdownCards } from "@/app/policies/[id]/policy-coverage-breakdown";
 import {
   formatDate,
   labelForStatus,
@@ -45,53 +54,51 @@ export async function generateMetadata({
   };
 }
 
-function PolicyPanel({ policy }: { policy: Policy }) {
+function policyPeriod(policy: Policy) {
+  const effective = formatDate(policy.effectiveDate);
+  const expiration = formatDate(policy.expirationDate);
+  if (effective === "Not listed" && expiration === "Not listed") {
+    return "Not listed";
+  }
+  return `${effective} to ${expiration}`;
+}
+
+function GlassWordmark() {
   return (
-    <section className="border-t border-black/10 py-7">
-      <div className="grid gap-5 md:grid-cols-[240px_1fr]">
-        <div>
-          <h2 className="text-base font-medium text-black">Policy</h2>
-          <p className="mt-1 text-sm text-black/60">{policy.title}</p>
-        </div>
-        <div className="grid gap-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Info label="Named insured" value={policy.insuredName} />
-            <Info label="Carrier" value={policy.carrier ?? "Not listed"} />
-            <Info label="Policy number" value={policy.policyNumber} />
-            <Info label="Type" value={policy.policyTypes.join(", ") || "Not listed"} />
-            <Info label="Effective" value={formatDate(policy.effectiveDate)} />
-            <Info label="Expiration" value={formatDate(policy.expirationDate)} />
-          </div>
-          {policy.coverages.length > 0 ? (
-            <div className="overflow-hidden border border-black/10">
-              <div className="grid grid-cols-[1.2fr_1fr_1fr] border-b border-black/10 bg-black/[0.03] px-3 py-2 text-xs font-medium uppercase tracking-normal text-black/60">
-                <div>Coverage</div>
-                <div>Limit</div>
-                <div>Deductible</div>
-              </div>
-              {policy.coverages.map((coverage) => (
-                <div
-                  key={`${coverage.name}-${coverage.limit ?? ""}-${coverage.deductible ?? ""}`}
-                  className="grid grid-cols-[1.2fr_1fr_1fr] border-b border-black/5 px-3 py-2 text-sm last:border-b-0"
-                >
-                  <div className="min-w-0 pr-3 text-black">{coverage.name}</div>
-                  <div className="min-w-0 pr-3 text-black/70">{coverage.limit ?? "Not listed"}</div>
-                  <div className="min-w-0 text-black/70">{coverage.deductible ?? "Not listed"}</div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
+    <div className="flex items-center gap-2.5 text-base font-medium tracking-tight text-foreground">
+      <Image src="/glass-icon.svg" alt="" width={16} height={16} />
+      <span>Glass</span>
+    </div>
+  );
+}
+
+function PolicyPanel({ policy }: { policy: Policy }) {
+  const coverageBreakdown =
+    policy.coverageBreakdown ?? buildCoverageBreakdown(policy);
+
+  return (
+    <section className="space-y-5 py-7">
+      <OperationalLabelValueList>
+        <OperationalLabelValueRow label="Named insured" value={policy.insuredName} />
+        <OperationalLabelValueRow label="Carrier" value={policy.carrier ?? "Not listed"} />
+        <OperationalLabelValueRow label="Policy number" value={policy.policyNumber} />
+        <OperationalLabelValueRow
+          label="Type"
+          value={policy.policyTypes.join(", ") || "Not listed"}
+        />
+        <OperationalLabelValueRow label="Policy period" value={policyPeriod(policy)} />
+      </OperationalLabelValueList>
+
+      <CoverageBreakdownCards breakdown={coverageBreakdown} />
     </section>
   );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <div className="text-xs font-medium uppercase tracking-normal text-black/50">{label}</div>
-      <div className="mt-1 text-sm text-black">{value}</div>
+    <div className="min-w-0">
+      <div className="text-base font-normal text-muted-foreground">{label}</div>
+      <div className="mt-1 break-words text-base text-foreground">{value}</div>
     </div>
   );
 }
@@ -106,11 +113,13 @@ export default async function ImessageSharePage({
 
   if (!view) {
     return (
-      <main className="min-h-screen bg-white px-6 py-10 text-black sm:px-10">
+      <main className="min-h-screen bg-background px-5 py-7 text-foreground sm:px-8 sm:py-10">
         <div className="mx-auto max-w-3xl">
-          <p className="text-sm font-medium text-black/50">Glass</p>
-          <h1 className="mt-5 text-3xl font-semibold tracking-normal">Link unavailable</h1>
-          <p className="mt-3 max-w-xl text-base text-black/60">
+          <GlassWordmark />
+          <h1 className="mt-5 text-base font-medium tracking-normal">
+            Link unavailable
+          </h1>
+          <p className="mt-3 max-w-xl text-base text-muted-foreground">
             This shared record could not be found.
           </p>
         </div>
@@ -118,31 +127,55 @@ export default async function ImessageSharePage({
     );
   }
 
+  const rawLabel = view.label?.trim();
+  const label =
+    rawLabel && !rawLabel.toLowerCase().endsWith(" details") ? rawLabel : null;
+
   return (
-    <main className="min-h-screen bg-white px-6 py-8 text-black sm:px-10 sm:py-10">
+    <main className="min-h-screen bg-background px-5 py-7 text-foreground sm:px-8 sm:py-10">
       <div className="mx-auto max-w-5xl">
-        <header className="pb-7">
+        <header className="border-b border-border pb-7">
           <div className="flex items-center justify-between gap-4">
-            <p className="text-sm font-medium text-black/50">Glass</p>
-            <p className="text-sm text-black/50">{view.orgName}</p>
+            <GlassWordmark />
+            <p className="truncate text-base text-muted-foreground">{view.orgName}</p>
           </div>
-          <h1 className="mt-8 max-w-3xl text-3xl font-semibold tracking-normal sm:text-4xl">
-            {view.title}
-          </h1>
-          {view.subtitle ? (
-            <p className="mt-3 max-w-2xl text-base text-black/60">{view.subtitle}</p>
-          ) : null}
-          {view.label ? (
-            <p className="mt-3 text-sm text-black/50">{view.label}</p>
-          ) : null}
+          <div className="mt-8 flex max-w-3xl flex-col items-start gap-3">
+            <div className="min-w-0">
+              <h1 className="text-base font-medium leading-5 tracking-normal text-foreground">
+                {view.title}
+              </h1>
+              {view.subtitle ? (
+                <p className="mt-2 text-base leading-6 text-muted-foreground">
+                  {view.subtitle}
+                </p>
+              ) : null}
+              {label ? (
+                <p className="mt-3 text-base text-muted-foreground">{label}</p>
+              ) : null}
+            </div>
+            {view.policy ? (
+              <PillButton
+                href={`/policies/${view.policy.id}`}
+                size="compact"
+                className="w-fit"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Open full policy
+              </PillButton>
+            ) : null}
+          </div>
         </header>
 
         {view.certificate ? (
-          <section className="border-t border-black/10 py-7">
+          <section className="border-b border-border py-7">
             <div className="grid gap-5 md:grid-cols-[240px_1fr]">
               <div>
-                <h2 className="text-base font-medium text-black">Certificate</h2>
-                <p className="mt-1 text-sm text-black/60">{view.certificate.holderName}</p>
+                <h2 className="text-base font-medium tracking-normal text-foreground">
+                  Certificate
+                </h2>
+                <p className="mt-1 text-base text-muted-foreground">
+                  {view.certificate.holderName}
+                </p>
               </div>
               <div className="grid gap-5">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -156,12 +189,14 @@ export default async function ImessageSharePage({
                 </div>
                 {view.certificate.fileUrl ? (
                   <div>
-                    <a
+                    <PillButton
                       href={view.certificate.fileUrl}
-                      className="inline-flex h-9 items-center justify-center bg-black px-4 text-sm font-medium text-white"
+                      variant="secondary"
+                      className="w-fit"
                     >
+                      <FileText className="h-3.5 w-3.5" />
                       Open PDF
-                    </a>
+                    </PillButton>
                   </div>
                 ) : null}
               </div>
@@ -170,11 +205,15 @@ export default async function ImessageSharePage({
         ) : null}
 
         {view.certificateRequest ? (
-          <section className="border-t border-black/10 py-7">
+          <section className="border-b border-border py-7">
             <div className="grid gap-5 md:grid-cols-[240px_1fr]">
               <div>
-                <h2 className="text-base font-medium text-black">Certificate request</h2>
-                <p className="mt-1 text-sm text-black/60">{view.certificateRequest.holderName}</p>
+                <h2 className="text-base font-medium tracking-normal text-foreground">
+                  Certificate request
+                </h2>
+                <p className="mt-1 text-base text-muted-foreground">
+                  {view.certificateRequest.holderName}
+                </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Info label="Status" value={labelForStatus(view.certificateRequest.status)} />
@@ -187,11 +226,15 @@ export default async function ImessageSharePage({
         ) : null}
 
         {view.policyChange ? (
-          <section className="border-t border-black/10 py-7">
+          <section className="border-b border-border py-7">
             <div className="grid gap-5 md:grid-cols-[240px_1fr]">
               <div>
-                <h2 className="text-base font-medium text-black">Policy change</h2>
-                <p className="mt-1 text-sm text-black/60">{labelForStatus(view.policyChange.status)}</p>
+                <h2 className="text-base font-medium tracking-normal text-foreground">
+                  Policy change
+                </h2>
+                <p className="mt-1 text-base text-muted-foreground">
+                  {labelForStatus(view.policyChange.status)}
+                </p>
               </div>
               <div className="grid gap-5">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -199,17 +242,22 @@ export default async function ImessageSharePage({
                   <Info label="Updated" value={formatDate(view.policyChange.updatedAt)} />
                 </div>
                 {view.policyChange.summary ? (
-                  <p className="text-sm leading-6 text-black/75">{view.policyChange.summary}</p>
+                  <p className="text-base leading-6 text-muted-foreground">
+                    {view.policyChange.summary}
+                  </p>
                 ) : null}
                 {view.policyChange.requestText ? (
-                  <div className="border border-black/10 p-4 text-sm leading-6 text-black/75">
+                  <div className="rounded-md border border-border p-4 text-base leading-6 text-muted-foreground">
                     {view.policyChange.requestText}
                   </div>
                 ) : null}
                 {view.policyChange.pendingQuestions.length > 0 ? (
                   <div className="grid gap-2">
                     {view.policyChange.pendingQuestions.map((question) => (
-                      <div key={question} className="border border-black/10 px-3 py-2 text-sm text-black/75">
+                      <div
+                        key={question}
+                        className="rounded-md border border-border px-3 py-2 text-base text-muted-foreground"
+                      >
                         {question}
                       </div>
                     ))}
