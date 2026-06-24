@@ -25,6 +25,7 @@ import {
   OperationalPanelHeader,
   OperationalSkeletonList,
 } from "@/components/ui/operational-panel";
+import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -57,11 +58,6 @@ const TABS: Array<{ value: CertificateWorkspaceTab; label: string }> = [
   { value: "review", label: "Review" },
 ];
 
-const CERTIFICATE_ROW_GRID_CLASS =
-  "grid min-w-0 gap-3 @xl/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @xl/certificates-panel:items-center";
-const CERTIFICATE_ROW_ACTIONS_CLASS =
-  "flex min-w-0 flex-wrap items-center gap-2 @xl/certificates-panel:justify-end @xl/certificates-panel:justify-self-end";
-
 function jobBadge(status: string) {
   if (status === "failed" || status === "blocked_missing_contact") return "destructive" as const;
   if (status === "review_required") return "secondary" as const;
@@ -69,45 +65,47 @@ function jobBadge(status: string) {
   return "outline" as const;
 }
 
-function PolicyLink({ policyId, policy }: { policyId: Id<"policies">; policy?: CertificatePolicyRecord | null }) {
-  return (
-    <Link
-      href={`/policies/${policyId}?tab=certificates`}
-      className="block max-w-full truncate text-base font-medium text-foreground hover:underline"
-    >
-      {certificatePolicyLabel(policy)}
-    </Link>
-  );
-}
-
 function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
   return (
     <OperationalItem>
-      <div className={CERTIFICATE_ROW_GRID_CLASS}>
-        <div className="min-w-0">
-          <p className="truncate text-base font-medium text-foreground">
-            {job.holder?.displayName ?? job.recipientName ?? "Certificate holder"}
-          </p>
-          <p className="mt-1 text-base text-muted-foreground">
+      <div className="flex min-w-0 flex-col gap-3 @xl/certificates-panel:flex-row @xl/certificates-panel:items-start @xl/certificates-panel:justify-between">
+        <div className="min-w-0 max-w-3xl">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="min-w-0 max-w-full truncate text-base font-medium text-foreground">
+              {job.holder?.displayName ?? job.recipientName ?? "Certificate holder"}
+            </p>
+            <Badge variant={jobBadge(job.status)} className="text-label capitalize">
+              {job.status.replace(/_/g, " ")}
+            </Badge>
+          </div>
+          <p className="mt-1 text-base leading-5 text-muted-foreground">
             {job.reason ?? job.lastError ?? "Certificate review queued"}
           </p>
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-label text-muted-foreground/70">
+            <Link
+              href={`/policies/${job.policyId}?tab=certificates`}
+              className="min-w-0 max-w-full truncate font-medium text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {certificatePolicyLabel(job.policy)}
+            </Link>
+            <span className="text-muted-foreground/35" aria-hidden="true">
+              ·
+            </span>
+            <span className="capitalize">{job.kind.replace(/_/g, " ")}</span>
+            <span className="text-muted-foreground/35" aria-hidden="true">
+              ·
+            </span>
+            <span>{formatCertificateTime(job.updatedAt)}</span>
+          </div>
         </div>
-        <div className="min-w-0">
-          <PolicyLink policyId={job.policyId} policy={job.policy} />
-          <p className="mt-1 text-base text-muted-foreground">
-            {job.kind.replace(/_/g, " ")} · {formatCertificateTime(job.updatedAt)}
-          </p>
-        </div>
-        <div className={CERTIFICATE_ROW_ACTIONS_CLASS}>
-          <Badge variant={jobBadge(job.status)} className="text-label capitalize">
-            {job.status.replace(/_/g, " ")}
-          </Badge>
-          <Link
+        <div className="flex shrink-0 items-center @xl/certificates-panel:justify-end">
+          <PillButton
             href={`/policies/${job.policyId}?tab=certificates`}
-            className="inline-flex h-7 shrink-0 items-center justify-center rounded-full border border-foreground/8 bg-transparent px-3 text-label font-medium leading-none text-muted-foreground transition-colors hover:border-foreground/14 hover:bg-foreground/[0.03] hover:text-foreground"
+            variant="secondary"
+            size="compact"
           >
             Review
-          </Link>
+          </PillButton>
         </div>
       </div>
     </OperationalItem>

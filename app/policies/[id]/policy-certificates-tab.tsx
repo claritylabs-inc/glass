@@ -706,28 +706,23 @@ function CertificateHoldActivityRow({ row }: { row: CertificateHoldRow }) {
   );
   return (
     <OperationalItem>
-      <div className="grid min-w-0 gap-3 @xl/certificates-panel:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] @xl/certificates-panel:items-center">
-        <div className="min-w-0">
-          <p className="truncate text-base font-medium text-foreground">
-            {holderName}
-          </p>
-          <p className="mt-1 text-base text-muted-foreground">
+      <div className="flex min-w-0 flex-col gap-2 @xl/certificates-panel:flex-row @xl/certificates-panel:items-start @xl/certificates-panel:justify-between">
+        <div className="min-w-0 max-w-3xl">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="min-w-0 max-w-full truncate text-base font-medium text-foreground">
+              {holderName}
+            </p>
+            <Badge variant="outline" className="text-label">
+              Held
+            </Badge>
+          </div>
+          <p className="mt-1 text-base leading-5 text-muted-foreground">
             {reason}
           </p>
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-base font-medium text-foreground">
-            Certificate review
-          </p>
-          <p className="mt-1 text-base text-muted-foreground">
-            {formatCertificateTime(row.createdAt)}
-          </p>
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2 @xl/certificates-panel:justify-end @xl/certificates-panel:justify-self-end">
-          <Badge variant="outline" className="text-label">
-            Held
-          </Badge>
-        </div>
+        <p className="shrink-0 text-label text-muted-foreground/70 @xl/certificates-panel:pt-0.5">
+          {formatCertificateTime(row.createdAt)}
+        </p>
       </div>
     </OperationalItem>
   );
