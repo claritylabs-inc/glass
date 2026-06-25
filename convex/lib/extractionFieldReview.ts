@@ -389,8 +389,16 @@ function shouldReviewGroup(document: Record<string, unknown>, group: FieldReview
   return group.fields.some((field) => isMissingValue(document[field]));
 }
 
-function routeLabel(route: ModelRoute) {
-  return `${route.provider}/${route.model}`;
+function sameModelRoute(left: ModelRoute, right: ModelRoute) {
+  return left.provider === right.provider && left.model === right.model;
+}
+
+export function fieldReviewRouteForPrimary(primaryRoute: ModelRoute): ModelRoute {
+  return fallbackRouteForCall({
+    task: "extraction",
+    taskKind: "extraction_review",
+    primaryRoute,
+  }) ?? primaryRoute;
 }
 
 async function generateReviewObject<T>(
@@ -403,37 +411,15 @@ async function generateReviewObject<T>(
   },
 ): Promise<T> {
   const primary = await getModelAndRouteForOrg(options.ctx, options.orgId, "extraction");
-  const fallbackRoute = fallbackRouteForCall({
-    task: "extraction",
-    taskKind: "extraction_review",
-    primaryRoute: primary.route,
+  const reviewRoute = fieldReviewRouteForPrimary(primary.route);
+  const result = await generateObject({
+    model: sameModelRoute(reviewRoute, primary.route) ? primary.model : getModelForRoute(reviewRoute),
+    schema: structuredOutputSchemaForRoute(params.schema, reviewRoute),
+    maxOutputTokens: params.maxOutputTokens,
+    providerOptions: getProviderOptionsForRoute(reviewRoute),
+    prompt: params.prompt,
   });
-  try {
-    const result = await generateObject({
-      model: primary.model,
-      schema: structuredOutputSchemaForRoute(params.schema, primary.route),
-      maxOutputTokens: params.maxOutputTokens,
-      providerOptions: getProviderOptionsForRoute(primary.route),
-      prompt: params.prompt,
-    });
-    return result.object;
-  } catch (error) {
-    if (!fallbackRoute) throw error;
-    await options.log?.(
-      `${params.label} primary model ${routeLabel(primary.route)} failed: ${
-        error instanceof Error ? error.message : String(error)
-      }. Retrying with ${routeLabel(fallbackRoute)}.`,
-      "info",
-    );
-    const result = await generateObject({
-      model: getModelForRoute(fallbackRoute),
-      schema: structuredOutputSchemaForRoute(params.schema, fallbackRoute),
-      maxOutputTokens: params.maxOutputTokens,
-      providerOptions: getProviderOptionsForRoute(fallbackRoute),
-      prompt: params.prompt,
-    });
-    return result.object;
-  }
+  return result.object;
 }
 
 function financialEvidence(document: Record<string, unknown>, sourceSpans: SourceLike[]) {

@@ -53,6 +53,60 @@ const coverageReviewCopySchema = z.object({
   })),
 });
 
+const SOURCE_GROUNDED_IDENTITY_FIELDS = [
+  "carrier",
+  "security",
+  "carrierLegalName",
+  "carrierNaicNumber",
+  "carrierAmBestRating",
+  "carrierAdmittedStatus",
+  "underwriter",
+  "mga",
+  "broker",
+  "brokerAgency",
+  "brokerContactName",
+  "brokerLicenseNumber",
+  "programName",
+  "policyNumber",
+  "quoteNumber",
+  "priorPolicyNumber",
+  "insuredName",
+  "insuredDba",
+  "insuredFein",
+] as const;
+
+const SOURCE_GROUNDED_PARTY_FIELDS = {
+  insurer: ["legalName", "naicNumber", "amBestRating", "amBestNumber", "admittedStatus", "stateOfDomicile"],
+  producer: ["agencyName", "contactName", "licenseNumber", "phone", "email"],
+} as const;
+
+const SOURCE_PROVENANCE_FIELDS = [
+  "sourceSpanIds",
+  "documentNodeId",
+  "sourceTextHash",
+  "pageStart",
+  "pageEnd",
+] as const;
+
+const SOURCE_BACKED_IDENTITY_FIELDS = [
+  "insuredAddress",
+  "additionalNamedInsureds",
+  "claimsContacts",
+  "regulatoryContacts",
+  "thirdPartyAdministrators",
+  "additionalInsureds",
+  "lossPayees",
+  "mortgageHolders",
+] as const;
+
+const SOURCE_PROVENANCE_FIELD_SET = new Set<string>(SOURCE_PROVENANCE_FIELDS);
+const LOW_VALUE_IDENTITY_FIELD_SET = new Set(["role", "relationship", "type", "kind", "label", "status"]);
+
+type RemovedSourceSensitiveValue = {
+  field: string;
+  value: string;
+};
+
 function compactCoverageReviewForPrompt(fields: Record<string, unknown>) {
   const review = fields.extractionReview as { questions?: Array<Record<string, unknown>> } | undefined;
   const questions = Array.isArray(review?.questions) ? review.questions : [];
@@ -81,6 +135,293 @@ function compactCoverageReviewForPrompt(fields: Record<string, unknown>) {
       })
       : [],
   }));
+}
+
+function normalizedSourceEvidence(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isPlaceholderSourceValue(value: string) {
+  return /^(?:unknown|n\/a|na|none|not applicable|not available)$/i.test(value.trim());
+}
+
+function sourceTextCorpus(sourceSpans: SourceSpanLike[]) {
+  return normalizedSourceEvidence(
+    sourceSpans
+      .map((span) => typeof span.text === "string" ? span.text : "")
+      .filter(Boolean)
+      .join("\n"),
+  );
+}
+
+function knownSourceSpanIds(sourceSpans: SourceSpanLike[]) {
+  const ids = new Set<string>();
+  for (const span of sourceSpans) {
+    if (typeof span.id === "string" && span.id.trim()) ids.add(span.id);
+    if (typeof span.sectionId === "string" && span.sectionId.trim()) ids.add(span.sectionId);
+  }
+  return ids;
+}
+
+function sourceSpanTextById(sourceSpans: SourceSpanLike[]) {
+  const textById = new Map<string, string>();
+  const append = (id: string | undefined, text: string) => {
+    if (!id?.trim()) return;
+    textById.set(id, [textById.get(id), text].filter(Boolean).join("\n"));
+  };
+
+  for (const span of sourceSpans) {
+    const text = typeof span.text === "string" ? span.text : "";
+    append(span.id, text);
+    append(span.sectionId, text);
+  }
+  return textById;
+}
+
+function provenanceSourceSpanIds(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const ids = (value as Record<string, unknown>).sourceSpanIds;
+  if (!Array.isArray(ids)) return [];
+  return ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+}
+
+function hasValidSourceProvenance(value: unknown, knownIds: Set<string>) {
+  const ids = provenanceSourceSpanIds(value);
+  if (ids.length === 0) return false;
+  if (knownIds.size === 0) return false;
+  return ids.some((id) => knownIds.has(id));
+}
+
+function sourceCorpusForProvenance(value: unknown, textById: Map<string, string>) {
+  return normalizedSourceEvidence(
+    provenanceSourceSpanIds(value)
+      .map((id) => textById.get(id) ?? "")
+      .filter(Boolean)
+      .join("\n"),
+  );
+}
+
+function sourceEvidenceCandidates(value: string) {
+  const trimmed = value.trim();
+  const withoutParentheticals = trimmed.replace(/\s*\([^)]*\)/g, " ");
+  const withoutTrailingDescriptors = withoutParentheticals
+    .replace(/\b(?:a\s+division\s+of|division\s+of|administered\s+by|issued\s+by)\b.*$/i, "")
+    .trim();
+  const beforeMetadataDelimiter =
+    withoutTrailingDescriptors.split(/\s[-–—|]\s/)[0]?.trim() ?? withoutTrailingDescriptors;
+
+  return Array.from(new Set([
+    trimmed,
+    withoutParentheticals,
+    withoutTrailingDescriptors,
+    beforeMetadataDelimiter,
+  ]
+    .map(normalizedSourceEvidence)
+    .filter((candidate) => candidate.length >= 3)));
+}
+
+function sourceSupportsScalarValue(value: unknown, corpus: string) {
+  if (typeof value === "string") {
+    if (!value.trim() || isPlaceholderSourceValue(value)) return true;
+    return sourceEvidenceCandidates(value).some((candidate) => corpus.includes(candidate));
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const candidate = normalizedSourceEvidence(String(value));
+    return candidate.length > 0 && corpus.includes(candidate);
+  }
+  return true;
+}
+
+function displayRemovedValue(value: unknown) {
+  const display = typeof value === "string" || typeof value === "number"
+    ? String(value).replace(/\s+/g, " ").trim()
+    : JSON.stringify(value);
+  if (!display) return "";
+  return display.length > 120 ? `${display.slice(0, 117)}...` : display;
+}
+
+function sourceClaimValues(value: unknown) {
+  const claims: unknown[] = [];
+
+  const collect = (item: unknown, key?: string) => {
+    if (item === undefined || item === null) return;
+    if (key && (SOURCE_PROVENANCE_FIELD_SET.has(key) || LOW_VALUE_IDENTITY_FIELD_SET.has(key))) return;
+
+    if (typeof item === "string") {
+      if (normalizedSourceEvidence(item).length >= 3 && !isPlaceholderSourceValue(item)) claims.push(item);
+      return;
+    }
+
+    if (typeof item === "number" && Number.isFinite(item)) {
+      claims.push(item);
+      return;
+    }
+
+    if (Array.isArray(item)) {
+      for (const child of item) collect(child);
+      return;
+    }
+
+    if (typeof item === "object") {
+      for (const [childKey, childValue] of Object.entries(item as Record<string, unknown>)) {
+        collect(childValue, childKey);
+      }
+    }
+  };
+
+  collect(value);
+  return claims;
+}
+
+function hasSourceSupportedClaim(value: unknown, textById: Map<string, string>) {
+  const corpus = sourceCorpusForProvenance(value, textById);
+  if (!corpus) return false;
+  return sourceClaimValues(value).some((claim) => sourceSupportsScalarValue(claim, corpus));
+}
+
+function copySourceProvenance(record: Record<string, unknown>) {
+  const provenance: Record<string, unknown> = {};
+  for (const key of SOURCE_PROVENANCE_FIELDS) {
+    if (record[key] !== undefined && record[key] !== null) {
+      provenance[key] = record[key];
+    }
+  }
+  return provenance;
+}
+
+function sourceGroundedPartyObject(
+  field: keyof typeof SOURCE_GROUNDED_PARTY_FIELDS,
+  value: unknown,
+  corpus: string,
+  sourceSpanIds: Set<string>,
+  sourceTextById: Map<string, string>,
+  removed: RemovedSourceSensitiveValue[],
+): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (!hasValidSourceProvenance(record, sourceSpanIds)) {
+    removed.push({ field, value: "missing or invalid source spans" });
+    return undefined;
+  }
+  const allowedFields = SOURCE_GROUNDED_PARTY_FIELDS[field];
+  const primaryField = allowedFields[0];
+  const primaryValue = record[primaryField];
+  const recordCorpus = sourceCorpusForProvenance(record, sourceTextById) || corpus;
+  if (
+    typeof primaryValue !== "string" ||
+    !primaryValue.trim() ||
+    !sourceSupportsScalarValue(primaryValue, recordCorpus)
+  ) {
+    removed.push({ field, value: displayRemovedValue(record[primaryField] ?? value) });
+    return undefined;
+  }
+
+  const next: Record<string, unknown> = copySourceProvenance(record);
+  for (const key of allowedFields) {
+    const raw = record[key];
+    if (raw === undefined || raw === null) continue;
+    if (sourceSupportsScalarValue(raw, recordCorpus)) {
+      next[key] = raw;
+    } else {
+      removed.push({ field: `${field}.${key}`, value: displayRemovedValue(raw) });
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function sourceBackedIdentityValue(
+  field: string,
+  value: unknown,
+  sourceSpanIds: Set<string>,
+  sourceTextById: Map<string, string>,
+  removed: RemovedSourceSensitiveValue[],
+) {
+  if (Array.isArray(value)) {
+    const kept = value.filter((item, index) => {
+      if (
+        hasValidSourceProvenance(item, sourceSpanIds) &&
+        hasSourceSupportedClaim(item, sourceTextById)
+      ) {
+        return true;
+      }
+      const reason = hasValidSourceProvenance(item, sourceSpanIds)
+        ? "source span does not support value"
+        : "missing or invalid source spans";
+      removed.push({ field: `${field}[${index}]`, value: reason });
+      return false;
+    });
+    return kept.length > 0 || value.length === 0 ? kept : undefined;
+  }
+
+  if (hasValidSourceProvenance(value, sourceSpanIds) && hasSourceSupportedClaim(value, sourceTextById)) {
+    return value;
+  }
+  const removedValue = hasValidSourceProvenance(value, sourceSpanIds)
+    ? "source span does not support value"
+    : "missing or invalid source spans";
+  removed.push({ field, value: removedValue });
+  return undefined;
+}
+
+export function stripUngroundedSourceSensitiveValues<T extends Record<string, unknown>>(
+  value: T,
+  sourceSpans: SourceSpanLike[],
+): { value: T; removed: RemovedSourceSensitiveValue[] } {
+  const corpus = sourceTextCorpus(sourceSpans);
+  const sourceSpanIds = knownSourceSpanIds(sourceSpans);
+  const sourceTextById = sourceSpanTextById(sourceSpans);
+  const next: Record<string, unknown> = { ...value };
+  const removed: RemovedSourceSensitiveValue[] = [];
+
+  for (const field of SOURCE_GROUNDED_IDENTITY_FIELDS) {
+    const raw = next[field];
+    if (raw === undefined || raw === null || sourceSupportsScalarValue(raw, corpus)) continue;
+    removed.push({ field, value: displayRemovedValue(raw) });
+    delete next[field];
+  }
+
+  for (const field of SOURCE_BACKED_IDENTITY_FIELDS) {
+    if (next[field] === undefined || next[field] === null) continue;
+    const grounded = sourceBackedIdentityValue(field, next[field], sourceSpanIds, sourceTextById, removed);
+    if (grounded !== undefined) {
+      next[field] = grounded;
+    } else {
+      delete next[field];
+    }
+  }
+
+  for (const field of Object.keys(SOURCE_GROUNDED_PARTY_FIELDS) as Array<keyof typeof SOURCE_GROUNDED_PARTY_FIELDS>) {
+    if (next[field] === undefined || next[field] === null) continue;
+    const party = sourceGroundedPartyObject(field, next[field], corpus, sourceSpanIds, sourceTextById, removed);
+    if (party) {
+      next[field] = party;
+    } else {
+      delete next[field];
+    }
+  }
+
+  return { value: next as T, removed };
+}
+
+async function logRemovedSourceSensitiveValues(
+  removed: RemovedSourceSensitiveValue[],
+  log?: ExtractionPostProcessOptions["log"],
+) {
+  const seen = new Set<string>();
+  for (const item of removed) {
+    const key = `${item.field}:${item.value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await log?.(
+      `Dropped ungrounded extracted ${item.field}: ${item.value || "value not present in source spans"}`,
+      "warn",
+    );
+  }
 }
 
 async function refineCoverageReviewCopyWithLlm(
@@ -226,6 +567,9 @@ export async function postProcessExtractionDocument(
     log: options.log,
   });
   document = fieldReview.document;
+  const groundedDocument = stripUngroundedSourceSensitiveValues(document, options.sourceSpans);
+  document = groundedDocument.value;
+  await logRemovedSourceSensitiveValues(groundedDocument.removed, options.log);
 
   const mappedFields = insuranceDocToPolicy(document as never);
   const scopedCoverage = applyCoverageDeclarationScoping({
@@ -250,12 +594,14 @@ export async function postProcessExtractionDocument(
     options.orgId,
     reviewCopyFields,
   );
+  const groundedFields = stripUngroundedSourceSensitiveValues(fields, options.sourceSpans);
+  await logRemovedSourceSensitiveValues(groundedFields.removed, options.log);
 
   return {
     document,
-    fields,
+    fields: groundedFields.value,
     fieldReview,
-    coverageReviewQuestionCount: openReviewQuestionCount(fields),
+    coverageReviewQuestionCount: openReviewQuestionCount(groundedFields.value),
   };
 }
 
