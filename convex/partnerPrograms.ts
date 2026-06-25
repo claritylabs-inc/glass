@@ -16,7 +16,8 @@ import { assertPartnerOrg, getOrgAccess } from "./lib/access";
 import { notify } from "./lib/notify";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { makeEmbedText } from "./lib/sdkCallbacks";
-import { getModelForOrg, getProviderOptionsForTask } from "./lib/models";
+import { getModelAndRouteForOrg, getProviderOptionsForTask } from "./lib/models";
+import { structuredOutputSchemaForRoute } from "./lib/fireworksStructuredOutput";
 import { getActiveOperatorImpersonation } from "./lib/operatorIdentity";
 
 const certificateSourceValidator = v.union(
@@ -565,10 +566,11 @@ export const autoPlaceTemplateFields = action({
       api.partnerPrograms.getCurrentPartnerOrgForAction,
       {},
     ) as { orgId: Id<"organizations">; role: string };
+    const modelRoute = await getModelAndRouteForOrg(ctx, access.orgId, "classification");
     const result = await generateObject({
-      model: await getModelForOrg(ctx, access.orgId, "classification"),
+      model: modelRoute.model,
       providerOptions: getProviderOptionsForTask("classification"),
-      schema: AutoPlaceTemplateSchema,
+      schema: structuredOutputSchemaForRoute(AutoPlaceTemplateSchema, modelRoute.route),
       system:
         "You match certificate overlay fields to deterministic PDF layout candidate rectangles. Do not invent coordinates. Choose only candidate IDs from the provided candidates. Prefer exact label matches and blank value cells to the right of labels. Coverage table fields should match a larger area candidate in the coverages/products section. If uncertain, choose the nearest semantically plausible candidate with low confidence.",
       prompt: JSON.stringify({
@@ -782,10 +784,11 @@ export const resolveCertificateAuthority = internalAction({
         page: span.pageStart,
         text: String(span.text ?? "").slice(0, 900),
       }));
+      const modelRoute = await getModelAndRouteForOrg(ctx, policy.orgId, "analysis");
       const result = await generateObject({
-        model: await getModelForOrg(ctx, policy.orgId, "analysis"),
+        model: modelRoute.model,
         providerOptions: getProviderOptionsForTask("analysis"),
-        schema: LlmApprovalSchema,
+        schema: structuredOutputSchemaForRoute(LlmApprovalSchema, modelRoute.route),
         system:
           "You review whether a certificate of insurance can be certified under an MGA program rule. Be conservative: approve only if the rule clearly permits it from structured fields and source excerpts. If evidence is missing, ambiguous, or conflicts, do not approve.",
         prompt: JSON.stringify({

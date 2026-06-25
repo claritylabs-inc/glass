@@ -92,6 +92,10 @@ const PROJECT_ID = process.env.PHOTON_PROJECT_ID;
 const PROJECT_SECRET = process.env.PHOTON_PROJECT_SECRET;
 const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL;
 const WORKER_SECRET = process.env.IMESSAGE_WORKER_SECRET ?? "";
+const GLASS_ENV =
+  process.env.GLASS_ENV ??
+  process.env.RAILWAY_ENVIRONMENT_NAME ??
+  "local";
 const IMESSAGE_ENABLED = process.env.IMESSAGE_ENABLED === "true";
 const SPECTRUM_PROVIDER = process.env.SPECTRUM_PROVIDER;
 const USE_TERMINAL =
@@ -655,11 +659,15 @@ async function main() {
       res.end(JSON.stringify({
         ok: true,
         service: "glass-imessage-worker",
+        glassEnv: GLASS_ENV,
         transport: TRANSPORT,
         imessageEnabled: IMESSAGE_ENABLED,
         convexSiteConfigured: Boolean(CONVEX_SITE_URL),
         workerSecretConfigured: Boolean(WORKER_SECRET),
         photonConfigured: Boolean(PROJECT_ID && PROJECT_SECRET),
+        railwayEnvironment: process.env.RAILWAY_ENVIRONMENT_NAME,
+        gitSha: process.env.RAILWAY_GIT_COMMIT_SHA,
+        gitBranch: process.env.RAILWAY_GIT_BRANCH,
         httpPorts,
       }));
       return;

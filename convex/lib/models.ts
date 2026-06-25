@@ -7,6 +7,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createXai } from "@ai-sdk/xai";
 import { createMistral } from "@ai-sdk/mistral";
 import { createCohere } from "@ai-sdk/cohere";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { gateway, type LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { internal } from "../_generated/api";
@@ -14,6 +15,7 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
   FALLBACK_MODEL,
+  FIREWORKS_MODEL_IDS,
   MODEL_ROUTING,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
@@ -29,7 +31,8 @@ import {
  * All models accessed via Vercel AI SDK's provider-agnostic interface.
  *
  * Env vars needed:
- *   OPENAI_API_KEY — direct OpenAI access for default Glass routes
+ *   FIREWORKS_API_KEY — direct Fireworks access for default Glass language routes
+ *   OPENAI_API_KEY — direct OpenAI access for embedding routes during the migration
  *   AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN — Vercel AI Gateway access for routes whose provider is not directly configured
  */
 
@@ -41,6 +44,8 @@ let _google: ReturnType<typeof createGoogleGenerativeAI> | null = null;
 let _xai: ReturnType<typeof createXai> | null = null;
 let _mistral: ReturnType<typeof createMistral> | null = null;
 let _cohere: ReturnType<typeof createCohere> | null = null;
+let _fireworks: ReturnType<typeof createOpenAICompatible> | null = null;
+const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
 function anthropic() {
   if (!_anthropic) _anthropic = createAnthropic();
@@ -77,8 +82,24 @@ function cohere() {
   return _cohere;
 }
 
+function createFireworksLanguageProvider(apiKey?: string) {
+  return createOpenAICompatible({
+    name: "fireworks",
+    baseURL: FIREWORKS_BASE_URL,
+    apiKey: apiKey ?? process.env.FIREWORKS_API_KEY,
+    includeUsage: true,
+    supportsStructuredOutputs: true,
+  });
+}
+
+function fireworks() {
+  if (!_fireworks) _fireworks = createFireworksLanguageProvider();
+  return _fireworks;
+}
+
 export {
   FALLBACK_MODEL,
+  FIREWORKS_MODEL_IDS,
   MODEL_ROUTING,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
@@ -249,6 +270,8 @@ function providerModel(provider: ModelProvider, model: string, apiKey?: string):
       return (apiKey ? createMistral({ apiKey }) : mistral())(model);
     case "cohere":
       return (apiKey ? createCohere({ apiKey }) : cohere())(model);
+    case "fireworks":
+      return (apiKey ? createFireworksLanguageProvider(apiKey) : fireworks())(model);
     case "moonshot":
       throw new Error("Moonshot routing is disabled");
     case "deepseek":
@@ -270,6 +293,8 @@ function directProviderApiKey(provider: ModelProvider): string | undefined {
       return process.env.MISTRAL_API_KEY;
     case "cohere":
       return process.env.COHERE_API_KEY;
+    case "fireworks":
+      return process.env.FIREWORKS_API_KEY;
     case "deepseek":
       return process.env.DEEPSEEK_API_KEY;
     case "moonshot":
@@ -278,6 +303,7 @@ function directProviderApiKey(provider: ModelProvider): string | undefined {
 }
 
 function gatewayModelId(route: ModelRoute): string {
+  if (route.provider === "fireworks") return `fireworks/${route.model}`;
   return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
 }
 
@@ -291,6 +317,8 @@ function nativeProviderModel(route: ModelRoute): string | null {
       return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
         ? route.model
         : null;
+    case "fireworks":
+      return route.model;
     case "moonshot":
       return null;
     default:
@@ -464,6 +492,7 @@ export function availableProviders(): string[] {
   if (process.env.XAI_API_KEY) providers.push("xai");
   if (process.env.MISTRAL_API_KEY) providers.push("mistral");
   if (process.env.COHERE_API_KEY) providers.push("cohere");
+  if (process.env.FIREWORKS_API_KEY) providers.push("fireworks");
   if (process.env.DEEPSEEK_API_KEY) providers.push("deepseek");
   if (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN) providers.push("gateway");
   return providers;

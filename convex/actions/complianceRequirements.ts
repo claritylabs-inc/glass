@@ -9,7 +9,8 @@ import dayjs from "dayjs";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getModel } from "../lib/models";
+import { getModel, MODEL_ROUTING } from "../lib/models";
+import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import {
   classifyRequirementSemantics,
@@ -331,7 +332,7 @@ async function runRequirementImport(
 
   const result = await generateObject({
     model: getModel("chat"),
-    schema: RequirementImportSchema,
+    schema: structuredOutputSchemaForRoute(RequirementImportSchema, MODEL_ROUTING.chat),
     system:
       "You convert contract and certificate insurance language into coverage-shaped structured compliance requirements for Glass.",
     prompt: buildPrompt({

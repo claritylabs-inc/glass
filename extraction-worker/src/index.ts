@@ -11,6 +11,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
 import { createXai } from "@ai-sdk/xai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import {
@@ -23,6 +24,10 @@ import {
   type PipelineCheckpoint,
 } from "@claritylabs/cl-sdk";
 import { modelCapabilitiesForRoute } from "./modelCapabilities.js";
+import {
+  normalizeJsonSchemaForFireworks,
+  structuredOutputSchemaForProvider,
+} from "./fireworksStructuredOutput.js";
 import { buildPdfSourceSpans } from "./pdfSourceSpans.js";
 import { convertPdfWithLiteParse, type PageScreenshot } from "./liteparse.js";
 
@@ -57,6 +62,7 @@ type ModelProvider =
   | "xai"
   | "mistral"
   | "cohere"
+  | "fireworks"
   | "deepseek";
 
 type ModelTask = "extraction" | "extraction_preview" | "classification";
@@ -286,6 +292,10 @@ const actions = {
 
 const CONVEX_URL = requiredEnv("CONVEX_URL");
 const SECRET = requiredEnv("EXTRACTION_WORKER_SECRET");
+const GLASS_ENV =
+  process.env.GLASS_ENV ??
+  process.env.RAILWAY_ENVIRONMENT_NAME ??
+  "local";
 const WORKER_ID = process.env.EXTRACTION_WORKER_ID ?? `extraction-worker-${process.pid}`;
 const WORKER_VERSION = process.env.EXTRACTION_WORKER_VERSION ?? workerPackage.version ?? "unknown";
 const WORKER_CL_SDK_VERSION =
@@ -431,14 +441,14 @@ function readSourceKind(value: unknown): "policy_pdf" | "application_pdf" | "ema
 }
 
 const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
-  classification: { provider: "openai", model: "gpt-5.4-nano" },
-  extraction: { provider: "openai", model: "gpt-5.4-nano" },
-  extraction_preview: { provider: "openai", model: "gpt-5.4-nano" },
+  classification: { provider: "fireworks", model: "accounts/fireworks/models/kimi-k2p6" },
+  extraction: { provider: "fireworks", model: "accounts/fireworks/models/kimi-k2p6" },
+  extraction_preview: { provider: "fireworks", model: "accounts/fireworks/models/kimi-k2p6" },
 };
 
 const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
   provider: "openai",
-  model: "gpt-5.4-mini",
+  model: "gpt-5.5",
 };
 
 const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([
@@ -448,6 +458,7 @@ const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([
   "xai",
   "mistral",
   "cohere",
+  "fireworks",
   "deepseek",
 ]);
 
@@ -455,6 +466,7 @@ const QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
   "extraction_review",
   "extraction_referential_lookup",
 ]);
+const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
 function isModelProvider(value: string): value is ModelProvider {
   return WORKER_MODEL_PROVIDERS.has(value as ModelProvider);
@@ -499,6 +511,14 @@ function providerModel(provider: ModelProvider, model: string, apiKey?: string):
       return (apiKey ? createMistral({ apiKey }) : createMistral())(model);
     case "cohere":
       return (apiKey ? createCohere({ apiKey }) : createCohere())(model);
+    case "fireworks":
+      return createOpenAICompatible({
+        name: "fireworks",
+        baseURL: FIREWORKS_BASE_URL,
+        apiKey: apiKey ?? process.env.FIREWORKS_API_KEY,
+        includeUsage: true,
+        supportsStructuredOutputs: true,
+      })(model);
     case "deepseek":
       return (apiKey ? createDeepSeek({ apiKey }) : createDeepSeek())(model);
   }
@@ -518,12 +538,15 @@ function directProviderApiKey(provider: ModelProvider): string | undefined {
       return process.env.MISTRAL_API_KEY;
     case "cohere":
       return process.env.COHERE_API_KEY;
+    case "fireworks":
+      return process.env.FIREWORKS_API_KEY;
     case "deepseek":
       return process.env.DEEPSEEK_API_KEY;
   }
 }
 
 function gatewayModelId(route: WorkerModelRoute): string {
+  if (route.provider === "fireworks") return `fireworks/${route.model}`;
   return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
 }
 
@@ -536,6 +559,8 @@ function nativeProviderModel(route: WorkerModelRoute): string | null {
       return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
         ? route.model
         : null;
+    case "fireworks":
+      return route.model;
     default:
       return route.model;
   }
@@ -956,15 +981,23 @@ function extractEmbeddedPdf(prompt: string): { text: string; pdfBase64: string }
   };
 }
 
-function buildPromptInput(prompt: string, providerOptions?: Record<string, unknown>) {
+function buildPromptInput(
+  prompt: string,
+  providerOptions?: Record<string, unknown>,
+  route?: WorkerModelRoute,
+) {
   const options = providerOptions as ExtractionProviderOptions | undefined;
-  const pdfPart = buildPdfFilePart({
-    pdfUrl: options?.pdfUrl,
-    pdfBytes: options?.pdfBytes,
-    pdfBase64: options?.pdfBase64,
-    mimeType: options?.mimeType,
-  });
-  if (options?.images?.length) {
+  const supportsPdfFileInput = route?.provider !== "fireworks";
+  const supportsImageInput = route ? routeSupportsImageInput(route) : true;
+  const pdfPart = supportsPdfFileInput
+    ? buildPdfFilePart({
+        pdfUrl: options?.pdfUrl,
+        pdfBytes: options?.pdfBytes,
+        pdfBase64: options?.pdfBase64,
+        mimeType: options?.mimeType,
+      })
+    : null;
+  if (supportsImageInput && options?.images?.length) {
     return {
       messages: [
         {
@@ -994,7 +1027,7 @@ function buildPromptInput(prompt: string, providerOptions?: Record<string, unkno
     };
   }
 
-  const embedded = extractEmbeddedPdf(prompt);
+  const embedded = supportsPdfFileInput ? extractEmbeddedPdf(prompt) : null;
   if (embedded) {
     return {
       messages: [
@@ -1015,6 +1048,14 @@ function buildPromptInput(prompt: string, providerOptions?: Record<string, unkno
   }
 
   return { prompt };
+}
+
+function routeSupportsImageInput(route: WorkerModelRoute): boolean {
+  if (route.provider !== "fireworks") return true;
+  return (
+    route.model === "accounts/fireworks/models/kimi-k2p6" ||
+    route.model === "accounts/fireworks/routers/kimi-k2p6-fast"
+  );
 }
 
 
@@ -1072,7 +1113,7 @@ function buildWorkerExtractor(opts: {
       const result = await aiGenerateText({
         model: route.model,
         system: params.system,
-        ...buildPromptInput(guidedPrompt, providerOptions),
+        ...buildPromptInput(guidedPrompt, providerOptions, route.route),
         maxOutputTokens,
         providerOptions: callProviderOptions,
         abortSignal: modelAbortSignal(),
@@ -1142,7 +1183,7 @@ function buildWorkerExtractor(opts: {
         const fallbackResult = await aiGenerateText({
           model: fallback.model,
           system: params.system,
-          ...buildPromptInput(guidedPrompt, providerOptions),
+          ...buildPromptInput(guidedPrompt, providerOptions, fallback.route),
           maxOutputTokens: fallbackMaxOutputTokens,
           providerOptions: fallbackProviderOptions,
           abortSignal: modelAbortSignal(),
@@ -1217,8 +1258,10 @@ function buildWorkerExtractor(opts: {
       const result = await aiGenerateText({
         model: route.model,
         system: params.system,
-        ...buildPromptInput(guidedPrompt, providerOptions),
-        output: Output.object({ schema: params.schema }),
+        ...buildPromptInput(guidedPrompt, providerOptions, route.route),
+        output: Output.object({
+          schema: structuredOutputSchemaForProvider(params.schema, route.route.provider),
+        }),
         maxOutputTokens,
         providerOptions: callProviderOptions,
         abortSignal: modelAbortSignal(),
@@ -1314,8 +1357,10 @@ function buildWorkerExtractor(opts: {
         const fallbackResult = await aiGenerateText({
           model: fallback.model,
           system: params.system,
-          ...buildPromptInput(guidedPrompt, providerOptions),
-          output: Output.object({ schema: params.schema }),
+          ...buildPromptInput(guidedPrompt, providerOptions, fallback.route),
+          output: Output.object({
+            schema: structuredOutputSchemaForProvider(params.schema, fallback.route.provider),
+          }),
           maxOutputTokens: fallbackMaxOutputTokens,
           providerOptions: fallbackProviderOptions,
           abortSignal: modelAbortSignal(),
@@ -1498,7 +1543,11 @@ function startHttpServer(): { close: () => void } | null {
         workerVersion: WORKER_VERSION,
         workerProtocolVersion: WORKER_PROTOCOL_VERSION,
         clSdkVersion: WORKER_CL_SDK_VERSION,
+        glassEnv: GLASS_ENV,
         convexUrl: CONVEX_URL,
+        railwayEnvironment: process.env.RAILWAY_ENVIRONMENT_NAME,
+        gitSha: process.env.RAILWAY_GIT_COMMIT_SHA,
+        gitBranch: process.env.RAILWAY_GIT_BRANCH,
       });
       return;
     }
@@ -1801,6 +1850,15 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
 const previewExtractionOutputSchema =
   jsonSchema<Record<string, unknown>>(previewExtractionSchema);
 
+function previewExtractionOutputSchemaForProvider(provider: string) {
+  if (provider !== "fireworks") return previewExtractionOutputSchema;
+  return jsonSchema<Record<string, unknown>>(
+    normalizeJsonSchemaForFireworks(previewExtractionSchema) as Parameters<
+      typeof jsonSchema<Record<string, unknown>>
+    >[0],
+  );
+}
+
 function cleanPreviewString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.replace(/\s+/g, " ").trim();
@@ -1952,7 +2010,9 @@ ${sourceText}`;
       model: route.model,
       system,
       prompt,
-      output: Output.object({ schema: previewExtractionOutputSchema }),
+      output: Output.object({
+        schema: previewExtractionOutputSchemaForProvider(route.route.provider),
+      }),
       maxOutputTokens,
       providerOptions: callProviderOptions,
       abortSignal: modelAbortSignal(),

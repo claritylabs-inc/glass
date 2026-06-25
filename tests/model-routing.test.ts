@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   FALLBACK_MODEL,
+  FIREWORKS_MODEL_IDS,
   MODEL_ROUTING,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
@@ -12,10 +13,52 @@ import {
 } from "../convex/lib/models";
 
 describe("model task routing", () => {
-  test("keeps the main web chat assistant on the high-volume mini route", () => {
+  test("routes the main web chat assistant to the fast Fireworks tool-calling model", () => {
     expect(MODEL_ROUTING.chat).toEqual({
+      provider: "fireworks",
+      model: FIREWORKS_MODEL_IDS.kimiK2P6Fast,
+    });
+  });
+
+  test("keeps the Fireworks default model set constrained by use case", () => {
+    for (const task of [
+      "email_draft",
+      "email_reply",
+      "analysis",
+      "summary",
+      "mailbox_coordinator",
+      "application_authoring",
+    ] as const) {
+      expect(MODEL_ROUTING[task]).toEqual({
+        provider: "fireworks",
+        model: FIREWORKS_MODEL_IDS.glm52,
+      });
+    }
+
+    for (const task of [
+      "classification",
+      "extraction",
+      "extraction_preview",
+      "triage",
+      "email_extraction",
+      "document_extraction",
+    ] as const) {
+      expect(MODEL_ROUTING[task]).toEqual({
+        provider: "fireworks",
+        model: FIREWORKS_MODEL_IDS.kimiK2P6,
+      });
+    }
+
+    expect(MODEL_ROUTING.chat).toEqual({
+      provider: "fireworks",
+      model: FIREWORKS_MODEL_IDS.kimiK2P6Fast,
+    });
+  });
+
+  test("keeps embeddings on the OpenAI-compatible 1536-dimensional route during migration", () => {
+    expect(MODEL_ROUTING.embeddings).toEqual({
       provider: "openai",
-      model: "gpt-5.4-mini",
+      model: "text-embedding-3-small",
     });
   });
 
@@ -82,6 +125,13 @@ describe("thread chat streaming reliability", () => {
 });
 
 describe("model fallback policy", () => {
+  test("uses OpenAI as the universal fallback provider", () => {
+    expect(FALLBACK_MODEL).toEqual({
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+  });
+
   test("does not generically escalate cheap extraction or classification calls", () => {
     expect(fallbackRouteForCall({ task: "extraction" })).toBeNull();
     expect(fallbackRouteForCall({ task: "extraction", taskKind: "extraction_focused" })).toBeNull();
@@ -100,7 +150,10 @@ describe("model fallback policy", () => {
       fallbackRouteForCall({
         task: "analysis",
         taskKind: "pce_packet_generation",
-        primaryRoute: { provider: "openai", model: "gpt-5.4-nano" },
+        primaryRoute: {
+          provider: "fireworks",
+          model: FIREWORKS_MODEL_IDS.kimiK2P6,
+        },
       }),
     ).toEqual(FALLBACK_MODEL);
   });
@@ -117,10 +170,10 @@ describe("model fallback policy", () => {
 });
 
 describe("mailbox coordinator routing", () => {
-  test("uses gpt-5.5 for complex mailbox workflows", () => {
+  test("uses the high-quality Fireworks reasoning route for complex mailbox workflows", () => {
     expect(MODEL_ROUTING.mailbox_coordinator).toEqual({
-      provider: "openai",
-      model: "gpt-5.5",
+      provider: "fireworks",
+      model: FIREWORKS_MODEL_IDS.glm52,
     });
   });
 });

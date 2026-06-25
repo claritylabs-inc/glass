@@ -23,7 +23,9 @@ describe("policy preview extraction", () => {
     const worker = read("extraction-worker/src/index.ts");
     const modelCatalog = read("convex/lib/modelCatalog.ts");
 
-    expect(modelCatalog).toContain('extraction_preview: { model: "gpt-5.4-nano", provider: "openai" }');
+    expect(modelCatalog).toContain(
+      'extraction_preview: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" }',
+    );
     expect(worker).toContain('type ModelTask = "extraction" | "extraction_preview" | "classification"');
     expect(worker).toContain("POLICY_PREVIEW_VERSION");
     expect(worker).toContain("claimExternalPreviewJob");

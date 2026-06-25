@@ -6,6 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import { getImessageWorkerUrl, isImessageInboundEnabled } from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
+import { getEmailDeliveryMode } from "./lib/resend";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import {
   type McpPolicySummarySource,
@@ -44,6 +45,7 @@ http.route({
       imessageWorkerUrlConfigured: Boolean(getImessageWorkerUrl()),
       imessageWorkerSecretConfigured: Boolean(process.env.IMESSAGE_WORKER_SECRET),
       emailInboundWebhookSecretConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET),
+      emailOutboundConfigured: Boolean(process.env.AUTH_RESEND_KEY),
       emailScanCronSecretConfigured: Boolean(process.env.EMAIL_SCAN_CRON_SECRET),
       connectedEmailEncryptionConfigured: Boolean(
         process.env.EMAIL_CONNECTIONS_ENCRYPTION_KEY,
@@ -54,6 +56,10 @@ http.route({
       JSON.stringify({
         ok,
         service: "glass-convex-agent-health",
+        glassEnv: process.env.GLASS_ENV ?? "unknown",
+        emailDeliveryMode: getEmailDeliveryMode(),
+        clientPortalUrl: getClientPortalUrl(),
+        authSiteUrl: getAuthSiteUrl(),
         checks,
       }),
       {

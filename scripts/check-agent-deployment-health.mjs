@@ -1,39 +1,116 @@
+import { readFileSync } from "node:fs";
+
 const DEFAULT_TIMEOUT_MS = 10_000;
 const CHECK_ATTEMPTS = Number(process.env.AGENT_HEALTH_ATTEMPTS ?? "3");
-const RETRY_DELAY_MS = Number(process.env.AGENT_HEALTH_RETRY_DELAY_MS ?? "10_000");
+const RETRY_DELAY_MS = Number(process.env.AGENT_HEALTH_RETRY_DELAY_MS ?? "10000");
+const DEPLOYMENTS = JSON.parse(readFileSync(new URL("../config/deployments.json", import.meta.url), "utf8"));
+
+function argValue(name) {
+  const prefix = `--${name}=`;
+  const inline = process.argv.find((arg) => arg.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = process.argv.indexOf(`--${name}`);
+  if (index >= 0) return process.argv[index + 1];
+  return undefined;
+}
+
+const DEPLOYMENT_ENV =
+  argValue("env") ??
+  argValue("environment") ??
+  process.env.GLASS_DEPLOYMENT_ENV ??
+  process.env.GLASS_ENV ??
+  "production";
+
+const deployment = DEPLOYMENTS[DEPLOYMENT_ENV];
+if (!deployment) {
+  console.error(
+    `[agent-health] Unknown deployment environment "${DEPLOYMENT_ENV}". Expected one of: ${Object.keys(DEPLOYMENTS).join(", ")}`,
+  );
+  process.exit(1);
+}
+
+function envOrDefault(envName, defaultValue, label) {
+  const value = envName ? process.env[envName] : undefined;
+  const resolved = value ?? defaultValue;
+  if (!resolved) {
+    throw new Error(
+      `${label} is not configured for ${DEPLOYMENT_ENV}; set ${envName ?? "the corresponding deployment URL"}`,
+    );
+  }
+  return resolved;
+}
+
+const urls = {
+  convexAgentHealth:
+    process.env.GLASS_CONVEX_AGENT_HEALTH_URL ??
+    envOrDefault(
+      deployment.convexAgentHealthUrlEnv,
+      deployment.convexAgentHealthUrl,
+      "Convex agent health URL",
+    ),
+  imessageWorkerHealth:
+    process.env.GLASS_IMESSAGE_WORKER_HEALTH_URL ??
+    envOrDefault(
+      deployment.imessageWorkerHealthUrlEnv,
+      deployment.imessageWorkerHealthUrl,
+      "iMessage worker health URL",
+    ),
+  extractionWorkerHealth:
+    process.env.GLASS_EXTRACTION_WORKER_HEALTH_URL ??
+    envOrDefault(
+      deployment.extractionWorkerHealthUrlEnv,
+      deployment.extractionWorkerHealthUrl,
+      "extraction worker health URL",
+    ),
+};
+
+function validateGlassEnv(payload) {
+  if (!payload.glassEnv) return;
+  if (payload.glassEnv !== deployment.glassEnv) {
+    throw new Error(
+      `glassEnv expected ${deployment.glassEnv} got ${String(payload.glassEnv)}`,
+    );
+  }
+}
 
 const checks = [
   {
     name: "Convex agent configuration",
-    url:
-      process.env.GLASS_CONVEX_AGENT_HEALTH_URL ??
-      "https://merry-platypus-82.convex.site/agent-health",
+    url: urls.convexAgentHealth,
     validate(payload) {
       if (payload.ok !== true) {
         throw new Error(`reported ok=${String(payload.ok)}`);
       }
+      validateGlassEnv(payload);
       const missing = Object.entries(payload.checks ?? {})
         .filter(([, value]) => value !== true)
         .map(([key]) => key);
       if (missing.length > 0) {
         throw new Error(`missing checks: ${missing.join(", ")}`);
       }
+      if (
+        payload.emailDeliveryMode &&
+        deployment.email?.deliveryMode &&
+        payload.emailDeliveryMode !== deployment.email.deliveryMode
+      ) {
+        throw new Error(
+          `emailDeliveryMode expected ${deployment.email.deliveryMode} got ${String(payload.emailDeliveryMode)}`,
+        );
+      }
     },
   },
   {
     name: "iMessage worker",
-    url:
-      process.env.GLASS_IMESSAGE_WORKER_HEALTH_URL ??
-      "https://glass-production-4618.up.railway.app/health",
+    url: urls.imessageWorkerHealth,
     validate(payload) {
       const expected = {
         ok: true,
         service: "glass-imessage-worker",
-        transport: "imessage",
-        imessageEnabled: true,
+        transport: deployment.imessage.transport,
+        imessageEnabled: deployment.imessage.imessageEnabled,
         convexSiteConfigured: true,
         workerSecretConfigured: true,
-        photonConfigured: true,
+        photonConfigured: deployment.imessage.photonConfigured,
       };
       const failures = Object.entries(expected)
         .filter(([key, value]) => payload[key] !== value)
@@ -41,23 +118,26 @@ const checks = [
       if (failures.length > 0) {
         throw new Error(failures.join("; "));
       }
-      if (!Array.isArray(payload.httpPorts) || !payload.httpPorts.includes(3001)) {
-        throw new Error("worker is not listening on Railway public target port 3001");
+      validateGlassEnv(payload);
+      for (const port of deployment.imessage.requiredHttpPorts ?? []) {
+        if (!Array.isArray(payload.httpPorts) || !payload.httpPorts.includes(port)) {
+          throw new Error(`worker is not listening on required port ${port}`);
+        }
       }
     },
   },
   {
     name: "Extraction worker",
-    url:
-      process.env.GLASS_EXTRACTION_WORKER_HEALTH_URL ??
-      "https://glass-extraction-worker-production.up.railway.app/health",
+    url: urls.extractionWorkerHealth,
     validate(payload) {
       if (payload.ok !== true) {
         throw new Error(`reported ok=${String(payload.ok)}`);
       }
-      if (payload.workerProtocolVersion !== "source-tree-v1") {
+      validateGlassEnv(payload);
+      const expectedProtocol = deployment.workers?.extractionProtocol;
+      if (expectedProtocol && payload.workerProtocolVersion !== expectedProtocol) {
         throw new Error(
-          `unexpected protocol ${String(payload.workerProtocolVersion)}`,
+          `unexpected protocol ${String(payload.workerProtocolVersion)}; expected ${expectedProtocol}`,
         );
       }
     },
@@ -124,3 +204,5 @@ if (failures.length > 0) {
   console.error(failures.join("\n"));
   process.exit(1);
 }
+
+console.log(`[agent-health] ${DEPLOYMENT_ENV} deployment health passed`);

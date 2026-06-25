@@ -10,6 +10,7 @@ const modelProviderValidator = v.union(
   v.literal("xai"),
   v.literal("mistral"),
   v.literal("cohere"),
+  v.literal("fireworks"),
   v.literal("moonshot"),
   v.literal("deepseek"),
 );
@@ -568,6 +569,7 @@ export default defineSchema({
         xai: v.optional(v.string()),
         mistral: v.optional(v.string()),
         cohere: v.optional(v.string()),
+        fireworks: v.optional(v.string()),
         moonshot: v.optional(v.string()),
         deepseek: v.optional(v.string()),
       }),

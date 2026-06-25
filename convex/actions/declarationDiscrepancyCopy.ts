@@ -5,7 +5,8 @@ import { z } from "zod";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { getModelForOrg } from "../lib/models";
+import { getModelAndRouteForOrg } from "../lib/models";
+import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
 
 type OpenDiscrepancyForCopy = {
   _id: string;
@@ -98,9 +99,10 @@ export const phraseOpenInternal = internalAction({
           policyCount: Array.isArray(value.policyIds) ? value.policyIds.length : 0,
         }));
 
+        const modelRoute = await getModelAndRouteForOrg(ctx, args.orgId, "summary");
         const result = await generateObject({
-          model: await getModelForOrg(ctx, args.orgId, "summary"),
-          schema: discrepancyCopySchema,
+          model: modelRoute.model,
+          schema: structuredOutputSchemaForRoute(discrepancyCopySchema, modelRoute.route),
           system:
             "You write plain-language commercial insurance product copy. Make conflicts understandable to non-technical broker and client users. Do not mention JSON, extraction, normalized values, field groups, databases, or implementation details.",
           prompt: `Write concise display copy for a policy detail conflict.

@@ -22,6 +22,7 @@ export type ModelProvider =
   | "xai"
   | "mistral"
   | "cohere"
+  | "fireworks"
   | "moonshot"
   | "deepseek";
 
@@ -51,6 +52,15 @@ export type ModelCapabilityConfig = {
   taskOutputTokens?: Record<string, number>;
 };
 
+export const FIREWORKS_MODEL_IDS = {
+  kimiK2P6: "accounts/fireworks/models/kimi-k2p6",
+  kimiK2P6Fast: "accounts/fireworks/routers/kimi-k2p6-fast",
+  glm52: "accounts/fireworks/models/glm-5p2",
+  gptOssSafeguard20B: "accounts/fireworks/models/gpt-oss-safeguard-20b",
+  qwen3Embedding8B: "accounts/fireworks/models/qwen3-embedding-8b",
+  nomicEmbedText15: "nomic-ai/nomic-embed-text-v1.5",
+} as const;
+
 export const PROVIDER_LABELS: Record<ModelProvider, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
@@ -58,6 +68,7 @@ export const PROVIDER_LABELS: Record<ModelProvider, string> = {
   xai: "xAI",
   mistral: "Mistral",
   cohere: "Cohere",
+  fireworks: "Fireworks",
   moonshot: "Disabled provider",
   deepseek: "DeepSeek",
 };
@@ -208,6 +219,12 @@ export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {
     "pixtral-12b",
   ],
   cohere: ["command-a"],
+  fireworks: [
+    FIREWORKS_MODEL_IDS.glm52,
+    FIREWORKS_MODEL_IDS.kimiK2P6,
+    FIREWORKS_MODEL_IDS.kimiK2P6Fast,
+    FIREWORKS_MODEL_IDS.gptOssSafeguard20B,
+  ],
   moonshot: [],
   deepseek: [
     "deepseek-v4-pro",
@@ -225,23 +242,27 @@ export const EMBEDDING_MODEL_CATALOG: Partial<Record<ModelProvider, string[]>> =
   {
     openai: ["text-embedding-3-small", "text-embedding-3-large"],
     google: ["gemini-embedding-001"],
+    fireworks: [
+      FIREWORKS_MODEL_IDS.qwen3Embedding8B,
+      FIREWORKS_MODEL_IDS.nomicEmbedText15,
+    ],
   };
 
 export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
-  chat: { model: "gpt-5.4-mini", provider: "openai" },
-  email_draft: { model: "gpt-5.4-mini", provider: "openai" },
-  email_reply: { model: "gpt-5.4-mini", provider: "openai" },
-  analysis: { model: "gpt-5.4-mini", provider: "openai" },
-  summary: { model: "gpt-5.4-nano", provider: "openai" },
-  classification: { model: "gpt-5.4-nano", provider: "openai" },
-  extraction: { model: "gpt-5.4-nano", provider: "openai" },
-  extraction_preview: { model: "gpt-5.4-nano", provider: "openai" },
-  triage: { model: "gemini-2.5-flash", provider: "google" },
-  email_extraction: { model: "gpt-5.4-nano", provider: "openai" },
-  document_extraction: { model: "gpt-5.4-nano", provider: "openai" },
-  security: { model: "claude-haiku-4.5", provider: "anthropic" },
-  mailbox_coordinator: { model: "gpt-5.5", provider: "openai" },
-  application_authoring: { model: "gpt-5.4-mini", provider: "openai" },
+  chat: { model: FIREWORKS_MODEL_IDS.kimiK2P6Fast, provider: "fireworks" },
+  email_draft: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
+  email_reply: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
+  analysis: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
+  summary: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
+  classification: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
+  extraction: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
+  extraction_preview: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
+  triage: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
+  email_extraction: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
+  document_extraction: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
+  security: { model: FIREWORKS_MODEL_IDS.gptOssSafeguard20B, provider: "fireworks" },
+  mailbox_coordinator: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
+  application_authoring: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
   embeddings: { model: "text-embedding-3-small", provider: "openai" },
 };
 
@@ -258,10 +279,10 @@ export const CONFIGURABLE_MODEL_PROVIDERS = MODEL_PROVIDERS.filter(
 
 export const WEB_RETRIEVAL_LABELS: Record<WebRetrievalProvider, string> = {
   exa: "Exa",
-  openai: "OpenAI web search",
-  google: "Google Search grounding",
-  anthropic: "Claude web search",
-  xai: "xAI web search",
+  openai: "OpenAI",
+  google: "Google",
+  anthropic: "Claude",
+  xai: "xAI",
 };
 
 export const WEB_RETRIEVAL_DEFAULT: WebRetrievalRoute = { primary: "exa" };
@@ -349,6 +370,81 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     defaultOutputTokens: 4_096,
     longListOutputTokens: 16_384,
   },
+  [FIREWORKS_MODEL_IDS.kimiK2P6]: {
+    modelName: FIREWORKS_MODEL_IDS.kimiK2P6,
+    maxInputTokens: 262_144,
+    maxOutputTokens: 32_768,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 24_576,
+    taskOutputTokens: {
+      extraction_classify: 2_048,
+      extraction_preview: 4_096,
+      extraction_form_inventory: 8_192,
+      extraction_page_map: 8_192,
+      extraction_focused: 16_384,
+      extraction_long_list: 24_576,
+      query_classify: 2_048,
+      application_classify: 2_048,
+      application_auto_fill: 8_192,
+      application_batch: 8_192,
+      application_email: 8_192,
+    },
+  },
+  [FIREWORKS_MODEL_IDS.kimiK2P6Fast]: {
+    modelName: FIREWORKS_MODEL_IDS.kimiK2P6Fast,
+    maxInputTokens: 262_144,
+    maxOutputTokens: 32_768,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 24_576,
+    taskOutputTokens: {
+      extraction_classify: 2_048,
+      extraction_preview: 4_096,
+      query_classify: 2_048,
+      query_reason: 8_192,
+      query_verify: 4_096,
+      query_respond: 8_192,
+      application_classify: 2_048,
+    },
+  },
+  [FIREWORKS_MODEL_IDS.glm52]: {
+    modelName: FIREWORKS_MODEL_IDS.glm52,
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: 32_768,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 24_576,
+    taskOutputTokens: {
+      extraction_classify: 2_048,
+      extraction_preview: 4_096,
+      extraction_form_inventory: 8_192,
+      extraction_page_map: 8_192,
+      extraction_focused: 16_384,
+      extraction_long_list: 24_576,
+      extraction_review: 12_288,
+      extraction_referential_lookup: 12_288,
+      query_classify: 2_048,
+      query_reason: 8_192,
+      query_verify: 4_096,
+      query_respond: 8_192,
+      application_classify: 2_048,
+      application_extract_fields: 8_192,
+      application_auto_fill: 8_192,
+      application_batch: 8_192,
+      application_email: 8_192,
+      pce_impact_analysis: 8_192,
+      pce_packet_generation: 8_192,
+    },
+  },
+  [FIREWORKS_MODEL_IDS.gptOssSafeguard20B]: {
+    modelName: FIREWORKS_MODEL_IDS.gptOssSafeguard20B,
+    maxInputTokens: 131_072,
+    maxOutputTokens: 8_192,
+    defaultOutputTokens: 2_048,
+  },
+  [FIREWORKS_MODEL_IDS.qwen3Embedding8B]: {
+    modelName: FIREWORKS_MODEL_IDS.qwen3Embedding8B,
+    maxInputTokens: 32_000,
+    defaultOutputTokens: 1_536,
+  },
 };
 
 export function modelCapabilitiesForRoute(
@@ -366,4 +462,12 @@ export function modelCapabilitiesForTask(
   task: ModelTask,
 ): ModelCapabilityConfig | undefined {
   return modelCapabilitiesForRoute(MODEL_ROUTING[task]);
+}
+
+export function modelSupportsImageInput(route: ModelRoute): boolean {
+  if (route.provider !== "fireworks") return true;
+  return (
+    route.model === FIREWORKS_MODEL_IDS.kimiK2P6 ||
+    route.model === FIREWORKS_MODEL_IDS.kimiK2P6Fast
+  );
 }

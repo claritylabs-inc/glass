@@ -58,17 +58,21 @@ describe("agent deployment safeguards", () => {
   it("smoke-checks production agent health on a schedule", () => {
     const workflow = read(".github/workflows/agent-safeguards.yml");
     const script = read("scripts/check-agent-deployment-health.mjs");
+    const deployments = read("config/deployments.json");
     const http = read("convex/http.ts");
 
     expect(workflow).toContain('cron: "*/15 * * * *"');
     expect(workflow).toContain("node scripts/check-agent-deployment-health.mjs");
     expect(workflow).toContain("AGENT_HEALTH_ATTEMPTS: 30");
-    expect(script).toContain("https://merry-platypus-82.convex.site/agent-health");
-    expect(script).toContain("https://glass-production-4618.up.railway.app/health");
+    expect(deployments).toContain("https://merry-platypus-82.convex.site/agent-health");
+    expect(deployments).toContain("https://glass-production-4618.up.railway.app/health");
+    expect(deployments).toContain("GLASS_STAGING_CONVEX_AGENT_HEALTH_URL");
+    expect(script).toContain("config/deployments.json");
     expect(script).toContain("AGENT_HEALTH_RETRY_DELAY_MS");
-    expect(script).toContain("worker is not listening on Railway public target port 3001");
+    expect(script).toContain("worker is not listening on required port");
     expect(http).toContain('path: "/agent-health"');
     expect(http).toContain("emailInboundWebhookSecretConfigured");
     expect(http).toContain("imessageWorkerSecretConfigured");
+    expect(http).toContain("emailOutboundConfigured");
   });
 });

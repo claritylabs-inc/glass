@@ -6,7 +6,8 @@ import { z } from "zod";
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import { getModelAndRouteForOrg, getProviderOptionsForTask } from "../lib/models";
+import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 
 const MAX_SOURCE_CHARS = 40_000;
@@ -189,10 +190,11 @@ export const formatQuestions = action({
       throw new Error("Paste questions or upload an application document first");
     }
 
+    const modelRoute = await getModelAndRouteForOrg(ctx, args.orgId, "application_authoring");
     const result = await generateObject({
-      model: await getModelForOrg(ctx, args.orgId, "application_authoring"),
+      model: modelRoute.model,
       providerOptions: getProviderOptionsForTask("application_authoring"),
-      schema: QuestionAuthoringSchema,
+      schema: structuredOutputSchemaForRoute(QuestionAuthoringSchema, modelRoute.route),
       system:
         "You format commercial insurance application source material into clean structured JSON questions for Glass.",
       prompt: buildPrompt({

@@ -6,7 +6,8 @@ import { generateText, Output } from "ai";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { getModelForOrg } from "../lib/models";
+import { getModelAndRouteForOrg } from "../lib/models";
+import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
 import { INDUSTRIES } from "../lib/industries";
 import { runWebRetrieval } from "../lib/webRetrieval";
 
@@ -152,9 +153,12 @@ export const extractCompanyInfo = action({
       return { error: "Could not retrieve website content" };
     }
 
+    const modelRoute = await getModelAndRouteForOrg(ctx, targetOrgId, "triage");
     const { output: object } = (await generateText({
-      model: await getModelForOrg(ctx, targetOrgId, "triage"),
-      output: Output.object({ schema: CompanyInfoSchema }),
+      model: modelRoute.model,
+      output: Output.object({
+        schema: structuredOutputSchemaForRoute(CompanyInfoSchema, modelRoute.route),
+      }),
       maxOutputTokens: 2048,
       prompt: `Extract company information from the website content below.
 

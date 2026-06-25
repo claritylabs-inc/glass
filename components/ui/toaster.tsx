@@ -7,6 +7,7 @@ export function AppToaster() {
   return (
     <Toaster
       position="bottom-right"
+      closeButton
       expand
       gap={8}
       visibleToasts={4}

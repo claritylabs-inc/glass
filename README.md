@@ -48,6 +48,8 @@ Then open `http://localhost:3000`.
 
 Production Railway worker services are Dockerfile-backed. Local worker image tests should use the same Dockerfiles through Apple's `container` CLI on Apple silicon Macs so local builds exercise the production container path.
 
+Deployment environment policy is documented in [docs/deployment/environments.md](docs/deployment/environments.md). `main` is production, `staging` is shared deployed integration, and local worktrees use local containers instead of shared Railway workers.
+
 Prerequisites:
 
 - Apple silicon Mac
@@ -93,6 +95,11 @@ Common variables used across major workflows:
 - `DEEPSEEK_API_KEY`
 - `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email)
 - `RESEND_WEBHOOK_SECRET`
+- `GLASS_ENV` — runtime lane: `production`, `staging`, or `local`
+- `EMAIL_DELIVERY_MODE` — outbound email policy: `live`, `restricted`, or `capture`
+- `EMAIL_ALLOWED_RECIPIENT_DOMAINS` / `EMAIL_ALLOWED_RECIPIENTS` — allowlist for restricted staging delivery
+- `EMAIL_REDIRECT_TO` — internal capture address for restricted staging delivery
+- `EMAIL_SUBJECT_PREFIX` — optional prefix for restricted delivery subjects; staging defaults to `[STAGING]`
 - `AGENT_DOMAIN` — verified Resend sending domain for agent mail. Defaults to `glass.insure`. Legacy inbound addresses at `glass.claritylabs.inc` and `dev.claritylabs.inc` remain recognized.
 - `NOTIFICATION_EMAIL_DOMAIN` — verified Resend sending domain for system notifications. Defaults to `notifications.glass.insure`.
 - `AUTH_EMAIL_DOMAIN` — verified Resend sending domain for OTP, auth, and invite mail. Defaults to `auth.glass.insure`.

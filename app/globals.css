@@ -299,6 +299,38 @@
   transition: width var(--motion-medium) var(--motion-ease);
 }
 
+[data-sonner-toast][data-styled="true"] {
+  padding-right: 2.5rem !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-close-button] {
+  top: 0.625rem !important;
+  right: 0.625rem !important;
+  left: auto !important;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: var(--muted-foreground) !important;
+  transform: none !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-sonner-toast][data-styled="true"] [data-close-button]:hover {
+    background: transparent !important;
+    border-color: transparent !important;
+    color: var(--foreground) !important;
+  }
+}
+
+[data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
+  box-shadow: none !important;
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+
 @media (max-width: 600px) {
   [data-sonner-toaster][data-x-position="right"] {
     left: auto;

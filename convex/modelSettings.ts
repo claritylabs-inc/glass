@@ -38,6 +38,7 @@ const configurableProviderValidator = v.union(
   v.literal("xai"),
   v.literal("mistral"),
   v.literal("cohere"),
+  v.literal("fireworks"),
   v.literal("deepseek"),
 );
 
@@ -126,6 +127,52 @@ function maskProviderKeys(keys: ProviderKeys | undefined) {
 
 function gatewayConfigured() {
   return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+}
+
+function languageProviderEnvConfigured(provider: ModelProvider) {
+  switch (provider) {
+    case "fireworks":
+      return !!process.env.FIREWORKS_API_KEY;
+    case "openai":
+      return !!process.env.OPENAI_API_KEY;
+    case "anthropic":
+      return !!process.env.ANTHROPIC_API_KEY;
+    case "google":
+      return !!(
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY
+      );
+    case "xai":
+      return !!process.env.XAI_API_KEY;
+    case "mistral":
+      return !!process.env.MISTRAL_API_KEY;
+    case "cohere":
+      return !!process.env.COHERE_API_KEY;
+    case "deepseek":
+      return !!process.env.DEEPSEEK_API_KEY;
+    case "moonshot":
+      return false;
+  }
+}
+
+function gatewayRoutableProvider(provider: ModelProvider) {
+  return (
+    provider === "openai" ||
+    provider === "anthropic" ||
+    provider === "google" ||
+    provider === "xai"
+  );
+}
+
+function providerTransport(provider: ModelProvider) {
+  if (languageProviderEnvConfigured(provider)) return "direct";
+  if (gatewayConfigured() && gatewayRoutableProvider(provider)) {
+    return "gateway";
+  }
+  return null;
+}
+
+function globalProviderConfigured(provider: ModelProvider) {
+  return providerTransport(provider) !== null;
 }
 
 function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefined) {
@@ -335,6 +382,8 @@ export const getGlobal = query({
       providers: CONFIGURABLE_MODEL_PROVIDERS.map((id) => ({
         id,
         label: PROVIDER_LABELS[id],
+        configured: globalProviderConfigured(id),
+        transport: providerTransport(id),
         languageModels: LANGUAGE_MODEL_CATALOG[id],
         embeddingModels: EMBEDDING_MODEL_CATALOG[id] ?? [],
       })),
@@ -347,8 +396,9 @@ export const getGlobal = query({
       })),
       routes: nullableRoutes(settings?.routes),
       webRetrieval: normalizeWebRetrieval(settings?.webRetrieval),
-      webRetrievalProviders: (Object.keys(WEB_RETRIEVAL_LABELS) as WebRetrievalProvider[]).map(
-        (id) => ({
+      webRetrievalProviders: (
+        Object.keys(WEB_RETRIEVAL_LABELS) as WebRetrievalProvider[]
+      ).map((id) => ({
           id,
           label: WEB_RETRIEVAL_LABELS[id],
           configured: webRetrievalEnvConfigured(id),

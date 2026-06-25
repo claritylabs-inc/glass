@@ -13,6 +13,7 @@ import type { EmbeddingModel, LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createFireworks } from "@ai-sdk/fireworks";
 import {
   getModel,
   getModelAndRouteForOrg,
@@ -21,12 +22,18 @@ import {
   generateTextWithFallback,
   mergeProviderOptions,
   modelTaskForCall,
+  MODEL_ROUTING,
   type ModelCallTaskKind,
   type ModelProvider,
   type ModelRoute,
   type ModelTask,
 } from "./models";
-import { modelCapabilitiesForRoute, modelCapabilitiesForTask } from "./modelCatalog";
+import {
+  modelCapabilitiesForRoute,
+  modelCapabilitiesForTask,
+  modelSupportsImageInput,
+} from "./modelCatalog";
+import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -301,17 +308,22 @@ function getEffectiveMaxTokens(
 function buildPromptInput(
   prompt: string,
   providerOptions?: Record<string, unknown>,
+  route?: ModelRoute,
 ) {
   const options = providerOptions as ExtractionProviderOptions | undefined;
   const images = options?.images;
-  const pdfPart = buildPdfFilePart({
-    pdfUrl: options?.pdfUrl,
-    pdfBytes: options?.pdfBytes,
-    pdfBase64: options?.pdfBase64,
-    mimeType: options?.mimeType,
-  });
+  const supportsPdfFileInput = route?.provider !== "fireworks";
+  const supportsImageInput = route ? modelSupportsImageInput(route) : true;
+  const pdfPart = supportsPdfFileInput
+    ? buildPdfFilePart({
+        pdfUrl: options?.pdfUrl,
+        pdfBytes: options?.pdfBytes,
+        pdfBase64: options?.pdfBase64,
+        mimeType: options?.mimeType,
+      })
+    : null;
 
-  if (images?.length) {
+  if (supportsImageInput && images?.length) {
     return {
       messages: [
         {
@@ -343,7 +355,7 @@ function buildPromptInput(
 
   // Fallback: cl-sdk's application pipeline embeds base64 PDF directly in the prompt
   // text instead of using providerOptions. Detect and lift it into a file part.
-  const extracted = extractEmbeddedPdf(prompt);
+  const extracted = supportsPdfFileInput ? extractEmbeddedPdf(prompt) : null;
   if (extracted) {
     return {
       messages: [
@@ -450,7 +462,11 @@ export function makeGenerateText(
         transport = resolved.transport;
         return resolved.model;
       })
-      : getModel(effectiveTask);
+      : (() => {
+        primaryRoute = MODEL_ROUTING[effectiveTask];
+        routeSource = "static";
+        return getModel(effectiveTask);
+      })();
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateText", taskKind, effectiveTask, trace);
@@ -458,7 +474,11 @@ export function makeGenerateText(
       const result = await generateTextWithFallback({
         model,
         system,
-        ...buildPromptInput(guidedPrompt, providerOptions as Record<string, unknown> | undefined),
+        ...buildPromptInput(
+          guidedPrompt,
+          providerOptions as Record<string, unknown> | undefined,
+          primaryRoute,
+        ),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
           getProviderOptionsForTask(effectiveTask),
@@ -550,7 +570,11 @@ export function makeGenerateObject(
         transport = resolved.transport;
         return resolved.model;
       })
-      : getModel(effectiveTask);
+      : (() => {
+        primaryRoute = MODEL_ROUTING[effectiveTask];
+        routeSource = "static";
+        return getModel(effectiveTask);
+      })();
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateObject", taskKind, effectiveTask, trace);
@@ -558,8 +582,12 @@ export function makeGenerateObject(
       const result = await generateStructuredWithFallback({
         model,
         system,
-        ...buildPromptInput(guidedPrompt, providerOptions as Record<string, unknown> | undefined),
-        output: Output.object({ schema }),
+        ...buildPromptInput(
+          guidedPrompt,
+          providerOptions as Record<string, unknown> | undefined,
+          primaryRoute,
+        ),
+        output: Output.object({ schema: structuredOutputSchemaForRoute(schema, primaryRoute) }),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
           getProviderOptionsForTask(effectiveTask),
@@ -675,18 +703,27 @@ function google() {
   return _google;
 }
 
+let _fireworks: ReturnType<typeof createFireworks> | null = null;
+function fireworks() {
+  if (!_fireworks) _fireworks = createFireworks();
+  return _fireworks;
+}
+
 function directEmbeddingApiKey(provider: ModelProvider): string | undefined {
   switch (provider) {
     case "openai":
       return process.env.OPENAI_API_KEY;
     case "google":
       return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY;
+    case "fireworks":
+      return process.env.FIREWORKS_API_KEY;
     default:
       return undefined;
   }
 }
 
 function embeddingGatewayModelId(route: ModelRoute) {
+  if (route.provider === "fireworks") return `fireworks/${route.model}`;
   return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
 }
 
@@ -696,6 +733,8 @@ function embeddingProviderModel(route: ModelRoute, apiKey?: string): EmbeddingMo
       return (apiKey ? createOpenAI({ apiKey }) : openai()).embeddingModel(route.model);
     case "google":
       return (apiKey ? createGoogleGenerativeAI({ apiKey }) : google()).embeddingModel(route.model);
+    case "fireworks":
+      return (apiKey ? createFireworks({ apiKey }) : fireworks()).embeddingModel(route.model);
     default:
       return gateway.embeddingModel(embeddingGatewayModelId(route));
   }
@@ -707,6 +746,12 @@ function embeddingProviderOptions(route: ModelRoute): ProviderOptions | undefine
   }
   if (route.provider === "google" && route.model === "gemini-embedding-001") {
     return { google: { outputDimensionality: EMBEDDING_DIMENSIONS } };
+  }
+  if (
+    route.provider === "fireworks" &&
+    route.model === "accounts/fireworks/models/qwen3-embedding-8b"
+  ) {
+    return { fireworks: { dimensions: EMBEDDING_DIMENSIONS } };
   }
   return undefined;
 }

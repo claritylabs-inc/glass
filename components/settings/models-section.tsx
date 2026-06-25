@@ -41,6 +41,7 @@ type ProviderId =
   | "xai"
   | "mistral"
   | "cohere"
+  | "fireworks"
   | "deepseek";
 type Route = { provider: ProviderId; model: string };
 type Routes = Record<string, Route | null>;
@@ -74,6 +75,7 @@ const VISIBLE_PROVIDERS: ProviderId[] = [
   "xai",
   "mistral",
   "cohere",
+  "fireworks",
   "deepseek",
 ];
 const DEFAULT_VALUE = "__default__";
