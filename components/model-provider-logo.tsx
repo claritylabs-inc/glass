@@ -36,13 +36,13 @@ const FIREWORKS_MODEL_LOGO_URLS = {
 } as const;
 
 const PROVIDER_BRAND_COLORS: Record<ModelProviderId, string> = {
-  openai: "#10A37F",
+  openai: "#000000",
   anthropic: "#D97757",
   google: "#4285F4",
   xai: "#111111",
   mistral: "#FA520F",
   cohere: "#39594D",
-  fireworks: "#F76918",
+  fireworks: "oklch(0.404 0.157 285)",
   deepseek: "#4D6BFE",
 };
 
