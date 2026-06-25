@@ -361,7 +361,7 @@ export const processInbound = internalAction({
         args.attachments,
       );
 
-      await ctx.runMutation(internal.threads.insertImessageMessage, {
+      const userMessageId = await ctx.runMutation(internal.threads.insertImessageMessage, {
         threadId,
         orgId,
         role: "user",
@@ -433,6 +433,8 @@ export const processInbound = internalAction({
         latestCancelledEmail,
         recentConversationContext,
         history: historyForContext,
+        userId: user._id,
+        userMessageId,
       });
       if (deterministicControlResult) {
         return await finish(

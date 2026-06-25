@@ -131,12 +131,12 @@ export const saveNote = tool({
 
 export const startApplicationIntake = tool({
   description:
-    "Start a broker/client insurance application intake when the user asks for a new policy, renewal application, carrier application, broker submission, or sends/uploads an application PDF/form to complete. Standalone client orgs without a connected broker can start their own intake. In broker portfolio mode, targetOrgId must be the specific client organization, not the broker workspace.",
+    "Start a broker/client insurance application intake when the user asks for a new policy, insurance quote, renewal application, carrier application, broker submission, or sends/uploads an application PDF/form to complete. Call this even when practical details are still missing; pass those follow-up items as missingQuestions so the intake is persisted before asking. Standalone client orgs without a connected broker can start their own intake. In broker portfolio mode, targetOrgId must be the specific client organization, not the broker workspace.",
   inputSchema: z.object({
     targetOrgId: z
       .string()
       .optional()
-      .describe("Client organization ID to start the application for. Required when the active scope is a broker portfolio."),
+      .describe("Client organization ID to start the application for. Required when the active scope is a broker portfolio; omit it in ordinary client scope so the current org is used."),
     templateId: z.string().optional().describe("Application template ID if the broker selected one."),
     title: z.string().optional().describe("Short application title, such as General Liability Application."),
     lineOfBusiness: z.string().optional().describe("Line of business, such as general liability, cyber, auto, or workers comp."),
@@ -153,7 +153,7 @@ export const startApplicationIntake = tool({
         }),
       )
       .optional()
-      .describe("Initial questions the agent already knows must be collected."),
+      .describe("Initial questions the agent already knows must be collected. Use this instead of asking the questions before starting the intake."),
   }),
 });
 
