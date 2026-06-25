@@ -86,10 +86,8 @@ const sdkSchemas = [
   ["PceSubmissionPacketSchema", PceSubmissionPacketSchema],
 ];
 const FIREWORKS_REASONING_MODEL = "accounts/fireworks/models/glm-5p2";
-const FIREWORKS_CHAT_MODEL = "accounts/fireworks/routers/kimi-k2p6-fast";
-const FIREWORKS_EXTRACTION_MODEL = "accounts/fireworks/models/kimi-k2p6";
-const RED_SQUARE_PNG_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAfElEQVR4nNXOQREAMAjAsK7+PTMRPLhGQd7QJnESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ESJ3ES53Vg6wNShQF/fRSLfgAAAABJRU5ErkJggg==";
+const FIREWORKS_CHAT_MODEL = "accounts/fireworks/models/deepseek-v4-flash";
+const FIREWORKS_EXTRACTION_MODEL = "accounts/fireworks/models/deepseek-v4-flash";
 
 for (const envFile of [".env.local", ".env.development.local", "extraction-worker/.env"]) {
   if (process.env.FIREWORKS_API_KEY || typeof process.loadEnvFile !== "function") break;
@@ -155,28 +153,14 @@ if (process.env.FIREWORKS_API_KEY) {
       cause: error,
     });
   }
-  const visionSmoke = await generateText({
+  const extractionSmoke = await generateText({
     model: fireworks(FIREWORKS_EXTRACTION_MODEL),
     maxOutputTokens: 128,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Answer with one lowercase word: what is the dominant color in this image?",
-          },
-          {
-            type: "image",
-            image: RED_SQUARE_PNG_BASE64,
-            mediaType: "image/png",
-          },
-        ],
-      },
-    ],
+    prompt:
+      "Extract only the policy number from this text: Policy Number: POL-12345. Return only the policy number.",
   });
-  if (!/\bred\b/i.test(visionSmoke.text)) {
-    throw new Error(`${FIREWORKS_EXTRACTION_MODEL} did not identify the red image`);
+  if (!/\bPOL-12345\b/.test(extractionSmoke.text)) {
+    throw new Error(`${FIREWORKS_EXTRACTION_MODEL} did not extract the policy number`);
   }
   const toolSmoke = await generateText({
     model: fireworks(FIREWORKS_CHAT_MODEL),
@@ -208,8 +192,8 @@ if (process.env.FIREWORKS_API_KEY) {
     extractionModel: FIREWORKS_EXTRACTION_MODEL,
     structuredOutput,
     structuredUsage: structuredSmoke.usage,
-    visionOutput: visionSmoke.text,
-    visionUsage: visionSmoke.usage,
+    extractionOutput: extractionSmoke.text,
+    extractionUsage: extractionSmoke.usage,
     toolOutput: toolSmoke.text,
     toolCallCount,
     toolUsage: toolSmoke.usage,
