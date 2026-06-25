@@ -9,6 +9,7 @@ import {
   SiOpenai,
   SiX,
 } from "react-icons/si";
+import { MODEL_DISPLAY_NAMES } from "@/convex/lib/modelCatalog";
 
 export type ModelProviderId =
   | "openai"
@@ -33,6 +34,17 @@ const FIREWORKS_MODEL_LOGO_URLS = {
   qwen: "https://app.fireworks.ai/images/logos/qwen-icon.svg",
   z: "https://app.fireworks.ai/images/logos/z-ai.svg",
 } as const;
+
+const PROVIDER_BRAND_COLORS: Record<ModelProviderId, string> = {
+  openai: "#10A37F",
+  anthropic: "#D97757",
+  google: "#4285F4",
+  xai: "#111111",
+  mistral: "#FA520F",
+  cohere: "#39594D",
+  fireworks: "#F76918",
+  deepseek: "#4D6BFE",
+};
 
 function FireworksMark({
   className,
@@ -142,15 +154,6 @@ const TEXT_MARKS: Partial<Record<ModelProviderId, string>> = {
   mistral: "M",
 };
 
-const KNOWN_MODEL_LABELS: Record<string, string> = {
-  "accounts/fireworks/models/deepseek-v4-flash": "DeepSeek V4 Flash",
-  "accounts/fireworks/models/glm-5p2": "GLM 5.2",
-  "accounts/fireworks/models/gpt-oss-safeguard-20b":
-    "GPT-OSS Safeguard 20B",
-  "accounts/fireworks/models/qwen3-embedding-8b": "Qwen3 Embedding 8B",
-  "nomic-ai/nomic-embed-text-v1.5": "Nomic Embed Text v1.5",
-};
-
 function fireworksModelLogoUrl(model: string) {
   const normalized = model.toLowerCase();
   if (normalized.includes("deepseek")) return FIREWORKS_MODEL_LOGO_URLS.deepseek;
@@ -187,7 +190,7 @@ function modelTokenLabel(token: string) {
 export function getModelDisplayName(routeOrModel: ModelLogoRoute | string) {
   const model =
     typeof routeOrModel === "string" ? routeOrModel : routeOrModel.model;
-  const known = KNOWN_MODEL_LABELS[model];
+  const known = MODEL_DISPLAY_NAMES[model];
   if (known) return known;
 
   const slug = model.split("/").pop() ?? model;
@@ -203,17 +206,38 @@ export function ModelProviderLogo({
   className?: string;
   size?: number;
 }) {
+  const color = PROVIDER_BRAND_COLORS[provider];
   const Icon = ICONS[provider];
   if (Icon) {
-    return <Icon aria-hidden="true" className={className} size={size} />;
+    return (
+      <Icon
+        aria-hidden="true"
+        className={className}
+        size={size}
+        style={{ color }}
+      />
+    );
   }
   const SvgMark = SVG_MARKS[provider];
-  if (SvgMark) return <SvgMark className={className} size={size} />;
+  if (SvgMark) {
+    return (
+      <span
+        aria-hidden="true"
+        className={["inline-flex shrink-0", className]
+          .filter(Boolean)
+          .join(" ")}
+        style={{ color, height: size, width: size }}
+      >
+        <SvgMark size={size} />
+      </span>
+    );
+  }
 
   const style: CSSProperties = {
     width: size,
     height: size,
     fontSize: Math.max(7, Math.round(size * 0.45)),
+    color,
   };
 
   return (

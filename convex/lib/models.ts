@@ -142,6 +142,8 @@ type ModelFallbackContext = {
   task?: ModelTask;
   taskKind?: ModelCallTaskKind;
   primaryRoute?: ModelRoute;
+  qualityRoute?: ModelRoute;
+  fallbackRoute?: ModelRoute;
 };
 
 const MODEL_CALL_TIMEOUT_MS = Math.max(
@@ -216,34 +218,36 @@ export function fallbackRouteForCall({
   task,
   taskKind,
   primaryRoute,
+  fallbackRoute = FALLBACK_MODEL,
 }: ModelFallbackContext): ModelRoute | null {
   const effectiveTask = task && modelTaskForCall(task, taskKind);
   const effectivePrimaryRoute =
     primaryRoute ?? (effectiveTask ? MODEL_ROUTING[effectiveTask] : undefined);
 
-  if (sameRoute(effectivePrimaryRoute, FALLBACK_MODEL)) return null;
+  if (sameRoute(effectivePrimaryRoute, fallbackRoute)) return null;
 
   if (taskKind && INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) {
-    return FALLBACK_MODEL;
+    return fallbackRoute;
   }
 
   if (effectiveTask && LOW_COST_NO_ESCALATION_TASKS.has(effectiveTask)) {
     return null;
   }
 
-  return FALLBACK_MODEL;
+  return fallbackRoute;
 }
 
 export function primaryRouteForCall({
   task,
   taskKind,
   primaryRoute,
+  qualityRoute = FALLBACK_MODEL,
 }: ModelFallbackContext): ModelRoute | null {
   if (!taskKind || !INTENTIONAL_QUALITY_PRIMARY_TASK_KINDS.has(taskKind)) return null;
   const effectiveTask = task && modelTaskForCall(task, taskKind);
   if (effectiveTask !== "extraction") return null;
-  if (sameRoute(primaryRoute, FALLBACK_MODEL)) return null;
-  return FALLBACK_MODEL;
+  if (sameRoute(primaryRoute, qualityRoute)) return null;
+  return qualityRoute;
 }
 
 export function getProviderOptionsForTask(task: ModelTask): ProviderOptions | undefined {
@@ -388,11 +392,13 @@ export async function getModelAndRouteForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "broker" | "global" | "static" | "default"; transport: "direct" | "gateway" }> {
+): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "broker" | "global" | "static" | "default"; transport: "direct" | "gateway"; qualityRoute: ModelRoute; fallbackRoute: ModelRoute }> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
     const routeSource = settings?.routeSources?.[task];
+    const qualityRoute = settings?.routes?.extraction_quality ?? FALLBACK_MODEL;
+    const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const configuredApiKey = routeSource === "broker" && configuredRoute
       ? settings?.providerKeys?.[configuredRoute.provider]
       : undefined;
@@ -411,6 +417,8 @@ export async function getModelAndRouteForOrg(
       route,
       routeSource: canUseConfiguredRoute ? (routeSource ?? "global") : "default",
       transport,
+      qualityRoute,
+      fallbackRoute,
     };
   } catch (err) {
     console.warn(
@@ -421,18 +429,27 @@ export async function getModelAndRouteForOrg(
     const route = MODEL_ROUTING[task];
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
-    return { model: getModel(task), route, routeSource: "default", transport };
+    return {
+      model: getModel(task),
+      route,
+      routeSource: "default",
+      transport,
+      qualityRoute: FALLBACK_MODEL,
+      fallbackRoute: FALLBACK_MODEL,
+    };
   }
 }
 
 export async function getModelAndRouteForPublicTask(
   ctx: ActionCtx,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "global" | "static" | "default"; transport: "direct" | "gateway" }> {
+): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "global" | "static" | "default"; transport: "direct" | "gateway"; qualityRoute: ModelRoute; fallbackRoute: ModelRoute }> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
     const route = settings?.routes?.[task] ?? MODEL_ROUTING[task];
     const routeSource = settings?.routeSources?.[task] ?? "static";
+    const qualityRoute = settings?.routes?.extraction_quality ?? FALLBACK_MODEL;
+    const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
     return {
@@ -440,6 +457,8 @@ export async function getModelAndRouteForPublicTask(
       route,
       routeSource,
       transport,
+      qualityRoute,
+      fallbackRoute,
     };
   } catch (err) {
     console.warn(
@@ -450,7 +469,14 @@ export async function getModelAndRouteForPublicTask(
     const route = MODEL_ROUTING[task];
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
-    return { model: getModel(task), route, routeSource: "default", transport };
+    return {
+      model: getModel(task),
+      route,
+      routeSource: "default",
+      transport,
+      qualityRoute: FALLBACK_MODEL,
+      fallbackRoute: FALLBACK_MODEL,
+    };
   }
 }
 

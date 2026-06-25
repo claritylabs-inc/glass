@@ -650,6 +650,46 @@ function apiKeyForRoute(
   return undefined;
 }
 
+function resolveConfiguredRoute(
+  routeId: string,
+  defaultRoute: WorkerModelRoute,
+  defaultRouteSource: WorkerRouteSource,
+  settings?: WorkerModelSettings,
+): {
+  route: WorkerModelRoute;
+  routeSource: WorkerRouteSource;
+  apiKey?: string;
+} {
+  const settingsRoute = settings?.routes?.[routeId];
+  const configuredRoute = isWorkerModelRoute(settingsRoute) ? settingsRoute : undefined;
+  const configuredRouteSource = readRouteSource(settings?.routeSources?.[routeId]);
+  const hasRequiredBrokerKey =
+    configuredRouteSource !== "broker" ||
+    !!(configuredRoute && settings?.providerKeys?.[configuredRoute.provider]);
+  if (configuredRoute && hasRequiredBrokerKey) {
+    const routeSource = configuredRouteSource ?? "configured";
+    return {
+      route: configuredRoute,
+      routeSource,
+      apiKey: apiKeyForRoute(configuredRoute, routeSource, settings),
+    };
+  }
+  return { route: defaultRoute, routeSource: defaultRouteSource };
+}
+
+function resolveConfiguredFallbackRoute(settings?: WorkerModelSettings) {
+  return resolveConfiguredRoute("fallback", WORKER_FALLBACK_ROUTE, "fallback", settings);
+}
+
+function resolveConfiguredQualityRoute(settings?: WorkerModelSettings) {
+  return resolveConfiguredRoute(
+    "extraction_quality",
+    WORKER_FALLBACK_ROUTE,
+    "static",
+    settings,
+  );
+}
+
 function resolveModelForTaskKind(
   taskKind: string | undefined,
   settings?: WorkerModelSettings,
@@ -663,15 +703,16 @@ function resolveModelForTaskKind(
     !!(configuredRoute && settings?.providerKeys?.[configuredRoute.provider]);
   const canUseConfiguredRoute = !!configuredRoute && hasRequiredBrokerKey;
   const baseRoute = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
+  const quality = resolveConfiguredQualityRoute(settings);
   const useQualityPrimary =
-    !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind) && !sameRoute(baseRoute, WORKER_FALLBACK_ROUTE);
-  const route = useQualityPrimary ? WORKER_FALLBACK_ROUTE : baseRoute;
+    !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind) && !sameRoute(baseRoute, quality.route);
+  const route = useQualityPrimary ? quality.route : baseRoute;
   const routeSource = useQualityPrimary
-    ? "fallback"
+    ? quality.routeSource
     : canUseConfiguredRoute
     ? (configuredRouteSource ?? "configured")
     : "default";
-  const apiKey = useQualityPrimary ? undefined : apiKeyForRoute(route, routeSource, settings);
+  const apiKey = useQualityPrimary ? quality.apiKey : apiKeyForRoute(route, routeSource, settings);
   return {
     model: routeToModel(route, apiKey),
     task,
@@ -691,19 +732,21 @@ function resolveFallbackModel(
   task: ModelTask,
   taskKind: string | undefined,
   primaryRoute: WorkerModelRoute,
+  settings?: WorkerModelSettings,
 ): ResolvedWorkerModelRoute | null {
   if (task === "classification" || task === "extraction") {
     if (!taskKind || !QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) return null;
   }
-  if (sameRoute(primaryRoute, WORKER_FALLBACK_ROUTE)) return null;
+  const fallback = resolveConfiguredFallbackRoute(settings);
+  if (sameRoute(primaryRoute, fallback.route)) return null;
   return {
     task,
-    model: routeToModel(WORKER_FALLBACK_ROUTE),
-    route: WORKER_FALLBACK_ROUTE,
-    routeSource: "fallback",
-    transport: routeTransport(WORKER_FALLBACK_ROUTE),
-    capabilities: modelCapabilitiesForRoute(WORKER_FALLBACK_ROUTE.model),
-    providerOptions: getProviderOptionsForRoute(WORKER_FALLBACK_ROUTE),
+    model: routeToModel(fallback.route, fallback.apiKey),
+    route: fallback.route,
+    routeSource: fallback.routeSource,
+    transport: routeTransport(fallback.route, fallback.apiKey),
+    capabilities: modelCapabilitiesForRoute(fallback.route.model),
+    providerOptions: getProviderOptionsForRoute(fallback.route),
   };
 }
 
@@ -1186,7 +1229,7 @@ function buildWorkerExtractor(opts: {
 
       const fallback = isMissingApiKeyError(error)
         ? null
-        : resolveFallbackModel(route.task, taskKind, route.route);
+        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
@@ -1360,7 +1403,7 @@ function buildWorkerExtractor(opts: {
 
       const fallback = isMissingApiKeyError(error)
         ? null
-        : resolveFallbackModel(route.task, taskKind, route.route);
+        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
@@ -2085,7 +2128,7 @@ ${sourceText}`;
 
     const fallback = isMissingApiKeyError(error)
       ? null
-      : resolveFallbackModel(route.task, "extraction_preview", route.route);
+      : resolveFallbackModel(route.task, "extraction_preview", route.route, job.modelSettings);
     if (!fallback) throw error;
 
     logFallback(route, fallback, error);

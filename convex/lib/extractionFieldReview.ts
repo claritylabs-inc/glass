@@ -393,11 +393,12 @@ function sameModelRoute(left: ModelRoute, right: ModelRoute) {
   return left.provider === right.provider && left.model === right.model;
 }
 
-export function fieldReviewRouteForPrimary(primaryRoute: ModelRoute): ModelRoute {
+export function fieldReviewRouteForPrimary(primaryRoute: ModelRoute, fallbackRoute?: ModelRoute): ModelRoute {
   return fallbackRouteForCall({
     task: "extraction",
     taskKind: "extraction_review",
     primaryRoute,
+    fallbackRoute,
   }) ?? primaryRoute;
 }
 
@@ -411,7 +412,7 @@ async function generateReviewObject<T>(
   },
 ): Promise<T> {
   const primary = await getModelAndRouteForOrg(options.ctx, options.orgId, "extraction");
-  const reviewRoute = fieldReviewRouteForPrimary(primary.route);
+  const reviewRoute = fieldReviewRouteForPrimary(primary.route, primary.fallbackRoute);
   const result = await generateObject({
     model: sameModelRoute(reviewRoute, primary.route) ? primary.model : getModelForRoute(reviewRoute),
     schema: structuredOutputSchemaForRoute(params.schema, reviewRoute),

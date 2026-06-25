@@ -616,6 +616,8 @@ export default defineSchema({
         mailbox_coordinator: v.optional(modelRouteValidator),
         application_authoring: v.optional(modelRouteValidator),
         embeddings: v.optional(modelRouteValidator),
+        extraction_quality: v.optional(modelRouteValidator),
+        fallback: v.optional(modelRouteValidator),
       }),
     ),
     webRetrieval: v.optional(webRetrievalValidator),

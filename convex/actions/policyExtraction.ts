@@ -237,6 +237,7 @@ type ExternalClaimResult = {
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
   modelSettings?: {
     routes?: Record<string, { provider: string; model: string }>;
+    routeSources?: Record<string, string>;
     providerKeys?: Record<string, string>;
   };
 } | null;
@@ -2176,6 +2177,7 @@ export const claimExternalJob = action({
     let modelSettings:
       | {
           routes?: Record<string, { provider: string; model: string }>;
+          routeSources?: Record<string, string>;
           providerKeys?: Record<string, string>;
         }
       | undefined;

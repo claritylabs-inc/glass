@@ -456,11 +456,15 @@ export function makeGenerateText(
     const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
     let primaryRoute: ModelRoute | undefined;
+    let qualityRoute: ModelRoute | undefined;
+    let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let transport: string | undefined;
     let model: LanguageModel = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
+        qualityRoute = resolved.qualityRoute;
+        fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
         transport = resolved.transport;
         return resolved.model;
@@ -470,10 +474,10 @@ export function makeGenerateText(
         routeSource = "static";
         return getModel(effectiveTask);
       })();
-    const primaryRouteOverride = primaryRouteForCall({ task: effectiveTask, taskKind, primaryRoute });
+    const primaryRouteOverride = primaryRouteForCall({ task: effectiveTask, taskKind, primaryRoute, qualityRoute });
     if (primaryRouteOverride) {
       primaryRoute = primaryRouteOverride;
-      routeSource = "fallback";
+      routeSource = "quality";
       transport = undefined;
       model = getModelForRoute(primaryRouteOverride);
     }
@@ -498,6 +502,7 @@ export function makeGenerateText(
         task: effectiveTask,
         taskKind,
         primaryRoute,
+        fallbackRoute,
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
@@ -571,11 +576,15 @@ export function makeGenerateObject(
     const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
     let primaryRoute: ModelRoute | undefined;
+    let qualityRoute: ModelRoute | undefined;
+    let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let transport: string | undefined;
     let model: LanguageModel = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
+        qualityRoute = resolved.qualityRoute;
+        fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
         transport = resolved.transport;
         return resolved.model;
@@ -585,10 +594,10 @@ export function makeGenerateObject(
         routeSource = "static";
         return getModel(effectiveTask);
       })();
-    const primaryRouteOverride = primaryRouteForCall({ task: effectiveTask, taskKind, primaryRoute });
+    const primaryRouteOverride = primaryRouteForCall({ task: effectiveTask, taskKind, primaryRoute, qualityRoute });
     if (primaryRouteOverride) {
       primaryRoute = primaryRouteOverride;
-      routeSource = "fallback";
+      routeSource = "quality";
       transport = undefined;
       model = getModelForRoute(primaryRouteOverride);
     }
@@ -614,6 +623,7 @@ export function makeGenerateObject(
         task: effectiveTask,
         taskKind,
         primaryRoute,
+        fallbackRoute,
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {

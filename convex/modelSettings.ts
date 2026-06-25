@@ -7,11 +7,19 @@ import { requireOperator } from "./lib/operatorIdentity";
 import {
   CONFIGURABLE_MODEL_PROVIDERS,
   EMBEDDING_MODEL_CATALOG,
+  EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+  FALLBACK_MODEL,
+  FALLBACK_MODEL_ROUTE_ID,
   LANGUAGE_MODEL_CATALOG,
+  MODEL_ROUTE_DESCRIPTIONS,
+  MODEL_ROUTE_IDS,
+  MODEL_ROUTE_LABELS,
   MODEL_ROUTING,
+  MODEL_TASK_GROUPS,
   MODEL_TASKS,
   MODEL_TASK_DESCRIPTIONS,
   MODEL_TASK_LABELS,
+  OPERATOR_MODEL_ROUTE_GROUPS,
   MODEL_CAPABILITIES,
   PROVIDER_LABELS,
   WEB_RETRIEVAL_DEFAULT,
@@ -22,13 +30,16 @@ import {
   modelCapabilitiesForRoute,
   type ModelProvider,
   type ModelRoute,
+  type ModelRouteId,
   type ModelTask,
   type WebRetrievalProvider,
   type WebRetrievalRoute,
+  defaultModelRouteForId,
 } from "./lib/modelCatalog";
 
 type ProviderKeys = NonNullable<Doc<"brokerModelSettings">["providerKeys"]>;
 type Routes = NonNullable<Doc<"brokerModelSettings">["routes"]>;
+type GlobalRoutes = Partial<Record<ModelRouteId, ModelRoute>>;
 type RouteSource = "broker" | "global" | "static";
 const CONFIGURABLE_PROVIDER_SET = new Set<ModelProvider>(CONFIGURABLE_MODEL_PROVIDERS);
 
@@ -63,7 +74,7 @@ const webRetrievalValidator = v.object({
   route: v.optional(routeValidator),
 });
 
-const routesValidator = v.object({
+const modelTaskRoutesValidator = v.object({
   chat: v.optional(routeUpdateValidator),
   email_draft: v.optional(routeUpdateValidator),
   email_reply: v.optional(routeUpdateValidator),
@@ -81,15 +92,39 @@ const routesValidator = v.object({
   embeddings: v.optional(routeUpdateValidator),
 });
 
+const globalRoutesValidator = v.object({
+  chat: v.optional(routeUpdateValidator),
+  email_draft: v.optional(routeUpdateValidator),
+  email_reply: v.optional(routeUpdateValidator),
+  extraction: v.optional(routeUpdateValidator),
+  extraction_preview: v.optional(routeUpdateValidator),
+  classification: v.optional(routeUpdateValidator),
+  analysis: v.optional(routeUpdateValidator),
+  summary: v.optional(routeUpdateValidator),
+  triage: v.optional(routeUpdateValidator),
+  email_extraction: v.optional(routeUpdateValidator),
+  document_extraction: v.optional(routeUpdateValidator),
+  security: v.optional(routeUpdateValidator),
+  mailbox_coordinator: v.optional(routeUpdateValidator),
+  application_authoring: v.optional(routeUpdateValidator),
+  embeddings: v.optional(routeUpdateValidator),
+  extraction_quality: v.optional(routeUpdateValidator),
+  fallback: v.optional(routeUpdateValidator),
+});
+
 function isModelTask(value: string): value is ModelTask {
   return (MODEL_TASKS as string[]).includes(value);
 }
 
-function assertSupportedRoute(task: ModelTask, route: ModelRoute) {
+function isModelRouteId(value: string): value is ModelRouteId {
+  return (MODEL_ROUTE_IDS as string[]).includes(value);
+}
+
+function assertSupportedRoute(routeId: ModelRouteId, route: ModelRoute) {
   if (isRetiredModelRoute(route)) {
     throw new Error(`Retired model ${route.model} is no longer selectable`);
   }
-  const models = task === "embeddings"
+  const models = routeId === "embeddings"
     ? EMBEDDING_MODEL_CATALOG[route.provider]
     : LANGUAGE_MODEL_CATALOG[route.provider];
   if (!models?.includes(route.model)) {
@@ -196,13 +231,13 @@ function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefine
   ) as Record<ModelTask, ModelRoute | null>;
 }
 
-function nullableRoutes(routes: Routes | undefined) {
+function nullableGlobalRoutes(routes: GlobalRoutes | undefined) {
   return Object.fromEntries(
-    MODEL_TASKS.map((task) => {
-      const route = routes?.[task];
-      return [task, route && !isRetiredModelRoute(route) ? route : null];
+    MODEL_ROUTE_IDS.map((id) => {
+      const route = routes?.[id];
+      return [id, route && !isRetiredModelRoute(route) ? route : null];
     }),
-  ) as Record<ModelTask, ModelRoute | null>;
+  ) as Record<ModelRouteId, ModelRoute | null>;
 }
 
 function configurableProviderKeys(keys: ProviderKeys | undefined) {
@@ -296,6 +331,7 @@ export const get = query({
         description: MODEL_TASK_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
       })),
+      groups: MODEL_TASK_GROUPS,
       routes: visibleRoutes(settings?.routes, settings?.providerKeys),
       providerKeys: maskProviderKeys(settings?.providerKeys),
       updatedAt: settings?.updatedAt ?? null,
@@ -304,7 +340,7 @@ export const get = query({
 });
 
 export const updateRoutes = mutation({
-  args: { routes: routesValidator },
+  args: { routes: modelTaskRoutesValidator },
   handler: async (ctx, args) => {
     const { userId, brokerOrgId } = await requireCurrentBrokerAdmin(ctx);
 
@@ -399,14 +435,15 @@ export const getGlobal = query({
         languageModels: LANGUAGE_MODEL_CATALOG[id],
         embeddingModels: EMBEDDING_MODEL_CATALOG[id] ?? [],
       })),
-      tasks: MODEL_TASKS.map((id) => ({
+      tasks: MODEL_ROUTE_IDS.map((id) => ({
         id,
-        label: MODEL_TASK_LABELS[id],
-        description: MODEL_TASK_DESCRIPTIONS[id],
+        label: MODEL_ROUTE_LABELS[id],
+        description: MODEL_ROUTE_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
-        defaultRoute: MODEL_ROUTING[id],
+        defaultRoute: defaultModelRouteForId(id),
       })),
-      routes: nullableRoutes(settings?.routes),
+      groups: OPERATOR_MODEL_ROUTE_GROUPS,
+      routes: nullableGlobalRoutes(settings?.routes as GlobalRoutes | undefined),
       webRetrieval: normalizeWebRetrieval(settings?.webRetrieval),
       webRetrievalProviders: (
         Object.keys(WEB_RETRIEVAL_LABELS) as WebRetrievalProvider[]
@@ -425,7 +462,7 @@ export const getGlobal = query({
 });
 
 export const updateGlobalRoutes = mutation({
-  args: { routes: routesValidator },
+  args: { routes: globalRoutesValidator },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const existing = await ctx.db
@@ -435,14 +472,14 @@ export const updateGlobalRoutes = mutation({
 
     for (const [task, route] of Object.entries(args.routes)) {
       if (!route) continue;
-      if (!isModelTask(task)) throw new Error(`Unknown model task ${task}`);
+      if (!isModelRouteId(task)) throw new Error(`Unknown model route ${task}`);
       assertSupportedRoute(task, route);
     }
 
     const now = dayjs().valueOf();
-    const routes = { ...(existing?.routes ?? {}) };
+    const routes = { ...(existing?.routes ?? {}) } as GlobalRoutes;
     for (const [task, route] of Object.entries(args.routes)) {
-      if (!isModelTask(task)) continue;
+      if (!isModelRouteId(task)) continue;
       if (route === null) {
         delete routes[task];
       } else if (route) {
@@ -511,8 +548,9 @@ export const resolveForOrg = internalQuery({
       .first();
 
     const providerKeys = configurableProviderKeys(settings?.providerKeys);
-    const routes = {} as Record<ModelTask, ModelRoute>;
-    const routeSources = {} as Record<ModelTask, RouteSource>;
+    const globalRoutes = globalSettings?.routes as GlobalRoutes | undefined;
+    const routes = {} as Record<ModelRouteId, ModelRoute>;
+    const routeSources = {} as Record<ModelRouteId, RouteSource>;
     for (const task of MODEL_TASKS) {
       const brokerRoute = settings?.routes?.[task];
       if (
@@ -525,7 +563,7 @@ export const resolveForOrg = internalQuery({
         routeSources[task] = "broker";
         continue;
       }
-      const globalRoute = globalSettings?.routes?.[task];
+      const globalRoute = globalRoutes?.[task];
       if (
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
@@ -537,6 +575,23 @@ export const resolveForOrg = internalQuery({
       }
       routes[task] = MODEL_ROUTING[task];
       routeSources[task] = "static";
+    }
+    for (const routeId of [
+      EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+      FALLBACK_MODEL_ROUTE_ID,
+    ]) {
+      const globalRoute = globalRoutes?.[routeId];
+      if (
+        globalRoute &&
+        globalRoute.provider !== "moonshot" &&
+        !isRetiredModelRoute(globalRoute)
+      ) {
+        routes[routeId] = globalRoute;
+        routeSources[routeId] = "global";
+      } else {
+        routes[routeId] = FALLBACK_MODEL;
+        routeSources[routeId] = "static";
+      }
     }
 
     return {
@@ -555,10 +610,11 @@ export const resolvePublicDefaults = internalQuery({
       .query("globalModelSettings")
       .withIndex("by_key", (q) => q.eq("key", "default"))
       .first();
-    const routes = {} as Record<ModelTask, ModelRoute>;
-    const routeSources = {} as Record<ModelTask, Extract<RouteSource, "global" | "static">>;
+    const globalRoutes = globalSettings?.routes as GlobalRoutes | undefined;
+    const routes = {} as Record<ModelRouteId, ModelRoute>;
+    const routeSources = {} as Record<ModelRouteId, Extract<RouteSource, "global" | "static">>;
     for (const task of MODEL_TASKS) {
-      const globalRoute = globalSettings?.routes?.[task];
+      const globalRoute = globalRoutes?.[task];
       if (
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
@@ -569,6 +625,23 @@ export const resolvePublicDefaults = internalQuery({
       } else {
         routes[task] = MODEL_ROUTING[task];
         routeSources[task] = "static";
+      }
+    }
+    for (const routeId of [
+      EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+      FALLBACK_MODEL_ROUTE_ID,
+    ]) {
+      const globalRoute = globalRoutes?.[routeId];
+      if (
+        globalRoute &&
+        globalRoute.provider !== "moonshot" &&
+        !isRetiredModelRoute(globalRoute)
+      ) {
+        routes[routeId] = globalRoute;
+        routeSources[routeId] = "global";
+      } else {
+        routes[routeId] = FALLBACK_MODEL;
+        routeSources[routeId] = "static";
       }
     }
 

@@ -12,7 +12,13 @@ import {
   modelTaskForCall,
   primaryRouteForCall,
 } from "../convex/lib/models";
-import { LANGUAGE_MODEL_CATALOG, isRetiredModelRoute } from "../convex/lib/modelCatalog";
+import {
+  LANGUAGE_MODEL_CATALOG,
+  MODEL_DISPLAY_NAMES,
+  MODEL_TASK_GROUPS,
+  OPERATOR_MODEL_ROUTE_GROUPS,
+  isRetiredModelRoute,
+} from "../convex/lib/modelCatalog";
 
 describe("model task routing", () => {
   test("routes the main web chat assistant to Fireworks DeepSeek Flash", () => {
@@ -58,6 +64,12 @@ describe("model task routing", () => {
   });
 
   test("removes Kimi from active routing and catalog selection", () => {
+    expect(LANGUAGE_MODEL_CATALOG.fireworks).toContain(
+      FIREWORKS_MODEL_IDS.deepseekV4Pro,
+    );
+    expect(MODEL_DISPLAY_NAMES[FIREWORKS_MODEL_IDS.deepseekV4Pro]).toBe(
+      "DeepSeek V4 Pro",
+    );
     expect(LANGUAGE_MODEL_CATALOG.fireworks).not.toContain(
       "accounts/fireworks/models/kimi-k2p6",
     );
@@ -180,6 +192,38 @@ describe("model fallback policy", () => {
     ).toEqual(FALLBACK_MODEL);
   });
 
+  test("uses the configured fallback route for retries", () => {
+    const fallbackRoute = {
+      provider: "fireworks" as const,
+      model: FIREWORKS_MODEL_IDS.glm52,
+    };
+
+    expect(
+      fallbackRouteForCall({
+        task: "extraction",
+        taskKind: "extraction_review",
+        primaryRoute: MODEL_ROUTING.extraction,
+        fallbackRoute,
+      }),
+    ).toEqual(fallbackRoute);
+  });
+
+  test("uses the configured quality route for proactive extraction", () => {
+    const qualityRoute = {
+      provider: "fireworks" as const,
+      model: FIREWORKS_MODEL_IDS.glm52,
+    };
+
+    expect(
+      primaryRouteForCall({
+        task: "extraction",
+        taskKind: "extraction_source_tree",
+        primaryRoute: MODEL_ROUTING.extraction,
+        qualityRoute,
+      }),
+    ).toEqual(qualityRoute);
+  });
+
   test("starts source-tree and operational-profile extraction on the quality route", () => {
     expect(
       primaryRouteForCall({
@@ -219,6 +263,35 @@ describe("model fallback policy", () => {
         primaryRoute: FALLBACK_MODEL,
       }),
     ).toBeNull();
+  });
+
+  test("exposes separate quality and fallback routes in operator model settings", () => {
+    const modelCatalog = readFileSync(
+      join(__dirname, "../convex/lib/modelCatalog.ts"),
+      "utf-8",
+    );
+    const operatorModelsPage = readFileSync(
+      join(__dirname, "../app/operator/models/page.tsx"),
+      "utf-8",
+    );
+
+    expect(modelCatalog).toContain(
+      'EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality"',
+    );
+    expect(modelCatalog).toContain('FALLBACK_MODEL_ROUTE_ID = "fallback"');
+    expect(modelCatalog).toContain("Source tree and profile extraction");
+    expect(modelCatalog).toContain("Fallback model");
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "extraction_quality",
+    );
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "fallback",
+    );
+    expect(MODEL_TASK_GROUPS.flatMap((group) => group.tasks)).not.toContain(
+      "extraction_quality",
+    );
+    expect(operatorModelsPage).toContain("settings.groups.map");
+    expect(operatorModelsPage).not.toContain("const TASK_GROUPS");
   });
 });
 

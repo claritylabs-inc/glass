@@ -68,6 +68,12 @@ type TaskConfig = {
   isEmbedding: boolean;
   defaultRoute: Route;
 };
+type TaskGroupConfig = {
+  id: string;
+  label: string;
+  description: string;
+  tasks: string[];
+};
 type WebRetrievalProviderConfig = {
   id: WebRetrievalProviderId;
   label: string;
@@ -78,6 +84,7 @@ type WebRetrievalProviderConfig = {
 type Settings = {
   providers: ProviderConfig[];
   tasks: TaskConfig[];
+  groups: TaskGroupConfig[];
   routes: Routes;
   webRetrieval: WebRetrieval;
   webRetrievalProviders: WebRetrievalProviderConfig[];
@@ -105,33 +112,6 @@ const WEB_RETRIEVAL_PRIORITY: WebRetrievalProviderId[] = [
   "anthropic",
   "xai",
 ];
-const TASK_GROUPS = [
-  {
-    id: "agents",
-    label: "Agent conversations",
-    tasks: ["chat", "email_reply", "email_draft", "mailbox_coordinator"],
-  },
-  {
-    id: "reasoning",
-    label: "Reasoning and authoring",
-    tasks: ["analysis", "application_authoring", "summary"],
-  },
-  {
-    id: "ingestion",
-    label: "Ingestion and extraction",
-    tasks: [
-      "classification",
-      "extraction",
-      "document_extraction",
-      "email_extraction",
-    ],
-  },
-  {
-    id: "platform",
-    label: "Platform utilities",
-    tasks: ["triage", "security", "embeddings"],
-  },
-] as const;
 function ProviderLogo({
   provider,
   size = 14,
@@ -512,7 +492,7 @@ export default function OperatorModelsPage() {
           </OperationalPanel>
         ) : (
           <div className="grid gap-4">
-            {TASK_GROUPS.map((group) => {
+            {settings.groups.map((group) => {
               const tasks = group.tasks
                 .map((taskId) =>
                   settings.tasks.find((task) => task.id === taskId),
@@ -521,7 +501,10 @@ export default function OperatorModelsPage() {
               if (tasks.length === 0) return null;
               return (
                 <OperationalPanel key={group.id}>
-                  <OperationalPanelHeader title={group.label} />
+                  <OperationalPanelHeader
+                    title={group.label}
+                    description={group.description}
+                  />
                   <div className="divide-y divide-foreground/6 px-4">
                     {tasks.map((task) => {
                       const route = settings.routes[task.id] ?? null;

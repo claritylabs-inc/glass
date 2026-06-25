@@ -28,7 +28,7 @@ describe("policy preview extraction", () => {
     expect(worker).toContain('type ModelTask = "extraction" | "extraction_preview" | "classification"');
     expect(worker).toContain("POLICY_PREVIEW_VERSION");
     expect(worker).toContain("claimExternalPreviewJob");
-    expect(worker).toContain('resolveFallbackModel(route.task, "extraction_preview", route.route)');
+    expect(worker).toContain('resolveFallbackModel(route.task, "extraction_preview", route.route, job.modelSettings)');
   });
 
   it("keeps the preview structured-output schema strict and nullable", () => {

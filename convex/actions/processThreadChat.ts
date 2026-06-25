@@ -1766,6 +1766,7 @@ export const run = internalAction({
           task: "chat",
           taskKind: "query_reason",
           primaryRoute: chatModel.route,
+          fallbackRoute: chatModel.fallbackRoute,
         });
         const retryRoute = fallbackRoute ?? chatModel.route;
         const retryModel = fallbackRoute
