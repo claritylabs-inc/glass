@@ -2718,8 +2718,8 @@ export function ExtractionCards({
           title="Coverages"
           items={coverages}
           getTitle={(coverage) =>
-            coverage.coverageSourceContext ??
             coverage.name ??
+            coverage.coverageSourceContext ??
             "Unnamed coverage"
           }
           getTrailing={(coverage) => coverage.limit}

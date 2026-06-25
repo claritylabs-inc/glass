@@ -54,6 +54,30 @@ describe("source node outline shaping", () => {
     expect(children).toBeUndefined();
   });
 
+  it("flattens generic policy-title wrappers inside declarations", () => {
+    const declarations = node("page_group", "declarations", 0, "Declarations");
+    const page = node("page", "page-5", 1, "Declarations");
+    const wrapper = node(
+      "section",
+      "policy-title",
+      2,
+      "TECHNOLOGY PROFESSIONAL AND CYBER LIABILITY INSURANCE POLICY",
+    );
+    const notice = node("text", "claims-made-notice", 3, "THIS IS A CLAIMS MADE NOTICE");
+    const table = node("table", "declarations-table", 4, "Table 2");
+
+    const children = shapeDirectContentOutlineChildren(
+      declarations,
+      [page, wrapper],
+      new Map([["policy-title", [notice, table]]]),
+    );
+
+    expect(children?.map((child) => child.nodeId)).toEqual([
+      "claims-made-notice",
+      "declarations-table",
+    ]);
+  });
+
   it("preserves the notices and jacket page filtering path", () => {
     const notices = node("page_group", "notices", 0, "Notices and Jacket");
     const page = node("page", "page-1", 1, "Page 1");

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeOperationalProfile, normalizeSourceTree, sourceTreePolicyFields, withControlledPolicyTypes, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
+import { normalizeOperationalProfile, normalizeSourceTree, operationalProfilePolicyFields, sourceTreePolicyFields, withControlledPolicyTypes, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
 
 const sourceSpans: SourceSpanLike[] = [
   { id: "span-jacket", text: "THIS IS A CLAIMS-MADE AND REPORTED POLICY. PLEASE READ IT CAREFULLY.", pageStart: 1 },
@@ -186,6 +186,130 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.coverageTypes).toEqual(["Professional Liability"]);
     expect(profile.parties.find((party: PolicyOperationalProfile["parties"][number]) => party.role === "named_insured")?.name).toBe("Cios Technologies Inc.");
     expect(profile.parties.some((party: PolicyOperationalProfile["parties"][number]) => /claims-made/i.test(party.name))).toBe(false);
+  });
+
+  it("persists normalized source-backed identity values instead of address/contact blobs", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        namedInsured: {
+          value: "Clarity Labs Inc. 1070 Bridgeview Way San Francisco, CA 94121 Risk Management & Notices Contact: Terrence Wang",
+          normalizedValue: "Clarity Labs Inc.",
+          confidence: "high",
+          sourceNodeIds: ["named-insured-row"],
+          sourceSpanIds: ["span-named-insured"],
+        },
+        policyTypes: ["professional_liability"],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.namedInsured?.value).toBe("Clarity Labs Inc.");
+    expect(profile.parties.find((party: PolicyOperationalProfile["parties"][number]) => party.role === "named_insured")?.name)
+      .toBe("Clarity Labs Inc.");
+    expect(operationalProfilePolicyFields(profile).insuredName).toBe("Clarity Labs Inc.");
+  });
+
+  it("drops torn declaration table coverage fragments and repairs self-referential limits", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        coverages: [
+          {
+            name: "C. Regulatory Proceedings Sub-Limit",
+            limit: "C. Regulatory Proceedings Sub-Limit",
+            deductible: "$5,000 Each",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+            limits: [
+              {
+                kind: "sublimit",
+                label: "Aggregate (sub-limit, part of and not in addition to Aggregate Policy Limit)",
+                value: "C. Regulatory Proceedings Sub-Limit",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+              {
+                kind: "each_claim_limit",
+                label: "Claim",
+                value: "$100,000 Each Proceeding /",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+          },
+          {
+            name: "Coverage Part B)",
+            limit: "Coverage Part B)",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+            limits: [
+              {
+                kind: "other",
+                label: "Aggregate (sub-limit, part of",
+                value: "Coverage Part B)",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name))
+      .toContain("C. Regulatory Proceedings Sub-Limit");
+    expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name))
+      .not.toContain("Coverage Part B)");
+    const regulatory = profile.coverages.find((coverage: PolicyOperationalProfile["coverages"][number]) =>
+      coverage.name === "C. Regulatory Proceedings Sub-Limit"
+    );
+    expect(regulatory?.limit).toBe("$100,000 Each Proceeding");
+    expect(regulatory?.limits?.map((term: NonNullable<PolicyOperationalProfile["coverages"][number]["limits"]>[number]) => term.value))
+      .toEqual(["$100,000 Each Proceeding"]);
+  });
+
+  it("repairs endorsement support status and stitched summaries from source nodes", () => {
+    const endorsementSpans: SourceSpanLike[] = [
+      {
+        id: "loss-payee-1",
+        text: "D. Loss Payee. For avoidance of doubt, no Scheduled Additional Insured is named as a loss payee, mortgageholder, or assignee of policy proceeds; nothing in this Endorsement entitles any Scheduled",
+        pageStart: 28,
+      },
+      {
+        id: "loss-payee-2",
+        text: "Additional Insured to receive direct payment of any proceeds of this Policy.",
+        pageStart: 28,
+      },
+    ];
+    const endorsementTree = normalizeSourceTree([], endorsementSpans, "endorsement-policy");
+    const lossPayeeNode = endorsementTree.find((node) => node.sourceSpanIds.includes("loss-payee-1"));
+    if (!lossPayeeNode) throw new Error("Expected loss payee source node");
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        endorsementSupport: [
+          {
+            kind: "loss_payee",
+            status: "supported",
+            summary: endorsementSpans[0].text,
+            sourceNodeIds: [lossPayeeNode.id],
+            sourceSpanIds: ["loss-payee-1"],
+          },
+        ],
+      },
+      endorsementTree,
+      endorsementSpans,
+    );
+
+    const lossPayee = profile.endorsementSupport.find((row: PolicyOperationalProfile["endorsementSupport"][number]) =>
+      row.kind === "loss_payee"
+    );
+    expect(lossPayee?.status).toBe("excluded");
+    expect(lossPayee?.summary).toContain("direct payment of any proceeds");
   });
 
   it("handles declaration row labels that do not use fixed item numbers", () => {

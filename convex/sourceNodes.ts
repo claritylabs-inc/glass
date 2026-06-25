@@ -133,6 +133,27 @@ function hasSemanticOutlineChildren(nodes: OutlineShapeNode[]) {
   return nodes.some((node) => SEMANTIC_OUTLINE_KINDS.has(node.kind));
 }
 
+function isDeclarationsGroup(node: Pick<SourceNodeDoc, "kind" | "title"> | OutlineShapeNode | undefined) {
+  return Boolean(node?.kind === "page_group" && /^declarations?$/i.test(node.title));
+}
+
+function isDeclarationPolicyTitleWrapper(parent: OutlineShapeNode, node: OutlineShapeNode) {
+  if (!isDeclarationsGroup(parent) || node.kind !== "section") return false;
+  const title = cleanNodeText(node.title);
+  if (!title || title.length > 140) return false;
+  if (/^(?:item\s+\d+|section|part|article|schedule|endorsement|exclusion|condition|definition|coverage\s+part)\b/i.test(title)) {
+    return false;
+  }
+  return /\b(?:insurance|liability|policy)\b/i.test(title);
+}
+
+function hasBlockingSemanticOutlineChildren(parent: OutlineShapeNode, nodes: OutlineShapeNode[]) {
+  return nodes.some((node) =>
+    SEMANTIC_OUTLINE_KINDS.has(node.kind) &&
+    !isDeclarationPolicyTitleWrapper(parent, node),
+  );
+}
+
 function shouldInlineOutlineChildren(node: SourceNodeDoc) {
   return !["table", "table_row", "table_cell", "text"].includes(node.kind);
 }
@@ -175,7 +196,7 @@ function shouldHidePageChildrenBehindStoredContent(parent: SourceNodeDoc, childr
 export function shapeDirectContentOutlineChildren<T extends OutlineShapeNode>(
   parent: T,
   children: T[],
-  pageChildrenByNodeId: ReadonlyMap<string, T[]>,
+  childNodesByNodeId: ReadonlyMap<string, T[]>,
 ): T[] | undefined {
   if (!CONTENT_PARENT_OUTLINE_KINDS.has(parent.kind) || isNoticesAndJacketNode(parent)) {
     return undefined;
@@ -184,15 +205,18 @@ export function shapeDirectContentOutlineChildren<T extends OutlineShapeNode>(
   const visibleOutlineChildren = children.filter((child) =>
     OUTLINE_NODE_KINDS.has(child.kind) && shouldShowOutlineChild(parent, child),
   );
-  if (hasSemanticOutlineChildren(visibleOutlineChildren)) return undefined;
+  if (hasBlockingSemanticOutlineChildren(parent, visibleOutlineChildren)) return undefined;
 
   const directChildren = children.filter(isDirectContentOutlineNode);
   for (const child of visibleOutlineChildren) {
-    if (child.kind !== "page") continue;
-    const pageChildren = pageChildrenByNodeId.get(child.nodeId) ?? [];
-    const pageOutlineChildren = pageChildren.filter((pageChild) => OUTLINE_NODE_KINDS.has(pageChild.kind));
-    if (hasSemanticOutlineChildren(pageOutlineChildren)) return undefined;
-    directChildren.push(...pageChildren.filter(isDirectContentOutlineNode));
+    if (child.kind === "page") {
+      const pageChildren = childNodesByNodeId.get(child.nodeId) ?? [];
+      const pageOutlineChildren = pageChildren.filter((pageChild) => OUTLINE_NODE_KINDS.has(pageChild.kind));
+      if (hasSemanticOutlineChildren(pageOutlineChildren)) return undefined;
+      directChildren.push(...pageChildren.filter(isDirectContentOutlineNode));
+    } else if (isDeclarationPolicyTitleWrapper(parent, child)) {
+      directChildren.push(...(childNodesByNodeId.get(child.nodeId) ?? []).filter(isDirectContentOutlineNode));
+    }
   }
 
   if (directChildren.length === 0) return undefined;
@@ -211,14 +235,17 @@ async function directContentOutlineChildren(
   const visibleOutlineChildren = children.filter((child) =>
     OUTLINE_NODE_KINDS.has(child.kind) && shouldShowOutlineChild(parent, child),
   );
-  if (hasSemanticOutlineChildren(visibleOutlineChildren)) return undefined;
+  if (hasBlockingSemanticOutlineChildren(parent, visibleOutlineChildren)) return undefined;
 
   const visiblePageChildren = visibleOutlineChildren.filter((child) => child.kind === "page");
-  const pageChildrenByNodeId = new Map<string, SourceNodeDoc[]>();
-  for (const page of visiblePageChildren) {
-    pageChildrenByNodeId.set(page.nodeId, await childNodes(ctx, policyId, page.nodeId));
+  const wrapperChildren = visibleOutlineChildren.filter((child) =>
+    isDeclarationPolicyTitleWrapper(parent, child),
+  );
+  const childNodesByNodeId = new Map<string, SourceNodeDoc[]>();
+  for (const node of [...visiblePageChildren, ...wrapperChildren]) {
+    childNodesByNodeId.set(node.nodeId, await childNodes(ctx, policyId, node.nodeId));
   }
-  return shapeDirectContentOutlineChildren(parent, children, pageChildrenByNodeId);
+  return shapeDirectContentOutlineChildren(parent, children, childNodesByNodeId);
 }
 
 function publicSourceNode(

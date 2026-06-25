@@ -658,6 +658,7 @@ function isBadOperationalIdentityValue(value: string | undefined): boolean {
   if (/^[a-z]/.test(text)) return true;
   if (/^(owner|policy owner|applicant)\s*:/i.test(text)) return true;
   if (/\b(?:insured persons?|insurance amount|benefit amount|policy number|owner|plan|premium)\s*:/i.test(text)) return true;
+  if (/\b(?:risk management|notices?\s+contact|mailing address|email:|direct:)\b/i.test(text)) return true;
   if (/[•]/.test(text)) return true;
   if (/^[^A-Za-z0-9]+|[^A-Za-z0-9.)]$/.test(text)) return true;
   const words = text.split(/\s+/).filter(Boolean);
@@ -673,6 +674,33 @@ function isBadBrokerValue(value: string | undefined): boolean {
   if (text.length > 140) return true;
   if (/^[\\/]/.test(text)) return true;
   return /\b(forms?\/endorsements?|endorsements?\s+at\s+inception|bilateral\s+discovery|discovery\/erp|erp\s+options?|list\s+of\s+forms?|coverage\s+parts?|declarations?|sublimits?|deductibles?|premium|truncated|immunosuppressive|agents)\b/i.test(text);
+}
+
+function sourceBackedString(value: SourceBackedValue, key: string): string | undefined {
+  const record = value as SourceBackedValue & Record<string, unknown>;
+  const text = record[key];
+  return typeof text === "string" ? normalizeWhitespace(text) : undefined;
+}
+
+function preferredIdentityText(
+  value: SourceBackedValue,
+  role?: OperationalParty["role"],
+): string {
+  const raw = normalizeWhitespace(value.value);
+  const normalized = sourceBackedString(value, "normalizedValue");
+  if (!normalized) return raw;
+  const invalidNormalized = role === "broker"
+    ? isBadBrokerValue(normalized)
+    : isBadOperationalIdentityValue(normalized);
+  if (invalidNormalized) return raw;
+
+  const invalidRaw = role === "broker"
+    ? isBadBrokerValue(raw)
+    : isBadOperationalIdentityValue(raw);
+  if (invalidRaw) return normalized;
+  if (raw.toLowerCase().includes(normalized.toLowerCase())) return normalized;
+  if (normalized.length < raw.length * 0.7) return normalized;
+  return raw;
 }
 
 function isLikelyNamedInsuredValue(value: string): boolean {
@@ -802,12 +830,17 @@ function sanitizeOperationalProfileCandidate(
     delete clean.premium;
   }
   for (const key of ["namedInsured", "insurer", "broker"] as const) {
-    const value = valueOfSourceBackedValue(clean[key]);
+    const sourceValue = valueOfSourceBackedValue(clean[key])
+      ? clean[key] as SourceBackedValue
+      : undefined;
+    const value = sourceValue ? preferredIdentityText(sourceValue, key === "broker" ? "broker" : undefined) : undefined;
     const invalid = key === "broker"
       ? isBadBrokerValue(value)
       : isBadOperationalIdentityValue(value);
     if (invalid) {
       delete clean[key];
+    } else if (sourceValue && value && value !== sourceValue.value) {
+      clean[key] = { ...sourceValue, value };
     }
   }
   return clean;
@@ -992,6 +1025,40 @@ function stringValues(value: unknown): string[] {
     : [];
 }
 
+function cleanCoverageScalar(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = normalizeWhitespace(value).replace(/\s+\/$/g, "");
+  return text || undefined;
+}
+
+function hasMonetaryCoverageValue(value: string | undefined): boolean {
+  const text = normalizeWhitespace(value ?? "");
+  return /\$|(?:\b(?:USD|CAD)\b)|(?:\b\d+(?:,\d{3})*(?:\.\d+)?\s*%)/i.test(text);
+}
+
+function isUnusableCoverageName(name: string): boolean {
+  return /^(?:coverage\s+part\s+[A-Z]\)?|aggregate|claim|proceeding|each\s+(?:claim|loss|occurrence))$/i.test(name)
+    || /^\$[\d,.]+\s+policy$/i.test(name);
+}
+
+function isCoverageNameEcho(value: string | undefined, coverageName: string): boolean {
+  if (!value || hasMonetaryCoverageValue(value)) return false;
+  const normalized = normalizeCoverageName(value);
+  return Boolean(normalized && normalized.toLowerCase() === coverageName.toLowerCase());
+}
+
+function preferredCoverageLimit(
+  currentLimit: string | undefined,
+  coverageName: string,
+  limits: Array<{ label: string; value: string }>,
+): string | undefined {
+  if (currentLimit && !isCoverageNameEcho(currentLimit, coverageName)) return currentLimit;
+  return limits.find((term) =>
+    hasMonetaryCoverageValue(term.value) &&
+    !/\b(?:deductible|retention|premium)\b/i.test(term.label)
+  )?.value;
+}
+
 function cleanCoverageTerms(value: unknown): Array<{
   kind: string;
   label: string;
@@ -1016,7 +1083,7 @@ function cleanCoverageTerms(value: unknown): Array<{
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const record = item as Record<string, unknown>;
     const label = typeof record.label === "string" ? normalizeWhitespace(record.label) : "";
-    const termValue = typeof record.value === "string" ? normalizeWhitespace(record.value) : "";
+    const termValue = cleanCoverageScalar(record.value) ?? "";
     if (!label || !termValue) continue;
     const sourceNodeIds = stringValues(record.sourceNodeIds);
     const sourceSpanIds = stringValues(record.sourceSpanIds);
@@ -1046,18 +1113,22 @@ function cleanOperationalCoverages(
   const seen = new Set<string>();
   for (const coverage of coverages) {
     const name = normalizeCoverageName(coverage.name);
-    if (!name) continue;
+    if (!name || isUnusableCoverageName(name)) continue;
     const record = coverage as OperationalCoverageLine & {
       limits?: unknown;
       retroactiveDate?: unknown;
       coverageOrigin?: unknown;
       endorsementNumber?: unknown;
     };
-    const limits = cleanCoverageTerms(record.limits);
+    const limits = cleanCoverageTerms(record.limits)
+      .filter((term) => !isCoverageNameEcho(term.value, name));
+    const limit = preferredCoverageLimit(cleanCoverageScalar(coverage.limit), name, limits);
+    const deductible = cleanCoverageScalar(coverage.deductible);
+    const premium = cleanCoverageScalar(coverage.premium);
     if (
-      !coverage.limit &&
-      !coverage.deductible &&
-      !coverage.premium &&
+      !limit &&
+      !deductible &&
+      !premium &&
       !record.retroactiveDate &&
       limits.length === 0 &&
       !coverage.formNumber &&
@@ -1070,9 +1141,17 @@ function cleanOperationalCoverages(
     if (coverage.sourceNodeIds.length === 0 && coverage.sourceSpanIds.length === 0 && limits.every((term) => term.sourceNodeIds.length === 0 && term.sourceSpanIds.length === 0)) {
       continue;
     }
+    const coverageBase = { ...coverage } as OperationalCoverageLine & { limits?: unknown };
+    delete coverageBase.limit;
+    delete coverageBase.deductible;
+    delete coverageBase.premium;
+    delete coverageBase.limits;
     const normalized: OperationalCoverageLine = {
-      ...coverage,
+      ...coverageBase,
       name,
+      ...(limit ? { limit } : {}),
+      ...(deductible ? { deductible } : {}),
+      ...(premium ? { premium } : {}),
       ...(limits.length ? { limits } : {}),
       ...(typeof record.retroactiveDate === "string" && record.retroactiveDate.trim()
         ? { retroactiveDate: record.retroactiveDate.trim() }
@@ -1088,9 +1167,9 @@ function cleanOperationalCoverages(
     } as OperationalCoverageLine;
     const key = [
       normalized.name.toLowerCase(),
-      normalized.limit ?? "",
-      normalized.deductible ?? "",
-      normalized.premium ?? "",
+      limit ?? "",
+      deductible ?? "",
+      premium ?? "",
       (normalized as OperationalCoverageLine & { retroactiveDate?: string }).retroactiveDate ?? "",
       JSON.stringify((normalized as OperationalCoverageLine & { limits?: unknown[] }).limits ?? []),
       normalized.formNumber ?? "",
@@ -1217,6 +1296,16 @@ type OperationalProfileExtensions = {
   additionalInsureds?: unknown;
 };
 
+type EndorsementSupportStatus = "supported" | "excluded" | "requires_review";
+
+type EndorsementSupportRow = {
+  kind: string;
+  status: EndorsementSupportStatus;
+  summary: string;
+  sourceNodeIds: string[];
+  sourceSpanIds: string[];
+};
+
 function coverageExtensionKey(coverage: Record<string, unknown>): string {
   const sourceNodeIds = Array.isArray(coverage.sourceNodeIds)
     ? coverage.sourceNodeIds.filter((id): id is string => typeof id === "string")
@@ -1304,6 +1393,102 @@ function preserveOperationalProfileExtensions(
   } as PolicyOperationalProfile;
 }
 
+function sourceNodeDisplayText(node: DocumentSourceNode): string {
+  return normalizeWhitespace(node.textExcerpt ?? node.description ?? node.title);
+}
+
+function expandedSourceTextForNode(
+  node: DocumentSourceNode,
+  sourceTree: DocumentSourceNode[],
+): string {
+  const sameParent = sourceTree
+    .filter((candidate) =>
+      candidate.parentId === node.parentId &&
+      candidate.order >= node.order &&
+      candidate.order <= node.order + 4,
+    )
+    .sort((left, right) => left.order - right.order);
+  const parts: string[] = [];
+  for (const candidate of sameParent) {
+    if (candidate.order > node.order && !["text", "table_cell"].includes(candidate.kind)) break;
+    const text = sourceNodeDisplayText(candidate);
+    if (!text) continue;
+    if (candidate.order > node.order && /^(?:[A-Z]\.|SECTION|SCHEDULE|ENDORSEMENT)\b/i.test(text)) break;
+    parts.push(text);
+    if (candidate.order > node.order && /[.!?]$/.test(text)) break;
+  }
+  return normalizeWhitespace(parts.join(" "));
+}
+
+function endorsementSupportStatus(
+  row: EndorsementSupportRow,
+  sourceText: string,
+): EndorsementSupportStatus {
+  const text = normalizeWhitespace(sourceText);
+  if (
+    /^(?:loss_payee|mortgagee)$/i.test(row.kind) &&
+    /\b(?:no|not)\b[\s\S]{0,120}\b(?:loss payee|mortgageholder|mortgagee|assignee|policy proceeds|direct payment)\b/i.test(text)
+  ) {
+    return "excluded";
+  }
+  if (/\b(?:not included|requires endorsement|only by endorsement)\b/i.test(text)) {
+    return "requires_review";
+  }
+  return row.status;
+}
+
+function normalizeEndorsementSupportRow(row: unknown): EndorsementSupportRow | undefined {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return undefined;
+  const record = row as Record<string, unknown>;
+  const kind = typeof record.kind === "string" ? normalizeWhitespace(record.kind) : "";
+  const status = record.status === "supported" || record.status === "excluded" || record.status === "requires_review"
+    ? record.status
+    : undefined;
+  const summary = typeof record.summary === "string" ? normalizeWhitespace(record.summary) : "";
+  const sourceNodeIds = sourceIds(record.sourceNodeIds);
+  const sourceSpanIds = sourceIds(record.sourceSpanIds);
+  if (!kind || !status || !summary || (sourceNodeIds.length === 0 && sourceSpanIds.length === 0)) {
+    return undefined;
+  }
+  return { kind, status, summary, sourceNodeIds, sourceSpanIds };
+}
+
+function repairEndorsementSupport(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+): PolicyOperationalProfile {
+  const rows = (profile as PolicyOperationalProfile & { endorsementSupport?: unknown }).endorsementSupport;
+  if (!Array.isArray(rows) || rows.length === 0) return profile;
+  const nodeById = new Map(sourceTree.map((node) => [node.id, node]));
+  const repaired = rows.flatMap((row): EndorsementSupportRow[] => {
+    const normalized = normalizeEndorsementSupportRow(row);
+    if (!normalized) return [];
+    const sourceNode = normalized.sourceNodeIds
+      .map((id) => nodeById.get(id))
+      .find((node): node is DocumentSourceNode => Boolean(node));
+    const sourceText = sourceNode ? expandedSourceTextForNode(sourceNode, sourceTree) : normalized.summary;
+    const summary = sourceText.length > normalized.summary.length
+      ? sourceText
+      : normalized.summary;
+    return [{
+      ...normalized,
+      summary,
+      status: endorsementSupportStatus(normalized, summary),
+    }];
+  });
+  const seen = new Set<string>();
+  const unique = repaired.filter((row) => {
+    const key = [row.kind, row.status, row.summary.toLowerCase()].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return {
+    ...profile,
+    endorsementSupport: unique,
+  };
+}
+
 function partiesFromProfile(profile: PolicyOperationalProfile): OperationalParty[] {
   const parties: OperationalParty[] = [];
   const push = (role: OperationalParty["role"], value: SourceBackedValue | undefined) => {
@@ -1333,10 +1518,11 @@ function finalizeSourceBackedIdentity(
   role?: OperationalParty["role"],
 ): SourceBackedValue | undefined {
   if (!value) return undefined;
-  if (role === "broker" ? isBadBrokerValue(value.value) : isBadOperationalIdentityValue(value.value)) {
+  const identityValue = preferredIdentityText(value, role);
+  if (role === "broker" ? isBadBrokerValue(identityValue) : isBadOperationalIdentityValue(identityValue)) {
     return undefined;
   }
-  return { ...value, value: restoreLegalSuffixPunctuation(value.value) };
+  return { ...value, value: restoreLegalSuffixPunctuation(identityValue) };
 }
 
 function finalizeSourceBackedPolicyNumber(value: SourceBackedValue | undefined): SourceBackedValue | undefined {
@@ -1537,7 +1723,7 @@ export function buildDeterministicOperationalProfile(
     ),
     sourceTree,
   );
-  return finalizeOperationalProfile(repaired);
+  return repairEndorsementSupport(finalizeOperationalProfile(repaired), sourceTree);
 }
 
 export function normalizeOperationalProfile(
@@ -1577,7 +1763,10 @@ export function normalizeOperationalProfile(
     ),
     sourceTree,
   );
-  return preserveOperationalProfileExtensions(finalizeOperationalProfile(repaired), rawProfile);
+  return preserveOperationalProfileExtensions(
+    repairEndorsementSupport(finalizeOperationalProfile(repaired), sourceTree),
+    rawProfile,
+  );
 }
 
 export function normalizeStoredOperationalProfile(

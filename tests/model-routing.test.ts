@@ -293,6 +293,14 @@ describe("model fallback policy", () => {
     expect(operatorModelsPage).toContain("settings.groups.map");
     expect(operatorModelsPage).not.toContain("const TASK_GROUPS");
   });
+
+  test("applies operator global routes even when an org has no broker settings", () => {
+    const settingsSource = readFileSync(join(__dirname, "../convex/modelSettings.ts"), "utf-8");
+
+    expect(settingsSource).not.toContain("if (!brokerOrgId) return null");
+    expect(settingsSource).toContain("const settings = brokerOrgId");
+    expect(settingsSource).toContain('routeSources[routeId] = "global"');
+  });
 });
 
 describe("mailbox coordinator routing", () => {

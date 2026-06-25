@@ -536,16 +536,17 @@ export const resolveForOrg = internalQuery({
     const org = await ctx.db.get(args.orgId);
     if (!org) return null;
     const brokerOrgId = org.type === "broker" ? org._id : org.brokerOrgId;
-    if (!brokerOrgId) return null;
 
     const globalSettings = await ctx.db
       .query("globalModelSettings")
       .withIndex("by_key", (q) => q.eq("key", "default"))
       .first();
-    const settings = await ctx.db
-      .query("brokerModelSettings")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
-      .first();
+    const settings = brokerOrgId
+      ? await ctx.db
+        .query("brokerModelSettings")
+        .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+        .first()
+      : null;
 
     const providerKeys = configurableProviderKeys(settings?.providerKeys);
     const globalRoutes = globalSettings?.routes as GlobalRoutes | undefined;

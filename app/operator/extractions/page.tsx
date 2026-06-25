@@ -266,7 +266,7 @@ function profileCellValue(row: Record<string, unknown>, key: string) {
 function supportStatusVariant(status: string) {
   const normalized = status.toLowerCase();
   if (normalized === "supported") return "secondary";
-  if (normalized === "unsupported" || normalized === "conflicting") return "destructive";
+  if (normalized === "unsupported" || normalized === "excluded" || normalized === "conflicting") return "destructive";
   return "outline";
 }
 
