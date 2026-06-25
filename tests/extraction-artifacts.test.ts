@@ -96,6 +96,8 @@ describe("policy extraction transient artifacts", () => {
     expect(traces).toContain("reconcileTerminalPolicy");
     expect(traces).toContain("reconcileTerminalRunningSessions");
     expect(traces).toContain("Extraction trace reconciled from terminal pipeline status");
+    expect(traces).toContain('if (status === "complete")');
+    expect(traces).toContain("patch.error = undefined");
 
     expect(extraction).toContain("pipelineReconcileTerminalState");
     expect(extraction).toContain("reconcileTerminalPolicy");

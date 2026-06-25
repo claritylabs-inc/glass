@@ -118,14 +118,26 @@ async function completeSessionDoc(
 ) {
   if (session.status !== "running") return false;
   const timestamp = nowMs();
-  await ctx.db.patch(session._id, defined({
+  const patch: {
+    status: "complete" | "error" | "cancelled";
+    completedAt: number;
+    lastEventAt: number;
+    totalDurationMs: number;
+    updatedAt: number;
+    error?: string | undefined;
+  } = {
     status,
     completedAt: timestamp,
     lastEventAt: timestamp,
     totalDurationMs: timestamp - session.startedAt,
-    error,
     updatedAt: timestamp,
-  }));
+  };
+  if (status === "complete") {
+    patch.error = undefined;
+  } else if (error !== undefined) {
+    patch.error = error;
+  }
+  await ctx.db.patch(session._id, patch);
   await ctx.db.insert("policyExtractionTraceEvents", defined({
     traceId: session.traceId,
     policyId: session.policyId,
