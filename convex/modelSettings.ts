@@ -75,7 +75,6 @@ const routesValidator = v.object({
   document_extraction: v.optional(routeUpdateValidator),
   security: v.optional(routeUpdateValidator),
   mailbox_coordinator: v.optional(routeUpdateValidator),
-  application_authoring: v.optional(routeUpdateValidator),
   embeddings: v.optional(routeUpdateValidator),
 });
 

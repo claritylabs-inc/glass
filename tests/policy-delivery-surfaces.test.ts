@@ -32,7 +32,6 @@ describe("policy delivery automation surfaces", () => {
       policies.indexOf("export const listForBroker"),
     );
     expect(createBrokerUpload).not.toContain("policy_delivered_by_broker");
-    expect(createBrokerUpload).not.toContain("quote_delivered_by_broker");
   });
 
   it("adds broker UI for settings, overrides, and delivery queue", () => {

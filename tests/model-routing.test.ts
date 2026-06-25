@@ -23,9 +23,6 @@ describe("model task routing", () => {
     expect(modelTaskForCall("extraction", "extraction_classify")).toBe("classification");
     expect(modelTaskForCall("extraction", "extraction_long_list")).toBe("extraction");
     expect(modelTaskForCall("chat", "query_reason")).toBe("chat");
-    expect(modelTaskForCall("extraction", "application_extract_fields")).toBe(
-      "application_authoring",
-    );
     expect(modelTaskForCall("extraction", "pce_impact_analysis")).toBe("analysis");
   });
 

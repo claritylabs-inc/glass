@@ -102,14 +102,6 @@ export type ModelCallTaskKind =
   | "query_reason"
   | "query_verify"
   | "query_respond"
-  | "application_classify"
-  | "application_extract_fields"
-  | "application_auto_fill"
-  | "application_lookup"
-  | "application_parse_answers"
-  | "application_batch"
-  | "application_email"
-  | "application_pdf_mapping"
   | "pce_impact_analysis"
   | "pce_reply_parse"
   | "pce_packet_generation"
@@ -175,8 +167,6 @@ export function modelTaskForCall(baseTask: ModelTask, taskKind?: ModelCallTaskKi
   if (taskKind.startsWith("extraction_")) return "extraction";
   if (taskKind === "query_classify") return "classification";
   if (taskKind.startsWith("query_")) return "chat";
-  if (taskKind === "application_classify") return "classification";
-  if (taskKind.startsWith("application_")) return "application_authoring";
   if (taskKind.startsWith("pce_")) return "analysis";
   return baseTask;
 }

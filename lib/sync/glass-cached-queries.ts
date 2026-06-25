@@ -15,7 +15,6 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { useSyncStore, type SyncStore } from "@claritylabs/cl-sync";
 
-type DocumentType = "policy" | "quote";
 type NotificationStatus = "unread" | "read" | "actioned";
 type NotificationListArgs = {
   orgId: Id<"organizations">;
@@ -66,7 +65,6 @@ type OptimisticThreadSend = {
   userName?: string;
   attachments?: OptimisticAttachment[];
   referencedPolicyIds?: Id<"policies">[];
-  referencedQuoteIds?: Id<"policies">[];
   referencedRequirementIds?: Id<"insuranceRequirements">[];
   referencedMailboxIds?: Id<"connectedEmailAccounts">[];
   skipAgentResponse?: boolean;
@@ -193,12 +191,12 @@ export function useCachedViewerOrg() {
   return useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
 }
 
-export function useCachedPolicyList(documentType: DocumentType) {
+export function useCachedPolicyList() {
   const policies = useCachedQuery(
     "policies.listForClient",
     api.policies.listForClient,
     {
-      documentType,
+      documentType: "policy",
     },
   ) as PolicyList | undefined;
   const setPolicyDetail = useSetCachedQuery<
@@ -339,7 +337,6 @@ export function useThreadCacheActions() {
             content: send.content,
             attachments: send.attachments,
             referencedPolicyIds: send.referencedPolicyIds,
-            referencedQuoteIds: send.referencedQuoteIds,
             referencedRequirementIds: send.referencedRequirementIds,
             referencedMailboxIds: send.referencedMailboxIds,
           };

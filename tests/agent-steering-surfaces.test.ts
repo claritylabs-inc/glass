@@ -10,12 +10,12 @@ describe("agent steering surfaces", () => {
     const promptInput = read("components/glass-prompt-input.tsx");
     const messageType = read("components/ai-elements/prompt-input/prompt-input.tsx");
 
-    expect(messageType).toContain('"policy" | "quote" | "requirement" | "mailbox"');
+    expect(messageType).toContain('"policy" | "requirement" | "mailbox"');
     expect(promptInput).toContain("findActiveTrigger");
     expect(promptInput).toContain("useCachedAgentTargets");
     expect(promptInput).toContain("targetKindsForTrigger(activeTrigger)");
     expect(promptInput).toContain('trigger.marker === "/"');
-    expect(promptInput).toContain('["policy", "quote", "requirement"]');
+    expect(promptInput).toContain('["policy", "requirement"]');
     expect(promptInput).toContain("PromptReferenceTag");
     expect(promptInput).toContain("selectTarget");
   });
@@ -31,7 +31,7 @@ describe("agent steering surfaces", () => {
     expect(promptInput).toContain("Math.hypot(dx, dy)");
     expect(promptInput).toContain("requestAnimationFrame");
     expect(promptInput).toContain("PREPARED_POLICY_TARGET_KINDS");
-    expect(promptInput).toContain('["policy", "quote"]');
+    expect(promptInput).toContain('["policy"]');
     expect(promptInput).toContain("PREPARED_REQUIREMENT_TARGET_KINDS");
     expect(promptInput).toContain('["requirement"]');
     expect(promptInput).toContain("PREPARED_MAILBOX_TARGET_KINDS");
@@ -65,7 +65,7 @@ describe("agent steering surfaces", () => {
     expect(mailboxCoordinator).toContain("USER-SELECTED MAILBOXES");
     expect(mailboxCoordinator).toContain("selectedAccountRows");
     expect(targets).toContain("policies");
-    expect(targets).toContain("quotes");
+    expect(targets).not.toContain("quotes:");
     expect(targets).toContain("requirements");
     expect(targets).toContain("mailboxes");
   });

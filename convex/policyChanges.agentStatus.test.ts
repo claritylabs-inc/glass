@@ -74,24 +74,10 @@ async function seedPolicyChangeCases(t: ReturnType<typeof convexTest>) {
       content: "Policy change request created.",
       policyChangeCaseId: activeCaseId,
     });
-    const applicationIntakeId = await ctx.db.insert("applicationIntakes", {
-      orgId,
-      title: "Cyber renewal application",
-      sourceKind: "web",
-      status: "collecting",
-      normalizedAnswers: [],
-      missingQuestions: [],
-      contextProposalCount: 0,
-      createdAt: 1200,
-      updatedAt: 1200,
-      lastActivityAt: 1200,
-    });
-
     return {
       orgId,
       activeCaseId,
       completedCaseId,
-      applicationIntakeId,
       threadId,
     };
   });
@@ -115,14 +101,13 @@ describe("policyChanges.listForAgentInternal", () => {
     ]);
   });
 
-  test("does not resolve an application-intake ID as a policy change case", async () => {
+  test("does not resolve an unrelated ID as a policy change case", async () => {
     const t = convexTest(schema, modules);
-    const { orgId, applicationIntakeId, threadId } =
-      await seedPolicyChangeCases(t);
+    const { orgId, threadId } = await seedPolicyChangeCases(t);
 
     const rows = await t.query(listForAgentInternalFn, {
       orgIds: [orgId],
-      caseId: String(applicationIntakeId),
+      caseId: String(threadId),
       threadId,
       limit: 10,
     });

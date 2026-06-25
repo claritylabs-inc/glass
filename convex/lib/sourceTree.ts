@@ -232,7 +232,7 @@ function sourceSpansForSdk(sourceSpans: SourceSpanLike[], documentId: string): S
       return {
         id,
         documentId: span.documentId ?? documentId,
-        sourceKind: span.sourceKind === "policy_pdf" || span.sourceKind === "application_pdf" || span.sourceKind === "email" || span.sourceKind === "attachment" || span.sourceKind === "manual_note"
+        sourceKind: span.sourceKind === "policy_pdf" || span.sourceKind === "email" || span.sourceKind === "attachment" || span.sourceKind === "manual_note"
           ? span.sourceKind
           : undefined,
         chunkId: undefined,

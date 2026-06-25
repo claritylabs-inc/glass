@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PillButton } from "@/components/ui/pill-button";
 import { PolicyListItem } from "@/components/policy-list-item";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
@@ -28,13 +27,6 @@ import {
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
-const DOC_TYPE_TABS = [
-  { id: "policy", label: "Policies" },
-  { id: "quote", label: "Quotes" },
-] as const;
-
-type DocTypeTab = (typeof DOC_TYPE_TABS)[number]["id"];
-
 type PolicyListToastRow = {
   _id: string;
   carrier?: string | null;
@@ -52,14 +44,13 @@ type PolicyListToastRow = {
 
 export default function PoliciesPage() {
   const router = useRouter();
-  const [docTypeTab, setDocTypeTab] = useState<DocTypeTab>("policy");
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const pendingExtractionToastsRef = useRef<
-    Record<string, { documentType: DocTypeTab; fileName?: string | null }>
+    Record<string, { fileName?: string | null }>
   >({});
 
-  const policies = useCachedPolicyList(docTypeTab);
+  const policies = useCachedPolicyList();
   const viewerOrg = useCachedViewerOrg();
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
@@ -102,7 +93,7 @@ export default function PoliciesPage() {
         showPolicyExtractionReadyToast(
           {
             ...policy,
-            documentType: policy.documentType ?? pendingPolicy.documentType,
+            documentType: policy.documentType ?? "policy",
             fileName: policy.fileName ?? pendingPolicy.fileName,
           },
           () => router.push(`/policies/${policyId}`),
@@ -116,7 +107,6 @@ export default function PoliciesPage() {
   const uploadMany = useCallback(
     async (
       files: File[],
-      documentType: "policy" | "quote",
       uploadMode: PolicyUploadMode = "combined",
     ): Promise<void> => {
       if (files.length === 0) return;
@@ -147,11 +137,10 @@ export default function PoliciesPage() {
             }
             showPolicyExtractionQueuedToast({
               policyId: result.id,
-              documentType,
+              documentType: "policy",
               fileName: files[i].name,
             });
             pendingExtractionToastsRef.current[result.id] = {
-              documentType,
               fileName: files[i].name,
             };
             resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
@@ -177,11 +166,10 @@ export default function PoliciesPage() {
               : files[0].name;
           showPolicyExtractionQueuedToast({
             policyId: result.id,
-            documentType,
+            documentType: "policy",
             fileName: displayFileName,
           });
           pendingExtractionToastsRef.current[result.id] = {
-            documentType,
             fileName: displayFileName,
           };
           resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
@@ -199,17 +187,17 @@ export default function PoliciesPage() {
 
   const handleDrawerUpload = useCallback(
     async (files: File[], uploadMode: PolicyUploadMode) => {
-      await uploadMany(files, docTypeTab, uploadMode);
+      await uploadMany(files, uploadMode);
       setUploaderOpen(false);
     },
-    [uploadMany, docTypeTab],
+    [uploadMany],
   );
 
   const handleEmptyStateFiles = useCallback(
     (files: File[], uploadMode: PolicyUploadMode) => {
-      void uploadMany(files, docTypeTab, uploadMode);
+      void uploadMany(files, uploadMode);
     },
-    [uploadMany, docTypeTab],
+    [uploadMany],
   );
 
   const isLoading = policies === undefined;
@@ -244,7 +232,6 @@ export default function PoliciesPage() {
           onClose={() => setUploaderOpen(false)}
           onUpload={handleDrawerUpload}
           uploading={uploading}
-          docType={docTypeTab}
         />
       }
     >
@@ -258,24 +245,10 @@ export default function PoliciesPage() {
             dismissKey="glass:agent-contact-callout:policies"
           />
         )}
-        <Tabs
-          value={docTypeTab}
-          onValueChange={(v) => setDocTypeTab(v as DocTypeTab)}
-        >
-          <TabsList variant="pill">
-            {DOC_TYPE_TABS.map((tab) => (
-              <TabsTrigger key={tab.id} value={tab.id}>
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-
         {isLoading ? (
           <div className="min-h-32" aria-hidden="true" />
         ) : list.length === 0 ? (
           <PolicyEmptyState
-            docType={docTypeTab}
             agentEmail={agentEmail}
             uploading={uploading}
             onUpload={handleEmptyStateFiles}

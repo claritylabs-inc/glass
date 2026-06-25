@@ -8,7 +8,6 @@ export type PolicyUploadMode = "combined" | "separate";
 interface PolicyUploadModeToggleProps {
   value: PolicyUploadMode;
   onChange: (value: PolicyUploadMode) => void;
-  docType: "policy" | "quote";
   disabled?: boolean;
   className?: string;
 }
@@ -16,13 +15,9 @@ interface PolicyUploadModeToggleProps {
 export function PolicyUploadModeToggle({
   value,
   onChange,
-  docType,
   disabled = false,
   className,
 }: PolicyUploadModeToggleProps) {
-  const singular = docType === "quote" ? "quote" : "policy";
-  const plural = docType === "quote" ? "quotes" : "policies";
-
   return (
     <div className={cn("flex items-center justify-between gap-3", className)}>
       <div className="text-label font-medium text-muted-foreground">
@@ -37,10 +32,10 @@ export function PolicyUploadModeToggle({
       >
         <TabsList variant="pill" aria-label="Import files as">
           <TabsTrigger value="combined" disabled={disabled}>
-            One {singular}
+            One policy
           </TabsTrigger>
           <TabsTrigger value="separate" disabled={disabled}>
-            Separate {plural}
+            Separate policies
           </TabsTrigger>
         </TabsList>
       </Tabs>

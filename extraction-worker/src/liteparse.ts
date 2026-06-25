@@ -8,7 +8,7 @@ import {
   type SourceSpan,
 } from "@claritylabs/cl-sdk";
 
-type SourceKindInput = Extract<SourceKind, "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note">;
+type SourceKindInput = Extract<SourceKind, "policy_pdf" | "email" | "attachment" | "manual_note">;
 
 export type LiteParseConversionMetadata = {
   parserBackend: "liteparse";

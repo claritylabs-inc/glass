@@ -209,7 +209,7 @@ type MentionTarget = PromptReference & {
   sublabel?: string;
 };
 
-const PREPARED_POLICY_TARGET_KINDS: PromptTargetKind[] = ["policy", "quote"];
+const PREPARED_POLICY_TARGET_KINDS: PromptTargetKind[] = ["policy"];
 const PREPARED_REQUIREMENT_TARGET_KINDS: PromptTargetKind[] = ["requirement"];
 const PREPARED_MAILBOX_TARGET_KINDS: PromptTargetKind[] = ["mailbox"];
 
@@ -359,11 +359,11 @@ function mergeDefaultReferencesIntoTokens(
 function targetKindsForTrigger(trigger: PromptTrigger): PromptTargetKind[] {
   if (trigger.preparedKinds) return trigger.preparedKinds;
   if (trigger.marker === "/") return PREPARED_MAILBOX_TARGET_KINDS;
-  return ["policy", "quote", "requirement"];
+  return ["policy", "requirement"];
 }
 
 function targetScopeLabel(kinds: PromptTargetKind[]) {
-  const hasPolicyTargets = kinds.includes("policy") || kinds.includes("quote");
+  const hasPolicyTargets = kinds.includes("policy");
   const hasRequirementTargets = kinds.includes("requirement");
   const hasMailboxTargets = kinds.includes("mailbox");
 
@@ -696,7 +696,6 @@ export const GlassPromptInput = forwardRef<
     if (!targets) return [];
     return [
       ...targets.policies,
-      ...targets.quotes,
       ...targets.requirements,
       ...targets.mailboxes,
     ].map((target) => ({
@@ -1231,7 +1230,7 @@ export const GlassPromptInput = forwardRef<
     [],
   );
   const hasPolicyTargets =
-    (targets?.policies.length ?? 0) + (targets?.quotes.length ?? 0) > 0;
+    (targets?.policies.length ?? 0) > 0;
   const hasRequirementTargets = (targets?.requirements.length ?? 0) > 0;
   const hasMailboxTargets = (targets?.mailboxes.length ?? 0) > 0;
   const hasPreparedActions =

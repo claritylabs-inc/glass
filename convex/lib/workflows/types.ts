@@ -6,7 +6,6 @@ export type WorkflowKind =
   | "certificate_request"
   | "broker_follow_up"
   | "document_delivery"
-  | "application_intake"
   | "mailbox_task";
 
 export type WorkflowStatus =

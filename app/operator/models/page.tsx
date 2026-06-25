@@ -93,7 +93,7 @@ const TASK_GROUPS = [
   {
     id: "reasoning",
     label: "Reasoning and authoring",
-    tasks: ["analysis", "application_authoring", "summary"],
+    tasks: ["analysis", "summary"],
   },
   {
     id: "ingestion",

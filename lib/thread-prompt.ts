@@ -4,7 +4,6 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 export type PromptReferenceIds = {
   referencedPolicyIds?: Id<"policies">[];
-  referencedQuoteIds?: Id<"policies">[];
   referencedRequirementIds?: Id<"insuranceRequirements">[];
   referencedMailboxIds?: Id<"connectedEmailAccounts">[];
 };
@@ -64,7 +63,6 @@ export function promptReferenceIds(
 ): PromptReferenceIds {
   return {
     referencedPolicyIds: referenceIds<Id<"policies">>(references, "policy"),
-    referencedQuoteIds: referenceIds<Id<"policies">>(references, "quote"),
     referencedRequirementIds: referenceIds<Id<"insuranceRequirements">>(
       references,
       "requirement",

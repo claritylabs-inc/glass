@@ -284,10 +284,10 @@ function MailboxTaskSummaryCard({
       if (result.status === "no_pdf_attachments") {
         toast.error("No PDF attachments found");
       } else {
-        toast.success(`Started policy/quote import for ${result.files?.length ?? filenames.length} file${filenames.length === 1 ? "" : "s"}`);
+        toast.success(`Started policy import for ${result.files?.length ?? filenames.length} file${filenames.length === 1 ? "" : "s"}`);
       }
     } catch {
-      toast.error("Failed to import policy/quote");
+      toast.error("Failed to import policy");
     } finally {
       setBusyKey(null);
     }
@@ -503,7 +503,7 @@ function MailboxTaskSummaryCard({
                         <PillButton
                           size="compact"
                           variant="iconLabel"
-                          label="Import policy/quote"
+                          label="Import policy"
                           disabled={busyKey !== null}
                           onClick={() => void handlePolicyImport(email, index)}
                         >

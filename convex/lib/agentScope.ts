@@ -12,7 +12,6 @@ export type AgentScopeOrg = {
   isPrimary: boolean;
   canWrite: boolean;
   policyCount: number;
-  quoteCount: number;
   expiringPolicyCount: number;
   expiredPolicyCount: number;
   openVendorComplianceItems: number;
@@ -105,9 +104,9 @@ async function summarizeOrg(ctx: any, org: Doc<"organizations">, args: {
     .query("policies")
     .withIndex("by_orgId", (q: any) => q.eq("orgId", org._id))
     .collect();
-  const activeDocs = policies.filter((policy: Doc<"policies">) => !policy.deletedAt);
-  const policyDocs = activeDocs.filter((policy: Doc<"policies">) => policy.documentType !== "quote");
-  const quoteDocs = activeDocs.filter((policy: Doc<"policies">) => policy.documentType === "quote");
+  const policyDocs = policies.filter(
+    (policy: Doc<"policies">) => !policy.deletedAt,
+  );
   const policyExpiry = policyDocs
     .map((policy: Doc<"policies">) => {
       const raw = policy.expirationDate;
@@ -141,7 +140,6 @@ async function summarizeOrg(ctx: any, org: Doc<"organizations">, args: {
     isPrimary: org._id === args.primaryOrgId,
     canWrite: args.canWrite,
     policyCount: policyDocs.length,
-    quoteCount: quoteDocs.length,
     expiringPolicyCount,
     expiredPolicyCount,
     openVendorComplianceItems,
@@ -249,7 +247,7 @@ export function formatAgentScopePortfolioIndex(scope: AgentScope): string {
   if (scope.mode !== "broker_portfolio") return "";
   const lines = scope.orgs.map((org) => {
     const focus = scope.focusedOrgId === org.orgId ? " [focused]" : "";
-    return `- ${org.name}${focus} (${org.type}, orgId: ${org.orgId}): ${org.policyCount} policies, ${org.quoteCount} quotes, ${org.expiringPolicyCount} expiring within 60 days, ${org.expiredPolicyCount} expired, ${org.openVendorComplianceItems} open vendor compliance item(s), ${org.recentActivityCount} recent broker activity item(s)`;
+    return `- ${org.name}${focus} (${org.type}, orgId: ${org.orgId}): ${org.policyCount} policies, ${org.expiringPolicyCount} expiring within 60 days, ${org.expiredPolicyCount} expired, ${org.openVendorComplianceItems} open vendor compliance item(s), ${org.recentActivityCount} recent broker activity item(s)`;
   });
   return `\n\nBROKER PORTFOLIO INDEX:\n${lines.join("\n")}`;
 }

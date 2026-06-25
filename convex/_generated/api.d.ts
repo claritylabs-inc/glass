@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as actions_applicationIntakeAuthoring from "../actions/applicationIntakeAuthoring.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_backfillPolicyChangeBrokerRecipients from "../actions/backfillPolicyChangeBrokerRecipients.js";
 import type * as actions_backfillRequirementSemantics from "../actions/backfillRequirementSemantics.js";
@@ -51,7 +50,6 @@ import type * as agentTargets from "../agentTargets.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as appCardLinks from "../appCardLinks.js";
-import type * as applicationIntakes from "../applicationIntakes.js";
 import type * as auth from "../auth.js";
 import type * as brokerActivity from "../brokerActivity.js";
 import type * as certificateHolders from "../certificateHolders.js";
@@ -92,7 +90,6 @@ import type * as lib_aiUtils from "../lib/aiUtils.js";
 import type * as lib_apiAuth from "../lib/apiAuth.js";
 import type * as lib_apiDto from "../lib/apiDto.js";
 import type * as lib_apiError from "../lib/apiError.js";
-import type * as lib_applicationIntakeIntent from "../lib/applicationIntakeIntent.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_branding from "../lib/branding.js";
 import type * as lib_brokerActivity from "../lib/brokerActivity.js";
@@ -184,7 +181,6 @@ import type * as lib_valueNormalization from "../lib/valueNormalization.js";
 import type * as lib_vendorComplianceTools from "../lib/vendorComplianceTools.js";
 import type * as lib_webChatDeterministicControls from "../lib/webChatDeterministicControls.js";
 import type * as lib_webRetrieval from "../lib/webRetrieval.js";
-import type * as lib_workflows_applicationIntake from "../lib/workflows/applicationIntake.js";
 import type * as lib_workflows_brokerFollowUp from "../lib/workflows/brokerFollowUp.js";
 import type * as lib_workflows_certificateRequest from "../lib/workflows/certificateRequest.js";
 import type * as lib_workflows_comms from "../lib/workflows/comms.js";
@@ -225,7 +221,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  "actions/applicationIntakeAuthoring": typeof actions_applicationIntakeAuthoring;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/backfillPolicyChangeBrokerRecipients": typeof actions_backfillPolicyChangeBrokerRecipients;
   "actions/backfillRequirementSemantics": typeof actions_backfillRequirementSemantics;
@@ -268,7 +263,6 @@ declare const fullApi: ApiFromModules<{
   apiAuditLog: typeof apiAuditLog;
   apiKeys: typeof apiKeys;
   appCardLinks: typeof appCardLinks;
-  applicationIntakes: typeof applicationIntakes;
   auth: typeof auth;
   brokerActivity: typeof brokerActivity;
   certificateHolders: typeof certificateHolders;
@@ -309,7 +303,6 @@ declare const fullApi: ApiFromModules<{
   "lib/apiAuth": typeof lib_apiAuth;
   "lib/apiDto": typeof lib_apiDto;
   "lib/apiError": typeof lib_apiError;
-  "lib/applicationIntakeIntent": typeof lib_applicationIntakeIntent;
   "lib/auth": typeof lib_auth;
   "lib/branding": typeof lib_branding;
   "lib/brokerActivity": typeof lib_brokerActivity;
@@ -401,7 +394,6 @@ declare const fullApi: ApiFromModules<{
   "lib/vendorComplianceTools": typeof lib_vendorComplianceTools;
   "lib/webChatDeterministicControls": typeof lib_webChatDeterministicControls;
   "lib/webRetrieval": typeof lib_webRetrieval;
-  "lib/workflows/applicationIntake": typeof lib_workflows_applicationIntake;
   "lib/workflows/brokerFollowUp": typeof lib_workflows_brokerFollowUp;
   "lib/workflows/certificateRequest": typeof lib_workflows_certificateRequest;
   "lib/workflows/comms": typeof lib_workflows_comms;

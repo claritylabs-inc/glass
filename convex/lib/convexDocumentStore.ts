@@ -50,15 +50,13 @@ export function createConvexDocumentStore(
         orgId,
       });
       // Apply filters in memory (Convex queries are index-based)
-      type PolicyRecord = { deletedAt?: number; documentType?: string; carrier?: string; security?: string; insuredName?: string; policyNumber?: string; quoteNumber?: string };
-      let filtered = (policies as PolicyRecord[]).filter((p) => !p.deletedAt);
+      type PolicyRecord = { deletedAt?: number; carrier?: string; security?: string; insuredName?: string; policyNumber?: string };
+      let filtered = (policies as PolicyRecord[]).filter(
+        (p) => !p.deletedAt,
+      );
 
       if (filters.type) {
-        filtered = filtered.filter((p) =>
-          filters.type === "quote"
-            ? p.documentType === "quote"
-            : p.documentType !== "quote",
-        );
+        filtered = filters.type === "policy" ? filtered : [];
       }
       if (filters.carrier) {
         const carrier = filters.carrier.toLowerCase();
@@ -79,13 +77,6 @@ export function createConvexDocumentStore(
           (p) => p.policyNumber === filters.policyNumber,
         );
       }
-      if (filters.quoteNumber) {
-        filtered = filtered.filter(
-          (p) => p.quoteNumber === filters.quoteNumber,
-        );
-      }
-
-
       return filtered.map((p) => policyToInsuranceDoc(p as any));
     },
 

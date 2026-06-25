@@ -177,7 +177,6 @@ describe("operator teardown policy-detail queries", () => {
       operatorSession.query(listAgentTargetsFn, { orgId: brokerOrgId }),
     ).resolves.toEqual({
       policies: [],
-      quotes: [],
       requirements: [],
       mailboxes: [],
     });
@@ -185,7 +184,6 @@ describe("operator teardown policy-detail queries", () => {
       operatorSession.query(listAgentTargetsFn, { orgId: clientOrgId }),
     ).resolves.toEqual({
       policies: [],
-      quotes: [],
       requirements: [],
       mailboxes: [],
     });

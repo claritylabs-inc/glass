@@ -32,12 +32,7 @@ export const backfill = internalAction({
       orgId: args.orgId,
     });
 
-    // Also load quotes
-    const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, {
-      orgId: args.orgId,
-    });
-
-    const allDocs = [...policies, ...quotes];
+    const allDocs = policies;
     console.log(`Backfill: ${allDocs.length} documents to process for org ${args.orgId}`);
 
     let processed = 0;

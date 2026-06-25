@@ -71,24 +71,7 @@ export const send = internalAction({
     let branding: NotificationEmailBranding;
     const siteUrl = getPortalUrlForOrg(recipientOrg);
 
-    const isApplicationNotification = type.startsWith("application_");
-
-    if (isApplicationNotification && recipientOrg.type === "broker") {
-      let logoUrl: string | null = null;
-      const whiteLabelingEnabled = isWhiteLabelingEnabled(recipientOrg);
-      if (whiteLabelingEnabled && recipientOrg.iconStorageId) {
-        logoUrl = await ctx.storage.getUrl(recipientOrg.iconStorageId);
-      }
-      branding = whiteLabelingEnabled
-        ? {
-            kind: "broker",
-            brokerName: recipientOrg.name ?? "Glass",
-            agentDisplayName: recipientOrg.agentDisplayName ?? null,
-            accentColor: recipientOrg.brandingColor ?? null,
-            logoUrl,
-          }
-        : { kind: "glass" };
-    } else if (recipientOrg.type === "client" && recipientOrg.brokerOrgId) {
+    if (recipientOrg.type === "client" && recipientOrg.brokerOrgId) {
       const brokerOrg = await ctx.runQuery(
         (internal as any).organizations.getInternal,
         { id: recipientOrg.brokerOrgId },
@@ -122,8 +105,7 @@ export const send = internalAction({
       ctaLabel: notificationCtaLabel(type),
       branding,
       siteUrl,
-      threadLabel: await resolveContextLabel(ctx, notification, isApplicationNotification),
-      variant: isApplicationNotification ? "application" : "default",
+      threadLabel: await resolveContextLabel(ctx, notification),
     });
 
     // Send to all recipients
@@ -157,12 +139,6 @@ export const send = internalAction({
 
 function notificationCtaLabel(type: NotificationType): string {
   switch (type) {
-    case "application_intake_started":
-      return "Open application";
-    case "application_intake_needs_review":
-      return "Review application";
-    case "application_packet_ready":
-      return "Open application";
     default:
       return "View in Glass";
   }
@@ -171,16 +147,7 @@ function notificationCtaLabel(type: NotificationType): string {
 async function resolveContextLabel(
   ctx: any,
   notification: any,
-  isApplicationNotification: boolean,
 ): Promise<string | undefined> {
-  if (isApplicationNotification) {
-    const relatedOrg = notification.relatedOrgId
-      ? await ctx.runQuery((internal as any).organizations.getInternal, {
-          id: notification.relatedOrgId,
-        })
-      : null;
-    return relatedOrg?.name ?? resolveThreadLabel(ctx, notification);
-  }
   return await resolveThreadLabel(ctx, notification);
 }
 
@@ -224,17 +191,6 @@ function buildCtaUrl(
       return `${siteUrl}/agent/thread/${p.threadId}`;
     case "view_vendor_compliance":
       return `${siteUrl}/connect/vendors`;
-    case "view_application_intake": {
-      const applicationIntakeId = typeof p.applicationIntakeId === "string" ? p.applicationIntakeId : "";
-      const clientOrgId = typeof p.clientOrgId === "string" ? p.clientOrgId : "";
-      const suffix = applicationIntakeId
-        ? `?applicationId=${encodeURIComponent(applicationIntakeId)}`
-        : "";
-      if (clientOrgId) {
-        return `${siteUrl}/clients/${clientOrgId}/applications${suffix}`;
-      }
-      return `${siteUrl}/applications${suffix}`;
-    }
     default:
       return `${siteUrl}/notifications`;
   }

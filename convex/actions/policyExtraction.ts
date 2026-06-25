@@ -39,7 +39,7 @@ import {
 import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
-const NON_INSURANCE_DOCUMENT_ERROR = "This document is not an insurance policy or quote, so extraction was stopped.";
+const NON_INSURANCE_DOCUMENT_ERROR = "This document is not a bound insurance policy, binder, endorsement, renewal, or post-binding insurance document, so extraction was stopped.";
 const ADVANCE_LEASE_MS = 2 * 60 * 1000;
 const ADVANCE_LEASE_HEARTBEAT_MS = 30 * 1000;
 const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
@@ -145,7 +145,6 @@ function canonicalSourceSpans(sourceSpans: SourceSpanLike[]) {
 
 function sourceKindForStorage(value: unknown) {
   return value === "policy_pdf" ||
-    value === "application_pdf" ||
     value === "email" ||
     value === "attachment" ||
     value === "manual_note"
@@ -713,8 +712,8 @@ function stripLease(
 const extractionGateSchema = z.object({
   shouldExtract: z.boolean(),
   classification: z.enum([
-    "insurance_policy_or_quote",
-    "insurance_related_but_not_policy_or_quote",
+    "bound_policy_document",
+    "insurance_related_but_not_bound_policy",
     "non_insurance",
     "unknown",
   ]),
@@ -1099,14 +1098,14 @@ async function classifyInsuranceExtractability(params: {
   const result = await generateGateObject({
     schema: extractionGateSchema,
     maxTokens: 600,
-    system: `You are a strict intake gate for Glass insurance extraction.
+    system: `You are a strict intake gate for Glass post-binding insurance extraction.
 
-Decide whether an uploaded PDF should be processed by a policy/quote extractor. Only allow extraction when the document is clearly an insurance policy, quote, binder, declarations page, renewal proposal, insurance schedule, policy wording, or endorsement/supplement that contains policy or quote terms.
+Decide whether an uploaded PDF should be processed by a bound-policy extractor. Only allow extraction when the document is clearly an already-bound insurance policy, binder, declarations page, renewal policy, insurance schedule, policy wording, endorsement, or post-binding supplement that contains bound policy terms.
 
-Reject novels, books, textbooks, resumes, invoices, generic contracts, marketing material, unrelated legal documents, and any document that is merely about insurance but is not itself a policy or quote artifact. If uncertain, return classification "unknown" and shouldExtract false only when the document is more likely not extractable than extractable.`,
+Reject unbound quotes, proposals, submissions, applications, marketing material, invoices, novels, books, textbooks, resumes, generic contracts, unrelated legal documents, and any document that is merely about insurance but is not itself a bound policy artifact. If uncertain, return classification "unknown" and shouldExtract false only when the document is more likely not extractable than extractable.`,
     prompt: `Classify this PDF before extraction.
 
-Return shouldExtract=true only for insurance policy/quote artifacts.
+Return shouldExtract=true only for bound or post-binding insurance policy artifacts.
 
 Machine-readable excerpts:
 ${excerpt}`,
@@ -1119,13 +1118,13 @@ ${excerpt}`,
 }
 
 function shouldRejectDocument(decision: ExtractionGateDecision): boolean {
-  if (decision.classification === "insurance_policy_or_quote" && decision.shouldExtract) {
+  if (decision.classification === "bound_policy_document" && decision.shouldExtract) {
     return false;
   }
   if (decision.classification === "non_insurance" && decision.confidence >= 0.5) {
     return true;
   }
-  if (decision.classification === "insurance_related_but_not_policy_or_quote" && decision.confidence >= 0.65) {
+  if (decision.classification === "insurance_related_but_not_bound_policy" && decision.confidence >= 0.65) {
     return true;
   }
   return !decision.shouldExtract && decision.confidence >= 0.7;
@@ -1415,7 +1414,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       if (clSdkCheckpoint) {
         await pCtx.log(`Resuming extraction from cl-sdk phase "${clSdkCheckpoint.phase}"…`);
       } else {
-        await pCtx.log("Checking whether the PDF is an insurance policy or quote…");
+        await pCtx.log("Checking whether the PDF is a bound policy document…");
         try {
           const gateDecision = await classifyInsuranceExtractability({
             ctx: convexCtx,
@@ -1610,9 +1609,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         log: async (message, level) => { await pCtx.log(message, level); },
       });
       const fields = processed.fields;
-      const docName = doc.type === "quote"
-        ? (doc.quoteNumber || "quote")
-        : (doc.policyNumber || "policy");
+      const docName = doc.policyNumber || "policy";
       const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
 
       await convexCtx.runMutation(
@@ -1943,14 +1940,12 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         ) as {
           uploadedByBrokerOrgId?: string;
           orgId?: string;
-          documentType?: string;
           uploadedBySide?: string;
           extractionReview?: unknown;
           policyNumber?: string;
           carrier?: string;
         } | null;
         if (finalPolicy?.uploadedByBrokerOrgId && finalPolicy.orgId) {
-          const docType = (finalPolicy.documentType ?? "policy") as "policy" | "quote";
           await convexCtx.runMutation(
             (internal as any).brokerActivity.record,
             {
@@ -1958,8 +1953,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               clientOrgId: finalPolicy.orgId,
               type: "policy_extraction_completed" as const,
               actorSide: "system" as const,
-              payload: { policyId, documentType: docType, uploadedBySide: finalPolicy.uploadedBySide ?? "client" },
-              summary: `${docType === "quote" ? "Quote" : "Policy"} extraction completed`,
+              payload: { policyId, documentType: "policy", uploadedBySide: finalPolicy.uploadedBySide ?? "client" },
+              summary: "Policy extraction completed",
             },
           );
         }
@@ -2602,9 +2597,7 @@ async function completeExternalExtractFromPayload(
       level: "warn",
     });
   }
-  const docName = doc.type === "quote"
-    ? (doc.quoteNumber || "quote")
-    : (doc.policyNumber || "policy");
+  const docName = doc.policyNumber || "policy";
   const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
 
   await ctx.runMutation((internal as any).policies.updateExtractionInternal, {

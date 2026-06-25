@@ -7,7 +7,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 
 /**
- * Extract a policy or quote from a manually uploaded PDF file.
+ * Extract a bound policy from a manually uploaded PDF file.
  * Does not require an email connection — used for direct uploads.
  * Thin wrapper — all extraction logic lives in policyExtraction.ts.
  */

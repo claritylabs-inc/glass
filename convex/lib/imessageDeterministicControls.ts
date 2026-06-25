@@ -3,7 +3,6 @@
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { resolveApplicationIntakeStartIntent } from "./applicationIntakeIntent";
 import type { AgentScope } from "./agentScope";
 import {
   isPendingEmailCancelConfirmationPrompt,
@@ -15,8 +14,6 @@ import { runImessageSlashCommand } from "./imessageSlashCommands";
 import { resolveTaskControlIntent } from "./taskControlDecision";
 import { taskControlResponse } from "./taskControlIntent";
 import { resolveTextChannelEmailControl } from "./textChannelControls";
-import { renderWorkflowComms } from "./workflows/comms";
-import { applicationIntakeOutcome } from "./workflows/applicationIntake";
 
 export type ImessageDeterministicControlResult = {
   response: string;
@@ -28,12 +25,10 @@ export async function runImessageDeterministicControls(
   args: {
     messageText: string;
     orgId: Id<"organizations">;
-    userId: Id<"users">;
     orgName: string;
     userName?: string;
     userEmail?: string;
     threadId: Id<"threads">;
-    userMessageId: Id<"threadMessages">;
     eventKey: string;
     chatGuid: string;
     isGroup: boolean;
@@ -48,19 +43,7 @@ export async function runImessageDeterministicControls(
 ): Promise<ImessageDeterministicControlResult | null> {
   const reply = async (
     response: string,
-    options?: {
-      leaveGroup?: boolean;
-      usedTools?: string[];
-      toolCalls?: Array<{
-        name: string;
-        input?: string;
-        output?: string;
-      }>;
-      toolArtifacts?: Array<{
-        type: string;
-        data: unknown;
-      }>;
-    },
+    options?: { leaveGroup?: boolean },
   ): Promise<ImessageDeterministicControlResult> => {
     await ctx.runMutation(internal.threads.insertImessageMessage, {
       threadId: args.threadId,
@@ -68,9 +51,6 @@ export async function runImessageDeterministicControls(
       role: "agent",
       content: response,
       responseMessageId: `${args.eventKey}:response`,
-      usedTools: options?.usedTools,
-      toolCalls: options?.toolCalls,
-      toolArtifacts: options?.toolArtifacts,
     });
     return { response, leaveGroup: options?.leaveGroup };
   };
@@ -189,68 +169,6 @@ export async function runImessageDeterministicControls(
     return await reply(
       pendingEmailCancelConfirmationMessage("pending", emailControl.count),
     );
-  }
-
-  const applicationStartIntent = resolveApplicationIntakeStartIntent(
-    args.messageText,
-  );
-  if (applicationStartIntent) {
-    if (!args.currentSenderIsLinked) {
-      return await reply(
-        "Only a linked Glass user in this chat can start an application intake.",
-      );
-    }
-    if (args.scopeMode !== "client") {
-      return null;
-    }
-
-    const intake = await ctx.runMutation(
-      internal.applicationIntakes.startFromAgent,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        sourceKind: "imessage",
-        requestText: applicationStartIntent.requestText,
-        title: applicationStartIntent.title,
-        applicationType: applicationStartIntent.applicationType,
-        lineOfBusiness: applicationStartIntent.lineOfBusiness,
-        product: applicationStartIntent.product,
-        threadId: args.threadId,
-        threadMessageId: args.userMessageId,
-        missingQuestions: applicationStartIntent.missingQuestions,
-      },
-    );
-    const output = applicationIntakeOutcome({
-      action: "started",
-      applicationIntakeId: intake?._id,
-      status: intake?.status,
-      title: intake?.title,
-      missingQuestions: intake?.missingQuestions,
-    });
-    const response = renderWorkflowComms(output.workflowOutcome, "imessage");
-    const toolInput = {
-      title: applicationStartIntent.title,
-      applicationType: applicationStartIntent.applicationType,
-      lineOfBusiness: applicationStartIntent.lineOfBusiness,
-      requestText: applicationStartIntent.requestText,
-      missingQuestions: applicationStartIntent.missingQuestions,
-    };
-    return await reply(response, {
-      usedTools: ["start_application_intake"],
-      toolCalls: [
-        {
-          name: "start_application_intake",
-          input: JSON.stringify(toolInput),
-          output: JSON.stringify(output),
-        },
-      ],
-      toolArtifacts: [
-        {
-          type: "application_intake",
-          data: output,
-        },
-      ],
-    });
   }
 
   const taskControlIntent = args.messageText.trim().length < 100

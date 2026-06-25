@@ -11,15 +11,10 @@ function policyLabel(policy: {
   security?: string;
   mga?: string;
   policyNumber?: string;
-  quoteNumber?: string;
   insuredName?: string;
-  documentType?: string;
 }) {
   const carrier = policy.mga || policy.carrier || policy.security || "Unknown carrier";
-  const number =
-    policy.documentType === "quote"
-      ? policy.quoteNumber || policy.policyNumber
-      : policy.policyNumber;
+  const number = policy.policyNumber;
   return [carrier, number ? `#${number}` : undefined].filter(Boolean).join(" ");
 }
 
@@ -29,7 +24,6 @@ export const list = query({
     if (!args.orgId) {
       return {
         policies: [],
-        quotes: [],
         requirements: [],
         mailboxes: [],
       };
@@ -39,7 +33,6 @@ export const list = query({
     if (!access) {
       return {
         policies: [],
-        quotes: [],
         requirements: [],
         mailboxes: [],
       };
@@ -83,7 +76,6 @@ export const list = query({
 
     return {
       policies: activeDocuments
-        .filter((policy) => policy.documentType !== "quote")
         .map((policy) => ({
           kind: "policy" as const,
           id: policy._id,
@@ -91,14 +83,6 @@ export const list = query({
           sublabel: [policy.insuredName, policy.policyTypes?.join(", ")]
             .filter(Boolean)
             .join(" · "),
-        })),
-      quotes: activeDocuments
-        .filter((policy) => policy.documentType === "quote")
-        .map((quote) => ({
-          kind: "quote" as const,
-          id: quote._id,
-          label: policyLabel(quote),
-          sublabel: [quote.insuredName, quote.premium].filter(Boolean).join(" · "),
         })),
       requirements: requirements.map((requirement) => {
         const semantics = requirementSemantics(requirement);

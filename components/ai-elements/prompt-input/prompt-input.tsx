@@ -35,7 +35,7 @@ export interface PromptInputMessage {
   text: string;
   files: FileUIPart[];
   references?: Array<{
-    kind: "policy" | "quote" | "requirement" | "mailbox";
+    kind: "policy" | "requirement" | "mailbox";
     id: string;
     label: string;
   }>;

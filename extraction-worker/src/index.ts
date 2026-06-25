@@ -417,10 +417,9 @@ function enrichProviderOptions(
   };
 }
 
-function readSourceKind(value: unknown): "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note" {
+function readSourceKind(value: unknown): "policy_pdf" | "email" | "attachment" | "manual_note" {
   if (
     value === "policy_pdf"
-    || value === "application_pdf"
     || value === "email"
     || value === "attachment"
     || value === "manual_note"
@@ -1678,13 +1677,9 @@ const PREVIEW_TOP_LEVEL_FIELDS = [
   "mga",
   "broker",
   "policyNumber",
-  "quoteNumber",
   "policyTypes",
   "effectiveDate",
   "expirationDate",
-  "proposedEffectiveDate",
-  "proposedExpirationDate",
-  "quoteExpirationDate",
   "insuredName",
   "premium",
   "totalCost",
@@ -1727,14 +1722,13 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
   type: "object",
   additionalProperties: false,
   properties: {
-    documentType: { type: ["string", "null"], enum: ["policy", "quote", null] },
+    documentType: { type: ["string", "null"], enum: ["policy", null] },
     carrier: { type: ["string", "null"] },
     security: { type: ["string", "null"] },
     underwriter: { type: ["string", "null"] },
     mga: { type: ["string", "null"] },
     broker: { type: ["string", "null"] },
     policyNumber: { type: ["string", "null"] },
-    quoteNumber: { type: ["string", "null"] },
     policyTypes: {
       type: "array",
       items: { type: "string" },
@@ -1742,9 +1736,6 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
     },
     effectiveDate: { type: ["string", "null"] },
     expirationDate: { type: ["string", "null"] },
-    proposedEffectiveDate: { type: ["string", "null"] },
-    proposedExpirationDate: { type: ["string", "null"] },
-    quoteExpirationDate: { type: ["string", "null"] },
     insuredName: { type: ["string", "null"] },
     premium: { type: ["string", "null"] },
     totalCost: { type: ["string", "null"] },
@@ -1831,10 +1822,7 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
     ? value as Record<string, unknown>
     : {};
   const fields: Record<string, unknown> = {};
-  const documentType = input.documentType === "quote" || input.documentType === "policy"
-    ? input.documentType
-    : undefined;
-  if (documentType) fields.documentType = documentType;
+  if (input.documentType === "policy") fields.documentType = "policy";
   for (const key of [
     "carrier",
     "security",
@@ -1842,12 +1830,8 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
     "mga",
     "broker",
     "policyNumber",
-    "quoteNumber",
     "effectiveDate",
     "expirationDate",
-    "proposedEffectiveDate",
-    "proposedExpirationDate",
-    "quoteExpirationDate",
     "insuredName",
     "premium",
     "totalCost",
@@ -1933,7 +1917,7 @@ async function extractPreviewFields(job: ClaimedPreviewJob, sourceText: string) 
     maxOutputTokensForRoute(4096, route),
     8192,
   );
-  const system = `You extract a fast provisional first read from insurance policy or quote text.
+  const system = `You extract a fast provisional first read from already-bound insurance policy text.
 Return only fields that are explicitly present or strongly implied by the document text.
 Leave unknown fields null or empty. Do not invent carriers, dates, limits, policy numbers, insured names, or coverages.
 This output is provisional and will be overwritten by a later source-backed extraction.`;

@@ -28,9 +28,8 @@ export function PolicyDetailsTab({
     isRenewal?: boolean;
   };
   fileUrl?: string | null;
-}) {
+  }) {
   const policyTypes = (policy.policyTypes as string[] | undefined) ?? ["other"];
-  const documentType = (policy.documentType as string | undefined) ?? "policy";
   const coverageBreakdown = buildCoverageBreakdown(policy);
   const isProvisional =
     policy.extractionDataStage === "preview" &&
@@ -71,7 +70,6 @@ export function PolicyDetailsTab({
         policyTypes={policyTypes}
         policyTermType={policy.policyTermType as string | undefined}
         isRenewal={policy.isRenewal}
-        documentType={documentType}
         pdfUrl={fileUrl ?? undefined}
       />
       <CoverageBreakdownCards breakdown={coverageBreakdown} />

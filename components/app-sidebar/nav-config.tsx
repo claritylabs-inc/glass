@@ -6,7 +6,6 @@ import {
   Building2,
   ClipboardCheck,
   FileText,
-  FileCheck2,
   FileStack,
   Send,
   ShieldCheck,
@@ -74,12 +73,6 @@ export const INSURANCE_ITEMS: NavItemConfig[] = [
     shortcut: navShortcut("p"),
   },
   {
-    href: "/applications",
-    label: "Applications",
-    icon: FileCheck2,
-    shortcut: navShortcut("i"),
-  },
-  {
     href: "/certificates",
     label: "Certificates",
     icon: BadgeCheck,
@@ -123,12 +116,6 @@ export const BROKER_NAV_ITEMS: NavItemConfig[] = [
     label: "Clients",
     icon: Users,
     shortcut: navShortcut("c"),
-  },
-  {
-    href: "/applications",
-    label: "Applications",
-    icon: FileCheck2,
-    shortcut: navShortcut("i"),
   },
   {
     href: "/activity",
@@ -180,7 +167,6 @@ export const PARTNER_NAV_ITEMS: NavItemConfig[] = [
 export const CLIENT_DETAIL_NAV: NavItemConfig[] = [
   { href: "", label: "Details", icon: User },
   { href: "/policies", label: "Policies", icon: FileText },
-  { href: "/applications", label: "Applications", icon: FileCheck2 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

@@ -346,7 +346,6 @@ export const sendMessage = mutation({
       )
     ),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     referencedRequirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     referencedMailboxIds: v.optional(v.array(v.id("connectedEmailAccounts"))),
     skipAgentResponse: v.optional(v.boolean()),
@@ -403,7 +402,6 @@ export const sendMessage = mutation({
       content: args.content,
       attachments: args.attachments,
       referencedPolicyIds: args.referencedPolicyIds,
-      referencedQuoteIds: args.referencedQuoteIds,
       referencedRequirementIds: args.referencedRequirementIds,
       referencedMailboxIds: args.referencedMailboxIds,
     });
@@ -527,7 +525,6 @@ export const updateAgentResponse = mutation({
     messageId: v.id("threadMessages"),
     content: v.string(),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
   },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAccess(ctx);
@@ -537,7 +534,6 @@ export const updateAgentResponse = mutation({
       content: args.content,
       status: undefined,
       referencedPolicyIds: args.referencedPolicyIds,
-      referencedQuoteIds: args.referencedQuoteIds,
     });
     await ctx.db.patch(msg.threadId, { lastMessageAt: dayjs().valueOf() });
   },
@@ -718,7 +714,6 @@ export const updateAgentMessage = internalMutation({
     id: v.id("threadMessages"),
     content: v.string(),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     citedSections: v.optional(v.array(v.string())),
     citedCoverageNames: v.optional(v.array(v.string())),
     citedSourceSpanIds: v.optional(v.array(v.string())),
@@ -755,7 +750,6 @@ export const updateAgentMessage = internalMutation({
       content: args.content,
       status: args.status ?? undefined,
       referencedPolicyIds: args.referencedPolicyIds,
-      referencedQuoteIds: args.referencedQuoteIds,
       citedSections: args.citedSections,
       citedCoverageNames: args.citedCoverageNames,
       citedSourceSpanIds: args.citedSourceSpanIds,
@@ -1452,7 +1446,6 @@ export const insertEmailMessage = internalMutation({
       data: v.any(),
     }))),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     resendEmailId: v.optional(v.string()),
     status: v.optional(v.union(
       v.literal("processing"),
@@ -1485,7 +1478,6 @@ export const insertEmailMessage = internalMutation({
       attachments: args.attachments,
       toolArtifacts: args.toolArtifacts,
       referencedPolicyIds: args.referencedPolicyIds,
-      referencedQuoteIds: args.referencedQuoteIds,
       status: args.status,
       error: args.error,
       pendingEmailId: args.pendingEmailId,
@@ -1517,7 +1509,6 @@ export const updateEmailMessage = internalMutation({
       fileId: v.optional(v.id("_storage")),
     }))),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     status: v.optional(v.union(v.literal("draft_email"), v.literal("cancelled"))),

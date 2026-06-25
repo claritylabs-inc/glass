@@ -7,7 +7,6 @@ import { getClientPortalUrl } from "./domains";
 
 type PolicyLike = {
   _id: Id<"policies">;
-  documentType?: "policy" | "quote";
   carrier?: string;
   security?: string;
   mga?: string;
@@ -33,7 +32,7 @@ function escapeHtml(value: string): string {
 
 function sourceFromPolicy(policy: PolicyLike, siteUrl: string): EmailPolicySource {
   const href = `${siteUrl.replace(/\/$/, "")}/policies/${policy._id}`;
-  const label = policy.documentType === "quote" ? "Quote" : "Policy";
+  const label = "Policy";
   const administrator = policy.mga || policy.security || policy.carrier || "Unknown";
   const type = policy.policyTypes?.[0];
   const detail = [administrator, policy.policyNumber, type].filter(Boolean).join(" - ");

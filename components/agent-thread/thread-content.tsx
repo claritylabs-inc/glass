@@ -38,7 +38,6 @@ import {
 } from "@/lib/sync/glass-cached-queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ActionSurfaceLink } from "@/components/ui/action-surface";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   splitQuotedReply,
@@ -104,7 +103,6 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   lookup_policy: "Searched policies",
   lookup_policy_section: "Read policy sections",
   compare_coverages: "Compared coverages",
-  check_application_status: "Checked application",
   save_note: "Saved note",
   generate_coi: "Generated COI",
   attach_policy_document: "Attached policy PDF",
@@ -166,9 +164,6 @@ function targetLabel(
   if (kind === "policy") {
     return targets.policies.find((target) => target.id === id)?.label;
   }
-  if (kind === "quote") {
-    return targets.quotes.find((target) => target.id === id)?.label;
-  }
   if (kind === "requirement") {
     return targets.requirements.find((target) => target.id === id)?.label;
   }
@@ -183,9 +178,6 @@ function threadContextReferenceLabel(
   if (!context?.entityId || context.entityId !== id) return undefined;
   if (kind === "policy" && context.pageType === "policy") {
     return context.summary ?? "Current policy";
-  }
-  if (kind === "quote" && context.pageType === "quote") {
-    return context.summary ?? "Current quote";
   }
   if (kind === "requirement" && context.pageType === "requirement") {
     return context.summary ?? "Current requirement";
@@ -214,7 +206,6 @@ function messagePromptReferences(
   };
 
   add("policy", message.referencedPolicyIds);
-  add("quote", message.referencedQuoteIds);
   add("requirement", message.referencedRequirementIds);
   add("mailbox", message.referencedMailboxIds);
 
@@ -1939,29 +1930,6 @@ export function ThreadContextLink({
   // Policy: delegate to the unified PolicyReferenceCard (opens preview side panel).
   if (context.pageType === "policy") {
     return <PolicyReferenceCard id={context.entityId} />;
-  }
-
-  // Quote fallback: no openPreview path today, keep the link-style card.
-  if (context.pageType === "quote" && context.summary) {
-    const href = `/policies/${context.entityId}`;
-    return (
-      <ActionSurfaceLink
-        href={href}
-        className="inline-flex items-center gap-2 px-3 py-2 hover:border-foreground/10 max-w-sm"
-      >
-        <div className="w-6 h-6 rounded-md bg-foreground/[0.04] flex items-center justify-center shrink-0">
-          <ClipboardList className="w-3.5 h-3.5 text-muted-foreground/50" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-label text-muted-foreground/40 font-medium leading-none mb-0.5">
-            Quote
-          </p>
-          <p className="text-label text-foreground truncate">
-            {context.summary}
-          </p>
-        </div>
-      </ActionSurfaceLink>
-    );
   }
 
   return null;

@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 
 export type PromptReferenceTagKind =
   | "policy"
-  | "quote"
   | "requirement"
   | "mailbox";
 

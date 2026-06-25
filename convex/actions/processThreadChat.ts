@@ -157,7 +157,6 @@ type DraftEmailForBatchRevision = {
     fileId: Id<"_storage">;
   }>;
   referencedPolicyIds?: Id<"policies">[];
-  referencedQuoteIds?: Id<"policies">[];
   threadMessageId?: Id<"threadMessages">;
 };
 
@@ -743,9 +742,6 @@ export const run = internalAction({
       const selectedPolicyIds = new Set<string>(
         (userMsgForGuard?.referencedPolicyIds as string[] | undefined) ?? [],
       );
-      const selectedQuoteIds = new Set<string>(
-        (userMsgForGuard?.referencedQuoteIds as string[] | undefined) ?? [],
-      );
       const selectedRequirementIds = new Set<string>(
         (userMsgForGuard?.referencedRequirementIds as string[] | undefined) ??
           [],
@@ -823,10 +819,7 @@ export const run = internalAction({
               siteUrl,
             });
 
-      const policiesByOrg = new Map<
-        string,
-        { policies: any[]; quotes: any[] }
-      >();
+      const policiesByOrg = new Map<string, any[]>();
       const documentContextOrgIds = documentContextOrgIdsForScope(scope);
       await Promise.all(
         documentContextOrgIds.map(async (readOrgId) => {
@@ -837,14 +830,10 @@ export const run = internalAction({
               limit: documentContextPolicyLimitForOrg(scope, readOrgId),
             },
           );
-          policiesByOrg.set(String(readOrgId), {
-            policies: (docs as any[]).filter(
-              (policy) => policy.documentType !== "quote",
-            ),
-            quotes: (docs as any[]).filter(
-              (policy) => policy.documentType === "quote",
-            ),
-          });
+          policiesByOrg.set(
+            String(readOrgId),
+            docs as any[],
+          );
         }),
       );
 
@@ -859,34 +848,21 @@ export const run = internalAction({
         .filter((m: Record<string, unknown>) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
-      const primaryDocs = policiesByOrg.get(String(args.orgId)) ?? {
-        policies: [],
-        quotes: [],
-      };
+      const primaryDocs = policiesByOrg.get(String(args.orgId)) ?? [];
       const focusedPolicyDocs =
         selectedPolicyIds.size > 0
           ? Array.from(policiesByOrg.values())
-              .flatMap((entry) => entry.policies)
+              .flat()
               .filter((policy) => selectedPolicyIds.has(String(policy._id)))
-          : primaryDocs.policies;
-      const focusedQuoteDocs =
-        selectedQuoteIds.size > 0
-          ? Array.from(policiesByOrg.values())
-              .flatMap((entry) => entry.quotes)
-              .filter((quote) => selectedQuoteIds.has(String(quote._id)))
-          : primaryDocs.quotes;
-      if (selectedPolicyIds.size > 0 || selectedQuoteIds.size > 0) {
-        policiesByOrg.set(String(args.orgId), {
-          policies: focusedPolicyDocs,
-          quotes: focusedQuoteDocs,
-        });
+          : primaryDocs;
+      if (selectedPolicyIds.size > 0) {
+        policiesByOrg.set(String(args.orgId), focusedPolicyDocs);
       }
 
       // Build document context (isolated per org in broker portfolio mode)
       const {
         context: docContext,
         relevantPolicyIds,
-        relevantQuoteIds,
       } = await buildScopedDocumentContext(
         ctx,
         scope,
@@ -941,7 +917,6 @@ export const run = internalAction({
           : [];
       const selectedSteeringBlock =
         selectedPolicyIds.size > 0 ||
-        selectedQuoteIds.size > 0 ||
         selectedRequirements.length > 0 ||
         selectedMailboxes.length > 0
           ? `\n\nUSER-SELECTED CONTEXT TARGETS:\n${[
@@ -950,14 +925,6 @@ export const run = internalAction({
                     .map(
                       (policy: any) =>
                         `- ${policy.carrier || policy.security || "Unknown carrier"} #${policy.policyNumber} (ID:${policy._id})`,
-                    )
-                    .join("\n")}`
-                : "",
-              focusedQuoteDocs.length
-                ? `Quotes:\n${focusedQuoteDocs
-                    .map(
-                      (quote: any) =>
-                        `- ${quote.carrier || quote.security || "Unknown carrier"} #${quote.quoteNumber || quote.policyNumber} (ID:${quote._id})`,
                     )
                     .join("\n")}`
                 : "",
@@ -1209,9 +1176,8 @@ export const run = internalAction({
             subject: draft.subject,
             emailBody: body,
             attachments:
-              attachments && attachments.length > 0 ? attachments : undefined,
+            attachments && attachments.length > 0 ? attachments : undefined,
             referencedPolicyIds: draft.referencedPolicyIds,
-            referencedQuoteIds: draft.referencedQuoteIds,
             chatMessageId: agentMsgId,
           });
 
@@ -1226,7 +1192,6 @@ export const run = internalAction({
               attachments:
                 attachments && attachments.length > 0 ? attachments : undefined,
               referencedPolicyIds: draft.referencedPolicyIds,
-              referencedQuoteIds: draft.referencedQuoteIds,
               pendingEmailId: draft._id,
               status: "draft_email",
             });
@@ -1466,7 +1431,6 @@ export const run = internalAction({
                 allowedRecipients,
                 availableAttachments,
                 referencedPolicyIds: relevantPolicyIds as Id<"policies">[],
-                referencedQuoteIds: relevantQuoteIds as Id<"policies">[],
                 autoSendEmails: brokerDirectedEmailRequest
                   ? false
                   : org.autoSendEmails === true,
@@ -1515,10 +1479,6 @@ export const run = internalAction({
         save_note: "Saving note...",
         confirm_policy_fact: "Confirming policy facts...",
         generate_coi: "Generating COI...",
-        start_application_intake: "Starting application intake...",
-        answer_application_questions: "Saving application answers...",
-        check_application_status: "Checking application status...",
-        prepare_application_packet: "Preparing application review...",
         create_policy_change_request: "Capturing broker follow-up...",
         add_policy_change_info: "Updating broker follow-up...",
         check_policy_change_status: "Checking broker follow-up...",
@@ -1819,20 +1779,12 @@ export const run = internalAction({
         ...selectedPolicyIds,
         ...citedPolicyIds,
       ]);
-      const finalReferencedQuoteIds = new Set<string>([
-        ...selectedQuoteIds,
-        ...relevantQuoteIds.filter((qid: string) => citedPolicyIds.has(qid)),
-      ]);
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
         content,
         referencedPolicyIds:
           finalReferencedPolicyIds.size > 0
             ? ([...finalReferencedPolicyIds] as Id<"policies">[])
-            : undefined,
-        referencedQuoteIds:
-          finalReferencedQuoteIds.size > 0
-            ? ([...finalReferencedQuoteIds] as Id<"policies">[])
             : undefined,
         citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
         citedCoverageNames:

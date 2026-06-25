@@ -113,16 +113,6 @@ export class GlassClient {
     return this.get("/mcp/certificates/review-jobs/list", filters);
   }
 
-  // ── Quotes ──
-
-  async listQuotes(filters?: { carrier?: string; year?: string }) {
-    return this.get("/mcp/quotes/list", filters);
-  }
-
-  async getQuote(id: string) {
-    return this.get("/mcp/quotes/get", { id });
-  }
-
   // ── Threads ──
 
   async listThreads() {

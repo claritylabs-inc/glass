@@ -166,11 +166,7 @@ export const INSURANCE_KEYWORDS = [
   "loss run",
   "loss history",
   "acord",
-  "quote proposal",
   "insurance proposal",
-  "insurance quote",
-  "indication",
-  "submission",
   "policy renewal",
   "insurance renewal",
   "policy expir",
@@ -246,27 +242,6 @@ export const POLICY_SECTION_TYPE_COLORS: Record<string, string> = {
   warranty: "bg-pink-50 dark:bg-pink-950/40 text-pink-600 dark:text-pink-400",
   notice: "bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400",
   regulatory: "bg-yellow-50 dark:bg-yellow-950/40 text-yellow-700 dark:text-yellow-400",
-  other: "bg-gray-50 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400",
-};
-
-// Quote section type labels and colors
-export const QUOTE_SECTION_TYPE_LABELS: Record<string, string> = {
-  terms_summary: "Terms Summary",
-  premium_indication: "Premium Indication",
-  underwriting_condition: "Underwriting Condition",
-  subjectivity: "Subjectivity",
-  coverage_summary: "Coverage Summary",
-  exclusion: "Exclusion",
-  other: "Other",
-};
-
-export const QUOTE_SECTION_TYPE_COLORS: Record<string, string> = {
-  terms_summary: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400",
-  premium_indication: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400",
-  underwriting_condition: "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400",
-  subjectivity: "bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400",
-  coverage_summary: "bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400",
-  exclusion: "bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400",
   other: "bg-gray-50 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400",
 };
 

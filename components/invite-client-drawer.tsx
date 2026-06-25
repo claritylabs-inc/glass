@@ -637,7 +637,6 @@ export function InviteClientDrawer({
             <PolicyUploadModeToggle
               value={policyUploadMode}
               onChange={setPolicyUploadMode}
-              docType="policy"
               disabled={busy}
               className="mt-2"
             />

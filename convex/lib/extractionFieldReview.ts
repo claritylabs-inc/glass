@@ -76,16 +76,12 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
       "mga",
       "brokerAgency",
       "policyNumber",
-      "quoteNumber",
       "insuredName",
       "effectiveDate",
       "expirationDate",
-      "proposedEffectiveDate",
-      "proposedExpirationDate",
     ],
     keywords: [
       "policy number",
-      "quote number",
       "named insured",
       "insured",
       "carrier",
@@ -98,7 +94,7 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
       "period",
     ],
     instructions:
-      "Verify carrier/security, MGA, broker, policy or quote number, named insured, and policy period fields. Prefer declaration pages and schedule summaries over policy wording. For named insured, use rows explicitly labeled named insured/insured/applicant and do not use authorized officer contacts, notice contacts, broker/producer names, signatures, incorporation/licensing statements, or corporate-authority wording as the insured.",
+      "Verify carrier/security, MGA, broker, policy number, named insured, and policy period fields. Prefer declaration pages and schedule summaries over policy wording. For named insured, use rows explicitly labeled named insured/insured/applicant and do not use authorized officer contacts, notice contacts, broker/producer names, signatures, incorporation/licensing statements, or corporate-authority wording as the insured.",
   },
   {
     id: "financial_terms",

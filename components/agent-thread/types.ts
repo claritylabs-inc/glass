@@ -45,7 +45,6 @@ export type ThreadMessage = {
   citedSections?: string[];
   citedCoverageNames?: string[];
   citedSourceSpanIds?: string[];
-  referencedQuoteIds?: Id<"policies">[];
   referencedRequirementIds?: Id<"insuranceRequirements">[];
   referencedMailboxIds?: Id<"connectedEmailAccounts">[];
   usedTools?: string[];

@@ -4,7 +4,7 @@
  * Query agent — cl-sdk
  *
  * Wraps createQueryAgent with Glass's model routing and Convex storage.
- * Provides citation-backed Q&A over policy/quote documents.
+ * Provides citation-backed Q&A over bound policy documents.
  */
 
 import { createQueryAgent } from "@claritylabs/cl-sdk";

@@ -19,7 +19,7 @@ Rules:
 - Use starting page context to disambiguate generic requests like "send this", "summarize this", or "what about exclusions?"
 - Never include raw email addresses, email domains, usernames, file IDs, generated IDs, or local-part fragments.
 - If the user asks to send, draft, or email a certificate of insurance / COI, title it "COI Email" or "Send COI" unless another deliverable is more specific.
-- Good examples: "COI Email", "Send COI", "GL Coverage Limits", "Cyber Liability Quotes", "Workers Comp Application", "Renewal Timeline".`;
+- Good examples: "COI Email", "Send COI", "GL Coverage Limits", "Cyber Liability Policy", "Endorsement Follow Up", "Renewal Timeline".`;
 
 type TitleContext = {
   userMessage: string;

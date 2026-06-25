@@ -2,9 +2,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  applicationIntakeOutcome,
-} from "../convex/lib/workflows/applicationIntake";
-import {
   brokerFollowUpOutcome,
 } from "../convex/lib/workflows/brokerFollowUp";
 import {
@@ -75,37 +72,6 @@ describe("workflow orchestration contract", () => {
     expect(outcome.sideEffects).toEqual([
       expect.objectContaining({ kind: "existing_file_returned" }),
     ]);
-  });
-
-  it("keeps application packets broker-ready without claiming carrier submission", () => {
-    const result = applicationIntakeOutcome({
-      action: "packet_prepared",
-      applicationIntakeId: "intake-1",
-      packetId: "packet-1",
-      status: "broker_ready",
-    });
-
-    expect(result.workflowOutcome.status).toBe("completed");
-    expect(result.message).toContain("broker review");
-    expect(result.message).not.toMatch(/submitted to carrier/i);
-    expect(result.workflowOutcome.forbiddenClaims).toContain("carrier_submitted");
-  });
-
-  it("keeps incomplete application packets in the input-needed path", () => {
-    const result = applicationIntakeOutcome({
-      action: "packet_prepared",
-      applicationIntakeId: "intake-1",
-      packetId: "packet-1",
-      status: "needs_broker_review",
-      missingFieldIds: ["payroll"],
-    });
-
-    expect(result.workflowOutcome.status).toBe("needs_input");
-    expect(result.workflowOutcome.nextAction).toBe("ask_application_questions");
-    expect(result.workflowOutcome.requiredSlots).toEqual([
-      expect.objectContaining({ key: "payroll" }),
-    ]);
-    expect(result.message).toContain("required information is still missing");
   });
 
   it("captures broker follow-ups before blocking on missing recipient", () => {
