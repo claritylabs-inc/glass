@@ -28,7 +28,6 @@ export type ModelLogoRoute = {
 const FIREWORKS_MODEL_LOGO_URLS = {
   deepseek: "https://app.fireworks.ai/images/logos/deepseek-icon.svg",
   minimax: "https://app.fireworks.ai/images/logos/minimax-icon.svg",
-  moonshot: "https://app.fireworks.ai/images/logos/moonshot-icon.svg",
   nomic: "https://app.fireworks.ai/images/logos/nomic.svg",
   openai: "https://app.fireworks.ai/images/logos/openai-icon.svg",
   qwen: "https://app.fireworks.ai/images/logos/qwen-icon.svg",
@@ -144,12 +143,11 @@ const TEXT_MARKS: Partial<Record<ModelProviderId, string>> = {
 };
 
 const KNOWN_MODEL_LABELS: Record<string, string> = {
+  "accounts/fireworks/models/deepseek-v4-flash": "DeepSeek V4 Flash",
   "accounts/fireworks/models/glm-5p2": "GLM 5.2",
   "accounts/fireworks/models/gpt-oss-safeguard-20b":
     "GPT-OSS Safeguard 20B",
-  "accounts/fireworks/models/kimi-k2p6": "Kimi K2.6",
   "accounts/fireworks/models/qwen3-embedding-8b": "Qwen3 Embedding 8B",
-  "accounts/fireworks/routers/kimi-k2p6-fast": "Kimi K2.6 Fast",
   "nomic-ai/nomic-embed-text-v1.5": "Nomic Embed Text v1.5",
 };
 
@@ -158,7 +156,6 @@ function fireworksModelLogoUrl(model: string) {
   if (normalized.includes("deepseek")) return FIREWORKS_MODEL_LOGO_URLS.deepseek;
   if (normalized.includes("glm")) return FIREWORKS_MODEL_LOGO_URLS.z;
   if (normalized.includes("gpt-oss")) return FIREWORKS_MODEL_LOGO_URLS.openai;
-  if (normalized.includes("kimi")) return FIREWORKS_MODEL_LOGO_URLS.moonshot;
   if (normalized.includes("minimax")) return FIREWORKS_MODEL_LOGO_URLS.minimax;
   if (normalized.includes("nomic")) return FIREWORKS_MODEL_LOGO_URLS.nomic;
   if (normalized.includes("qwen")) return FIREWORKS_MODEL_LOGO_URLS.qwen;

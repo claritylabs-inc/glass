@@ -105,8 +105,8 @@ Core layers:
 
 Default model routing lives in [convex/lib/models.ts](convex/lib/models.ts), with broker-visible catalogs in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
 
-- `chat` → Fireworks `accounts/fireworks/routers/kimi-k2p6-fast` for low-latency interactive tool use
-- `classification`, `triage`, `extraction`, `extraction_preview`, `email_extraction`, `document_extraction` → Fireworks `accounts/fireworks/models/kimi-k2p6` for multimodal source-backed extraction, routing decisions, and cheap structured work
+- `chat` → Fireworks `accounts/fireworks/models/deepseek-v4-flash` for low-latency interactive tool use
+- `classification`, `triage`, `extraction`, `extraction_preview`, `email_extraction`, `document_extraction` → Fireworks `accounts/fireworks/models/deepseek-v4-flash` for cheap structured work and high-volume extraction/classification calls
 - `email_draft`, `email_reply`, `analysis`, `summary`, `mailbox_coordinator`, `application_authoring` → Fireworks `accounts/fireworks/models/glm-5p2` for deliberate text reasoning, writing, and coordination
 - `security` → Fireworks `accounts/fireworks/models/gpt-oss-safeguard-20b`
 - `embeddings` → OpenAI `text-embedding-3-small` at 1536 dimensions until re-embedding and retrieval-shadow validation prove a Fireworks embedding route is safe
@@ -124,15 +124,15 @@ Usage notes:
 - Model catalogs in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts) mirror Vercel AI Gateway `provider/model` slugs. Runtime calls use direct provider SDKs when an explicit broker key or matching server env key exists; otherwise they route through Vercel AI Gateway using `AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN`.
 - SDK-facing extraction passes the org context into the SDK callbacks, so broker-owned provider keys and routes apply to `cl-sdk` model calls. SDK-facing workflows also pass model capability metadata from `MODEL_CAPABILITIES` in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts), so `cl-sdk` can resolve task-aware token budgets for extraction, query, and PCE instead of relying on low static caps.
 - Fireworks structured output uses [convex/lib/fireworksStructuredOutput.ts](convex/lib/fireworksStructuredOutput.ts) and the worker mirror in [extraction-worker/src/fireworksStructuredOutput.ts](extraction-worker/src/fireworksStructuredOutput.ts). The adapter converts Zod schemas to Fireworks-compatible JSON Schema by rewriting `oneOf` to `anyOf` and dropping provider-unsupported length, item-count, pattern, and property-name constraints while preserving local Zod validation on returned objects.
-- Fireworks calls do not send OpenAI-style PDF file parts. Glass passes LiteParse/PDF.js text in prompts. Bounded page screenshots are attached only when the selected Fireworks route supports image input, currently Kimi K2.6 and Kimi K2.6 Fast; GLM 5.2 receives text-only prompts.
+- Fireworks calls do not send OpenAI-style PDF file parts. Glass passes LiteParse/PDF.js text in prompts. Current Fireworks defaults are treated as text-only; bounded page screenshots are held back unless a selected non-Fireworks or future verified multimodal route supports image input.
 
 Fallback behavior:
 
 - If no broker key exists for a route, Glass uses the operator global default when present and otherwise the static `MODEL_ROUTING` default.
 - If a global/static route targets a provider without a server-side provider key, Glass uses Vercel AI Gateway instead of failing on a missing provider key.
 - `getModel()` falls back to Claude Haiku if a provider is unavailable.
-- `generateTextWithFallback()` and `generateStructuredWithFallback()` use task-aware fallback policy. Missing API key errors are not retried, because retrying another model does not fix missing credentials and only adds latency. Low-cost extraction/classification calls do not generically escalate. SDK `taskKind`s that represent validation repair, ambiguous synthesis, unsupported source-evidence resolution, or high-risk packet generation may fall back to the GLM 5.2 reasoning route in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts) when the primary route is not already GLM 5.2.
-- Web chat streaming in [processThreadChat.ts](convex/actions/processThreadChat.ts) stays on the Fireworks Kimi K2.6 Fast route by default and retries transient provider `server_error` / 5xx stream failures once before any visible text, tool call, or side-effectful work has started. If a broker override is active, that retry may use the configured fallback route; otherwise it retries the same Fireworks route.
+- `generateTextWithFallback()` and `generateStructuredWithFallback()` use task-aware fallback policy. Missing API key errors are not retried, because retrying another model does not fix missing credentials and only adds latency. Low-cost extraction/classification calls do not generically escalate. SDK `taskKind`s that represent strict source-tree/profile generation, validation repair, ambiguous synthesis, unsupported source-evidence resolution, or high-risk packet generation use or may fall back to the OpenAI `gpt-5.5` route in [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts).
+- Web chat streaming in [processThreadChat.ts](convex/actions/processThreadChat.ts) stays on the Fireworks DeepSeek V4 Flash route by default and retries transient provider `server_error` / 5xx stream failures once before any visible text, tool call, or side-effectful work has started. If a broker override is active, that retry may use the configured fallback route; otherwise it retries the same Fireworks route.
 
 ## Compliance Requirements
 

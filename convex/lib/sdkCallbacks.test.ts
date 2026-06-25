@@ -87,10 +87,10 @@ describe("sdkCallbacks PDF inputs", () => {
     expect(input.providerOptions.pdfBytes).toBeInstanceOf(Uint8Array);
   });
 
-  test("keeps page image parts for Fireworks Kimi extraction callbacks without raw PDF parts", async () => {
+  test("uses text-only prompt input for Fireworks DeepSeek extraction callbacks", async () => {
     mocks.getModelAndRouteForOrg.mockResolvedValueOnce({
-      model: "kimi",
-      route: { provider: "fireworks", model: "accounts/fireworks/models/kimi-k2p6" },
+      model: "deepseek",
+      route: { provider: "fireworks", model: "accounts/fireworks/models/deepseek-v4-flash" },
     });
     const generateObject = makeGenerateObject("extraction", testRouting());
 
@@ -107,7 +107,7 @@ describe("sdkCallbacks PDF inputs", () => {
     });
 
     const input = generatedInput();
-    expect(hasMessagePart(input, "image")).toBe(true);
+    expect(hasMessagePart(input, "image")).toBe(false);
     expect(hasMessagePart(input, "file")).toBe(false);
     expect(input.providerOptions.pdfBytes).toBeInstanceOf(Uint8Array);
   });

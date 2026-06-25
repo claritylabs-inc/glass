@@ -14,7 +14,7 @@ describe("extraction field review", () => {
     expect(
       fieldReviewRouteForPrimary({
         provider: "fireworks",
-        model: FIREWORKS_MODEL_IDS.kimiK2P6,
+        model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
       }),
     ).toEqual(FALLBACK_MODEL);
   });

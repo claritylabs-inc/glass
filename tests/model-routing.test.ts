@@ -12,12 +12,13 @@ import {
   modelTaskForCall,
   primaryRouteForCall,
 } from "../convex/lib/models";
+import { LANGUAGE_MODEL_CATALOG, isRetiredModelRoute } from "../convex/lib/modelCatalog";
 
 describe("model task routing", () => {
-  test("routes the main web chat assistant to the fast Fireworks tool-calling model", () => {
+  test("routes the main web chat assistant to Fireworks DeepSeek Flash", () => {
     expect(MODEL_ROUTING.chat).toEqual({
       provider: "fireworks",
-      model: FIREWORKS_MODEL_IDS.kimiK2P6Fast,
+      model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
     });
   });
 
@@ -46,14 +47,28 @@ describe("model task routing", () => {
     ] as const) {
       expect(MODEL_ROUTING[task]).toEqual({
         provider: "fireworks",
-        model: FIREWORKS_MODEL_IDS.kimiK2P6,
+        model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
       });
     }
 
     expect(MODEL_ROUTING.chat).toEqual({
       provider: "fireworks",
-      model: FIREWORKS_MODEL_IDS.kimiK2P6Fast,
+      model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
     });
+  });
+
+  test("removes Kimi from active routing and catalog selection", () => {
+    expect(LANGUAGE_MODEL_CATALOG.fireworks).not.toContain(
+      "accounts/fireworks/models/kimi-k2p6",
+    );
+    expect(LANGUAGE_MODEL_CATALOG.fireworks).not.toContain(
+      "accounts/fireworks/routers/kimi-k2p6-fast",
+    );
+    expect(isRetiredModelRoute({
+      provider: "fireworks",
+      model: "accounts/fireworks/models/kimi-k2p6",
+    })).toBe(true);
+    expect(isRetiredModelRoute(MODEL_ROUTING.extraction)).toBe(false);
   });
 
   test("keeps embeddings on the OpenAI-compatible 1536-dimensional route during migration", () => {
@@ -159,7 +174,7 @@ describe("model fallback policy", () => {
         taskKind: "pce_packet_generation",
         primaryRoute: {
           provider: "fireworks",
-          model: FIREWORKS_MODEL_IDS.kimiK2P6,
+          model: FIREWORKS_MODEL_IDS.glm52,
         },
       }),
     ).toEqual(FALLBACK_MODEL);

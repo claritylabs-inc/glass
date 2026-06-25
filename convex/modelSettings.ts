@@ -18,6 +18,7 @@ import {
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   WEB_RETRIEVAL_LABELS,
   WEB_RETRIEVAL_MODEL_CATALOG,
+  isRetiredModelRoute,
   modelCapabilitiesForRoute,
   type ModelProvider,
   type ModelRoute,
@@ -85,6 +86,9 @@ function isModelTask(value: string): value is ModelTask {
 }
 
 function assertSupportedRoute(task: ModelTask, route: ModelRoute) {
+  if (isRetiredModelRoute(route)) {
+    throw new Error(`Retired model ${route.model} is no longer selectable`);
+  }
   const models = task === "embeddings"
     ? EMBEDDING_MODEL_CATALOG[route.provider]
     : LANGUAGE_MODEL_CATALOG[route.provider];
@@ -181,7 +185,12 @@ function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefine
       const route = routes?.[task];
       return [
         task,
-        route && isConfigurableProvider(route.provider) && keys?.[route.provider] ? route : null,
+        route &&
+        !isRetiredModelRoute(route) &&
+        isConfigurableProvider(route.provider) &&
+        keys?.[route.provider]
+          ? route
+          : null,
       ];
     }),
   ) as Record<ModelTask, ModelRoute | null>;
@@ -189,7 +198,10 @@ function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefine
 
 function nullableRoutes(routes: Routes | undefined) {
   return Object.fromEntries(
-    MODEL_TASKS.map((task) => [task, routes?.[task] ?? null]),
+    MODEL_TASKS.map((task) => {
+      const route = routes?.[task];
+      return [task, route && !isRetiredModelRoute(route) ? route : null];
+    }),
   ) as Record<ModelTask, ModelRoute | null>;
 }
 
@@ -506,6 +518,7 @@ export const resolveForOrg = internalQuery({
       if (
         brokerRoute &&
         brokerRoute.provider !== "moonshot" &&
+        !isRetiredModelRoute(brokerRoute) &&
         providerKeys[brokerRoute.provider]
       ) {
         routes[task] = brokerRoute;
@@ -513,7 +526,11 @@ export const resolveForOrg = internalQuery({
         continue;
       }
       const globalRoute = globalSettings?.routes?.[task];
-      if (globalRoute && globalRoute.provider !== "moonshot") {
+      if (
+        globalRoute &&
+        globalRoute.provider !== "moonshot" &&
+        !isRetiredModelRoute(globalRoute)
+      ) {
         routes[task] = globalRoute;
         routeSources[task] = "global";
         continue;
@@ -542,7 +559,11 @@ export const resolvePublicDefaults = internalQuery({
     const routeSources = {} as Record<ModelTask, Extract<RouteSource, "global" | "static">>;
     for (const task of MODEL_TASKS) {
       const globalRoute = globalSettings?.routes?.[task];
-      if (globalRoute && globalRoute.provider !== "moonshot") {
+      if (
+        globalRoute &&
+        globalRoute.provider !== "moonshot" &&
+        !isRetiredModelRoute(globalRoute)
+      ) {
         routes[task] = globalRoute;
         routeSources[task] = "global";
       } else {

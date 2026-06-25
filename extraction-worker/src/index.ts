@@ -441,9 +441,18 @@ function readSourceKind(value: unknown): "policy_pdf" | "application_pdf" | "ema
 }
 
 const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
-  classification: { provider: "fireworks", model: "accounts/fireworks/models/kimi-k2p6" },
-  extraction: { provider: "fireworks", model: "accounts/fireworks/models/kimi-k2p6" },
-  extraction_preview: { provider: "fireworks", model: "accounts/fireworks/models/kimi-k2p6" },
+  classification: {
+    provider: "fireworks",
+    model: "accounts/fireworks/models/deepseek-v4-flash",
+  },
+  extraction: {
+    provider: "fireworks",
+    model: "accounts/fireworks/models/deepseek-v4-flash",
+  },
+  extraction_preview: {
+    provider: "fireworks",
+    model: "accounts/fireworks/models/deepseek-v4-flash",
+  },
 };
 
 const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
@@ -1063,11 +1072,7 @@ function buildPromptInput(
 }
 
 function routeSupportsImageInput(route: WorkerModelRoute): boolean {
-  if (route.provider !== "fireworks") return true;
-  return (
-    route.model === "accounts/fireworks/models/kimi-k2p6" ||
-    route.model === "accounts/fireworks/routers/kimi-k2p6-fast"
-  );
+  return route.provider !== "fireworks";
 }
 
 

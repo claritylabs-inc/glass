@@ -53,13 +53,17 @@ export type ModelCapabilityConfig = {
 };
 
 export const FIREWORKS_MODEL_IDS = {
-  kimiK2P6: "accounts/fireworks/models/kimi-k2p6",
-  kimiK2P6Fast: "accounts/fireworks/routers/kimi-k2p6-fast",
+  deepseekV4Flash: "accounts/fireworks/models/deepseek-v4-flash",
   glm52: "accounts/fireworks/models/glm-5p2",
   gptOssSafeguard20B: "accounts/fireworks/models/gpt-oss-safeguard-20b",
   qwen3Embedding8B: "accounts/fireworks/models/qwen3-embedding-8b",
   nomicEmbedText15: "nomic-ai/nomic-embed-text-v1.5",
 } as const;
+
+const RETIRED_MODEL_IDS = new Set<string>([
+  "accounts/fireworks/models/kimi-k2p6",
+  "accounts/fireworks/routers/kimi-k2p6-fast",
+]);
 
 export const PROVIDER_LABELS: Record<ModelProvider, string> = {
   openai: "OpenAI",
@@ -221,8 +225,7 @@ export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {
   cohere: ["command-a"],
   fireworks: [
     FIREWORKS_MODEL_IDS.glm52,
-    FIREWORKS_MODEL_IDS.kimiK2P6,
-    FIREWORKS_MODEL_IDS.kimiK2P6Fast,
+    FIREWORKS_MODEL_IDS.deepseekV4Flash,
     FIREWORKS_MODEL_IDS.gptOssSafeguard20B,
   ],
   moonshot: [],
@@ -249,20 +252,44 @@ export const EMBEDDING_MODEL_CATALOG: Partial<Record<ModelProvider, string[]>> =
   };
 
 export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
-  chat: { model: FIREWORKS_MODEL_IDS.kimiK2P6Fast, provider: "fireworks" },
+  chat: { model: FIREWORKS_MODEL_IDS.deepseekV4Flash, provider: "fireworks" },
   email_draft: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
   email_reply: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
   analysis: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
   summary: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
-  classification: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
-  extraction: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
-  extraction_preview: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
-  triage: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
-  email_extraction: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
-  document_extraction: { model: FIREWORKS_MODEL_IDS.kimiK2P6, provider: "fireworks" },
-  security: { model: FIREWORKS_MODEL_IDS.gptOssSafeguard20B, provider: "fireworks" },
-  mailbox_coordinator: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
-  application_authoring: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
+  classification: {
+    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    provider: "fireworks",
+  },
+  extraction: {
+    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    provider: "fireworks",
+  },
+  extraction_preview: {
+    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    provider: "fireworks",
+  },
+  triage: { model: FIREWORKS_MODEL_IDS.deepseekV4Flash, provider: "fireworks" },
+  email_extraction: {
+    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    provider: "fireworks",
+  },
+  document_extraction: {
+    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    provider: "fireworks",
+  },
+  security: {
+    model: FIREWORKS_MODEL_IDS.gptOssSafeguard20B,
+    provider: "fireworks",
+  },
+  mailbox_coordinator: {
+    model: FIREWORKS_MODEL_IDS.glm52,
+    provider: "fireworks",
+  },
+  application_authoring: {
+    model: FIREWORKS_MODEL_IDS.glm52,
+    provider: "fireworks",
+  },
   embeddings: { model: "text-embedding-3-small", provider: "openai" },
 };
 
@@ -370,9 +397,9 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     defaultOutputTokens: 4_096,
     longListOutputTokens: 16_384,
   },
-  [FIREWORKS_MODEL_IDS.kimiK2P6]: {
-    modelName: FIREWORKS_MODEL_IDS.kimiK2P6,
-    maxInputTokens: 262_144,
+  [FIREWORKS_MODEL_IDS.deepseekV4Flash]: {
+    modelName: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    maxInputTokens: 1_000_000,
     maxOutputTokens: 32_768,
     defaultOutputTokens: 8_192,
     longListOutputTokens: 24_576,
@@ -388,22 +415,6 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
       application_auto_fill: 8_192,
       application_batch: 8_192,
       application_email: 8_192,
-    },
-  },
-  [FIREWORKS_MODEL_IDS.kimiK2P6Fast]: {
-    modelName: FIREWORKS_MODEL_IDS.kimiK2P6Fast,
-    maxInputTokens: 262_144,
-    maxOutputTokens: 32_768,
-    defaultOutputTokens: 8_192,
-    longListOutputTokens: 24_576,
-    taskOutputTokens: {
-      extraction_classify: 2_048,
-      extraction_preview: 4_096,
-      query_classify: 2_048,
-      query_reason: 8_192,
-      query_verify: 4_096,
-      query_respond: 8_192,
-      application_classify: 2_048,
     },
   },
   [FIREWORKS_MODEL_IDS.glm52]: {
@@ -465,9 +476,11 @@ export function modelCapabilitiesForTask(
 }
 
 export function modelSupportsImageInput(route: ModelRoute): boolean {
-  if (route.provider !== "fireworks") return true;
-  return (
-    route.model === FIREWORKS_MODEL_IDS.kimiK2P6 ||
-    route.model === FIREWORKS_MODEL_IDS.kimiK2P6Fast
-  );
+  return route.provider !== "fireworks";
+}
+
+export function isRetiredModelRoute(
+  route: ModelRoute | null | undefined,
+): boolean {
+  return !!route && RETIRED_MODEL_IDS.has(route.model);
 }
