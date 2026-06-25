@@ -42,7 +42,7 @@ const PROVIDER_BRAND_COLORS: Record<ModelProviderId, string> = {
   xai: "#111111",
   mistral: "#FA520F",
   cohere: "#39594D",
-  fireworks: "oklch(0.404 0.157 285)",
+  fireworks: "rgb(42.8% 13% 96.9%)",
   deepseek: "#4D6BFE",
 };
 
