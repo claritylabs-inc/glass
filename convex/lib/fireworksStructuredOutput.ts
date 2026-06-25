@@ -21,6 +21,10 @@ function isRecord(value: unknown): value is JsonSchemaNode {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function enumContainsNull(value: unknown): boolean {
+  return Array.isArray(value) && value.some((item) => item === null);
+}
+
 function assertNoExternalRefs(schema: unknown, path = "$") {
   if (Array.isArray(schema)) {
     schema.forEach((item, index) => assertNoExternalRefs(item, `${path}[${index}]`));
@@ -43,6 +47,7 @@ export function normalizeJsonSchemaForFireworks(schema: unknown): unknown {
   const normalized: JsonSchemaNode = {};
   for (const [key, value] of Object.entries(schema)) {
     if (FIREWORKS_UNSUPPORTED_SCHEMA_KEYS.has(key)) continue;
+    if (key === "enum" && enumContainsNull(value)) continue;
     if (key === "oneOf") {
       const replacement = normalizeJsonSchemaForFireworks(value);
       normalized.anyOf =
@@ -89,6 +94,9 @@ export function collectFireworksSchemaIssues(schema: unknown, path = "$"): strin
   for (const [key, value] of Object.entries(schema)) {
     if (FIREWORKS_UNSUPPORTED_SCHEMA_KEYS.has(key) || key === "oneOf") {
       issues.push(`${path}.${key}`);
+    }
+    if (key === "enum" && enumContainsNull(value)) {
+      issues.push(`${path}.enum:null`);
     }
     if (key === "$ref" && typeof value === "string" && !value.startsWith("#/")) {
       issues.push(`${path}.$ref:${value}`);

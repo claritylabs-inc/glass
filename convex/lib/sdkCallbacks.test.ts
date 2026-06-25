@@ -16,11 +16,14 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./models", () => ({
   getModel: vi.fn(() => "model"),
   getModelAndRouteForOrg: mocks.getModelAndRouteForOrg,
+  getModelForRoute: vi.fn(() => "route-model"),
+  getProviderOptionsForRoute: vi.fn(() => ({})),
   getProviderOptionsForTask: vi.fn(() => ({})),
   generateStructuredWithFallback: mocks.generateStructuredWithFallback,
   generateTextWithFallback: vi.fn(async () => ({ text: "ok", usage: { inputTokens: 1, outputTokens: 1 } })),
   mergeProviderOptions: vi.fn((a, b) => ({ ...(a ?? {}), ...(b ?? {}) })),
   modelTaskForCall: vi.fn((task) => task),
+  primaryRouteForCall: vi.fn(() => null),
 }));
 
 vi.mock("ai", async (importOriginal) => {

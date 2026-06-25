@@ -1,5 +1,10 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import { describe, expect, it } from "vitest";
 import { stripUngroundedSourceSensitiveValues } from "../convex/lib/extractionPostProcess";
+
+const root = process.cwd();
+const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("extraction source grounding", () => {
   it("drops hallucinated administrator identity fields that are absent from source spans", () => {
@@ -181,5 +186,25 @@ describe("extraction source grounding", () => {
     expect(result.removed).toEqual([
       { field: "additionalNamedInsureds[1]", value: "source span does not support value" },
     ]);
+  });
+
+  it("allows structured party objects to persist source provenance", () => {
+    for (const path of ["convex/schema.ts", "convex/policies.ts"]) {
+      const source = read(path);
+      const insurerBlock = source.slice(
+        source.indexOf("insurer: v.optional"),
+        source.indexOf("producer: v.optional"),
+      );
+      const producerBlock = source.slice(
+        source.indexOf("producer: v.optional"),
+        source.indexOf("lossPayees: v.optional"),
+      );
+
+      for (const block of [insurerBlock, producerBlock]) {
+        expect(block).toContain("documentNodeId");
+        expect(block).toContain("sourceSpanIds");
+        expect(block).toContain("sourceTextHash");
+      }
+    }
   });
 });

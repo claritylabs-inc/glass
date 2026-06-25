@@ -19,7 +19,7 @@ describe("policy preview extraction", () => {
     expect(schema).toContain("extraction_preview: v.optional(modelRouteValidator)");
   });
 
-  it("routes preview extraction through the low-cost model path without fallback escalation", () => {
+  it("routes preview extraction through the worker preview path with fallback support", () => {
     const worker = read("extraction-worker/src/index.ts");
     const modelCatalog = read("convex/lib/modelCatalog.ts");
 
@@ -29,7 +29,7 @@ describe("policy preview extraction", () => {
     expect(worker).toContain('type ModelTask = "extraction" | "extraction_preview" | "classification"');
     expect(worker).toContain("POLICY_PREVIEW_VERSION");
     expect(worker).toContain("claimExternalPreviewJob");
-    expect(worker).toContain('if (task === "extraction_preview") return null');
+    expect(worker).toContain('resolveFallbackModel(route.task, "extraction_preview", route.route)');
   });
 
   it("keeps the preview structured-output schema strict and nullable", () => {

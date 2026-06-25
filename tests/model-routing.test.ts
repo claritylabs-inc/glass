@@ -10,6 +10,7 @@ import {
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   fallbackRouteForCall,
   modelTaskForCall,
+  primaryRouteForCall,
 } from "../convex/lib/models";
 
 describe("model task routing", () => {
@@ -140,6 +141,12 @@ describe("model fallback policy", () => {
   });
 
   test("allows intentional quality escalation for task kinds that warrant it", () => {
+    expect(
+      fallbackRouteForCall({ task: "extraction", taskKind: "extraction_source_tree" }),
+    ).toEqual(FALLBACK_MODEL);
+    expect(
+      fallbackRouteForCall({ task: "extraction", taskKind: "extraction_operational_profile" }),
+    ).toEqual(FALLBACK_MODEL);
     expect(fallbackRouteForCall({ task: "extraction", taskKind: "extraction_review" })).toEqual(
       FALLBACK_MODEL,
     );
@@ -156,6 +163,37 @@ describe("model fallback policy", () => {
         },
       }),
     ).toEqual(FALLBACK_MODEL);
+  });
+
+  test("starts source-tree and operational-profile extraction on the quality route", () => {
+    expect(
+      primaryRouteForCall({
+        task: "extraction",
+        taskKind: "extraction_source_tree",
+        primaryRoute: MODEL_ROUTING.extraction,
+      }),
+    ).toEqual(FALLBACK_MODEL);
+    expect(
+      primaryRouteForCall({
+        task: "extraction",
+        taskKind: "extraction_operational_profile",
+        primaryRoute: MODEL_ROUTING.extraction,
+      }),
+    ).toEqual(FALLBACK_MODEL);
+    expect(
+      primaryRouteForCall({
+        task: "extraction",
+        taskKind: "extraction_focused",
+        primaryRoute: MODEL_ROUTING.extraction,
+      }),
+    ).toBeNull();
+    expect(
+      primaryRouteForCall({
+        task: "extraction",
+        taskKind: "extraction_source_tree",
+        primaryRoute: FALLBACK_MODEL,
+      }),
+    ).toBeNull();
   });
 
   test("does not retry when the selected route is already the fallback route", () => {

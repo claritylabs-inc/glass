@@ -9,7 +9,7 @@
 
 import dayjs from "dayjs";
 import { Output, embed, embedMany, gateway } from "ai";
-import type { EmbeddingModel, LanguageModelUsage } from "ai";
+import type { EmbeddingModel, LanguageModel, LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -17,12 +17,15 @@ import { createFireworks } from "@ai-sdk/fireworks";
 import {
   getModel,
   getModelAndRouteForOrg,
+  getModelForRoute,
+  getProviderOptionsForRoute,
   getProviderOptionsForTask,
   generateStructuredWithFallback,
   generateTextWithFallback,
   mergeProviderOptions,
   modelTaskForCall,
   MODEL_ROUTING,
+  primaryRouteForCall,
   type ModelCallTaskKind,
   type ModelProvider,
   type ModelRoute,
@@ -455,7 +458,7 @@ export function makeGenerateText(
     let primaryRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let transport: string | undefined;
-    const model = routing?.ctx && routing.orgId
+    let model: LanguageModel = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
         routeSource = resolved.routeSource;
@@ -467,6 +470,13 @@ export function makeGenerateText(
         routeSource = "static";
         return getModel(effectiveTask);
       })();
+    const primaryRouteOverride = primaryRouteForCall({ task: effectiveTask, taskKind, primaryRoute });
+    if (primaryRouteOverride) {
+      primaryRoute = primaryRouteOverride;
+      routeSource = "fallback";
+      transport = undefined;
+      model = getModelForRoute(primaryRouteOverride);
+    }
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateText", taskKind, effectiveTask, trace);
@@ -481,7 +491,7 @@ export function makeGenerateText(
         ),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
-          getProviderOptionsForTask(effectiveTask),
+          primaryRoute ? getProviderOptionsForRoute(primaryRoute) : getProviderOptionsForTask(effectiveTask),
           providerOptions as ProviderOptions,
         ),
       }, {
@@ -563,7 +573,7 @@ export function makeGenerateObject(
     let primaryRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let transport: string | undefined;
-    const model = routing?.ctx && routing.orgId
+    let model: LanguageModel = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
         routeSource = resolved.routeSource;
@@ -575,6 +585,13 @@ export function makeGenerateObject(
         routeSource = "static";
         return getModel(effectiveTask);
       })();
+    const primaryRouteOverride = primaryRouteForCall({ task: effectiveTask, taskKind, primaryRoute });
+    if (primaryRouteOverride) {
+      primaryRoute = primaryRouteOverride;
+      routeSource = "fallback";
+      transport = undefined;
+      model = getModelForRoute(primaryRouteOverride);
+    }
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateObject", taskKind, effectiveTask, trace);
@@ -590,7 +607,7 @@ export function makeGenerateObject(
         output: Output.object({ schema: structuredOutputSchemaForRoute(schema, primaryRoute) }),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
-          getProviderOptionsForTask(effectiveTask),
+          primaryRoute ? getProviderOptionsForRoute(primaryRoute) : getProviderOptionsForTask(effectiveTask),
           providerOptions as ProviderOptions,
         ),
       }, {

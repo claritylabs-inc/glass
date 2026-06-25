@@ -463,8 +463,14 @@ const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([
 ]);
 
 const QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
+  "extraction_source_tree",
+  "extraction_operational_profile",
   "extraction_review",
   "extraction_referential_lookup",
+]);
+const QUALITY_PRIMARY_TASK_KINDS = new Set<string>([
+  "extraction_source_tree",
+  "extraction_operational_profile",
 ]);
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
@@ -647,11 +653,16 @@ function resolveModelForTaskKind(
     configuredRouteSource !== "broker" ||
     !!(configuredRoute && settings?.providerKeys?.[configuredRoute.provider]);
   const canUseConfiguredRoute = !!configuredRoute && hasRequiredBrokerKey;
-  const route = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
-  const routeSource = canUseConfiguredRoute
+  const baseRoute = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
+  const useQualityPrimary =
+    !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind) && !sameRoute(baseRoute, WORKER_FALLBACK_ROUTE);
+  const route = useQualityPrimary ? WORKER_FALLBACK_ROUTE : baseRoute;
+  const routeSource = useQualityPrimary
+    ? "fallback"
+    : canUseConfiguredRoute
     ? (configuredRouteSource ?? "configured")
     : "default";
-  const apiKey = apiKeyForRoute(route, routeSource, settings);
+  const apiKey = useQualityPrimary ? undefined : apiKeyForRoute(route, routeSource, settings);
   return {
     model: routeToModel(route, apiKey),
     task,
@@ -672,7 +683,6 @@ function resolveFallbackModel(
   taskKind: string | undefined,
   primaryRoute: WorkerModelRoute,
 ): ResolvedWorkerModelRoute | null {
-  if (task === "extraction_preview") return null;
   if (task === "classification" || task === "extraction") {
     if (!taskKind || !QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) return null;
   }
@@ -806,6 +816,8 @@ function modelTraceLabel(
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
     extraction_preview: "Extract provisional policy fields",
+    extraction_source_tree: "Build source-native document tree",
+    extraction_operational_profile: "Build operational profile",
     extraction_form_inventory: "Extract form inventory",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
@@ -2065,7 +2077,81 @@ ${sourceText}`;
         trace: { phase: "preview", label },
       }),
     });
-    throw error;
+
+    const fallback = isMissingApiKeyError(error)
+      ? null
+      : resolveFallbackModel(route.task, "extraction_preview", route.route);
+    if (!fallback) throw error;
+
+    logFallback(route, fallback, error);
+    const fallbackMaxOutputTokens = Math.min(
+      maxOutputTokensForRoute(4096, fallback),
+      8192,
+    );
+    const fallbackProviderOptions = providerOptionsForModelCall(fallback, undefined);
+    const fallbackStartedAt = nowMs();
+    try {
+      const result = await aiGenerateText({
+        model: fallback.model,
+        system,
+        prompt,
+        output: Output.object({
+          schema: previewExtractionOutputSchemaForProvider(fallback.route.provider),
+        }),
+        maxOutputTokens: fallbackMaxOutputTokens,
+        providerOptions: fallbackProviderOptions,
+        abortSignal: modelAbortSignal(),
+      });
+      const usage = mapUsage(result.usage);
+      await recordModelCallComplete({
+        job,
+        route: fallback,
+        label,
+        taskKind: "extraction_preview",
+        attempt: 2,
+        startedAt: fallbackStartedAt,
+        usage,
+        details: modelTraceDetails({
+          kind: "generateObject",
+          label,
+          task: fallback.task,
+          taskKind: "extraction_preview",
+          prompt,
+          system,
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+          trace: { phase: "preview", label },
+          output: result.output,
+          outputKind: "object",
+        }),
+      });
+      return {
+        fields: normalizePreviewFields(result.output),
+        route: fallback,
+      };
+    } catch (fallbackError) {
+      await recordModelCallError({
+        job,
+        route: fallback,
+        label,
+        taskKind: "extraction_preview",
+        attempt: 2,
+        startedAt: fallbackStartedAt,
+        error: fallbackError,
+        details: modelTraceDetails({
+          kind: "generateObject",
+          label,
+          task: fallback.task,
+          taskKind: "extraction_preview",
+          prompt,
+          system,
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+          trace: { phase: "preview", label },
+        }),
+      });
+      throw fallbackError;
+    }
   }
 }
 

@@ -110,6 +110,8 @@ export {
 
 export type ModelCallTaskKind =
   | "extraction_classify"
+  | "extraction_source_tree"
+  | "extraction_operational_profile"
   | "extraction_form_inventory"
   | "extraction_page_map"
   | "extraction_focused"
@@ -174,6 +176,9 @@ const LOW_COST_NO_ESCALATION_TASKS = new Set<ModelTask>([
 ]);
 
 const INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
+  // Core policy structure/fact projections where partial or timed-out output blocks the run.
+  "extraction_source_tree",
+  "extraction_operational_profile",
   // Validation / repair passes over extracted or reasoned output.
   "extraction_review",
   "query_verify",
@@ -184,6 +189,11 @@ const INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
   "extraction_referential_lookup",
   // High-risk carrier-facing packet generation.
   "pce_packet_generation",
+]);
+
+const INTENTIONAL_QUALITY_PRIMARY_TASK_KINDS = new Set<string>([
+  "extraction_source_tree",
+  "extraction_operational_profile",
 ]);
 
 function sameRoute(left?: ModelRoute, right?: ModelRoute): boolean {
@@ -221,6 +231,18 @@ export function fallbackRouteForCall({
     return null;
   }
 
+  return FALLBACK_MODEL;
+}
+
+export function primaryRouteForCall({
+  task,
+  taskKind,
+  primaryRoute,
+}: ModelFallbackContext): ModelRoute | null {
+  if (!taskKind || !INTENTIONAL_QUALITY_PRIMARY_TASK_KINDS.has(taskKind)) return null;
+  const effectiveTask = task && modelTaskForCall(task, taskKind);
+  if (effectiveTask !== "extraction") return null;
+  if (sameRoute(primaryRoute, FALLBACK_MODEL)) return null;
   return FALLBACK_MODEL;
 }
 

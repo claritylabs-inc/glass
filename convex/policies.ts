@@ -1017,6 +1017,11 @@ export const updateExtraction = mutation({
       amBestNumber: v.optional(v.string()),
       admittedStatus: v.optional(v.string()),
       stateOfDomicile: v.optional(v.string()),
+      documentNodeId: v.optional(v.string()),
+      sourceSpanIds: v.optional(v.array(v.string())),
+      sourceTextHash: v.optional(v.string()),
+      pageStart: v.optional(v.number()),
+      pageEnd: v.optional(v.number()),
     })),
     producer: v.optional(v.object({
       agencyName: v.string(),
@@ -1024,6 +1029,11 @@ export const updateExtraction = mutation({
       licenseNumber: v.optional(v.string()),
       phone: v.optional(v.string()),
       email: v.optional(v.string()),
+      documentNodeId: v.optional(v.string()),
+      sourceSpanIds: v.optional(v.array(v.string())),
+      sourceTextHash: v.optional(v.string()),
+      pageStart: v.optional(v.number()),
+      pageEnd: v.optional(v.number()),
       address: v.optional(addressValidator),
     })),
     lossPayees: v.optional(v.array(v.object({

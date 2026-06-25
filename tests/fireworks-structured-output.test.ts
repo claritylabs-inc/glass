@@ -52,4 +52,21 @@ describe("Fireworks structured output schema adapter", () => {
       value: { name: "okay", tags: ["a"] },
     });
   });
+
+  test("removes nullable enums that Fireworks rejects", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        documentType: { type: ["string", "null"], enum: ["policy", "quote", null] },
+      },
+    };
+
+    expect(collectFireworksSchemaIssues(schema)).toContain("$.properties.documentType.enum:null");
+
+    const normalized = normalizeJsonSchemaForFireworks(schema) as {
+      properties: { documentType: Record<string, unknown> };
+    };
+    expect(normalized.properties.documentType).toEqual({ type: ["string", "null"] });
+    expect(collectFireworksSchemaIssues(normalized)).toEqual([]);
+  });
 });
