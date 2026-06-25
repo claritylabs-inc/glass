@@ -1605,7 +1605,7 @@ function inlineContentForDisplay(nodes: DocumentOutlineNode[]) {
 
 function shouldRenderTextChild(parent: DocumentOutlineNode) {
   const kind = nodeKind(parent);
-  return kind === undefined || !["document", "page_group", "form", "table"].includes(kind);
+  return kind === undefined || !["document", "table"].includes(kind);
 }
 
 function sourceSpanIdsForTableRow(

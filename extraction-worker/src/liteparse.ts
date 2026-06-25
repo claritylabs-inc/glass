@@ -7,6 +7,7 @@ import {
   type SourceKind,
   type SourceSpan,
 } from "@claritylabs/cl-sdk";
+import { classifyLiteParseTextElement } from "./liteparseTextClassification.js";
 
 type SourceKindInput = Extract<SourceKind, "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note">;
 
@@ -314,20 +315,6 @@ function continuesCurrentTable(row: PositionedRow, next: PositionedRow | undefin
   return Boolean(next && isTableLikeRow(next) && /\b(coverage|endorsement|aggregate|claim|loss|sublimit|sub-limit|defense)\b/i.test(row.text));
 }
 
-function classifyTextElement(row: PositionedRow, pageRows: PositionedRow[]): "title" | "paragraph" {
-  const text = row.text.trim();
-  const heights = pageRows
-    .map((item) => item.bbox.height)
-    .filter((value) => Number.isFinite(value) && value > 0)
-    .sort((a, b) => a - b);
-  const medianHeight = heights.length > 0 ? heights[Math.floor(heights.length / 2)] : row.bbox.height;
-  const looksLikeHeading =
-    row.bbox.height >= medianHeight * 1.2 ||
-    (/^[A-Z0-9][A-Z0-9\s,.'&/():-]{6,}$/.test(text) && text.length <= 120) ||
-    /^(section|coverage|endorsement|declarations?|schedule|exclusions?|conditions?)\b/i.test(text);
-  return looksLikeHeading ? "title" : "paragraph";
-}
-
 function normalizeHeader(value: string, index: number): string {
   const normalized = normalizeWhitespace(value).replace(/[:*]+$/g, "");
   return normalized || `Column ${index + 1}`;
@@ -397,7 +384,7 @@ function buildLiteParseSourceSpans(params: {
         inTable = false;
         currentHeaders = [];
         if (row.text.length >= 12) {
-          const elementType = classifyTextElement(row, rows);
+          const elementType = classifyLiteParseTextElement(row, rows);
           const textSpan = spanWithBbox(buildSourceSpan({
             documentId: params.documentId,
             sourceKind: params.sourceKind,
