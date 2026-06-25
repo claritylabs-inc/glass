@@ -25,9 +25,12 @@
   "staging": {
     "branch": "staging",
     "glassEnv": "staging",
+    "convexAgentHealthUrlEnv": "GLASS_STAGING_CONVEX_AGENT_HEALTH_URL",
     "convexAgentHealthUrl": "https://flexible-greyhound-425.convex.site/agent-health",
     "clientPortalUrl": "https://staging.glass.insure",
+    "extractionWorkerHealthUrlEnv": "GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL",
     "extractionWorkerHealthUrl": "https://glass-extraction-worker-staging.up.railway.app/health",
+    "imessageWorkerHealthUrlEnv": "GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL",
     "imessageWorkerHealthUrl": "https://imessage-worker-staging.up.railway.app/health",
     "imessage": {
       "transport": "terminal",

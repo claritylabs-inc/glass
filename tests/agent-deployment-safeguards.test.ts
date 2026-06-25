@@ -67,6 +67,8 @@ describe("agent deployment safeguards", () => {
     expect(deployments).toContain("https://merry-platypus-82.convex.site/agent-health");
     expect(deployments).toContain("https://glass-production-4618.up.railway.app/health");
     expect(deployments).toContain("GLASS_STAGING_CONVEX_AGENT_HEALTH_URL");
+    expect(deployments).toContain("GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL");
+    expect(deployments).toContain("GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL");
     expect(script).toContain("config/deployments.json");
     expect(script).toContain("AGENT_HEALTH_RETRY_DELAY_MS");
     expect(script).toContain("worker is not listening on required port");

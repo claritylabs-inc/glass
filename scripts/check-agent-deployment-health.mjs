@@ -30,7 +30,10 @@ if (!deployment) {
 }
 
 function envOrDefault(envName, defaultValue, label) {
-  const value = envName ? process.env[envName] : undefined;
+  const rawValue = envName ? process.env[envName] : undefined;
+  const value = typeof rawValue === "string" && rawValue.trim() !== ""
+    ? rawValue.trim()
+    : undefined;
   const resolved = value ?? defaultValue;
   if (!resolved) {
     throw new Error(
