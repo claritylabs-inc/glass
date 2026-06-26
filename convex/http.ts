@@ -60,6 +60,11 @@ http.route({
         emailDeliveryMode: getEmailDeliveryMode(),
         clientPortalUrl: getClientPortalUrl(),
         authSiteUrl: getAuthSiteUrl(),
+        extractionWorker: {
+          mode: process.env.EXTRACTION_WORKER_MODE ?? "internal",
+          expectedProtocolVersion: process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION ?? null,
+          expectedClSdkVersion: process.env.EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION ?? null,
+        },
         checks,
       }),
       {

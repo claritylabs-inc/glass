@@ -17,6 +17,7 @@ import {
   FALLBACK_MODEL,
   FIREWORKS_MODEL_IDS,
   MODEL_ROUTING,
+  VISUAL_TABLE_REPAIR_MODEL,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   type ModelProvider,
@@ -392,12 +393,22 @@ export async function getModelAndRouteForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "broker" | "global" | "static" | "default"; transport: "direct" | "gateway"; qualityRoute: ModelRoute; fallbackRoute: ModelRoute }> {
+): Promise<{
+  model: LanguageModel;
+  route: ModelRoute;
+  routeSource: "broker" | "global" | "static" | "default";
+  transport: "direct" | "gateway";
+  qualityRoute: ModelRoute;
+  visualTableRepairRoute: ModelRoute;
+  fallbackRoute: ModelRoute;
+}> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
     const routeSource = settings?.routeSources?.[task];
     const qualityRoute = settings?.routes?.extraction_quality ?? FALLBACK_MODEL;
+    const visualTableRepairRoute =
+      settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const configuredApiKey = routeSource === "broker" && configuredRoute
       ? settings?.providerKeys?.[configuredRoute.provider]
@@ -418,6 +429,7 @@ export async function getModelAndRouteForOrg(
       routeSource: canUseConfiguredRoute ? (routeSource ?? "global") : "default",
       transport,
       qualityRoute,
+      visualTableRepairRoute,
       fallbackRoute,
     };
   } catch (err) {
@@ -435,6 +447,7 @@ export async function getModelAndRouteForOrg(
       routeSource: "default",
       transport,
       qualityRoute: FALLBACK_MODEL,
+      visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
       fallbackRoute: FALLBACK_MODEL,
     };
   }
@@ -443,12 +456,22 @@ export async function getModelAndRouteForOrg(
 export async function getModelAndRouteForPublicTask(
   ctx: ActionCtx,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "global" | "static" | "default"; transport: "direct" | "gateway"; qualityRoute: ModelRoute; fallbackRoute: ModelRoute }> {
+): Promise<{
+  model: LanguageModel;
+  route: ModelRoute;
+  routeSource: "global" | "static" | "default";
+  transport: "direct" | "gateway";
+  qualityRoute: ModelRoute;
+  visualTableRepairRoute: ModelRoute;
+  fallbackRoute: ModelRoute;
+}> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
     const route = settings?.routes?.[task] ?? MODEL_ROUTING[task];
     const routeSource = settings?.routeSources?.[task] ?? "static";
     const qualityRoute = settings?.routes?.extraction_quality ?? FALLBACK_MODEL;
+    const visualTableRepairRoute =
+      settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
@@ -458,6 +481,7 @@ export async function getModelAndRouteForPublicTask(
       routeSource,
       transport,
       qualityRoute,
+      visualTableRepairRoute,
       fallbackRoute,
     };
   } catch (err) {
@@ -475,6 +499,7 @@ export async function getModelAndRouteForPublicTask(
       routeSource: "default",
       transport,
       qualityRoute: FALLBACK_MODEL,
+      visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
       fallbackRoute: FALLBACK_MODEL,
     };
   }

@@ -35,6 +35,7 @@ import {
   modelCapabilitiesForRoute,
   modelCapabilitiesForTask,
   modelSupportsImageInput,
+  VISUAL_TABLE_REPAIR_MODEL,
 } from "./modelCatalog";
 import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
@@ -381,6 +382,19 @@ function buildPromptInput(
   return { prompt };
 }
 
+function isVisualTableRepairTrace(trace: ModelCallTraceDetails | undefined): boolean {
+  return typeof trace?.label === "string" && trace.label.startsWith("source_tree_visual_table_repair_");
+}
+
+function visualTableRepairRouteOverride(
+  trace: ModelCallTraceDetails | undefined,
+  visualTableRepairRoute: ModelRoute | undefined,
+): ModelRoute | null {
+  if (!isVisualTableRepairTrace(trace)) return null;
+  const route = visualTableRepairRoute ?? VISUAL_TABLE_REPAIR_MODEL;
+  return modelSupportsImageInput(route) ? route : VISUAL_TABLE_REPAIR_MODEL;
+}
+
 /**
  * Detect base64 PDF content embedded directly in prompt text.
  * The cl-sdk application pipeline concatenates raw pdfBase64 into prompts
@@ -457,6 +471,7 @@ export function makeGenerateText(
     const effectiveTask = modelTaskForCall(task, taskKind);
     let primaryRoute: ModelRoute | undefined;
     let qualityRoute: ModelRoute | undefined;
+    let visualTableRepairRoute: ModelRoute | undefined;
     let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let transport: string | undefined;
@@ -464,6 +479,7 @@ export function makeGenerateText(
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
         qualityRoute = resolved.qualityRoute;
+        visualTableRepairRoute = resolved.visualTableRepairRoute;
         fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
         transport = resolved.transport;
@@ -480,6 +496,13 @@ export function makeGenerateText(
       routeSource = "quality";
       transport = undefined;
       model = getModelForRoute(primaryRouteOverride);
+    }
+    const visualRepairRouteOverride = visualTableRepairRouteOverride(trace, visualTableRepairRoute);
+    if (visualRepairRouteOverride) {
+      primaryRoute = visualRepairRouteOverride;
+      routeSource = "visual_table_repair";
+      transport = undefined;
+      model = getModelForRoute(visualRepairRouteOverride);
     }
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
     const startedAt = nowMs();
@@ -577,6 +600,7 @@ export function makeGenerateObject(
     const effectiveTask = modelTaskForCall(task, taskKind);
     let primaryRoute: ModelRoute | undefined;
     let qualityRoute: ModelRoute | undefined;
+    let visualTableRepairRoute: ModelRoute | undefined;
     let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let transport: string | undefined;
@@ -584,6 +608,7 @@ export function makeGenerateObject(
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
         qualityRoute = resolved.qualityRoute;
+        visualTableRepairRoute = resolved.visualTableRepairRoute;
         fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
         transport = resolved.transport;
@@ -600,6 +625,13 @@ export function makeGenerateObject(
       routeSource = "quality";
       transport = undefined;
       model = getModelForRoute(primaryRouteOverride);
+    }
+    const visualRepairRouteOverride = visualTableRepairRouteOverride(trace, visualTableRepairRoute);
+    if (visualRepairRouteOverride) {
+      primaryRoute = visualRepairRouteOverride;
+      routeSource = "visual_table_repair";
+      transport = undefined;
+      model = getModelForRoute(visualRepairRouteOverride);
     }
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
     const startedAt = nowMs();

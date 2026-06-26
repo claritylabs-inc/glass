@@ -4,6 +4,10 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const CHECK_ATTEMPTS = Number(process.env.AGENT_HEALTH_ATTEMPTS ?? "3");
 const RETRY_DELAY_MS = Number(process.env.AGENT_HEALTH_RETRY_DELAY_MS ?? "10000");
 const DEPLOYMENTS = JSON.parse(readFileSync(new URL("../config/deployments.json", import.meta.url), "utf8"));
+const EXTRACTION_WORKER_PACKAGE = JSON.parse(
+  readFileSync(new URL("../extraction-worker/package.json", import.meta.url), "utf8"),
+);
+const EXPECTED_CL_SDK_VERSION = EXTRACTION_WORKER_PACKAGE.dependencies?.["@claritylabs/cl-sdk"];
 
 function argValue(name) {
   const prefix = `--${name}=`;
@@ -76,6 +80,27 @@ function validateGlassEnv(payload) {
   }
 }
 
+function normalizeVersionSpec(value) {
+  return typeof value === "string" ? value.trim().replace(/^[~^=v]+/, "") : undefined;
+}
+
+function requireString(value, label) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${label} is missing`);
+  }
+  return value.trim();
+}
+
+function assertSameVersion(label, actual, expected) {
+  const normalizedActual = normalizeVersionSpec(actual);
+  const normalizedExpected = normalizeVersionSpec(expected);
+  if (!normalizedActual || !normalizedExpected || normalizedActual !== normalizedExpected) {
+    throw new Error(`${label} expected ${String(expected)} got ${String(actual)}`);
+  }
+}
+
+let convexAgentPayload;
+
 const checks = [
   {
     name: "Convex agent configuration",
@@ -100,6 +125,25 @@ const checks = [
           `emailDeliveryMode expected ${deployment.email.deliveryMode} got ${String(payload.emailDeliveryMode)}`,
         );
       }
+      const extractionWorker = payload.extractionWorker;
+      if (!extractionWorker || typeof extractionWorker !== "object") {
+        throw new Error("extractionWorker compatibility config missing from Convex health");
+      }
+      if (deployment.workers?.extractionProtocol) {
+        if (extractionWorker.expectedProtocolVersion !== deployment.workers.extractionProtocol) {
+          throw new Error(
+            `extractionWorker.expectedProtocolVersion expected ${deployment.workers.extractionProtocol} got ${String(extractionWorker.expectedProtocolVersion)}`,
+          );
+        }
+      }
+      if (EXPECTED_CL_SDK_VERSION) {
+        assertSameVersion(
+          "extractionWorker.expectedClSdkVersion",
+          extractionWorker.expectedClSdkVersion,
+          EXPECTED_CL_SDK_VERSION,
+        );
+      }
+      convexAgentPayload = payload;
     },
   },
   {
@@ -141,6 +185,35 @@ const checks = [
       if (expectedProtocol && payload.workerProtocolVersion !== expectedProtocol) {
         throw new Error(
           `unexpected protocol ${String(payload.workerProtocolVersion)}; expected ${expectedProtocol}`,
+        );
+      }
+      const convexExtractionWorker = convexAgentPayload?.extractionWorker;
+      if (!convexExtractionWorker || typeof convexExtractionWorker !== "object") {
+        throw new Error("Convex extraction worker compatibility config unavailable");
+      }
+      const convexExpectedProtocol = requireString(
+        convexExtractionWorker.expectedProtocolVersion,
+        "Convex extractionWorker.expectedProtocolVersion",
+      );
+      if (payload.workerProtocolVersion !== convexExpectedProtocol) {
+        throw new Error(
+          `workerProtocolVersion expected ${convexExpectedProtocol} got ${String(payload.workerProtocolVersion)}`,
+        );
+      }
+      const convexExpectedClSdkVersion = requireString(
+        convexExtractionWorker.expectedClSdkVersion,
+        "Convex extractionWorker.expectedClSdkVersion",
+      );
+      assertSameVersion(
+        "worker cl-sdk version",
+        payload.clSdkVersion,
+        convexExpectedClSdkVersion,
+      );
+      if (EXPECTED_CL_SDK_VERSION) {
+        assertSameVersion(
+          "worker cl-sdk package spec",
+          payload.clSdkVersion,
+          EXPECTED_CL_SDK_VERSION,
         );
       }
     },

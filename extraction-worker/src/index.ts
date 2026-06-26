@@ -455,6 +455,13 @@ const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
   },
 };
 
+const FIREWORKS_QWEN_37_PLUS = "accounts/fireworks/models/qwen3p7-plus";
+
+const WORKER_VISUAL_TABLE_REPAIR_ROUTE: WorkerModelRoute = {
+  provider: "fireworks",
+  model: FIREWORKS_QWEN_37_PLUS,
+};
+
 const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
   provider: "openai",
   model: "gpt-5.5",
@@ -690,9 +697,26 @@ function resolveConfiguredQualityRoute(settings?: WorkerModelSettings) {
   );
 }
 
+function isVisualTableRepairTrace(trace: ModelCallTrace | undefined): boolean {
+  return typeof trace?.label === "string" && trace.label.startsWith("source_tree_visual_table_repair_");
+}
+
+function resolveConfiguredVisualTableRepairRoute(settings?: WorkerModelSettings) {
+  const configured = resolveConfiguredRoute(
+    "extraction_visual_table_repair",
+    WORKER_VISUAL_TABLE_REPAIR_ROUTE,
+    "static",
+    settings,
+  );
+  return routeSupportsImageInput(configured.route)
+    ? configured
+    : { route: WORKER_VISUAL_TABLE_REPAIR_ROUTE, routeSource: "static" as const };
+}
+
 function resolveModelForTaskKind(
   taskKind: string | undefined,
   settings?: WorkerModelSettings,
+  trace?: ModelCallTrace,
 ): ResolvedWorkerModelRoute {
   const task = modelTaskForTaskKind(taskKind);
   const settingsRoute = settings?.routes?.[task];
@@ -706,13 +730,20 @@ function resolveModelForTaskKind(
   const quality = resolveConfiguredQualityRoute(settings);
   const useQualityPrimary =
     !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind) && !sameRoute(baseRoute, quality.route);
-  const route = useQualityPrimary ? quality.route : baseRoute;
-  const routeSource = useQualityPrimary
+  const visualRepair = isVisualTableRepairTrace(trace)
+    ? resolveConfiguredVisualTableRepairRoute(settings)
+    : null;
+  const route = visualRepair?.route ?? (useQualityPrimary ? quality.route : baseRoute);
+  const routeSource = visualRepair?.routeSource ?? (useQualityPrimary
     ? quality.routeSource
     : canUseConfiguredRoute
     ? (configuredRouteSource ?? "configured")
-    : "default";
-  const apiKey = useQualityPrimary ? quality.apiKey : apiKeyForRoute(route, routeSource, settings);
+    : "default");
+  const apiKey = visualRepair
+    ? visualRepair.apiKey
+    : useQualityPrimary
+      ? quality.apiKey
+      : apiKeyForRoute(route, routeSource, settings);
   return {
     model: routeToModel(route, apiKey),
     task,
@@ -1115,7 +1146,13 @@ function buildPromptInput(
 }
 
 function routeSupportsImageInput(route: WorkerModelRoute): boolean {
-  return route.provider !== "fireworks";
+  return (
+    route.model === FIREWORKS_QWEN_37_PLUS ||
+    route.provider === "openai" ||
+    route.provider === "anthropic" ||
+    route.provider === "google" ||
+    route.provider === "xai"
+  );
 }
 
 
@@ -1161,7 +1198,7 @@ function buildWorkerExtractor(opts: {
     const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
-    const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
+    const route = resolveModelForTaskKind(taskKind, opts.modelSettings, trace);
     const label = modelTraceLabel("generateText", taskKind, route.task, trace);
     const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route);
     const callProviderOptions = providerOptionsForModelCall(
@@ -1306,7 +1343,7 @@ function buildWorkerExtractor(opts: {
     const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
-    const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
+    const route = resolveModelForTaskKind(taskKind, opts.modelSettings, trace);
     const label = modelTraceLabel("generateObject", taskKind, route.task, trace);
     const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route);
     const callProviderOptions = providerOptionsForModelCall(

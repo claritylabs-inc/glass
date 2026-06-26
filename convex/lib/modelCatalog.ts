@@ -50,12 +50,14 @@ export type ModelCapabilityConfig = {
   defaultOutputTokens?: number;
   longListOutputTokens?: number;
   taskOutputTokens?: Record<string, number>;
+  supportsImageInput?: boolean;
 };
 
 export const FIREWORKS_MODEL_IDS = {
   deepseekV4Pro: "accounts/fireworks/models/deepseek-v4-pro",
   deepseekV4Flash: "accounts/fireworks/models/deepseek-v4-flash",
   glm52: "accounts/fireworks/models/glm-5p2",
+  qwen37Plus: "accounts/fireworks/models/qwen3p7-plus",
   gptOssSafeguard20B: "accounts/fireworks/models/gpt-oss-safeguard-20b",
   qwen3Embedding8B: "accounts/fireworks/models/qwen3-embedding-8b",
   nomicEmbedText15: "nomic-ai/nomic-embed-text-v1.5",
@@ -232,6 +234,7 @@ export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {
   cohere: ["command-a"],
   fireworks: [
     FIREWORKS_MODEL_IDS.glm52,
+    FIREWORKS_MODEL_IDS.qwen37Plus,
     FIREWORKS_MODEL_IDS.deepseekV4Pro,
     FIREWORKS_MODEL_IDS.deepseekV4Flash,
     FIREWORKS_MODEL_IDS.gptOssSafeguard20B,
@@ -306,22 +309,32 @@ export const FALLBACK_MODEL: ModelRoute = {
   provider: "openai",
 };
 
+export const VISUAL_TABLE_REPAIR_MODEL: ModelRoute = {
+  model: FIREWORKS_MODEL_IDS.qwen37Plus,
+  provider: "fireworks",
+};
+
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
 export const EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality" as const;
+export const EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID =
+  "extraction_visual_table_repair" as const;
 export const FALLBACK_MODEL_ROUTE_ID = "fallback" as const;
 export type ModelRouteId =
   | ModelTask
   | typeof EXTRACTION_QUALITY_MODEL_ROUTE_ID
+  | typeof EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID
   | typeof FALLBACK_MODEL_ROUTE_ID;
 export const MODEL_ROUTE_IDS = [
   ...MODEL_TASKS,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+  EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
   FALLBACK_MODEL_ROUTE_ID,
 ] as ModelRouteId[];
 
 export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_LABELS,
   extraction_quality: "Source tree and profile extraction",
+  extraction_visual_table_repair: "Visual table repair",
   fallback: "Fallback model",
 };
 
@@ -329,16 +342,17 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_DESCRIPTIONS,
   extraction_quality:
     "Proactive primary route for source-tree generation and operational-profile extraction before any failure occurs.",
+  extraction_visual_table_repair:
+    "Image-capable route for repairing parsed table rows and column labels against page screenshots.",
   fallback:
     "Retry route after failed high-risk or non-low-cost model calls. Cheap classification and extraction paths do not automatically escalate here.",
 };
 
 export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
-  if (
-    id === EXTRACTION_QUALITY_MODEL_ROUTE_ID ||
-    id === FALLBACK_MODEL_ROUTE_ID
-  ) {
-    return FALLBACK_MODEL;
+  if (id === FALLBACK_MODEL_ROUTE_ID) return FALLBACK_MODEL;
+  if (id === EXTRACTION_QUALITY_MODEL_ROUTE_ID) return FALLBACK_MODEL;
+  if (id === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID) {
+    return VISUAL_TABLE_REPAIR_MODEL;
   }
   return MODEL_ROUTING[id];
 }
@@ -398,6 +412,7 @@ export const OPERATOR_MODEL_ROUTE_GROUPS = [
       "classification",
       "extraction",
       "extraction_quality",
+      "extraction_visual_table_repair",
       "fallback",
       "document_extraction",
       "email_extraction",
@@ -446,6 +461,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   [FIREWORKS_MODEL_IDS.deepseekV4Pro]: "DeepSeek V4 Pro",
   [FIREWORKS_MODEL_IDS.deepseekV4Flash]: "DeepSeek V4 Flash",
   [FIREWORKS_MODEL_IDS.glm52]: "GLM 5.2",
+  [FIREWORKS_MODEL_IDS.qwen37Plus]: "Qwen 3.7 Plus",
   [FIREWORKS_MODEL_IDS.gptOssSafeguard20B]: "GPT-OSS Safeguard 20B",
   [FIREWORKS_MODEL_IDS.qwen3Embedding8B]: "Qwen3 Embedding 8B",
   [FIREWORKS_MODEL_IDS.nomicEmbedText15]: "Nomic Embed Text v1.5",
@@ -496,6 +512,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     maxOutputTokens: 32_768,
     defaultOutputTokens: 8_192,
     longListOutputTokens: 24_576,
+    supportsImageInput: true,
   },
   "gpt-5.4-nano": {
     modelName: "gpt-5.4-nano",
@@ -573,6 +590,21 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
       pce_packet_generation: 8_192,
     },
   },
+  [FIREWORKS_MODEL_IDS.qwen37Plus]: {
+    modelName: FIREWORKS_MODEL_IDS.qwen37Plus,
+    maxInputTokens: 262_144,
+    maxOutputTokens: 65_536,
+    defaultOutputTokens: 4_096,
+    longListOutputTokens: 16_384,
+    supportsImageInput: true,
+    taskOutputTokens: {
+      extraction_source_tree: 2_400,
+      extraction_operational_profile: 8_192,
+      extraction_review: 8_192,
+      query_reason: 8_192,
+      query_verify: 4_096,
+    },
+  },
   [FIREWORKS_MODEL_IDS.glm52]: {
     modelName: FIREWORKS_MODEL_IDS.glm52,
     maxInputTokens: 1_000_000,
@@ -631,8 +663,18 @@ export function modelCapabilitiesForTask(
   return modelCapabilitiesForRoute(MODEL_ROUTING[task]);
 }
 
+const IMAGE_CAPABLE_PROVIDER_DEFAULTS = new Set<ModelProvider>([
+  "openai",
+  "anthropic",
+  "google",
+  "xai",
+]);
+
 export function modelSupportsImageInput(route: ModelRoute): boolean {
-  return route.provider !== "fireworks";
+  return (
+    modelCapabilitiesForRoute(route)?.supportsImageInput === true ||
+    IMAGE_CAPABLE_PROVIDER_DEFAULTS.has(route.provider)
+  );
 }
 
 export function isRetiredModelRoute(

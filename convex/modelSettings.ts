@@ -8,6 +8,7 @@ import {
   CONFIGURABLE_MODEL_PROVIDERS,
   EMBEDDING_MODEL_CATALOG,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+  EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
   FALLBACK_MODEL,
   FALLBACK_MODEL_ROUTE_ID,
   LANGUAGE_MODEL_CATALOG,
@@ -22,12 +23,14 @@ import {
   OPERATOR_MODEL_ROUTE_GROUPS,
   MODEL_CAPABILITIES,
   PROVIDER_LABELS,
+  VISUAL_TABLE_REPAIR_MODEL,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   WEB_RETRIEVAL_LABELS,
   WEB_RETRIEVAL_MODEL_CATALOG,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
+  modelSupportsImageInput,
   type ModelProvider,
   type ModelRoute,
   type ModelRouteId,
@@ -109,6 +112,7 @@ const globalRoutesValidator = v.object({
   application_authoring: v.optional(routeUpdateValidator),
   embeddings: v.optional(routeUpdateValidator),
   extraction_quality: v.optional(routeUpdateValidator),
+  extraction_visual_table_repair: v.optional(routeUpdateValidator),
   fallback: v.optional(routeUpdateValidator),
 });
 
@@ -129,6 +133,12 @@ function assertSupportedRoute(routeId: ModelRouteId, route: ModelRoute) {
     : LANGUAGE_MODEL_CATALOG[route.provider];
   if (!models?.includes(route.model)) {
     throw new Error(`Unsupported model ${route.model} for ${PROVIDER_LABELS[route.provider]}`);
+  }
+  if (
+    routeId === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID &&
+    !modelSupportsImageInput(route)
+  ) {
+    throw new Error("Visual table repair requires a model that supports image input");
   }
 }
 
@@ -330,6 +340,7 @@ export const get = query({
         label: MODEL_TASK_LABELS[id],
         description: MODEL_TASK_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
+        requiresImageInput: false,
       })),
       groups: MODEL_TASK_GROUPS,
       routes: visibleRoutes(settings?.routes, settings?.providerKeys),
@@ -440,6 +451,7 @@ export const getGlobal = query({
         label: MODEL_ROUTE_LABELS[id],
         description: MODEL_ROUTE_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
+        requiresImageInput: id === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
         defaultRoute: defaultModelRouteForId(id),
       })),
       groups: OPERATOR_MODEL_ROUTE_GROUPS,
@@ -579,6 +591,7 @@ export const resolveForOrg = internalQuery({
     }
     for (const routeId of [
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+      EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {
       const globalRoute = globalRoutes?.[routeId];
@@ -590,7 +603,9 @@ export const resolveForOrg = internalQuery({
         routes[routeId] = globalRoute;
         routeSources[routeId] = "global";
       } else {
-        routes[routeId] = FALLBACK_MODEL;
+        routes[routeId] = routeId === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID
+          ? VISUAL_TABLE_REPAIR_MODEL
+          : FALLBACK_MODEL;
         routeSources[routeId] = "static";
       }
     }
@@ -630,6 +645,7 @@ export const resolvePublicDefaults = internalQuery({
     }
     for (const routeId of [
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+      EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {
       const globalRoute = globalRoutes?.[routeId];
@@ -641,7 +657,9 @@ export const resolvePublicDefaults = internalQuery({
         routes[routeId] = globalRoute;
         routeSources[routeId] = "global";
       } else {
-        routes[routeId] = FALLBACK_MODEL;
+        routes[routeId] = routeId === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID
+          ? VISUAL_TABLE_REPAIR_MODEL
+          : FALLBACK_MODEL;
         routeSources[routeId] = "static";
       }
     }

@@ -57,6 +57,18 @@ const MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
       extraction_referential_lookup: 12_288,
     },
   },
+  "accounts/fireworks/models/qwen3p7-plus": {
+    modelName: "accounts/fireworks/models/qwen3p7-plus",
+    maxInputTokens: 262_144,
+    maxOutputTokens: 65_536,
+    defaultOutputTokens: 4_096,
+    longListOutputTokens: 16_384,
+    taskOutputTokens: {
+      extraction_source_tree: 2_400,
+      extraction_operational_profile: 8_192,
+      extraction_review: 8_192,
+    },
+  },
 };
 
 export function modelCapabilitiesForRoute(model: string): ModelCapabilities {

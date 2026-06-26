@@ -52,6 +52,7 @@ type ModelCapability = {
   defaultOutputTokens?: number;
   longListOutputTokens?: number;
   taskOutputTokens?: Record<string, number>;
+  supportsImageInput?: boolean;
 };
 type ProviderConfig = {
   id: ProviderId;
@@ -66,6 +67,7 @@ type TaskConfig = {
   label: string;
   description: string;
   isEmbedding: boolean;
+  requiresImageInput?: boolean;
   defaultRoute: Route;
 };
 type TaskGroupConfig = {
@@ -112,6 +114,12 @@ const WEB_RETRIEVAL_PRIORITY: WebRetrievalProviderId[] = [
   "anthropic",
   "xai",
 ];
+const IMAGE_CAPABLE_PROVIDER_DEFAULTS = new Set<ProviderId>([
+  "openai",
+  "anthropic",
+  "google",
+  "xai",
+]);
 function ProviderLogo({
   provider,
   size = 14,
@@ -434,11 +442,20 @@ export default function OperatorModelsPage() {
       : (item?.languageModels ?? []);
   }
 
+  function routeSupportsTask(route: Route, task: TaskConfig) {
+    if (!task.requiresImageInput) return true;
+    return (
+      modelCapabilities[capabilityKey(route)]?.supportsImageInput === true ||
+      IMAGE_CAPABLE_PROVIDER_DEFAULTS.has(route.provider)
+    );
+  }
+
   function providersForTask(task: TaskConfig, selectedProvider: ProviderId) {
     return [...(settings?.providers ?? [])]
       .filter((provider) => {
-        const hasModels =
-          modelsForProvider(provider.id, task.isEmbedding).length > 0;
+        const hasModels = modelsForProvider(provider.id, task.isEmbedding).some(
+          (model) => routeSupportsTask({ provider: provider.id, model }, task),
+        );
         return (
           hasModels && (provider.configured || provider.id === selectedProvider)
         );
@@ -450,7 +467,9 @@ export default function OperatorModelsPage() {
   }
 
   function modelsForSelectedRoute(task: TaskConfig, route: Route) {
-    const models = modelsForProvider(route.provider, task.isEmbedding);
+    const models = modelsForProvider(route.provider, task.isEmbedding).filter(
+      (model) => routeSupportsTask({ provider: route.provider, model }, task),
+    );
     return models.includes(route.model) ? models : [route.model, ...models];
   }
 
