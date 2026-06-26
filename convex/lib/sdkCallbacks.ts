@@ -391,6 +391,10 @@ function isVisualTableRepairTrace(trace: ModelCallTraceDetails | undefined): boo
   return typeof trace?.label === "string" && trace.label.startsWith("source_tree_visual_table_repair_");
 }
 
+function shouldReturnEmptyFormInventory(taskKind: ModelCallTaskKind | undefined): boolean {
+  return taskKind === "extraction_form_inventory";
+}
+
 function visualTableRepairRouteOverride(
   trace: ModelCallTraceDetails | undefined,
   visualTableRepairRoute: ModelRoute | undefined,
@@ -751,6 +755,37 @@ export function makeGenerateObject(
         });
         return {
           object: { sections: [] } as unknown,
+          usage: undefined,
+        };
+      }
+
+      if (shouldReturnEmptyFormInventory(taskKind)) {
+        await recordModelTrace(routing, {
+          label,
+          task: effectiveTask,
+          taskKind,
+          route: primaryRoute,
+          routeSource,
+          transport,
+          durationMs: nowMs() - startedAt,
+          status: "error",
+          error: message,
+          details: modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task: effectiveTask,
+            taskKind,
+            prompt: guidedPrompt,
+            system,
+            maxOutputTokens: effectiveMaxTokens,
+            providerOptions: providerOptions as ProviderOptions,
+            trace,
+            output: { forms: [] },
+            outputKind: "object",
+          }),
+        });
+        return {
+          object: { forms: [] } as unknown,
           usage: undefined,
         };
       }

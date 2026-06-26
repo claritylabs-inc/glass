@@ -889,6 +889,10 @@ function shouldReturnEmptySections(prompt: string, error: unknown): boolean {
   );
 }
 
+function shouldReturnEmptyFormInventory(taskKind: string | undefined): boolean {
+  return taskKind === "extraction_form_inventory";
+}
+
 function maxOutputTokensForRoute(
   maxTokens: number,
   route: ResolvedWorkerModelRoute,
@@ -1450,6 +1454,32 @@ function buildWorkerExtractor(opts: {
           }),
         });
         return { object: { sections: [] }, usage: undefined };
+      }
+
+      if (shouldReturnEmptyFormInventory(taskKind)) {
+        await recordModelCallError({
+          job: opts.job,
+          route,
+          label,
+          taskKind,
+          attempt: 1,
+          startedAt,
+          error,
+          details: modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task: route.task,
+            taskKind,
+            prompt: guidedPrompt,
+            system: params.system,
+            maxOutputTokens,
+            providerOptions: callProviderOptions,
+            trace,
+            output: { forms: [] },
+            outputKind: "object",
+          }),
+        });
+        return { object: { forms: [] }, usage: undefined };
       }
 
       await recordModelCallError({
