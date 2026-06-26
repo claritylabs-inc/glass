@@ -893,6 +893,10 @@ function shouldReturnEmptyFormInventory(taskKind: string | undefined): boolean {
   return taskKind === "extraction_form_inventory";
 }
 
+function shouldReturnEmptyVisualTableRepair(trace: ModelCallTrace | undefined): boolean {
+  return isVisualTableRepairTrace(trace);
+}
+
 function maxOutputTokensForRoute(
   maxTokens: number,
   route: ResolvedWorkerModelRoute,
@@ -1480,6 +1484,32 @@ function buildWorkerExtractor(opts: {
           }),
         });
         return { object: { forms: [] }, usage: undefined };
+      }
+
+      if (shouldReturnEmptyVisualTableRepair(trace)) {
+        await recordModelCallError({
+          job: opts.job,
+          route,
+          label,
+          taskKind,
+          attempt: 1,
+          startedAt,
+          error,
+          details: modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task: route.task,
+            taskKind,
+            prompt: guidedPrompt,
+            system: params.system,
+            maxOutputTokens,
+            providerOptions: callProviderOptions,
+            trace,
+            output: { tables: [], warnings: [] },
+            outputKind: "object",
+          }),
+        });
+        return { object: { tables: [], warnings: [] }, usage: undefined };
       }
 
       await recordModelCallError({
