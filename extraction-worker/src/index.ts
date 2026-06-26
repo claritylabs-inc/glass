@@ -129,6 +129,7 @@ const actions = {
     {
       secret: string;
       policyId: string;
+      leaseId: string;
       payload: unknown;
     },
     CompletionPayloadSaveResult
@@ -145,6 +146,7 @@ const actions = {
     {
       secret: string;
       policyId: string;
+      leaseId: string;
       storageId: string;
       byteLength: number;
     },
@@ -187,6 +189,7 @@ const actions = {
     {
       secret: string;
       policyId: string;
+      leaseId: string;
       message: string;
       phase?: string;
       level?: "info" | "warn" | "error";
@@ -1653,7 +1656,7 @@ function readReviewModeEnv(name: string, fallback: "always" | "auto" | "skip"): 
 }
 
 async function logJob(
-  job: Pick<ClaimedJob, "policyId">,
+  job: Pick<ClaimedJob, "policyId" | "leaseId">,
   message: string,
   level: "info" | "warn" | "error" = "info",
 ): Promise<void> {
@@ -1661,6 +1664,7 @@ async function logJob(
     await convex.action(actions.logExternalJob, {
       secret: SECRET,
       policyId: job.policyId,
+      leaseId: job.leaseId,
       message,
       phase: "worker",
       level,
@@ -1859,6 +1863,7 @@ async function uploadCompletionPayload(
       return await convex.action(actions.finalizeExternalCompletionPayload, {
         secret: SECRET,
         policyId: job.policyId,
+        leaseId: job.leaseId,
         storageId: uploaded.storageId,
         byteLength,
       });
@@ -1879,6 +1884,7 @@ async function uploadCompletionPayload(
     return await convex.action(actions.saveExternalCompletionPayload, {
       secret: SECRET,
       policyId: job.policyId,
+      leaseId: job.leaseId,
       payload,
     });
   }

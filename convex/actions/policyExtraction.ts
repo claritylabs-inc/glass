@@ -553,6 +553,36 @@ function isCancelledError(error: unknown): boolean {
   return error instanceof Error && error.message === CANCELLED_BY_USER;
 }
 
+async function externalLeaseMatches(
+  ctx: ActionCtx,
+  args: { policyId: string; leaseId: string; state?: unknown },
+): Promise<boolean> {
+  const job = await ctx.runQuery(internal.policies.pipelineGetJob, {
+    jobId: args.policyId,
+  }) as {
+    status?: string;
+    checkpoint?: LeasedPolicyCheckpoint | null;
+  } | null;
+  const checkpoint = job?.checkpoint;
+  if (
+    job?.status !== "running" ||
+    checkpoint?.nextPhase !== "extract" ||
+    checkpoint.lease?.id !== args.leaseId
+  ) {
+    return false;
+  }
+  const claimedState = args.state as PolicyExtractionState | undefined;
+  const currentState = checkpoint.state;
+  if (
+    claimedState?.traceId &&
+    currentState.traceId &&
+    claimedState.traceId !== currentState.traceId
+  ) {
+    return false;
+  }
+  return true;
+}
+
 async function loadPdfBytes(
   ctx: ActionCtx,
   fileId: string,
@@ -2331,12 +2361,14 @@ export const logExternalJob = action({
   args: {
     secret: v.string(),
     policyId: v.string(),
+    leaseId: v.string(),
     message: v.string(),
     phase: v.optional(v.string()),
     level: v.optional(v.union(v.literal("info"), v.literal("warn"), v.literal("error"))),
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
+    if (!await externalLeaseMatches(ctx, args)) return { ok: false };
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: args.policyId,
       timestamp: nowMs(),
@@ -2444,30 +2476,7 @@ async function externalCompletionLeaseIsCurrent(
   ctx: ActionCtx,
   args: ExternalCompleteArgs,
 ): Promise<boolean> {
-  const job = await ctx.runQuery(internal.policies.pipelineGetJob, {
-    jobId: args.policyId,
-  }) as {
-    status?: string;
-    checkpoint?: LeasedPolicyCheckpoint | null;
-  } | null;
-  const checkpoint = job?.checkpoint;
-  if (
-    job?.status !== "running" ||
-    checkpoint?.nextPhase !== "extract" ||
-    checkpoint.lease?.id !== args.leaseId
-  ) {
-    return false;
-  }
-  const claimedState = args.state as PolicyExtractionState;
-  const currentState = checkpoint.state as PolicyExtractionState;
-  if (
-    claimedState.traceId &&
-    currentState.traceId &&
-    claimedState.traceId !== currentState.traceId
-  ) {
-    return false;
-  }
-  return true;
+  return await externalLeaseMatches(ctx, args);
 }
 
 async function completeExternalExtractFromPayload(
@@ -2830,6 +2839,7 @@ export const failExternalJob = action({
   },
   handler: async (ctx, args) => {
     requireExtractionWorkerSecret(args.secret);
+    if (!await externalLeaseMatches(ctx, args)) return { ok: false };
     const checkpoint = args.state
       ? {
           nextPhase: "extract",
@@ -2865,13 +2875,14 @@ export const failExternalJob = action({
       }
       return { ok, replayable: ok };
     }
-    await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+    const ok = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
       jobId: args.policyId,
       leaseId: args.leaseId,
       status: "error",
       error: args.error,
       checkpoint,
-    });
+    }) as boolean;
+    if (!ok) return { ok: false };
     await completeTraceSession(
       ctx,
       (args.state as PolicyExtractionState | undefined)?.traceId,
