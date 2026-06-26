@@ -800,6 +800,99 @@ function isBadPolicyNumberValue(value: string | undefined): boolean {
   return !normalizedPolicyNumberValue(value);
 }
 
+type MoneyCandidate = {
+  value: string;
+  amount: number;
+};
+
+const MONEY_VALUE_PATTERN = /(?:\b(?:CAD|USD)\s*)?\$\s*\d[\d,]*(?:\.\d{1,2})?|\b(?:CAD|USD)\s+\d[\d,]*(?:\.\d{1,2})?/gi;
+
+function moneyNumberFromString(value: string | undefined): number | undefined {
+  const text = normalizeWhitespace(value ?? "");
+  if (!/^\$?\s*\d[\d,\s]*(?:\.\d{1,2})?$/.test(text)) return undefined;
+  const amount = Number(text.replace(/[$,\s]/g, ""));
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+function currencyPrefixFromText(value: string | undefined): string | undefined {
+  const text = normalizeWhitespace(value ?? "");
+  const currency = text.match(/\b(CAD|USD)\b/i)?.[1];
+  return currency ? currency.toUpperCase() : undefined;
+}
+
+function formatMoneyCandidate(
+  amount: number,
+  currencyPrefix: string | undefined,
+  hasCents: boolean,
+): string {
+  const formatted = amount.toLocaleString("en-US", {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
+  return `${currencyPrefix ? `${currencyPrefix} ` : ""}$${formatted}`;
+}
+
+function moneyCandidateFromText(
+  value: string,
+  fallbackCurrencyPrefix?: string,
+): MoneyCandidate | undefined {
+  const amount = moneyNumberFromString(value.replace(/\b(?:CAD|USD)\b/gi, ""));
+  if (amount === undefined) return undefined;
+  const hasCents = /\.\d{1,2}\b/.test(value);
+  const currencyPrefix = currencyPrefixFromText(value) ?? fallbackCurrencyPrefix;
+  return {
+    value: formatMoneyCandidate(amount, currencyPrefix, hasCents),
+    amount,
+  };
+}
+
+function moneyCandidatesFromText(value: string): MoneyCandidate[] {
+  const text = normalizeWhitespace(value);
+  const fallbackCurrencyPrefix = currencyPrefixFromText(text);
+  return [...text.matchAll(MONEY_VALUE_PATTERN)]
+    .map((match) => moneyCandidateFromText(match[0] ?? "", fallbackCurrencyPrefix))
+    .filter((candidate): candidate is MoneyCandidate => Boolean(candidate));
+}
+
+function isPremiumLabelPart(value: string): boolean {
+  return /\bpremium\b/i.test(value) &&
+    !/\b(?:total\s+(?:due|payable|cost)|fees?|tax(?:es)?)\b/i.test(value);
+}
+
+function premiumCandidateFromLabeledParts(parts: string[]): MoneyCandidate | undefined {
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]!;
+    if (!isPremiumLabelPart(part)) continue;
+    const nextPart = parts[index + 1];
+    const nextCandidate = nextPart && !/\b(?:premium|total\s+(?:due|payable|cost)|fees?|tax(?:es)?)\b/i.test(nextPart)
+      ? moneyCandidatesFromText(nextPart)[0]
+      : undefined;
+    const candidate = moneyCandidatesFromText(part)[0] ?? nextCandidate;
+    if (candidate) return candidate;
+  }
+  return undefined;
+}
+
+function preferredPremiumMoneyCandidate(value: SourceBackedValue): MoneyCandidate | undefined {
+  const text = normalizeWhitespace(value.value);
+  const labeledParts = text.split(/\s*[;|]\s*/).filter(Boolean);
+  const partCandidate = premiumCandidateFromLabeledParts(labeledParts);
+  if (partCandidate) return partCandidate;
+
+  const normalizedAmount = moneyNumberFromString(sourceBackedString(value, "normalizedValue"));
+  if (normalizedAmount !== undefined) {
+    const normalizedValue = sourceBackedString(value, "normalizedValue") ?? "";
+    const hasCents = /\.\d{1,2}\b/.test(normalizedValue);
+    return {
+      value: formatMoneyCandidate(normalizedAmount, currencyPrefixFromText(text), hasCents),
+      amount: normalizedAmount,
+    };
+  }
+
+  const candidates = moneyCandidatesFromText(text);
+  return candidates[0];
+}
+
 function isValidPremiumValue(value: string | undefined): boolean {
   const text = normalizeWhitespace(value ?? "");
   if (!text) return false;
@@ -826,7 +919,16 @@ function sanitizeOperationalProfileCandidate(
     delete clean.policyNumber;
   }
   const premium = valueOfSourceBackedValue(clean.premium);
-  if (premium && !isValidPremiumValue(premium)) {
+  const premiumCandidate = clean.premium && typeof clean.premium === "object" && !Array.isArray(clean.premium)
+    ? preferredPremiumMoneyCandidate(clean.premium as SourceBackedValue)
+    : undefined;
+  if (premiumCandidate && clean.premium) {
+    clean.premium = {
+      ...(clean.premium as SourceBackedValue),
+      value: premiumCandidate.value,
+      normalizedValue: String(premiumCandidate.amount),
+    };
+  } else if (premium && !isValidPremiumValue(premium)) {
     delete clean.premium;
   }
   for (const key of ["namedInsured", "insurer", "broker"] as const) {
@@ -1531,7 +1633,14 @@ function finalizeSourceBackedPolicyNumber(value: SourceBackedValue | undefined):
 }
 
 function finalizeSourceBackedPremium(value: SourceBackedValue | undefined): SourceBackedValue | undefined {
-  return value && isValidPremiumValue(value.value) ? value : undefined;
+  if (!value) return undefined;
+  const premiumCandidate = preferredPremiumMoneyCandidate(value);
+  if (!premiumCandidate) return isValidPremiumValue(value.value) ? value : undefined;
+  return {
+    ...value,
+    value: premiumCandidate.value,
+    normalizedValue: String(premiumCandidate.amount),
+  };
 }
 
 function sourceIds(value: unknown): string[] {
@@ -2071,7 +2180,13 @@ export function operationalProfilePolicyFields(
   const effectiveDate = profileValue(operationalProfile, "effectiveDate");
   const expirationDate = profileValue(operationalProfile, "expirationDate");
   const retroactiveDate = profileValue(operationalProfile, "retroactiveDate");
-  const premium = profileValue(operationalProfile, "premium");
+  const premiumField = profileField(operationalProfile, "premium");
+  const premium = premiumField?.value;
+  const premiumNormalizedValue = premiumField
+    ? sourceBackedString(premiumField, "normalizedValue")
+    : undefined;
+  const premiumAmount = moneyNumberFromString(premiumNormalizedValue)
+    ?? moneyNumberFromString(premium);
   fields.policyNumber = policyNumber ?? "Unknown";
   fields.insuredName = namedInsured ?? "Unknown";
   if (insurer) {
@@ -2086,6 +2201,7 @@ export function operationalProfilePolicyFields(
   if (expirationDate) fields.expirationDate = expirationDate;
   if (retroactiveDate) fields.retroactiveDate = retroactiveDate;
   fields.premium = premium ?? undefined;
+  if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.policyTypes.length > 0) fields.policyTypes = operationalProfile.policyTypes;
   if (operationalProfile.coverages.length > 0) {

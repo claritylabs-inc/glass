@@ -1165,6 +1165,32 @@ describe("sourceTreePolicyFields", () => {
     expect(operationalProfile.premium).toBeUndefined();
   });
 
+  it("normalizes mixed annual premium and total due strings to the annual premium scalar", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        premium: {
+          value: "Total Due: $15,203.99 | Annual Premium | $14475",
+          confidence: "high",
+          sourceNodeIds: ["premium-row"],
+          sourceSpanIds: ["span-premium"],
+        },
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(operationalProfile.premium?.value).toBe("$14,475");
+    expect(operationalProfile.premium?.normalizedValue).toBe("14475");
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+    });
+    expect(fields.premium).toBe("$14,475");
+    expect(fields.premiumAmount).toBe(14475);
+  });
+
   it("repairs polluted declaration fields from source-backed operational profile values", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
