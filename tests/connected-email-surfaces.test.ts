@@ -89,7 +89,7 @@ describe("connected email surfaces", () => {
     expect(mcpChat).toContain("coordinate_mailbox_task");
   });
 
-  it("lets mailbox task artifacts import policies, quotes and requirements", () => {
+  it("lets mailbox task artifacts import policies and requirements", () => {
     const backend = read("convex/actions/connectedEmail.ts");
     const mailboxTask = read("components/agent-thread/artifacts/mailbox-task.tsx");
     const threadContent = read("components/agent-thread/thread-content.tsx");
@@ -114,7 +114,7 @@ describe("connected email surfaces", () => {
     expect(read("convex/lib/emailSubagent.ts")).toContain(".eml exports of source emails");
     expect(read("convex/actions/mailboxCoordinator.ts")).toContain("save_connected_email_attachments_to_thread");
     expect(read("convex/actions/mailboxCoordinator.ts")).toContain("save_connected_email_message_to_thread");
-    expect(mailboxTask).toContain("Import policy/quote");
+    expect(mailboxTask).toContain("Import policy");
     expect(mailboxTask).toContain("Save to thread");
     expect(mailboxTask).toContain("Create vendor requirements");
     expect(mailboxTask).toContain("Create internal requirements");

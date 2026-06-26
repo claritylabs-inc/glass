@@ -10,10 +10,8 @@ import { getEmailDeliveryMode } from "./lib/resend";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import {
   type McpPolicySummarySource,
-  type McpQuoteSummarySource,
   policyMatchesMcpFilters,
   policyMatchesSearch,
-  quoteMatchesMcpFilters,
   toCertificateHolderDto,
   toCertificateDto,
   toCertificateVersionDto,
@@ -22,7 +20,6 @@ import {
   toMcpMyPolicyDto,
   toMcpPolicySearchResultDto,
   toMcpPolicySummaryDto,
-  toMcpQuoteSummaryDto,
   toMcpThreadMessageDto,
   toMcpThreadSummaryDto,
   toNotificationDto,
@@ -1071,62 +1068,6 @@ http.route({
   }),
 });
 
-// GET /mcp/quotes/list
-http.route({
-  path: "/mcp/quotes/list",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const quotes = await ctx.runQuery(
-        internal.policies.listAllQuotesInternal,
-        {
-          orgId: identity.orgId as Id<"organizations">,
-        },
-      );
-
-      const carrier = getQueryParam(request, "carrier");
-      const year = getQueryParam(request, "year");
-
-      const filtered = quotes.filter((quote: McpQuoteSummarySource) =>
-        quoteMatchesMcpFilters(quote, { carrier, year }),
-      );
-
-      return jsonResponse(filtered.map(toMcpQuoteSummaryDto));
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// GET /mcp/quotes/get
-http.route({
-  path: "/mcp/quotes/get",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const id = getQueryParam(request, "id");
-      if (!id) return jsonResponse({ error: "Missing id parameter" }, 400);
-
-      const quotes = await ctx.runQuery(
-        internal.policies.listAllQuotesInternal,
-        {
-          orgId: identity.orgId as Id<"organizations">,
-        },
-      );
-      const found = quotes.find((q: any) => q._id === id);
-      if (!found) return jsonResponse({ error: "Not found" }, 404);
-
-      return jsonResponse(found);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
 // GET /mcp/threads/list
 http.route({
   path: "/mcp/threads/list",
@@ -1383,30 +1324,6 @@ const MCP_TOOLS = [
     },
   },
   {
-    name: "list_quotes",
-    description: "List insurance quotes. Optionally filter by carrier or year.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        carrier: { type: "string", description: "Filter by carrier name" },
-        year: {
-          type: "string",
-          description: "Filter by quote year (e.g. '2024')",
-        },
-      },
-    },
-  },
-  {
-    name: "get_quote",
-    description:
-      "Get full details of a specific insurance quote by ID, including proposed coverages and terms.",
-    inputSchema: {
-      type: "object" as const,
-      properties: { id: { type: "string", description: "The quote ID" } },
-      required: ["id"],
-    },
-  },
-  {
     name: "list_threads",
     description: "List recent conversation threads (up to 50, newest first).",
     inputSchema: { type: "object" as const, properties: {} },
@@ -1451,7 +1368,7 @@ const MCP_TOOLS = [
   {
     name: "ask_glass",
     description:
-      "Ask the Glass AI assistant a question about the organization's insurance portfolio, policies, quotes, or coverage details. For client orgs, Glass answers within that org; for broker workspaces, Glass can answer across managed clients with client-labeled results. Optionally pass a threadId to continue an existing conversation.",
+      "Ask the Glass AI assistant a question about the organization's insurance portfolio, bound policies, renewals, or coverage details. For client orgs, Glass answers within that org; for broker workspaces, Glass can answer across managed clients with client-labeled results. Optionally pass a threadId to continue an existing conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1987,39 +1904,6 @@ async function handleToolCall(
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };
     }
-    case "list_quotes": {
-      const quotes = (await ctx.runQuery(
-        internal.policies.listAllQuotesInternal,
-        { orgId },
-      )) as McpQuoteSummarySource[];
-      const filtered = quotes.filter((quote) =>
-        quoteMatchesMcpFilters(quote, {
-          carrier: typeof args.carrier === "string" ? args.carrier : null,
-          year: typeof args.year === "string" ? args.year : null,
-        }),
-      );
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(filtered.map(toMcpQuoteSummaryDto), null, 2),
-          },
-        ],
-      };
-    }
-    case "get_quote": {
-      if (!args.id) throw new Error("Missing id parameter");
-      const quotes = await ctx.runQuery(
-        internal.policies.listAllQuotesInternal,
-        { orgId },
-      );
-      const found = quotes.find((q: any) => q._id === args.id);
-      if (!found) throw new Error("Not found");
-
-      return {
-        content: [{ type: "text", text: JSON.stringify(found, null, 2) }],
-      };
-    }
     case "list_threads": {
       const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });
       return {
@@ -2450,7 +2334,7 @@ http.route({
               ],
             },
             instructions:
-              "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, threads, and org info. Use ask_glass for complex insurance questions.",
+              "Glass is an insurance intelligence platform. Use Glass tools to look up bound policies, renewals, threads, and org info. Use ask_glass for complex insurance questions.",
           });
         }
         case "tools/list": {
@@ -3803,7 +3687,7 @@ http.route({
         glass: {
           uri: `${url.origin}/mcp`,
           instructions:
-            "Glass is an insurance intelligence platform. Use Glass tools to look up policies, quotes, threads, and broker-client workflows.",
+            "Glass is an insurance intelligence platform. Use Glass tools to look up bound policies, renewals, threads, and broker-client workflows.",
         },
       },
     });

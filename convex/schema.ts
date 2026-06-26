@@ -118,38 +118,6 @@ const policyDeliverySourceKindValidator = v.union(
   v.literal("endorsement"),
 );
 
-const applicationIntakeSourceKindValidator = v.union(
-  v.literal("web"),
-  v.literal("email"),
-  v.literal("imessage"),
-  v.literal("mcp"),
-  v.literal("broker_portal"),
-  v.literal("operator"),
-);
-
-const applicationIntakeStatusValidator = v.union(
-  v.literal("draft"),
-  v.literal("collecting"),
-  v.literal("waiting_on_client"),
-  v.literal("needs_broker_review"),
-  v.literal("broker_ready"),
-  v.literal("submitted"),
-  v.literal("cancelled"),
-  v.literal("stale"),
-);
-
-const applicationTemplateStatusValidator = v.union(
-  v.literal("draft"),
-  v.literal("active"),
-  v.literal("archived"),
-);
-
-const applicationPacketStatusValidator = v.union(
-  v.literal("draft"),
-  v.literal("broker_ready"),
-  v.literal("submitted"),
-);
-
 const certificateSourceValidator = v.union(
   v.literal("policy_page"),
   v.literal("chat"),
@@ -589,7 +557,6 @@ export default defineSchema({
         document_extraction: v.optional(modelRouteValidator),
         security: v.optional(modelRouteValidator),
         mailbox_coordinator: v.optional(modelRouteValidator),
-        application_authoring: v.optional(modelRouteValidator),
         embeddings: v.optional(modelRouteValidator),
       }),
     ),
@@ -614,7 +581,6 @@ export default defineSchema({
         document_extraction: v.optional(modelRouteValidator),
         security: v.optional(modelRouteValidator),
         mailbox_coordinator: v.optional(modelRouteValidator),
-        application_authoring: v.optional(modelRouteValidator),
         embeddings: v.optional(modelRouteValidator),
         extraction_quality: v.optional(modelRouteValidator),
         extraction_form_inventory: v.optional(modelRouteValidator),
@@ -671,166 +637,12 @@ export default defineSchema({
       v.literal("imessage"),
     ),
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("policies")),
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_org", ["orgId"])
     .index("by_org_type", ["orgId", "type"]),
-
-  // Application intake — current v0.2 broker/client packet workflow.
-  // This is not the removed Applications v2 / Passport implementation.
-  applicationTemplates: defineTable({
-    brokerOrgId: v.id("organizations"),
-    title: v.string(),
-    version: v.string(),
-    applicationType: v.optional(v.string()),
-    lineOfBusiness: v.optional(v.string()),
-    product: v.optional(v.string()),
-    status: applicationTemplateStatusValidator,
-    sourceKind: v.union(
-      v.literal("manual"),
-      v.literal("pdf"),
-      v.literal("imported"),
-      v.literal("generated"),
-    ),
-    sourceFileId: v.optional(v.id("_storage")),
-    questionGraph: v.optional(v.any()),
-    fieldCount: v.number(),
-    createdByUserId: v.optional(v.id("users")),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_brokerOrgId_status", ["brokerOrgId", "status"])
-    .index("by_brokerOrgId_updatedAt", ["brokerOrgId", "updatedAt"]),
-
-  applicationIntakes: defineTable({
-    orgId: v.id("organizations"),
-    brokerOrgId: v.optional(v.id("organizations")),
-    templateId: v.optional(v.id("applicationTemplates")),
-    templateVersion: v.optional(v.string()),
-    templateSnapshot: v.optional(v.any()),
-    title: v.string(),
-    applicationType: v.optional(v.string()),
-    lineOfBusiness: v.optional(v.string()),
-    product: v.optional(v.string()),
-    sourceKind: applicationIntakeSourceKindValidator,
-    threadId: v.optional(v.id("threads")),
-    threadMessageId: v.optional(v.id("threadMessages")),
-    createdByUserId: v.optional(v.id("users")),
-    status: applicationIntakeStatusValidator,
-    requestText: v.optional(v.string()),
-    questionGraph: v.optional(v.any()),
-    normalizedAnswers: v.array(
-      v.object({
-        fieldId: v.string(),
-        label: v.string(),
-        section: v.optional(v.string()),
-        value: v.string(),
-        source: v.string(),
-        sourceSpanIds: v.optional(v.array(v.string())),
-        userSourceSpanIds: v.optional(v.array(v.string())),
-        updatedAt: v.number(),
-      }),
-    ),
-    missingQuestions: v.array(
-      v.object({
-        fieldId: v.string(),
-        label: v.string(),
-        section: v.optional(v.string()),
-        prompt: v.string(),
-        required: v.boolean(),
-      }),
-    ),
-    contextProposalCount: v.number(),
-    packetId: v.optional(v.id("applicationPackets")),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-    lastActivityAt: v.number(),
-    submittedAt: v.optional(v.number()),
-  })
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_orgId_updatedAt", ["orgId", "updatedAt"])
-    .index("by_brokerOrgId_status", ["brokerOrgId", "status"])
-    .index("by_brokerOrgId_updatedAt", ["brokerOrgId", "updatedAt"])
-    .index("by_threadId", ["threadId"])
-    .index("by_templateId", ["templateId"]),
-
-  applicationMessages: defineTable({
-    applicationIntakeId: v.id("applicationIntakes"),
-    orgId: v.id("organizations"),
-    brokerOrgId: v.optional(v.id("organizations")),
-    sourceKind: applicationIntakeSourceKindValidator,
-    role: v.union(
-      v.literal("user"),
-      v.literal("assistant"),
-      v.literal("tool"),
-      v.literal("broker"),
-      v.literal("system"),
-    ),
-    content: v.string(),
-    sourceSpanIds: v.optional(v.array(v.string())),
-    threadMessageId: v.optional(v.id("threadMessages")),
-    createdByUserId: v.optional(v.id("users")),
-    createdAt: v.number(),
-  })
-    .index("by_applicationIntakeId_createdAt", ["applicationIntakeId", "createdAt"])
-    .index("by_orgId_createdAt", ["orgId", "createdAt"]),
-
-  applicationContextProposals: defineTable({
-    applicationIntakeId: v.id("applicationIntakes"),
-    orgId: v.id("organizations"),
-    fieldId: v.optional(v.string()),
-    key: v.string(),
-    value: v.string(),
-    category: v.string(),
-    source: v.union(
-      v.literal("application"),
-      v.literal("user"),
-      v.literal("lookup"),
-      v.literal("policy"),
-      v.literal("email"),
-      v.literal("chat"),
-      v.literal("imessage"),
-      v.literal("mcp"),
-    ),
-    confidence: v.union(
-      v.literal("confirmed"),
-      v.literal("high"),
-      v.literal("medium"),
-      v.literal("low"),
-    ),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("applied"),
-      v.literal("dismissed"),
-    ),
-    sourceSpanIds: v.optional(v.array(v.string())),
-    userSourceSpanIds: v.optional(v.array(v.string())),
-    createdAt: v.number(),
-    appliedAt: v.optional(v.number()),
-  })
-    .index("by_applicationIntakeId_status", ["applicationIntakeId", "status"])
-    .index("by_orgId_status", ["orgId", "status"]),
-
-  applicationPackets: defineTable({
-    applicationIntakeId: v.id("applicationIntakes"),
-    orgId: v.id("organizations"),
-    brokerOrgId: v.optional(v.id("organizations")),
-    status: applicationPacketStatusValidator,
-    missingFieldIds: v.array(v.string()),
-    qualityReport: v.optional(v.any()),
-    submissionNotes: v.optional(v.string()),
-    fileId: v.optional(v.id("_storage")),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-    submittedAt: v.optional(v.number()),
-  })
-    .index("by_applicationIntakeId", ["applicationIntakeId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_brokerOrgId_status", ["brokerOrgId", "status"]),
 
   // Passport, integrations, email-inbox, and org-documents tables
   // were removed as part of the v0.2.0 scope simplification. See git history.
@@ -1515,7 +1327,7 @@ export default defineSchema({
     // Policy metadata
     policyNumber: v.string(),
     policyTypes: v.array(v.string()),
-    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
+    documentType: v.optional(v.literal("policy")),
     policyYear: v.number(),
     effectiveDate: v.string(),
     expirationDate: v.string(),
@@ -1633,17 +1445,6 @@ export default defineSchema({
     assignmentClause: v.optional(v.string()),
     subrogationClause: v.optional(v.string()),
     otherInsuranceClause: v.optional(v.string()),
-    // Quote-specific fields (for documentType === "quote")
-    quoteNumber: v.optional(v.string()),
-    quoteYear: v.optional(v.number()),
-    proposedEffectiveDate: v.optional(v.string()),
-    proposedExpirationDate: v.optional(v.string()),
-    quoteExpirationDate: v.optional(v.string()),
-    subjectivities: v.optional(v.any()),
-    underwritingConditions: v.optional(v.any()),
-    enrichedSubjectivities: v.optional(v.any()),
-    enrichedUnderwritingConditions: v.optional(v.any()),
-    warrantyRequirements: v.optional(v.any()),
     // Supplementary extraction (cl-sdk 0.13+) — extra facts not captured by structured extractors
     supplementaryFacts: v.optional(
       v.array(
@@ -2295,7 +2096,6 @@ export default defineSchema({
       v.literal("client_onboarding_completed"),
       v.literal("client_document_uploaded"),
       v.literal("policy_delivered_by_broker"),
-      v.literal("quote_delivered_by_broker"),
       v.literal("vendor_compliance_met"),
       v.literal("vendor_compliance_gap"),
       v.literal("vendor_policy_expiring"),
@@ -2305,9 +2105,6 @@ export default defineSchema({
       v.literal("policy_declaration_discrepancy"),
       v.literal("policy_change_needs_info"),
       v.literal("policy_change_completed"),
-      v.literal("application_intake_started"),
-      v.literal("application_intake_needs_review"),
-      v.literal("application_packet_ready"),
     ),
     title: v.string(),
     body: v.string(),
@@ -2386,9 +2183,6 @@ export default defineSchema({
       v.literal("invitation_accepted"),
       v.literal("onboarding_completed"),
       v.literal("document_uploaded"),
-      v.literal("application_sent"),
-      v.literal("application_batch_submitted"),
-      v.literal("application_completed"),
       v.literal("policy_uploaded"),
       v.literal("policy_extraction_completed"),
       v.literal("notification_fired"),
@@ -2413,7 +2207,7 @@ export default defineSchema({
 
   // ── Vector Search (cl-sdk 0.5.0+) ──
 
-  // Document chunks for semantic search over extracted policy/quote content
+  // Document chunks for semantic search over extracted bound policy content
   documentChunks: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
@@ -2442,7 +2236,6 @@ export default defineSchema({
     documentId: v.string(),
     sourceKind: v.union(
       v.literal("policy_pdf"),
-      v.literal("application_pdf"),
       v.literal("email"),
       v.literal("attachment"),
       v.literal("manual_note"),
@@ -2822,7 +2615,6 @@ export default defineSchema({
 
   policyAuditLog: defineTable({
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("policies")),
     userId: v.id("users"),
     orgId: v.optional(v.id("organizations")),
     action: v.string(),
@@ -2926,7 +2718,6 @@ export default defineSchema({
     // Agent response metadata
     replyToMessageId: v.optional(v.id("threadMessages")),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     referencedRequirementIds: v.optional(
       v.array(v.id("insuranceRequirements")),
     ),
@@ -3114,7 +2905,6 @@ export default defineSchema({
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
   })
     .index("by_threadId", ["threadId"])
     .index("by_status", ["status"]),

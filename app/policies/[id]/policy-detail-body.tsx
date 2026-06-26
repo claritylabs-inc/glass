@@ -413,7 +413,7 @@ export function PolicyDetailBody({
     if (policy) {
       const types = policy.policyTypes ?? [];
       setPageContext({
-        pageType: policy.documentType === "quote" ? "quote" : "policy",
+        pageType: "policy",
         entityId: policy._id,
         summary: `${policy.mga ?? policy.carrier ?? "Unknown"} ${policy.policyNumber ?? ""} — ${types.join(", ")}`,
       });
@@ -433,8 +433,6 @@ export function PolicyDetailBody({
   }, [fileUrl, initialPage, openWithUrl, preloadPdfUrl]);
 
   const p = (policy ?? {}) as unknown as Record<string, unknown>;
-  const documentType: string =
-    (p.documentType as string | undefined) ?? "policy";
   const carrierName = (p.carrier as string | undefined) ?? "";
   const administratorName = (p.mga as string | undefined) ?? "";
   const displayName = administratorName || carrierName;
@@ -526,15 +524,10 @@ export function PolicyDetailBody({
     onBreadcrumb(
       <>
         {displayName} {policyNumber}
-        {documentType === "quote" && (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-label font-medium bg-yellow-100 dark:bg-yellow-950/40 text-yellow-800 dark:text-yellow-400 ml-1.5">
-            Quote
-          </span>
-        )}
       </>,
     );
     return () => onBreadcrumb(null);
-  }, [onBreadcrumb, policy, displayName, policyNumber, documentType]);
+  }, [onBreadcrumb, policy, displayName, policyNumber]);
 
   const handleDelete = async () => {
     if (!policy) return;

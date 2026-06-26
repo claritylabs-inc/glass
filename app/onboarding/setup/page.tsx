@@ -203,7 +203,7 @@ export default function ClientOnboardingSetupPage() {
     api.actions.extractCompanyInfo.extractCompanyInfo,
   );
 
-  const policies = useCachedPolicyList("policy") as PolicyRow[] | undefined;
+  const policies = useCachedPolicyList() as PolicyRow[] | undefined;
 
   const [currentStep, setCurrentStep] = useState<Step>(0);
   const [userName, setUserName] = useState("");
@@ -679,7 +679,6 @@ export default function ClientOnboardingSetupPage() {
               </OperationalPanel>
             ) : (
               <PolicyEmptyState
-                docType="policy"
                 agentEmail={brokerAgentEmail}
                 uploading={uploading}
                 onUpload={handleFilesUpload}

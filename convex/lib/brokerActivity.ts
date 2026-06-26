@@ -8,9 +8,6 @@ export type BrokerActivityEvent = {
     | "invitation_accepted"
     | "onboarding_completed"
     | "document_uploaded"
-    | "application_sent"
-    | "application_batch_submitted"
-    | "application_completed"
     | "policy_uploaded"
     | "policy_extraction_completed"
     | "notification_fired";

@@ -25,13 +25,13 @@ function pageContextReference(
 ): PromptReference | null {
   if (!pageContext?.entityId) return null;
 
-  if (pageContext.pageType === "policy" || pageContext.pageType === "quote") {
+  if (pageContext.pageType === "policy") {
     return {
-      kind: pageContext.pageType,
+      kind: "policy",
       id: pageContext.entityId,
       label:
         pageContext.summary ??
-        (pageContext.pageType === "quote" ? "Current quote" : "Current policy"),
+        "Current policy",
     };
   }
 

@@ -6,7 +6,7 @@ import type { ActionCtx } from "../_generated/server";
 
 type EmbedText = (text: string) => Promise<number[]>;
 
-type SourceKind = "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note";
+type SourceKind = "policy_pdf" | "email" | "attachment" | "manual_note";
 
 type SourceSpan = {
   id: string;

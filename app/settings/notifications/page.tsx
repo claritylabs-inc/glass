@@ -23,13 +23,12 @@ const BROKER_PREF_ROWS: PrefRow[] = [
   { type: "client_document_uploaded", label: "Client uploads document", group: "Client Activity" },
   { type: "client_invitation_accepted", label: "Client accepted invitation", group: "Client Activity" },
   { type: "client_onboarding_completed", label: "Client completed onboarding", group: "Client Activity" },
-  { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies & Quotes" },
-  { type: "quote_delivered_by_broker", label: "Quote delivered", group: "Policies & Quotes" },
-  { type: "policy_change_needs_info", label: "Policy change needs info", group: "Policies & Quotes" },
-  { type: "policy_change_completed", label: "Policy change completed", group: "Policies & Quotes" },
-  { type: "policy_declaration_discrepancy", label: "Policy details do not match", group: "Policies & Quotes" },
-  { type: "renewal_reminder", label: "Renewal reminder", group: "Policies & Quotes" },
-  { type: "policy_lapsed", label: "Policy lapsed", group: "Policies & Quotes" },
+  { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies" },
+  { type: "policy_change_needs_info", label: "Policy change needs info", group: "Policies" },
+  { type: "policy_change_completed", label: "Policy change completed", group: "Policies" },
+  { type: "policy_declaration_discrepancy", label: "Policy details do not match", group: "Policies" },
+  { type: "renewal_reminder", label: "Renewal reminder", group: "Policies" },
+  { type: "policy_lapsed", label: "Policy lapsed", group: "Policies" },
   { type: "vendor_compliance_gap", label: "Vendor compliance gaps", group: "Vendor Compliance" },
   { type: "vendor_policy_expiring", label: "Vendor policy expiring", group: "Vendor Compliance" },
   { type: "vendor_policy_expired", label: "Vendor policy expired", group: "Vendor Compliance" },
@@ -37,13 +36,12 @@ const BROKER_PREF_ROWS: PrefRow[] = [
 ];
 
 const CLIENT_PREF_ROWS: PrefRow[] = [
-  { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies & Quotes" },
-  { type: "quote_delivered_by_broker", label: "Quote delivered", group: "Policies & Quotes" },
-  { type: "policy_change_needs_info", label: "Policy change needs info", group: "Policies & Quotes" },
-  { type: "policy_change_completed", label: "Policy change completed", group: "Policies & Quotes" },
-  { type: "policy_declaration_discrepancy", label: "Policy details do not match", group: "Policies & Quotes" },
-  { type: "renewal_reminder", label: "Renewal reminder", group: "Policies & Quotes" },
-  { type: "policy_lapsed", label: "Policy lapsed", group: "Policies & Quotes" },
+  { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies" },
+  { type: "policy_change_needs_info", label: "Policy change needs info", group: "Policies" },
+  { type: "policy_change_completed", label: "Policy change completed", group: "Policies" },
+  { type: "policy_declaration_discrepancy", label: "Policy details do not match", group: "Policies" },
+  { type: "renewal_reminder", label: "Renewal reminder", group: "Policies" },
+  { type: "policy_lapsed", label: "Policy lapsed", group: "Policies" },
   { type: "vendor_compliance_gap", label: "Vendor compliance gaps", group: "Vendor Compliance" },
   { type: "vendor_policy_expiring", label: "Vendor policy expiring", group: "Vendor Compliance" },
   { type: "vendor_policy_expired", label: "Vendor policy expired", group: "Vendor Compliance" },
@@ -156,7 +154,7 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
       ? "client, policy, vendor and account events"
       : orgType === "partner"
         ? "program approval, certified COI and policy-change events"
-        : "policy, quote and vendor compliance events";
+        : "policy and vendor compliance events";
 
   function prefKey(type: string, channel: NotificationChannel): string {
     return `${type}:${channel}`;

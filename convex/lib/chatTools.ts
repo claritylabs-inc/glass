@@ -129,70 +129,6 @@ export const saveNote = tool({
   }),
 });
 
-export const startApplicationIntake = tool({
-  description:
-    "Start a broker/client insurance application intake when the user asks for a new policy, renewal application, carrier application, broker submission, or sends/uploads an application PDF/form to complete. Standalone client orgs without a connected broker can start their own intake. In broker portfolio mode, targetOrgId must be the specific client organization, not the broker workspace.",
-  inputSchema: z.object({
-    targetOrgId: z
-      .string()
-      .optional()
-      .describe("Client organization ID to start the application for. Required when the active scope is a broker portfolio."),
-    templateId: z.string().optional().describe("Application template ID if the broker selected one."),
-    title: z.string().optional().describe("Short application title, such as General Liability Application."),
-    lineOfBusiness: z.string().optional().describe("Line of business, such as general liability, cyber, auto, or workers comp."),
-    product: z.string().optional().describe("Specific product or carrier application name when known."),
-    requestText: z.string().describe("The user's request or intake instruction."),
-    missingQuestions: z
-      .array(
-        z.object({
-          fieldId: z.string(),
-          label: z.string(),
-          section: z.string().optional(),
-          prompt: z.string(),
-          required: z.boolean().optional(),
-        }),
-      )
-      .optional()
-      .describe("Initial questions the agent already knows must be collected."),
-  }),
-});
-
-export const answerApplicationQuestions = tool({
-  description:
-    "Record answers for an active application intake. Use when the user replies with requested application information over chat, email, iMessage/SMS, or MCP.",
-  inputSchema: z.object({
-    applicationIntakeId: z.string().describe("Application intake ID."),
-    answers: z.array(
-      z.object({
-        fieldId: z.string(),
-        label: z.string(),
-        section: z.string().optional(),
-        value: z.string(),
-        sourceSpanIds: z.array(z.string()).optional(),
-        userSourceSpanIds: z.array(z.string()).optional(),
-      }),
-    ),
-    message: z.string().optional().describe("Original user message containing the answers."),
-  }),
-});
-
-export const checkApplicationStatus = tool({
-  description:
-    "Check status for an active insurance application intake or list recent application intakes in scope. Use only for new-policy, renewal-application, carrier-application, quote-submission, or broker-submission application workflows. Do not use for broker follow-ups about policy updates or endorsements; use check_policy_change_status for those.",
-  inputSchema: z.object({
-    applicationIntakeId: z.string().optional().describe("Specific application intake ID."),
-  }),
-});
-
-export const prepareApplicationPacket = tool({
-  description:
-    "Prepare collected application answers for broker review/submission. This does not submit to carriers; it marks the application ready for broker review/submission when required fields are complete.",
-  inputSchema: z.object({
-    applicationIntakeId: z.string().describe("Application intake ID."),
-    submissionNotes: z.string().optional().describe("Broker-facing notes for carrier submission."),
-  }),
-});
-
 export const confirmPolicyFact = tool({
   description:
     "Persist a policy fact that was confirmed from original PDF source evidence. Use only after lookup_policy_section returns original-PDF sourceSpanIds that directly support the fact. This can also update a small set of top-level extracted policy fields when the PDF evidence is clear.",
@@ -336,7 +272,7 @@ export const addPolicyChangeInfo = tool({
 
 export const checkPolicyChangeStatus = tool({
   description:
-    "Check status for broker follow-ups about policy updates or endorsements. Use this when the user asks whether a requested policy update was sent, is waiting on the broker, or is done. Do not use check_application_status for these requests.",
+    "Check status for broker follow-ups about policy updates or endorsements. Use this when the user asks whether a requested policy update was sent, is waiting on the broker, or is done.",
   inputSchema: z.object({
     caseId: z
       .string()
@@ -436,7 +372,7 @@ export const readConnectedEmailAttachment = tool({
 
 export const importConnectedEmailPolicyAttachments = tool({
   description:
-    "Import PDF attachments from a connected-email message into the Glass policy library. Use after search/read confirms the attachments are policies, declarations, quotes, binders, COIs, or related insurance documents.",
+    "Import PDF attachments from a connected-email message into the Glass policy library. Use after search/read confirms the attachments are bound policies, declarations, binders, endorsements, COIs, or other post-binding insurance documents.",
   inputSchema: z.object({
     emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
     filenames: z.array(z.string()).optional().describe("Specific PDF filenames to import. Omit to import all PDF attachments on the email as one policy package."),

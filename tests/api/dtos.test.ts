@@ -2,13 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   policyMatchesMcpFilters,
   policyMatchesSearch,
-  quoteMatchesMcpFilters,
   toCertificateHolderDto,
   toCertificateDto,
   toCertificateVersionDto,
   toCertificateWorkflowJobDto,
   toMcpPolicySummaryDto,
-  toMcpQuoteSummaryDto,
   toNotificationDto,
   toOrgDto,
   toPolicyDto,
@@ -95,31 +93,6 @@ describe("MCP policy DTO helpers", () => {
     expect(policyMatchesMcpFilters(policy, { carrier: "Zurich", year: "2024", type: "general_liability" })).toBe(true);
     expect(policyMatchesMcpFilters(policy, { carrier: "Chubb", year: "2024", type: "general_liability" })).toBe(false);
     expect(policyMatchesSearch(policy, "marsh")).toBe(true);
-  });
-});
-
-describe("MCP quote DTO helpers", () => {
-  it("maps quote summaries and filters by existing policyYear semantics", () => {
-    const quote = {
-      _id: "q1",
-      carrier: "Chubb",
-      policyTypes: ["cyber"],
-      policyYear: 2024,
-      quoteNumber: "Q-1",
-      quoteYear: 2025,
-      premium: "$8,000",
-      insuredName: "Acme",
-      isRenewal: true,
-      coverages: [],
-    };
-
-    expect(quoteMatchesMcpFilters(quote, { carrier: "Chubb", year: "2024" })).toBe(true);
-    expect(toMcpQuoteSummaryDto(quote)).toMatchObject({
-      _id: "q1",
-      quoteNumber: "Q-1",
-      quoteYear: 2025,
-      policyTypes: ["cyber"],
-    });
   });
 });
 

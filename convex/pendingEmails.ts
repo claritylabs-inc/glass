@@ -33,7 +33,6 @@ async function restoreCancelledEmailAsDraft(
       subject: pending.subject,
       attachments: pending.attachments,
       referencedPolicyIds: pending.referencedPolicyIds,
-      referencedQuoteIds: pending.referencedQuoteIds,
       pendingEmailId: id,
       responseMessageId: undefined,
       status: "draft_email",
@@ -136,7 +135,6 @@ export const create = internalMutation({
     ),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     status: v.optional(v.union(v.literal("draft"), v.literal("pending"))),
   },
   handler: async (ctx, args) => {
@@ -175,7 +173,6 @@ export const updateDraftInternal = internalMutation({
     }))),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-    referencedQuoteIds: v.optional(v.array(v.id("policies"))),
     chatMessageId: v.optional(v.id("threadMessages")),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   },

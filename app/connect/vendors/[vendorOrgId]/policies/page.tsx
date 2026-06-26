@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -11,10 +11,7 @@ import {
   OperationalPanelBody,
 } from "@/components/ui/operational-panel";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
-
-type DocType = "policy" | "quote";
 
 function VendorPoliciesLoadingSkeleton() {
   return (
@@ -33,7 +30,6 @@ export default function ConnectedVendorPoliciesPage({
 }) {
   const { vendorOrgId } = use(params);
   const router = useRouter();
-  const [docType, setDocType] = useState<DocType>("policy");
   const vendorOrg = useCachedQuery("orgs.getById.vendorPolicies", api.orgs.getById, {
     orgId: vendorOrgId as Id<"organizations">,
   });
@@ -42,7 +38,7 @@ export default function ConnectedVendorPoliciesPage({
     api.policies.listForOrg,
     {
       orgId: vendorOrgId as Id<"organizations">,
-      documentType: docType,
+      documentType: "policy",
     },
   );
 
@@ -62,20 +58,13 @@ export default function ConnectedVendorPoliciesPage({
       }
     >
       <div className="space-y-4">
-        <Tabs value={docType} onValueChange={(value) => setDocType(value as DocType)}>
-          <TabsList variant="pill">
-            <TabsTrigger value="policy">Policies</TabsTrigger>
-            <TabsTrigger value="quote">Quotes</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
         {policies === undefined ? (
           <VendorPoliciesLoadingSkeleton />
         ) : rows.length === 0 ? (
           <OperationalPanel as="div">
             <OperationalPanelBody className="px-5 py-6">
               <p className="text-base font-medium text-foreground">
-                No {docType === "quote" ? "quotes" : "policies"} yet
+                No policies yet
               </p>
               <p className="mt-1 text-base text-muted-foreground">
                 Uploaded vendor insurance records will appear here when available.

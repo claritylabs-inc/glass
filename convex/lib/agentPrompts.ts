@@ -17,7 +17,6 @@ export {
 } from "@claritylabs/cl-sdk";
 export type {
   PolicyDocument,
-  QuoteDocument,
   AgentContext,
   Platform,
   CommunicationIntent,
@@ -75,19 +74,16 @@ export async function buildDocumentContext(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   policies: Doc<"policies">[],
-  quotes: Doc<"policies">[],
   queryText: string,
 ): Promise<{
   context: string;
   relevantPolicyIds: Id<"policies">[];
-  relevantQuoteIds: Id<"policies">[];
 }> {
-  if (policies.length === 0 && quotes.length === 0) {
+  if (policies.length === 0) {
     return {
       context:
-        "NO POLICIES OR QUOTES FOUND. The user has not imported any insurance documents yet.",
+        "NO POLICIES FOUND. The user has not imported any bound insurance policies yet.",
       relevantPolicyIds: [],
-      relevantQuoteIds: [],
     };
   }
 
@@ -108,14 +104,14 @@ export async function buildDocumentContext(
   ]);
 
   if (!hasSourceNodes && (hasSourceChunks || hasDocumentChunks)) {
-    for (const policy of [...policies, ...quotes].slice(0, 6)) {
+    for (const policy of policies.slice(0, 6)) {
       if (!policy.fileId || policy.sourceTreeStatus === "queued" || policy.sourceTreeStatus === "running") continue;
       await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.ensurePolicyV3SourceTree, {
         policyId: policy._id,
         reason: "agent_document_context",
       }).catch(() => undefined);
     }
-    const fallback = buildFallbackContext(policies, quotes, queryText);
+    const fallback = buildFallbackContext(policies, queryText);
     return {
       ...fallback,
       context: `${fallback.context}\n\nSOURCE TREE REBUILD REQUIRED: This workspace has legacy policy evidence but no v3 source-node index yet. Glass has queued source-tree rebuilds for policies with stored PDFs. For exact policy-wording answers, wait for sourceTreeStatus=ready and use source nodes/spans.`,
@@ -123,11 +119,11 @@ export async function buildDocumentContext(
   }
 
   if (hasSourceNodes) {
-    return buildVectorContext(ctx, orgId, policies, quotes, queryText);
+    return buildVectorContext(ctx, orgId, policies, queryText);
   }
 
   // Fallback: build simple index (same as old SDK behavior)
-  return buildFallbackContext(policies, quotes, queryText);
+  return buildFallbackContext(policies, queryText);
 }
 
 /**
@@ -274,17 +270,14 @@ async function buildVectorContext(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   policies: Doc<"policies">[],
-  quotes: Doc<"policies">[],
   queryText: string,
 ): Promise<{
   context: string;
   relevantPolicyIds: Id<"policies">[];
-  relevantQuoteIds: Id<"policies">[];
 }> {
   const embed = makeEmbedText(ctx, orgId);
   const queryEmbedding = await embed(queryText);
-  const allDocs = [...policies, ...quotes];
-  const policyMap = new Map(allDocs.map((p) => [p._id, p]));
+  const policyMap = new Map(policies.map((p) => [p._id, p]));
 
   const results = await ctx.vectorSearch("documentChunks", "by_embedding", {
     vector: queryEmbedding,
@@ -352,11 +345,9 @@ async function buildVectorContext(
 
   // Group by policy
   const relevantPolicyIdSet = new Set<Id<"policies">>();
-  const relevantQuoteIdSet = new Set<Id<"policies">>();
-
   const parts: string[] = [];
 
-  // Build index of all policies/quotes
+  // Build index of all policies.
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
       const types = p.policyTypes?.join(", ") ?? "unknown";
@@ -369,16 +360,6 @@ async function buildVectorContext(
       `POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`,
     );
   }
-  if (quotes.length > 0) {
-    const indexLines = quotes.map((q, i) => {
-      const carrier = q.mga || q.carrier || q.security;
-      return `[Q${i + 1}] ${carrier} | #${q.quoteNumber ?? q.policyNumber} | Insured: ${q.insuredName} | Premium: ${q.premium ?? "N/A"}`;
-    });
-    parts.push(
-      `QUOTE INDEX (${quotes.length} quotes):\n${indexLines.join("\n")}`,
-    );
-  }
-
   const sourceNodesByPolicy = new Map<string, typeof sourceNodeDocs>();
   for (const node of sourceNodeDocs) {
     if (!node.policyId) continue;
@@ -392,23 +373,14 @@ async function buildVectorContext(
     const policy = policyMap.get(policyId as Id<"policies">);
     if (!policy) continue;
 
-    const isQuote = policy.documentType === "quote";
-    if (isQuote) {
-      relevantQuoteIdSet.add(policyId as Id<"policies">);
-    } else {
-      relevantPolicyIdSet.add(policyId as Id<"policies">);
-    }
+    relevantPolicyIdSet.add(policyId as Id<"policies">);
 
     const contextNodes = sourceContextByPolicy.get(policyId) ?? matchedNodes;
     const contextByNodeId = new Map(
       contextNodes.map((node) => [String(node.nodeId), node]),
     );
     const carrier = policy.mga || policy.carrier || policy.security;
-    const docLabel = isQuote ? "QUOTE" : "POLICY";
-    const number = isQuote
-      ? (policy.quoteNumber ?? policy.policyNumber)
-      : policy.policyNumber;
-    let section = `\n--- ${docLabel} SOURCE TREE: ${carrier} #${number} (ID:${policyId}) ---`;
+    let section = `\n--- POLICY SOURCE TREE: ${carrier} #${policy.policyNumber} (ID:${policyId}) ---`;
     const profile = policy.operationalProfile
       ? JSON.stringify(policy.operationalProfile, null, 2).slice(0, 5000)
       : "";
@@ -443,20 +415,11 @@ async function buildVectorContext(
     const policy = policyMap.get(policyId as Id<"policies">);
     if (!policy) continue;
 
-    const isQuote = policy.documentType === "quote";
-    if (isQuote) {
-      relevantQuoteIdSet.add(policyId as Id<"policies">);
-    } else {
-      relevantPolicyIdSet.add(policyId as Id<"policies">);
-    }
+    relevantPolicyIdSet.add(policyId as Id<"policies">);
 
     const carrier = policy.mga || policy.carrier || policy.security;
-    const docLabel = isQuote ? "QUOTE" : "POLICY";
-    const number = isQuote
-      ? (policy.quoteNumber ?? policy.policyNumber)
-      : policy.policyNumber;
 
-    let section = `\n--- ${docLabel} SOURCE EVIDENCE: ${carrier} #${number} (ID:${policyId}) ---`;
+    let section = `\n--- POLICY SOURCE EVIDENCE: ${carrier} #${policy.policyNumber} (ID:${policyId}) ---`;
     const structure = formatDocumentStructureForPrompt(policy as Record<string, unknown>, {
       maxNodes: 10,
       maxChars: 3500,
@@ -494,20 +457,11 @@ async function buildVectorContext(
     const policy = policyMap.get(policyId as Id<"policies">);
     if (!policy) continue;
 
-    const isQuote = policy.documentType === "quote";
-    if (isQuote) {
-      relevantQuoteIdSet.add(policyId as Id<"policies">);
-    } else {
-      relevantPolicyIdSet.add(policyId as Id<"policies">);
-    }
+    relevantPolicyIdSet.add(policyId as Id<"policies">);
 
     const carrier = policy.mga || policy.carrier || policy.security;
-    const docLabel = isQuote ? "QUOTE" : "POLICY";
-    const number = isQuote
-      ? (policy.quoteNumber ?? policy.policyNumber)
-      : policy.policyNumber;
 
-    let section = `\n--- ${docLabel}: ${carrier} #${number} (ID:${policyId}) ---`;
+    let section = `\n--- POLICY: ${carrier} #${policy.policyNumber} (ID:${policyId}) ---`;
     if (policy.summary) section += `\nSummary: ${policy.summary}`;
     const structure = formatDocumentStructureForPrompt(policy as Record<string, unknown>, {
       maxNodes: 10,
@@ -536,7 +490,6 @@ async function buildVectorContext(
   return {
     context: parts.join("\n\n"),
     relevantPolicyIds: [...relevantPolicyIdSet],
-    relevantQuoteIds: [...relevantQuoteIdSet],
   };
 }
 
@@ -613,12 +566,10 @@ function isStructuredFactChunk(chunk: Doc<"documentChunks">): boolean {
  */
 function buildFallbackContext(
   policies: Doc<"policies">[],
-  quotes: Doc<"policies">[],
   queryText: string,
 ): {
   context: string;
   relevantPolicyIds: Id<"policies">[];
-  relevantQuoteIds: Id<"policies">[];
 } {
   const queryLower = queryText.toLowerCase();
   const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 2);
@@ -649,27 +600,6 @@ function buildFallbackContext(
     return { policy: p, score };
   });
 
-  const scoredQuotes = quotes.map((q) => {
-    let score = 0;
-    const searchText = [
-      q.carrier,
-      q.security,
-      q.quoteNumber,
-      q.insuredName,
-      ...(q.policyTypes ?? []),
-      ...(q.coverages?.map((c: { name?: string }) => c.name) ?? []),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    for (const word of queryWords) {
-      if (searchText.includes(word)) score++;
-    }
-    if (queryLower.includes("quote") || queryLower.includes("proposal"))
-      score += 3;
-    return { quote: q, score };
-  });
-
   const topPolicies = scoredPolicies
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
@@ -679,14 +609,6 @@ function buildFallbackContext(
       ? topPolicies.map((r) => r.policy)
       : policies.slice(0, 5);
   const relevantPolicyIds = policiesToExpand.map((p) => p._id);
-
-  const topQuotes = scoredQuotes
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
-  const quotesToExpand =
-    topQuotes.length > 0 ? topQuotes.map((r) => r.quote) : quotes.slice(0, 3);
-  const relevantQuoteIds = quotesToExpand.map((q) => q._id);
 
   const parts: string[] = [];
 
@@ -721,7 +643,7 @@ function buildFallbackContext(
     parts.push(`DETAILED POLICY DATA:\n${expanded.join("\n")}`);
   }
 
-  return { context: parts.join("\n\n"), relevantPolicyIds, relevantQuoteIds };
+  return { context: parts.join("\n\n"), relevantPolicyIds };
 }
 
 /**
@@ -829,20 +751,18 @@ export function buildConversationMemoryFromList(
 export async function buildScopedDocumentContext(
   ctx: ActionCtx,
   scope: AgentScope,
-  policiesByOrg: Map<string, { policies: Doc<"policies">[]; quotes: Doc<"policies">[] }>,
+  policiesByOrg: Map<string, Doc<"policies">[]>,
   queryText: string,
 ): Promise<{
   context: string;
   relevantPolicyIds: Id<"policies">[];
-  relevantQuoteIds: Id<"policies">[];
 }> {
   if (scope.mode !== "broker_portfolio") {
-    const docs = policiesByOrg.get(String(scope.primaryOrgId)) ?? { policies: [], quotes: [] };
-    return buildDocumentContext(ctx, scope.primaryOrgId, docs.policies, docs.quotes, queryText);
+    const policies = policiesByOrg.get(String(scope.primaryOrgId)) ?? [];
+    return buildDocumentContext(ctx, scope.primaryOrgId, policies, queryText);
   }
 
   const relevantPolicyIds: Id<"policies">[] = [];
-  const relevantQuoteIds: Id<"policies">[] = [];
   const parts = [formatAgentScopePortfolioIndex(scope)];
   const loadedOrgIds = new Set(policiesByOrg.keys());
   const orderedOrgIds = documentContextOrgIdsForScope(scope).filter((orgId) =>
@@ -856,17 +776,15 @@ export async function buildScopedDocumentContext(
   }
 
   for (const orgId of orderedOrgIds) {
-    const docs = policiesByOrg.get(String(orgId)) ?? { policies: [], quotes: [] };
-    const result = await buildDocumentContext(ctx, orgId, docs.policies, docs.quotes, queryText);
+    const policies = policiesByOrg.get(String(orgId)) ?? [];
+    const result = await buildDocumentContext(ctx, orgId, policies, queryText);
     relevantPolicyIds.push(...result.relevantPolicyIds);
-    relevantQuoteIds.push(...result.relevantQuoteIds);
     parts.push(`\n\nCLIENT/ORG: ${orgLabelForScope(scope, orgId)} (orgId: ${orgId})\n${result.context}`);
   }
 
   return {
     context: parts.join(""),
     relevantPolicyIds,
-    relevantQuoteIds,
   };
 }
 

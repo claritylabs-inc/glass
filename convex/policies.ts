@@ -205,6 +205,23 @@ export function normalizeEditableFields(
   const deriveNumericAmounts = options.deriveNumericAmounts ?? true;
   const normalizeMoneyText = options.normalizeMoneyText ?? true;
   const next = { ...fields };
+  if (next.documentType && next.documentType !== "policy") {
+    next.documentType = "policy";
+  }
+  for (const key of [
+    "quoteNumber",
+    "quoteYear",
+    "proposedEffectiveDate",
+    "proposedExpirationDate",
+    "quoteExpirationDate",
+    "subjectivities",
+    "underwritingConditions",
+    "enrichedSubjectivities",
+    "enrichedUnderwritingConditions",
+    "warrantyRequirements",
+  ]) {
+    delete next[key];
+  }
   for (const key of ["effectiveDate", "expirationDate", "retroactiveDate", "nextReviewDate"]) {
     if (typeof next[key] === "string") next[key] = normalizeExtractedDate(next[key]) ?? next[key];
   }
@@ -733,20 +750,6 @@ export const listPreviewReadableForAgentContextInternal = internalQuery({
   },
 });
 
-// All complete, non-deleted quotes for an org (used by agent action)
-export const listAllQuotesInternal = internalQuery({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    const all = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
-      .collect();
-    return all.filter(
-      (p) => p.documentType === "quote" && isFinalExtractedPolicy(p)
-    );
-  },
-});
-
 // Legacy: support userId-based lookup during transition
 export const listAllInternalByUser = internalQuery({
   args: { userId: v.id("users") },
@@ -969,7 +972,7 @@ export const insert = mutation({
     broker: v.optional(v.string()),
     policyNumber: v.string(),
     policyTypes: v.array(v.string()),
-    documentType: v.union(v.literal("policy"), v.literal("quote")),
+    documentType: v.literal("policy"),
     policyYear: v.number(),
     effectiveDate: v.string(),
     expirationDate: v.string(),
@@ -1079,7 +1082,7 @@ export const updateExtraction = mutation({
     // Standard fields
     policyNumber: v.optional(v.string()),
     policyTypes: v.optional(v.array(v.string())),
-    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
+    documentType: v.optional(v.literal("policy")),
     policyYear: v.optional(v.number()),
     effectiveDate: v.optional(v.string()),
     expirationDate: v.optional(v.string()),
@@ -1113,17 +1116,6 @@ export const updateExtraction = mutation({
     assignmentClause: v.optional(v.string()),
     subrogationClause: v.optional(v.string()),
     otherInsuranceClause: v.optional(v.string()),
-    // Quote-specific fields (for documentType === "quote")
-    quoteNumber: v.optional(v.string()),
-    quoteYear: v.optional(v.number()),
-    proposedEffectiveDate: v.optional(v.string()),
-    proposedExpirationDate: v.optional(v.string()),
-    quoteExpirationDate: v.optional(v.string()),
-    subjectivities: v.optional(v.any()),
-    underwritingConditions: v.optional(v.any()),
-    enrichedSubjectivities: v.optional(v.any()),
-    enrichedUnderwritingConditions: v.optional(v.any()),
-    warrantyRequirements: v.optional(v.any()),
     // Supplementary extraction (cl-sdk 0.13+)
     supplementaryFacts: v.optional(v.array(v.object({
       key: v.string(),
@@ -1507,14 +1499,14 @@ export const generateUploadUrl = mutation({
   },
 });
 
-// Broker uploads a policy or quote on behalf of a client org.
+// Broker uploads a policy on behalf of a client org.
 // Requires broker_of_client access to the clientOrgId.
 export const createBrokerUpload = mutation({
   args: {
     clientOrgId: v.id("organizations"),
     fileId: v.id("_storage"),
     fileName: v.optional(v.string()),
-    documentType: v.union(v.literal("policy"), v.literal("quote")),
+    documentType: v.literal("policy"),
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1547,7 +1539,7 @@ export const createBrokerUpload = mutation({
     await recordBrokerActivity(ctx, {
       brokerOrgId: access.brokerOrgId,
       clientOrgId: args.clientOrgId,
-      type: args.documentType === "quote" ? "policy_uploaded" : "policy_uploaded",
+      type: "policy_uploaded",
       actorUserId: access.userId,
       actorSide: "broker",
       payload: {
@@ -1555,7 +1547,7 @@ export const createBrokerUpload = mutation({
         documentType: args.documentType,
         uploadedBySide: "broker",
       },
-      summary: `Broker uploaded a ${args.documentType} on behalf of client`,
+      summary: "Broker uploaded a policy on behalf of client",
     });
 
     return policyId;
@@ -1566,7 +1558,7 @@ export const createBrokerUpload = mutation({
 export const listForBroker = query({
   args: {
     clientOrgId: v.id("organizations"),
-    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
+    documentType: v.optional(v.literal("policy")),
   },
   handler: async (ctx, args) => {
     const access = await getOrgAccessForQuery(ctx, args.clientOrgId);
@@ -1587,7 +1579,7 @@ export const listForBroker = query({
 // Client queries their own policies (explicit about side).
 export const listForClient = query({
   args: {
-    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
+    documentType: v.optional(v.literal("policy")),
   },
   handler: async (ctx, args) => {
     const access = await getCurrentOrgAccess(ctx);
@@ -1695,14 +1687,15 @@ export const getInternal = internalQuery({
   },
 });
 
-// All complete, non-deleted policies+quotes for an org (used by DocumentStore)
+// All policy rows for an org (used by DocumentStore)
 export const listByOrgInternal = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    return ctx.db
+    const policies = await ctx.db
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
       .collect();
+    return policies;
   },
 });
 
@@ -1741,16 +1734,11 @@ const PREVIEW_EXTRACTION_FIELD_ALLOWLIST = new Set([
   "mga",
   "broker",
   "policyNumber",
-  "quoteNumber",
   "policyTypes",
   "documentType",
   "policyYear",
-  "quoteYear",
   "effectiveDate",
   "expirationDate",
-  "proposedEffectiveDate",
-  "proposedExpirationDate",
-  "quoteExpirationDate",
   "isRenewal",
   "coverages",
   "premium",
@@ -1927,7 +1915,7 @@ export const restore = mutation({
 export const listForOrg = query({
   args: {
     orgId: v.id("organizations"),
-    documentType: v.optional(v.union(v.literal("policy"), v.literal("quote"))),
+    documentType: v.optional(v.literal("policy")),
   },
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx, args.orgId);

@@ -324,7 +324,7 @@ export const populateForPolicyInternal = internalMutation({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId || policy.deletedAt || policy.documentType === "quote") {
+    if (!policy?.orgId || policy.deletedAt) {
       return { holderCount: 0, linkCount: 0 };
     }
 

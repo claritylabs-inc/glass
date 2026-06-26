@@ -149,7 +149,6 @@ export interface PolicySummaryProps {
   policyTermType?: string;
   summary?: string;
   isRenewal?: boolean;
-  documentType?: string;
   pdfUrl?: string | null;
 }
 
@@ -166,7 +165,6 @@ export function PolicySummary({
   policyTermType,
   summary: _summary,
   isRenewal,
-  documentType,
   pdfUrl,
 }: PolicySummaryProps) {
   const realPolicyNumber = realText(policyNumber);
@@ -179,9 +177,7 @@ export function PolicySummary({
   const realPremium = realText(premium);
   const realPolicyTypes = policyTypes.filter(isRealPolicyType);
   const periodValue =
-    documentType === "quote" && !realEffectiveDate && !realExpirationDate
-      ? undefined
-      : policyTermType === "continuous" && realEffectiveDate
+    policyTermType === "continuous" && realEffectiveDate
         ? `${realEffectiveDate} — Until Cancelled`
         : realEffectiveDate || realExpirationDate
           ? `${realEffectiveDate ?? "—"} – ${realExpirationDate ?? "—"}`

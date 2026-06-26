@@ -3,7 +3,7 @@
 /**
  * Extraction pipeline — cl-sdk
  *
- * Replaces the old multi-pass extraction (classifyDocumentType → extractFromPdf/extractQuoteFromPdf → applyExtracted)
+ * Replaces the old multi-pass extraction (classifyDocumentType → extractFromPdf → applyExtracted)
  * with the new coordinator/worker pipeline: createExtractor(config).extract(pdfBase64).
  *
  * The new SDK handles classification, extraction, and assembly internally.

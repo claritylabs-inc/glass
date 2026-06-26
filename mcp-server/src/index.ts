@@ -4,7 +4,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { GlassClient } from "./client.js";
 import { registerPolicyTools } from "./tools/policies.js";
-import { registerQuoteTools } from "./tools/quotes.js";
 import { registerThreadTools } from "./tools/threads.js";
 import { registerOrgTools } from "./tools/org.js";
 import { registerAgentTools } from "./tools/agent.js";
@@ -36,7 +35,6 @@ const server = new McpServer({
 
 // Register all tools
 registerPolicyTools(server, client);
-registerQuoteTools(server, client);
 registerThreadTools(server, client);
 registerOrgTools(server, client);
 registerAgentTools(server, client);

@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 
-type SourceKind = "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note";
+type SourceKind = "policy_pdf" | "email" | "attachment" | "manual_note";
 
 export type WorkerSourceSpan = {
   id: string;

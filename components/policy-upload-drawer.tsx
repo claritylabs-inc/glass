@@ -11,8 +11,6 @@ import {
   type PolicyUploadMode,
 } from "@/components/policy-upload-mode-toggle";
 
-export type DocumentType = "policy" | "quote";
-
 const LABEL_CLASSES =
   "text-label font-medium text-muted-foreground block mb-1.5";
 
@@ -21,8 +19,6 @@ interface PolicyUploadDrawerProps {
   onClose: () => void;
   onUpload: (files: File[], mode: PolicyUploadMode) => Promise<void>;
   uploading: boolean;
-  /** Drives the drawer title + copy only — actual type is inferred during extraction. */
-  docType?: DocumentType;
 }
 
 function filterPdfs(incoming: File[]): File[] {
@@ -47,7 +43,6 @@ export function PolicyUploadDrawer({
   onClose,
   onUpload,
   uploading,
-  docType = "policy",
 }: PolicyUploadDrawerProps) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -81,8 +76,6 @@ export function PolicyUploadDrawer({
     onClose();
   }, [files, uploadMode, onUpload, onClose]);
 
-  const typeLabel = docType === "quote" ? "quote" : "policy";
-  const typePlural = docType === "quote" ? "quotes" : "policies";
   const canUpload = files.length > 0 && !uploading;
 
   return (
@@ -91,7 +84,7 @@ export function PolicyUploadDrawer({
       onOpenChange={(value) => {
         if (!value) onClose();
       }}
-      title={`Upload ${typeLabel}`}
+      title="Upload policy"
       footer={
         <PillButton
           variant="primary"
@@ -101,11 +94,11 @@ export function PolicyUploadDrawer({
           {uploading
             ? "Uploading…"
             : files.length > 1 && uploadMode === "separate"
-              ? `Upload as ${files.length} ${typePlural}`
+              ? `Upload as ${files.length} policies`
               : files.length > 1
-                ? `Upload as one ${typeLabel}`
+                ? "Upload as one policy"
               : files.length === 1
-                ? `Upload ${typeLabel}`
+                ? "Upload policy"
                 : "Choose files to upload"}
         </PillButton>
       }
@@ -135,7 +128,7 @@ export function PolicyUploadDrawer({
             <FileUp className="h-4 w-4" />
           </div>
           <p className="text-base font-semibold text-foreground">
-            Drag and drop {typeLabel} PDFs
+            Drag and drop policy PDFs
           </p>
           <p className="text-base text-muted-foreground mt-1">
             {files.length > 0
@@ -144,8 +137,8 @@ export function PolicyUploadDrawer({
           </p>
           <p className="text-label text-muted-foreground/60 mt-3">
             {uploadMode === "separate"
-              ? `Multiple PDFs will create separate ${typePlural}.`
-              : `Multiple PDFs will be combined into a single ${typeLabel}.`}
+              ? "Multiple PDFs will create separate policies."
+              : "Multiple PDFs will be combined into a single policy."}
           </p>
           <input
             ref={fileInputRef}
@@ -165,7 +158,6 @@ export function PolicyUploadDrawer({
           <PolicyUploadModeToggle
             value={uploadMode}
             onChange={setUploadMode}
-            docType={docType}
             disabled={uploading}
           />
         ) : null}

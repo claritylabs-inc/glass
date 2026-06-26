@@ -118,7 +118,6 @@ async function sendPendingEmailById(
             resendEmailId: sentMessageId,
             attachments: pending.attachments,
             referencedPolicyIds: pending.referencedPolicyIds,
-            referencedQuoteIds: pending.referencedQuoteIds,
             policyChangeCaseId: pending.policyChangeCaseId,
             clearStatus: true,
           });
@@ -137,7 +136,6 @@ async function sendPendingEmailById(
             resendEmailId: sentMessageId,
             attachments: pending.attachments,
             referencedPolicyIds: pending.referencedPolicyIds,
-            referencedQuoteIds: pending.referencedQuoteIds,
             pendingEmailId: id,
             policyChangeCaseId: pending.policyChangeCaseId,
           });

@@ -51,8 +51,8 @@ export function policyExtractionToastId(policyId: string) {
   return `policy-extraction:${policyId}`;
 }
 
-function documentLabel(documentType?: string | null) {
-  return documentType === "quote" ? "quote" : "policy";
+function documentLabel() {
+  return "policy";
 }
 
 function titleCase(value: string) {
@@ -90,7 +90,7 @@ function isPreviewStatus(status?: string | null, stage?: string | null) {
 }
 
 function isNonInsuranceDocument(error?: string | null) {
-  return error?.startsWith("This document is not an insurance policy or quote");
+  return error?.startsWith("This document is not a bound insurance policy");
 }
 
 function ExtractionToastIcon({ tone }: { tone: ExtractionToastTone }) {
@@ -245,14 +245,14 @@ function showExtractionStatusToast({
 
 export function showPolicyExtractionQueuedToast({
   policyId,
-  documentType,
+  documentType: _documentType,
   fileName,
 }: {
   policyId: string;
   documentType?: string | null;
   fileName?: string | null;
 }) {
-  const label = documentLabel(documentType);
+  const label = documentLabel();
   showExtractionStatusToast({
     id: policyExtractionToastId(policyId),
     title: `Extracting ${label}`,
@@ -269,7 +269,7 @@ export function showPolicyExtractionReadyToast(
   policy: ToastPolicy,
   openPolicy?: () => void,
 ) {
-  const label = documentLabel(policy.documentType);
+  const label = documentLabel();
   const title =
     cleanDisplayText(policy.carrier) ??
     cleanDisplayText(policy.policyNumber) ??

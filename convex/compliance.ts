@@ -373,7 +373,7 @@ function policyReadableForCompliance(
   policy: Doc<"policies">,
   includePreviewPolicies: boolean,
 ) {
-  if (policy.deletedAt || policy.dismissed || policy.documentType === "quote") {
+  if (policy.deletedAt || policy.dismissed) {
     return false;
   }
   const dataStage = policyDataStage(policy);

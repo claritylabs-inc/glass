@@ -305,7 +305,7 @@ export default function OAuthAuthorizePage() {
                 <ul className="space-y-1.5 text-base text-muted-foreground">
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Read your policies and quotes
+                    Read your policies
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>

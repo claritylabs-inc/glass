@@ -4,7 +4,6 @@ import { internalMutation } from "./_generated/server";
 export const append = internalMutation({
   args: {
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("policies")),
     userId: v.id("users"),
     orgId: v.optional(v.id("organizations")),
     action: v.string(),
