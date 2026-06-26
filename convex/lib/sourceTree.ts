@@ -712,6 +712,18 @@ function isLikelyNamedInsuredValue(value: string): boolean {
   return /[A-Za-z]/.test(text);
 }
 
+function cleanNamedInsuredValue(value: string): string {
+  const text = normalizeWhitespace(value)
+    .replace(/\b(?:Risk Management|Notices?\s+Contact|Email|Direct|Phone)\s*:.*$/i, "")
+    .replace(/\s+\|\s*$/g, "")
+    .trim();
+  const legalEntity = text.match(
+    /^(.+?\b(?:Inc\.?|Incorporated|LLC|L\.L\.C\.|Ltd\.?|Limited|Corporation|Corp\.?|Company|Co\.|LP|L\.P\.|LLP|L\.L\.P\.|PLC|P\.L\.C\.)\b)/i,
+  )?.[1];
+  if (legalEntity) return normalizeWhitespace(legalEntity);
+  return normalizeWhitespace(text.replace(/\s+\d{1,6}\s+[A-Za-z0-9.'-]+(?:\s+[A-Za-z0-9.'-]+){0,6}\b.*$/i, ""));
+}
+
 function datePhraseFromScheduleValue(value: string): string {
   const text = normalizeWhitespace(value);
   const monthDate = text.match(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s*(?:\d{4}|X{4})\b/i);
@@ -961,12 +973,13 @@ function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<
     if (!label || !value) continue;
     const normalizedLabel = label.toLowerCase();
 
+    const namedInsuredValue = cleanNamedInsuredValue(value);
     if (
       !candidate.namedInsured
       && /(?:item\s*1\b.*)?(?:named insured|insured name|policyholder|applicant)\b/.test(normalizedLabel)
-      && isLikelyNamedInsuredValue(value)
+      && isLikelyNamedInsuredValue(namedInsuredValue)
     ) {
-      candidate.namedInsured = sourceBackedValueFromNode(node, value);
+      candidate.namedInsured = sourceBackedValueFromNode(node, namedInsuredValue);
     } else if (!candidate.policyNumber && /(?:item\s*2\b.*)?(?:policy|contract)\s*(?:number|no\.?|#)\b/.test(normalizedLabel)) {
       candidate.policyNumber = sourceBackedValueFromNode(node, value);
     } else if (/(?:item\s*3\b.*)?(?:policy period|policy term|period of insurance|effective.*(?:expiration|expiry)|from.*to)\b/.test(normalizedLabel)) {
@@ -2204,6 +2217,16 @@ export function operationalProfilePolicyFields(
   if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.policyTypes.length > 0) fields.policyTypes = operationalProfile.policyTypes;
+  const coverageLabels = operationalProfile.coverageTypes.length
+    ? operationalProfile.coverageTypes
+    : operationalProfile.policyTypes;
+  const summary = [
+    insurer && insurer !== "Unknown" ? insurer : undefined,
+    policyNumber && policyNumber !== "Unknown" ? `policy #${policyNumber}` : "policy",
+    namedInsured && namedInsured !== "Unknown" ? `for ${namedInsured}` : undefined,
+    coverageLabels.length > 0 ? `covering ${coverageLabels.slice(0, 5).join(", ")}` : undefined,
+  ].filter(Boolean).join(" ");
+  if (summary) fields.summary = summary;
   if (operationalProfile.coverages.length > 0) {
     fields.coverages = operationalProfile.coverages.map((coverage: OperationalCoverageLine) => {
       const coverageRecord = coverage as OperationalCoverageLine & {
