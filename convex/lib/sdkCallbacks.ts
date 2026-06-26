@@ -545,6 +545,7 @@ export function makeGenerateText(
         taskKind,
         primaryRoute,
         fallbackRoute,
+        allowFallback: !visualRepairRouteOverride,
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
@@ -684,6 +685,7 @@ export function makeGenerateObject(
         taskKind,
         primaryRoute,
         fallbackRoute,
+        allowFallback: !visualRepairRouteOverride,
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {

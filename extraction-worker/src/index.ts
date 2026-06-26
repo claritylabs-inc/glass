@@ -788,7 +788,10 @@ function resolveFallbackModel(
   taskKind: string | undefined,
   primaryRoute: WorkerModelRoute,
   settings?: WorkerModelSettings,
+  trace?: ModelCallTrace,
 ): ResolvedWorkerModelRoute | null {
+  if (isVisualTableRepairTrace(trace)) return null;
+
   if (task === "classification" || task === "extraction") {
     if (!taskKind || !QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) return null;
   }
@@ -1291,7 +1294,7 @@ function buildWorkerExtractor(opts: {
 
       const fallback = isMissingApiKeyError(error)
         ? null
-        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
+        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings, trace);
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
@@ -1465,7 +1468,7 @@ function buildWorkerExtractor(opts: {
 
       const fallback = isMissingApiKeyError(error)
         ? null
-        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
+        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings, trace);
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);

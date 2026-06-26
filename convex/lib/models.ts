@@ -147,6 +147,7 @@ type ModelFallbackContext = {
   primaryRoute?: ModelRoute;
   qualityRoute?: ModelRoute;
   fallbackRoute?: ModelRoute;
+  allowFallback?: boolean;
 };
 
 const MODEL_CALL_TIMEOUT_MS = Math.max(
@@ -222,7 +223,10 @@ export function fallbackRouteForCall({
   taskKind,
   primaryRoute,
   fallbackRoute = FALLBACK_MODEL,
+  allowFallback = true,
 }: ModelFallbackContext): ModelRoute | null {
+  if (!allowFallback) return null;
+
   const effectiveTask = task && modelTaskForCall(task, taskKind);
   const effectivePrimaryRoute =
     primaryRoute ?? (effectiveTask ? MODEL_ROUTING[effectiveTask] : undefined);

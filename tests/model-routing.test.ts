@@ -208,6 +208,16 @@ describe("model fallback policy", () => {
     ).toEqual(fallbackRoute);
   });
 
+  test("honors explicit no-fallback contexts for optional repair calls", () => {
+    expect(
+      fallbackRouteForCall({
+        task: "extraction",
+        taskKind: "extraction_source_tree",
+        allowFallback: false,
+      }),
+    ).toBeNull();
+  });
+
   test("uses the configured quality route for proactive extraction", () => {
     const qualityRoute = {
       provider: "fireworks" as const,
