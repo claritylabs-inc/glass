@@ -303,11 +303,14 @@ function addPolicyPeriodGuidance(prompt: string): string {
 
 function getEffectiveMaxTokens(
   task: ModelTask,
+  taskKind: ModelCallTaskKind | undefined,
   maxTokens: number,
   route?: ModelRoute,
 ): number {
   const routeCapabilities = route ? modelCapabilitiesForRoute(route) : modelCapabilitiesForTask(task);
-  const routeMax = routeCapabilities?.maxOutputTokens;
+  const routeMax = taskKind
+    ? routeCapabilities?.taskOutputTokens?.[taskKind] ?? routeCapabilities?.maxOutputTokens
+    : routeCapabilities?.maxOutputTokens;
   return routeMax ? Math.min(maxTokens, routeMax) : maxTokens;
 }
 
@@ -523,7 +526,7 @@ export function makeGenerateText(
       transport = undefined;
       model = getModelForRoute(visualRepairRouteOverride);
     }
-    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, taskKind, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateText", taskKind, effectiveTask, trace);
     try {
@@ -662,7 +665,7 @@ export function makeGenerateObject(
       transport = undefined;
       model = getModelForRoute(visualRepairRouteOverride);
     }
-    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, taskKind, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateObject", taskKind, effectiveTask, trace);
     try {

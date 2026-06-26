@@ -21,6 +21,7 @@ import {
   type ExtractionResult,
   type ExtractionState,
   type ModelCapabilities,
+  type ModelTaskKind,
   type PipelineCheckpoint,
 } from "@claritylabs/cl-sdk";
 import { modelCapabilitiesForRoute } from "./modelCapabilities.js";
@@ -888,8 +889,14 @@ function shouldReturnEmptySections(prompt: string, error: unknown): boolean {
   );
 }
 
-function maxOutputTokensForRoute(maxTokens: number, route: ResolvedWorkerModelRoute): number {
-  const routeMax = route.capabilities.maxOutputTokens;
+function maxOutputTokensForRoute(
+  maxTokens: number,
+  route: ResolvedWorkerModelRoute,
+  taskKind?: string,
+): number {
+  const routeMax = taskKind
+    ? route.capabilities.taskOutputTokens?.[taskKind as ModelTaskKind] ?? route.capabilities.maxOutputTokens
+    : route.capabilities.maxOutputTokens;
   return routeMax ? Math.min(maxTokens, routeMax) : maxTokens;
 }
 
@@ -1228,7 +1235,7 @@ function buildWorkerExtractor(opts: {
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
     const route = resolveModelForTaskKind(taskKind, opts.modelSettings, trace);
     const label = modelTraceLabel("generateText", taskKind, route.task, trace);
-    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route);
+    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route, taskKind);
     const callProviderOptions = providerOptionsForModelCall(
       route,
       providerOptions as ProviderOptions | undefined,
@@ -1298,7 +1305,7 @@ function buildWorkerExtractor(opts: {
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
-      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback);
+      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback, taskKind);
       const fallbackProviderOptions = providerOptionsForModelCall(
         fallback,
         providerOptions as ProviderOptions | undefined,
@@ -1373,7 +1380,7 @@ function buildWorkerExtractor(opts: {
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
     const route = resolveModelForTaskKind(taskKind, opts.modelSettings, trace);
     const label = modelTraceLabel("generateObject", taskKind, route.task, trace);
-    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route);
+    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route, taskKind);
     const callProviderOptions = providerOptionsForModelCall(
       route,
       providerOptions as ProviderOptions | undefined,
@@ -1472,7 +1479,7 @@ function buildWorkerExtractor(opts: {
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
-      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback);
+      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback, taskKind);
       const fallbackProviderOptions = providerOptionsForModelCall(
         fallback,
         providerOptions as ProviderOptions | undefined,
@@ -2113,7 +2120,7 @@ function previewTextFromSourceSpans(sourceSpans: Array<Record<string, unknown>>)
 async function extractPreviewFields(job: ClaimedPreviewJob, sourceText: string) {
   const route = resolveModelForTaskKind("extraction_preview", job.modelSettings);
   const maxOutputTokens = Math.min(
-    maxOutputTokensForRoute(4096, route),
+    maxOutputTokensForRoute(4096, route, "extraction_preview"),
     8192,
   );
   const system = `You extract a fast provisional first read from insurance policy or quote text.
@@ -2198,7 +2205,7 @@ ${sourceText}`;
 
     logFallback(route, fallback, error);
     const fallbackMaxOutputTokens = Math.min(
-      maxOutputTokensForRoute(4096, fallback),
+      maxOutputTokensForRoute(4096, fallback, "extraction_preview"),
       8192,
     );
     const fallbackProviderOptions = providerOptionsForModelCall(fallback, undefined);
