@@ -13,6 +13,7 @@ import {
   primaryRouteForCall,
 } from "../convex/lib/models";
 import {
+  EXTRACTION_QUALITY_MODEL,
   LANGUAGE_MODEL_CATALOG,
   MODEL_DISPLAY_NAMES,
   MODEL_TASK_GROUPS,
@@ -153,10 +154,10 @@ describe("thread chat streaming reliability", () => {
 });
 
 describe("model fallback policy", () => {
-  test("uses OpenAI as the universal fallback provider", () => {
+  test("uses Fireworks DeepSeek V4 Pro as the default fallback provider", () => {
     expect(FALLBACK_MODEL).toEqual({
-      provider: "openai",
-      model: "gpt-5.5",
+      provider: "fireworks",
+      model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
     });
   });
 
@@ -241,14 +242,14 @@ describe("model fallback policy", () => {
         taskKind: "extraction_source_tree",
         primaryRoute: MODEL_ROUTING.extraction,
       }),
-    ).toEqual(FALLBACK_MODEL);
+    ).toEqual(EXTRACTION_QUALITY_MODEL);
     expect(
       primaryRouteForCall({
         task: "extraction",
         taskKind: "extraction_operational_profile",
         primaryRoute: MODEL_ROUTING.extraction,
       }),
-    ).toEqual(FALLBACK_MODEL);
+    ).toEqual(EXTRACTION_QUALITY_MODEL);
     expect(
       primaryRouteForCall({
         task: "extraction",
@@ -260,7 +261,7 @@ describe("model fallback policy", () => {
       primaryRouteForCall({
         task: "extraction",
         taskKind: "extraction_source_tree",
-        primaryRoute: FALLBACK_MODEL,
+        primaryRoute: EXTRACTION_QUALITY_MODEL,
       }),
     ).toBeNull();
   });

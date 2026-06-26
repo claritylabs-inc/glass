@@ -248,7 +248,7 @@ export function primaryRouteForCall({
   task,
   taskKind,
   primaryRoute,
-  qualityRoute = FALLBACK_MODEL,
+  qualityRoute = EXTRACTION_QUALITY_MODEL,
 }: ModelFallbackContext): ModelRoute | null {
   if (!taskKind || !INTENTIONAL_QUALITY_PRIMARY_TASK_KINDS.has(taskKind)) return null;
   const effectiveTask = task && modelTaskForCall(task, taskKind);

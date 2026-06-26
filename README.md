@@ -151,7 +151,7 @@ Model routing is defined in `convex/lib/models.ts`:
 
 - Defaults are broker-configurable in `/settings?section=models`; see `AGENTS.md` for the current opaque Glass defaults and fallback behavior.
 
-Fallback logic retries supported calls on `gpt-5.5` with reasoning disabled if the primary provider fails.
+Fallback logic retries supported calls on the configured fallback route. The static default is Fireworks DeepSeek V4 Pro.
 
 ## Convex Rule Of Thumb
 

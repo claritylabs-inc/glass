@@ -456,6 +456,7 @@ const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
   },
 };
 
+const FIREWORKS_DEEPSEEK_V4_PRO = "accounts/fireworks/models/deepseek-v4-pro";
 const FIREWORKS_QWEN_37_PLUS = "accounts/fireworks/models/qwen3p7-plus";
 
 const WORKER_VISUAL_TABLE_REPAIR_ROUTE: WorkerModelRoute = {
@@ -474,8 +475,8 @@ const WORKER_QUALITY_ROUTE: WorkerModelRoute = {
 };
 
 const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
-  provider: "openai",
-  model: "gpt-5.5",
+  provider: "fireworks",
+  model: FIREWORKS_DEEPSEEK_V4_PRO,
 };
 
 const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([

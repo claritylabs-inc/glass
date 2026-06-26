@@ -305,8 +305,8 @@ export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
 };
 
 export const FALLBACK_MODEL: ModelRoute = {
-  model: "gpt-5.5",
-  provider: "openai",
+  model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
+  provider: "fireworks",
 };
 
 export const EXTRACTION_QUALITY_MODEL: ModelRoute = {
