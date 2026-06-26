@@ -446,7 +446,7 @@ async function recordModelTrace(
     transport?: string;
     durationMs: number;
     usage?: TokenUsage;
-    status: "complete" | "error";
+    status: "complete" | "error" | "soft_failed";
     error?: string;
     details?: Record<string, unknown>;
   },
@@ -741,8 +741,7 @@ export function makeGenerateObject(
           routeSource,
           transport,
           durationMs: nowMs() - startedAt,
-          status: "error",
-          error: message,
+          status: "soft_failed",
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -772,8 +771,7 @@ export function makeGenerateObject(
           routeSource,
           transport,
           durationMs: nowMs() - startedAt,
-          status: "error",
-          error: message,
+          status: "soft_failed",
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -803,8 +801,7 @@ export function makeGenerateObject(
           routeSource,
           transport,
           durationMs: nowMs() - startedAt,
-          status: "error",
-          error: message,
+          status: "soft_failed",
           details: modelTraceDetails({
             kind: "generateObject",
             label,

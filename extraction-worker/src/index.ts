@@ -855,6 +855,29 @@ async function recordModelCallError(
   });
 }
 
+async function recordModelCallSoftFailure(
+  opts: {
+    job: Pick<ClaimedJob, "state">;
+    route: ResolvedWorkerModelRoute;
+    label: string;
+    taskKind?: string;
+    startedAt: number;
+    details: unknown;
+  },
+) {
+  await recordTraceEvent(opts.job, {
+    kind: "model_call",
+    label: opts.label,
+    task: opts.route.task,
+    taskKind: opts.taskKind,
+    ...modelRouteTrace(opts.route),
+    attempt: 1,
+    status: "soft_failed",
+    durationMs: nowMs() - opts.startedAt,
+    details: opts.details,
+  });
+}
+
 async function recordModelCallComplete(
   opts: {
     job: Pick<ClaimedJob, "state">;
@@ -1435,14 +1458,12 @@ function buildWorkerExtractor(opts: {
       };
     } catch (error) {
       if (shouldReturnEmptySections(guidedPrompt, error)) {
-        await recordModelCallError({
+        await recordModelCallSoftFailure({
           job: opts.job,
           route,
           label,
           taskKind,
-          attempt: 1,
           startedAt,
-          error,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -1461,14 +1482,12 @@ function buildWorkerExtractor(opts: {
       }
 
       if (shouldReturnEmptyFormInventory(taskKind)) {
-        await recordModelCallError({
+        await recordModelCallSoftFailure({
           job: opts.job,
           route,
           label,
           taskKind,
-          attempt: 1,
           startedAt,
-          error,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -1487,14 +1506,12 @@ function buildWorkerExtractor(opts: {
       }
 
       if (shouldReturnEmptyVisualTableRepair(trace)) {
-        await recordModelCallError({
+        await recordModelCallSoftFailure({
           job: opts.job,
           route,
           label,
           taskKind,
-          attempt: 1,
           startedAt,
-          error,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
