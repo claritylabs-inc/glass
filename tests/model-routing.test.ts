@@ -263,7 +263,7 @@ describe("model fallback policy", () => {
         taskKind: "extraction_source_tree",
         primaryRoute: EXTRACTION_QUALITY_MODEL,
       }),
-    ).toBeNull();
+    ).toEqual(EXTRACTION_QUALITY_MODEL);
   });
 
   test("does not retry when the selected route is already the fallback route", () => {

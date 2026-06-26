@@ -310,7 +310,7 @@ export const FALLBACK_MODEL: ModelRoute = {
 };
 
 export const EXTRACTION_QUALITY_MODEL: ModelRoute = {
-  model: FIREWORKS_MODEL_IDS.glm52,
+  model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
   provider: "fireworks",
 };
 

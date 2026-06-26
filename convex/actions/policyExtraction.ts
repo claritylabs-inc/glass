@@ -2551,6 +2551,7 @@ async function completeExternalExtractFromPayload(
     orgId: state.orgId as Id<"organizations">,
     document: doc,
     sourceSpans: canonicalSpans,
+    runModelReview: false,
     log: async (message, level = "info") => {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
@@ -2586,23 +2587,7 @@ async function completeExternalExtractFromPayload(
       });
     },
   });
-  const operationalProfile = await extractAdditionalInsuredEligibility({
-    ctx,
-    orgId: state.orgId as Id<"organizations">,
-    traceId: state.traceId,
-    policyId,
-    sourceTree: sourceNodes,
-    profile: validatedOperationalProfile,
-    log: async (message, level = "info") => {
-      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-        jobId: policyId,
-        timestamp: nowMs(),
-        message,
-        phase: "extract",
-        level,
-      });
-    },
-  });
+  const operationalProfile = validatedOperationalProfile;
   const fields = processed.fields;
   if (processed.coverageReviewQuestionCount > 0) {
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {

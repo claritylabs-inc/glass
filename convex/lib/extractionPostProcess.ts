@@ -26,6 +26,7 @@ type ExtractionPostProcessOptions = {
   orgId: Id<"organizations">;
   document: Record<string, unknown>;
   sourceSpans: SourceSpanLike[];
+  runModelReview?: boolean;
   log?: (message: string, level?: "info" | "warn" | "error") => Promise<void> | void;
 };
 
@@ -543,6 +544,7 @@ export async function postProcessExtractionDocument(
   options: ExtractionPostProcessOptions,
 ): Promise<ExtractionPostProcessResult> {
   let document = options.document;
+  const runModelReview = options.runModelReview ?? true;
 
   const periodFallback = applyPolicyPeriodFallback(
     document,
@@ -559,13 +561,15 @@ export async function postProcessExtractionDocument(
     );
   }
 
-  const fieldReview = await reviewExtractionFields({
-    ctx: options.ctx,
-    orgId: options.orgId,
-    document,
-    sourceSpans: options.sourceSpans,
-    log: options.log,
-  });
+  const fieldReview = runModelReview
+    ? await reviewExtractionFields({
+      ctx: options.ctx,
+      orgId: options.orgId,
+      document,
+      sourceSpans: options.sourceSpans,
+      log: options.log,
+    })
+    : { document, applied: [], skipped: [] };
   document = fieldReview.document;
   const groundedDocument = stripUngroundedSourceSensitiveValues(document, options.sourceSpans);
   document = groundedDocument.value;
@@ -584,16 +588,20 @@ export async function postProcessExtractionDocument(
     );
   }
 
-  const reviewCopyFields = await refineCoverageReviewCopyWithLlm(
-    options.ctx,
-    options.orgId,
-    scopedCoverage.fields,
-  );
-  const fields = await normalizeOrgNamesWithLlm(
-    options.ctx,
-    options.orgId,
-    reviewCopyFields,
-  );
+  const reviewCopyFields = runModelReview
+    ? await refineCoverageReviewCopyWithLlm(
+      options.ctx,
+      options.orgId,
+      scopedCoverage.fields,
+    )
+    : scopedCoverage.fields;
+  const fields = runModelReview
+    ? await normalizeOrgNamesWithLlm(
+      options.ctx,
+      options.orgId,
+      reviewCopyFields,
+    )
+    : reviewCopyFields;
   const groundedFields = stripUngroundedSourceSensitiveValues(fields, options.sourceSpans);
   await logRemovedSourceSensitiveValues(groundedFields.removed, options.log);
 

@@ -444,23 +444,24 @@ function readSourceKind(value: unknown): "policy_pdf" | "application_pdf" | "ema
   return "policy_pdf";
 }
 
+const FIREWORKS_DEEPSEEK_V4_PRO = "accounts/fireworks/models/deepseek-v4-pro";
+const FIREWORKS_DEEPSEEK_V4_FLASH = "accounts/fireworks/models/deepseek-v4-flash";
+const FIREWORKS_QWEN_37_PLUS = "accounts/fireworks/models/qwen3p7-plus";
+
 const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
   classification: {
     provider: "fireworks",
-    model: "accounts/fireworks/models/deepseek-v4-flash",
+    model: FIREWORKS_DEEPSEEK_V4_FLASH,
   },
   extraction: {
     provider: "fireworks",
-    model: "accounts/fireworks/models/deepseek-v4-flash",
+    model: FIREWORKS_DEEPSEEK_V4_FLASH,
   },
   extraction_preview: {
     provider: "fireworks",
-    model: "accounts/fireworks/models/deepseek-v4-flash",
+    model: FIREWORKS_DEEPSEEK_V4_FLASH,
   },
 };
-
-const FIREWORKS_DEEPSEEK_V4_PRO = "accounts/fireworks/models/deepseek-v4-pro";
-const FIREWORKS_QWEN_37_PLUS = "accounts/fireworks/models/qwen3p7-plus";
 
 const WORKER_VISUAL_TABLE_REPAIR_ROUTE: WorkerModelRoute = {
   provider: "fireworks",
@@ -474,7 +475,7 @@ const WORKER_FORM_INVENTORY_ROUTE: WorkerModelRoute = {
 
 const WORKER_QUALITY_ROUTE: WorkerModelRoute = {
   provider: "fireworks",
-  model: "accounts/fireworks/models/glm-5p2",
+  model: FIREWORKS_DEEPSEEK_V4_FLASH,
 };
 
 const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
@@ -753,7 +754,7 @@ function resolveModelForTaskKind(
   const baseRoute = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
   const quality = resolveConfiguredQualityRoute(settings);
   const useQualityPrimary =
-    !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind) && !sameRoute(baseRoute, quality.route);
+    !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind);
   const visualRepair = isVisualTableRepairTrace(trace)
     ? resolveConfiguredVisualTableRepairRoute(settings)
     : null;

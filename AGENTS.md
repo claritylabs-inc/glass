@@ -107,6 +107,7 @@ Default model routing lives in [convex/lib/models.ts](convex/lib/models.ts), wit
 
 - `chat` → Fireworks `accounts/fireworks/models/deepseek-v4-flash` for low-latency interactive tool use
 - `classification`, `triage`, `extraction`, `extraction_preview`, `email_extraction`, `document_extraction` → Fireworks `accounts/fireworks/models/deepseek-v4-flash` for cheap structured work and high-volume extraction/classification calls
+- `extraction_quality` → Fireworks `accounts/fireworks/models/deepseek-v4-flash` for proactive source-tree and operational-profile extraction
 - `email_draft`, `email_reply`, `analysis`, `summary`, `mailbox_coordinator`, `application_authoring` → Fireworks `accounts/fireworks/models/glm-5p2` for deliberate text reasoning, writing, and coordination
 - `security` → Fireworks `accounts/fireworks/models/gpt-oss-safeguard-20b`
 - `embeddings` → OpenAI `text-embedding-3-small` at 1536 dimensions until re-embedding and retrieval-shadow validation prove a Fireworks embedding route is safe
