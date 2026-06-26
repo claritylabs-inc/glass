@@ -278,11 +278,18 @@ describe("model fallback policy", () => {
     expect(modelCatalog).toContain(
       'EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality"',
     );
+    expect(modelCatalog).toContain(
+      'EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID =\n  "extraction_form_inventory"',
+    );
     expect(modelCatalog).toContain('FALLBACK_MODEL_ROUTE_ID = "fallback"');
     expect(modelCatalog).toContain("Source tree and profile extraction");
+    expect(modelCatalog).toContain("Form inventory");
     expect(modelCatalog).toContain("Fallback model");
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "extraction_quality",
+    );
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "extraction_form_inventory",
     );
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "fallback",

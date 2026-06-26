@@ -53,6 +53,7 @@ const MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
       extraction_long_list: 24_576,
+      extraction_operational_profile: 8_192,
       extraction_review: 12_288,
       extraction_referential_lookup: 12_288,
     },
@@ -65,6 +66,7 @@ const MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
     longListOutputTokens: 16_384,
     taskOutputTokens: {
       extraction_source_tree: 2_400,
+      extraction_form_inventory: 2_048,
       extraction_operational_profile: 8_192,
       extraction_review: 8_192,
     },

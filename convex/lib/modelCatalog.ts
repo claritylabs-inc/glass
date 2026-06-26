@@ -309,24 +309,38 @@ export const FALLBACK_MODEL: ModelRoute = {
   provider: "openai",
 };
 
+export const EXTRACTION_QUALITY_MODEL: ModelRoute = {
+  model: FIREWORKS_MODEL_IDS.glm52,
+  provider: "fireworks",
+};
+
 export const VISUAL_TABLE_REPAIR_MODEL: ModelRoute = {
+  model: FIREWORKS_MODEL_IDS.qwen37Plus,
+  provider: "fireworks",
+};
+
+export const FORM_INVENTORY_MODEL: ModelRoute = {
   model: FIREWORKS_MODEL_IDS.qwen37Plus,
   provider: "fireworks",
 };
 
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
 export const EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality" as const;
+export const EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID =
+  "extraction_form_inventory" as const;
 export const EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID =
   "extraction_visual_table_repair" as const;
 export const FALLBACK_MODEL_ROUTE_ID = "fallback" as const;
 export type ModelRouteId =
   | ModelTask
   | typeof EXTRACTION_QUALITY_MODEL_ROUTE_ID
+  | typeof EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID
   | typeof EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID
   | typeof FALLBACK_MODEL_ROUTE_ID;
 export const MODEL_ROUTE_IDS = [
   ...MODEL_TASKS,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+  EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
   EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
   FALLBACK_MODEL_ROUTE_ID,
 ] as ModelRouteId[];
@@ -334,6 +348,7 @@ export const MODEL_ROUTE_IDS = [
 export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_LABELS,
   extraction_quality: "Source tree and profile extraction",
+  extraction_form_inventory: "Form inventory",
   extraction_visual_table_repair: "Visual table repair",
   fallback: "Fallback model",
 };
@@ -342,6 +357,8 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_DESCRIPTIONS,
   extraction_quality:
     "Proactive primary route for source-tree generation and operational-profile extraction before any failure occurs.",
+  extraction_form_inventory:
+    "Fast optional page-range inventory for declarations, forms, notices, and endorsements before source-tree grouping.",
   extraction_visual_table_repair:
     "Image-capable route for repairing parsed table rows and column labels against page screenshots.",
   fallback:
@@ -350,7 +367,10 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
 
 export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
   if (id === FALLBACK_MODEL_ROUTE_ID) return FALLBACK_MODEL;
-  if (id === EXTRACTION_QUALITY_MODEL_ROUTE_ID) return FALLBACK_MODEL;
+  if (id === EXTRACTION_QUALITY_MODEL_ROUTE_ID) return EXTRACTION_QUALITY_MODEL;
+  if (id === EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID) {
+    return FORM_INVENTORY_MODEL;
+  }
   if (id === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID) {
     return VISUAL_TABLE_REPAIR_MODEL;
   }
@@ -412,6 +432,7 @@ export const OPERATOR_MODEL_ROUTE_GROUPS = [
       "classification",
       "extraction",
       "extraction_quality",
+      "extraction_form_inventory",
       "extraction_visual_table_repair",
       "fallback",
       "document_extraction",
@@ -575,6 +596,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
       extraction_long_list: 24_576,
+      extraction_operational_profile: 8_192,
       extraction_review: 12_288,
       extraction_referential_lookup: 12_288,
       query_classify: 2_048,
@@ -599,6 +621,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     supportsImageInput: true,
     taskOutputTokens: {
       extraction_source_tree: 2_400,
+      extraction_form_inventory: 2_048,
       extraction_operational_profile: 8_192,
       extraction_review: 8_192,
       query_reason: 8_192,

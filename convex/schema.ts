@@ -617,6 +617,7 @@ export default defineSchema({
         application_authoring: v.optional(modelRouteValidator),
         embeddings: v.optional(modelRouteValidator),
         extraction_quality: v.optional(modelRouteValidator),
+        extraction_form_inventory: v.optional(modelRouteValidator),
         extraction_visual_table_repair: v.optional(modelRouteValidator),
         fallback: v.optional(modelRouteValidator),
       }),

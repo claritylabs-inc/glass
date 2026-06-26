@@ -7,9 +7,9 @@ import { requireOperator } from "./lib/operatorIdentity";
 import {
   CONFIGURABLE_MODEL_PROVIDERS,
   EMBEDDING_MODEL_CATALOG,
+  EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
   EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
-  FALLBACK_MODEL,
   FALLBACK_MODEL_ROUTE_ID,
   LANGUAGE_MODEL_CATALOG,
   MODEL_ROUTE_DESCRIPTIONS,
@@ -23,7 +23,6 @@ import {
   OPERATOR_MODEL_ROUTE_GROUPS,
   MODEL_CAPABILITIES,
   PROVIDER_LABELS,
-  VISUAL_TABLE_REPAIR_MODEL,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   WEB_RETRIEVAL_LABELS,
@@ -112,6 +111,7 @@ const globalRoutesValidator = v.object({
   application_authoring: v.optional(routeUpdateValidator),
   embeddings: v.optional(routeUpdateValidator),
   extraction_quality: v.optional(routeUpdateValidator),
+  extraction_form_inventory: v.optional(routeUpdateValidator),
   extraction_visual_table_repair: v.optional(routeUpdateValidator),
   fallback: v.optional(routeUpdateValidator),
 });
@@ -591,6 +591,7 @@ export const resolveForOrg = internalQuery({
     }
     for (const routeId of [
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+      EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
       EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {
@@ -603,9 +604,7 @@ export const resolveForOrg = internalQuery({
         routes[routeId] = globalRoute;
         routeSources[routeId] = "global";
       } else {
-        routes[routeId] = routeId === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID
-          ? VISUAL_TABLE_REPAIR_MODEL
-          : FALLBACK_MODEL;
+        routes[routeId] = defaultModelRouteForId(routeId);
         routeSources[routeId] = "static";
       }
     }
@@ -645,6 +644,7 @@ export const resolvePublicDefaults = internalQuery({
     }
     for (const routeId of [
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+      EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
       EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {
@@ -657,9 +657,7 @@ export const resolvePublicDefaults = internalQuery({
         routes[routeId] = globalRoute;
         routeSources[routeId] = "global";
       } else {
-        routes[routeId] = routeId === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID
-          ? VISUAL_TABLE_REPAIR_MODEL
-          : FALLBACK_MODEL;
+        routes[routeId] = defaultModelRouteForId(routeId);
         routeSources[routeId] = "static";
       }
     }

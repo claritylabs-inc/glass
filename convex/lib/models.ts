@@ -14,8 +14,10 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
+  EXTRACTION_QUALITY_MODEL,
   FALLBACK_MODEL,
   FIREWORKS_MODEL_IDS,
+  FORM_INVENTORY_MODEL,
   MODEL_ROUTING,
   VISUAL_TABLE_REPAIR_MODEL,
   WEB_RETRIEVAL_DEFAULT,
@@ -399,6 +401,7 @@ export async function getModelAndRouteForOrg(
   routeSource: "broker" | "global" | "static" | "default";
   transport: "direct" | "gateway";
   qualityRoute: ModelRoute;
+  formInventoryRoute: ModelRoute;
   visualTableRepairRoute: ModelRoute;
   fallbackRoute: ModelRoute;
 }> {
@@ -406,7 +409,9 @@ export async function getModelAndRouteForOrg(
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
     const routeSource = settings?.routeSources?.[task];
-    const qualityRoute = settings?.routes?.extraction_quality ?? FALLBACK_MODEL;
+    const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+    const formInventoryRoute =
+      settings?.routes?.extraction_form_inventory ?? FORM_INVENTORY_MODEL;
     const visualTableRepairRoute =
       settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
@@ -429,6 +434,7 @@ export async function getModelAndRouteForOrg(
       routeSource: canUseConfiguredRoute ? (routeSource ?? "global") : "default",
       transport,
       qualityRoute,
+      formInventoryRoute,
       visualTableRepairRoute,
       fallbackRoute,
     };
@@ -446,7 +452,8 @@ export async function getModelAndRouteForOrg(
       route,
       routeSource: "default",
       transport,
-      qualityRoute: FALLBACK_MODEL,
+      qualityRoute: EXTRACTION_QUALITY_MODEL,
+      formInventoryRoute: FORM_INVENTORY_MODEL,
       visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
       fallbackRoute: FALLBACK_MODEL,
     };
@@ -462,6 +469,7 @@ export async function getModelAndRouteForPublicTask(
   routeSource: "global" | "static" | "default";
   transport: "direct" | "gateway";
   qualityRoute: ModelRoute;
+  formInventoryRoute: ModelRoute;
   visualTableRepairRoute: ModelRoute;
   fallbackRoute: ModelRoute;
 }> {
@@ -469,7 +477,9 @@ export async function getModelAndRouteForPublicTask(
     const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
     const route = settings?.routes?.[task] ?? MODEL_ROUTING[task];
     const routeSource = settings?.routeSources?.[task] ?? "static";
-    const qualityRoute = settings?.routes?.extraction_quality ?? FALLBACK_MODEL;
+    const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+    const formInventoryRoute =
+      settings?.routes?.extraction_form_inventory ?? FORM_INVENTORY_MODEL;
     const visualTableRepairRoute =
       settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
@@ -481,6 +491,7 @@ export async function getModelAndRouteForPublicTask(
       routeSource,
       transport,
       qualityRoute,
+      formInventoryRoute,
       visualTableRepairRoute,
       fallbackRoute,
     };
@@ -498,7 +509,8 @@ export async function getModelAndRouteForPublicTask(
       route,
       routeSource: "default",
       transport,
-      qualityRoute: FALLBACK_MODEL,
+      qualityRoute: EXTRACTION_QUALITY_MODEL,
+      formInventoryRoute: FORM_INVENTORY_MODEL,
       visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
       fallbackRoute: FALLBACK_MODEL,
     };

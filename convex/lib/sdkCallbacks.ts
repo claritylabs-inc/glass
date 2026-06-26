@@ -32,6 +32,7 @@ import {
   type ModelTask,
 } from "./models";
 import {
+  FORM_INVENTORY_MODEL,
   modelCapabilitiesForRoute,
   modelCapabilitiesForTask,
   modelSupportsImageInput,
@@ -306,7 +307,8 @@ function getEffectiveMaxTokens(
   route?: ModelRoute,
 ): number {
   const routeCapabilities = route ? modelCapabilitiesForRoute(route) : modelCapabilitiesForTask(task);
-  return routeCapabilities?.maxOutputTokens ?? maxTokens;
+  const routeMax = routeCapabilities?.maxOutputTokens;
+  return routeMax ? Math.min(maxTokens, routeMax) : maxTokens;
 }
 
 function buildPromptInput(
@@ -395,6 +397,14 @@ function visualTableRepairRouteOverride(
   return modelSupportsImageInput(route) ? route : VISUAL_TABLE_REPAIR_MODEL;
 }
 
+function formInventoryRouteOverride(
+  taskKind: ModelCallTaskKind | undefined,
+  formInventoryRoute: ModelRoute | undefined,
+): ModelRoute | null {
+  if (taskKind !== "extraction_form_inventory") return null;
+  return formInventoryRoute ?? FORM_INVENTORY_MODEL;
+}
+
 /**
  * Detect base64 PDF content embedded directly in prompt text.
  * The cl-sdk application pipeline concatenates raw pdfBase64 into prompts
@@ -471,6 +481,7 @@ export function makeGenerateText(
     const effectiveTask = modelTaskForCall(task, taskKind);
     let primaryRoute: ModelRoute | undefined;
     let qualityRoute: ModelRoute | undefined;
+    let formInventoryRoute: ModelRoute | undefined;
     let visualTableRepairRoute: ModelRoute | undefined;
     let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
@@ -479,6 +490,7 @@ export function makeGenerateText(
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
         qualityRoute = resolved.qualityRoute;
+        formInventoryRoute = resolved.formInventoryRoute;
         visualTableRepairRoute = resolved.visualTableRepairRoute;
         fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
@@ -496,6 +508,13 @@ export function makeGenerateText(
       routeSource = "quality";
       transport = undefined;
       model = getModelForRoute(primaryRouteOverride);
+    }
+    const formInventoryRouteOverrideValue = formInventoryRouteOverride(taskKind, formInventoryRoute);
+    if (formInventoryRouteOverrideValue) {
+      primaryRoute = formInventoryRouteOverrideValue;
+      routeSource = "form_inventory";
+      transport = undefined;
+      model = getModelForRoute(formInventoryRouteOverrideValue);
     }
     const visualRepairRouteOverride = visualTableRepairRouteOverride(trace, visualTableRepairRoute);
     if (visualRepairRouteOverride) {
@@ -600,6 +619,7 @@ export function makeGenerateObject(
     const effectiveTask = modelTaskForCall(task, taskKind);
     let primaryRoute: ModelRoute | undefined;
     let qualityRoute: ModelRoute | undefined;
+    let formInventoryRoute: ModelRoute | undefined;
     let visualTableRepairRoute: ModelRoute | undefined;
     let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
@@ -608,6 +628,7 @@ export function makeGenerateObject(
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
         qualityRoute = resolved.qualityRoute;
+        formInventoryRoute = resolved.formInventoryRoute;
         visualTableRepairRoute = resolved.visualTableRepairRoute;
         fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
@@ -625,6 +646,13 @@ export function makeGenerateObject(
       routeSource = "quality";
       transport = undefined;
       model = getModelForRoute(primaryRouteOverride);
+    }
+    const formInventoryRouteOverrideValue = formInventoryRouteOverride(taskKind, formInventoryRoute);
+    if (formInventoryRouteOverrideValue) {
+      primaryRoute = formInventoryRouteOverrideValue;
+      routeSource = "form_inventory";
+      transport = undefined;
+      model = getModelForRoute(formInventoryRouteOverrideValue);
     }
     const visualRepairRouteOverride = visualTableRepairRouteOverride(trace, visualTableRepairRoute);
     if (visualRepairRouteOverride) {

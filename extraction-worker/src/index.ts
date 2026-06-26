@@ -462,6 +462,16 @@ const WORKER_VISUAL_TABLE_REPAIR_ROUTE: WorkerModelRoute = {
   model: FIREWORKS_QWEN_37_PLUS,
 };
 
+const WORKER_FORM_INVENTORY_ROUTE: WorkerModelRoute = {
+  provider: "fireworks",
+  model: FIREWORKS_QWEN_37_PLUS,
+};
+
+const WORKER_QUALITY_ROUTE: WorkerModelRoute = {
+  provider: "fireworks",
+  model: "accounts/fireworks/models/glm-5p2",
+};
+
 const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
   provider: "openai",
   model: "gpt-5.5",
@@ -691,7 +701,7 @@ function resolveConfiguredFallbackRoute(settings?: WorkerModelSettings) {
 function resolveConfiguredQualityRoute(settings?: WorkerModelSettings) {
   return resolveConfiguredRoute(
     "extraction_quality",
-    WORKER_FALLBACK_ROUTE,
+    WORKER_QUALITY_ROUTE,
     "static",
     settings,
   );
@@ -711,6 +721,15 @@ function resolveConfiguredVisualTableRepairRoute(settings?: WorkerModelSettings)
   return routeSupportsImageInput(configured.route)
     ? configured
     : { route: WORKER_VISUAL_TABLE_REPAIR_ROUTE, routeSource: "static" as const };
+}
+
+function resolveConfiguredFormInventoryRoute(settings?: WorkerModelSettings) {
+  return resolveConfiguredRoute(
+    "extraction_form_inventory",
+    WORKER_FORM_INVENTORY_ROUTE,
+    "static",
+    settings,
+  );
 }
 
 function resolveModelForTaskKind(
@@ -733,14 +752,19 @@ function resolveModelForTaskKind(
   const visualRepair = isVisualTableRepairTrace(trace)
     ? resolveConfiguredVisualTableRepairRoute(settings)
     : null;
-  const route = visualRepair?.route ?? (useQualityPrimary ? quality.route : baseRoute);
-  const routeSource = visualRepair?.routeSource ?? (useQualityPrimary
+  const formInventory = taskKind === "extraction_form_inventory"
+    ? resolveConfiguredFormInventoryRoute(settings)
+    : null;
+  const route = visualRepair?.route ?? formInventory?.route ?? (useQualityPrimary ? quality.route : baseRoute);
+  const routeSource = visualRepair?.routeSource ?? formInventory?.routeSource ?? (useQualityPrimary
     ? quality.routeSource
     : canUseConfiguredRoute
     ? (configuredRouteSource ?? "configured")
     : "default");
   const apiKey = visualRepair
     ? visualRepair.apiKey
+    : formInventory
+      ? formInventory.apiKey
     : useQualityPrimary
       ? quality.apiKey
       : apiKeyForRoute(route, routeSource, settings);
@@ -862,7 +886,8 @@ function shouldReturnEmptySections(prompt: string, error: unknown): boolean {
 }
 
 function maxOutputTokensForRoute(maxTokens: number, route: ResolvedWorkerModelRoute): number {
-  return route.capabilities.maxOutputTokens ?? maxTokens;
+  const routeMax = route.capabilities.maxOutputTokens;
+  return routeMax ? Math.min(maxTokens, routeMax) : maxTokens;
 }
 
 function logFallback(
