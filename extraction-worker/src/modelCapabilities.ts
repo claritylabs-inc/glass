@@ -41,6 +41,23 @@ const MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
       extraction_long_list: 24_576,
     },
   },
+  "accounts/fireworks/models/deepseek-v4-pro": {
+    modelName: "accounts/fireworks/models/deepseek-v4-pro",
+    maxInputTokens: 1_048_576,
+    maxOutputTokens: 32_768,
+    defaultOutputTokens: 8_192,
+    longListOutputTokens: 24_576,
+    taskOutputTokens: {
+      extraction_classify: 2_048,
+      extraction_form_inventory: 8_192,
+      extraction_page_map: 8_192,
+      extraction_focused: 16_384,
+      extraction_long_list: 24_576,
+      extraction_operational_profile: 8_192,
+      extraction_review: 12_288,
+      extraction_referential_lookup: 12_288,
+    },
+  },
   "accounts/fireworks/models/glm-5p2": {
     modelName: "accounts/fireworks/models/glm-5p2",
     maxInputTokens: 1_000_000,

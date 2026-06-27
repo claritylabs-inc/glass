@@ -3,14 +3,13 @@
 /**
  * Maps between cl-sdk InsuranceDocument types and Glass's policies table schema.
  *
- * Replaces the removed applyExtracted / applyExtractedQuote from cl-sdk v0.1.x
- * and the toPolicy / toQuote adapters from agentPrompts.ts.
+ * Replaces the removed applyExtracted adapter from cl-sdk v0.1.x
+ * and the old toPolicy adapter from agentPrompts.ts.
  */
 
 import type {
   InsuranceDocument,
   PolicyDocument,
-  QuoteDocument,
 } from "@claritylabs/cl-sdk";
 import { sanitizeNulls } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
@@ -106,7 +105,6 @@ export function insuranceDocToPolicy(
   doc: InsuranceDocument,
 ): Record<string, unknown> {
   const d = doc as any;
-  const isQuote = d.type === "quote";
   const policyTypes =
     Array.isArray(d.policyTypes) && d.policyTypes.length > 0
       ? d.policyTypes
@@ -133,11 +131,9 @@ export function insuranceDocToPolicy(
     underwriter: d.underwriter ?? undefined,
     mga: normalizeOrgName(d.mga) ?? undefined,
     broker: normalizeOrgName(d.brokerAgency) ?? undefined,
-    policyNumber: isQuote
-      ? d.quoteNumber || "Unknown"
-      : normalizeCriticalString(d.policyNumber) || declarationPolicyNumber || "Unknown",
+    policyNumber: normalizeCriticalString(d.policyNumber) || declarationPolicyNumber || "Unknown",
     policyTypes,
-    documentType: d.type,
+    documentType: "policy",
     policyYear: policyYearFromDate(effectiveDate),
     effectiveDate: effectiveDate || "Unknown",
     expirationDate: expirationDate ?? "Unknown",
@@ -243,31 +239,9 @@ export function insuranceDocToPolicy(
   if (d.supplementaryFacts?.length)
     fields.supplementaryFacts = sanitizeNulls(d.supplementaryFacts);
 
-  // Policy-specific fields
-  if (!isQuote) {
-    if (d.policyTermType) fields.policyTermType = d.policyTermType;
-    if (d.nextReviewDate)
-      fields.nextReviewDate = normalizeExtractedDate(d.nextReviewDate) ?? d.nextReviewDate;
-  }
-
-  // Quote-specific fields
-  if (isQuote) {
-    if (d.quoteNumber) fields.quoteNumber = d.quoteNumber;
-    if (d.proposedEffectiveDate)
-      fields.proposedEffectiveDate =
-        normalizeExtractedDate(d.proposedEffectiveDate) ?? d.proposedEffectiveDate;
-    if (d.proposedExpirationDate)
-      fields.proposedExpirationDate =
-        normalizeExtractedDate(d.proposedExpirationDate) ?? d.proposedExpirationDate;
-    if (d.quoteExpirationDate)
-      fields.quoteExpirationDate =
-        normalizeExtractedDate(d.quoteExpirationDate) ?? d.quoteExpirationDate;
-    if (d.subjectivities?.length)
-      fields.subjectivities = sanitizeNulls(d.subjectivities);
-    if (d.underwritingConditions?.length) {
-      fields.underwritingConditions = sanitizeNulls(d.underwritingConditions);
-    }
-  }
+  if (d.policyTermType) fields.policyTermType = d.policyTermType;
+  if (d.nextReviewDate)
+    fields.nextReviewDate = normalizeExtractedDate(d.nextReviewDate) ?? d.nextReviewDate;
 
   return fields;
 }
@@ -278,8 +252,6 @@ export function insuranceDocToPolicy(
  * Used by DocumentStore.get/query and agent context building.
  */
 export function policyToInsuranceDoc(p: any): InsuranceDocument {
-  const isQuote = p.documentType === "quote";
-
   const base = {
     id: p._id as string,
     carrier: p.carrier,
@@ -346,19 +318,6 @@ export function policyToInsuranceDoc(p: any): InsuranceDocument {
     // Supplementary facts (cl-sdk 0.13+)
     supplementaryFacts: p.supplementaryFacts as unknown,
   };
-
-  if (isQuote) {
-    return {
-      ...base,
-      type: "quote" as const,
-      quoteNumber: p.quoteNumber || p.policyNumber,
-      proposedEffectiveDate: p.proposedEffectiveDate,
-      proposedExpirationDate: p.proposedExpirationDate,
-      subjectivities: p.subjectivities as unknown,
-      underwritingConditions: p.underwritingConditions as unknown,
-      premiumBreakdown: p.premiumBreakdown as unknown,
-    } as QuoteDocument;
-  }
 
   return {
     ...base,

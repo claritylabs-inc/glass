@@ -79,10 +79,7 @@ export const rechunkAll = internalAction({
     const policies = await ctx.runQuery(internal.policies.listAllInternal, {
       orgId: args.orgId,
     });
-    const quotes = await ctx.runQuery(internal.policies.listAllQuotesInternal, {
-      orgId: args.orgId,
-    });
-    const allDocs = [...policies, ...quotes].filter(
+    const allDocs = policies.filter(
       (p) => p.pipelineStatus === "complete",
     );
 

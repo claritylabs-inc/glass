@@ -1005,13 +1005,13 @@ export const processInbound = internalAction({
         allowBrokerPortfolio: org.type === "broker" && isInternal && effectiveMode === "direct",
       })) as AgentScope;
 
-      const policiesByOrg = new Map<string, { policies: any[]; quotes: any[] }>();
+      const policiesByOrg = new Map<string, any[]>();
       await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
         const docs = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, { orgId: readOrgId });
-        policiesByOrg.set(String(readOrgId), {
-          policies: (docs as any[]).filter((policy) => policy.documentType !== "quote"),
-          quotes: (docs as any[]).filter((policy) => policy.documentType === "quote"),
-        });
+        policiesByOrg.set(
+          String(readOrgId),
+          docs as any[],
+        );
       }));
       const siteUrl = getClientPortalUrl();
 
@@ -1064,7 +1064,6 @@ export const processInbound = internalAction({
       const {
         context: policyContext,
         relevantPolicyIds,
-        relevantQuoteIds,
       } = await buildScopedDocumentContext(
         ctx,
         scope,
@@ -1073,7 +1072,6 @@ export const processInbound = internalAction({
       );
       const referencedPolicySourceIds = new Set<string>([
         ...relevantPolicyIds.map(String),
-        ...relevantQuoteIds.map(String),
       ]);
 
       // Cross-thread conversation memory (vector search)
@@ -1333,10 +1331,6 @@ If the broker attached an endorsement or confirmation for this change, use compl
                   referencedPolicySourceIds.size > 0
                     ? ([...referencedPolicySourceIds] as Id<"policies">[])
                     : undefined,
-                referencedQuoteIds:
-                  relevantQuoteIds.length > 0
-                    ? (relevantQuoteIds as Id<"policies">[])
-                    : undefined,
                 autoSendEmails: brokerDirectedEmailRequest
                   ? false
                   : org.autoSendEmails === true,
@@ -1562,12 +1556,12 @@ If the broker attached an endorsement or confirmation for this change, use compl
         if (pdfAttachments.length > 0) {
           attachmentToolHint = correlatedPolicyChangeCase
             ? `\n\nATTACHMENT TOOLS:
-This email is linked to broker follow-up ${correlatedPolicyChangeCase._id}. If any attached PDF is an endorsement or confirmation of the requested change, call complete_policy_change_from_endorsement with caseId "${correlatedPolicyChangeCase._id}"${correlatedPolicyChangeCase.policyId ? ` and policyId "${correlatedPolicyChangeCase.policyId}"` : ""}. Only use extract_policy_attachment if the PDF is clearly a new standalone policy, quote, binder, or COI that should be added to the library separately.
+This email is linked to broker follow-up ${correlatedPolicyChangeCase._id}. If any attached PDF is an endorsement or confirmation of the requested change, call complete_policy_change_from_endorsement with caseId "${correlatedPolicyChangeCase._id}"${correlatedPolicyChangeCase.policyId ? ` and policyId "${correlatedPolicyChangeCase.policyId}"` : ""}. Only use extract_policy_attachment if the PDF is clearly a new standalone bound policy, binder, endorsement, or COI that should be added to the library separately.
 
 PDF ATTACHMENT MANIFEST (storageId -> fileName):
 ${pdfAttachments.join("\n")}`
             : `\n\nATTACHMENT TOOLS:
-If any attached PDF appears to be a policy, declarations page, quote, binder, COI, or other insurance document that should be added to the organization's policy library, call the extract_policy_attachment tool. PDFs are also provided inline so you may read them to answer questions.
+If any attached PDF appears to be a bound policy, declarations page, binder, endorsement, COI, or other post-binding insurance document that should be added to the organization's policy library, call the extract_policy_attachment tool. PDFs are also provided inline so you may read them to answer questions.
 
 PDF ATTACHMENT MANIFEST (storageId -> fileName):
 ${pdfAttachments.join("\n")}
@@ -1779,10 +1773,6 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         referencedPolicyIds:
           referencedPolicySourceIds.size > 0
             ? ([...referencedPolicySourceIds] as Id<"policies">[])
-            : undefined,
-        referencedQuoteIds:
-          relevantQuoteIds.length > 0
-            ? (relevantQuoteIds as Id<"policies">[])
             : undefined,
         attachments:
           generatedCoiAttachments.length > 0

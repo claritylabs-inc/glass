@@ -113,13 +113,13 @@ export const run = internalAction({
     })) as AgentScope;
 
     const allMessages = await ctx.runQuery(internal.threads.messagesInternal, { threadId });
-    const policiesByOrg = new Map<string, { policies: any[]; quotes: any[] }>();
+    const policiesByOrg = new Map<string, any[]>();
     await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
       const docs = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, { orgId: readOrgId });
-      policiesByOrg.set(String(readOrgId), {
-        policies: (docs as any[]).filter((policy) => policy.documentType !== "quote"),
-        quotes: (docs as any[]).filter((policy) => policy.documentType === "quote"),
-      });
+      policiesByOrg.set(
+        String(readOrgId),
+        docs as any[],
+      );
     }));
     const siteUrl = getClientPortalUrl();
 
@@ -142,7 +142,6 @@ export const run = internalAction({
     const {
       context: docContext,
       relevantPolicyIds,
-      relevantQuoteIds,
     } = await buildScopedDocumentContext(ctx, scope, policiesByOrg, args.message);
 
     // Cross-thread conversation memory (vector search)
@@ -207,7 +206,7 @@ MCP MODE:
         canWrite: args.canWrite,
         writeUnavailableMessage:
           args.canWrite === false
-            ? "This MCP token has read-only scope. Reconnect or authorize with write scope to perform that application action."
+            ? "This MCP token has read-only scope. Reconnect or authorize with write scope to perform that action."
             : undefined,
         getCurrentPolicyChangeCaseId: () => policyChangeCaseId,
         onPolicyReferenced: (policyId) => {
@@ -406,8 +405,6 @@ MCP MODE:
         referencedPolicySourceIds.size > 0
           ? ([...referencedPolicySourceIds] as Id<"policies">[])
           : undefined,
-      referencedQuoteIds:
-        relevantQuoteIds.length > 0 ? relevantQuoteIds : undefined,
       attachments:
         responseAttachments.length > 0 ? responseAttachments : undefined,
       toolArtifacts:

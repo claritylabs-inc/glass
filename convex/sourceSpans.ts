@@ -6,7 +6,6 @@ import { getActiveOperatorProfile } from "./lib/operatorIdentity";
 
 const sourceKindValidator = v.union(
   v.literal("policy_pdf"),
-  v.literal("application_pdf"),
   v.literal("email"),
   v.literal("attachment"),
   v.literal("manual_note"),

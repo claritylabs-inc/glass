@@ -2,7 +2,7 @@
 
 import { createHash } from "crypto";
 
-export type GlassSourceKind = "policy_pdf" | "application_pdf" | "email" | "attachment" | "manual_note";
+export type GlassSourceKind = "policy_pdf" | "email" | "attachment" | "manual_note";
 
 export interface GlassSourceSpan {
   id: string;

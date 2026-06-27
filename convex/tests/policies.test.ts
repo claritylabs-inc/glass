@@ -53,25 +53,16 @@ test("assertCanDeletePolicy allows broker deleting their own uploaded policy", (
 });
 
 // Task 3: Event type helpers
-test("chooses policy_uploaded event type for documentType=policy", () => {
-  const chooseEventType = (
-    documentType: "policy" | "quote",
-    _side: "broker" | "client" | "email_scan",
-  ) => {
-    if (documentType === "quote") return "quote_uploaded";
+test("chooses policy_uploaded event type for policy uploads", () => {
+  const chooseEventType = (_side: "broker" | "client" | "email_scan") => {
     return "policy_uploaded";
   };
-  expect(chooseEventType("policy", "broker")).toBe("policy_uploaded");
-  expect(chooseEventType("quote", "client")).toBe("quote_uploaded");
+  expect(chooseEventType("broker")).toBe("policy_uploaded");
 });
 
 test("chooses policy_extraction_completed for policy completion", () => {
-  const completionEvent = (documentType: "policy" | "quote") =>
-    documentType === "quote"
-      ? "quote_extraction_completed"
-      : "policy_extraction_completed";
-  expect(completionEvent("policy")).toBe("policy_extraction_completed");
-  expect(completionEvent("quote")).toBe("quote_extraction_completed");
+  const completionEvent = () => "policy_extraction_completed";
+  expect(completionEvent()).toBe("policy_extraction_completed");
 });
 
 // Task 9: Integration-style tests

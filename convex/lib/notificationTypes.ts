@@ -22,7 +22,6 @@ export const ALL_NOTIFICATION_TYPES = [
   "client_onboarding_completed",
   "client_document_uploaded",
   "policy_delivered_by_broker",
-  "quote_delivered_by_broker",
   // Vendor compliance
   "vendor_compliance_met",
   "vendor_compliance_gap",
@@ -33,9 +32,6 @@ export const ALL_NOTIFICATION_TYPES = [
   "policy_declaration_discrepancy",
   "policy_change_needs_info",
   "policy_change_completed",
-  "application_intake_started",
-  "application_intake_needs_review",
-  "application_packet_ready",
 ] as const;
 
 export type NotificationType = (typeof ALL_NOTIFICATION_TYPES)[number];
@@ -62,7 +58,6 @@ export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverit
   client_onboarding_completed: "info",
   client_document_uploaded: "info",
   policy_delivered_by_broker: "info",
-  quote_delivered_by_broker: "info",
   // Vendor compliance
   vendor_compliance_met: "info",
   vendor_compliance_gap: "warning",
@@ -73,9 +68,6 @@ export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverit
   policy_declaration_discrepancy: "warning",
   policy_change_needs_info: "warning",
   policy_change_completed: "info",
-  application_intake_started: "info",
-  application_intake_needs_review: "warning",
-  application_packet_ready: "info",
 };
 
 /** Types that coalesce within a 10-minute window. Value is window in ms. */

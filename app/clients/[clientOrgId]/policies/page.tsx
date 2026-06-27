@@ -6,7 +6,6 @@ import { useMutation, useAction } from "convex/react";
 import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PillButton } from "@/components/ui/pill-button";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
@@ -30,8 +29,6 @@ import {
   showPolicyExtractionQueuedToast,
   showPolicyExtractionReadyToast,
 } from "@/components/shared/extraction-banner";
-
-type DocType = "policy" | "quote";
 
 type BrokerPolicyRow = {
   _id: Id<"policies">;
@@ -87,15 +84,12 @@ function displayUploadedBy(side?: BrokerPolicyRow["uploadedBySide"]) {
 export default function ClientPoliciesPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const router = useRouter();
-  const [docType, setDocType] = useState<DocType>("policy");
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const pendingExtractionToastsRef = useRef<
-    Record<string, { documentType: DocType; fileName?: string | null }>
+    Record<string, { fileName?: string | null }>
   >({});
   const { setActions, setRightPanel } = useClientDetailActions();
-
-  const label = docType === "quote" ? "quote" : "policy";
 
   // Broker's own agent email (shown in empty state for easy forwarding)
   const viewerOrg = useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
@@ -112,11 +106,11 @@ export default function ClientPoliciesPage() {
         onClick={() => setUploaderOpen(true)}
       >
         <Upload className="h-3.5 w-3.5" />
-        Upload {label}
+        Upload policy
       </PillButton>,
     );
     return () => setActions(null);
-  }, [setActions, label]);
+  }, [setActions]);
 
   const policies = useCachedQuery(
     "policies.listForBroker",
@@ -124,7 +118,7 @@ export default function ClientPoliciesPage() {
     clientOrgId
       ? {
           clientOrgId: clientOrgId as Id<"organizations">,
-          documentType: docType,
+          documentType: "policy",
         }
       : "skip",
   );
@@ -168,7 +162,7 @@ export default function ClientPoliciesPage() {
         showPolicyExtractionReadyToast(
           {
             ...policy,
-            documentType: policy.documentType ?? pendingPolicy.documentType,
+            documentType: policy.documentType ?? "policy",
             fileName: policy.fileName ?? pendingPolicy.fileName,
           },
           () => router.push(`/clients/${clientOrgId}/policies/${policyId}`),
@@ -196,15 +190,14 @@ export default function ClientPoliciesPage() {
               clientOrgId: clientOrgId as Id<"organizations">,
               fileId: storageIds[i] as Id<"_storage">,
               fileName: files[i].name,
-              documentType: docType,
+              documentType: "policy",
             })) as Id<"policies">;
             showPolicyExtractionQueuedToast({
               policyId,
-              documentType: docType,
+              documentType: "policy",
               fileName: files[i].name,
             });
             pendingExtractionToastsRef.current[policyId] = {
-              documentType: docType,
               fileName: files[i].name,
             };
             resolvePendingExtractionToasts(
@@ -230,7 +223,7 @@ export default function ClientPoliciesPage() {
             clientOrgId: clientOrgId as Id<"organizations">,
             fileId: storageIds[0] as Id<"_storage">,
             fileName: files[0].name,
-            documentType: docType,
+            documentType: "policy",
           })) as Id<"policies">;
           const displayFileName =
             files.length > 1
@@ -238,11 +231,10 @@ export default function ClientPoliciesPage() {
               : files[0].name;
           showPolicyExtractionQueuedToast({
             policyId,
-            documentType: docType,
+            documentType: "policy",
             fileName: displayFileName,
           });
           pendingExtractionToastsRef.current[policyId] = {
-            documentType: docType,
             fileName: displayFileName,
           };
           resolvePendingExtractionToasts(
@@ -277,7 +269,6 @@ export default function ClientPoliciesPage() {
     },
     [
       clientOrgId,
-      docType,
       uploadStorage,
       createBrokerUpload,
       extractFromUpload,
@@ -293,11 +284,10 @@ export default function ClientPoliciesPage() {
         onClose={() => setUploaderOpen(false)}
         onUpload={handleUpload}
         uploading={uploading}
-        docType={docType}
       />,
     );
     return () => setRightPanel(null);
-  }, [setRightPanel, uploaderOpen, uploading, docType, handleUpload]);
+  }, [setRightPanel, uploaderOpen, uploading, handleUpload]);
 
   const isLoading = policies === undefined;
   const rows = (policies ?? []) as BrokerPolicyRow[];
@@ -308,18 +298,10 @@ export default function ClientPoliciesPage() {
 
   return (
     <div className="space-y-4">
-      <Tabs value={docType} onValueChange={(v) => setDocType(v as DocType)}>
-        <TabsList variant="pill">
-          <TabsTrigger value="policy">Policies</TabsTrigger>
-          <TabsTrigger value="quote">Quotes</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       {isLoading ? (
         <div className="min-h-32" aria-hidden="true" />
       ) : rows.length === 0 ? (
         <PolicyEmptyState
-          docType={docType}
           agentEmail={agentEmail}
           uploading={uploading}
           onUpload={handleUpload}

@@ -14,7 +14,6 @@ import {
 
 type ParsedPdfSourceKind =
   | "policy_pdf"
-  | "application_pdf"
   | "email"
   | "attachment"
   | "manual_note";

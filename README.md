@@ -7,7 +7,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 ## What Glass Does
 
 - Ingests insurance-related documents from email and uploads
-- Extracts structured policy, quote, and supporting business data
+- Extracts structured bound-policy, renewal, and supporting business data
 - Builds a continuously-updated `orgMemory` layer
 - Supports agent workflows for Q&A, policy-change requests, COI generation, and follow-up analysis
 - Exposes capabilities through UI, REST API (`/api/v1/*`), and MCP (`/mcp` + local server)
@@ -125,13 +125,13 @@ Not every flow requires every variable; requirements depend on which features yo
 
 Agent responses are grounded in:
 
-- `documentChunks` (policy/quote/supporting docs)
+- `documentChunks` (bound-policy/supporting docs)
 - `orgMemory` (organization facts)
 - `conversationTurns` (cross-thread memory)
 
 ### 3) Connected vendor/client accounts
 
-Client/customer orgs can request a one-way vendor relationship from Connected orgs in the main app menu by entering a vendor contact email. If the email belongs to an existing Glass user, Glass resolves that user's org and emails an approval link; otherwise Glass sends an invite link so the vendor can sign in, create/select their org, and approve access. Active relationships grant the client org read-only access to the vendor's public org profile and policy/quote records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
+Client/customer orgs can request a one-way vendor relationship from Connected orgs in the main app menu by entering a vendor contact email. If the email belongs to an existing Glass user, Glass resolves that user's org and emails an approval link; otherwise Glass sends an invite link so the vendor can sign in, create/select their org, and approve access. Active relationships grant the client org read-only access to the vendor's public org profile and bound policy records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
 
 Connected vendor data is exposed in the same channels as first-party insurance data:
 

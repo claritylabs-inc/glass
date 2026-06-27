@@ -76,31 +76,4 @@ describe("buildNotificationEmail", () => {
     expect(result.text).not.toContain("Glass Notifications");
   });
 
-  test("application variant uses a compact operational layout", () => {
-    const result = buildNotificationEmail({
-      title: "Application needs broker review",
-      body: "General liability application",
-      ctaUrl: "https://app.glass.insure/clients/client123/applications?applicationId=intake123",
-      ctaLabel: "Review application",
-      branding: {
-        kind: "broker",
-        brokerName: "Smith Insurance",
-        agentDisplayName: "Sarah Smith",
-        accentColor: null,
-        logoUrl: null,
-      },
-      siteUrl: "https://app.glass.insure",
-      threadLabel: "Acme Co",
-      variant: "application",
-    });
-
-    expect(result.html).toContain("Smith Insurance");
-    expect(result.html).toContain("Application intake");
-    expect(result.html).toContain("Acme Co");
-    expect(result.html).toContain("Review application");
-    expect(result.html).toContain("background:#000000");
-    expect(result.html).not.toContain("from Clarity Labs");
-    expect(result.html).not.toContain("Powered by");
-    expect(result.text).toContain("Application: Acme Co");
-  });
 });

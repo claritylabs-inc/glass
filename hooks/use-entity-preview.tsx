@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
 
 export interface EntityPreview {
-  type: "policy" | "quote";
+  type: "policy";
   id: string;
   page?: number; // optional page from ?page= param
   citedSections?: string[]; // section/endorsement titles or form numbers referenced in the agent answer

@@ -241,63 +241,6 @@ export function toPolicyFileDto(policy: PolicyFileDtoSource, url: string): Polic
   };
 }
 
-export interface McpQuoteSummarySource {
-  _id: DtoId;
-  carrier: string;
-  security?: string;
-  broker?: string;
-  policyTypes: string[];
-  policyYear: number;
-  quoteNumber?: string;
-  quoteYear?: number;
-  proposedEffectiveDate?: string;
-  proposedExpirationDate?: string;
-  quoteExpirationDate?: string;
-  premium?: string | number;
-  insuredName: string;
-  summary?: string;
-  isRenewal: boolean;
-  coverages: Jsonish[];
-}
-
-export interface McpQuoteSummaryDto {
-  _id: string;
-  carrier: string;
-  security?: string;
-  broker?: string;
-  quoteNumber?: string;
-  policyTypes: string[];
-  quoteYear?: number;
-  proposedEffectiveDate?: string;
-  proposedExpirationDate?: string;
-  quoteExpirationDate?: string;
-  premium?: string | number;
-  insuredName: string;
-  summary?: string;
-  isRenewal: boolean;
-  coverages: Jsonish[];
-}
-
-export function toMcpQuoteSummaryDto(quote: McpQuoteSummarySource): McpQuoteSummaryDto {
-  return {
-    _id: quote._id,
-    carrier: quote.carrier,
-    security: quote.security,
-    broker: quote.broker,
-    quoteNumber: quote.quoteNumber,
-    policyTypes: quote.policyTypes,
-    quoteYear: quote.quoteYear,
-    proposedEffectiveDate: quote.proposedEffectiveDate,
-    proposedExpirationDate: quote.proposedExpirationDate,
-    quoteExpirationDate: quote.quoteExpirationDate,
-    premium: quote.premium,
-    insuredName: quote.insuredName,
-    summary: quote.summary,
-    isRenewal: quote.isRenewal,
-    coverages: quote.coverages,
-  };
-}
-
 export interface CertificateDtoSource {
   _id: DtoId;
   policyId: DtoId;
@@ -705,15 +648,6 @@ export function policyMatchesMcpFilters(
   if (filters.carrier && policy.carrier !== filters.carrier) return false;
   if (filters.year && policy.policyYear !== Number.parseInt(filters.year, 10)) return false;
   if (filters.type && !(policy.policyTypes ?? []).includes(filters.type)) return false;
-  return true;
-}
-
-export function quoteMatchesMcpFilters(
-  quote: PolicyFilterSource,
-  filters: Pick<PolicyFilters, "carrier" | "year">,
-): boolean {
-  if (filters.carrier && quote.carrier !== filters.carrier) return false;
-  if (filters.year && quote.policyYear !== Number.parseInt(filters.year, 10)) return false;
   return true;
 }
 

@@ -11,8 +11,6 @@ import {
 } from "@/components/policy-upload-mode-toggle";
 
 export interface PolicyEmptyStateProps {
-  /** "policy" or "quote" — controls copy only. */
-  docType: "policy" | "quote";
   /** Optional agent email to show in the forward card. Card is hidden if absent. */
   agentEmail?: string | null;
   /** Upload-in-flight flag. */
@@ -37,7 +35,6 @@ export interface PolicyEmptyStateProps {
 }
 
 export function PolicyEmptyState({
-  docType,
   agentEmail,
   uploading,
   onUpload,
@@ -50,8 +47,7 @@ export function PolicyEmptyState({
   onUploadModeChange,
   hideUploadButton = false,
 }: PolicyEmptyStateProps) {
-  const plural = docType === "quote" ? "quotes" : "policies";
-  const heading = title === "" ? null : (title ?? `No ${plural} yet`);
+  const heading = title === "" ? null : (title ?? "No policies yet");
   const sub =
     subtitle === ""
       ? null
@@ -73,7 +69,6 @@ export function PolicyEmptyState({
       ) : null}
 
       <DropZone
-        docType={docType}
         uploading={uploading}
         onUpload={onUpload}
         className={agentEmail ? "mt-3" : hasHeader ? "mt-5" : ""}
@@ -141,7 +136,6 @@ function AgentForwardCard({
 }
 
 function DropZone({
-  docType,
   uploading,
   onUpload,
   className,
@@ -151,7 +145,6 @@ function DropZone({
   onUploadModeChange,
   hideUploadButton = false,
 }: {
-  docType: "policy" | "quote";
   uploading: boolean;
   onUpload: (files: File[], mode: PolicyUploadMode) => void;
   className?: string;
@@ -161,8 +154,6 @@ function DropZone({
   onUploadModeChange?: (mode: PolicyUploadMode) => void;
   hideUploadButton?: boolean;
 }) {
-  const label = docType === "quote" ? "quote" : "policy";
-  const pluralLabel = docType === "quote" ? "quotes" : "policies";
   const [dragOver, setDragOver] = useState(false);
   const [internalUploadMode, setInternalUploadMode] =
     useState<PolicyUploadMode>("combined");
@@ -260,7 +251,7 @@ function DropZone({
           <FileUp className="h-4.5 w-4.5" />
         </div>
         <p className="text-base font-semibold text-foreground">
-          Drag and drop {label} PDFs
+          Drag and drop policy PDFs
         </p>
         <p className="text-base text-muted-foreground mt-1">
           {staged.length > 0
@@ -269,8 +260,8 @@ function DropZone({
         </p>
         <p className="text-base text-muted-foreground/60 mt-3">
           {uploadMode === "separate"
-            ? `Multiple PDFs will create separate ${pluralLabel}.`
-            : `Multiple PDFs will be combined into a single ${label}.`}
+            ? "Multiple PDFs will create separate policies."
+            : "Multiple PDFs will be combined into a single policy."}
         </p>
         <input
           ref={inputRef}
@@ -290,7 +281,6 @@ function DropZone({
         <PolicyUploadModeToggle
           value={uploadMode}
           onChange={updateUploadMode}
-          docType={docType}
           disabled={uploading}
         />
       ) : null}
@@ -328,10 +318,10 @@ function DropZone({
           {uploading
             ? "Uploading…"
             : staged.length > 1 && uploadMode === "separate"
-              ? `Upload as ${staged.length} ${pluralLabel}`
+              ? `Upload as ${staged.length} policies`
               : staged.length > 1
-                ? `Upload as one ${label}`
-                : `Upload ${label}`}
+                ? "Upload as one policy"
+                : "Upload policy"}
         </PillButton>
       ) : null}
     </div>

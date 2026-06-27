@@ -60,7 +60,7 @@ const EXAMPLE_PROMPTS: ExamplePrompt[] = [
   {
     label: "Find the latest policy or renewal attachment",
     prompt:
-      "Search connected email for my latest policy, quote, certificate, or renewal attachment and save the relevant files to this thread",
+      "Search connected email for my latest policy, certificate, or renewal attachment and save the relevant files to this thread",
     requires: ["mailboxes"],
   },
 ];

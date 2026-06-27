@@ -33,7 +33,6 @@ type NotificationType =
   | "client_onboarding_completed"
   | "client_document_uploaded"
   | "policy_delivered_by_broker"
-  | "quote_delivered_by_broker"
   | "vendor_compliance_met"
   | "vendor_compliance_gap"
   | "vendor_policy_expiring"
@@ -42,10 +41,7 @@ type NotificationType =
   | "program_admin_pce_request"
   | "policy_declaration_discrepancy"
   | "policy_change_needs_info"
-  | "policy_change_completed"
-  | "application_intake_started"
-  | "application_intake_needs_review"
-  | "application_packet_ready";
+  | "policy_change_completed";
 
 interface Notification {
   _id: Id<"notifications">;
@@ -84,33 +80,13 @@ function notificationActionLabel(notification: Notification) {
       return "Open thread";
     case "view_vendor_compliance":
       return "Open vendor compliance";
-    case "view_application_intake":
-      return "Open application";
     default:
       return undefined;
   }
 }
 
 function notificationDisplayTitle(notification: Notification) {
-  if (
-    notification.type === "application_packet_ready" &&
-    notification.title === "Application packet ready"
-  ) {
-    return "Application ready for review";
-  }
   return notification.title;
-}
-
-function applicationNotificationHref(payload: Record<string, unknown>) {
-  const applicationIntakeId =
-    typeof payload.applicationIntakeId === "string" ? payload.applicationIntakeId : "";
-  const clientOrgId = typeof payload.clientOrgId === "string" ? payload.clientOrgId : "";
-  const suffix = applicationIntakeId
-    ? `?applicationId=${encodeURIComponent(applicationIntakeId)}`
-    : "";
-  return clientOrgId
-    ? `/clients/${clientOrgId}/applications${suffix}`
-    : `/applications${suffix}`;
 }
 
 export function NotificationsPanel({
@@ -177,9 +153,6 @@ export function NotificationsPanel({
           break;
         case "view_vendor_compliance":
           router.push("/connect/vendors");
-          break;
-        case "view_application_intake":
-          router.push(applicationNotificationHref(p));
           break;
         default:
           break;

@@ -95,7 +95,6 @@ export async function buildImessageKnowledgeContext(
       ctx,
       entry.orgId,
       entry.policies,
-      [],
       args.retrievalQuery,
     );
     if (built.context.trim().length > 0) {

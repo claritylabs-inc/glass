@@ -90,7 +90,6 @@ const modelTaskRoutesValidator = v.object({
   document_extraction: v.optional(routeUpdateValidator),
   security: v.optional(routeUpdateValidator),
   mailbox_coordinator: v.optional(routeUpdateValidator),
-  application_authoring: v.optional(routeUpdateValidator),
   embeddings: v.optional(routeUpdateValidator),
 });
 
@@ -108,7 +107,6 @@ const globalRoutesValidator = v.object({
   document_extraction: v.optional(routeUpdateValidator),
   security: v.optional(routeUpdateValidator),
   mailbox_coordinator: v.optional(routeUpdateValidator),
-  application_authoring: v.optional(routeUpdateValidator),
   embeddings: v.optional(routeUpdateValidator),
   extraction_quality: v.optional(routeUpdateValidator),
   extraction_form_inventory: v.optional(routeUpdateValidator),

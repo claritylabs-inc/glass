@@ -80,7 +80,6 @@ type EmailExpertContext = {
   unknownRecipientMessage?: string;
   availableAttachments?: EmailAttachmentMeta[];
   referencedPolicyIds?: Id<"policies">[];
-  referencedQuoteIds?: Id<"policies">[];
   policyChangeCaseId?: Id<"policyChangeCases">;
   autoSendEmails?: boolean;
   emailSendDelay?: number;
@@ -281,7 +280,6 @@ export async function upsertEmailDraftArtifact(
     attachments: EmailAttachmentMeta[];
     allowMultipleCoiAttachments?: boolean;
     referencedPolicyIds?: Id<"policies">[];
-    referencedQuoteIds?: Id<"policies">[];
     policyChangeCaseId?: Id<"policyChangeCases">;
   },
 ): Promise<Id<"pendingEmails"> | undefined> {
@@ -329,7 +327,6 @@ export async function upsertEmailDraftArtifact(
         params.attachments.length > 0 ? params.attachments : undefined,
       allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
       referencedPolicyIds: params.referencedPolicyIds,
-      referencedQuoteIds: params.referencedQuoteIds,
       policyChangeCaseId: params.policyChangeCaseId,
       chatMessageId: context.chatMessageId,
     });
@@ -344,7 +341,6 @@ export async function upsertEmailDraftArtifact(
         attachments:
           params.attachments.length > 0 ? params.attachments : undefined,
         referencedPolicyIds: params.referencedPolicyIds,
-        referencedQuoteIds: params.referencedQuoteIds,
         policyChangeCaseId: params.policyChangeCaseId,
         pendingEmailId: existing._id,
         status: "draft_email",
@@ -373,7 +369,6 @@ export async function upsertEmailDraftArtifact(
     attachments: params.attachments.length > 0 ? params.attachments : undefined,
     allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
     referencedPolicyIds: params.referencedPolicyIds,
-    referencedQuoteIds: params.referencedQuoteIds,
     policyChangeCaseId: params.policyChangeCaseId,
     status: "draft",
   });
@@ -393,7 +388,6 @@ export async function upsertEmailDraftArtifact(
       attachments:
         params.attachments.length > 0 ? params.attachments : undefined,
       referencedPolicyIds: params.referencedPolicyIds,
-      referencedQuoteIds: params.referencedQuoteIds,
       policyChangeCaseId: params.policyChangeCaseId,
       status: "draft_email",
       pendingEmailId,
@@ -926,7 +920,6 @@ async function runEmailSubagent(
               attachments,
               allowMultipleCoiAttachments,
               referencedPolicyIds,
-              referencedQuoteIds: context.referencedQuoteIds,
             })
           : undefined;
       finalResult = {
@@ -995,7 +988,6 @@ async function runEmailSubagent(
             sourcePolicyIds.size > 0
               ? ([...sourcePolicyIds] as Id<"policies">[])
               : undefined,
-          referencedQuoteIds: context.referencedQuoteIds,
         },
       );
       await ctx.scheduler.runAfter(
@@ -1044,7 +1036,6 @@ async function runEmailSubagent(
           sourcePolicyIds.size > 0
             ? ([...sourcePolicyIds] as Id<"policies">[])
             : undefined,
-        referencedQuoteIds: context.referencedQuoteIds,
       });
     }
 

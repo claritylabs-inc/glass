@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Entity preview panel shell — resizable sidebar that renders policy or quote previews.
+ * Entity preview panel shell — resizable sidebar that renders policy previews.
  * Content components are in components/preview/.
  */
 

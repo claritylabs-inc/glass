@@ -7,10 +7,8 @@ import {
   UserCheck,
   CheckCircle,
   FileUp,
-  Send,
   FileText,
   Bell,
-  Package,
 } from "lucide-react";
 import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -34,9 +32,6 @@ const TYPE_ICONS: Record<
   invitation_accepted: UserCheck,
   onboarding_completed: CheckCircle,
   document_uploaded: FileUp,
-  application_sent: Send,
-  application_batch_submitted: Package,
-  application_completed: CheckCircle,
   policy_uploaded: FileText,
   policy_extraction_completed: FileText,
   notification_fired: Bell,
@@ -46,9 +41,6 @@ const TYPE_LABELS: Record<string, string> = {
   invitation_accepted: "Invitation accepted",
   onboarding_completed: "Onboarding completed",
   document_uploaded: "Document uploaded",
-  application_sent: "Application sent",
-  application_batch_submitted: "Application batch submitted",
-  application_completed: "Application completed",
   policy_uploaded: "Policy uploaded",
   policy_extraction_completed: "Policy extracted",
   notification_fired: "Notification",

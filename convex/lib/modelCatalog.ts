@@ -12,7 +12,6 @@ export type ModelTask =
   | "document_extraction"
   | "security"
   | "mailbox_coordinator"
-  | "application_authoring"
   | "embeddings";
 
 export type ModelProvider =
@@ -94,7 +93,6 @@ export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
   document_extraction: "Document extraction",
   security: "Security checks",
   mailbox_coordinator: "Mailbox coordinator",
-  application_authoring: "Application authoring",
   embeddings: "Embeddings",
 };
 
@@ -106,11 +104,11 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
   email_reply:
     "Inbound email reply route for tenant-aware email agent responses.",
   extraction:
-    "Standard policy and quote extraction route after LiteParse preprocessing: focused fields, source review, and post-processing.",
+    "Standard bound-policy extraction route after LiteParse preprocessing: focused fields, source review, and post-processing.",
   extraction_preview:
     "Fast preview route for policy-list fields extracted from LiteParse text before full enrichment completes.",
   classification:
-    "Fast routing route for document kind, request intent, delivery rules, extraction/query/application classification, and other small decisions.",
+    "Fast routing route for document kind, request intent, delivery rules, extraction/query classification, and other small decisions.",
   analysis:
     "Deeper reasoning route for coverage analysis, compliance review, partner-program matching, policy reconciliation, and policy-change impact.",
   summary:
@@ -125,8 +123,6 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
     "Safety route for prompt-injection and unsafe-request classification before agent execution.",
   mailbox_coordinator:
     "Coordinator route for multi-step connected-mailbox workflows: search mail, inspect attachments, import policies or requirements, and plan follow-up.",
-  application_authoring:
-    "Application-intake route for classification, field extraction, questionnaire autofill, answer parsing, batch drafting, and email assistance.",
   embeddings:
     "Vector embedding route for policies, source chunks, and conversation memory. Must stay compatible with the configured Convex vector dimensions.",
 };
@@ -297,10 +293,6 @@ export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
     model: FIREWORKS_MODEL_IDS.glm52,
     provider: "fireworks",
   },
-  application_authoring: {
-    model: FIREWORKS_MODEL_IDS.glm52,
-    provider: "fireworks",
-  },
   embeddings: { model: "text-embedding-3-small", provider: "openai" },
 };
 
@@ -320,7 +312,7 @@ export const VISUAL_TABLE_REPAIR_MODEL: ModelRoute = {
 };
 
 export const FORM_INVENTORY_MODEL: ModelRoute = {
-  model: FIREWORKS_MODEL_IDS.qwen37Plus,
+  model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
   provider: "fireworks",
 };
 
@@ -348,7 +340,7 @@ export const MODEL_ROUTE_IDS = [
 export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_LABELS,
   extraction_quality: "Source tree and profile extraction",
-  extraction_form_inventory: "Form inventory",
+  extraction_form_inventory: "Form inventory and page ranges",
   extraction_visual_table_repair: "Visual table repair",
   fallback: "Fallback model",
 };
@@ -358,7 +350,7 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
   extraction_quality:
     "Proactive primary route for source-tree generation and operational-profile extraction before any failure occurs.",
   extraction_form_inventory:
-    "Fast optional page-range inventory for declarations, forms, notices, and endorsements before source-tree grouping.",
+    "Long-context structured route for extracting declarations, policy forms, notices, endorsements, and page ranges before source-tree grouping.",
   extraction_visual_table_repair:
     "Image-capable route for repairing parsed table rows and column labels against page screenshots.",
   fallback:
@@ -396,8 +388,8 @@ export const MODEL_TASK_GROUPS = [
     id: "reasoning_authoring",
     label: "Reasoning and authoring",
     description:
-      "Routes used for deeper policy reasoning, application drafting, and summaries.",
-    tasks: ["analysis", "application_authoring", "summary"],
+      "Routes used for deeper policy reasoning, review, and summaries.",
+    tasks: ["analysis", "summary"],
   },
   {
     id: "document_ingestion",
@@ -577,10 +569,6 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
       extraction_focused: 16_384,
       extraction_long_list: 24_576,
       query_classify: 2_048,
-      application_classify: 2_048,
-      application_auto_fill: 8_192,
-      application_batch: 8_192,
-      application_email: 8_192,
     },
   },
   [FIREWORKS_MODEL_IDS.deepseekV4Pro]: {
@@ -603,11 +591,6 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
       query_reason: 8_192,
       query_verify: 4_096,
       query_respond: 8_192,
-      application_classify: 2_048,
-      application_extract_fields: 8_192,
-      application_auto_fill: 8_192,
-      application_batch: 8_192,
-      application_email: 8_192,
       pce_impact_analysis: 8_192,
       pce_packet_generation: 8_192,
     },
@@ -647,11 +630,6 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
       query_reason: 8_192,
       query_verify: 4_096,
       query_respond: 8_192,
-      application_classify: 2_048,
-      application_extract_fields: 8_192,
-      application_auto_fill: 8_192,
-      application_batch: 8_192,
-      application_email: 8_192,
       pce_impact_analysis: 8_192,
       pce_packet_generation: 8_192,
     },

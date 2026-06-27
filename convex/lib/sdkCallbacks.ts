@@ -139,14 +139,6 @@ function modelTraceLabel(
     query_reason: "Reason over documents",
     query_verify: "Verify answer evidence",
     query_respond: "Write answer",
-    application_classify: "Classify application",
-    application_extract_fields: "Extract application fields",
-    application_auto_fill: "Autofill application",
-    application_lookup: "Look up application context",
-    application_parse_answers: "Parse application answers",
-    application_batch: "Generate application batch",
-    application_email: "Draft application email",
-    application_pdf_mapping: "Map application PDF",
     pce_impact_analysis: "Analyze policy change",
     pce_reply_parse: "Parse policy-change reply",
     pce_packet_generation: "Generate policy-change packet",
@@ -362,7 +354,7 @@ function buildPromptInput(
     };
   }
 
-  // Fallback: cl-sdk's application pipeline embeds base64 PDF directly in the prompt
+  // Fallback: older cl-sdk calls may embed base64 PDF directly in the prompt
   // text instead of using providerOptions. Detect and lift it into a file part.
   const extracted = supportsPdfFileInput ? extractEmbeddedPdf(prompt) : null;
   if (extracted) {
@@ -418,8 +410,7 @@ function formInventoryRouteOverride(
 
 /**
  * Detect base64 PDF content embedded directly in prompt text.
- * The cl-sdk application pipeline concatenates raw pdfBase64 into prompts
- * (e.g. "Extract fields from this application:\n{base64}").
+ * Older cl-sdk calls can concatenate raw pdfBase64 into prompts.
  * We detect this by looking for the PDF magic bytes in base64 ("JVBER" = "%PDF").
  */
 function extractEmbeddedPdf(
@@ -742,6 +733,7 @@ export function makeGenerateObject(
           transport,
           durationMs: nowMs() - startedAt,
           status: "soft_failed",
+          error: message,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -772,6 +764,7 @@ export function makeGenerateObject(
           transport,
           durationMs: nowMs() - startedAt,
           status: "soft_failed",
+          error: message,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -802,6 +795,7 @@ export function makeGenerateObject(
           transport,
           durationMs: nowMs() - startedAt,
           status: "soft_failed",
+          error: message,
           details: modelTraceDetails({
             kind: "generateObject",
             label,

@@ -11,7 +11,7 @@ export function registerAgentTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "ask_glass",
-    "Ask the Glass AI assistant a question about the organization's insurance portfolio, policies, quotes, or coverage details. Glass has full context about all policies and quotes and can answer complex insurance questions. Optionally pass a threadId to continue an existing conversation.",
+    "Ask the Glass AI assistant a question about the organization's insurance portfolio, bound policies, renewals, or coverage details. Glass has full context about imported policies and can answer complex insurance questions. Optionally pass a threadId to continue an existing conversation.",
     {
       message: z.string().describe("The question or message to send to Glass"),
       threadId: z

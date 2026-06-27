@@ -64,7 +64,6 @@ export const upsert = internalMutation({
       v.literal("imessage"),
     ),
     policyId: v.optional(v.id("policies")),
-    quoteId: v.optional(v.id("policies")),
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -108,7 +107,6 @@ export const bulkInsert = internalMutation({
           v.literal("imessage"),
         ),
         policyId: v.optional(v.id("policies")),
-        quoteId: v.optional(v.id("policies")),
       }),
     ),
   },
