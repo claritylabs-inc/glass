@@ -16,6 +16,7 @@ import type { ActionCtx } from "../_generated/server";
 import {
   EXTRACTION_QUALITY_MODEL,
   FALLBACK_MODEL,
+  COVERAGE_CLEANUP_MODEL,
   FIREWORKS_MODEL_IDS,
   FORM_INVENTORY_MODEL,
   MODEL_ROUTING,
@@ -116,6 +117,7 @@ export type ModelCallTaskKind =
   | "extraction_source_tree"
   | "extraction_operational_profile"
   | "extraction_form_inventory"
+  | "extraction_coverage_cleanup"
   | "extraction_page_map"
   | "extraction_focused"
   | "extraction_long_list"
@@ -179,6 +181,7 @@ const INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
   "extraction_operational_profile",
   // Validation / repair passes over extracted or reasoned output.
   "extraction_review",
+  "extraction_coverage_cleanup",
   "query_verify",
   // Ambiguous synthesis over retrieved evidence or requested changes.
   "query_reason",
@@ -394,6 +397,7 @@ export async function getModelAndRouteForOrg(
   transport: "direct" | "gateway";
   qualityRoute: ModelRoute;
   formInventoryRoute: ModelRoute;
+  coverageCleanupRoute: ModelRoute;
   visualTableRepairRoute: ModelRoute;
   fallbackRoute: ModelRoute;
 }> {
@@ -404,6 +408,8 @@ export async function getModelAndRouteForOrg(
     const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
     const formInventoryRoute =
       settings?.routes?.extraction_form_inventory ?? FORM_INVENTORY_MODEL;
+    const coverageCleanupRoute =
+      settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
     const visualTableRepairRoute =
       settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
@@ -427,6 +433,7 @@ export async function getModelAndRouteForOrg(
       transport,
       qualityRoute,
       formInventoryRoute,
+      coverageCleanupRoute,
       visualTableRepairRoute,
       fallbackRoute,
     };
@@ -446,6 +453,7 @@ export async function getModelAndRouteForOrg(
       transport,
       qualityRoute: EXTRACTION_QUALITY_MODEL,
       formInventoryRoute: FORM_INVENTORY_MODEL,
+      coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
       visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
       fallbackRoute: FALLBACK_MODEL,
     };
@@ -462,6 +470,7 @@ export async function getModelAndRouteForPublicTask(
   transport: "direct" | "gateway";
   qualityRoute: ModelRoute;
   formInventoryRoute: ModelRoute;
+  coverageCleanupRoute: ModelRoute;
   visualTableRepairRoute: ModelRoute;
   fallbackRoute: ModelRoute;
 }> {
@@ -472,6 +481,8 @@ export async function getModelAndRouteForPublicTask(
     const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
     const formInventoryRoute =
       settings?.routes?.extraction_form_inventory ?? FORM_INVENTORY_MODEL;
+    const coverageCleanupRoute =
+      settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
     const visualTableRepairRoute =
       settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
@@ -484,6 +495,7 @@ export async function getModelAndRouteForPublicTask(
       transport,
       qualityRoute,
       formInventoryRoute,
+      coverageCleanupRoute,
       visualTableRepairRoute,
       fallbackRoute,
     };
@@ -503,6 +515,7 @@ export async function getModelAndRouteForPublicTask(
       transport,
       qualityRoute: EXTRACTION_QUALITY_MODEL,
       formInventoryRoute: FORM_INVENTORY_MODEL,
+      coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
       visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
       fallbackRoute: FALLBACK_MODEL,
     };

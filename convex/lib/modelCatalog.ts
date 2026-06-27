@@ -316,10 +316,17 @@ export const FORM_INVENTORY_MODEL: ModelRoute = {
   provider: "fireworks",
 };
 
+export const COVERAGE_CLEANUP_MODEL: ModelRoute = {
+  model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
+  provider: "fireworks",
+};
+
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
 export const EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality" as const;
 export const EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID =
   "extraction_form_inventory" as const;
+export const EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =
+  "extraction_coverage_cleanup" as const;
 export const EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID =
   "extraction_visual_table_repair" as const;
 export const FALLBACK_MODEL_ROUTE_ID = "fallback" as const;
@@ -327,12 +334,14 @@ export type ModelRouteId =
   | ModelTask
   | typeof EXTRACTION_QUALITY_MODEL_ROUTE_ID
   | typeof EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID
+  | typeof EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID
   | typeof EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID
   | typeof FALLBACK_MODEL_ROUTE_ID;
 export const MODEL_ROUTE_IDS = [
   ...MODEL_TASKS,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
   EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
+  EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
   EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
   FALLBACK_MODEL_ROUTE_ID,
 ] as ModelRouteId[];
@@ -341,6 +350,7 @@ export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_LABELS,
   extraction_quality: "Source tree and profile extraction",
   extraction_form_inventory: "Form inventory and page ranges",
+  extraction_coverage_cleanup: "Coverage cleanup",
   extraction_visual_table_repair: "Visual table repair",
   fallback: "Fallback model",
 };
@@ -351,6 +361,8 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
     "Proactive primary route for source-tree generation and operational-profile extraction before any failure occurs.",
   extraction_form_inventory:
     "Long-context structured route for extracting declarations, policy forms, notices, endorsements, and page ranges before source-tree grouping.",
+  extraction_coverage_cleanup:
+    "Source-span review route for repairing or dropping malformed coverage limit rows before persistence.",
   extraction_visual_table_repair:
     "Image-capable route for repairing parsed table rows and column labels against page screenshots.",
   fallback:
@@ -362,6 +374,9 @@ export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
   if (id === EXTRACTION_QUALITY_MODEL_ROUTE_ID) return EXTRACTION_QUALITY_MODEL;
   if (id === EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID) {
     return FORM_INVENTORY_MODEL;
+  }
+  if (id === EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID) {
+    return COVERAGE_CLEANUP_MODEL;
   }
   if (id === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID) {
     return VISUAL_TABLE_REPAIR_MODEL;
@@ -425,6 +440,7 @@ export const OPERATOR_MODEL_ROUTE_GROUPS = [
       "extraction",
       "extraction_quality",
       "extraction_form_inventory",
+      "extraction_coverage_cleanup",
       "extraction_visual_table_repair",
       "fallback",
       "document_extraction",
@@ -564,6 +580,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     taskOutputTokens: {
       extraction_classify: 2_048,
       extraction_preview: 4_096,
+      extraction_coverage_cleanup: 8_192,
       extraction_form_inventory: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
@@ -580,6 +597,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     taskOutputTokens: {
       extraction_classify: 2_048,
       extraction_preview: 4_096,
+      extraction_coverage_cleanup: 8_192,
       extraction_form_inventory: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
@@ -604,6 +622,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     supportsImageInput: true,
     taskOutputTokens: {
       extraction_source_tree: 2_400,
+      extraction_coverage_cleanup: 8_192,
       extraction_form_inventory: 2_048,
       extraction_operational_profile: 8_192,
       extraction_review: 8_192,
@@ -620,6 +639,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     taskOutputTokens: {
       extraction_classify: 2_048,
       extraction_preview: 4_096,
+      extraction_coverage_cleanup: 8_192,
       extraction_form_inventory: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,

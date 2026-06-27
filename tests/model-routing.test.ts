@@ -106,6 +106,42 @@ describe("model task routing", () => {
     expect(workerSource).toContain("model: FIREWORKS_DEEPSEEK_V4_PRO");
   });
 
+  test("uses a standard operator-configurable route for coverage cleanup", () => {
+    const modelSettings = readFileSync(
+      join(__dirname, "../convex/modelSettings.ts"),
+      "utf-8",
+    );
+    const sdkCallbacks = readFileSync(
+      join(__dirname, "../convex/lib/sdkCallbacks.ts"),
+      "utf-8",
+    );
+    const workerSource = readFileSync(
+      join(__dirname, "../extraction-worker/src/index.ts"),
+      "utf-8",
+    );
+
+    expect(defaultModelRouteForId("extraction_coverage_cleanup")).toEqual({
+      provider: "fireworks",
+      model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
+    });
+    expect(MODEL_ROUTE_LABELS.extraction_coverage_cleanup).toBe(
+      "Coverage cleanup",
+    );
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "extraction_coverage_cleanup",
+    );
+    expect(modelSettings).toContain(
+      "EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID",
+    );
+    expect(modelSettings).toContain(
+      "extraction_coverage_cleanup: v.optional(routeUpdateValidator)",
+    );
+    expect(sdkCallbacks).toContain("coverageCleanupRouteOverride");
+    expect(sdkCallbacks).toContain('routeSource = "coverage_cleanup"');
+    expect(workerSource).toContain("WORKER_COVERAGE_CLEANUP_ROUTE");
+    expect(workerSource).toContain('"extraction_coverage_cleanup"');
+  });
+
   test("keeps embeddings on the OpenAI-compatible 1536-dimensional route during migration", () => {
     expect(MODEL_ROUTING.embeddings).toEqual({
       provider: "openai",
@@ -311,15 +347,22 @@ describe("model fallback policy", () => {
     expect(modelCatalog).toContain(
       'EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID =\n  "extraction_form_inventory"',
     );
+    expect(modelCatalog).toContain(
+      'EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =\n  "extraction_coverage_cleanup"',
+    );
     expect(modelCatalog).toContain('FALLBACK_MODEL_ROUTE_ID = "fallback"');
     expect(modelCatalog).toContain("Source tree and profile extraction");
     expect(modelCatalog).toContain("Form inventory");
+    expect(modelCatalog).toContain("Coverage cleanup");
     expect(modelCatalog).toContain("Fallback model");
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "extraction_quality",
     );
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "extraction_form_inventory",
+    );
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "extraction_coverage_cleanup",
     );
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "fallback",

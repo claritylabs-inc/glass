@@ -32,6 +32,7 @@ import {
   type ModelTask,
 } from "./models";
 import {
+  COVERAGE_CLEANUP_MODEL,
   FORM_INVENTORY_MODEL,
   modelCapabilitiesForRoute,
   modelCapabilitiesForTask,
@@ -126,6 +127,7 @@ function modelTraceLabel(
   }
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
+    extraction_coverage_cleanup: "Clean coverage limits",
     extraction_form_inventory: "Extract form inventory",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
@@ -408,6 +410,17 @@ function formInventoryRouteOverride(
   return formInventoryRoute ?? FORM_INVENTORY_MODEL;
 }
 
+function coverageCleanupRouteOverride(
+  taskKind: ModelCallTaskKind | undefined,
+  trace: ModelCallTraceDetails | undefined,
+  coverageCleanupRoute: ModelRoute | undefined,
+): ModelRoute | null {
+  if (taskKind !== "extraction_coverage_cleanup" && trace?.phase !== "coverage_cleanup") {
+    return null;
+  }
+  return coverageCleanupRoute ?? COVERAGE_CLEANUP_MODEL;
+}
+
 /**
  * Detect base64 PDF content embedded directly in prompt text.
  * Older cl-sdk calls can concatenate raw pdfBase64 into prompts.
@@ -484,6 +497,7 @@ export function makeGenerateText(
     let primaryRoute: ModelRoute | undefined;
     let qualityRoute: ModelRoute | undefined;
     let formInventoryRoute: ModelRoute | undefined;
+    let coverageCleanupRoute: ModelRoute | undefined;
     let visualTableRepairRoute: ModelRoute | undefined;
     let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
@@ -493,6 +507,7 @@ export function makeGenerateText(
         primaryRoute = resolved.route;
         qualityRoute = resolved.qualityRoute;
         formInventoryRoute = resolved.formInventoryRoute;
+        coverageCleanupRoute = resolved.coverageCleanupRoute;
         visualTableRepairRoute = resolved.visualTableRepairRoute;
         fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
@@ -517,6 +532,13 @@ export function makeGenerateText(
       routeSource = "form_inventory";
       transport = undefined;
       model = getModelForRoute(formInventoryRouteOverrideValue);
+    }
+    const coverageCleanupRouteOverrideValue = coverageCleanupRouteOverride(taskKind, trace, coverageCleanupRoute);
+    if (coverageCleanupRouteOverrideValue) {
+      primaryRoute = coverageCleanupRouteOverrideValue;
+      routeSource = "coverage_cleanup";
+      transport = undefined;
+      model = getModelForRoute(coverageCleanupRouteOverrideValue);
     }
     const visualRepairRouteOverride = visualTableRepairRouteOverride(trace, visualTableRepairRoute);
     if (visualRepairRouteOverride) {
@@ -623,6 +645,7 @@ export function makeGenerateObject(
     let primaryRoute: ModelRoute | undefined;
     let qualityRoute: ModelRoute | undefined;
     let formInventoryRoute: ModelRoute | undefined;
+    let coverageCleanupRoute: ModelRoute | undefined;
     let visualTableRepairRoute: ModelRoute | undefined;
     let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
@@ -632,6 +655,7 @@ export function makeGenerateObject(
         primaryRoute = resolved.route;
         qualityRoute = resolved.qualityRoute;
         formInventoryRoute = resolved.formInventoryRoute;
+        coverageCleanupRoute = resolved.coverageCleanupRoute;
         visualTableRepairRoute = resolved.visualTableRepairRoute;
         fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
@@ -656,6 +680,13 @@ export function makeGenerateObject(
       routeSource = "form_inventory";
       transport = undefined;
       model = getModelForRoute(formInventoryRouteOverrideValue);
+    }
+    const coverageCleanupRouteOverrideValue = coverageCleanupRouteOverride(taskKind, trace, coverageCleanupRoute);
+    if (coverageCleanupRouteOverrideValue) {
+      primaryRoute = coverageCleanupRouteOverrideValue;
+      routeSource = "coverage_cleanup";
+      transport = undefined;
+      model = getModelForRoute(coverageCleanupRouteOverrideValue);
     }
     const visualRepairRouteOverride = visualTableRepairRouteOverride(trace, visualTableRepairRoute);
     if (visualRepairRouteOverride) {

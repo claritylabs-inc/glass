@@ -33,6 +33,7 @@ import {
   operationalProfilePolicyFields,
   sourceTreePolicyFields,
   type DocumentSourceNode,
+  type OperationalCoverageLine,
   type PolicyOperationalProfile,
   type SourceSpanLike,
 } from "../lib/sourceTree";
@@ -791,6 +792,48 @@ const additionalInsuredEligibilitySchema = z.object({
 
 type OperationalCoverageOrigin = "core" | "endorsement";
 
+const coverageCleanupTermSchema = z.object({
+  kind: z.enum([
+    "each_claim_limit",
+    "each_occurrence_limit",
+    "each_loss_limit",
+    "aggregate_limit",
+    "sublimit",
+    "retention",
+    "deductible",
+    "retroactive_date",
+    "premium",
+    "other",
+  ]),
+  label: z.string(),
+  value: z.string(),
+  amount: z.number().nullable(),
+  appliesTo: z.string().nullable(),
+  sourceNodeIds: z.array(z.string()),
+  sourceSpanIds: z.array(z.string()),
+});
+
+const coverageCleanupRowSchema = z.object({
+  name: z.string(),
+  coverageCode: z.string().nullable(),
+  limit: z.string().nullable(),
+  deductible: z.string().nullable(),
+  premium: z.string().nullable(),
+  retroactiveDate: z.string().nullable(),
+  formNumber: z.string().nullable(),
+  sectionRef: z.string().nullable(),
+  coverageOrigin: z.enum(["core", "endorsement"]).nullable(),
+  endorsementNumber: z.string().nullable(),
+  limits: z.array(coverageCleanupTermSchema).max(12),
+  sourceNodeIds: z.array(z.string()),
+  sourceSpanIds: z.array(z.string()),
+});
+
+const coverageCleanupSchema = z.object({
+  coverages: z.array(coverageCleanupRowSchema).max(80),
+  warnings: z.array(z.string()).max(20),
+});
+
 type OperationalCoverageWithOrigin = PolicyOperationalProfile["coverages"][number] & {
   coverageOrigin?: OperationalCoverageOrigin;
   coverageOriginConfidence?: "low" | "medium" | "high";
@@ -798,6 +841,7 @@ type OperationalCoverageWithOrigin = PolicyOperationalProfile["coverages"][numbe
 };
 
 type AdditionalInsuredEligibility = z.infer<typeof additionalInsuredEligibilitySchema>;
+type CoverageCleanupResult = z.infer<typeof coverageCleanupSchema>;
 
 type OperationalProfileWithEligibility = PolicyOperationalProfile & {
   additionalInsuredEligibility?: AdditionalInsuredEligibility;
@@ -856,18 +900,274 @@ function annotateCoverageOriginsFallback(
   };
 }
 
+function compactSourceText(value: unknown): string {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function cleanNullableText(value: string | null): string | undefined {
+  const text = compactSourceText(value);
+  return text || undefined;
+}
+
+function validStringIds(ids: string[], validIds: Set<string>): string[] {
+  return [...new Set(ids.filter((id) => validIds.has(id)))];
+}
+
+function coverageTermSourceIds(
+  coverage: OperationalCoverageLine,
+  field: "sourceNodeIds" | "sourceSpanIds",
+): string[] {
+  return coverage.limits.flatMap(
+    (term: { sourceNodeIds: string[]; sourceSpanIds: string[] }) => term[field],
+  );
+}
+
+function sourceNodeEvidenceText(node: DocumentSourceNode): string {
+  return [node.title, node.description, node.textExcerpt]
+    .map(compactSourceText)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function coverageCleanupEvidence(params: {
+  profile: PolicyOperationalProfile;
+  sourceTree: DocumentSourceNode[];
+  sourceSpans: SourceSpanLike[];
+}): { text: string; count: number } {
+  const nodeById = new Map(params.sourceTree.map((node) => [node.id, node]));
+  const spanById = new Map(
+    params.sourceSpans.flatMap((span): Array<[string, SourceSpanLike]> =>
+      typeof span.id === "string" ? [[span.id, span]] : []
+    ),
+  );
+  const coverageNodeIds = new Set<string>();
+  const coverageSpanIds = new Set<string>();
+
+  for (const coverage of params.profile.coverages) {
+    for (const id of coverage.sourceNodeIds) coverageNodeIds.add(id);
+    for (const id of coverage.sourceSpanIds) coverageSpanIds.add(id);
+    for (const id of coverageTermSourceIds(coverage, "sourceNodeIds")) coverageNodeIds.add(id);
+    for (const id of coverageTermSourceIds(coverage, "sourceSpanIds")) coverageSpanIds.add(id);
+  }
+
+  const nearbyNodeIds = new Set<string>(coverageNodeIds);
+  for (const id of coverageNodeIds) {
+    const node = nodeById.get(id);
+    if (!node) continue;
+    for (const sibling of params.sourceTree) {
+      if (
+        sibling.parentId === node.parentId &&
+        Math.abs(sibling.order - node.order) <= 3
+      ) {
+        nearbyNodeIds.add(sibling.id);
+      }
+    }
+  }
+
+  const sourceNodes = [...nearbyNodeIds]
+    .map((id) => nodeById.get(id))
+    .filter((node): node is DocumentSourceNode => Boolean(node))
+    .sort((left, right) =>
+      (left.pageStart ?? Number.MAX_SAFE_INTEGER) - (right.pageStart ?? Number.MAX_SAFE_INTEGER)
+      || left.order - right.order
+    )
+    .slice(0, 120)
+    .map((node) => ({
+      nodeId: node.id,
+      kind: node.kind,
+      page: node.pageStart,
+      path: node.path,
+      title: node.title,
+      sourceSpanIds: node.sourceSpanIds,
+      text: sourceNodeEvidenceText(node).slice(0, 1400),
+    }));
+
+  for (const node of sourceNodes) {
+    for (const spanId of node.sourceSpanIds) coverageSpanIds.add(spanId);
+  }
+
+  const sourceSpans = [...coverageSpanIds]
+    .map((id) => spanById.get(id))
+    .filter((span): span is SourceSpanLike => Boolean(span))
+    .sort((left, right) =>
+      (left.pageStart ?? Number.MAX_SAFE_INTEGER) - (right.pageStart ?? Number.MAX_SAFE_INTEGER)
+      || String(left.id).localeCompare(String(right.id))
+    )
+    .slice(0, 160)
+    .map((span) => ({
+      spanId: span.id,
+      page: span.pageStart,
+      text: compactSourceText(span.text).slice(0, 1400),
+    }));
+
+  const currentCoverages = params.profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number], index: number) => ({
+    coverageId: `coverage_${index}`,
+    ...coverage,
+  }));
+
+  const payload = {
+    currentCoverages,
+    sourceNodes,
+    sourceSpans,
+  };
+  return {
+    text: JSON.stringify(payload, null, 2).slice(0, 52000),
+    count: sourceNodes.length + sourceSpans.length,
+  };
+}
+
+function validateCoverageCleanupResult(
+  result: CoverageCleanupResult,
+  sourceTree: DocumentSourceNode[],
+  sourceSpans: SourceSpanLike[],
+): PolicyOperationalProfile["coverages"] {
+  const validNodeIds = new Set(sourceTree.map((node) => node.id));
+  const validSpanIds = new Set(
+    sourceSpans.flatMap((span) => typeof span.id === "string" ? [span.id] : []),
+  );
+  const rows: PolicyOperationalProfile["coverages"] = [];
+  const seen = new Set<string>();
+
+  for (const row of result.coverages) {
+    const name = compactSourceText(row.name);
+    if (!name) continue;
+    const limits = row.limits.flatMap((term) => {
+      const label = compactSourceText(term.label);
+      const value = compactSourceText(term.value);
+      const sourceNodeIds = validStringIds(term.sourceNodeIds, validNodeIds);
+      const sourceSpanIds = validStringIds(term.sourceSpanIds, validSpanIds);
+      if (!label || !value || (sourceNodeIds.length === 0 && sourceSpanIds.length === 0)) return [];
+      const appliesTo = cleanNullableText(term.appliesTo);
+      return [{
+        kind: term.kind,
+        label,
+        value,
+        ...(typeof term.amount === "number" && Number.isFinite(term.amount) ? { amount: term.amount } : {}),
+        ...(appliesTo ? { appliesTo } : {}),
+        sourceNodeIds,
+        sourceSpanIds,
+      }];
+    });
+    const sourceNodeIds = validStringIds([
+      ...row.sourceNodeIds,
+      ...limits.flatMap((term) => term.sourceNodeIds),
+    ], validNodeIds);
+    const sourceSpanIds = validStringIds([
+      ...row.sourceSpanIds,
+      ...limits.flatMap((term) => term.sourceSpanIds),
+    ], validSpanIds);
+    if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0) {
+      continue;
+    }
+    const coverageCode = cleanNullableText(row.coverageCode);
+    const limit = cleanNullableText(row.limit);
+    const deductible = cleanNullableText(row.deductible);
+    const premium = cleanNullableText(row.premium);
+    const retroactiveDate = cleanNullableText(row.retroactiveDate);
+    const formNumber = cleanNullableText(row.formNumber);
+    const sectionRef = cleanNullableText(row.sectionRef);
+    const endorsementNumber = cleanNullableText(row.endorsementNumber);
+    const cleaned: OperationalCoverageLine = {
+      name,
+      ...(coverageCode ? { coverageCode } : {}),
+      ...(limit ? { limit } : {}),
+      ...(deductible ? { deductible } : {}),
+      ...(premium ? { premium } : {}),
+      ...(retroactiveDate ? { retroactiveDate } : {}),
+      ...(formNumber ? { formNumber } : {}),
+      ...(sectionRef ? { sectionRef } : {}),
+      ...(row.coverageOrigin ? { coverageOrigin: row.coverageOrigin } : {}),
+      ...(endorsementNumber ? { endorsementNumber } : {}),
+      limits,
+      sourceNodeIds,
+      sourceSpanIds,
+    };
+    const key = JSON.stringify({
+      name: cleaned.name,
+      limit: cleaned.limit,
+      deductible: cleaned.deductible,
+      retroactiveDate: cleaned.retroactiveDate,
+      limits,
+    }).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(cleaned);
+  }
+  return rows;
+}
+
 async function validateOperationalCoverageLines(params: {
   ctx: ActionCtx;
   orgId: Id<"organizations">;
   traceId?: string;
   policyId: string;
   sourceTree: DocumentSourceNode[];
+  sourceSpans: SourceSpanLike[];
   profile: PolicyOperationalProfile;
   log?: (message: string, level?: PipelineLogLevel) => Promise<void>;
 }): Promise<PolicyOperationalProfile> {
   if (params.profile.coverages.length === 0) return params.profile;
-  await params.log?.("Using source-native coverage rows without LLM coverage validation", "info");
-  return annotateCoverageOriginsFallback(params.profile, params.sourceTree);
+  const excerpt = coverageCleanupEvidence({
+    profile: params.profile,
+    sourceTree: params.sourceTree,
+    sourceSpans: params.sourceSpans,
+  });
+  if (excerpt.count === 0) {
+    await params.log?.("Coverage cleanup skipped: no source evidence for coverage rows", "warn");
+    return annotateCoverageOriginsFallback(params.profile, params.sourceTree);
+  }
+
+  const generateCoverageCleanupObject = makeGenerateObject("extraction", {
+    ctx: params.ctx,
+    orgId: params.orgId,
+    traceId: params.traceId,
+    tracePolicyId: params.policyId,
+  });
+
+  try {
+    const result = await generateCoverageCleanupObject({
+      schema: coverageCleanupSchema,
+      maxTokens: 5000,
+      taskKind: "extraction_review",
+      trace: { phase: "coverage_cleanup", label: "Clean coverage limits" },
+      system: `You repair extracted insurance coverage limit rows using only cited source nodes and source spans.
+
+Rules:
+- Use the current coverage rows as candidates, but trust the source evidence over the candidate shape.
+- Keep or repair rows only when the coverage name, limits, deductibles, premiums, and retroactive dates are supported by the supplied source evidence.
+- If a row name is a table header or value fragment such as "Limit of Liability", "Aggregate", "Claim", "Proceeding", "$2,000,000 Policy", or "Aggregate Policy Limit of Liability", merge its facts into the correct nearby coverage-part row or drop it.
+- Preserve exact monetary amounts, dates, and limit qualifiers from the source evidence. Do not invent or infer values.
+- Use only sourceNodeIds and sourceSpanIds supplied in the evidence payload. Every returned coverage row or term must carry source IDs.
+- Return a clean operational coverage list suitable for persistence. Do not explain in prose outside the JSON.`,
+      prompt: `Clean these coverage rows against their source evidence.
+
+Return:
+- coverages: the corrected coverage rows.
+- warnings: concise issues that could not be repaired.
+
+Evidence payload:
+${excerpt.text}`,
+    });
+    const coverages = validateCoverageCleanupResult(
+      result.object as CoverageCleanupResult,
+      params.sourceTree,
+      params.sourceSpans,
+    );
+    await params.log?.(
+      `Coverage cleanup reviewed ${params.profile.coverages.length} row(s); kept ${coverages.length} source-backed row(s)`,
+      coverages.length ? "info" : "warn",
+    );
+    return annotateCoverageOriginsFallback({
+      ...params.profile,
+      coverages,
+    }, params.sourceTree);
+  } catch (error) {
+    await params.log?.(
+      `Coverage cleanup skipped: ${error instanceof Error ? error.message : String(error)}`,
+      "warn",
+    );
+    return annotateCoverageOriginsFallback(params.profile, params.sourceTree);
+  }
 }
 
 function additionalInsuredEligibilityExcerpt(sourceTree: DocumentSourceNode[]): {
@@ -1627,6 +1927,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         traceId: state.traceId,
         policyId,
         sourceTree: sourceNodes,
+        sourceSpans: canonicalSpans,
         profile: normalizedOperationalProfile,
         log: async (message, level) => { await pCtx.log(message, level); },
       });
@@ -2571,6 +2872,7 @@ async function completeExternalExtractFromPayload(
     traceId: state.traceId,
     policyId,
     sourceTree: sourceNodes,
+    sourceSpans: canonicalSpans,
     profile: normalizedOperationalProfile,
     log: async (message, level = "info") => {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {

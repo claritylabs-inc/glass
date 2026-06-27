@@ -6,6 +6,7 @@ import { requireOrgAccess } from "./lib/orgAuth";
 import { requireOperator } from "./lib/operatorIdentity";
 import {
   CONFIGURABLE_MODEL_PROVIDERS,
+  EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
   EMBEDDING_MODEL_CATALOG,
   EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
@@ -110,6 +111,7 @@ const globalRoutesValidator = v.object({
   embeddings: v.optional(routeUpdateValidator),
   extraction_quality: v.optional(routeUpdateValidator),
   extraction_form_inventory: v.optional(routeUpdateValidator),
+  extraction_coverage_cleanup: v.optional(routeUpdateValidator),
   extraction_visual_table_repair: v.optional(routeUpdateValidator),
   fallback: v.optional(routeUpdateValidator),
 });
@@ -590,6 +592,7 @@ export const resolveForOrg = internalQuery({
     for (const routeId of [
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
       EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
+      EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
       EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {
@@ -643,6 +646,7 @@ export const resolvePublicDefaults = internalQuery({
     for (const routeId of [
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
       EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
+      EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
       EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {

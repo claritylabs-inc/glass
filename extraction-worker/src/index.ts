@@ -472,6 +472,11 @@ const WORKER_FORM_INVENTORY_ROUTE: WorkerModelRoute = {
   model: FIREWORKS_DEEPSEEK_V4_PRO,
 };
 
+const WORKER_COVERAGE_CLEANUP_ROUTE: WorkerModelRoute = {
+  provider: "fireworks",
+  model: FIREWORKS_DEEPSEEK_V4_PRO,
+};
+
 const WORKER_QUALITY_ROUTE: WorkerModelRoute = {
   provider: "fireworks",
   model: FIREWORKS_DEEPSEEK_V4_FLASH,
@@ -497,6 +502,7 @@ const QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
   "extraction_source_tree",
   "extraction_operational_profile",
   "extraction_review",
+  "extraction_coverage_cleanup",
   "extraction_referential_lookup",
 ]);
 const QUALITY_PRIMARY_TASK_KINDS = new Set<string>([
@@ -737,6 +743,15 @@ function resolveConfiguredFormInventoryRoute(settings?: WorkerModelSettings) {
   );
 }
 
+function resolveConfiguredCoverageCleanupRoute(settings?: WorkerModelSettings) {
+  return resolveConfiguredRoute(
+    "extraction_coverage_cleanup",
+    WORKER_COVERAGE_CLEANUP_ROUTE,
+    "static",
+    settings,
+  );
+}
+
 function resolveModelForTaskKind(
   taskKind: string | undefined,
   settings?: WorkerModelSettings,
@@ -760,14 +775,19 @@ function resolveModelForTaskKind(
   const formInventory = taskKind === "extraction_form_inventory"
     ? resolveConfiguredFormInventoryRoute(settings)
     : null;
-  const route = visualRepair?.route ?? formInventory?.route ?? (useQualityPrimary ? quality.route : baseRoute);
-  const routeSource = visualRepair?.routeSource ?? formInventory?.routeSource ?? (useQualityPrimary
+  const coverageCleanup = taskKind === "extraction_coverage_cleanup"
+    ? resolveConfiguredCoverageCleanupRoute(settings)
+    : null;
+  const route = visualRepair?.route ?? coverageCleanup?.route ?? formInventory?.route ?? (useQualityPrimary ? quality.route : baseRoute);
+  const routeSource = visualRepair?.routeSource ?? coverageCleanup?.routeSource ?? formInventory?.routeSource ?? (useQualityPrimary
     ? quality.routeSource
     : canUseConfiguredRoute
     ? (configuredRouteSource ?? "configured")
     : "default");
   const apiKey = visualRepair
     ? visualRepair.apiKey
+    : coverageCleanup
+      ? coverageCleanup.apiKey
     : formInventory
       ? formInventory.apiKey
     : useQualityPrimary
