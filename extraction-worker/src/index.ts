@@ -469,7 +469,7 @@ const WORKER_VISUAL_TABLE_REPAIR_ROUTE: WorkerModelRoute = {
 
 const WORKER_FORM_INVENTORY_ROUTE: WorkerModelRoute = {
   provider: "fireworks",
-  model: FIREWORKS_QWEN_37_PLUS,
+  model: FIREWORKS_DEEPSEEK_V4_PRO,
 };
 
 const WORKER_QUALITY_ROUTE: WorkerModelRoute = {
@@ -866,6 +866,7 @@ async function recordModelCallSoftFailure(
     label: string;
     taskKind?: string;
     startedAt: number;
+    error?: unknown;
     details: unknown;
   },
 ) {
@@ -878,6 +879,7 @@ async function recordModelCallSoftFailure(
     attempt: 1,
     status: "soft_failed",
     durationMs: nowMs() - opts.startedAt,
+    ...(opts.error === undefined ? {} : { error: errorMessage(opts.error) }),
     details: opts.details,
   });
 }
@@ -1523,6 +1525,7 @@ function buildWorkerExtractor(opts: {
           label,
           taskKind,
           startedAt,
+          error,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -1547,6 +1550,7 @@ function buildWorkerExtractor(opts: {
           label,
           taskKind,
           startedAt,
+          error,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -1571,6 +1575,7 @@ function buildWorkerExtractor(opts: {
           label,
           taskKind,
           startedAt,
+          error,
           details: modelTraceDetails({
             kind: "generateObject",
             label,

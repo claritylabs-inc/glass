@@ -733,6 +733,7 @@ export function makeGenerateObject(
           transport,
           durationMs: nowMs() - startedAt,
           status: "soft_failed",
+          error: message,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -763,6 +764,7 @@ export function makeGenerateObject(
           transport,
           durationMs: nowMs() - startedAt,
           status: "soft_failed",
+          error: message,
           details: modelTraceDetails({
             kind: "generateObject",
             label,
@@ -793,6 +795,7 @@ export function makeGenerateObject(
           transport,
           durationMs: nowMs() - startedAt,
           status: "soft_failed",
+          error: message,
           details: modelTraceDetails({
             kind: "generateObject",
             label,

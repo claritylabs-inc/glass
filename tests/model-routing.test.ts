@@ -16,8 +16,11 @@ import {
   EXTRACTION_QUALITY_MODEL,
   LANGUAGE_MODEL_CATALOG,
   MODEL_DISPLAY_NAMES,
+  MODEL_ROUTE_DESCRIPTIONS,
+  MODEL_ROUTE_LABELS,
   MODEL_TASK_GROUPS,
   OPERATOR_MODEL_ROUTE_GROUPS,
+  defaultModelRouteForId,
   isRetiredModelRoute,
 } from "../convex/lib/modelCatalog";
 
@@ -81,6 +84,26 @@ describe("model task routing", () => {
       model: "accounts/fireworks/models/kimi-k2p6",
     })).toBe(true);
     expect(isRetiredModelRoute(MODEL_ROUTING.extraction)).toBe(false);
+  });
+
+  test("uses DeepSeek Pro for configurable form inventory and page ranges", () => {
+    const workerSource = readFileSync(
+      join(__dirname, "../extraction-worker/src/index.ts"),
+      "utf-8",
+    );
+
+    expect(defaultModelRouteForId("extraction_form_inventory")).toEqual({
+      provider: "fireworks",
+      model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
+    });
+    expect(MODEL_ROUTE_LABELS.extraction_form_inventory).toBe(
+      "Form inventory and page ranges",
+    );
+    expect(MODEL_ROUTE_DESCRIPTIONS.extraction_form_inventory).toContain(
+      "page ranges before source-tree grouping",
+    );
+    expect(workerSource).toContain("const WORKER_FORM_INVENTORY_ROUTE");
+    expect(workerSource).toContain("model: FIREWORKS_DEEPSEEK_V4_PRO");
   });
 
   test("keeps embeddings on the OpenAI-compatible 1536-dimensional route during migration", () => {

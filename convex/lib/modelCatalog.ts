@@ -312,7 +312,7 @@ export const VISUAL_TABLE_REPAIR_MODEL: ModelRoute = {
 };
 
 export const FORM_INVENTORY_MODEL: ModelRoute = {
-  model: FIREWORKS_MODEL_IDS.qwen37Plus,
+  model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
   provider: "fireworks",
 };
 
@@ -340,7 +340,7 @@ export const MODEL_ROUTE_IDS = [
 export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_LABELS,
   extraction_quality: "Source tree and profile extraction",
-  extraction_form_inventory: "Form inventory",
+  extraction_form_inventory: "Form inventory and page ranges",
   extraction_visual_table_repair: "Visual table repair",
   fallback: "Fallback model",
 };
@@ -350,7 +350,7 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
   extraction_quality:
     "Proactive primary route for source-tree generation and operational-profile extraction before any failure occurs.",
   extraction_form_inventory:
-    "Fast optional page-range inventory for declarations, forms, notices, and endorsements before source-tree grouping.",
+    "Long-context structured route for extracting declarations, policy forms, notices, endorsements, and page ranges before source-tree grouping.",
   extraction_visual_table_repair:
     "Image-capable route for repairing parsed table rows and column labels against page screenshots.",
   fallback:
