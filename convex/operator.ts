@@ -145,6 +145,15 @@ function normalizeCoverageContextText(value: string) {
     .trim();
 }
 
+function operatorCoverageName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const name = normalizeCoverageName(value);
+  if (!name) return undefined;
+  if (/^(?:limit of liability|deductible|retroactive date|aggregate|claim|proceeding|source)$/i.test(name)) return undefined;
+  if (/\$[\d,.]+/.test(name) && /\b(?:limit|liability|deductible|aggregate|claim|policy)\b/i.test(name)) return undefined;
+  return name;
+}
+
 function coverageSourceContext(
   coverage: Record<string, unknown>,
   node: OperatorSourceNode | undefined,
@@ -234,9 +243,7 @@ async function policyWithOperatorCoverageContext(
           entry?.node ?? undefined,
           entry?.children ?? [],
         );
-        const name = normalizeCoverageName(context) ?? normalizeCoverageName(
-          typeof coverage.name === "string" ? coverage.name : undefined,
-        );
+        const name = operatorCoverageName(coverage.name) ?? operatorCoverageName(context);
         return name ? { ...coverage, name } : coverage;
       }),
     },

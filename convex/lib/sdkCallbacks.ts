@@ -85,6 +85,11 @@ type ParamsWithOptionalTaskKind = {
   trace?: unknown;
 };
 
+type GenerateObjectParams = Parameters<GenerateObject>[0];
+type GlassGenerateObject = (
+  params: Omit<GenerateObjectParams, "taskKind"> & { taskKind?: ModelCallTaskKind },
+) => ReturnType<GenerateObject>;
+
 type ModelCallTraceDetails = {
   label?: string;
   extractorName?: string;
@@ -635,7 +640,7 @@ export function makeGenerateText(
 export function makeGenerateObject(
   task: ModelTask = "extraction",
   routing?: ModelRoutingContext,
-): GenerateObject {
+): GlassGenerateObject {
   return async (params) => {
     const { prompt, system, schema, maxTokens, providerOptions } = params;
     const guidedPrompt = addPolicyPeriodGuidance(prompt);

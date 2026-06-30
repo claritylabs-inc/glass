@@ -1128,7 +1128,7 @@ async function validateOperationalCoverageLines(params: {
     const result = await generateCoverageCleanupObject({
       schema: coverageCleanupSchema,
       maxTokens: 5000,
-      taskKind: "extraction_review",
+      taskKind: "extraction_coverage_cleanup",
       trace: { phase: "coverage_cleanup", label: "Clean coverage limits" },
       system: `You repair extracted insurance coverage limit rows using only cited source nodes and source spans.
 
@@ -1919,7 +1919,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         (result as any).operationalProfile,
         sourceNodes,
         canonicalSpans,
-        doc as Record<string, unknown>,
       );
       const validatedOperationalProfile = await validateOperationalCoverageLines({
         ctx: convexCtx,
@@ -2864,7 +2863,6 @@ async function completeExternalExtractFromPayload(
     operationalProfileInput,
     sourceNodes,
     canonicalSpans,
-    doc,
   );
   const validatedOperationalProfile = await validateOperationalCoverageLines({
     ctx,
@@ -3241,7 +3239,7 @@ export const rematerializeSourceTreeProfile = internalAction({
     } | null;
     if (!policy) throw new Error("Policy not found");
 
-    const operationalProfile = normalizeStoredOperationalProfile(policy.operationalProfile, policy.document);
+    const operationalProfile = normalizeStoredOperationalProfile(policy.operationalProfile);
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
       fields: operationalProfilePolicyFields(operationalProfile),
@@ -3364,7 +3362,6 @@ export const rebuildStoredSourceNodes = internalAction({
       policy.operationalProfile,
       sourceNodes,
       canonicalSpans,
-      policy.document,
     );
 
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {

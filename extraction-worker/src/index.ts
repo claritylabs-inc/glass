@@ -904,29 +904,6 @@ async function recordModelCallSoftFailure(
   });
 }
 
-async function recordModelCallSkipped(
-  opts: {
-    job: Pick<ClaimedJob, "state">;
-    route: ResolvedWorkerModelRoute;
-    label: string;
-    taskKind?: string;
-    startedAt: number;
-    details: unknown;
-  },
-) {
-  await recordTraceEvent(opts.job, {
-    kind: "model_call",
-    label: opts.label,
-    task: opts.route.task,
-    taskKind: opts.taskKind,
-    ...modelRouteTrace(opts.route),
-    attempt: 1,
-    status: "skipped",
-    durationMs: nowMs() - opts.startedAt,
-    details: opts.details,
-  });
-}
-
 async function recordModelCallComplete(
   opts: {
     job: Pick<ClaimedJob, "state">;
@@ -967,14 +944,6 @@ function shouldReturnEmptyFormInventory(taskKind: string | undefined): boolean {
 
 function shouldReturnEmptyVisualTableRepair(trace: ModelCallTrace | undefined): boolean {
   return isVisualTableRepairTrace(trace);
-}
-
-function operationalProfileNoOp(taskKind: string | undefined, prompt: string): Record<string, unknown> | null {
-  if (taskKind !== "extraction_operational_profile") return null;
-  if (prompt.startsWith("Review and clean a source-backed operational profile")) {
-    return { coverageDecisions: [], warnings: [] };
-  }
-  return {};
 }
 
 function maxOutputTokensForRoute(
@@ -1474,30 +1443,6 @@ function buildWorkerExtractor(opts: {
       providerOptions as ProviderOptions | undefined,
     );
     const startedAt = nowMs();
-    const noOpObject = operationalProfileNoOp(taskKind, guidedPrompt);
-    if (noOpObject) {
-      await recordModelCallSkipped({
-        job: opts.job,
-        route,
-        label,
-        taskKind,
-        startedAt,
-        details: modelTraceDetails({
-          kind: "generateObject",
-          label,
-          task: route.task,
-          taskKind,
-          prompt: guidedPrompt,
-          system: params.system,
-          maxOutputTokens,
-          providerOptions: callProviderOptions,
-          trace,
-          output: noOpObject,
-          outputKind: "object",
-        }),
-      });
-      return { object: noOpObject, usage: undefined };
-    }
     try {
       const result = await aiGenerateText({
         model: route.model,
