@@ -103,6 +103,15 @@ type ModelCallDebugDetails = {
   promptPreview?: string;
   outputPreview?: string;
   outputKind?: string;
+  trace?: {
+    batchIndex?: number;
+    batchCount?: number;
+    coverageGroup?: string;
+    itemCount?: number;
+    startPage?: number;
+    endPage?: number;
+    sourceBacked?: boolean;
+  };
   inputSummary?: {
     hasPdfBase64?: boolean;
     pdfBase64Chars?: number;
@@ -696,6 +705,25 @@ function modelCallTitle(event: TraceEvent) {
   return humanizeTaskKind(event.taskKind) ?? humanizeTaskKind(event.task) ?? "Model call";
 }
 
+function traceEventStatusLabel(event: TraceEvent) {
+  if (event.error) return "failed";
+  if (event.status === "complete") return "completed";
+  if (event.status === "soft_failed") return "returned fallback";
+  return event.status;
+}
+
+function traceEventRouteLabel(event: TraceEvent) {
+  return [
+    [event.provider, event.model].filter(Boolean).join(" / "),
+    event.routeSource,
+    event.transport,
+  ].filter(Boolean).join(" · ");
+}
+
+function traceEventAttemptLabel(event: TraceEvent) {
+  return event.attempt ? `attempt ${event.attempt}` : undefined;
+}
+
 function eventTitle(event: TraceEvent) {
   if (event.kind === "model_call") return modelCallTitle(event);
   return event.label ?? humanizeTaskKind(event.taskKind) ?? event.phase ?? event.message ?? event.kind;
@@ -704,9 +732,11 @@ function eventTitle(event: TraceEvent) {
 function eventCaption(event: TraceEvent) {
   if (event.kind === "model_call") {
     return [
-      [event.provider, event.model].filter(Boolean).join(" / "),
+      traceEventRouteLabel(event),
       event.taskKind,
-      event.status,
+      traceEventAttemptLabel(event),
+      traceEventStatusLabel(event),
+      event.error ? `error: ${event.error}` : undefined,
     ].filter(Boolean).join(" · ");
   }
   return [event.kind, event.status].filter(Boolean).join(" · ");
@@ -846,17 +876,21 @@ function buildTimelineRows(events: TraceEvent[], session: TraceRow) {
     .sort((a, b) => a.startMs - b.startMs || b.durationMs - a.durationMs);
 }
 
-function timelineColor(kind: TraceEvent["kind"]) {
-  if (kind === "model_call") return "bg-blue-500";
-  if (kind === "phase") return "bg-foreground";
-  if (kind === "embedding_batch") return "bg-emerald-500";
-  if (kind === "worker") return "bg-violet-500";
-  if (kind === "artifact") return "bg-amber-500";
+function timelineColor(event: TraceEvent) {
+  if (event.kind === "model_call") {
+    if (event.error || event.status === "error") return "bg-red-500";
+    if (event.status === "soft_failed") return "bg-amber-500";
+    return "bg-blue-500";
+  }
+  if (event.kind === "phase") return "bg-foreground";
+  if (event.kind === "embedding_batch") return "bg-emerald-500";
+  if (event.kind === "worker") return "bg-violet-500";
+  if (event.kind === "artifact") return "bg-amber-500";
   return "bg-muted-foreground";
 }
 
-function timelineInsideTextColor(kind: TraceEvent["kind"]) {
-  return kind === "phase" ? "text-background" : "text-white";
+function timelineInsideTextColor(event: TraceEvent) {
+  return event.kind === "phase" ? "text-background" : "text-white";
 }
 
 function modelCallDebugDetails(event?: TraceEvent): ModelCallDebugDetails | null {
@@ -893,6 +927,7 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
     );
   }
   const inputSummary = details.inputSummary;
+  const trace = details.trace;
   const inputRows = [
     inputSummary?.mimeType ? ["MIME type", inputSummary.mimeType] : null,
     inputSummary?.fileId ? ["File ID", inputSummary.fileId] : null,
@@ -900,6 +935,13 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
     inputSummary?.hasPdfBytes ? ["PDF bytes", inputSummary.pdfBytes?.toLocaleString() ?? "present"] : null,
     inputSummary?.hasPdfBase64 ? ["PDF base64", `${inputSummary.pdfBase64Chars?.toLocaleString() ?? "present"} chars`] : null,
     inputSummary?.images?.length ? ["Images", `${inputSummary.images.length} image${inputSummary.images.length === 1 ? "" : "s"}`] : null,
+  ].filter((row): row is [string, string] => !!row);
+  const traceRows = [
+    trace?.batchIndex || trace?.batchCount ? ["Batch", `${trace.batchIndex ?? "?"} / ${trace.batchCount ?? "?"}`] : null,
+    trace?.coverageGroup ? ["Coverage group", trace.coverageGroup.replace(/_/g, " ")] : null,
+    trace?.itemCount !== undefined ? ["Items", trace.itemCount.toLocaleString()] : null,
+    trace?.startPage ? ["Pages", trace.endPage && trace.endPage !== trace.startPage ? `${trace.startPage}-${trace.endPage}` : String(trace.startPage)] : null,
+    trace?.sourceBacked !== undefined ? ["Source-backed", trace.sourceBacked ? "yes" : "no"] : null,
   ].filter((row): row is [string, string] => !!row);
 
   return (
@@ -929,6 +971,19 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
           <h4 className="mb-1.5 text-base font-medium text-muted-foreground">Input attachments</h4>
           <dl className="grid gap-x-8 gap-y-1.5 text-base text-muted-foreground sm:grid-cols-2">
             {inputRows.map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="inline font-medium text-foreground">{label}</dt>
+                <dd className="ml-2 inline break-words">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </OperationalPanel>
+      ) : null}
+      {traceRows.length ? (
+        <OperationalPanel as="section" className="px-3 py-3">
+          <h4 className="mb-1.5 text-base font-medium text-muted-foreground">Trace metadata</h4>
+          <dl className="grid gap-x-8 gap-y-1.5 text-base text-muted-foreground sm:grid-cols-2">
+            {traceRows.map(([label, value]) => (
               <div key={label} className="min-w-0">
                 <dt className="inline font-medium text-foreground">{label}</dt>
                 <dd className="ml-2 inline break-words">{value}</dd>
@@ -1048,7 +1103,7 @@ function TimelineWaterfall({
                 return (
                   <div
                     key={row.id}
-                    className="grid min-h-7 border-b border-foreground/6 text-left hover:bg-muted/40"
+                    className="grid min-h-9 border-b border-foreground/6 text-left hover:bg-muted/40"
                     style={{ gridTemplateColumns }}
                   >
                     <div className={`min-w-0 py-1.5 pr-2.5 ${row.level > 0 ? "pl-5" : "pl-2.5"}`}>
@@ -1070,10 +1125,13 @@ function TimelineWaterfall({
                         )}
                         <p className="min-w-0 truncate text-label font-medium text-foreground">{row.label}</p>
                       </div>
+                      {row.caption ? (
+                        <p className="ml-5 mt-0.5 min-w-0 truncate text-label text-muted-foreground">{row.caption}</p>
+                      ) : null}
                     </div>
                     <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
                       <div
-                        className={`absolute top-1.5 flex h-4 items-center justify-center rounded-sm px-1 ${timelineColor(row.kind)}`}
+                        className={`absolute top-1.5 flex h-4 items-center justify-center rounded-sm px-1 ${timelineColor(row.event)}`}
                         style={{
                           left: `${constrainedLeft}%`,
                           width: `${constrainedWidth}%`,
@@ -1081,7 +1139,7 @@ function TimelineWaterfall({
                         title={`${row.label} · ${durationLabel} · ${row.caption}`}
                       >
                         {showDurationInside ? (
-                          <span className={`truncate text-label font-medium ${timelineInsideTextColor(row.kind)}`}>
+                          <span className={`truncate text-label font-medium ${timelineInsideTextColor(row.event)}`}>
                             {durationLabel}
                           </span>
                         ) : null}
@@ -1108,6 +1166,8 @@ function TimelineWaterfall({
         <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-label text-muted-foreground">
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-amber-500" />model fallback</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-red-500" />model error</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />embedding</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-500" />worker</span>
         </div>
@@ -1156,11 +1216,18 @@ function ModelCallSelector({
           label="Model"
           value={[selectedEvent.provider, selectedEvent.model].filter(Boolean).join(" / ") || "—"}
         />
+        <OperationalLabelValueRow label="Route" value={[selectedEvent.routeSource, selectedEvent.transport].filter(Boolean).join(" / ") || "—"} />
+        <OperationalLabelValueRow label="Status" value={traceEventStatusLabel(selectedEvent) ?? "—"} />
+        <OperationalLabelValueRow label="Attempt" value={selectedEvent.attempt ? String(selectedEvent.attempt) : "—"} />
+        <OperationalLabelValueRow label="Task" value={selectedEvent.taskKind ?? selectedEvent.task ?? "—"} />
         <OperationalLabelValueRow label="Time" value={formatDuration(selectedEvent.durationMs)} />
         <OperationalLabelValueRow
           label="Tokens"
           value={formatTokens(selectedEvent.inputTokens, selectedEvent.outputTokens)}
         />
+        {selectedEvent.error ? (
+          <OperationalLabelValueRow label="Error" value={selectedEvent.error} />
+        ) : null}
       </OperationalLabelValueList>
     </div>
   );
@@ -1169,6 +1236,8 @@ function ModelCallSelector({
 function modelCallSelectLabel(event: TraceEvent) {
   return [
     eventTitle(event),
+    traceEventAttemptLabel(event),
+    traceEventStatusLabel(event),
     formatDuration(event.durationMs),
     formatCompactTokens(event.inputTokens, event.outputTokens) !== "—"
       ? formatCompactTokens(event.inputTokens, event.outputTokens)

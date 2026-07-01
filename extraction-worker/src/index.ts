@@ -446,6 +446,7 @@ function readSourceKind(value: unknown): "policy_pdf" | "email" | "attachment" |
 const FIREWORKS_DEEPSEEK_V4_PRO = "accounts/fireworks/models/deepseek-v4-pro";
 const FIREWORKS_DEEPSEEK_V4_FLASH = "accounts/fireworks/models/deepseek-v4-flash";
 const FIREWORKS_QWEN_37_PLUS = "accounts/fireworks/models/qwen3p7-plus";
+const OPENAI_GPT_5_4_MINI = "gpt-5.4-mini";
 
 const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
   classification: {
@@ -473,8 +474,8 @@ const WORKER_FORM_INVENTORY_ROUTE: WorkerModelRoute = {
 };
 
 const WORKER_COVERAGE_CLEANUP_ROUTE: WorkerModelRoute = {
-  provider: "fireworks",
-  model: FIREWORKS_DEEPSEEK_V4_PRO,
+  provider: "openai",
+  model: OPENAI_GPT_5_4_MINI,
 };
 
 const WORKER_QUALITY_ROUTE: WorkerModelRoute = {
@@ -1658,6 +1659,19 @@ function buildWorkerExtractor(opts: {
 
   const concurrency = readBoundedIntEnv("EXTRACTION_CONCURRENCY", 6, 1, 8);
   const extractionRoute = resolveModelForTaskKind("extraction_focused", opts.modelSettings);
+  const modelCapabilitiesByTaskKind = Object.fromEntries(
+    ([
+      "extraction_source_tree",
+      "extraction_operational_profile",
+      "extraction_form_inventory",
+      "extraction_coverage_cleanup",
+      "extraction_review",
+      "extraction_referential_lookup",
+    ] satisfies ModelTaskKind[]).map((taskKind) => [
+      taskKind,
+      resolveModelForTaskKind(taskKind, opts.modelSettings).capabilities,
+    ]),
+  ) as Partial<Record<ModelTaskKind, ModelCapabilities>>;
   return createExtractor({
     generateText,
     generateObject,
@@ -1671,6 +1685,7 @@ function buildWorkerExtractor(opts: {
     onProgress: opts.log,
     onCheckpointSave: opts.onCheckpointSave,
     modelCapabilities: extractionRoute.capabilities,
+    modelCapabilitiesByTaskKind,
   });
 }
 

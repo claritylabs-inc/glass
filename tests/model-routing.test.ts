@@ -121,8 +121,8 @@ describe("model task routing", () => {
     );
 
     expect(defaultModelRouteForId("extraction_coverage_cleanup")).toEqual({
-      provider: "fireworks",
-      model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
+      provider: "openai",
+      model: "gpt-5.4-mini",
     });
     expect(MODEL_ROUTE_LABELS.extraction_coverage_cleanup).toBe(
       "Coverage cleanup",
@@ -139,6 +139,7 @@ describe("model task routing", () => {
     expect(sdkCallbacks).toContain("coverageCleanupRouteOverride");
     expect(sdkCallbacks).toContain('routeSource = "coverage_cleanup"');
     expect(workerSource).toContain("WORKER_COVERAGE_CLEANUP_ROUTE");
+    expect(workerSource).toContain("model: OPENAI_GPT_5_4_MINI");
     expect(workerSource).toContain('"extraction_coverage_cleanup"');
   });
 
@@ -172,10 +173,17 @@ describe("model task routing", () => {
   test("keeps SDK extraction review broad pass disabled in Glass hosts", () => {
     const appExtractor = readFileSync(join(__dirname, "../convex/lib/extraction.ts"), "utf-8");
     const worker = readFileSync(join(__dirname, "../extraction-worker/src/index.ts"), "utf-8");
+    const workerCapabilities = readFileSync(
+      join(__dirname, "../extraction-worker/src/modelCapabilities.ts"),
+      "utf-8",
+    );
 
     expect(appExtractor).toContain('readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip")');
     expect(worker).toContain('readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip")');
     expect(worker).toContain("modelCapabilitiesForRoute(route.model)");
+    expect(worker).toContain("modelCapabilitiesByTaskKind");
+    expect(workerCapabilities).toContain("extraction_operational_profile");
+    expect(workerCapabilities).toContain("extraction_coverage_cleanup");
     expect(worker).not.toContain("EXTRACTION_MAX_TOKEN_OVERRIDES");
   });
 });

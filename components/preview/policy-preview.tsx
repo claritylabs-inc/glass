@@ -118,7 +118,7 @@ export function PolicyPreview({
           ...(citedSourceSpanIds ?? []),
           ...collectSourceSpanIds(documentOutline),
         ]),
-      ],
+      ].slice(0, 256),
     [citedSourceSpanIds, documentOutline],
   );
   const fileUrl = useCachedQuery(

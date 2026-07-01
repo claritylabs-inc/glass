@@ -80,11 +80,12 @@ function sourceUnit(span: SourceSpanDoc): string | undefined {
 export function usePolicySourceSpans(
   policyId: Id<"policies"> | undefined,
   sourceSpanIds: string[],
-  options?: { allowOperatorAccess?: boolean },
+  options?: { allowOperatorAccess?: boolean; maxIds?: number },
 ) {
+  const maxIds = options?.maxIds ?? 256;
   const uniqueIds = useMemo(
-    () => [...new Set(sourceSpanIds)].sort(),
-    [sourceSpanIds],
+    () => [...new Set(sourceSpanIds)].sort().slice(0, maxIds),
+    [sourceSpanIds, maxIds],
   );
   return useCachedQuery(
     "sourceSpans.listSpansByPolicyAndSpanIds.policy-detail",

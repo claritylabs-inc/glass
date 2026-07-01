@@ -63,6 +63,7 @@ type ClientSourceSpan = Pick<
 };
 
 const BULK_SPAN_LOOKUP_THRESHOLD = 32;
+const MAX_CLIENT_SPAN_LOOKUP_IDS = 256;
 const MAX_PARENT_LOOKUP_ROUNDS = 8;
 
 function parentFor(span: SourceSpanDoc) {
@@ -140,7 +141,7 @@ export const listSpansByPolicyAndSpanIds = query({
       if (!operatorAccess) return [];
     }
 
-    const wanted = new Set(args.spanIds);
+    const wanted = new Set([...new Set(args.spanIds)].slice(0, MAX_CLIENT_SPAN_LOOKUP_IDS));
     if (wanted.size === 0) return [];
     const relatedIds = new Set(wanted);
     const byId = new Map<string, SourceSpanDoc>();

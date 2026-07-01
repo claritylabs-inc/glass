@@ -255,4 +255,36 @@ describe("operator teardown policy-detail queries", () => {
     expect(spanIds).toEqual(expect.arrayContaining(["cell-a", "row-1", "page-1"]));
     expect(spanIds).not.toContain("cell-b");
   });
+
+  test("source span evidence lookup caps oversized client requests", async () => {
+    const { t, operatorUserId, clientOrgId, policyId } =
+      await seedOperatorPolicyFixture();
+    const now = dayjs().valueOf();
+    const requestedSpanIds = Array.from({ length: 300 }, (_, index) => `bulk-${index}`);
+    await t.run(async (ctx) => {
+      for (const spanId of requestedSpanIds) {
+        await ctx.db.insert("sourceSpans", {
+          orgId: clientOrgId,
+          policyId,
+          spanId,
+          documentId: "doc-a",
+          sourceKind: "policy_pdf",
+          text: `Bulk source evidence ${spanId}`,
+          textHash: spanId,
+          createdAt: now,
+        });
+      }
+    });
+    const operatorSession = t.withIdentity({
+      subject: `${operatorUserId}|session`,
+    });
+
+    const spans = await operatorSession.query(listSpansByPolicyAndSpanIdsFn, {
+      policyId,
+      spanIds: requestedSpanIds,
+    });
+
+    expect(spans).toHaveLength(256);
+    expect(spans.map((span: { spanId: string }) => span.spanId)).not.toContain("bulk-299");
+  });
 });

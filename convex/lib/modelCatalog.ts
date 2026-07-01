@@ -317,8 +317,8 @@ export const FORM_INVENTORY_MODEL: ModelRoute = {
 };
 
 export const COVERAGE_CLEANUP_MODEL: ModelRoute = {
-  model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
-  provider: "fireworks",
+  model: "gpt-5.4-mini",
+  provider: "openai",
 };
 
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
@@ -542,6 +542,13 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
     defaultOutputTokens: 8_192,
     longListOutputTokens: 24_576,
     supportsImageInput: true,
+    taskOutputTokens: {
+      extraction_operational_profile: 8_192,
+      extraction_coverage_cleanup: 4_096,
+      extraction_review: 12_288,
+      query_reason: 8_192,
+      query_verify: 4_096,
+    },
   },
   "gpt-5.4-nano": {
     modelName: "gpt-5.4-nano",
@@ -585,6 +592,7 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
       extraction_long_list: 24_576,
+      extraction_operational_profile: 8_192,
       query_classify: 2_048,
     },
   },
