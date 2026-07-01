@@ -45,7 +45,7 @@ function coverageTermRows(row: CoverageBreakdownRow) {
   return terms;
 }
 
-function sourceLabel(row: CoverageBreakdownRow) {
+function formLabel(row: CoverageBreakdownRow) {
   return [
     row.formNumber,
     row.origin === "endorsement" ? "Endorsement schedule" : row.sectionRef,
@@ -66,7 +66,7 @@ function CoverageLimitTable({ rows }: { rows: CoverageBreakdownRow[] }) {
                 Coverage
               </th>
               <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
-                Source
+                Form
               </th>
               <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
                 Term
@@ -82,7 +82,7 @@ function CoverageLimitTable({ rows }: { rows: CoverageBreakdownRow[] }) {
               const visibleTerms = terms.length
                 ? terms
                 : [{ label: "Limit", value: row.limit ?? "—" }];
-              const source = sourceLabel(row);
+              const form = formLabel(row);
 
               return visibleTerms.map((term, termIndex) => (
                 <tr
@@ -101,7 +101,7 @@ function CoverageLimitTable({ rows }: { rows: CoverageBreakdownRow[] }) {
                         rowSpan={visibleTerms.length}
                         className="w-[22%] px-4 py-3 align-top text-label leading-5 text-muted-foreground [overflow-wrap:anywhere]"
                       >
-                        {source || "—"}
+                        {form || "—"}
                       </td>
                     </>
                   ) : null}

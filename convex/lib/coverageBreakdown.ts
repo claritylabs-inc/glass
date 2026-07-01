@@ -108,24 +108,19 @@ export function formatCoverageBreakdownForPrompt(policy: unknown, maxRows = 16):
   const breakdown = buildCoverageBreakdown(policy);
   if (breakdown.all.length === 0) return "";
   const lines: string[] = [];
-  const addRows = (label: string, rows: CoverageBreakdownRow[]) => {
-    if (rows.length === 0) return;
-    lines.push(`${label}:`);
-    for (const row of rows.slice(0, maxRows)) {
-      const facts = [
-        ...(row.limits?.map((term) => `${term.label} ${term.value}`) ?? []),
-        row.limit && !row.limits?.length ? `limit ${row.limit}` : undefined,
-        row.deductible ? `deductible ${row.deductible}` : undefined,
-        row.premium ? `premium ${row.premium}` : undefined,
-        row.retroactiveDate ? `retroactive ${row.retroactiveDate}` : undefined,
-        row.formNumber ? `form ${row.formNumber}` : undefined,
-        row.sectionRef ? `section ${row.sectionRef}` : undefined,
-      ].filter(Boolean);
-      lines.push(`- ${row.name}${facts.length ? `: ${facts.join(", ")}` : ""}`);
-    }
-  };
-  addRows("Core coverage limits", breakdown.core);
-  addRows("Endorsement coverage limits", breakdown.endorsements);
+  lines.push("Coverage limits:");
+  for (const row of breakdown.all.slice(0, maxRows)) {
+    const facts = [
+      ...(row.limits?.map((term) => `${term.label} ${term.value}`) ?? []),
+      row.limit && !row.limits?.length ? `limit ${row.limit}` : undefined,
+      row.deductible ? `deductible ${row.deductible}` : undefined,
+      row.premium ? `premium ${row.premium}` : undefined,
+      row.retroactiveDate ? `retroactive ${row.retroactiveDate}` : undefined,
+      row.formNumber ? `form ${row.formNumber}` : undefined,
+      row.sectionRef ? `section ${row.sectionRef}` : undefined,
+    ].filter(Boolean);
+    lines.push(`- ${row.name}${facts.length ? `: ${facts.join(", ")}` : ""}`);
+  }
   return lines.join("\n");
 }
 

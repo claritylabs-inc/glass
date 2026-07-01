@@ -28,7 +28,7 @@ export function AppToaster() {
           maxWidth: "calc(100vw - 2rem)",
         },
         className:
-          "!overflow-hidden !bg-card dark:!bg-popover/95 !backdrop-blur-xl !border !border-foreground/8 !shadow-lg !shadow-black/[0.08] !rounded-xl !text-foreground !text-base !font-[var(--font-geist-sans)]",
+          "!overflow-hidden !bg-card dark:!bg-popover/95 !border !border-foreground/8 !shadow-lg !shadow-black/[0.08] !rounded-xl !text-foreground !text-base !font-[var(--font-geist-sans)]",
         descriptionClassName: "!text-muted-foreground !text-label",
       }}
     />

@@ -393,7 +393,7 @@ function CoverageList({
                 Coverage
               </th>
               <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
-                Source
+                Form
               </th>
               <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
                 Term

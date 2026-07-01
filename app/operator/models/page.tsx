@@ -274,9 +274,6 @@ function WebBrowsingRouteRow({
             {webRetrieval.primary === "exa" ? "Default" : "Override"}
           </span>
         </div>
-        <p className="mt-0.5 text-label text-muted-foreground/60">
-          Public web retrieval for website enrichment and agent web research.
-        </p>
       </div>
       <div className="flex w-full flex-col gap-2 justify-self-start xl:w-auto xl:flex-row xl:justify-self-end">
         {saving ? (
