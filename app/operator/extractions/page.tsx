@@ -316,11 +316,13 @@ function cleanCoverageTitle(value?: string) {
 
 function coverageRowTitle(row: Record<string, unknown>) {
   const origin = profileCellValue(row, "coverageOrigin");
+  const fromName = cleanCoverageTitle(profileCellValue(row, "name"));
+  if (fromName) return fromName;
   if (origin === "endorsement") {
     const fromSection = cleanCoverageTitle(profileCellValue(row, "sectionRef"));
     if (fromSection) return fromSection;
   }
-  return cleanCoverageTitle(profileCellValue(row, "name")) ?? "Coverage";
+  return "Coverage";
 }
 
 function coverageMetadata(
@@ -331,6 +333,9 @@ function coverageMetadata(
   const hasRetroactiveTerm = terms.some((term) => /retroactive/i.test(term.label));
   return [
     profileCellValue(row, "formNumber"),
+    profileCellValue(row, "coverageOrigin") === "endorsement"
+      ? "Endorsement schedule"
+      : profileCellValue(row, "sectionRef"),
     retroactiveDate && !hasRetroactiveTerm ? `Retroactive ${retroactiveDate}` : undefined,
   ].filter((item): item is string => Boolean(item));
 }
@@ -380,55 +385,66 @@ function CoverageList({
   if (!rows.length) return null;
   return (
     <ProfileListSection title={title}>
-      {rows.map((row, rowIndex) => {
-        const name = coverageRowTitle(row);
-        const limit = profileCellDisplay(row.limit);
-        const terms = coverageLimitTerms(row);
-        const metadata = coverageMetadata(row, terms);
-        return (
-          <OperationalItem
-            key={rowIndex}
-            className="px-4"
-          >
-            <div className="min-w-0 space-y-2">
-              <div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
-                <div className="min-w-0">
-                  <p className="text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
-                    {name}
-                  </p>
-                  {metadata.length ? (
-                    <p className="mt-1 text-label leading-4 text-muted-foreground">
-                      {metadata.join(" | ")}
-                    </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[42rem] text-left">
+          <thead className="border-b border-foreground/6">
+            <tr>
+              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
+                Coverage
+              </th>
+              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
+                Source
+              </th>
+              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
+                Term
+              </th>
+              <th className="px-4 py-2.5 text-right text-label font-medium text-muted-foreground">
+                Value
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => {
+              const name = coverageRowTitle(row);
+              const limit = profileCellDisplay(row.limit);
+              const terms = coverageLimitTerms(row);
+              const visibleTerms = terms.length
+                ? terms
+                : [{ label: "Limit", value: limit }];
+              const metadata = coverageMetadata(row, terms).join(" | ");
+              return visibleTerms.map((term, termIndex) => (
+                <tr
+                  key={`${name}-${rowIndex}-${term.label}-${termIndex}`}
+                  className="border-t border-foreground/6 first:border-t-0 hover:bg-foreground/[0.015]"
+                >
+                  {termIndex === 0 ? (
+                    <>
+                      <td
+                        rowSpan={visibleTerms.length}
+                        className="w-[34%] px-4 py-3 align-top text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]"
+                      >
+                        {name}
+                      </td>
+                      <td
+                        rowSpan={visibleTerms.length}
+                        className="w-[22%] px-4 py-3 align-top text-label leading-5 text-muted-foreground [overflow-wrap:anywhere]"
+                      >
+                        {metadata || "—"}
+                      </td>
+                    </>
                   ) : null}
-                </div>
-                {terms.length === 0 && limit !== "—" ? (
-                  <span className="text-base font-normal tabular-nums text-foreground sm:text-right">
-                    {limit}
-                  </span>
-                ) : null}
-              </div>
-              {terms.length ? (
-                <dl className="divide-y divide-foreground/6">
-                  {terms.map((term) => (
-                    <div
-                      key={`${term.label}-${term.value}`}
-                      className="grid gap-1 py-2 first:pt-1 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.55fr)] sm:gap-4"
-                    >
-                      <dt className="min-w-0 text-base font-normal leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-                        {term.label}
-                      </dt>
-                      <dd className="min-w-0 text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
-                        {term.value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : null}
-            </div>
-          </OperationalItem>
-        );
-      })}
+                  <td className="px-4 py-2.5 align-top text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                    {term.label}
+                  </td>
+                  <td className="px-4 py-2.5 text-right align-top text-base leading-5 text-foreground [overflow-wrap:anywhere]">
+                    {term.value}
+                  </td>
+                </tr>
+              ));
+            })}
+          </tbody>
+        </table>
+      </div>
     </ProfileListSection>
   );
 }
@@ -603,8 +619,6 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         .filter((item): item is Record<string, unknown> => Boolean(item))
         .map(profileTableRow)
     : [];
-  const coreCoverages = coverages.filter((row) => row.coverageOrigin !== "endorsement");
-  const endorsementCoverages = coverages.filter((row) => row.coverageOrigin === "endorsement");
   const parties = Array.isArray(profile.parties)
     ? profile.parties
         .map(recordValue)
@@ -635,8 +649,7 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
           ))}
         </OperationalLabelValueList>
       ) : null}
-      <CoverageList title="Core coverage limits" rows={coreCoverages} />
-      <CoverageList title="Endorsement coverage limits" rows={endorsementCoverages} />
+      <CoverageList title="Coverage limits" rows={coverages} />
       <PartyList rows={parties} />
       <NamedAdditionalInsuredList rows={additionalInsureds} />
       <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />

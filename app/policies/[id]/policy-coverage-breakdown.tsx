@@ -1,11 +1,12 @@
 "use client";
 
 import {
-  OperationalItem,
   OperationalPanel,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
+
+type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
 function normalizedCoverageText(value: string | undefined) {
   return value
@@ -15,14 +16,7 @@ function normalizedCoverageText(value: string | undefined) {
     .trim();
 }
 
-function stripParentheticalText(value: string | undefined) {
-  return value
-    ?.replace(/\s*\([^)]*\)/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
-function coverageTermRows(row: CoverageBreakdown["core"][number]) {
+function coverageTermRows(row: CoverageBreakdownRow) {
   const terms = [...(row.limits ?? [])];
   const seen = new Set(
     terms.map(
@@ -30,11 +24,8 @@ function coverageTermRows(row: CoverageBreakdown["core"][number]) {
         `${normalizedCoverageText(term.label)}|${normalizedCoverageText(term.value)}`,
     ),
   );
-  const hasLabel = (label: string) =>
-    terms.some(
-      (term) =>
-        normalizedCoverageText(term.label) === normalizedCoverageText(label),
-    );
+  const hasLabel = (pattern: RegExp) =>
+    terms.some((term) => pattern.test(normalizedCoverageText(term.label) ?? ""));
   const push = (label: string, value: string | undefined) => {
     if (!value) return;
     const key = `${normalizedCoverageText(label)}|${normalizedCoverageText(value)}`;
@@ -44,64 +35,87 @@ function coverageTermRows(row: CoverageBreakdown["core"][number]) {
   };
 
   if (!row.limits?.length) push("Limit", row.limit);
-  if (!hasLabel("Deductible")) push("Deductible", row.deductible);
-  if (!hasLabel("Premium")) push("Premium", row.premium);
-  if (!hasLabel("Retroactive Date")) {
+  if (!hasLabel(/\bdeductible\b|\bretention\b/)) {
+    push("Deductible", row.deductible);
+  }
+  if (!hasLabel(/\bpremium\b/)) push("Premium", row.premium);
+  if (!hasLabel(/\bretroactive\b/)) {
     push("Retroactive Date", row.retroactiveDate);
   }
   return terms;
 }
 
-function CoverageLimitPanel({
-  title,
-  rows,
-  hideParentheticalText = false,
-}: {
-  title: string;
-  rows: CoverageBreakdown["core"];
-  hideParentheticalText?: boolean;
-}) {
+function sourceLabel(row: CoverageBreakdownRow) {
+  return [
+    row.formNumber,
+    row.origin === "endorsement" ? "Endorsement schedule" : row.sectionRef,
+  ].filter(Boolean).join(" | ");
+}
+
+function CoverageLimitTable({ rows }: { rows: CoverageBreakdownRow[] }) {
   if (!rows.length) return null;
-  const displayText = (value: string | undefined) =>
-    hideParentheticalText ? stripParentheticalText(value) : value;
 
   return (
     <OperationalPanel className="mb-6">
-      <OperationalPanelHeader title={title} />
-      <div>
-        {rows.map((row, rowIndex) => {
-          const terms = coverageTermRows(row);
+      <OperationalPanelHeader title="Coverage limits" />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[42rem] text-left">
+          <thead className="border-b border-foreground/6">
+            <tr>
+              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
+                Coverage
+              </th>
+              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
+                Source
+              </th>
+              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
+                Term
+              </th>
+              <th className="px-4 py-2.5 text-right text-label font-medium text-muted-foreground">
+                Value
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => {
+              const terms = coverageTermRows(row);
+              const visibleTerms = terms.length
+                ? terms
+                : [{ label: "Limit", value: row.limit ?? "—" }];
+              const source = sourceLabel(row);
 
-          return (
-            <OperationalItem
-              key={`${row.name}:${row.limit ?? ""}:${rowIndex}`}
-              className="w-full px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="text-base font-medium leading-5 text-foreground wrap:anywhere">
-                  {displayText(row.name)}
-                </p>
-              </div>
-              {terms.length > 0 ? (
-                <div className="mt-3 w-full divide-y divide-foreground/6">
-                  {terms.map((term) => (
-                    <div
-                      key={`${term.label}:${term.value}`}
-                      className="grid w-full grid-cols-2 items-center gap-6 py-2 first:pt-0 last:pb-0"
-                    >
-                      <p className="min-w-0 text-base leading-5 text-muted-foreground wrap:anywhere">
-                        {displayText(term.label)}
-                      </p>
-                      <p className="max-w-[min(48rem,60vw)] text-right text-base font-medium leading-5 tabular-nums text-foreground wrap:anywhere">
-                        {displayText(term.value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </OperationalItem>
-          );
-        })}
+              return visibleTerms.map((term, termIndex) => (
+                <tr
+                  key={`${row.name}:${row.limit ?? ""}:${rowIndex}:${term.label}:${termIndex}`}
+                  className="border-t border-foreground/6 first:border-t-0 hover:bg-foreground/[0.015]"
+                >
+                  {termIndex === 0 ? (
+                    <>
+                      <td
+                        rowSpan={visibleTerms.length}
+                        className="w-[34%] px-4 py-3 align-top text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]"
+                      >
+                        {row.name}
+                      </td>
+                      <td
+                        rowSpan={visibleTerms.length}
+                        className="w-[22%] px-4 py-3 align-top text-label leading-5 text-muted-foreground [overflow-wrap:anywhere]"
+                      >
+                        {source || "—"}
+                      </td>
+                    </>
+                  ) : null}
+                  <td className="px-4 py-2.5 align-top text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                    {term.label}
+                  </td>
+                  <td className="px-4 py-2.5 text-right align-top text-base font-medium leading-5 tabular-nums text-foreground [overflow-wrap:anywhere]">
+                    {term.value}
+                  </td>
+                </tr>
+              ));
+            })}
+          </tbody>
+        </table>
       </div>
     </OperationalPanel>
   );
@@ -113,14 +127,5 @@ export function CoverageBreakdownCards({
   breakdown: CoverageBreakdown;
 }) {
   if (!breakdown.all.length) return null;
-  return (
-    <>
-      <CoverageLimitPanel title="Core coverage limits" rows={breakdown.core} />
-      <CoverageLimitPanel
-        title="Endorsement coverage limits"
-        rows={breakdown.endorsements}
-        hideParentheticalText
-      />
-    </>
-  );
+  return <CoverageLimitTable rows={breakdown.all} />;
 }
