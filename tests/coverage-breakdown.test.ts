@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCoverageBreakdownForPrompt } from "../convex/lib/coverageBreakdown";
+import { buildCoverageBreakdown, formatCoverageBreakdownForPrompt } from "../convex/lib/coverageBreakdown";
 
 describe("coverage breakdown formatting", () => {
   it("keeps base policy and endorsement rows separated", () => {
@@ -25,8 +25,36 @@ describe("coverage breakdown formatting", () => {
       },
     });
 
-    expect(text).toContain("Base policy coverages:");
-    expect(text).toContain("Endorsement coverages:");
+    expect(text).toContain("Policy coverage schedules:");
+    expect(text).toContain("Endorsement coverage schedules:");
     expect(text.match(/Network Security and Privacy Liability/g)).toHaveLength(2);
+  });
+
+  it("keeps unknown-origin rows visible without classifying them as base policy", () => {
+    const policy = {
+      operationalProfile: {
+        coverages: [
+          {
+            name: "Technology Professional Liability",
+            limits: [{ label: "Each Claim", value: "$2,000,000" }],
+            formNumber: "SPS-TPC 03 25",
+          },
+          {
+            name: "Technology Professional Liability",
+            coverageOrigin: "core",
+            limits: [{ label: "Policy Aggregate", value: "$2,000,000" }],
+            formNumber: "SPS-TPC 03 25",
+          },
+        ],
+      },
+    };
+
+    const breakdown = buildCoverageBreakdown(policy);
+    expect(breakdown.core.map((row) => row.name)).toEqual(["Technology Professional Liability"]);
+    expect(breakdown.unclassified.map((row) => row.name)).toEqual(["Technology Professional Liability"]);
+
+    const text = formatCoverageBreakdownForPrompt(policy);
+    expect(text).toContain("Policy coverage schedules:");
+    expect(text).toContain("Source-backed coverage schedules:");
   });
 });

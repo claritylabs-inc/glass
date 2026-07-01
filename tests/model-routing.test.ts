@@ -22,6 +22,7 @@ import {
   OPERATOR_MODEL_ROUTE_GROUPS,
   defaultModelRouteForId,
   isRetiredModelRoute,
+  modelCapabilitiesForRoute,
 } from "../convex/lib/modelCatalog";
 
 describe("model task routing", () => {
@@ -125,7 +126,7 @@ describe("model task routing", () => {
       model: "gpt-5.4-mini",
     });
     expect(MODEL_ROUTE_LABELS.extraction_coverage_cleanup).toBe(
-      "Coverage cleanup",
+      "Coverage schedule cleanup",
     );
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "extraction_coverage_cleanup",
@@ -137,7 +138,7 @@ describe("model task routing", () => {
       "extraction_coverage_cleanup: v.optional(routeUpdateValidator)",
     );
     expect(sdkCallbacks).toContain("coverageCleanupRouteOverride");
-    expect(sdkCallbacks).toContain('routeSource = "coverage_cleanup"');
+    expect(sdkCallbacks).toContain('routePurpose = "extraction_coverage_cleanup"');
     expect(workerSource).toContain("WORKER_COVERAGE_CLEANUP_ROUTE");
     expect(workerSource).toContain("model: OPENAI_GPT_5_4_MINI");
     expect(workerSource).toContain('"extraction_coverage_cleanup"');
@@ -185,6 +186,21 @@ describe("model task routing", () => {
     expect(workerCapabilities).toContain("extraction_operational_profile");
     expect(workerCapabilities).toContain("extraction_coverage_cleanup");
     expect(worker).not.toContain("EXTRACTION_MAX_TOKEN_OVERRIDES");
+  });
+
+  test("does not cap source-backed operational profiles below full structured output", () => {
+    const workerCapabilities = readFileSync(
+      join(__dirname, "../extraction-worker/src/modelCapabilities.ts"),
+      "utf-8",
+    );
+
+    const deepseekFlashCapabilities = modelCapabilitiesForRoute({
+      provider: "fireworks",
+      model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    });
+    expect(deepseekFlashCapabilities?.taskOutputTokens?.extraction_operational_profile).toBe(32_768);
+    expect(workerCapabilities).toContain("extraction_operational_profile: 32_768");
+    expect(workerCapabilities).not.toContain("extraction_operational_profile: 8_192");
   });
 });
 
@@ -358,10 +374,14 @@ describe("model fallback policy", () => {
     expect(modelCatalog).toContain(
       'EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =\n  "extraction_coverage_cleanup"',
     );
+    expect(modelCatalog).toContain(
+      'EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID =\n  "extraction_visual_table_repair"',
+    );
     expect(modelCatalog).toContain('FALLBACK_MODEL_ROUTE_ID = "fallback"');
     expect(modelCatalog).toContain("Source tree and profile extraction");
     expect(modelCatalog).toContain("Form inventory");
-    expect(modelCatalog).toContain("Coverage cleanup");
+    expect(modelCatalog).toContain("Coverage schedule cleanup");
+    expect(modelCatalog).toContain("Visual table repair");
     expect(modelCatalog).toContain("Fallback model");
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "extraction_quality",
@@ -371,6 +391,9 @@ describe("model fallback policy", () => {
     );
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "extraction_coverage_cleanup",
+    );
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "extraction_visual_table_repair",
     );
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "fallback",

@@ -8,13 +8,12 @@ export type CoverageBreakdownRow = {
   formNumber?: string;
   sectionRef?: string;
   origin?: "core" | "endorsement" | string;
-  originConfidence?: string;
-  originReason?: string;
 };
 
 export type CoverageBreakdown = {
   core: CoverageBreakdownRow[];
   endorsements: CoverageBreakdownRow[];
+  unclassified: CoverageBreakdownRow[];
   all: CoverageBreakdownRow[];
 };
 
@@ -76,8 +75,6 @@ function coverageRowsFrom(value: unknown): CoverageBreakdownRow[] {
         formNumber: realText(row.formNumber),
         sectionRef: realText(row.sectionRef),
         origin: realText(row.coverageOrigin) ?? realText(row.origin),
-        originConfidence: realText(row.coverageOriginConfidence),
-        originReason: realText(row.coverageOriginReason),
       };
     })
     .filter((row) =>
@@ -99,9 +96,10 @@ export function buildCoverageBreakdown(policy: unknown): CoverageBreakdown {
   const profile = recordValue(record?.operationalProfile);
   const profileRows = coverageRowsFrom(profile?.coverages);
   const rows = profileRows.length > 0 ? profileRows : coverageRowsFrom(record?.coverages);
-  const core = rows.filter((row) => row.origin !== "endorsement");
+  const core = rows.filter((row) => row.origin === "core");
   const endorsements = rows.filter((row) => row.origin === "endorsement");
-  return { core, endorsements, all: rows };
+  const unclassified = rows.filter((row) => row.origin !== "core" && row.origin !== "endorsement");
+  return { core, endorsements, unclassified, all: rows };
 }
 
 export function formatCoverageBreakdownForPrompt(policy: unknown, maxRows = 16): string {
@@ -118,8 +116,19 @@ export function formatCoverageBreakdownForPrompt(policy: unknown, maxRows = 16):
     }
   };
 
-  addRows("Base policy coverages", breakdown.core);
-  addRows("Endorsement coverages", breakdown.endorsements);
+  const perBucketLimit = Math.max(1, Math.floor(maxRows / 3));
+  addRows("Policy coverage schedules", breakdown.core.slice(0, perBucketLimit));
+  addRows("Endorsement coverage schedules", breakdown.endorsements.slice(0, perBucketLimit));
+  addRows("Source-backed coverage schedules", breakdown.unclassified.slice(0, perBucketLimit));
+  if (remainingRows > 0) {
+    const shown = new Set([
+      ...breakdown.core.slice(0, perBucketLimit),
+      ...breakdown.endorsements.slice(0, perBucketLimit),
+      ...breakdown.unclassified.slice(0, perBucketLimit),
+    ]);
+    const remaining = breakdown.all.filter((row) => !shown.has(row));
+    addRows("Additional coverage schedules", remaining);
+  }
   return lines.join("\n");
 }
 

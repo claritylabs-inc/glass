@@ -103,6 +103,7 @@ type ModelCallDebugDetails = {
   promptPreview?: string;
   outputPreview?: string;
   outputKind?: string;
+  routePurpose?: string;
   trace?: {
     batchIndex?: number;
     batchCount?: number;
@@ -625,11 +626,15 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         .map(profileTableRow)
     : [];
   const agreementCoverages = coverages.filter(
-    (coverage) => profileCellValue(coverage, "coverageOrigin") !== "endorsement",
+    (coverage) => profileCellValue(coverage, "coverageOrigin") === "core",
   );
   const endorsementCoverages = coverages.filter(
     (coverage) => profileCellValue(coverage, "coverageOrigin") === "endorsement",
   );
+  const unclassifiedCoverages = coverages.filter((coverage) => {
+    const origin = profileCellValue(coverage, "coverageOrigin");
+    return origin !== "core" && origin !== "endorsement";
+  });
   const parties = Array.isArray(profile.parties)
     ? profile.parties
         .map(recordValue)
@@ -660,8 +665,9 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
           ))}
         </OperationalLabelValueList>
       ) : null}
-      <CoverageList title="Base policy coverages" rows={agreementCoverages} />
-      <CoverageList title="Endorsement coverages" rows={endorsementCoverages} />
+      <CoverageList title="Policy coverage schedules" rows={agreementCoverages} />
+      <CoverageList title="Endorsement coverage schedules" rows={endorsementCoverages} />
+      <CoverageList title="Source-backed coverage schedules" rows={unclassifiedCoverages} />
       <PartyList rows={parties} />
       <NamedAdditionalInsuredList rows={additionalInsureds} />
       <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />
@@ -715,13 +721,22 @@ function traceEventStatusLabel(event: TraceEvent) {
 function traceEventRouteLabel(event: TraceEvent) {
   return [
     [event.provider, event.model].filter(Boolean).join(" / "),
-    event.routeSource,
+    event.routeSource?.replace(/_/g, " "),
     event.transport,
   ].filter(Boolean).join(" · ");
 }
 
 function traceEventAttemptLabel(event: TraceEvent) {
   return event.attempt ? `attempt ${event.attempt}` : undefined;
+}
+
+function traceEventMaxTokens(event: TraceEvent) {
+  const details = modelCallDebugDetails(event);
+  return details?.maxOutputTokens;
+}
+
+function traceEventRoutePurpose(event: TraceEvent) {
+  return modelCallDebugDetails(event)?.routePurpose?.replace(/_/g, " ");
 }
 
 function eventTitle(event: TraceEvent) {
@@ -733,8 +748,10 @@ function eventCaption(event: TraceEvent) {
   if (event.kind === "model_call") {
     return [
       traceEventRouteLabel(event),
+      traceEventRoutePurpose(event),
       event.taskKind,
       traceEventAttemptLabel(event),
+      traceEventMaxTokens(event) ? `max ${traceEventMaxTokens(event)?.toLocaleString()} out` : undefined,
       traceEventStatusLabel(event),
       event.error ? `error: ${event.error}` : undefined,
     ].filter(Boolean).join(" · ");
@@ -1217,9 +1234,11 @@ function ModelCallSelector({
           value={[selectedEvent.provider, selectedEvent.model].filter(Boolean).join(" / ") || "—"}
         />
         <OperationalLabelValueRow label="Route" value={[selectedEvent.routeSource, selectedEvent.transport].filter(Boolean).join(" / ") || "—"} />
+        <OperationalLabelValueRow label="Route purpose" value={traceEventRoutePurpose(selectedEvent) ?? "—"} />
         <OperationalLabelValueRow label="Status" value={traceEventStatusLabel(selectedEvent) ?? "—"} />
         <OperationalLabelValueRow label="Attempt" value={selectedEvent.attempt ? String(selectedEvent.attempt) : "—"} />
         <OperationalLabelValueRow label="Task" value={selectedEvent.taskKind ?? selectedEvent.task ?? "—"} />
+        <OperationalLabelValueRow label="Max tokens" value={traceEventMaxTokens(selectedEvent)?.toLocaleString() ?? "—"} />
         <OperationalLabelValueRow label="Time" value={formatDuration(selectedEvent.durationMs)} />
         <OperationalLabelValueRow
           label="Tokens"

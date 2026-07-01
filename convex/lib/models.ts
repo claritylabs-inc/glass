@@ -118,6 +118,7 @@ export type ModelCallTaskKind =
   | "extraction_operational_profile"
   | "extraction_form_inventory"
   | "extraction_coverage_cleanup"
+  | "extraction_visual_table_repair"
   | "extraction_page_map"
   | "extraction_focused"
   | "extraction_long_list"
@@ -396,9 +397,13 @@ export async function getModelAndRouteForOrg(
   routeSource: "broker" | "global" | "static" | "default";
   transport: "direct" | "gateway";
   qualityRoute: ModelRoute;
+  qualityRouteSource: "broker" | "global" | "static";
   formInventoryRoute: ModelRoute;
+  formInventoryRouteSource: "broker" | "global" | "static";
   coverageCleanupRoute: ModelRoute;
+  coverageCleanupRouteSource: "broker" | "global" | "static";
   visualTableRepairRoute: ModelRoute;
+  visualTableRepairRouteSource: "broker" | "global" | "static";
   fallbackRoute: ModelRoute;
 }> {
   try {
@@ -406,12 +411,16 @@ export async function getModelAndRouteForOrg(
     const configuredRoute = settings?.routes?.[task];
     const routeSource = settings?.routeSources?.[task];
     const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+    const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
     const formInventoryRoute =
       settings?.routes?.extraction_form_inventory ?? FORM_INVENTORY_MODEL;
+    const formInventoryRouteSource = settings?.routeSources?.extraction_form_inventory ?? "static";
     const coverageCleanupRoute =
       settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
+    const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
     const visualTableRepairRoute =
       settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
+    const visualTableRepairRouteSource = settings?.routeSources?.extraction_visual_table_repair ?? "static";
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const configuredApiKey = routeSource === "broker" && configuredRoute
       ? settings?.providerKeys?.[configuredRoute.provider]
@@ -432,9 +441,13 @@ export async function getModelAndRouteForOrg(
       routeSource: canUseConfiguredRoute ? (routeSource ?? "global") : "default",
       transport,
       qualityRoute,
+      qualityRouteSource,
       formInventoryRoute,
+      formInventoryRouteSource,
       coverageCleanupRoute,
+      coverageCleanupRouteSource,
       visualTableRepairRoute,
+      visualTableRepairRouteSource,
       fallbackRoute,
     };
   } catch (err) {
@@ -452,9 +465,13 @@ export async function getModelAndRouteForOrg(
       routeSource: "default",
       transport,
       qualityRoute: EXTRACTION_QUALITY_MODEL,
+      qualityRouteSource: "static",
       formInventoryRoute: FORM_INVENTORY_MODEL,
+      formInventoryRouteSource: "static",
       coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
+      coverageCleanupRouteSource: "static",
       visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
+      visualTableRepairRouteSource: "static",
       fallbackRoute: FALLBACK_MODEL,
     };
   }
@@ -469,9 +486,13 @@ export async function getModelAndRouteForPublicTask(
   routeSource: "global" | "static" | "default";
   transport: "direct" | "gateway";
   qualityRoute: ModelRoute;
+  qualityRouteSource: "global" | "static";
   formInventoryRoute: ModelRoute;
+  formInventoryRouteSource: "global" | "static";
   coverageCleanupRoute: ModelRoute;
+  coverageCleanupRouteSource: "global" | "static";
   visualTableRepairRoute: ModelRoute;
+  visualTableRepairRouteSource: "global" | "static";
   fallbackRoute: ModelRoute;
 }> {
   try {
@@ -479,12 +500,16 @@ export async function getModelAndRouteForPublicTask(
     const route = settings?.routes?.[task] ?? MODEL_ROUTING[task];
     const routeSource = settings?.routeSources?.[task] ?? "static";
     const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+    const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
     const formInventoryRoute =
       settings?.routes?.extraction_form_inventory ?? FORM_INVENTORY_MODEL;
+    const formInventoryRouteSource = settings?.routeSources?.extraction_form_inventory ?? "static";
     const coverageCleanupRoute =
       settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
+    const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
     const visualTableRepairRoute =
       settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
+    const visualTableRepairRouteSource = settings?.routeSources?.extraction_visual_table_repair ?? "static";
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
@@ -494,9 +519,13 @@ export async function getModelAndRouteForPublicTask(
       routeSource,
       transport,
       qualityRoute,
+      qualityRouteSource,
       formInventoryRoute,
+      formInventoryRouteSource,
       coverageCleanupRoute,
+      coverageCleanupRouteSource,
       visualTableRepairRoute,
+      visualTableRepairRouteSource,
       fallbackRoute,
     };
   } catch (err) {
@@ -514,9 +543,13 @@ export async function getModelAndRouteForPublicTask(
       routeSource: "default",
       transport,
       qualityRoute: EXTRACTION_QUALITY_MODEL,
+      qualityRouteSource: "static",
       formInventoryRoute: FORM_INVENTORY_MODEL,
+      formInventoryRouteSource: "static",
       coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
+      coverageCleanupRouteSource: "static",
       visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
+      visualTableRepairRouteSource: "static",
       fallbackRoute: FALLBACK_MODEL,
     };
   }

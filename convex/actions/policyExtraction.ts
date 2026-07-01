@@ -789,72 +789,12 @@ const additionalInsuredEligibilitySchema = z.object({
   overallSummary: z.string(),
 });
 
-type OperationalCoverageOrigin = "core" | "endorsement";
-
-type OperationalCoverageWithOrigin = PolicyOperationalProfile["coverages"][number] & {
-  coverageOrigin?: OperationalCoverageOrigin;
-  coverageOriginConfidence?: "low" | "medium" | "high";
-  coverageOriginReason?: string;
-};
-
 type AdditionalInsuredEligibility = z.infer<typeof additionalInsuredEligibilitySchema>;
 
 type OperationalProfileWithEligibility = PolicyOperationalProfile & {
   additionalInsuredEligibility?: AdditionalInsuredEligibility;
   additionalInsureds?: AdditionalInsuredEligibility["additionalInsureds"];
 };
-
-function fallbackCoverageOrigin(
-  coverage: PolicyOperationalProfile["coverages"][number],
-  nodesById: Map<string, DocumentSourceNode>,
-): { origin: OperationalCoverageOrigin; confidence: "low" | "medium"; reason: string } {
-  const evidenceText = coverage.sourceNodeIds
-    .map((nodeId: string) => {
-      const node = nodesById.get(nodeId);
-      if (!node) return "";
-      return [
-        node.kind,
-        node.title,
-        node.description,
-        node.textExcerpt,
-        Array.isArray(node.path) ? node.path.join(" ") : node.path,
-      ].filter(Boolean).join(" ");
-    })
-    .join(" ");
-  if (/\b(endorsement|endorse|amend|amendatory|rider|change endorsement|endt\.?|end\.?|nwc-end)\b/i.test(evidenceText)) {
-    return {
-      origin: "endorsement",
-      confidence: "medium",
-      reason: "Source evidence appears in an endorsement or amendatory form.",
-    };
-  }
-  return {
-    origin: "core",
-    confidence: "low",
-    reason: "No endorsement signal was found in the cited source evidence.",
-  };
-}
-
-function annotateCoverageOrigins(
-  profile: PolicyOperationalProfile,
-  sourceTree: DocumentSourceNode[],
-): PolicyOperationalProfile {
-  const nodesById = new Map(sourceTree.map((node) => [node.id, node]));
-  return {
-    ...profile,
-    coverages: profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => {
-      const existing = coverage as OperationalCoverageWithOrigin;
-      if (existing.coverageOrigin) return coverage;
-      const fallback = fallbackCoverageOrigin(coverage, nodesById);
-      return {
-        ...coverage,
-        coverageOrigin: fallback.origin,
-        coverageOriginConfidence: fallback.confidence,
-        coverageOriginReason: fallback.reason,
-      } as OperationalCoverageWithOrigin;
-    }) as PolicyOperationalProfile["coverages"],
-  };
-}
 
 function additionalInsuredEligibilityExcerpt(sourceTree: DocumentSourceNode[]): {
   text: string;
@@ -1606,17 +1546,13 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         sourceNodes,
         canonicalSpans,
       );
-      const annotatedOperationalProfile = annotateCoverageOrigins(
-        normalizedOperationalProfile,
-        sourceNodes,
-      );
       const operationalProfile = await extractAdditionalInsuredEligibility({
         ctx: convexCtx,
         orgId: state.orgId as Id<"organizations">,
         traceId: state.traceId,
         policyId,
         sourceTree: sourceNodes,
-        profile: annotatedOperationalProfile,
+        profile: normalizedOperationalProfile,
         log: async (message, level) => { await pCtx.log(message, level); },
       });
       const fields = processed.fields;
@@ -2548,10 +2484,7 @@ async function completeExternalExtractFromPayload(
     sourceNodes,
     canonicalSpans,
   );
-  const operationalProfile = annotateCoverageOrigins(
-    normalizedOperationalProfile,
-    sourceNodes,
-  );
+  const operationalProfile = normalizedOperationalProfile;
   const fields = processed.fields;
   if (processed.coverageReviewQuestionCount > 0) {
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
@@ -2572,7 +2505,7 @@ async function completeExternalExtractFromPayload(
       ...fields,
       ...sourceTreePolicyFields({
         sourceTree: sourceNodes,
-        operationalProfile,
+        operationalProfile: normalizedOperationalProfile,
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
       }),

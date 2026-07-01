@@ -1042,8 +1042,6 @@ function cleanOperationalCoverages(
 
 type OperationalCoverageExtension = {
   coverageOrigin?: "core" | "endorsement";
-  coverageOriginConfidence?: "low" | "medium" | "high";
-  coverageOriginReason?: string;
 };
 
 type OperationalProfileExtensions = {
@@ -1082,20 +1080,8 @@ function storedCoverageExtensions(rawProfile: unknown): Map<string, OperationalC
     const coverageOrigin = record.coverageOrigin === "core" || record.coverageOrigin === "endorsement"
       ? record.coverageOrigin
       : undefined;
-    const coverageOriginConfidence = record.coverageOriginConfidence === "low"
-      || record.coverageOriginConfidence === "medium"
-      || record.coverageOriginConfidence === "high"
-      ? record.coverageOriginConfidence
-      : undefined;
-    const coverageOriginReason = typeof record.coverageOriginReason === "string"
-      ? record.coverageOriginReason
-      : undefined;
-    if (!coverageOrigin && !coverageOriginConfidence && !coverageOriginReason) continue;
-    extensions.set(coverageExtensionKey(record), {
-      coverageOrigin,
-      coverageOriginConfidence,
-      coverageOriginReason,
-    });
+    if (!coverageOrigin) continue;
+    extensions.set(coverageExtensionKey(record), { coverageOrigin });
   }
   return extensions;
 }
@@ -1758,8 +1744,6 @@ export function operationalProfilePolicyFields(
     fields.coverages = operationalProfile.coverages.map((coverage: OperationalCoverageLine) => {
       const coverageRecord = coverage as OperationalCoverageLine & {
         coverageOrigin?: "core" | "endorsement";
-        coverageOriginConfidence?: "low" | "medium" | "high";
-        coverageOriginReason?: string;
         endorsementNumber?: string;
         retroactiveDate?: string;
         limits?: unknown[];
@@ -1774,8 +1758,6 @@ export function operationalProfilePolicyFields(
         formNumber: coverage.formNumber,
         sectionRef: coverage.sectionRef,
         coverageOrigin: coverageRecord.coverageOrigin,
-        coverageOriginConfidence: coverageRecord.coverageOriginConfidence,
-        coverageOriginReason: coverageRecord.coverageOriginReason,
         endorsementNumber: coverageRecord.endorsementNumber,
         limits: coverageRecord.limits,
         documentNodeId: coverage.sourceNodeIds[0],

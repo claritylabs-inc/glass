@@ -52,7 +52,7 @@ function formLabel(row: CoverageBreakdownRow) {
   ].filter(Boolean).join(" | ");
 }
 
-function CoverageLimitTable({
+function CoverageScheduleTable({
   rows,
   title,
 }: {
@@ -131,13 +131,17 @@ export function CoverageBreakdownCards({
   if (!breakdown.all.length) return null;
   return (
     <div className="mb-6 space-y-3">
-      <CoverageLimitTable
+      <CoverageScheduleTable
         rows={breakdown.core}
-        title="Base policy coverages"
+        title="Policy coverage schedules"
       />
-      <CoverageLimitTable
+      <CoverageScheduleTable
         rows={breakdown.endorsements}
-        title="Endorsement coverages"
+        title="Endorsement coverage schedules"
+      />
+      <CoverageScheduleTable
+        rows={breakdown.unclassified}
+        title="Source-backed coverage schedules"
       />
     </div>
   );

@@ -182,8 +182,6 @@ function policyWithOperationalCoverages(policy: any, profile: any | undefined): 
       formNumber: coverage.formNumber,
       sectionRef: coverage.sectionRef,
       coverageOrigin: coverage.coverageOrigin,
-      coverageOriginConfidence: coverage.coverageOriginConfidence,
-      coverageOriginReason: coverage.coverageOriginReason,
       isOperationalProfileCoverage: true,
       documentNodeId: coverage.sourceNodeIds?.[0],
       sourceSpanIds: coverage.sourceSpanIds,

@@ -770,7 +770,7 @@ function resolveModelForTaskKind(
   const quality = resolveConfiguredQualityRoute(settings);
   const useQualityPrimary =
     !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind);
-  const visualRepair = isVisualTableRepairTrace(trace)
+  const visualRepair = (isVisualTableRepairTrace(trace) || taskKind === "extraction_visual_table_repair")
     ? resolveConfiguredVisualTableRepairRoute(settings)
     : null;
   const formInventory = taskKind === "extraction_form_inventory"
@@ -994,6 +994,8 @@ function modelTraceLabel(
     extraction_preview: "Extract provisional policy fields",
     extraction_source_tree: "Build source-native document tree",
     extraction_operational_profile: "Build operational profile",
+    extraction_coverage_cleanup: "Clean coverage schedules",
+    extraction_visual_table_repair: "Visual table repair",
     extraction_form_inventory: "Extract form inventory",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
@@ -1662,6 +1664,7 @@ function buildWorkerExtractor(opts: {
   const modelCapabilitiesByTaskKind = Object.fromEntries(
     ([
       "extraction_source_tree",
+      "extraction_visual_table_repair",
       "extraction_operational_profile",
       "extraction_form_inventory",
       "extraction_coverage_cleanup",

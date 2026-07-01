@@ -21,6 +21,7 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - `npm run lint` — repo-wide ESLint
 - `npx tsc --noEmit` — TypeScript validation (Next.js)
 - `npx convex typecheck` — TypeScript validation (Convex functions)
+- `npm run check:cl-sdk-version` — verify the root app and extraction worker consume the same `@claritylabs/cl-sdk` package spec
 - `npm run check:agent-workers` — build/syntax-check mission-critical Railway agent workers before deployment
 - `npm run check:agent-health` — smoke-check production Convex agent config plus iMessage and extraction worker health
 - `npm run container:doctor` — verify local Apple `container` prerequisites and installation
