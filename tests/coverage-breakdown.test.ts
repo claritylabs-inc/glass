@@ -3,15 +3,15 @@ import { describe, expect, it } from "vitest";
 import { formatCoverageBreakdownForPrompt } from "../convex/lib/coverageBreakdown";
 
 describe("coverage breakdown formatting", () => {
-  it("presents core and endorsement rows as one coverage list", () => {
+  it("keeps base policy and endorsement rows separated", () => {
     const text = formatCoverageBreakdownForPrompt({
       operationalProfile: {
         coverages: [
           {
-            name: "Technology Professional Liability",
+            name: "Network Security and Privacy Liability",
             coverageOrigin: "core",
-            limits: [{ label: "Each Claim", value: "$2,000,000" }],
-            deductible: "$10,000",
+            limits: [{ label: "Each Claim", value: "$1,000,000" }],
+            deductible: "$5,000",
             formNumber: "SPS-TPC 03 25",
           },
           {
@@ -25,10 +25,8 @@ describe("coverage breakdown formatting", () => {
       },
     });
 
-    expect(text).toContain("Coverage limits:");
-    expect(text).toContain("Technology Professional Liability");
-    expect(text).toContain("Network Security and Privacy Liability");
-    expect(text).not.toContain("Core coverage limits");
-    expect(text).not.toContain("Endorsement coverage limits");
+    expect(text).toContain("Base policy coverages:");
+    expect(text).toContain("Endorsement coverages:");
+    expect(text.match(/Network Security and Privacy Liability/g)).toHaveLength(2);
   });
 });

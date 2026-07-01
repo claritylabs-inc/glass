@@ -52,12 +52,18 @@ function formLabel(row: CoverageBreakdownRow) {
   ].filter(Boolean).join(" | ");
 }
 
-function CoverageLimitTable({ rows }: { rows: CoverageBreakdownRow[] }) {
+function CoverageLimitTable({
+  rows,
+  title,
+}: {
+  rows: CoverageBreakdownRow[];
+  title: string;
+}) {
   if (!rows.length) return null;
 
   return (
-    <OperationalPanel className="mb-6">
-      <OperationalPanelHeader title="Coverage limits" />
+    <OperationalPanel>
+      <OperationalPanelHeader title={title} />
       <div className="overflow-x-auto">
         <table className="w-full min-w-[36rem] text-left">
           <thead className="border-b border-foreground/6">
@@ -123,5 +129,16 @@ export function CoverageBreakdownCards({
   breakdown: CoverageBreakdown;
 }) {
   if (!breakdown.all.length) return null;
-  return <CoverageLimitTable rows={breakdown.all} />;
+  return (
+    <div className="mb-6 space-y-3">
+      <CoverageLimitTable
+        rows={breakdown.core}
+        title="Base policy coverages"
+      />
+      <CoverageLimitTable
+        rows={breakdown.endorsements}
+        title="Endorsement coverages"
+      />
+    </div>
+  );
 }

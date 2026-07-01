@@ -615,6 +615,12 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         .filter((item): item is Record<string, unknown> => Boolean(item))
         .map(profileTableRow)
     : [];
+  const agreementCoverages = coverages.filter(
+    (coverage) => profileCellValue(coverage, "coverageOrigin") !== "endorsement",
+  );
+  const endorsementCoverages = coverages.filter(
+    (coverage) => profileCellValue(coverage, "coverageOrigin") === "endorsement",
+  );
   const parties = Array.isArray(profile.parties)
     ? profile.parties
         .map(recordValue)
@@ -645,7 +651,8 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
           ))}
         </OperationalLabelValueList>
       ) : null}
-      <CoverageList title="Coverage limits" rows={coverages} />
+      <CoverageList title="Base policy coverages" rows={agreementCoverages} />
+      <CoverageList title="Endorsement coverages" rows={endorsementCoverages} />
       <PartyList rows={parties} />
       <NamedAdditionalInsuredList rows={additionalInsureds} />
       <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />
