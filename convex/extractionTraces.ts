@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
@@ -381,6 +381,26 @@ export const completeSession = internalMutation({
       .first();
     if (!session) return false;
     return await completeSessionDoc(ctx, session, args.status, args.error);
+  },
+});
+
+export const getSessionCounters = internalQuery({
+  args: {
+    traceId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!args.traceId) return null;
+    const session = await ctx.db
+      .query("policyExtractionTraceSessions")
+      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId!))
+      .first();
+    if (!session) return null;
+    return {
+      modelCallCount: session.modelCallCount ?? 0,
+      modelDurationMs: session.modelDurationMs ?? 0,
+      inputTokens: session.inputTokens ?? 0,
+      outputTokens: session.outputTokens ?? 0,
+    };
   },
 });
 

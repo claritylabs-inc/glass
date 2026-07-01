@@ -2498,9 +2498,13 @@ async function completeExternalExtractFromPayload(
     phase: "extract",
     level: "info",
   });
-  const modelCallCount = performanceReport?.modelCallCount ?? performanceReport?.modelCalls?.length;
+  const traceCounters = await ctx.runQuery((internal as any).extractionTraces.getSessionCounters, {
+    traceId: state.traceId,
+  }) as { modelCallCount?: number; modelDurationMs?: number } | null;
+  const modelCallCount = traceCounters?.modelCallCount || performanceReport?.modelCallCount || performanceReport?.modelCalls?.length;
   if (modelCallCount) {
-    const totalSeconds = Math.round((performanceReport?.totalModelCallDurationMs ?? 0) / 1000);
+    const totalModelCallDurationMs = traceCounters?.modelDurationMs ?? performanceReport?.totalModelCallDurationMs ?? 0;
+    const totalSeconds = Math.round(totalModelCallDurationMs / 1000);
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: policyId,
       timestamp: nowMs(),
