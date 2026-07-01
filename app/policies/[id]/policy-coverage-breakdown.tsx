@@ -59,14 +59,11 @@ function CoverageLimitTable({ rows }: { rows: CoverageBreakdownRow[] }) {
     <OperationalPanel className="mb-6">
       <OperationalPanelHeader title="Coverage limits" />
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[42rem] text-left">
+        <table className="w-full min-w-[36rem] text-left">
           <thead className="border-b border-foreground/6">
             <tr>
               <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
                 Coverage
-              </th>
-              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
-                Form
               </th>
               <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
                 Term
@@ -90,20 +87,19 @@ function CoverageLimitTable({ rows }: { rows: CoverageBreakdownRow[] }) {
                   className="border-t border-foreground/6 first:border-t-0 hover:bg-foreground/[0.015]"
                 >
                   {termIndex === 0 ? (
-                    <>
-                      <td
-                        rowSpan={visibleTerms.length}
-                        className="w-[34%] px-4 py-3 align-top text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]"
-                      >
+                    <td
+                      rowSpan={visibleTerms.length}
+                      className="w-[42%] px-4 py-3 align-top [overflow-wrap:anywhere]"
+                    >
+                      <div className="text-base font-medium leading-5 text-foreground">
                         {row.name}
-                      </td>
-                      <td
-                        rowSpan={visibleTerms.length}
-                        className="w-[22%] px-4 py-3 align-top text-label leading-5 text-muted-foreground [overflow-wrap:anywhere]"
-                      >
-                        {form || "—"}
-                      </td>
-                    </>
+                      </div>
+                      {form ? (
+                        <div className="mt-1 text-label leading-4 text-muted-foreground">
+                          {form}
+                        </div>
+                      ) : null}
+                    </td>
                   ) : null}
                   <td className="px-4 py-2.5 align-top text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
                     {term.label}
