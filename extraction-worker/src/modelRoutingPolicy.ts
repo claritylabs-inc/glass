@@ -77,6 +77,7 @@ const OPENAI_GPT_5_4_CAPABILITIES: Omit<ModelPolicyCapabilityConfig, "modelName"
   longListOutputTokens: 24_576,
   taskOutputTokens: {
     extraction_classify: 2_048,
+    extraction_source_tree: 4_096,
     extraction_form_inventory: 8_192,
     extraction_page_map: 8_192,
     extraction_focused: 16_384,
@@ -130,6 +131,7 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
     longListOutputTokens: 24_576,
     taskOutputTokens: {
       extraction_classify: 2_048,
+      extraction_source_tree: 4_096,
       extraction_preview: 4_096,
       extraction_coverage_cleanup: 8_192,
       extraction_form_inventory: 8_192,
@@ -148,6 +150,7 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
     longListOutputTokens: 24_576,
     taskOutputTokens: {
       extraction_classify: 2_048,
+      extraction_source_tree: 4_096,
       extraction_preview: 4_096,
       extraction_coverage_cleanup: 8_192,
       extraction_form_inventory: 8_192,
@@ -190,6 +193,7 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
     longListOutputTokens: 24_576,
     taskOutputTokens: {
       extraction_classify: 2_048,
+      extraction_source_tree: 4_096,
       extraction_preview: 4_096,
       extraction_coverage_cleanup: 8_192,
       extraction_form_inventory: 8_192,
