@@ -183,7 +183,6 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.broker).toBeUndefined();
     expect(profile.insurer).toBeUndefined();
     expect(profile.policyTypes).toEqual(["professional_liability"]);
-    expect(profile.coverageTypes).toEqual(["Professional Liability"]);
     expect(profile.parties).toEqual([]);
   });
 
@@ -397,7 +396,6 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.premium?.value).toBe("$12,500");
     expect(profile.broker?.value).toBe("Northshore Risk Advisors Inc.");
     expect(profile.policyTypes).toEqual(["general_liability"]);
-    expect(profile.coverageTypes).toEqual(["General Liability"]);
   });
 
   it("keeps model-backed life policy fields without document fallback candidates", () => {
@@ -468,7 +466,6 @@ describe("normalizeOperationalProfile", () => {
           {
             name: "Sun Permanent Life - Basic insurance coverage",
             limit: "$X,XXX,XXX",
-            coverageOrigin: "core",
             sourceNodeIds: ["node-coverage"],
             sourceSpanIds: ["life-coverage"],
           },
@@ -479,7 +476,6 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.policyTypes).toEqual(["life"]);
-    expect(profile.coverageTypes).toEqual(["Life"]);
     expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
     expect(profile.namedInsured?.value).toBe("Jim Doe");
     expect(profile.insurer?.value).toBe("Sun Life Assurance Company of Canada");
@@ -532,13 +528,11 @@ describe("normalizeOperationalProfile", () => {
           {
             name: "Manulife Par with VitalityPlusTM",
             formNumber: "1118-995",
-            coverageOrigin: "core",
             sourceNodeIds: ["benefit-node-1"],
             sourceSpanIds: ["benefit-product"],
           },
           {
             name: "Death benefit",
-            coverageOrigin: "core",
             limits: [
               {
                 kind: "other",
@@ -554,7 +548,6 @@ describe("normalizeOperationalProfile", () => {
           },
           {
             name: "Disability benefit",
-            coverageOrigin: "core",
             limits: [
               {
                 kind: "other",
@@ -580,7 +573,6 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.policyTypes).toEqual(["life", "disability"]);
-    expect(profile.coverageTypes).toEqual(["Life", "Disability"]);
     expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name)).toEqual([
       "Manulife Par with VitalityPlusTM",
       "Death benefit",
@@ -624,7 +616,6 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.policyTypes).toEqual(["other"]);
-    expect(profile.coverageTypes).toEqual(["Other"]);
     expect(profile.policyNumber?.value).toBe("LI-1234");
   });
 
@@ -710,7 +701,6 @@ describe("normalizeOperationalProfile", () => {
         coverages: [
           {
             name: "Joint last-to-die basic insurance coverage",
-            coverageOrigin: "core",
             limits: [
               {
                 kind: "premium",
@@ -756,7 +746,6 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.policyTypes).toEqual(["other"]);
-    expect(profile.coverageTypes).toEqual(["Other"]);
   });
 
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
@@ -1036,10 +1025,6 @@ describe("sourceTreePolicyFields", () => {
       "professional_liability",
       "cyber",
     ]);
-    expect(operationalProfile.coverageTypes).toEqual([
-      "Professional Liability",
-      "Cyber",
-    ]);
     expect(fields.policyTypes).toEqual(["professional_liability", "cyber"]);
     expect(
       (fields.operationalProfile as PolicyOperationalProfile).policyTypes,
@@ -1053,7 +1038,6 @@ describe("sourceTreePolicyFields", () => {
         coverages: [
           {
             name: "Death benefit",
-            coverageOrigin: "core",
             sourceNodeIds: ["named-insured-row"],
             sourceSpanIds: ["span-named-insured"],
             limits: [

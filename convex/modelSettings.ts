@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import { requireOperator } from "./lib/operatorIdentity";
 import {
   CONFIGURABLE_MODEL_PROVIDERS,
@@ -10,7 +10,6 @@ import {
   EMBEDDING_MODEL_CATALOG,
   EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
-  EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
   FALLBACK_MODEL_ROUTE_ID,
   LANGUAGE_MODEL_CATALOG,
   MODEL_ROUTE_DESCRIPTIONS,
@@ -30,7 +29,6 @@ import {
   WEB_RETRIEVAL_MODEL_CATALOG,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
-  modelSupportsImageInput,
   type ModelProvider,
   type ModelRoute,
   type ModelRouteId,
@@ -112,7 +110,6 @@ const globalRoutesValidator = v.object({
   extraction_quality: v.optional(routeUpdateValidator),
   extraction_form_inventory: v.optional(routeUpdateValidator),
   extraction_coverage_cleanup: v.optional(routeUpdateValidator),
-  extraction_visual_table_repair: v.optional(routeUpdateValidator),
   fallback: v.optional(routeUpdateValidator),
 });
 
@@ -133,12 +130,6 @@ function assertSupportedRoute(routeId: ModelRouteId, route: ModelRoute) {
     : LANGUAGE_MODEL_CATALOG[route.provider];
   if (!models?.includes(route.model)) {
     throw new Error(`Unsupported model ${route.model} for ${PROVIDER_LABELS[route.provider]}`);
-  }
-  if (
-    routeId === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID &&
-    !modelSupportsImageInput(route)
-  ) {
-    throw new Error("Visual table repair requires a model that supports image input");
   }
 }
 
@@ -340,7 +331,6 @@ export const get = query({
         label: MODEL_TASK_LABELS[id],
         description: MODEL_TASK_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
-        requiresImageInput: false,
       })),
       groups: MODEL_TASK_GROUPS,
       routes: visibleRoutes(settings?.routes, settings?.providerKeys),
@@ -451,7 +441,6 @@ export const getGlobal = query({
         label: MODEL_ROUTE_LABELS[id],
         description: MODEL_ROUTE_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
-        requiresImageInput: id === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
         defaultRoute: defaultModelRouteForId(id),
       })),
       groups: OPERATOR_MODEL_ROUTE_GROUPS,
@@ -593,7 +582,6 @@ export const resolveForOrg = internalQuery({
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
       EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
       EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
-      EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {
       const globalRoute = globalRoutes?.[routeId];
@@ -647,7 +635,6 @@ export const resolvePublicDefaults = internalQuery({
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
       EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
       EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
-      EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {
       const globalRoute = globalRoutes?.[routeId];

@@ -1,3 +1,13 @@
+import {
+  MODEL_POLICY_CAPABILITIES,
+  MODEL_POLICY_FIREWORKS_MODEL_IDS,
+  MODEL_POLICY_QUALITY_ESCALATION_TASK_KINDS,
+  MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS,
+  MODEL_POLICY_SPECIAL_ROUTES,
+  MODEL_POLICY_TASK_ROUTES,
+  modelPolicySupportsImageInput,
+} from "../../extraction-worker/src/modelRoutingPolicy";
+
 export type ModelTask =
   | "chat"
   | "email_draft"
@@ -52,15 +62,7 @@ export type ModelCapabilityConfig = {
   supportsImageInput?: boolean;
 };
 
-export const FIREWORKS_MODEL_IDS = {
-  deepseekV4Pro: "accounts/fireworks/models/deepseek-v4-pro",
-  deepseekV4Flash: "accounts/fireworks/models/deepseek-v4-flash",
-  glm52: "accounts/fireworks/models/glm-5p2",
-  qwen37Plus: "accounts/fireworks/models/qwen3p7-plus",
-  gptOssSafeguard20B: "accounts/fireworks/models/gpt-oss-safeguard-20b",
-  qwen3Embedding8B: "accounts/fireworks/models/qwen3-embedding-8b",
-  nomicEmbedText15: "nomic-ai/nomic-embed-text-v1.5",
-} as const;
+export const FIREWORKS_MODEL_IDS = MODEL_POLICY_FIREWORKS_MODEL_IDS;
 
 const RETIRED_MODEL_IDS = new Set<string>([
   "accounts/fireworks/models/kimi-k2p6",
@@ -258,68 +260,26 @@ export const EMBEDDING_MODEL_CATALOG: Partial<Record<ModelProvider, string[]>> =
     ],
   };
 
-export const MODEL_ROUTING: Record<ModelTask, ModelRoute> = {
-  chat: { model: FIREWORKS_MODEL_IDS.deepseekV4Flash, provider: "fireworks" },
-  email_draft: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
-  email_reply: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
-  analysis: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
-  summary: { model: FIREWORKS_MODEL_IDS.glm52, provider: "fireworks" },
-  classification: {
-    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    provider: "fireworks",
-  },
-  extraction: {
-    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    provider: "fireworks",
-  },
-  extraction_preview: {
-    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    provider: "fireworks",
-  },
-  triage: { model: FIREWORKS_MODEL_IDS.deepseekV4Flash, provider: "fireworks" },
-  email_extraction: {
-    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    provider: "fireworks",
-  },
-  document_extraction: {
-    model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    provider: "fireworks",
-  },
-  security: {
-    model: FIREWORKS_MODEL_IDS.gptOssSafeguard20B,
-    provider: "fireworks",
-  },
-  mailbox_coordinator: {
-    model: FIREWORKS_MODEL_IDS.glm52,
-    provider: "fireworks",
-  },
-  embeddings: { model: "text-embedding-3-small", provider: "openai" },
-};
+export const MODEL_ROUTING =
+  MODEL_POLICY_TASK_ROUTES satisfies Record<ModelTask, ModelRoute>;
 
-export const FALLBACK_MODEL: ModelRoute = {
-  model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
-  provider: "fireworks",
-};
+export const FALLBACK_MODEL =
+  MODEL_POLICY_SPECIAL_ROUTES.fallback satisfies ModelRoute;
 
-export const EXTRACTION_QUALITY_MODEL: ModelRoute = {
-  model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-  provider: "fireworks",
-};
+export const EXTRACTION_QUALITY_MODEL =
+  MODEL_POLICY_SPECIAL_ROUTES.extraction_quality satisfies ModelRoute;
 
-export const VISUAL_TABLE_REPAIR_MODEL: ModelRoute = {
-  model: FIREWORKS_MODEL_IDS.qwen37Plus,
-  provider: "fireworks",
-};
+export const FORM_INVENTORY_MODEL =
+  MODEL_POLICY_SPECIAL_ROUTES.extraction_form_inventory satisfies ModelRoute;
 
-export const FORM_INVENTORY_MODEL: ModelRoute = {
-  model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
-  provider: "fireworks",
-};
+export const COVERAGE_CLEANUP_MODEL =
+  MODEL_POLICY_SPECIAL_ROUTES.extraction_coverage_cleanup satisfies ModelRoute;
 
-export const COVERAGE_CLEANUP_MODEL: ModelRoute = {
-  model: "gpt-5.4-mini",
-  provider: "openai",
-};
+export const QUALITY_PRIMARY_TASK_KINDS =
+  MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS;
+
+export const QUALITY_ESCALATION_TASK_KINDS =
+  MODEL_POLICY_QUALITY_ESCALATION_TASK_KINDS;
 
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
 export const EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality" as const;
@@ -327,22 +287,18 @@ export const EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID =
   "extraction_form_inventory" as const;
 export const EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =
   "extraction_coverage_cleanup" as const;
-export const EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID =
-  "extraction_visual_table_repair" as const;
 export const FALLBACK_MODEL_ROUTE_ID = "fallback" as const;
 export type ModelRouteId =
   | ModelTask
   | typeof EXTRACTION_QUALITY_MODEL_ROUTE_ID
   | typeof EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID
   | typeof EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID
-  | typeof EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID
   | typeof FALLBACK_MODEL_ROUTE_ID;
 export const MODEL_ROUTE_IDS = [
   ...MODEL_TASKS,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
   EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
   EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
-  EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID,
   FALLBACK_MODEL_ROUTE_ID,
 ] as ModelRouteId[];
 
@@ -351,7 +307,6 @@ export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
   extraction_quality: "Source tree and profile extraction",
   extraction_form_inventory: "Form inventory and page ranges",
   extraction_coverage_cleanup: "Coverage schedule cleanup",
-  extraction_visual_table_repair: "Visual table repair",
   fallback: "Fallback model",
 };
 
@@ -363,8 +318,6 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
     "Long-context structured route for extracting declarations, policy forms, notices, endorsements, and page ranges before source-tree grouping.",
   extraction_coverage_cleanup:
     "Source-span review route for repairing malformed policy and endorsement coverage schedule rows before persistence.",
-  extraction_visual_table_repair:
-    "Image-capable route for repairing parsed table rows and column labels against page screenshots.",
   fallback:
     "Retry route after failed high-risk or non-low-cost model calls. Cheap classification and extraction paths do not automatically escalate here.",
 };
@@ -377,9 +330,6 @@ export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
   }
   if (id === EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID) {
     return COVERAGE_CLEANUP_MODEL;
-  }
-  if (id === EXTRACTION_VISUAL_TABLE_REPAIR_MODEL_ROUTE_ID) {
-    return VISUAL_TABLE_REPAIR_MODEL;
   }
   return MODEL_ROUTING[id];
 }
@@ -441,7 +391,6 @@ export const OPERATOR_MODEL_ROUTE_GROUPS = [
       "extraction_quality",
       "extraction_form_inventory",
       "extraction_coverage_cleanup",
-      "extraction_visual_table_repair",
       "fallback",
       "document_extraction",
       "email_extraction",
@@ -508,179 +457,8 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "deepseek-v4-flash": "DeepSeek V4 Flash",
 };
 
-export const MODEL_CAPABILITIES: Record<string, ModelCapabilityConfig> = {
-  "gpt-5.5": {
-    modelName: "gpt-5.5",
-    maxInputTokens: 400_000,
-    maxOutputTokens: 32_768,
-    defaultOutputTokens: 8_192,
-    longListOutputTokens: 24_576,
-    taskOutputTokens: {
-      extraction_classify: 2_048,
-      extraction_form_inventory: 8_192,
-      extraction_page_map: 8_192,
-      extraction_focused: 16_384,
-      extraction_long_list: 24_576,
-      extraction_operational_profile: 32_768,
-      extraction_visual_table_repair: 2_400,
-      extraction_review: 12_288,
-      query_reason: 8_192,
-      query_verify: 4_096,
-      pce_impact_analysis: 8_192,
-      pce_packet_generation: 8_192,
-    },
-  },
-  "gpt-5.4": {
-    modelName: "gpt-5.4",
-    maxInputTokens: 400_000,
-    maxOutputTokens: 32_768,
-    defaultOutputTokens: 8_192,
-    longListOutputTokens: 24_576,
-  },
-  "gpt-5.4-mini": {
-    modelName: "gpt-5.4-mini",
-    maxInputTokens: 400_000,
-    maxOutputTokens: 32_768,
-    defaultOutputTokens: 8_192,
-    longListOutputTokens: 24_576,
-    supportsImageInput: true,
-    taskOutputTokens: {
-      extraction_operational_profile: 32_768,
-      extraction_coverage_cleanup: 4_096,
-      extraction_visual_table_repair: 2_400,
-      extraction_review: 12_288,
-      query_reason: 8_192,
-      query_verify: 4_096,
-    },
-  },
-  "gpt-5.4-nano": {
-    modelName: "gpt-5.4-nano",
-    maxInputTokens: 400_000,
-    maxOutputTokens: 32_768,
-    defaultOutputTokens: 8_192,
-    longListOutputTokens: 24_576,
-  },
-  "claude-haiku-4-5-20251001": {
-    modelName: "claude-haiku-4-5-20251001",
-    maxInputTokens: 200_000,
-    maxOutputTokens: 8_192,
-    defaultOutputTokens: 4_096,
-    longListOutputTokens: 8_192,
-  },
-  "claude-haiku-4.5": {
-    modelName: "claude-haiku-4.5",
-    maxInputTokens: 200_000,
-    maxOutputTokens: 8_192,
-    defaultOutputTokens: 4_096,
-    longListOutputTokens: 8_192,
-  },
-  "gemini-2.5-flash": {
-    modelName: "gemini-2.5-flash",
-    maxInputTokens: 1_000_000,
-    maxOutputTokens: 65_536,
-    defaultOutputTokens: 4_096,
-    longListOutputTokens: 16_384,
-  },
-  [FIREWORKS_MODEL_IDS.deepseekV4Flash]: {
-    modelName: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    maxInputTokens: 1_000_000,
-    maxOutputTokens: 32_768,
-    defaultOutputTokens: 8_192,
-    longListOutputTokens: 24_576,
-    taskOutputTokens: {
-      extraction_classify: 2_048,
-      extraction_preview: 4_096,
-      extraction_coverage_cleanup: 8_192,
-      extraction_visual_table_repair: 2_400,
-      extraction_form_inventory: 8_192,
-      extraction_page_map: 8_192,
-      extraction_focused: 16_384,
-      extraction_long_list: 24_576,
-      extraction_operational_profile: 32_768,
-      query_classify: 2_048,
-    },
-  },
-  [FIREWORKS_MODEL_IDS.deepseekV4Pro]: {
-    modelName: FIREWORKS_MODEL_IDS.deepseekV4Pro,
-    maxInputTokens: 1_048_576,
-    maxOutputTokens: 32_768,
-    defaultOutputTokens: 8_192,
-    longListOutputTokens: 24_576,
-    taskOutputTokens: {
-      extraction_classify: 2_048,
-      extraction_preview: 4_096,
-      extraction_coverage_cleanup: 8_192,
-      extraction_visual_table_repair: 2_400,
-      extraction_form_inventory: 8_192,
-      extraction_page_map: 8_192,
-      extraction_focused: 16_384,
-      extraction_long_list: 24_576,
-      extraction_operational_profile: 32_768,
-      extraction_review: 12_288,
-      extraction_referential_lookup: 12_288,
-      query_classify: 2_048,
-      query_reason: 8_192,
-      query_verify: 4_096,
-      query_respond: 8_192,
-      pce_impact_analysis: 8_192,
-      pce_packet_generation: 8_192,
-    },
-  },
-  [FIREWORKS_MODEL_IDS.qwen37Plus]: {
-    modelName: FIREWORKS_MODEL_IDS.qwen37Plus,
-    maxInputTokens: 262_144,
-    maxOutputTokens: 65_536,
-    defaultOutputTokens: 4_096,
-    longListOutputTokens: 16_384,
-    supportsImageInput: true,
-    taskOutputTokens: {
-      extraction_source_tree: 2_400,
-      extraction_visual_table_repair: 2_400,
-      extraction_coverage_cleanup: 8_192,
-      extraction_form_inventory: 2_048,
-      extraction_operational_profile: 32_768,
-      extraction_review: 8_192,
-      query_reason: 8_192,
-      query_verify: 4_096,
-    },
-  },
-  [FIREWORKS_MODEL_IDS.glm52]: {
-    modelName: FIREWORKS_MODEL_IDS.glm52,
-    maxInputTokens: 1_000_000,
-    maxOutputTokens: 32_768,
-    defaultOutputTokens: 8_192,
-    longListOutputTokens: 24_576,
-    taskOutputTokens: {
-      extraction_classify: 2_048,
-      extraction_preview: 4_096,
-      extraction_coverage_cleanup: 8_192,
-      extraction_form_inventory: 8_192,
-      extraction_page_map: 8_192,
-      extraction_focused: 16_384,
-      extraction_long_list: 24_576,
-      extraction_operational_profile: 32_768,
-      extraction_review: 12_288,
-      extraction_referential_lookup: 12_288,
-      query_classify: 2_048,
-      query_reason: 8_192,
-      query_verify: 4_096,
-      query_respond: 8_192,
-      pce_impact_analysis: 8_192,
-      pce_packet_generation: 8_192,
-    },
-  },
-  [FIREWORKS_MODEL_IDS.gptOssSafeguard20B]: {
-    modelName: FIREWORKS_MODEL_IDS.gptOssSafeguard20B,
-    maxInputTokens: 131_072,
-    maxOutputTokens: 8_192,
-    defaultOutputTokens: 2_048,
-  },
-  [FIREWORKS_MODEL_IDS.qwen3Embedding8B]: {
-    modelName: FIREWORKS_MODEL_IDS.qwen3Embedding8B,
-    maxInputTokens: 32_000,
-    defaultOutputTokens: 1_536,
-  },
-};
+export const MODEL_CAPABILITIES =
+  MODEL_POLICY_CAPABILITIES satisfies Record<string, ModelCapabilityConfig>;
 
 export function modelCapabilitiesForRoute(
   route: ModelRoute,
@@ -699,18 +477,8 @@ export function modelCapabilitiesForTask(
   return modelCapabilitiesForRoute(MODEL_ROUTING[task]);
 }
 
-const IMAGE_CAPABLE_PROVIDER_DEFAULTS = new Set<ModelProvider>([
-  "openai",
-  "anthropic",
-  "google",
-  "xai",
-]);
-
 export function modelSupportsImageInput(route: ModelRoute): boolean {
-  return (
-    modelCapabilitiesForRoute(route)?.supportsImageInput === true ||
-    IMAGE_CAPABLE_PROVIDER_DEFAULTS.has(route.provider)
-  );
+  return modelPolicySupportsImageInput(route);
 }
 
 export function isRetiredModelRoute(

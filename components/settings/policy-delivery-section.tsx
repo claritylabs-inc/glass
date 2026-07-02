@@ -275,7 +275,7 @@ function RuleDrawer({
           <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={insurers} onChange={(event) => setInsurers(event.target.value)} placeholder="Coalition, CNA, Lloyd's" />
         </label>
         <label className="space-y-1.5">
-          <span className="text-label text-muted-foreground">Lines or coverage types</span>
+          <span className="text-label text-muted-foreground">Policy types</span>
           <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={lines} onChange={(event) => setLines(event.target.value)} placeholder="Cyber, Technology E&O, General liability" />
         </label>
         <label className="space-y-1.5">

@@ -46,10 +46,7 @@ function coverageTermRows(row: CoverageBreakdownRow) {
 }
 
 function formLabel(row: CoverageBreakdownRow) {
-  return [
-    row.formNumber,
-    row.origin === "endorsement" ? "Endorsement schedule" : row.sectionRef,
-  ].filter(Boolean).join(" | ");
+  return [row.formNumber, row.sectionRef].filter(Boolean).join(" | ");
 }
 
 function CoverageScheduleTable({
@@ -132,16 +129,8 @@ export function CoverageBreakdownCards({
   return (
     <div className="mb-6 space-y-3">
       <CoverageScheduleTable
-        rows={breakdown.core}
-        title="Policy coverage schedules"
-      />
-      <CoverageScheduleTable
-        rows={breakdown.endorsements}
-        title="Endorsement coverage schedules"
-      />
-      <CoverageScheduleTable
-        rows={breakdown.unclassified}
-        title="Source-backed coverage schedules"
+        rows={breakdown.all}
+        title="Coverage schedules"
       />
     </div>
   );

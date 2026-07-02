@@ -2856,7 +2856,6 @@ export const rematerializeSourceTreeProfile = internalAction({
       expirationDate: operationalProfile.expirationDate?.value,
       premium: operationalProfile.premium?.value,
       policyTypes: operationalProfile.policyTypes,
-      coverageTypes: operationalProfile.coverageTypes,
     };
   },
 });

@@ -584,6 +584,8 @@ export default defineSchema({
         embeddings: v.optional(modelRouteValidator),
         extraction_quality: v.optional(modelRouteValidator),
         extraction_form_inventory: v.optional(modelRouteValidator),
+        extraction_coverage_cleanup: v.optional(modelRouteValidator),
+        // Staging has this deprecated key persisted. Runtime code no longer reads or writes it.
         extraction_visual_table_repair: v.optional(modelRouteValidator),
         fallback: v.optional(modelRouteValidator),
       }),
@@ -1370,13 +1372,6 @@ export default defineSchema({
         included: v.optional(v.boolean()),
         coveragePremium: v.optional(v.string()),
         premium: v.optional(v.string()),
-        coverageOrigin: v.optional(
-          v.union(v.literal("core"), v.literal("endorsement")),
-        ),
-        coverageOriginConfidence: v.optional(
-          v.union(v.literal("low"), v.literal("medium"), v.literal("high")),
-        ),
-        coverageOriginReason: v.optional(v.string()),
         pageNumber: v.optional(v.number()),
         resolvedFromPage: v.optional(v.number()),
         sectionRef: v.optional(v.string()),

@@ -184,7 +184,6 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
       name: coverage.name,
       limit: coverage.limit,
       deductible: coverage.deductible,
-      origin: coverage.coverageOrigin,
     })),
     coverageBreakdown: coverageBreakdownForTool(policy),
   };

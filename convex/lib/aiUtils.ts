@@ -322,7 +322,7 @@ export function policySearchScore(
   const q = query.toLowerCase().trim();
   const words = q.split(/\s+/).filter((w) => w.length > 2);
   const policyTypes = (policy.policyTypes as string[] | undefined) ?? [];
-  const coverages = (policy.coverages as Array<{ name?: string; limit?: string; coverageOrigin?: string }> | undefined) ?? [];
+  const coverages = (policy.coverages as Array<{ name?: string; limit?: string }> | undefined) ?? [];
   const outlineText = flattenDocumentOutline(getPolicyDocumentOutline(policy))
     .slice(0, 20)
     .map(({ node }) => [
@@ -339,7 +339,7 @@ export function policySearchScore(
     policy.policyNumber,
     policy.summary,
     ...policyTypes,
-    ...coverages.flatMap((c) => [c.name, c.limit, c.coverageOrigin]),
+    ...coverages.flatMap((c) => [c.name, c.limit]),
     outlineText,
   ].filter(Boolean).join(" ").toLowerCase();
 
@@ -527,7 +527,6 @@ export function searchPolicyDocument(
     if (cov.limit) parts.push(`Limit: ${cov.limit}`);
     if (cov.deductible) parts.push(`Deductible: ${cov.deductible}`);
     if (cov.coverageCode) parts.push(`Code: ${cov.coverageCode}`);
-    if (cov.coverageOrigin) parts.push(`Origin: ${cov.coverageOrigin}`);
     if (cov.originalContent) parts.push(cov.originalContent);
     addResult("coverage", cov.name, parts.join("\n"), {}, 1);
   }
@@ -548,7 +547,6 @@ export function searchPolicyDocument(
           content: coverages
             .map((c) => [
               c.name,
-              c.coverageOrigin ? `Origin: ${c.coverageOrigin}` : undefined,
               c.limit ? `Limit: ${c.limit}` : undefined,
               c.deductible ? `Deductible: ${c.deductible}` : undefined,
             ]

@@ -26,6 +26,13 @@ import {
 } from "@claritylabs/cl-sdk";
 import { modelCapabilitiesForRoute } from "./modelCapabilities.js";
 import {
+  MODEL_POLICY_QUALITY_ESCALATION_TASK_KINDS,
+  MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS,
+  MODEL_POLICY_SPECIAL_ROUTES,
+  MODEL_POLICY_TASK_ROUTES,
+  modelPolicySupportsImageInput,
+} from "./modelRoutingPolicy.js";
+import {
   normalizeJsonSchemaForFireworks,
   structuredOutputSchemaForProvider,
 } from "./fireworksStructuredOutput.js";
@@ -443,50 +450,23 @@ function readSourceKind(value: unknown): "policy_pdf" | "email" | "attachment" |
   return "policy_pdf";
 }
 
-const FIREWORKS_DEEPSEEK_V4_PRO = "accounts/fireworks/models/deepseek-v4-pro";
-const FIREWORKS_DEEPSEEK_V4_FLASH = "accounts/fireworks/models/deepseek-v4-flash";
-const FIREWORKS_QWEN_37_PLUS = "accounts/fireworks/models/qwen3p7-plus";
-const OPENAI_GPT_5_4_MINI = "gpt-5.4-mini";
-
 const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
-  classification: {
-    provider: "fireworks",
-    model: FIREWORKS_DEEPSEEK_V4_FLASH,
-  },
-  extraction: {
-    provider: "fireworks",
-    model: FIREWORKS_DEEPSEEK_V4_FLASH,
-  },
-  extraction_preview: {
-    provider: "fireworks",
-    model: FIREWORKS_DEEPSEEK_V4_FLASH,
-  },
+  classification: MODEL_POLICY_TASK_ROUTES.classification,
+  extraction: MODEL_POLICY_TASK_ROUTES.extraction,
+  extraction_preview: MODEL_POLICY_TASK_ROUTES.extraction_preview,
 };
 
-const WORKER_VISUAL_TABLE_REPAIR_ROUTE: WorkerModelRoute = {
-  provider: "fireworks",
-  model: FIREWORKS_QWEN_37_PLUS,
-};
+const WORKER_FORM_INVENTORY_ROUTE: WorkerModelRoute =
+  MODEL_POLICY_SPECIAL_ROUTES.extraction_form_inventory;
 
-const WORKER_FORM_INVENTORY_ROUTE: WorkerModelRoute = {
-  provider: "fireworks",
-  model: FIREWORKS_DEEPSEEK_V4_PRO,
-};
+const WORKER_COVERAGE_CLEANUP_ROUTE: WorkerModelRoute =
+  MODEL_POLICY_SPECIAL_ROUTES.extraction_coverage_cleanup;
 
-const WORKER_COVERAGE_CLEANUP_ROUTE: WorkerModelRoute = {
-  provider: "openai",
-  model: OPENAI_GPT_5_4_MINI,
-};
+const WORKER_QUALITY_ROUTE: WorkerModelRoute =
+  MODEL_POLICY_SPECIAL_ROUTES.extraction_quality;
 
-const WORKER_QUALITY_ROUTE: WorkerModelRoute = {
-  provider: "fireworks",
-  model: FIREWORKS_DEEPSEEK_V4_FLASH,
-};
-
-const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
-  provider: "fireworks",
-  model: FIREWORKS_DEEPSEEK_V4_PRO,
-};
+const WORKER_FALLBACK_ROUTE: WorkerModelRoute =
+  MODEL_POLICY_SPECIAL_ROUTES.fallback;
 
 const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([
   "openai",
@@ -499,17 +479,12 @@ const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([
   "deepseek",
 ]);
 
-const QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
-  "extraction_source_tree",
-  "extraction_operational_profile",
-  "extraction_review",
-  "extraction_coverage_cleanup",
-  "extraction_referential_lookup",
-]);
-const QUALITY_PRIMARY_TASK_KINDS = new Set<string>([
-  "extraction_source_tree",
-  "extraction_operational_profile",
-]);
+const QUALITY_ESCALATION_TASK_KINDS = new Set<string>(
+  MODEL_POLICY_QUALITY_ESCALATION_TASK_KINDS,
+);
+const QUALITY_PRIMARY_TASK_KINDS = new Set<string>(
+  MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS,
+);
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
 function isModelProvider(value: string): value is ModelProvider {
@@ -719,22 +694,6 @@ function resolveConfiguredQualityRoute(settings?: WorkerModelSettings) {
   );
 }
 
-function isVisualTableRepairTrace(trace: ModelCallTrace | undefined): boolean {
-  return typeof trace?.label === "string" && trace.label.startsWith("source_tree_visual_table_repair_");
-}
-
-function resolveConfiguredVisualTableRepairRoute(settings?: WorkerModelSettings) {
-  const configured = resolveConfiguredRoute(
-    "extraction_visual_table_repair",
-    WORKER_VISUAL_TABLE_REPAIR_ROUTE,
-    "static",
-    settings,
-  );
-  return routeSupportsImageInput(configured.route)
-    ? configured
-    : { route: WORKER_VISUAL_TABLE_REPAIR_ROUTE, routeSource: "static" as const };
-}
-
 function resolveConfiguredFormInventoryRoute(settings?: WorkerModelSettings) {
   return resolveConfiguredRoute(
     "extraction_form_inventory",
@@ -756,7 +715,6 @@ function resolveConfiguredCoverageCleanupRoute(settings?: WorkerModelSettings) {
 function resolveModelForTaskKind(
   taskKind: string | undefined,
   settings?: WorkerModelSettings,
-  trace?: ModelCallTrace,
 ): ResolvedWorkerModelRoute {
   const task = modelTaskForTaskKind(taskKind);
   const settingsRoute = settings?.routes?.[task];
@@ -770,24 +728,19 @@ function resolveModelForTaskKind(
   const quality = resolveConfiguredQualityRoute(settings);
   const useQualityPrimary =
     !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind);
-  const visualRepair = (isVisualTableRepairTrace(trace) || taskKind === "extraction_visual_table_repair")
-    ? resolveConfiguredVisualTableRepairRoute(settings)
-    : null;
   const formInventory = taskKind === "extraction_form_inventory"
     ? resolveConfiguredFormInventoryRoute(settings)
     : null;
   const coverageCleanup = taskKind === "extraction_coverage_cleanup"
     ? resolveConfiguredCoverageCleanupRoute(settings)
     : null;
-  const route = visualRepair?.route ?? coverageCleanup?.route ?? formInventory?.route ?? (useQualityPrimary ? quality.route : baseRoute);
-  const routeSource = visualRepair?.routeSource ?? coverageCleanup?.routeSource ?? formInventory?.routeSource ?? (useQualityPrimary
+  const route = coverageCleanup?.route ?? formInventory?.route ?? (useQualityPrimary ? quality.route : baseRoute);
+  const routeSource = coverageCleanup?.routeSource ?? formInventory?.routeSource ?? (useQualityPrimary
     ? quality.routeSource
     : canUseConfiguredRoute
     ? (configuredRouteSource ?? "configured")
     : "default");
-  const apiKey = visualRepair
-    ? visualRepair.apiKey
-    : coverageCleanup
+  const apiKey = coverageCleanup
       ? coverageCleanup.apiKey
     : formInventory
       ? formInventory.apiKey
@@ -814,10 +767,7 @@ function resolveFallbackModel(
   taskKind: string | undefined,
   primaryRoute: WorkerModelRoute,
   settings?: WorkerModelSettings,
-  trace?: ModelCallTrace,
 ): ResolvedWorkerModelRoute | null {
-  if (isVisualTableRepairTrace(trace)) return null;
-
   if (task === "classification" || task === "extraction") {
     if (!taskKind || !QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) return null;
   }
@@ -943,10 +893,6 @@ function shouldReturnEmptyFormInventory(taskKind: string | undefined): boolean {
   return taskKind === "extraction_form_inventory";
 }
 
-function shouldReturnEmptyVisualTableRepair(trace: ModelCallTrace | undefined): boolean {
-  return isVisualTableRepairTrace(trace);
-}
-
 function maxOutputTokensForRoute(
   maxTokens: number,
   route: ResolvedWorkerModelRoute,
@@ -995,7 +941,6 @@ function modelTraceLabel(
     extraction_source_tree: "Build source-native document tree",
     extraction_operational_profile: "Build operational profile",
     extraction_coverage_cleanup: "Clean coverage schedules",
-    extraction_visual_table_repair: "Visual table repair",
     extraction_form_inventory: "Extract form inventory",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
@@ -1241,13 +1186,7 @@ function buildPromptInput(
 }
 
 function routeSupportsImageInput(route: WorkerModelRoute): boolean {
-  return (
-    route.model === FIREWORKS_QWEN_37_PLUS ||
-    route.provider === "openai" ||
-    route.provider === "anthropic" ||
-    route.provider === "google" ||
-    route.provider === "xai"
-  );
+  return modelPolicySupportsImageInput(route);
 }
 
 
@@ -1293,7 +1232,7 @@ function buildWorkerExtractor(opts: {
     const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
-    const route = resolveModelForTaskKind(taskKind, opts.modelSettings, trace);
+    const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
     const label = modelTraceLabel("generateText", taskKind, route.task, trace);
     const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route, taskKind);
     const callProviderOptions = providerOptionsForModelCall(
@@ -1361,7 +1300,7 @@ function buildWorkerExtractor(opts: {
 
       const fallback = isMissingApiKeyError(error)
         ? null
-        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings, trace);
+        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
@@ -1438,7 +1377,7 @@ function buildWorkerExtractor(opts: {
     const trace = readTraceDetails(params);
     const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
-    const route = resolveModelForTaskKind(taskKind, opts.modelSettings, trace);
+    const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
     const label = modelTraceLabel("generateObject", taskKind, route.task, trace);
     const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route, taskKind);
     const callProviderOptions = providerOptionsForModelCall(
@@ -1536,31 +1475,6 @@ function buildWorkerExtractor(opts: {
         return { object: { forms: [] }, usage: undefined };
       }
 
-      if (shouldReturnEmptyVisualTableRepair(trace)) {
-        await recordModelCallSoftFailure({
-          job: opts.job,
-          route,
-          label,
-          taskKind,
-          startedAt,
-          error,
-          details: modelTraceDetails({
-            kind: "generateObject",
-            label,
-            task: route.task,
-            taskKind,
-            prompt: guidedPrompt,
-            system: params.system,
-            maxOutputTokens,
-            providerOptions: callProviderOptions,
-            trace,
-            output: { tables: [], warnings: [] },
-            outputKind: "object",
-          }),
-        });
-        return { object: { tables: [], warnings: [] }, usage: undefined };
-      }
-
       await recordModelCallError({
         job: opts.job,
         route,
@@ -1584,7 +1498,7 @@ function buildWorkerExtractor(opts: {
 
       const fallback = isMissingApiKeyError(error)
         ? null
-        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings, trace);
+        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
@@ -1664,7 +1578,6 @@ function buildWorkerExtractor(opts: {
   const modelCapabilitiesByTaskKind = Object.fromEntries(
     ([
       "extraction_source_tree",
-      "extraction_visual_table_repair",
       "extraction_operational_profile",
       "extraction_form_inventory",
       "extraction_coverage_cleanup",

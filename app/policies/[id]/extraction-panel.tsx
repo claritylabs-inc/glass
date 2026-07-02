@@ -2615,7 +2615,7 @@ export function ExtractionCards({
       value: `${policyDocument.effectiveDate ?? "—"} – ${policyDocument.expirationDate ?? "—"}`,
     },
     policyDocument?.policyTypes?.length && {
-      label: "Coverage types",
+      label: "Policy types",
       value: policyDocument.policyTypes
         .map(
           (type) =>

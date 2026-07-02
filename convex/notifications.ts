@@ -1,7 +1,7 @@
 // convex/notifications.ts
 import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
-import { getOrgAccess, requireOrgAccess } from "./lib/orgAuth";
+import { getCurrentOrgAccess as getOrgAccess, requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import { Id } from "./_generated/dataModel";
 
 // ── Public queries ──────────────────────────────────────────────────────────

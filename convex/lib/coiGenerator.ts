@@ -181,7 +181,6 @@ function policyWithOperationalCoverages(policy: any, profile: any | undefined): 
       premium: coverage.premium,
       formNumber: coverage.formNumber,
       sectionRef: coverage.sectionRef,
-      coverageOrigin: coverage.coverageOrigin,
       isOperationalProfileCoverage: true,
       documentNodeId: coverage.sourceNodeIds?.[0],
       sourceSpanIds: coverage.sourceSpanIds,
@@ -304,7 +303,7 @@ function buildFallbackCoverageLines(
     });
   }
 
-  // ── Other coverage types (professional liability, cyber, etc.) ────────────
+  // Other policy types (professional liability, cyber, etc.).
   const otherTypes = policyTypes.filter((t) =>
     !["general_liability", "bop", "product_liability", "commercial_auto",
       "non_owned_auto", "personal_auto", "umbrella", "excess_liability",

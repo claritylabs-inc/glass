@@ -860,10 +860,6 @@ function controlledPolicyTypes(values: unknown): string[] {
   return unique.length ? unique : ["other"];
 }
 
-function controlledCoverageTypes(policyTypes: string[]): string[] {
-  return policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
-}
-
 const COVERAGE_TERM_KINDS = new Set([
   "each_claim_limit",
   "each_occurrence_limit",
@@ -975,7 +971,6 @@ function cleanOperationalCoverages(
     const record = coverage as OperationalCoverageLine & {
       limits?: unknown;
       retroactiveDate?: unknown;
-      coverageOrigin?: unknown;
       endorsementNumber?: unknown;
     };
     const limits = cleanCoverageTerms(record.limits)
@@ -990,9 +985,7 @@ function cleanOperationalCoverages(
       !record.retroactiveDate &&
       limits.length === 0 &&
       !coverage.formNumber &&
-      !coverage.sectionRef &&
-      record.coverageOrigin !== "core" &&
-      record.coverageOrigin !== "endorsement"
+      !coverage.sectionRef
     ) {
       continue;
     }
@@ -1013,9 +1006,6 @@ function cleanOperationalCoverages(
       ...(limits.length ? { limits } : {}),
       ...(typeof record.retroactiveDate === "string" && record.retroactiveDate.trim()
         ? { retroactiveDate: record.retroactiveDate.trim() }
-        : {}),
-      ...(record.coverageOrigin === "core" || record.coverageOrigin === "endorsement"
-        ? { coverageOrigin: record.coverageOrigin }
         : {}),
       ...(typeof record.endorsementNumber === "string" && record.endorsementNumber.trim()
         ? { endorsementNumber: record.endorsementNumber.trim() }
@@ -1040,66 +1030,10 @@ function cleanOperationalCoverages(
   return cleaned;
 }
 
-type OperationalCoverageExtension = {
-  coverageOrigin?: "core" | "endorsement";
-};
-
 type OperationalProfileExtensions = {
   additionalInsuredEligibility?: unknown;
   additionalInsureds?: unknown;
 };
-
-function coverageExtensionKey(coverage: Record<string, unknown>): string {
-  const sourceNodeIds = Array.isArray(coverage.sourceNodeIds)
-    ? coverage.sourceNodeIds.filter((id): id is string => typeof id === "string")
-    : [];
-  const sourceSpanIds = Array.isArray(coverage.sourceSpanIds)
-    ? coverage.sourceSpanIds.filter((id): id is string => typeof id === "string")
-    : [];
-  return [
-    normalizeWhitespace(String(coverage.name ?? "")).toLowerCase(),
-    normalizeWhitespace(String(coverage.limit ?? "")).toLowerCase(),
-    normalizeWhitespace(String(coverage.deductible ?? "")).toLowerCase(),
-    normalizeWhitespace(String(coverage.premium ?? "")).toLowerCase(),
-    sourceNodeIds.join(","),
-    sourceSpanIds.join(","),
-  ].join("|");
-}
-
-function storedCoverageExtensions(rawProfile: unknown): Map<string, OperationalCoverageExtension> {
-  const extensions = new Map<string, OperationalCoverageExtension>();
-  const rows = rawProfile
-    && typeof rawProfile === "object"
-    && !Array.isArray(rawProfile)
-    && Array.isArray((rawProfile as Record<string, unknown>).coverages)
-    ? (rawProfile as { coverages: unknown[] }).coverages
-    : [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-    const record = row as Record<string, unknown>;
-    const coverageOrigin = record.coverageOrigin === "core" || record.coverageOrigin === "endorsement"
-      ? record.coverageOrigin
-      : undefined;
-    if (!coverageOrigin) continue;
-    extensions.set(coverageExtensionKey(record), { coverageOrigin });
-  }
-  return extensions;
-}
-
-function preserveCoverageExtensions(
-  profile: PolicyOperationalProfile,
-  rawProfile: unknown,
-): PolicyOperationalProfile {
-  const extensions = storedCoverageExtensions(rawProfile);
-  if (extensions.size === 0) return profile;
-  return {
-    ...profile,
-    coverages: profile.coverages.map((coverage: OperationalCoverageLine) => ({
-      ...coverage,
-      ...extensions.get(coverageExtensionKey(coverage as unknown as Record<string, unknown>)),
-    })),
-  };
-}
 
 function storedProfileExtensions(rawProfile: unknown): OperationalProfileExtensions {
   if (!rawProfile || typeof rawProfile !== "object" || Array.isArray(rawProfile)) return {};
@@ -1119,7 +1053,7 @@ function preserveOperationalProfileExtensions(
   rawProfile: unknown,
 ): PolicyOperationalProfile {
   return {
-    ...preserveCoverageExtensions(profile, rawProfile),
+    ...profile,
     ...storedProfileExtensions(rawProfile),
   } as PolicyOperationalProfile;
 }
@@ -1182,7 +1116,6 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
   const finalized: PolicyOperationalProfile = {
     ...profile,
     policyTypes,
-    coverageTypes: controlledCoverageTypes(policyTypes),
     coverages,
     policyNumber: finalizeSourceBackedPolicyNumber(profile.policyNumber),
     namedInsured: finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
@@ -1207,7 +1140,6 @@ function emptyOperationalProfile(): PolicyOperationalProfile {
   return PolicyOperationalProfileSchema.parse({
     documentType: "policy",
     policyTypes: ["other"],
-    coverageTypes: [],
     coverages: [],
     parties: [],
     endorsementSupport: [],
@@ -1285,9 +1217,6 @@ function normalizeRawCoverage(
     ...limits.flatMap((term) => term.sourceSpanIds),
   ], validSpanIds);
   if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0) return undefined;
-  const coverageOrigin = record.coverageOrigin === "core" || record.coverageOrigin === "endorsement"
-    ? record.coverageOrigin
-    : undefined;
   return {
     name,
     ...(cleanCoverageScalar(record.coverageCode) ? { coverageCode: cleanCoverageScalar(record.coverageCode) } : {}),
@@ -1297,7 +1226,6 @@ function normalizeRawCoverage(
     ...(cleanCoverageScalar(record.retroactiveDate) ? { retroactiveDate: cleanCoverageScalar(record.retroactiveDate) } : {}),
     ...(cleanCoverageScalar(record.formNumber) ? { formNumber: cleanCoverageScalar(record.formNumber) } : {}),
     ...(cleanCoverageScalar(record.sectionRef) ? { sectionRef: cleanCoverageScalar(record.sectionRef) } : {}),
-    ...(coverageOrigin ? { coverageOrigin } : {}),
     ...(cleanCoverageScalar(record.endorsementNumber) ? { endorsementNumber: cleanCoverageScalar(record.endorsementNumber) } : {}),
     limits,
     sourceNodeIds,
@@ -1372,9 +1300,6 @@ function normalizeRawOperationalProfile(
     expirationDate: values[5],
     retroactiveDate: values[6],
     premium: values[7],
-    coverageTypes: Array.isArray(candidate.coverageTypes)
-      ? (candidate.coverageTypes as unknown[]).filter((type): type is string => typeof type === "string" && type.trim().length > 0)
-      : [],
     coverages,
     parties: [],
     endorsementSupport: normalizeRawEndorsementSupport(
@@ -1730,20 +1655,16 @@ export function operationalProfilePolicyFields(
   if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.policyTypes.length > 0) fields.policyTypes = operationalProfile.policyTypes;
-  const coverageLabels = operationalProfile.coverageTypes.length
-    ? operationalProfile.coverageTypes
-    : operationalProfile.policyTypes;
   const summary = [
     insurer && insurer !== "Unknown" ? insurer : undefined,
     policyNumber && policyNumber !== "Unknown" ? `policy #${policyNumber}` : "policy",
     namedInsured && namedInsured !== "Unknown" ? `for ${namedInsured}` : undefined,
-    coverageLabels.length > 0 ? `covering ${coverageLabels.slice(0, 5).join(", ")}` : undefined,
+    operationalProfile.policyTypes.length > 0 ? `covering ${operationalProfile.policyTypes.slice(0, 5).join(", ")}` : undefined,
   ].filter(Boolean).join(" ");
   if (summary) fields.summary = summary;
   if (operationalProfile.coverages.length > 0) {
     fields.coverages = operationalProfile.coverages.map((coverage: OperationalCoverageLine) => {
       const coverageRecord = coverage as OperationalCoverageLine & {
-        coverageOrigin?: "core" | "endorsement";
         endorsementNumber?: string;
         retroactiveDate?: string;
         limits?: unknown[];
@@ -1757,7 +1678,6 @@ export function operationalProfilePolicyFields(
         retroactiveDate: coverageRecord.retroactiveDate,
         formNumber: coverage.formNumber,
         sectionRef: coverage.sectionRef,
-        coverageOrigin: coverageRecord.coverageOrigin,
         endorsementNumber: coverageRecord.endorsementNumber,
         limits: coverageRecord.limits,
         documentNodeId: coverage.sourceNodeIds[0],

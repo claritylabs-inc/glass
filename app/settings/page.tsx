@@ -43,9 +43,6 @@ const BROKER_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
   AGENT_SETTINGS_SECTION,
 );
 
-// Keep for backwards-compatible export
-export const SETTINGS_SECTIONS = CLIENT_SETTINGS_SECTIONS;
-
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();

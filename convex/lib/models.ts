@@ -19,8 +19,9 @@ import {
   COVERAGE_CLEANUP_MODEL,
   FIREWORKS_MODEL_IDS,
   FORM_INVENTORY_MODEL,
+  QUALITY_ESCALATION_TASK_KINDS,
+  QUALITY_PRIMARY_TASK_KINDS,
   MODEL_ROUTING,
-  VISUAL_TABLE_REPAIR_MODEL,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   type ModelProvider,
@@ -118,7 +119,6 @@ export type ModelCallTaskKind =
   | "extraction_operational_profile"
   | "extraction_form_inventory"
   | "extraction_coverage_cleanup"
-  | "extraction_visual_table_repair"
   | "extraction_page_map"
   | "extraction_focused"
   | "extraction_long_list"
@@ -176,27 +176,8 @@ const LOW_COST_NO_ESCALATION_TASKS = new Set<ModelTask>([
   "document_extraction",
 ]);
 
-const INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
-  // Core policy structure/fact projections where partial or timed-out output blocks the run.
-  "extraction_source_tree",
-  "extraction_operational_profile",
-  // Validation / repair passes over extracted or reasoned output.
-  "extraction_review",
-  "extraction_coverage_cleanup",
-  "query_verify",
-  // Ambiguous synthesis over retrieved evidence or requested changes.
-  "query_reason",
-  "pce_impact_analysis",
-  // Source-evidence support where the cheap path may fail to resolve references.
-  "extraction_referential_lookup",
-  // High-risk carrier-facing packet generation.
-  "pce_packet_generation",
-]);
-
-const INTENTIONAL_QUALITY_PRIMARY_TASK_KINDS = new Set<string>([
-  "extraction_source_tree",
-  "extraction_operational_profile",
-]);
+const QUALITY_ESCALATION_TASK_KIND_SET = new Set<string>(QUALITY_ESCALATION_TASK_KINDS);
+const QUALITY_PRIMARY_TASK_KIND_SET = new Set<string>(QUALITY_PRIMARY_TASK_KINDS);
 
 function sameRoute(left?: ModelRoute, right?: ModelRoute): boolean {
   return !!left && !!right && left.provider === right.provider && left.model === right.model;
@@ -227,7 +208,7 @@ export function fallbackRouteForCall({
 
   if (sameRoute(effectivePrimaryRoute, fallbackRoute)) return null;
 
-  if (taskKind && INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) {
+  if (taskKind && QUALITY_ESCALATION_TASK_KIND_SET.has(taskKind)) {
     return fallbackRoute;
   }
 
@@ -243,7 +224,7 @@ export function primaryRouteForCall({
   taskKind,
   qualityRoute = EXTRACTION_QUALITY_MODEL,
 }: ModelFallbackContext): ModelRoute | null {
-  if (!taskKind || !INTENTIONAL_QUALITY_PRIMARY_TASK_KINDS.has(taskKind)) return null;
+  if (!taskKind || !QUALITY_PRIMARY_TASK_KIND_SET.has(taskKind)) return null;
   const effectiveTask = task && modelTaskForCall(task, taskKind);
   if (effectiveTask !== "extraction") return null;
   return qualityRoute;
@@ -402,8 +383,6 @@ export async function getModelAndRouteForOrg(
   formInventoryRouteSource: "broker" | "global" | "static";
   coverageCleanupRoute: ModelRoute;
   coverageCleanupRouteSource: "broker" | "global" | "static";
-  visualTableRepairRoute: ModelRoute;
-  visualTableRepairRouteSource: "broker" | "global" | "static";
   fallbackRoute: ModelRoute;
 }> {
   try {
@@ -418,9 +397,6 @@ export async function getModelAndRouteForOrg(
     const coverageCleanupRoute =
       settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
     const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
-    const visualTableRepairRoute =
-      settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
-    const visualTableRepairRouteSource = settings?.routeSources?.extraction_visual_table_repair ?? "static";
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const configuredApiKey = routeSource === "broker" && configuredRoute
       ? settings?.providerKeys?.[configuredRoute.provider]
@@ -446,8 +422,6 @@ export async function getModelAndRouteForOrg(
       formInventoryRouteSource,
       coverageCleanupRoute,
       coverageCleanupRouteSource,
-      visualTableRepairRoute,
-      visualTableRepairRouteSource,
       fallbackRoute,
     };
   } catch (err) {
@@ -470,8 +444,6 @@ export async function getModelAndRouteForOrg(
       formInventoryRouteSource: "static",
       coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
       coverageCleanupRouteSource: "static",
-      visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
-      visualTableRepairRouteSource: "static",
       fallbackRoute: FALLBACK_MODEL,
     };
   }
@@ -491,8 +463,6 @@ export async function getModelAndRouteForPublicTask(
   formInventoryRouteSource: "global" | "static";
   coverageCleanupRoute: ModelRoute;
   coverageCleanupRouteSource: "global" | "static";
-  visualTableRepairRoute: ModelRoute;
-  visualTableRepairRouteSource: "global" | "static";
   fallbackRoute: ModelRoute;
 }> {
   try {
@@ -507,9 +477,6 @@ export async function getModelAndRouteForPublicTask(
     const coverageCleanupRoute =
       settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
     const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
-    const visualTableRepairRoute =
-      settings?.routes?.extraction_visual_table_repair ?? VISUAL_TABLE_REPAIR_MODEL;
-    const visualTableRepairRouteSource = settings?.routeSources?.extraction_visual_table_repair ?? "static";
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
@@ -524,8 +491,6 @@ export async function getModelAndRouteForPublicTask(
       formInventoryRouteSource,
       coverageCleanupRoute,
       coverageCleanupRouteSource,
-      visualTableRepairRoute,
-      visualTableRepairRouteSource,
       fallbackRoute,
     };
   } catch (err) {
@@ -548,8 +513,6 @@ export async function getModelAndRouteForPublicTask(
       formInventoryRouteSource: "static",
       coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
       coverageCleanupRouteSource: "static",
-      visualTableRepairRoute: VISUAL_TABLE_REPAIR_MODEL,
-      visualTableRepairRouteSource: "static",
       fallbackRoute: FALLBACK_MODEL,
     };
   }

@@ -115,7 +115,7 @@ function ExtractionPendingDetails() {
       </div>
       <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
         {[
-          "Coverage types",
+          "Policy types",
           "Carrier",
           "Named insured",
           "Policy period",
@@ -225,10 +225,9 @@ export function PolicySummary({
             <SummaryRow label="Policy number" value={realPolicyNumber} />
           )}
 
-          {/* Coverage types — same row style as other fields */}
           {realPolicyTypes.length > 0 && (
             <SummaryRow
-              label="Coverage types"
+              label="Policy types"
               value={
                 <span className="flex flex-wrap justify-end gap-1">
                   {realPolicyTypes.slice(0, 4).map((t) => (

@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { requireOrgAccess as requireCurrentOrgAccess } from "./lib/orgAuth";
+import { requireCurrentOrgAccess } from "./lib/access";
 import { requireBrokerAccessToClient } from "./lib/access";
 
 const channelValidator = v.union(v.literal("email"), v.literal("imessage"));

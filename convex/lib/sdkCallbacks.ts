@@ -37,7 +37,6 @@ import {
   modelCapabilitiesForRoute,
   modelCapabilitiesForTask,
   modelSupportsImageInput,
-  VISUAL_TABLE_REPAIR_MODEL,
 } from "./modelCatalog";
 import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
@@ -136,7 +135,6 @@ function modelTraceLabel(
     extraction_form_inventory: "Extract form inventory",
     extraction_source_tree: "Build source-native document tree",
     extraction_operational_profile: "Build operational profile",
-    extraction_visual_table_repair: "Visual table repair",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
     extraction_long_list: "Extract long policy lists",
@@ -391,29 +389,8 @@ function buildPromptInput(
   return { prompt };
 }
 
-function isVisualTableRepairTrace(trace: ModelCallTraceDetails | undefined): boolean {
-  return typeof trace?.label === "string" && trace.label.startsWith("source_tree_visual_table_repair_");
-}
-
 function shouldReturnEmptyFormInventory(taskKind: ModelCallTaskKind | undefined): boolean {
   return taskKind === "extraction_form_inventory";
-}
-
-function shouldReturnEmptyVisualTableRepair(
-  taskKind: ModelCallTaskKind | undefined,
-  trace: ModelCallTraceDetails | undefined,
-): boolean {
-  return taskKind === "extraction_visual_table_repair" || isVisualTableRepairTrace(trace);
-}
-
-function visualTableRepairRouteOverride(
-  taskKind: ModelCallTaskKind | undefined,
-  trace: ModelCallTraceDetails | undefined,
-  visualTableRepairRoute: ModelRoute | undefined,
-): ModelRoute | null {
-  if (taskKind !== "extraction_visual_table_repair" && !isVisualTableRepairTrace(trace)) return null;
-  const route = visualTableRepairRoute ?? VISUAL_TABLE_REPAIR_MODEL;
-  return modelSupportsImageInput(route) ? route : VISUAL_TABLE_REPAIR_MODEL;
 }
 
 function formInventoryRouteOverride(
@@ -515,8 +492,6 @@ export function makeGenerateText(
     let formInventoryRouteSource: string | undefined;
     let coverageCleanupRoute: ModelRoute | undefined;
     let coverageCleanupRouteSource: string | undefined;
-    let visualTableRepairRoute: ModelRoute | undefined;
-    let visualTableRepairRouteSource: string | undefined;
     let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let routePurpose: string | undefined;
@@ -530,8 +505,6 @@ export function makeGenerateText(
         formInventoryRouteSource = resolved.formInventoryRouteSource;
         coverageCleanupRoute = resolved.coverageCleanupRoute;
         coverageCleanupRouteSource = resolved.coverageCleanupRouteSource;
-        visualTableRepairRoute = resolved.visualTableRepairRoute;
-        visualTableRepairRouteSource = resolved.visualTableRepairRouteSource;
         fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
         transport = resolved.transport;
@@ -566,14 +539,6 @@ export function makeGenerateText(
       transport = undefined;
       model = getModelForRoute(coverageCleanupRouteOverrideValue);
     }
-    const visualRepairRouteOverride = visualTableRepairRouteOverride(taskKind, trace, visualTableRepairRoute);
-    if (visualRepairRouteOverride) {
-      primaryRoute = visualRepairRouteOverride;
-      routeSource = visualTableRepairRouteSource ?? routeSource;
-      routePurpose = "extraction_visual_table_repair";
-      transport = undefined;
-      model = getModelForRoute(visualRepairRouteOverride);
-    }
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, taskKind, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateText", taskKind, effectiveTask, trace);
@@ -596,7 +561,6 @@ export function makeGenerateText(
         taskKind,
         primaryRoute,
         fallbackRoute,
-        allowFallback: !visualRepairRouteOverride,
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
@@ -678,8 +642,6 @@ export function makeGenerateObject(
     let formInventoryRouteSource: string | undefined;
     let coverageCleanupRoute: ModelRoute | undefined;
     let coverageCleanupRouteSource: string | undefined;
-    let visualTableRepairRoute: ModelRoute | undefined;
-    let visualTableRepairRouteSource: string | undefined;
     let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
     let routePurpose: string | undefined;
@@ -693,8 +655,6 @@ export function makeGenerateObject(
         formInventoryRouteSource = resolved.formInventoryRouteSource;
         coverageCleanupRoute = resolved.coverageCleanupRoute;
         coverageCleanupRouteSource = resolved.coverageCleanupRouteSource;
-        visualTableRepairRoute = resolved.visualTableRepairRoute;
-        visualTableRepairRouteSource = resolved.visualTableRepairRouteSource;
         fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
         transport = resolved.transport;
@@ -729,14 +689,6 @@ export function makeGenerateObject(
       transport = undefined;
       model = getModelForRoute(coverageCleanupRouteOverrideValue);
     }
-    const visualRepairRouteOverride = visualTableRepairRouteOverride(taskKind, trace, visualTableRepairRoute);
-    if (visualRepairRouteOverride) {
-      primaryRoute = visualRepairRouteOverride;
-      routeSource = visualTableRepairRouteSource ?? routeSource;
-      routePurpose = "extraction_visual_table_repair";
-      transport = undefined;
-      model = getModelForRoute(visualRepairRouteOverride);
-    }
     const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, taskKind, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateObject", taskKind, effectiveTask, trace);
@@ -760,7 +712,6 @@ export function makeGenerateObject(
         taskKind,
         primaryRoute,
         fallbackRoute,
-        allowFallback: !visualRepairRouteOverride,
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
@@ -857,38 +808,6 @@ export function makeGenerateObject(
         });
         return {
           object: { forms: [] } as unknown,
-          usage: undefined,
-        };
-      }
-
-      if (shouldReturnEmptyVisualTableRepair(taskKind, trace)) {
-        await recordModelTrace(routing, {
-          label,
-          task: effectiveTask,
-          taskKind,
-          route: primaryRoute,
-          routeSource,
-          transport,
-          durationMs: nowMs() - startedAt,
-          status: "soft_failed",
-          error: message,
-          details: modelTraceDetails({
-            kind: "generateObject",
-            label,
-            task: effectiveTask,
-            taskKind,
-            prompt: guidedPrompt,
-            system,
-            maxOutputTokens: effectiveMaxTokens,
-            routePurpose,
-            providerOptions: providerOptions as ProviderOptions,
-            trace,
-            output: { tables: [], warnings: [] },
-            outputKind: "object",
-          }),
-        });
-        return {
-          object: { tables: [], warnings: [] } as unknown,
           usage: undefined,
         };
       }

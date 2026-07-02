@@ -388,7 +388,6 @@ function addOperationalProfileEvidence(items: EvidenceCorpusItem[], profile: unk
     fieldText(item, "summary"),
   ]);
   addRecordArrayEvidence(items, "Coverage", record.coverages, (item) => [
-    fieldText(item, "coverageOrigin"),
     fieldText(item, "name"),
     fieldText(item, "limit"),
     fieldText(item, "formNumber"),

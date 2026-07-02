@@ -3,10 +3,15 @@ import { query, mutation, action, internalQuery, internalMutation } from "./_gen
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import dayjs from "dayjs";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
-import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal as _internal } from "./_generated/api";
-import { getOrgAccess as getOrgAccessNew, assertBrokerOrg } from "./lib/access";
+import {
+  assertBrokerOrg,
+  getCurrentOrgAccess as getOrgAccess,
+  getOrgAccess as getOrgAccessNew,
+  requireCurrentOrgAccess as requireOrgAccess,
+  requireCurrentOrgAdmin as requireOrgAdmin,
+} from "./lib/access";
 import type { Id } from "./_generated/dataModel";
 import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
 import { normalizeOptionalEmail, resolveBrokerIdentityForClient } from "./lib/brokerIdentity";

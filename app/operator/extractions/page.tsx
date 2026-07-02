@@ -222,7 +222,8 @@ function profileScalarRows(profile: Record<string, unknown>) {
     rows.push({ label: "Document type", value: profile.documentType });
   }
   const policyTypes = stringArray(profile.policyTypes);
-  if (policyTypes.length) rows.push({ label: "Policy types", value: policyTypes.join(", ") });
+  const policyTypeLabels = policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
+  if (policyTypeLabels.length) rows.push({ label: "Policy types", value: policyTypeLabels.join(", ") });
   pushValue("Policy number", "policyNumber");
   pushValue("Named insured", "namedInsured");
   pushValue("Insurer", "insurer");
@@ -231,10 +232,6 @@ function profileScalarRows(profile: Record<string, unknown>) {
   pushValue("Expiration", "expirationDate");
   pushValue("Retroactive", "retroactiveDate");
   pushValue("Premium", "premium");
-  const coverageTypes = policyTypes
-    .map((type) => POLICY_TYPE_LABELS[type] ?? undefined)
-    .filter((label): label is string => Boolean(label));
-  if (coverageTypes.length) rows.push({ label: "Coverage types", value: coverageTypes.join(", ") });
   const warnings = stringArray(profile.warnings);
   if (warnings.length) rows.push({ label: "Warnings", value: warnings.join(" | ") });
   return rows;
@@ -325,13 +322,8 @@ function cleanCoverageTitle(value?: string) {
 }
 
 function coverageRowTitle(row: Record<string, unknown>) {
-  const origin = profileCellValue(row, "coverageOrigin");
   const fromName = cleanCoverageTitle(profileCellValue(row, "name"));
   if (fromName) return fromName;
-  if (origin === "endorsement") {
-    const fromSection = cleanCoverageTitle(profileCellValue(row, "sectionRef"));
-    if (fromSection) return fromSection;
-  }
   return "Coverage";
 }
 
@@ -343,9 +335,7 @@ function coverageMetadata(
   const hasRetroactiveTerm = terms.some((term) => /retroactive/i.test(term.label));
   return [
     profileCellValue(row, "formNumber"),
-    profileCellValue(row, "coverageOrigin") === "endorsement"
-      ? "Endorsement schedule"
-      : profileCellValue(row, "sectionRef"),
+    profileCellValue(row, "sectionRef"),
     retroactiveDate && !hasRetroactiveTerm ? `Retroactive ${retroactiveDate}` : undefined,
   ].filter((item): item is string => Boolean(item));
 }
@@ -625,16 +615,6 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         .filter((item): item is Record<string, unknown> => Boolean(item))
         .map(profileTableRow)
     : [];
-  const agreementCoverages = coverages.filter(
-    (coverage) => profileCellValue(coverage, "coverageOrigin") === "core",
-  );
-  const endorsementCoverages = coverages.filter(
-    (coverage) => profileCellValue(coverage, "coverageOrigin") === "endorsement",
-  );
-  const unclassifiedCoverages = coverages.filter((coverage) => {
-    const origin = profileCellValue(coverage, "coverageOrigin");
-    return origin !== "core" && origin !== "endorsement";
-  });
   const parties = Array.isArray(profile.parties)
     ? profile.parties
         .map(recordValue)
@@ -665,9 +645,7 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
           ))}
         </OperationalLabelValueList>
       ) : null}
-      <CoverageList title="Policy coverage schedules" rows={agreementCoverages} />
-      <CoverageList title="Endorsement coverage schedules" rows={endorsementCoverages} />
-      <CoverageList title="Source-backed coverage schedules" rows={unclassifiedCoverages} />
+      <CoverageList title="Coverage schedules" rows={coverages} />
       <PartyList rows={parties} />
       <NamedAdditionalInsuredList rows={additionalInsureds} />
       <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />

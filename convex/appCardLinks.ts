@@ -53,7 +53,6 @@ function formatCoverage(coverage: Doc<"policies">["coverages"][number]) {
     name: coverage.name,
     limit: coverage.limit,
     deductible: coverage.deductible,
-    origin: coverage.coverageOrigin,
   };
 }
 

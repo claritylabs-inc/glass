@@ -33,7 +33,7 @@ export const lookupPolicy = tool({
 
 export const compareCoverages = tool({
   description:
-    "Compare two policies side by side — coverage types, limits, deductibles, and premium.",
+    "Compare two policies side by side — policy types, limits, deductibles, and premium.",
   inputSchema: z.object({
     policyId1: z.string().describe("Policy reference for the first policy to compare"),
     policyId2: z.string().describe("Policy reference for the second policy to compare"),
