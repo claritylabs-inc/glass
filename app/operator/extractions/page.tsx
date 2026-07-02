@@ -218,9 +218,6 @@ function profileScalarRows(profile: Record<string, unknown>) {
     });
   };
 
-  if (typeof profile.documentType === "string") {
-    rows.push({ label: "Document type", value: profile.documentType });
-  }
   const policyTypes = stringArray(profile.policyTypes);
   const policyTypeLabels = policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
   if (policyTypeLabels.length) rows.push({ label: "Policy types", value: policyTypeLabels.join(", ") });
@@ -445,25 +442,6 @@ function CoverageList({
   );
 }
 
-function PartyList({ rows }: { rows: Array<Record<string, unknown>> }) {
-  if (!rows.length) return null;
-  return (
-    <OperationalLabelValueList title="Parties">
-      {rows.map((row, rowIndex) => {
-        const role = profileCellDisplay(row.role);
-        const name = profileCellDisplay(row.name);
-        return (
-          <OperationalLabelValueRow
-            key={rowIndex}
-            label={formatProfileLabel(role)}
-            value={name}
-          />
-        );
-      })}
-    </OperationalLabelValueList>
-  );
-}
-
 function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>> }) {
   if (!rows.length) return null;
   return (
@@ -615,12 +593,6 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         .filter((item): item is Record<string, unknown> => Boolean(item))
         .map(profileTableRow)
     : [];
-  const parties = Array.isArray(profile.parties)
-    ? profile.parties
-        .map(recordValue)
-        .filter((item): item is Record<string, unknown> => Boolean(item))
-        .map(profileTableRow)
-    : [];
   const additionalInsuredEligibility = recordValue(profile.additionalInsuredEligibility);
   const additionalInsureds = Array.isArray(profile.additionalInsureds)
     ? profile.additionalInsureds
@@ -646,7 +618,6 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
         </OperationalLabelValueList>
       ) : null}
       <CoverageList title="Coverage schedules" rows={coverages} />
-      <PartyList rows={parties} />
       <NamedAdditionalInsuredList rows={additionalInsureds} />
       <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />
       <EndorsementSupportList rows={endorsementSupport} />
