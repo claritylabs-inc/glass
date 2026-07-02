@@ -10,6 +10,10 @@ import {
   normalizeJsonSchemaForFireworks,
   structuredOutputSchemaForRoute,
 } from "../convex/lib/fireworksStructuredOutput";
+import {
+  collectFireworksSchemaIssues as collectWorkerFireworksSchemaIssues,
+  normalizeJsonSchemaForFireworks as normalizeWorkerJsonSchemaForFireworks,
+} from "../extraction-worker/src/fireworksStructuredOutput";
 
 const SDK_STRUCTURED_OUTPUT_SCHEMAS = [
   ["InsuranceDocumentSchema", InsuranceDocumentSchema],
@@ -68,5 +72,35 @@ describe("Fireworks structured output schema adapter", () => {
     };
     expect(normalized.properties.documentType).toEqual({ type: ["string", "null"] });
     expect(collectFireworksSchemaIssues(normalized)).toEqual([]);
+  });
+
+  test("keeps the extraction worker Fireworks schema adapter in parity", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        documentType: { type: ["string", "null"], enum: ["policy", null] },
+        policyTypes: { type: "array", maxItems: 12, items: { type: "string" } },
+      },
+    };
+
+    expect(collectWorkerFireworksSchemaIssues(schema)).toContain(
+      "$.properties.documentType.enum:null",
+    );
+    expect(collectWorkerFireworksSchemaIssues(schema)).toContain(
+      "$.properties.policyTypes.maxItems",
+    );
+
+    const normalized = normalizeWorkerJsonSchemaForFireworks(schema) as {
+      properties: {
+        documentType: Record<string, unknown>;
+        policyTypes: Record<string, unknown>;
+      };
+    };
+    expect(normalized.properties.documentType).toEqual({ type: ["string", "null"] });
+    expect(normalized.properties.policyTypes).toEqual({
+      type: "array",
+      items: { type: "string" },
+    });
+    expect(collectWorkerFireworksSchemaIssues(normalized)).toEqual([]);
   });
 });

@@ -26,7 +26,7 @@
     "@ai-sdk/openai-compatible": "^2.0.51",
     "@ai-sdk/provider-utils": "^4.0.23",
     "@ai-sdk/xai": "^3.0.83",
-    "@claritylabs/cl-sdk": "^3.1.22",
+    "@claritylabs/cl-sdk": "^3.1.23",
     "@llamaindex/liteparse": "^2.0.3",
     "ai": "^6.0.134",
     "convex": "^1.32.0",

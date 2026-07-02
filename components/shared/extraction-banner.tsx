@@ -257,8 +257,8 @@ export function showPolicyExtractionQueuedToast({
     id: policyExtractionToastId(policyId),
     title: `Extracting ${label}`,
     description: cleanDisplayText(fileName)
-      ? `${fileName} uploaded. Extraction starts shortly.`
-      : "Extraction starts shortly.",
+      ? `${fileName} uploaded. Extraction is queued.`
+      : "Extraction is queued.",
     tone: "loading",
     duration: 60_000,
     collapsible: true,
