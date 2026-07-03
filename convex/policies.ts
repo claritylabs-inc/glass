@@ -187,6 +187,45 @@ function isVisiblePolicyListRow(policy: {
   );
 }
 
+const FINAL_EXTRACTION_IDENTITY_FIELDS = [
+  "policyNumber",
+  "insuredName",
+  "broker",
+  "effectiveDate",
+  "expirationDate",
+] as const;
+
+function knownPolicyText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (/^(unknown|extracting(?:\.\.\.)?|not applicable|n\/a)$/i.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function preserveKnownFinalExtractionIdentityFields(
+  fields: Record<string, unknown>,
+  existing: Record<string, unknown> | null,
+) {
+  if (!existing || fields.extractionDataStage !== "final") return;
+
+  for (const key of FINAL_EXTRACTION_IDENTITY_FIELDS) {
+    if (knownPolicyText(fields[key]) || !knownPolicyText(existing[key])) continue;
+    fields[key] = existing[key];
+  }
+
+  const existingCarrier = knownPolicyText(existing.carrier) ?? knownPolicyText(existing.security);
+  const existingSecurity = knownPolicyText(existing.security) ?? existingCarrier;
+  if (!knownPolicyText(fields.carrier) && existingCarrier) {
+    fields.carrier = existingCarrier;
+  }
+  if (!knownPolicyText(fields.security) && existingSecurity) {
+    fields.security = existingSecurity;
+  }
+}
+
 function policyYearFromInput(value: string | undefined): number | undefined {
   const normalized = normalizeExtractedDate(value);
   if (!normalized) return undefined;
@@ -1707,6 +1746,8 @@ export const updateExtractionInternal = internalMutation({
       deriveNumericAmounts: false,
       normalizeMoneyText: false,
     });
+    const existingPolicy = await ctx.db.get(args.id);
+    preserveKnownFinalExtractionIdentityFields(fields, existingPolicy);
     const operationalProfile = fields.operationalProfile;
     if (
       operationalProfile &&
