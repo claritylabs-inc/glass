@@ -815,7 +815,7 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.policyTypes).toEqual(["critical_illness"]);
-    expect(profile.warnings).toContain("Policy types augmented from extracted coverage labels.");
+    expect(profile.warnings).toEqual([]);
   });
 
   it("infers multiple commercial policy types from coverage lines", () => {
@@ -878,7 +878,7 @@ describe("normalizeOperationalProfile", () => {
     ]);
   });
 
-  it("keeps a specific model policy type while adding missing coverage-backed types", () => {
+  it("uses coverage-backed policy types before specific model hints", () => {
     const profile = normalizeOperationalProfile(
       {
         policyTypes: ["inland_marine"],
@@ -918,6 +918,34 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.policyTypes).toEqual(["inland_marine", "commercial_auto"]);
+  });
+
+  it("does not keep a conflicting model policy type when coverage evidence is specific", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["cyber"],
+        coverages: [
+          {
+            name: "Commercial Auto Physical Damage",
+            limits: [
+              {
+                kind: "other",
+                label: "Maximum Limit at Any One Vehicle",
+                value: "Actual Cash Value of Scheduled Autos",
+                sourceNodeIds: ["policy-number-row"],
+                sourceSpanIds: ["span-policy-number"],
+              },
+            ],
+            sourceNodeIds: ["policy-number-row"],
+            sourceSpanIds: ["span-policy-number"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.policyTypes).toEqual(["commercial_auto"]);
   });
 
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
@@ -1165,7 +1193,7 @@ describe("normalizeSourceTree", () => {
 });
 
 describe("sourceTreePolicyFields", () => {
-  it("keeps preliminary model policy types when final grounding falls back to other", () => {
+  it("uses preliminary policy types as hints when coverage evidence is not classifiable", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
         policyTypes: ["other"],
@@ -1187,9 +1215,7 @@ describe("sourceTreePolicyFields", () => {
 
     expect(fields.policyTypes).toEqual(["professional_liability"]);
     expect((fields.operationalProfile as PolicyOperationalProfile).policyTypes).toEqual(["professional_liability"]);
-    expect((fields.operationalProfile as PolicyOperationalProfile).warnings).toContain(
-      "Policy types carried forward from preliminary classification because final extraction returned only other.",
-    );
+    expect((fields.operationalProfile as PolicyOperationalProfile).warnings).toEqual([]);
   });
 
   it("preserves SDK multi-policy types when materializing stored policy fields", () => {

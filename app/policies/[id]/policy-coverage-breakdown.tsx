@@ -49,7 +49,7 @@ function formLabel(row: CoverageBreakdownRow) {
   return [row.formNumber, row.sectionRef].filter(Boolean).join(" | ");
 }
 
-function CoverageScheduleTable({
+function CoverageScheduleList({
   rows,
   title,
 }: {
@@ -61,60 +61,47 @@ function CoverageScheduleTable({
   return (
     <OperationalPanel>
       <OperationalPanelHeader title={title} />
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[36rem] text-left">
-          <thead className="border-b border-foreground/6">
-            <tr>
-              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
-                Coverage
-              </th>
-              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
-                Term
-              </th>
-              <th className="px-4 py-2.5 text-right text-label font-medium text-muted-foreground">
-                Value
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, rowIndex) => {
-              const terms = coverageTermRows(row);
-              const visibleTerms = terms.length
-                ? terms
-                : [{ label: "Limit", value: row.limit ?? "—" }];
-              const form = formLabel(row);
+      <div>
+        {rows.map((row, rowIndex) => {
+          const terms = coverageTermRows(row);
+          const visibleTerms = terms.length
+            ? terms
+            : [{ label: "Limit", value: row.limit ?? "—" }];
+          const form = formLabel(row);
 
-              return visibleTerms.map((term, termIndex) => (
-                <tr
-                  key={`${row.name}:${row.limit ?? ""}:${rowIndex}:${term.label}:${termIndex}`}
-                  className="border-t border-foreground/6 first:border-t-0 hover:bg-foreground/[0.015]"
-                >
-                  {termIndex === 0 ? (
-                    <td
-                      rowSpan={visibleTerms.length}
-                      className="w-[42%] px-4 py-3 align-top [overflow-wrap:anywhere]"
-                    >
-                      <div className="text-base font-medium leading-5 text-foreground">
-                        {row.name}
-                      </div>
-                      {form ? (
-                        <div className="mt-1 text-label leading-4 text-muted-foreground">
-                          {form}
-                        </div>
-                      ) : null}
-                    </td>
-                  ) : null}
-                  <td className="px-4 py-2.5 align-top text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-                    {term.label}
-                  </td>
-                  <td className="px-4 py-2.5 text-right align-top text-base font-medium leading-5 tabular-nums text-foreground [overflow-wrap:anywhere]">
-                    {term.value}
-                  </td>
-                </tr>
-              ));
-            })}
-          </tbody>
-        </table>
+          return (
+            <section
+              key={`${row.name}:${row.limit ?? ""}:${rowIndex}`}
+              className="border-t border-foreground/6 px-4 py-3 first:border-t-0"
+            >
+              <div className="min-w-0">
+                <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+                  {row.name}
+                </div>
+                {form ? (
+                  <div className="mt-1 text-label leading-4 text-muted-foreground [overflow-wrap:anywhere]">
+                    {form}
+                  </div>
+                ) : null}
+              </div>
+              <dl className="mt-3 divide-y divide-foreground/6">
+                {visibleTerms.map((term, termIndex) => (
+                  <div
+                    key={`${term.label}:${termIndex}`}
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0"
+                  >
+                    <dt className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                      {term.label}
+                    </dt>
+                    <dd className="min-w-0 text-right text-base font-medium leading-5 tabular-nums text-foreground [overflow-wrap:anywhere]">
+                      {term.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          );
+        })}
       </div>
     </OperationalPanel>
   );
@@ -128,7 +115,7 @@ export function CoverageBreakdownCards({
   if (!breakdown.all.length) return null;
   return (
     <div className="mb-6 space-y-3">
-      <CoverageScheduleTable
+      <CoverageScheduleList
         rows={breakdown.all}
         title="Coverage schedules"
       />

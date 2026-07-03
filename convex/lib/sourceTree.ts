@@ -5,7 +5,6 @@ import {
   normalizeDocumentSourceTreePaths,
   normalizeOperationalPolicyTypes,
   PolicyOperationalProfileSchema,
-  POLICY_TYPES_FROM_COVERAGES_WARNING,
   resolveOperationalProfilePolicyTypes,
   stableHash,
   type DocumentSourceNode,
@@ -1083,26 +1082,6 @@ function finalizeSourceBackedPremium(value: SourceBackedValue | undefined): Sour
   };
 }
 
-const CARRIED_POLICY_TYPES_WARNING = "Policy types carried forward from preliminary classification because final extraction returned only other.";
-
-function appendProfileWarning(warnings: string[], warning: string): string[] {
-  return warnings.includes(warning) ? warnings : [...warnings, warning];
-}
-
-function policyTypeResolutionWarnings(
-  warnings: string[],
-  source: ReturnType<typeof resolveOperationalProfilePolicyTypes>["source"],
-): string[] {
-  let next = warnings;
-  if (source === "existing" || source === "existing_augmented") {
-    next = appendProfileWarning(next, CARRIED_POLICY_TYPES_WARNING);
-  }
-  if (source === "inferred" || source === "profile_augmented" || source === "existing_augmented") {
-    next = appendProfileWarning(next, POLICY_TYPES_FROM_COVERAGES_WARNING);
-  }
-  return next;
-}
-
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
   const coverages = cleanOperationalCoverages(profile.coverages);
   const resolvedTypes = resolveOperationalProfilePolicyTypes({
@@ -1113,7 +1092,7 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
     ...profile,
     policyTypes: resolvedTypes.policyTypes,
     coverages,
-    warnings: policyTypeResolutionWarnings(profile.warnings, resolvedTypes.source),
+    warnings: profile.warnings,
     policyNumber: finalizeSourceBackedPolicyNumber(profile.policyNumber),
     namedInsured: finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
     insurer: finalizeSourceBackedIdentity(profile.insurer, "insurer"),
@@ -1131,6 +1110,10 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
     ...finalized.parties.flatMap((party: OperationalParty) => party.sourceSpanIds),
   ])];
   return finalized;
+}
+
+function sameStringArray(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function emptyOperationalProfile(): PolicyOperationalProfile {
@@ -1583,11 +1566,14 @@ export function sourceTreePolicyFields(params: {
     existingTypes: params.existingPolicyTypes,
     coverages: params.operationalProfile.coverages,
   });
-  const operationalProfile: PolicyOperationalProfile = resolvedTypes.source !== "profile"
+  const policyTypesChanged = !sameStringArray(
+    resolvedTypes.policyTypes,
+    params.operationalProfile.policyTypes,
+  );
+  const operationalProfile: PolicyOperationalProfile = policyTypesChanged
     ? {
         ...params.operationalProfile,
         policyTypes: resolvedTypes.policyTypes,
-        warnings: policyTypeResolutionWarnings(params.operationalProfile.warnings, resolvedTypes.source),
       }
     : params.operationalProfile;
   const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);

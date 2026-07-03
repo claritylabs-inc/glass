@@ -406,79 +406,62 @@ function CoverageList({
   if (!rows.length) return null;
   return (
     <ProfileListSection title={title}>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[36rem] text-left">
-          <thead className="border-b border-foreground/6">
-            <tr>
-              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
-                Coverage
-              </th>
-              <th className="px-4 py-2.5 text-label font-medium text-muted-foreground">
-                Term
-              </th>
-              <th className="px-4 py-2.5 text-right text-label font-medium text-muted-foreground">
-                Value
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, rowIndex) => {
-              const name = coverageRowTitle(row);
-              const limit = profileCellDisplay(row.limit);
-              const terms = coverageLimitTerms(row);
-              const coverageSourceSpanIds = sourceSpanIdsFrom(row);
-              const visibleTerms = terms.length
-                ? terms
-                : limit !== "—"
-                  ? [{ label: "Limit", value: limit, sourceSpanIds: coverageSourceSpanIds }]
-                  : [];
-              const metadata = coverageMetadata(row, terms).join(" | ");
-              return visibleTerms.map((term, termIndex) => (
-                <tr
-                  key={`${name}-${rowIndex}-${term.label}-${termIndex}`}
-                  className="border-t border-foreground/6 first:border-t-0 hover:bg-foreground/[0.015]"
-                >
-                  {termIndex === 0 ? (
-                    <td
-                      rowSpan={visibleTerms.length}
-                      className="w-[42%] px-4 py-3 align-top [overflow-wrap:anywhere]"
-                    >
-                      <div className="flex min-w-0 items-start gap-1.5 text-base font-normal leading-5 text-foreground">
-                        <span className="min-w-0 break-words">{name}</span>
+      {rows.map((row, rowIndex) => {
+        const name = coverageRowTitle(row);
+        const limit = profileCellDisplay(row.limit);
+        const terms = coverageLimitTerms(row);
+        const coverageSourceSpanIds = sourceSpanIdsFrom(row);
+        const visibleTerms = terms.length
+          ? terms
+          : limit !== "—"
+            ? [{ label: "Limit", value: limit, sourceSpanIds: coverageSourceSpanIds }]
+            : [];
+        const metadata = coverageMetadata(row, terms).join(" | ");
+
+        return (
+          <OperationalItem key={`${name}-${rowIndex}`} className="px-4">
+            <div className="flex min-w-0 items-start gap-1.5 text-base font-normal leading-5 text-foreground">
+              <span className="min-w-0 break-words">{name}</span>
+              <SourceEvidenceButton
+                sourceSpanIds={coverageSourceSpanIds}
+                sourceSpans={sourceSpans}
+                fileUrl={fileUrl}
+                className="shrink-0"
+              />
+            </div>
+            {metadata ? (
+              <div className="mt-1 text-label leading-4 text-muted-foreground [overflow-wrap:anywhere]">
+                {metadata}
+              </div>
+            ) : null}
+            {visibleTerms.length > 0 ? (
+              <dl className="mt-3 divide-y divide-foreground/6">
+                {visibleTerms.map((term, termIndex) => (
+                  <div
+                    key={`${term.label}-${termIndex}`}
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0"
+                  >
+                    <dt className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                      {term.label}
+                    </dt>
+                    <dd className="min-w-0 text-right text-base leading-5 text-foreground [overflow-wrap:anywhere]">
+                      <span className="inline-flex min-w-0 items-center justify-end gap-1.5">
+                        <span className="min-w-0 break-words">{term.value}</span>
                         <SourceEvidenceButton
-                          sourceSpanIds={coverageSourceSpanIds}
+                          sourceSpanIds={term.sourceSpanIds}
                           sourceSpans={sourceSpans}
                           fileUrl={fileUrl}
                           className="shrink-0"
                         />
-                      </div>
-                      {metadata ? (
-                        <div className="mt-1 text-label leading-4 text-muted-foreground">
-                          {metadata}
-                        </div>
-                      ) : null}
-                    </td>
-                  ) : null}
-                  <td className="px-4 py-2.5 align-top text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-                    {term.label}
-                  </td>
-                  <td className="px-4 py-2.5 text-right align-top text-base leading-5 text-foreground [overflow-wrap:anywhere]">
-                    <span className="inline-flex min-w-0 items-center justify-end gap-1.5">
-                      <span className="min-w-0 break-words">{term.value}</span>
-                      <SourceEvidenceButton
-                        sourceSpanIds={term.sourceSpanIds}
-                        sourceSpans={sourceSpans}
-                        fileUrl={fileUrl}
-                        className="shrink-0"
-                      />
-                    </span>
-                  </td>
-                </tr>
-              ));
-            })}
-          </tbody>
-        </table>
-      </div>
+                      </span>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+          </OperationalItem>
+        );
+      })}
     </ProfileListSection>
   );
 }
