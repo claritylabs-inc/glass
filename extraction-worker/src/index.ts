@@ -801,6 +801,35 @@ async function recordModelCallError(
   });
 }
 
+async function recordModelCallStart(
+  opts: {
+    job: Pick<ClaimedJob, "state">;
+    route: ResolvedWorkerModelRoute;
+    label: string;
+    taskKind?: string;
+    attempt: number;
+    maxOutputTokens: number;
+    providerOptions?: ProviderOptions;
+    trace?: ModelCallTrace;
+  },
+) {
+  await recordTraceEvent(opts.job, {
+    kind: "worker",
+    phase: "model_call",
+    label: opts.label,
+    task: opts.route.task,
+    taskKind: opts.taskKind,
+    ...modelRouteTrace(opts.route),
+    attempt: opts.attempt,
+    status: "started",
+    details: stripUndefined({
+      maxOutputTokens: opts.maxOutputTokens,
+      trace: opts.trace,
+      inputSummary: providerInputSummary(opts.providerOptions),
+    }),
+  });
+}
+
 async function recordModelCallSoftFailure(
   opts: {
     job: Pick<ClaimedJob, "state">;
@@ -1206,6 +1235,16 @@ function buildWorkerExtractor(opts: {
     );
     const startedAt = nowMs();
     try {
+      await recordModelCallStart({
+        job: opts.job,
+        route,
+        label,
+        taskKind,
+        attempt: 1,
+        maxOutputTokens,
+        providerOptions: callProviderOptions,
+        trace,
+      });
       const result = await aiGenerateText({
         model: route.model,
         system: params.system,
@@ -1304,6 +1343,16 @@ function buildWorkerExtractor(opts: {
       );
       const fallbackStartedAt = nowMs();
       try {
+        await recordModelCallStart({
+          job: opts.job,
+          route: fallback,
+          label,
+          taskKind,
+          attempt: 2,
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+          trace,
+        });
         const fallbackResult = await aiGenerateText({
           model: fallback.model,
           system: params.system,
