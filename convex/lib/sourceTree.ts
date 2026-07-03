@@ -827,6 +827,51 @@ const POLICY_NUMBER_PATTERNS = [
 ];
 
 const POLICY_TYPE_ALIASES: Record<string, string> = {
+  "business owners policy": "bop",
+  "businessowners policy": "bop",
+  "business owner's policy": "bop",
+  "commercial general liability": "general_liability",
+  "general liability insurance": "general_liability",
+  "commercial property insurance": "commercial_property",
+  "property insurance": "commercial_property",
+  "commercial auto insurance": "commercial_auto",
+  "business auto": "commercial_auto",
+  "business automobile": "commercial_auto",
+  "hired and non owned auto": "non_owned_auto",
+  "hired and non-owned auto": "non_owned_auto",
+  "non owned auto": "non_owned_auto",
+  "non-owned auto": "non_owned_auto",
+  "workers compensation": "workers_comp",
+  "workers' compensation": "workers_comp",
+  "workers compensation insurance": "workers_comp",
+  "umbrella liability": "umbrella",
+  "commercial umbrella": "umbrella",
+  "excess liability insurance": "excess_liability",
+  "professional liability insurance": "professional_liability",
+  "errors and omissions": "professional_liability",
+  "errors & omissions": "professional_liability",
+  "e&o": "professional_liability",
+  "cyber liability": "cyber",
+  "cyber insurance": "cyber",
+  "network security and privacy liability": "cyber",
+  "employment practices liability": "epli",
+  "employment practices liability insurance": "epli",
+  "directors and officers": "directors_officers",
+  "directors & officers": "directors_officers",
+  "d&o": "directors_officers",
+  "fiduciary liability insurance": "fiduciary_liability",
+  "crime insurance": "crime_fidelity",
+  "fidelity bond": "crime_fidelity",
+  "inland marine insurance": "inland_marine",
+  "motor truck cargo": "inland_marine",
+  "motor truck cargo legal liability": "inland_marine",
+  "builders risk insurance": "builders_risk",
+  "pollution liability": "environmental",
+  "premises pollution liability": "environmental",
+  "environmental liability": "environmental",
+  "ocean marine insurance": "ocean_marine",
+  "surety bond": "surety",
+  "product liability insurance": "product_liability",
   "life insurance": "life",
   "permanent life": "life",
   "term life": "life",
@@ -838,6 +883,50 @@ const POLICY_TYPE_ALIASES: Record<string, string> = {
   "long term care": "long_term_care",
   "long-term care": "long_term_care",
 };
+
+const POLICY_TYPE_TEXT_PATTERNS: Array<{ type: string; pattern: RegExp }> = [
+  { type: "general_liability", pattern: /\b(?:commercial\s+)?general\s+liability\b|\bcgl\b/i },
+  { type: "commercial_property", pattern: /\bcommercial\s+property\b|\bproperty\s+insurance\b/i },
+  { type: "commercial_auto", pattern: /\bcommercial\s+auto(?:mobile)?\b|\bbusiness\s+auto(?:mobile)?\b|\bauto\s+physical\s+damage\b/i },
+  { type: "non_owned_auto", pattern: /\b(?:hired\s+(?:and\s+)?)?non[-\s]?owned\s+auto\b/i },
+  { type: "workers_comp", pattern: /\bworkers['’]?\s+comp(?:ensation)?\b/i },
+  { type: "umbrella", pattern: /\bcommercial\s+umbrella\b|\bumbrella\s+liability\b/i },
+  { type: "excess_liability", pattern: /\bexcess\s+liability\b/i },
+  { type: "professional_liability", pattern: /\bprofessional\s+liability\b|\berrors?\s*(?:and|&)\s*omissions?\b|\be&o\b/i },
+  { type: "cyber", pattern: /\bcyber\b|\bnetwork\s+security\b|\bprivacy\s+liability\b/i },
+  { type: "epli", pattern: /\bemployment\s+practices?\s+liability\b|\bepli\b/i },
+  { type: "directors_officers", pattern: /\bdirectors?\s*(?:and|&)\s*officers?\b|\bd&o\b/i },
+  { type: "fiduciary_liability", pattern: /\bfiduciary\s+liability\b/i },
+  { type: "crime_fidelity", pattern: /\bcrime\b|\bfidelity\b/i },
+  { type: "inland_marine", pattern: /\binland\s+marine\b|\bmotor\s+truck\s+cargo\b|\bcargo\s+legal\s+liability\b/i },
+  { type: "builders_risk", pattern: /\bbuilders?\s+risk\b/i },
+  { type: "environmental", pattern: /\bpollution\s+liability\b|\benvironmental\s+liability\b/i },
+  { type: "ocean_marine", pattern: /\bocean\s+marine\b/i },
+  { type: "surety", pattern: /\bsurety\b/i },
+  { type: "product_liability", pattern: /\bproduct\s+liability\b|\bproducts?\s+completed\s+operations\b/i },
+  { type: "bop", pattern: /\bbusiness\s*owners?\s+policy\b|\bbop\b/i },
+  { type: "homeowners_ho3", pattern: /\bhomeowners?\s*(?:ho[-\s]?3)?\b/i },
+  { type: "homeowners_ho5", pattern: /\bho[-\s]?5\b/i },
+  { type: "renters_ho4", pattern: /\brenters?\b|\bho[-\s]?4\b/i },
+  { type: "condo_ho6", pattern: /\bcondo(?:minium)?\b|\bho[-\s]?6\b/i },
+  { type: "dwelling_fire", pattern: /\bdwelling\s+fire\b/i },
+  { type: "personal_auto", pattern: /\bpersonal\s+auto\b/i },
+  { type: "personal_umbrella", pattern: /\bpersonal\s+umbrella\b/i },
+  { type: "flood_private", pattern: /\bflood\b/i },
+  { type: "earthquake", pattern: /\bearthquake\b/i },
+  { type: "personal_inland_marine", pattern: /\bpersonal\s+(?:articles|inland\s+marine)\b/i },
+  { type: "watercraft", pattern: /\bwatercraft\b|\bboat\s+insurance\b/i },
+  { type: "recreational_vehicle", pattern: /\brecreational\s+vehicle\b|\brv\s+insurance\b/i },
+  { type: "farm_ranch", pattern: /\bfarm\b|\branch\b/i },
+  { type: "life", pattern: /\blife\s+insurance\b|\bterm\s+life\b|\bwhole\s+life\b|\buniversal\s+life\b/i },
+  { type: "critical_illness", pattern: /\bcritical\s+illness\b/i },
+  { type: "disability", pattern: /\bdisability\s+insurance\b|\btotal\s+disability\b/i },
+  { type: "long_term_care", pattern: /\blong[-\s]?term\s+care\b/i },
+  { type: "pet", pattern: /\bpet\s+insurance\b/i },
+  { type: "travel", pattern: /\btravel\s+insurance\b/i },
+  { type: "identity_theft", pattern: /\bidentity\s+theft\b/i },
+  { type: "title", pattern: /\btitle\s+insurance\b/i },
+];
 
 function policyNumberCandidateFromText(text: string): string | undefined {
   for (const pattern of POLICY_NUMBER_PATTERNS) {
@@ -864,19 +953,54 @@ function hasSpecificPolicyType(types: string[]): boolean {
   return types.some((type) => type !== "other");
 }
 
+function policyTypesFromText(value: string | undefined): string[] {
+  const text = normalizeWhitespace(value ?? "");
+  if (!text) return [];
+  const aliasType = POLICY_TYPE_ALIASES[text.toLowerCase()];
+  if (aliasType && POLICY_TYPE_KEYS.has(aliasType)) return [aliasType];
+  return POLICY_TYPE_TEXT_PATTERNS
+    .filter(({ pattern }) => pattern.test(text))
+    .map(({ type }) => type)
+    .filter((type) => POLICY_TYPE_KEYS.has(type));
+}
+
+function inferPolicyTypesFromCoverageLines(coverages: OperationalCoverageLine[]): string[] {
+  const inferred: string[] = [];
+  for (const coverage of coverages) {
+    const limits = (coverage.limits ?? []) as NonNullable<OperationalCoverageLine["limits"]>;
+    const text = [
+      coverage.coverageCode,
+      coverage.formNumber,
+      coverage.name,
+      ...limits.flatMap((term: { appliesTo?: unknown; label?: unknown }) => [term.appliesTo, term.label]),
+    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    for (const value of text) {
+      for (const type of policyTypesFromText(value)) {
+        if (!inferred.includes(type)) inferred.push(type);
+      }
+    }
+  }
+  return inferred.slice(0, 6);
+}
+
 function resolvePolicyTypes(
   profileTypes: unknown,
   existingTypes: unknown,
-): { policyTypes: string[]; carriedForward: boolean } {
+  coverages: OperationalCoverageLine[] = [],
+): { policyTypes: string[]; source: "profile" | "existing" | "inferred" } {
   const controlled = controlledPolicyTypes(profileTypes);
   if (hasSpecificPolicyType(controlled)) {
-    return { policyTypes: controlled, carriedForward: false };
+    return { policyTypes: controlled, source: "profile" };
   }
   const existingControlled = controlledPolicyTypes(existingTypes);
   if (hasSpecificPolicyType(existingControlled)) {
-    return { policyTypes: existingControlled, carriedForward: true };
+    return { policyTypes: existingControlled, source: "existing" };
   }
-  return { policyTypes: controlled, carriedForward: false };
+  const inferred = inferPolicyTypesFromCoverageLines(coverages);
+  if (inferred.length > 0) {
+    return { policyTypes: inferred, source: "inferred" };
+  }
+  return { policyTypes: controlled, source: "profile" };
 }
 
 const COVERAGE_TERM_KINDS = new Set([
@@ -1126,13 +1250,23 @@ function finalizeSourceBackedPremium(value: SourceBackedValue | undefined): Sour
   };
 }
 
+const INFERRED_POLICY_TYPES_WARNING = "Policy types inferred from extracted coverage labels because final extraction returned only other.";
+const CARRIED_POLICY_TYPES_WARNING = "Policy types carried forward from preliminary classification because final extraction returned only other.";
+
+function appendProfileWarning(warnings: string[], warning: string): string[] {
+  return warnings.includes(warning) ? warnings : [...warnings, warning];
+}
+
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
-  const policyTypes = controlledPolicyTypes(profile.policyTypes);
   const coverages = cleanOperationalCoverages(profile.coverages);
+  const resolvedTypes = resolvePolicyTypes(profile.policyTypes, undefined, coverages);
   const finalized: PolicyOperationalProfile = {
     ...profile,
-    policyTypes,
+    policyTypes: resolvedTypes.policyTypes,
     coverages,
+    warnings: resolvedTypes.source === "inferred"
+      ? appendProfileWarning(profile.warnings, INFERRED_POLICY_TYPES_WARNING)
+      : profile.warnings,
     policyNumber: finalizeSourceBackedPolicyNumber(profile.policyNumber),
     namedInsured: finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
     insurer: finalizeSourceBackedIdentity(profile.insurer, "insurer"),
@@ -1597,15 +1731,21 @@ export function sourceTreePolicyFields(params: {
   existingPolicyTypes?: unknown;
 }): Record<string, unknown> {
   const { sourceTree } = params;
-  const resolvedTypes = resolvePolicyTypes(params.operationalProfile.policyTypes, params.existingPolicyTypes);
-  const carriedPolicyTypesWarning = "Policy types carried forward from preliminary classification because final extraction returned only other.";
-  const operationalProfile: PolicyOperationalProfile = resolvedTypes.carriedForward
+  const resolvedTypes = resolvePolicyTypes(
+    params.operationalProfile.policyTypes,
+    params.existingPolicyTypes,
+    params.operationalProfile.coverages,
+  );
+  const operationalProfile: PolicyOperationalProfile = resolvedTypes.source === "existing" || resolvedTypes.source === "inferred"
     ? {
         ...params.operationalProfile,
         policyTypes: resolvedTypes.policyTypes,
-        warnings: params.operationalProfile.warnings.includes(carriedPolicyTypesWarning)
-          ? params.operationalProfile.warnings
-          : [...params.operationalProfile.warnings, carriedPolicyTypesWarning],
+        warnings: appendProfileWarning(
+          params.operationalProfile.warnings,
+          resolvedTypes.source === "existing"
+            ? CARRIED_POLICY_TYPES_WARNING
+            : INFERRED_POLICY_TYPES_WARNING,
+        ),
       }
     : params.operationalProfile;
   const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);

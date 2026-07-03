@@ -783,7 +783,7 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.coverages[0].limits?.[0]?.value).toBe("$XXX");
   });
 
-  it("does not infer policy types from source evidence when the model returns other", () => {
+  it("infers policy types from extracted coverage labels when the model returns other", () => {
     const spans: SourceSpanLike[] = [
       { id: "term-title", text: "Critical illness insurance", pageStart: 1 },
       { id: "term-benefits", text: "Critical illness insurance benefit | Total disability waiver | Long term care conversion option", pageStart: 5 },
@@ -796,6 +796,15 @@ describe("normalizeOperationalProfile", () => {
         coverages: [
           {
             name: "Critical illness insurance benefit",
+            limits: [
+              {
+                kind: "other",
+                label: "Benefit",
+                value: "$50,000",
+                sourceNodeIds: ["term-policy:source_node:text:term-benefits"],
+                sourceSpanIds: ["term-benefits"],
+              },
+            ],
             sourceNodeIds: ["term-policy:source_node:text:term-benefits"],
             sourceSpanIds: ["term-benefits"],
           },
@@ -805,7 +814,70 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.policyTypes).toEqual(["other"]);
+    expect(profile.policyTypes).toEqual(["critical_illness"]);
+    expect(profile.warnings).toContain(
+      "Policy types inferred from extracted coverage labels because final extraction returned only other.",
+    );
+  });
+
+  it("infers multiple commercial policy types from coverage lines", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["other"],
+        coverages: [
+          {
+            name: "Commercial General Liability",
+            limits: [
+              {
+                kind: "aggregate_limit",
+                label: "General Aggregate Limit",
+                value: "$5,000,000",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+          {
+            name: "Errors and Omissions Liability - Claims Made",
+            limits: [
+              {
+                kind: "each_claim_limit",
+                label: "Each Claim Limit",
+                value: "$250,000",
+                sourceNodeIds: ["policy-number-row"],
+                sourceSpanIds: ["span-policy-number"],
+              },
+            ],
+            sourceNodeIds: ["policy-number-row"],
+            sourceSpanIds: ["span-policy-number"],
+          },
+          {
+            name: "Commercial Auto Physical Damage",
+            limits: [
+              {
+                kind: "each_loss_limit",
+                label: "Maximum per Auto",
+                value: "$250,000",
+                sourceNodeIds: ["premium-row"],
+                sourceSpanIds: ["span-premium"],
+              },
+            ],
+            sourceNodeIds: ["premium-row"],
+            sourceSpanIds: ["span-premium"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.policyTypes).toEqual([
+      "general_liability",
+      "professional_liability",
+      "commercial_auto",
+    ]);
   });
 
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
