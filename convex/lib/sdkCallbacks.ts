@@ -33,7 +33,6 @@ import {
 } from "./models";
 import {
   COVERAGE_CLEANUP_MODEL,
-  FORM_INVENTORY_MODEL,
   modelCapabilitiesForRoute,
   modelCapabilitiesForTask,
   modelSupportsImageInput,
@@ -132,7 +131,6 @@ function modelTraceLabel(
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
     extraction_coverage_cleanup: "Clean coverage schedules",
-    extraction_form_inventory: "Extract form inventory",
     extraction_source_tree: "Build source-native document tree",
     extraction_operational_profile: "Build operational profile",
     extraction_page_map: "Map policy pages",
@@ -389,18 +387,6 @@ function buildPromptInput(
   return { prompt };
 }
 
-function shouldReturnEmptyFormInventory(taskKind: ModelCallTaskKind | undefined): boolean {
-  return taskKind === "extraction_form_inventory";
-}
-
-function formInventoryRouteOverride(
-  taskKind: ModelCallTaskKind | undefined,
-  formInventoryRoute: ModelRoute | undefined,
-): ModelRoute | null {
-  if (taskKind !== "extraction_form_inventory") return null;
-  return formInventoryRoute ?? FORM_INVENTORY_MODEL;
-}
-
 function coverageCleanupRouteOverride(
   taskKind: ModelCallTaskKind | undefined,
   trace: ModelCallTraceDetails | undefined,
@@ -488,8 +474,6 @@ export function makeGenerateText(
     let primaryRoute: ModelRoute | undefined;
     let qualityRoute: ModelRoute | undefined;
     let qualityRouteSource: string | undefined;
-    let formInventoryRoute: ModelRoute | undefined;
-    let formInventoryRouteSource: string | undefined;
     let coverageCleanupRoute: ModelRoute | undefined;
     let coverageCleanupRouteSource: string | undefined;
     let fallbackRoute: ModelRoute | undefined;
@@ -501,8 +485,6 @@ export function makeGenerateText(
         primaryRoute = resolved.route;
         qualityRoute = resolved.qualityRoute;
         qualityRouteSource = resolved.qualityRouteSource;
-        formInventoryRoute = resolved.formInventoryRoute;
-        formInventoryRouteSource = resolved.formInventoryRouteSource;
         coverageCleanupRoute = resolved.coverageCleanupRoute;
         coverageCleanupRouteSource = resolved.coverageCleanupRouteSource;
         fallbackRoute = resolved.fallbackRoute;
@@ -522,14 +504,6 @@ export function makeGenerateText(
       routePurpose = "extraction_quality";
       transport = undefined;
       model = getModelForRoute(primaryRouteOverride);
-    }
-    const formInventoryRouteOverrideValue = formInventoryRouteOverride(taskKind, formInventoryRoute);
-    if (formInventoryRouteOverrideValue) {
-      primaryRoute = formInventoryRouteOverrideValue;
-      routeSource = formInventoryRouteSource ?? routeSource;
-      routePurpose = "extraction_form_inventory";
-      transport = undefined;
-      model = getModelForRoute(formInventoryRouteOverrideValue);
     }
     const coverageCleanupRouteOverrideValue = coverageCleanupRouteOverride(taskKind, trace, coverageCleanupRoute);
     if (coverageCleanupRouteOverrideValue) {
@@ -638,8 +612,6 @@ export function makeGenerateObject(
     let primaryRoute: ModelRoute | undefined;
     let qualityRoute: ModelRoute | undefined;
     let qualityRouteSource: string | undefined;
-    let formInventoryRoute: ModelRoute | undefined;
-    let formInventoryRouteSource: string | undefined;
     let coverageCleanupRoute: ModelRoute | undefined;
     let coverageCleanupRouteSource: string | undefined;
     let fallbackRoute: ModelRoute | undefined;
@@ -651,8 +623,6 @@ export function makeGenerateObject(
         primaryRoute = resolved.route;
         qualityRoute = resolved.qualityRoute;
         qualityRouteSource = resolved.qualityRouteSource;
-        formInventoryRoute = resolved.formInventoryRoute;
-        formInventoryRouteSource = resolved.formInventoryRouteSource;
         coverageCleanupRoute = resolved.coverageCleanupRoute;
         coverageCleanupRouteSource = resolved.coverageCleanupRouteSource;
         fallbackRoute = resolved.fallbackRoute;
@@ -672,14 +642,6 @@ export function makeGenerateObject(
       routePurpose = "extraction_quality";
       transport = undefined;
       model = getModelForRoute(primaryRouteOverride);
-    }
-    const formInventoryRouteOverrideValue = formInventoryRouteOverride(taskKind, formInventoryRoute);
-    if (formInventoryRouteOverrideValue) {
-      primaryRoute = formInventoryRouteOverrideValue;
-      routeSource = formInventoryRouteSource ?? routeSource;
-      routePurpose = "extraction_form_inventory";
-      transport = undefined;
-      model = getModelForRoute(formInventoryRouteOverrideValue);
     }
     const coverageCleanupRouteOverrideValue = coverageCleanupRouteOverride(taskKind, trace, coverageCleanupRoute);
     if (coverageCleanupRouteOverrideValue) {
@@ -776,38 +738,6 @@ export function makeGenerateObject(
         });
         return {
           object: { sections: [] } as unknown,
-          usage: undefined,
-        };
-      }
-
-      if (shouldReturnEmptyFormInventory(taskKind)) {
-        await recordModelTrace(routing, {
-          label,
-          task: effectiveTask,
-          taskKind,
-          route: primaryRoute,
-          routeSource,
-          transport,
-          durationMs: nowMs() - startedAt,
-          status: "soft_failed",
-          error: message,
-          details: modelTraceDetails({
-            kind: "generateObject",
-            label,
-            task: effectiveTask,
-            taskKind,
-            prompt: guidedPrompt,
-            system,
-            maxOutputTokens: effectiveMaxTokens,
-            routePurpose,
-            providerOptions: providerOptions as ProviderOptions,
-            trace,
-            output: { forms: [] },
-            outputKind: "object",
-          }),
-        });
-        return {
-          object: { forms: [] } as unknown,
           usage: undefined,
         };
       }

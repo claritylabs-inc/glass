@@ -11,17 +11,16 @@ import {
   createConvexSchedulerAdapter,
 } from "@claritylabs/cl-pipelines/convex";
 import type { Phase, PhaseResult } from "@claritylabs/cl-pipelines";
-import {
-  buildExtractor,
-  summarizeExtractionCheckpoint,
-} from "../lib/extraction";
+import { buildExtractor } from "../lib/extraction";
 import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
 import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
-import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
+import type { ExtractionResult, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+
+type ExtractionState = Record<string, unknown>;
 import {
   openExtractionReviewQuestions,
   postProcessExtractionDocument,
@@ -44,7 +43,6 @@ const ADVANCE_LEASE_MS = 2 * 60 * 1000;
 const ADVANCE_LEASE_HEARTBEAT_MS = 30 * 1000;
 const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
 const EMBEDDING_CONCURRENCY = readBoundedIntEnv("EXTRACTION_EMBEDDING_CONCURRENCY", 8, 1, 16);
-const CHECKPOINT_LOG_THRESHOLD_BYTES = 256 * 1024;
 const EXTERNAL_WORKER_MODE = process.env.EXTRACTION_WORKER_MODE === "external";
 const EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION =
   process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION;
@@ -166,9 +164,9 @@ export type PolicyExtractionState = {
   policyVersionKind?: "new_policy" | "re_extraction" | "renewal";
   traceId?: string;
   externalWorker?: boolean;
-  /** Deprecated inline SDK checkpoint. Kept for legacy in-flight resumes. */
+  /** Deprecated inline SDK checkpoint. Kept only so legacy stored state can deserialize. */
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
-  /** Storage-backed SDK checkpoint. Prevents near-1MB pipeline state documents. */
+  /** Deprecated storage-backed SDK checkpoint. New source-span SDK runs do not write it. */
   clSdkCheckpointFileId?: string;
   chunkIds?: string[];
   sourceSpanIds?: string[];
@@ -224,7 +222,6 @@ type ExternalCompletionPayload = {
   warnings?: string[];
   tokenUsage?: unknown;
   performanceReport?: unknown;
-  checkpoint?: PipelineCheckpoint<ExtractionState>;
 };
 
 type ExternalClaimResult = {
@@ -233,7 +230,6 @@ type ExternalClaimResult = {
   leaseExpiresAt: number;
   state: PolicyExtractionState;
   fileUrl: string;
-  clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
   modelSettings?: {
     routes?: Record<string, { provider: string; model: string }>;
     routeSources?: Record<string, string>;
@@ -257,7 +253,6 @@ type ExternalPreviewClaimResult = {
 type ExternalAckResult = {
   ok: boolean;
   leaseExpiresAt?: number;
-  checkpointFileId?: string | undefined;
 };
 
 type ExternalCompleteArgs = {
@@ -274,7 +269,6 @@ type ExternalCompleteArgs = {
   warnings?: string[];
   tokenUsage?: unknown;
   performanceReport?: unknown;
-  checkpoint?: unknown;
 };
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
@@ -361,12 +355,6 @@ async function completeTraceSession(
   }
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}
-
 function requireExtractionWorkerSecret(secret: string): void {
   const expected = process.env.EXTRACTION_WORKER_SECRET;
   if (!expected || secret !== expected) {
@@ -404,33 +392,6 @@ function validateExternalWorkerCompatibility(args: {
     }
   }
   return undefined;
-}
-
-function compactClSdkCheckpoint(
-  checkpoint: PipelineCheckpoint<ExtractionState>,
-): {
-  checkpoint: PipelineCheckpoint<ExtractionState>;
-  omittedDocument: boolean;
-} {
-  const raw = checkpoint as PipelineCheckpoint<ExtractionState> & {
-    state?: Record<string, unknown>;
-  };
-
-  // The SDK can checkpoint the assembled document alongside extraction memory.
-  // Memory is sufficient to resume and reassemble, while storing both can push
-  // the JSON artifact close to Convex's practical size/timeout limits.
-  if (checkpoint.phase !== "assemble" || !raw.state || raw.state.document === undefined) {
-    return { checkpoint, omittedDocument: false };
-  }
-
-  const { document: _document, ...stateWithoutDocument } = raw.state;
-  return {
-    checkpoint: {
-      ...checkpoint,
-      state: stateWithoutDocument as ExtractionState,
-    },
-    omittedDocument: true,
-  };
 }
 
 async function runBounded<T>(
@@ -639,17 +600,6 @@ async function getLatestArtifactStorageId(
   return artifact?.storageId ? String(artifact.storageId) : undefined;
 }
 
-async function loadClSdkCheckpoint(
-  ctx: ActionCtx,
-  jobId: string,
-  state: PolicyExtractionState,
-): Promise<PipelineCheckpoint<ExtractionState> | undefined> {
-  if (state.clSdkCheckpoint) return state.clSdkCheckpoint;
-  const storageId = state.clSdkCheckpointFileId
-    ?? await getLatestArtifactStorageId(ctx, jobId, "cl_sdk_checkpoint");
-  return await loadJsonArtifact<PipelineCheckpoint<ExtractionState>>(ctx, storageId);
-}
-
 async function storeEmbeddingPayload(
   ctx: ActionCtx,
   jobId: string,
@@ -667,35 +617,6 @@ async function loadExternalCompletionPayload(
 
 function asOptionalId<T extends string>(value: unknown): T | undefined {
   return typeof value === "string" && value.length > 0 ? value as T : undefined;
-}
-
-async function storeClSdkCheckpoint(
-  ctx: ActionCtx,
-  jobId: string,
-  checkpoint: PipelineCheckpoint<ExtractionState>,
-  log?: (message: string, level?: PipelineLogLevel) => Promise<void>,
-): Promise<string> {
-  const compacted = compactClSdkCheckpoint(checkpoint);
-  const stored = await storeJsonArtifact(
-    ctx,
-    jobId,
-    "cl_sdk_checkpoint",
-    compacted.checkpoint,
-  );
-
-  const shouldLog =
-    compacted.omittedDocument ||
-    stored.byteLength >= CHECKPOINT_LOG_THRESHOLD_BYTES ||
-    stored.durationMs >= 1000;
-  if (shouldLog && log) {
-    const compactNote = compacted.omittedDocument ? "; omitted assembled document" : "";
-    await log(
-      `Saved cl-sdk ${checkpoint.phase} checkpoint (${formatBytes(stored.byteLength)} in ${stored.durationMs}ms${compactNote})`,
-      stored.byteLength >= 900 * 1024 ? "warn" : "info",
-    );
-  }
-
-  return stored.storageId;
 }
 
 async function loadEmbeddingPayload(
@@ -1338,8 +1259,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
   };
 
   // ── Phase 2: extract ──────────────────────────────────────────────────────────
-  // Wraps cl-sdk buildExtractor. cl-sdk's internal checkpoint is the ONLY state
-  // this phase carries on cl-pipelines' checkpoint.
   const extractPhase: Phase<PolicyExtractionState> = {
     name: "extract",
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
@@ -1358,7 +1277,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       if (!pdfBytes) return { kind: "error", error: "File not found in storage" };
 
       const policyId = pCtx.jobId;
-      const clSdkCheckpoint = await loadClSdkCheckpoint(convexCtx, policyId, state);
       const pdfSource = await preparePdfTextWithParserFallback({
         pdfBytes,
         documentId: policyId,
@@ -1368,65 +1286,61 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         await pCtx.log(`Prepared ${pdfSource.sourceSpans.length} ${pdfSource.parserBackend} source spans for source-grounded extraction`);
       }
 
-      if (clSdkCheckpoint) {
-        await pCtx.log(`Resuming extraction from cl-sdk phase "${clSdkCheckpoint.phase}"…`);
-      } else {
-        await pCtx.log("Checking whether the PDF is a bound policy document…");
-        try {
-          const gateDecision = await classifyInsuranceExtractability({
-            ctx: convexCtx,
-            orgId: state.orgId as Id<"organizations">,
-            traceId: state.traceId,
-            policyId,
-            pdfBytes,
-            sourceSpans: pdfSource.sourceSpans,
-          });
-          await pCtx.log(
-            `Document gate: ${gateDecision.classification} (${Math.round(gateDecision.confidence * 100)}% confidence) — ${gateDecision.reason}`,
-          );
+      await pCtx.log("Checking whether the PDF is a bound policy document…");
+      try {
+        const gateDecision = await classifyInsuranceExtractability({
+          ctx: convexCtx,
+          orgId: state.orgId as Id<"organizations">,
+          traceId: state.traceId,
+          policyId,
+          pdfBytes,
+          sourceSpans: pdfSource.sourceSpans,
+        });
+        await pCtx.log(
+          `Document gate: ${gateDecision.classification} (${Math.round(gateDecision.confidence * 100)}% confidence) — ${gateDecision.reason}`,
+        );
 
-          if (shouldRejectDocument(gateDecision)) {
-            const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
-            await convexCtx.runMutation(
-              (internal as any).policies.updateExtractionInternal,
-              {
-                id: policyId,
-                fields: {
-                  carrier: "Non-insurance document",
-                  policyNumber: "Not applicable",
-                  policyTypes: ["other"],
-                  insuredName: "Not applicable",
-                  effectiveDate: "Not applicable",
-                  expirationDate: "Not applicable",
-                  summary: rejectionSummary,
-                  excludeFromSearch: true,
-                },
+        if (shouldRejectDocument(gateDecision)) {
+          const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
+          await convexCtx.runMutation(
+            (internal as any).policies.updateExtractionInternal,
+            {
+              id: policyId,
+              fields: {
+                carrier: "Non-insurance document",
+                policyNumber: "Not applicable",
+                policyTypes: ["other"],
+                insuredName: "Not applicable",
+                effectiveDate: "Not applicable",
+                expirationDate: "Not applicable",
+                summary: rejectionSummary,
+                excludeFromSearch: true,
               },
-            );
-
-            if (state.fileId) {
-              await convexCtx.runMutation((internal as any).policies.updateFiles, {
-                id: policyId,
-                files: [
-                  {
-                    fileId: state.fileId as Id<"_storage">,
-                    fileName: state.fileName || "upload.pdf",
-                    fileType: "unknown",
-                    status: "not_insurance",
-                  },
-                ],
-                reconciliationStatus: "error" as const,
-              });
-            }
-
-            return { kind: "error", error: rejectionSummary };
-          }
-        } catch (error) {
-          await pCtx.log(
-            `Warning: document gate failed; continuing extraction (${error instanceof Error ? error.message : String(error)})`,
-            "warn",
+            },
           );
+
+          if (state.fileId) {
+            await convexCtx.runMutation((internal as any).policies.updateFiles, {
+              id: policyId,
+              files: [
+                {
+                  fileId: state.fileId as Id<"_storage">,
+                  fileName: state.fileName || "upload.pdf",
+                  fileType: "unknown",
+                  status: "not_insurance",
+                },
+              ],
+              reconciliationStatus: "error" as const,
+            });
+          }
+
+          return { kind: "error", error: rejectionSummary };
         }
+      } catch (error) {
+        await pCtx.log(
+          `Warning: document gate failed; continuing extraction (${error instanceof Error ? error.message : String(error)})`,
+          "warn",
+        );
       }
 
       const extractor = buildExtractor({
@@ -1438,31 +1352,13 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         onProgress: async (msg) => { await pCtx.log(msg); },
         shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
         pageScreenshots: pdfSource.pageScreenshots,
-        onCheckpointSave: async (cp) => {
-          if (await isExtractionCancelled(convexCtx, policyId)) {
-            throw new Error(CANCELLED_BY_USER);
-          }
-          // Route cl-sdk's checkpoint through cl-pipelines' saveState, storing
-          // the large checkpoint payload outside the hot runtime document.
-          if (cp.phase === "assemble") {
-            await pCtx.log("Saving compact assemble checkpoint...");
-          }
-          const checkpointFileId = await storeClSdkCheckpoint(convexCtx, policyId, cp, pCtx.log);
-          await pCtx.saveState({
-            ...state,
-            clSdkCheckpoint: undefined,
-            clSdkCheckpointFileId: checkpointFileId,
-          });
-          if (cp.phase === "assemble") {
-            await pCtx.log("Assemble checkpoint saved; continuing with summary and formatting...");
-          }
-        },
       });
 
       const extractOptions: ExtractOptions = {
-        ...(clSdkCheckpoint ? { resumeFrom: clSdkCheckpoint } : {}),
         ...(pdfSource.sourceSpans.length > 0
-          ? { sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>> }
+          ? {
+              sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>>,
+            }
           : {}),
       };
 
@@ -1483,20 +1379,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       if (await isExtractionCancelled(convexCtx, pCtx.jobId)) {
         return { kind: "error", error: CANCELLED_BY_USER };
-      }
-
-      if (result.checkpoint) {
-        const checkpointFileId = await storeClSdkCheckpoint(
-          convexCtx,
-          policyId,
-          result.checkpoint,
-          pCtx.log,
-        );
-        await pCtx.saveState({
-          ...state,
-          clSdkCheckpoint: undefined,
-          clSdkCheckpointFileId: checkpointFileId,
-        });
       }
 
       const resultSourceSpans = Array.isArray((result as any).sourceSpans)
@@ -1527,9 +1409,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           `Extraction model calls: ${result.performanceReport.modelCalls.length}; total model time: ${totalSeconds}s`,
         );
       }
-      for (const line of summarizeExtractionCheckpoint(result)) {
-        await pCtx.log(line);
-      }
 
       const processed = await postProcessExtractionDocument({
         ctx: convexCtx,
@@ -1558,6 +1437,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const fields = processed.fields;
       const docName = doc.policyNumber || "policy";
       const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
+      const existingPolicy = await convexCtx.runQuery(internal.policies.getInternal, {
+        id: policyId as Id<"policies">,
+      }) as { policyTypes?: string[] } | null;
 
       await convexCtx.runMutation(
         (internal as any).policies.updateExtractionInternal,
@@ -1571,6 +1453,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               operationalProfile,
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
+              existingPolicyTypes: existingPolicy?.policyTypes,
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -1579,16 +1462,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         },
       );
 
-      // Update policyFiles record if present
-      if (state.policyFileId) {
-        await convexCtx.runMutation(
-          (internal as any).policyFiles.updateExtraction,
-          {
-            id: state.policyFileId,
-            extractedData: result.document,
-          },
-        );
-      }
       await convexCtx.runMutation((internal as any).policies.updateFiles, {
         id: policyId,
         files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
@@ -1603,8 +1476,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const chunkIds = chunks.map((c: { id: string }) => c.id);
       const nextState: PolicyExtractionState = {
         ...state,
-        clSdkCheckpoint: undefined, // clear — extraction done
-        clSdkCheckpointFileId: undefined,
         embeddingPayloadFileId,
         chunkIds,
         sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
@@ -2140,7 +2011,6 @@ export const claimExternalJob = action({
       leaseExpiresAt,
       state: claimed.checkpoint.state,
       fileUrl,
-      clSdkCheckpoint: await loadClSdkCheckpoint(ctx, claimed.policyId, claimed.checkpoint.state),
       modelSettings,
     };
   },
@@ -2342,47 +2212,6 @@ export const recordExternalTraceEvent = action({
   },
 });
 
-export const saveExternalCheckpoint = action({
-  args: {
-    secret: v.string(),
-    policyId: v.string(),
-    leaseId: v.string(),
-    state: v.any(),
-    checkpoint: v.any(),
-  },
-  handler: async (ctx, args): Promise<ExternalAckResult> => {
-    requireExtractionWorkerSecret(args.secret);
-    const checkpointFileId = await storeClSdkCheckpoint(
-      ctx,
-      args.policyId,
-      args.checkpoint as PipelineCheckpoint<ExtractionState>,
-      async (message, level = "info") => {
-        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-          jobId: args.policyId,
-          timestamp: nowMs(),
-          message,
-          phase: "worker",
-          level,
-        });
-      },
-    );
-    const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
-    const ok = await ctx.runMutation((internal as any).policies.pipelineSaveStateForLease, {
-      jobId: args.policyId,
-      leaseId: args.leaseId,
-      nextPhase: "extract",
-      state: {
-        ...(args.state as PolicyExtractionState),
-        externalWorker: true,
-        clSdkCheckpoint: undefined,
-        clSdkCheckpointFileId: checkpointFileId,
-      },
-      leaseExpiresAt,
-    }) as boolean;
-    return { ok, checkpointFileId, leaseExpiresAt };
-  },
-});
-
 async function externalCompletionLeaseIsCurrent(
   ctx: ActionCtx,
   args: ExternalCompleteArgs,
@@ -2419,9 +2248,6 @@ async function completeExternalExtractFromPayload(
         totalModelCallDurationMs?: number;
       }
     | undefined;
-  const checkpoint = (payload?.checkpoint ?? args.checkpoint) as
-    | PipelineCheckpoint<ExtractionState>
-    | undefined;
   let doc = document as Record<string, unknown>;
   if (!state.orgId || !state.userId) {
     throw new Error("External extraction completion missing orgId or userId");
@@ -2449,18 +2275,6 @@ async function completeExternalExtractFromPayload(
       level: "info",
     });
   }
-  if (checkpoint) {
-    for (const line of summarizeExtractionCheckpoint({ checkpoint })) {
-      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-        jobId: policyId,
-        timestamp: nowMs(),
-        message: line,
-        phase: "extract",
-        level: "info",
-      });
-    }
-  }
-
   const processed = await postProcessExtractionDocument({
     ctx,
     orgId: state.orgId as Id<"organizations">,
@@ -2497,6 +2311,9 @@ async function completeExternalExtractFromPayload(
   }
   const docName = doc.policyNumber || "policy";
   const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
+  const existingPolicy = await ctx.runQuery(internal.policies.getInternal, {
+    id: policyId as Id<"policies">,
+  }) as { policyTypes?: string[] } | null;
 
   await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
     id: policyId,
@@ -2508,6 +2325,7 @@ async function completeExternalExtractFromPayload(
         operationalProfile: normalizedOperationalProfile,
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
+        existingPolicyTypes: existingPolicy?.policyTypes,
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),
@@ -2515,12 +2333,6 @@ async function completeExternalExtractFromPayload(
     },
   });
 
-  if (state.policyFileId) {
-    await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
-      id: state.policyFileId,
-      extractedData: doc,
-    });
-  }
   if (state.fileId) {
     await ctx.runMutation((internal as any).policies.updateFiles, {
       id: policyId,
@@ -2536,8 +2348,6 @@ async function completeExternalExtractFromPayload(
   });
   const nextState: PolicyExtractionState = {
     ...state,
-    clSdkCheckpoint: undefined,
-    clSdkCheckpointFileId: undefined,
     embeddingPayloadFileId,
     chunkIds: chunks.map((chunk) => String(chunk.id)),
     sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
@@ -2584,7 +2394,6 @@ export const completeExternalExtract = action({
     warnings: v.optional(v.array(v.string())),
     tokenUsage: v.optional(v.any()),
     performanceReport: v.optional(v.any()),
-    checkpoint: v.optional(v.any()),
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
@@ -2933,6 +2742,7 @@ export const rebuildStoredSourceNodes = internalAction({
       declarations?: unknown;
       documentMetadata?: unknown;
       operationalProfile?: unknown;
+      policyTypes?: string[];
     } | null;
     if (!policy) throw new Error("Policy not found");
     if (!policy.orgId) throw new Error("Policy is missing orgId");
@@ -2972,6 +2782,7 @@ export const rebuildStoredSourceNodes = internalAction({
         operationalProfile,
         existingDocumentMetadata: policy.documentMetadata,
         existingDeclarations: policy.declarations,
+        existingPolicyTypes: policy.policyTypes,
       }),
     });
 
@@ -3198,8 +3009,6 @@ export const retryPolicyExtraction = internalAction({
         policyFileId: existingState?.policyFileId,
         policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
         traceId,
-        clSdkCheckpointFileId: mode === "resume" ? existingState?.clSdkCheckpointFileId : undefined,
-        clSdkCheckpoint: mode === "resume" ? existingState?.clSdkCheckpoint : undefined,
       };
       if (!nextState.fileId) throw new Error("Policy source file is missing");
       if (mode === "full") {

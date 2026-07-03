@@ -475,7 +475,7 @@ export function searchPolicyDocument(
   }
 
   if (metadataContext) {
-    addResult("document_metadata", "Document metadata and form inventory", metadataContext, {
+    addResult("document_metadata", "Document metadata and source outline", metadataContext, {
       evidenceKind: "navigation",
     });
   }

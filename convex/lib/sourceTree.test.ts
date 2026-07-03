@@ -208,6 +208,66 @@ describe("normalizeOperationalProfile", () => {
     expect(operationalProfilePolicyFields(profile).insuredName).toBe("Clarity Labs Inc.");
   });
 
+  it("keeps inferred scalar values when provenance is unavailable", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyNumber: {
+          value: "SLS-EO-26-110482",
+          confidence: "high",
+          sourceNodeIds: ["missing-node"],
+          sourceSpanIds: ["missing-span"],
+        },
+        policyTypes: ["professional_liability"],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.policyNumber?.value).toBe("SLS-EO-26-110482");
+    expect(profile.policyNumber?.confidence).toBe("low");
+    expect(profile.policyNumber?.sourceNodeIds).toEqual([]);
+    expect(profile.policyNumber?.sourceSpanIds).toEqual([]);
+  });
+
+  it("keeps inferred coverage rows and terms when provenance is unavailable", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        coverages: [
+          {
+            name: "Technology Professional Liability",
+            sourceNodeIds: ["missing-node"],
+            sourceSpanIds: ["missing-span"],
+            limits: [
+              {
+                kind: "each_claim_limit",
+                label: "Each Claim",
+                value: "$2,000,000",
+                sourceNodeIds: ["missing-node"],
+                sourceSpanIds: ["missing-span"],
+              },
+              {
+                kind: "deductible",
+                label: "Deductible",
+                value: "$10,000",
+              },
+            ],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.coverages).toHaveLength(1);
+    expect(profile.coverages[0].sourceNodeIds).toEqual([]);
+    expect(profile.coverages[0].sourceSpanIds).toEqual([]);
+    expect(profile.coverages[0].limits?.map((term: { label: string; value: string }) => [term.label, term.value])).toEqual([
+      ["Each Claim", "$2,000,000"],
+      ["Deductible", "$10,000"],
+    ]);
+  });
+
   it("drops torn declaration table coverage fragments and repairs self-referential limits", () => {
     const profile = normalizeOperationalProfile(
       {
@@ -993,6 +1053,33 @@ describe("normalizeSourceTree", () => {
 });
 
 describe("sourceTreePolicyFields", () => {
+  it("keeps preliminary model policy types when final grounding falls back to other", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        policyTypes: ["other"],
+        namedInsured: {
+          value: "Cios Technologies Inc.",
+          sourceNodeIds: ["named-insured-row"],
+          sourceSpanIds: ["span-named-insured"],
+        },
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+      existingPolicyTypes: ["professional_liability"],
+    });
+
+    expect(fields.policyTypes).toEqual(["professional_liability"]);
+    expect((fields.operationalProfile as PolicyOperationalProfile).policyTypes).toEqual(["professional_liability"]);
+    expect((fields.operationalProfile as PolicyOperationalProfile).warnings).toContain(
+      "Policy types carried forward from preliminary classification because final extraction returned only other.",
+    );
+  });
+
   it("preserves SDK multi-policy types when materializing stored policy fields", () => {
     const operationalProfile = normalizeOperationalProfile(
       {

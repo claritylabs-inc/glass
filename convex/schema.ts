@@ -1551,8 +1551,8 @@ export default defineSchema({
     .index("by_status_updatedAt", ["status", "updatedAt"]),
 
   // Storage-backed transient extraction artifacts. These records point at JSON
-  // blobs in Convex file storage for cl-sdk checkpoints and pre-embedding
-  // chunk/source-span payloads. They are cleaned up on success/cancel/restart.
+  // blobs in Convex file storage for pre-embedding chunk/source-span payloads,
+  // external worker completion payloads, and legacy cl-sdk checkpoint cleanup.
   policyExtractionArtifacts: defineTable({
     policyId: v.id("policies"),
     kind: v.union(

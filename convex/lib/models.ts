@@ -18,7 +18,6 @@ import {
   FALLBACK_MODEL,
   COVERAGE_CLEANUP_MODEL,
   FIREWORKS_MODEL_IDS,
-  FORM_INVENTORY_MODEL,
   QUALITY_ESCALATION_TASK_KINDS,
   QUALITY_PRIMARY_TASK_KINDS,
   MODEL_ROUTING,
@@ -117,7 +116,6 @@ export type ModelCallTaskKind =
   | "extraction_classify"
   | "extraction_source_tree"
   | "extraction_operational_profile"
-  | "extraction_form_inventory"
   | "extraction_coverage_cleanup"
   | "extraction_page_map"
   | "extraction_focused"
@@ -379,8 +377,6 @@ export async function getModelAndRouteForOrg(
   transport: "direct" | "gateway";
   qualityRoute: ModelRoute;
   qualityRouteSource: "broker" | "global" | "static";
-  formInventoryRoute: ModelRoute;
-  formInventoryRouteSource: "broker" | "global" | "static";
   coverageCleanupRoute: ModelRoute;
   coverageCleanupRouteSource: "broker" | "global" | "static";
   fallbackRoute: ModelRoute;
@@ -391,9 +387,6 @@ export async function getModelAndRouteForOrg(
     const routeSource = settings?.routeSources?.[task];
     const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
     const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
-    const formInventoryRoute =
-      settings?.routes?.extraction_form_inventory ?? FORM_INVENTORY_MODEL;
-    const formInventoryRouteSource = settings?.routeSources?.extraction_form_inventory ?? "static";
     const coverageCleanupRoute =
       settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
     const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
@@ -418,8 +411,6 @@ export async function getModelAndRouteForOrg(
       transport,
       qualityRoute,
       qualityRouteSource,
-      formInventoryRoute,
-      formInventoryRouteSource,
       coverageCleanupRoute,
       coverageCleanupRouteSource,
       fallbackRoute,
@@ -440,8 +431,6 @@ export async function getModelAndRouteForOrg(
       transport,
       qualityRoute: EXTRACTION_QUALITY_MODEL,
       qualityRouteSource: "static",
-      formInventoryRoute: FORM_INVENTORY_MODEL,
-      formInventoryRouteSource: "static",
       coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
       coverageCleanupRouteSource: "static",
       fallbackRoute: FALLBACK_MODEL,
@@ -459,8 +448,6 @@ export async function getModelAndRouteForPublicTask(
   transport: "direct" | "gateway";
   qualityRoute: ModelRoute;
   qualityRouteSource: "global" | "static";
-  formInventoryRoute: ModelRoute;
-  formInventoryRouteSource: "global" | "static";
   coverageCleanupRoute: ModelRoute;
   coverageCleanupRouteSource: "global" | "static";
   fallbackRoute: ModelRoute;
@@ -471,9 +458,6 @@ export async function getModelAndRouteForPublicTask(
     const routeSource = settings?.routeSources?.[task] ?? "static";
     const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
     const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
-    const formInventoryRoute =
-      settings?.routes?.extraction_form_inventory ?? FORM_INVENTORY_MODEL;
-    const formInventoryRouteSource = settings?.routeSources?.extraction_form_inventory ?? "static";
     const coverageCleanupRoute =
       settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
     const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
@@ -487,8 +471,6 @@ export async function getModelAndRouteForPublicTask(
       transport,
       qualityRoute,
       qualityRouteSource,
-      formInventoryRoute,
-      formInventoryRouteSource,
       coverageCleanupRoute,
       coverageCleanupRouteSource,
       fallbackRoute,
@@ -509,8 +491,6 @@ export async function getModelAndRouteForPublicTask(
       transport,
       qualityRoute: EXTRACTION_QUALITY_MODEL,
       qualityRouteSource: "static",
-      formInventoryRoute: FORM_INVENTORY_MODEL,
-      formInventoryRouteSource: "static",
       coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
       coverageCleanupRouteSource: "static",
       fallbackRoute: FALLBACK_MODEL,

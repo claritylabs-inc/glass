@@ -8,7 +8,6 @@ import {
   CONFIGURABLE_MODEL_PROVIDERS,
   EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
   EMBEDDING_MODEL_CATALOG,
-  EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
   FALLBACK_MODEL_ROUTE_ID,
   LANGUAGE_MODEL_CATALOG,
@@ -108,7 +107,6 @@ const globalRoutesValidator = v.object({
   mailbox_coordinator: v.optional(routeUpdateValidator),
   embeddings: v.optional(routeUpdateValidator),
   extraction_quality: v.optional(routeUpdateValidator),
-  extraction_form_inventory: v.optional(routeUpdateValidator),
   extraction_coverage_cleanup: v.optional(routeUpdateValidator),
   fallback: v.optional(routeUpdateValidator),
 });
@@ -580,7 +578,6 @@ export const resolveForOrg = internalQuery({
     }
     for (const routeId of [
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
-      EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
       EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {
@@ -633,7 +630,6 @@ export const resolvePublicDefaults = internalQuery({
     }
     for (const routeId of [
       EXTRACTION_QUALITY_MODEL_ROUTE_ID,
-      EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
       EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
       FALLBACK_MODEL_ROUTE_ID,
     ]) {

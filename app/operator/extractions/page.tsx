@@ -630,7 +630,6 @@ function humanizeTaskKind(value?: string) {
   if (!value) return undefined;
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
-    extraction_form_inventory: "Extract form inventory",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
     extraction_long_list: "Extract long policy lists",

@@ -860,6 +860,25 @@ function controlledPolicyTypes(values: unknown): string[] {
   return unique.length ? unique : ["other"];
 }
 
+function hasSpecificPolicyType(types: string[]): boolean {
+  return types.some((type) => type !== "other");
+}
+
+function resolvePolicyTypes(
+  profileTypes: unknown,
+  existingTypes: unknown,
+): { policyTypes: string[]; carriedForward: boolean } {
+  const controlled = controlledPolicyTypes(profileTypes);
+  if (hasSpecificPolicyType(controlled)) {
+    return { policyTypes: controlled, carriedForward: false };
+  }
+  const existingControlled = controlledPolicyTypes(existingTypes);
+  if (hasSpecificPolicyType(existingControlled)) {
+    return { policyTypes: existingControlled, carriedForward: true };
+  }
+  return { policyTypes: controlled, carriedForward: false };
+}
+
 const COVERAGE_TERM_KINDS = new Set([
   "each_claim_limit",
   "each_occurrence_limit",
@@ -987,9 +1006,6 @@ function cleanOperationalCoverages(
       !coverage.formNumber &&
       !coverage.sectionRef
     ) {
-      continue;
-    }
-    if (coverage.sourceNodeIds.length === 0 && coverage.sourceSpanIds.length === 0 && limits.every((term) => term.sourceNodeIds.length === 0 && term.sourceSpanIds.length === 0)) {
       continue;
     }
     const coverageBase = { ...coverage } as OperationalCoverageLine & { limits?: unknown };
@@ -1163,15 +1179,19 @@ function normalizeRawSourceBackedValue(
   const text = cleanCoverageScalar(record.value);
   const sourceNodeIds = validSourceIds(record.sourceNodeIds, validNodeIds);
   const sourceSpanIds = validSourceIds(record.sourceSpanIds, validSpanIds);
-  if (!text || (sourceNodeIds.length === 0 && sourceSpanIds.length === 0)) return undefined;
+  if (!text) return undefined;
+  const hasSource = sourceNodeIds.length > 0 || sourceSpanIds.length > 0;
+  const confidence = record.confidence === "low" || record.confidence === "medium" || record.confidence === "high"
+    ? record.confidence
+    : undefined;
   return {
     value: text,
     ...(typeof record.normalizedValue === "string" && record.normalizedValue.trim()
       ? { normalizedValue: normalizeWhitespace(record.normalizedValue) }
       : {}),
-    ...(record.confidence === "low" || record.confidence === "medium" || record.confidence === "high"
-      ? { confidence: record.confidence }
-      : {}),
+    ...(hasSource
+      ? confidence ? { confidence } : {}
+      : { confidence: "low" as const }),
     sourceNodeIds,
     sourceSpanIds,
   };
@@ -1186,7 +1206,6 @@ function normalizeRawCoverageTerm(
   if (!term) return undefined;
   const sourceNodeIds = validSourceIds(term.sourceNodeIds, validNodeIds);
   const sourceSpanIds = validSourceIds(term.sourceSpanIds, validSpanIds);
-  if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0) return undefined;
   return {
     ...term,
     sourceNodeIds,
@@ -1216,7 +1235,6 @@ function normalizeRawCoverage(
     ...stringValues(record.sourceSpanIds),
     ...limits.flatMap((term) => term.sourceSpanIds),
   ], validSpanIds);
-  if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0) return undefined;
   return {
     name,
     ...(cleanCoverageScalar(record.coverageCode) ? { coverageCode: cleanCoverageScalar(record.coverageCode) } : {}),
@@ -1576,8 +1594,20 @@ export function sourceTreePolicyFields(params: {
   operationalProfile: PolicyOperationalProfile;
   existingDocumentMetadata?: unknown;
   existingDeclarations?: unknown;
+  existingPolicyTypes?: unknown;
 }): Record<string, unknown> {
-  const { sourceTree, operationalProfile } = params;
+  const { sourceTree } = params;
+  const resolvedTypes = resolvePolicyTypes(params.operationalProfile.policyTypes, params.existingPolicyTypes);
+  const carriedPolicyTypesWarning = "Policy types carried forward from preliminary classification because final extraction returned only other.";
+  const operationalProfile: PolicyOperationalProfile = resolvedTypes.carriedForward
+    ? {
+        ...params.operationalProfile,
+        policyTypes: resolvedTypes.policyTypes,
+        warnings: params.operationalProfile.warnings.includes(carriedPolicyTypesWarning)
+          ? params.operationalProfile.warnings
+          : [...params.operationalProfile.warnings, carriedPolicyTypesWarning],
+      }
+    : params.operationalProfile;
   const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);
   const hasEvidenceNodes = sourceTree.some((node) => node.kind !== "document");
   const existingMetadata = params.existingDocumentMetadata && typeof params.existingDocumentMetadata === "object" && !Array.isArray(params.existingDocumentMetadata)

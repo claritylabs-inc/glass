@@ -17,12 +17,9 @@ import { makeFunctionReference } from "convex/server";
 import {
   createExtractor,
   type GenerateObject,
-  type GenerateText,
   type ExtractionResult,
-  type ExtractionState,
   type ModelCapabilities,
   type ModelTaskKind,
-  type PipelineCheckpoint,
 } from "@claritylabs/cl-sdk";
 import { modelCapabilitiesForRoute } from "./modelCapabilities.js";
 import {
@@ -46,7 +43,6 @@ type WorkerState = {
   orgId: string;
   userId: string;
   policyFileId?: string;
-  clSdkCheckpointFileId?: string;
   traceId?: string;
   externalWorker?: boolean;
 };
@@ -57,11 +53,10 @@ type ClaimedJob = {
   leaseExpiresAt: number;
   state: WorkerState;
   fileUrl: string;
-  clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
   modelSettings?: WorkerModelSettings;
 };
 
-type ClaimedPreviewJob = Omit<ClaimedJob, "clSdkCheckpoint">;
+type ClaimedPreviewJob = ClaimedJob;
 
 type ModelProvider =
   | "openai"
@@ -112,7 +107,6 @@ type ModelCallTrace = {
 type AckResult = {
   ok: boolean;
   leaseExpiresAt?: number;
-  checkpointFileId?: string;
   replayed?: boolean;
 };
 
@@ -203,17 +197,6 @@ const actions = {
     },
     AckResult
   >("actions/policyExtraction.js:logExternalJob"),
-  saveExternalCheckpoint: makeFunctionReference<
-    "action",
-    {
-      secret: string;
-      policyId: string;
-      leaseId: string;
-      state: WorkerState;
-      checkpoint: PipelineCheckpoint<ExtractionState>;
-    },
-    AckResult
-  >("actions/policyExtraction.js:saveExternalCheckpoint"),
   completeExternalExtract: makeFunctionReference<
     "action",
     {
@@ -231,7 +214,6 @@ const actions = {
       warnings?: string[];
       tokenUsage?: unknown;
       performanceReport?: unknown;
-      checkpoint?: PipelineCheckpoint<ExtractionState>;
     },
     AckResult
   >("actions/policyExtraction.js:completeExternalExtract"),
@@ -348,6 +330,12 @@ const PREVIEW_JOB_CONCURRENCY = readBoundedIntEnv(
   1,
   8,
 );
+const EXTRACTION_JOB_CONCURRENCY = readBoundedIntEnv(
+  "EXTRACTION_JOB_CONCURRENCY",
+  100,
+  1,
+  1000,
+);
 
 const convex = new ConvexHttpClient(CONVEX_URL);
 
@@ -455,9 +443,6 @@ const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
   extraction: MODEL_POLICY_TASK_ROUTES.extraction,
   extraction_preview: MODEL_POLICY_TASK_ROUTES.extraction_preview,
 };
-
-const WORKER_FORM_INVENTORY_ROUTE: WorkerModelRoute =
-  MODEL_POLICY_SPECIAL_ROUTES.extraction_form_inventory;
 
 const WORKER_COVERAGE_CLEANUP_ROUTE: WorkerModelRoute =
   MODEL_POLICY_SPECIAL_ROUTES.extraction_coverage_cleanup;
@@ -694,15 +679,6 @@ function resolveConfiguredQualityRoute(settings?: WorkerModelSettings) {
   );
 }
 
-function resolveConfiguredFormInventoryRoute(settings?: WorkerModelSettings) {
-  return resolveConfiguredRoute(
-    "extraction_form_inventory",
-    WORKER_FORM_INVENTORY_ROUTE,
-    "static",
-    settings,
-  );
-}
-
 function resolveConfiguredCoverageCleanupRoute(settings?: WorkerModelSettings) {
   return resolveConfiguredRoute(
     "extraction_coverage_cleanup",
@@ -728,22 +704,17 @@ function resolveModelForTaskKind(
   const quality = resolveConfiguredQualityRoute(settings);
   const useQualityPrimary =
     !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind);
-  const formInventory = taskKind === "extraction_form_inventory"
-    ? resolveConfiguredFormInventoryRoute(settings)
-    : null;
   const coverageCleanup = taskKind === "extraction_coverage_cleanup"
     ? resolveConfiguredCoverageCleanupRoute(settings)
     : null;
-  const route = coverageCleanup?.route ?? formInventory?.route ?? (useQualityPrimary ? quality.route : baseRoute);
-  const routeSource = coverageCleanup?.routeSource ?? formInventory?.routeSource ?? (useQualityPrimary
+  const route = coverageCleanup?.route ?? (useQualityPrimary ? quality.route : baseRoute);
+  const routeSource = coverageCleanup?.routeSource ?? (useQualityPrimary
     ? quality.routeSource
     : canUseConfiguredRoute
     ? (configuredRouteSource ?? "configured")
     : "default");
   const apiKey = coverageCleanup
       ? coverageCleanup.apiKey
-    : formInventory
-      ? formInventory.apiKey
     : useQualityPrimary
       ? quality.apiKey
       : apiKeyForRoute(route, routeSource, settings);
@@ -889,10 +860,6 @@ function shouldReturnEmptySections(prompt: string, error: unknown): boolean {
   );
 }
 
-function shouldReturnEmptyFormInventory(taskKind: string | undefined): boolean {
-  return taskKind === "extraction_form_inventory";
-}
-
 function maxOutputTokensForRoute(
   maxTokens: number,
   route: ResolvedWorkerModelRoute,
@@ -941,7 +908,6 @@ function modelTraceLabel(
     extraction_source_tree: "Build source-native document tree",
     extraction_operational_profile: "Build operational profile",
     extraction_coverage_cleanup: "Clean coverage schedules",
-    extraction_form_inventory: "Extract form inventory",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
     extraction_long_list: "Extract long policy lists",
@@ -1223,155 +1189,9 @@ async function recordTraceEvent(job: Pick<ClaimedJob, "state">, event: {
 function buildWorkerExtractor(opts: {
   job: ClaimedJob;
   log: (message: string) => Promise<void>;
-  onCheckpointSave: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
   modelSettings?: WorkerModelSettings;
   pageScreenshots?: PageScreenshot[];
 }) {
-  const generateText: GenerateText = async (params) => {
-    const taskKind = readTaskKind(params);
-    const trace = readTraceDetails(params);
-    const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
-    const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
-    const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
-    const label = modelTraceLabel("generateText", taskKind, route.task, trace);
-    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route, taskKind);
-    const callProviderOptions = providerOptionsForModelCall(
-      route,
-      providerOptions as ProviderOptions | undefined,
-    );
-    const startedAt = nowMs();
-    try {
-      const result = await aiGenerateText({
-        model: route.model,
-        system: params.system,
-        ...buildPromptInput(guidedPrompt, providerOptions, route.route),
-        maxOutputTokens,
-        providerOptions: callProviderOptions,
-        abortSignal: modelAbortSignal(),
-      });
-      const usage = mapUsage(result.usage);
-      await recordModelCallComplete({
-        job: opts.job,
-        route,
-        label,
-        taskKind,
-        attempt: 1,
-        startedAt,
-        usage,
-        details: modelTraceDetails({
-          kind: "generateText",
-          label,
-          task: route.task,
-          taskKind,
-          prompt: guidedPrompt,
-          system: params.system,
-          maxOutputTokens,
-          providerOptions: callProviderOptions,
-          trace,
-          output: result.text,
-          outputKind: "text",
-        }),
-      });
-      return {
-        text: result.text,
-        usage,
-      };
-    } catch (error) {
-      await recordModelCallError({
-        job: opts.job,
-        route,
-        label,
-        taskKind,
-        attempt: 1,
-        startedAt,
-        error,
-        details: modelTraceDetails({
-          kind: "generateText",
-          label,
-          task: route.task,
-          taskKind,
-          prompt: guidedPrompt,
-          system: params.system,
-          maxOutputTokens,
-          providerOptions: callProviderOptions,
-          trace,
-        }),
-      });
-
-      const fallback = isMissingApiKeyError(error)
-        ? null
-        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
-      if (!fallback) throw error;
-
-      logFallback(route, fallback, error);
-      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback, taskKind);
-      const fallbackProviderOptions = providerOptionsForModelCall(
-        fallback,
-        providerOptions as ProviderOptions | undefined,
-      );
-      const fallbackStartedAt = nowMs();
-      try {
-        const fallbackResult = await aiGenerateText({
-          model: fallback.model,
-          system: params.system,
-          ...buildPromptInput(guidedPrompt, providerOptions, fallback.route),
-          maxOutputTokens: fallbackMaxOutputTokens,
-          providerOptions: fallbackProviderOptions,
-          abortSignal: modelAbortSignal(),
-        });
-        const usage = mapUsage(fallbackResult.usage);
-        await recordModelCallComplete({
-          job: opts.job,
-          route: fallback,
-          label,
-          taskKind,
-          attempt: 2,
-          startedAt: fallbackStartedAt,
-          usage,
-          details: modelTraceDetails({
-            kind: "generateText",
-            label,
-            task: fallback.task,
-            taskKind,
-            prompt: guidedPrompt,
-            system: params.system,
-            maxOutputTokens: fallbackMaxOutputTokens,
-            providerOptions: fallbackProviderOptions,
-            trace,
-            output: fallbackResult.text,
-            outputKind: "text",
-          }),
-        });
-        return {
-          text: fallbackResult.text,
-          usage,
-        };
-      } catch (fallbackError) {
-        await recordModelCallError({
-          job: opts.job,
-          route: fallback,
-          label,
-          taskKind,
-          attempt: 2,
-          startedAt: fallbackStartedAt,
-          error: fallbackError,
-          details: modelTraceDetails({
-            kind: "generateText",
-            label,
-            task: fallback.task,
-            taskKind,
-            prompt: guidedPrompt,
-            system: params.system,
-            maxOutputTokens: fallbackMaxOutputTokens,
-            providerOptions: fallbackProviderOptions,
-            trace,
-          }),
-        });
-        throw fallbackError;
-      }
-    }
-  };
-
   const generateObject: GenerateObject = async (params) => {
     const taskKind = readTaskKind(params);
     const trace = readTraceDetails(params);
@@ -1448,31 +1268,6 @@ function buildWorkerExtractor(opts: {
           }),
         });
         return { object: { sections: [] }, usage: undefined };
-      }
-
-      if (shouldReturnEmptyFormInventory(taskKind)) {
-        await recordModelCallSoftFailure({
-          job: opts.job,
-          route,
-          label,
-          taskKind,
-          startedAt,
-          error,
-          details: modelTraceDetails({
-            kind: "generateObject",
-            label,
-            task: route.task,
-            taskKind,
-            prompt: guidedPrompt,
-            system: params.system,
-            maxOutputTokens,
-            providerOptions: callProviderOptions,
-            trace,
-            output: { forms: [] },
-            outputKind: "object",
-          }),
-        });
-        return { object: { forms: [] }, usage: undefined };
       }
 
       await recordModelCallError({
@@ -1573,13 +1368,11 @@ function buildWorkerExtractor(opts: {
     }
   };
 
-  const concurrency = readBoundedIntEnv("EXTRACTION_CONCURRENCY", 6, 1, 8);
   const extractionRoute = resolveModelForTaskKind("extraction_focused", opts.modelSettings);
   const modelCapabilitiesByTaskKind = Object.fromEntries(
     ([
       "extraction_source_tree",
       "extraction_operational_profile",
-      "extraction_form_inventory",
       "extraction_coverage_cleanup",
       "extraction_review",
       "extraction_referential_lookup",
@@ -1589,26 +1382,12 @@ function buildWorkerExtractor(opts: {
     ]),
   ) as Partial<Record<ModelTaskKind, ModelCapabilities>>;
   return createExtractor({
-    generateText,
     generateObject,
-    concurrency,
-    pageMapConcurrency: readBoundedIntEnv("EXTRACTION_PAGE_MAP_CONCURRENCY", concurrency, 1, 8),
-    extractorConcurrency: readBoundedIntEnv("EXTRACTION_EXTRACTOR_CONCURRENCY", concurrency, 1, 8),
-    formatConcurrency: readBoundedIntEnv("EXTRACTION_FORMAT_CONCURRENCY", concurrency, 1, 8),
-    maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 1, 0, 2),
-    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip"),
     log: opts.log,
     onProgress: opts.log,
-    onCheckpointSave: opts.onCheckpointSave,
     modelCapabilities: extractionRoute.capabilities,
     modelCapabilitiesByTaskKind,
   });
-}
-
-function readReviewModeEnv(name: string, fallback: "always" | "auto" | "skip"): "always" | "auto" | "skip" {
-  const raw = process.env[name];
-  if (raw === "always" || raw === "auto" || raw === "skip") return raw;
-  return fallback;
 }
 
 async function logJob(
@@ -1747,27 +1526,6 @@ async function heartbeat(job: ClaimedJob): Promise<void> {
   if (!result.ok) {
     throw new Error(`Lost external extraction lease for ${job.policyId}`);
   }
-}
-
-async function saveCheckpoint(
-  job: ClaimedJob,
-  checkpoint: PipelineCheckpoint<ExtractionState>,
-): Promise<void> {
-  const result = await convex.action(actions.saveExternalCheckpoint, {
-    secret: SECRET,
-    policyId: job.policyId,
-    leaseId: job.leaseId,
-    state: job.state,
-    checkpoint,
-  });
-  if (!result.ok) {
-    throw new Error(`Failed to persist checkpoint for ${job.policyId}`);
-  }
-  job.state = {
-    ...job.state,
-    clSdkCheckpointFileId: result.checkpointFileId,
-    externalWorker: true,
-  };
 }
 
 function jsonByteLength(value: unknown): number {
@@ -2405,10 +2163,6 @@ async function processJob(job: ClaimedJob): Promise<void> {
     const pdfBytes = await fetchPdfBytes(job.fileUrl);
     await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
 
-    if (job.clSdkCheckpoint) {
-      await logJob(job, `Resuming extraction from cl-sdk phase "${job.clSdkCheckpoint.phase}"`);
-    }
-
     let result: ExtractionResult;
     let preparedSource: Awaited<ReturnType<typeof buildPdfSourceSpans>>;
     const extractStartedAt = nowMs();
@@ -2433,9 +2187,6 @@ async function processJob(job: ClaimedJob): Promise<void> {
       const extractor = buildWorkerExtractor({
         job,
         log: async (message) => logJob(job, message),
-        onCheckpointSave: async (checkpoint) => {
-          await saveCheckpoint(job, checkpoint);
-        },
         modelSettings: job.modelSettings,
         pageScreenshots: converted.pageScreenshots,
       });
@@ -2447,9 +2198,10 @@ async function processJob(job: ClaimedJob): Promise<void> {
         pdfBytes,
         job.policyId,
         {
-          ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
           ...(converted.sourceSpans.length > 0
-            ? { sourceSpans: converted.sourceSpans as unknown as Array<Record<string, unknown>> }
+            ? {
+                sourceSpans: converted.sourceSpans as unknown as Array<Record<string, unknown>>,
+              }
             : {}),
         },
       );
@@ -2470,18 +2222,16 @@ async function processJob(job: ClaimedJob): Promise<void> {
       const extractor = buildWorkerExtractor({
         job,
         log: async (message) => logJob(job, message),
-        onCheckpointSave: async (checkpoint) => {
-          await saveCheckpoint(job, checkpoint);
-        },
         modelSettings: job.modelSettings,
       });
       result = await extractor.extract(
         pdfBytes,
         job.policyId,
         {
-          ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
           ...(preparedSource.sourceSpans.length > 0
-            ? { sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>> }
+            ? {
+                sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>>,
+              }
             : {}),
         },
       );
@@ -2669,9 +2419,15 @@ async function main(): Promise<void> {
   const previewLoop = runPreviewLoop().catch((error) => {
     console.error("Preview extraction loop failed:", error);
   });
+  const active = new Set<Promise<void>>();
   let lastIdleLogAt = 0;
   try {
     while (!shuttingDown) {
+      if (active.size >= EXTRACTION_JOB_CONCURRENCY) {
+        await Promise.race(active);
+        continue;
+      }
+
       let job: ClaimedJob | null = null;
       try {
         job = await claimJob();
@@ -2681,7 +2437,10 @@ async function main(): Promise<void> {
         continue;
       }
       if (job) {
-        await processJob(job);
+        const task = processJob(job).finally(() => {
+          active.delete(task);
+        });
+        active.add(task);
         continue;
       }
 
@@ -2694,6 +2453,7 @@ async function main(): Promise<void> {
     }
   } finally {
     shuttingDown = true;
+    await Promise.allSettled(active);
     await previewLoop;
     httpServer?.close();
   }

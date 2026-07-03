@@ -43,7 +43,6 @@ export const MODEL_POLICY_TASK_ROUTES = {
 export const MODEL_POLICY_SPECIAL_ROUTES = {
   fallback: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Pro },
   extraction_quality: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
-  extraction_form_inventory: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Pro },
   extraction_coverage_cleanup: { provider: "openai", model: "gpt-5.4-mini" },
 } as const;
 
@@ -78,7 +77,6 @@ const OPENAI_GPT_5_4_CAPABILITIES: Omit<ModelPolicyCapabilityConfig, "modelName"
   taskOutputTokens: {
     extraction_classify: 2_048,
     extraction_source_tree: 4_096,
-    extraction_form_inventory: 8_192,
     extraction_page_map: 8_192,
     extraction_focused: 16_384,
     extraction_long_list: 24_576,
@@ -134,7 +132,6 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
       extraction_source_tree: 4_096,
       extraction_preview: 4_096,
       extraction_coverage_cleanup: 8_192,
-      extraction_form_inventory: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
       extraction_long_list: 24_576,
@@ -153,7 +150,6 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
       extraction_source_tree: 4_096,
       extraction_preview: 4_096,
       extraction_coverage_cleanup: 8_192,
-      extraction_form_inventory: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
       extraction_long_list: 24_576,
@@ -178,7 +174,6 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
     taskOutputTokens: {
       extraction_source_tree: 2_400,
       extraction_coverage_cleanup: 8_192,
-      extraction_form_inventory: 2_048,
       extraction_operational_profile: 32_768,
       extraction_review: 8_192,
       query_reason: 8_192,
@@ -196,7 +191,6 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
       extraction_source_tree: 4_096,
       extraction_preview: 4_096,
       extraction_coverage_cleanup: 8_192,
-      extraction_form_inventory: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
       extraction_long_list: 24_576,

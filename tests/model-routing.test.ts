@@ -16,7 +16,7 @@ import {
   EXTRACTION_QUALITY_MODEL,
   LANGUAGE_MODEL_CATALOG,
   MODEL_DISPLAY_NAMES,
-  MODEL_ROUTE_DESCRIPTIONS,
+  MODEL_ROUTE_IDS,
   MODEL_ROUTE_LABELS,
   MODEL_TASK_GROUPS,
   OPERATOR_MODEL_ROUTE_GROUPS,
@@ -87,7 +87,7 @@ describe("model task routing", () => {
     expect(isRetiredModelRoute(MODEL_ROUTING.extraction)).toBe(false);
   });
 
-  test("uses DeepSeek Pro for configurable form inventory and page ranges", () => {
+  test("does not expose removed form inventory extraction as a model route", () => {
     const workerSource = readFileSync(
       join(__dirname, "../extraction-worker/src/index.ts"),
       "utf-8",
@@ -97,19 +97,12 @@ describe("model task routing", () => {
       "utf-8",
     );
 
-    expect(defaultModelRouteForId("extraction_form_inventory")).toEqual({
-      provider: "fireworks",
-      model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
-    });
-    expect(MODEL_ROUTE_LABELS.extraction_form_inventory).toBe(
-      "Form inventory and page ranges",
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).not.toContain(
+      "extraction_form_inventory",
     );
-    expect(MODEL_ROUTE_DESCRIPTIONS.extraction_form_inventory).toContain(
-      "page ranges before source-tree grouping",
-    );
-    expect(workerSource).toContain("const WORKER_FORM_INVENTORY_ROUTE");
-    expect(routingPolicy).toContain("extraction_form_inventory:");
-    expect(routingPolicy).toContain("MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Pro");
+    expect(MODEL_ROUTE_IDS).not.toContain("extraction_form_inventory");
+    expect(workerSource).not.toContain("extraction_form_inventory");
+    expect(routingPolicy).not.toContain("extraction_form_inventory");
   });
 
   test("uses a standard operator-configurable route for coverage cleanup", () => {
@@ -180,7 +173,7 @@ describe("model task routing", () => {
     );
   });
 
-  test("keeps SDK extraction review broad pass disabled in Glass hosts", () => {
+  test("keeps extraction hosts on source-span model passes without legacy review knobs", () => {
     const appExtractor = readFileSync(join(__dirname, "../convex/lib/extraction.ts"), "utf-8");
     const worker = readFileSync(join(__dirname, "../extraction-worker/src/index.ts"), "utf-8");
     const routingPolicy = readFileSync(
@@ -188,8 +181,10 @@ describe("model task routing", () => {
       "utf-8",
     );
 
-    expect(appExtractor).toContain('readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip")');
-    expect(worker).toContain('readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip")');
+    expect(appExtractor).not.toContain("EXTRACTION_REVIEW_MODE");
+    expect(worker).not.toContain("EXTRACTION_REVIEW_MODE");
+    expect(worker).not.toContain("EXTRACTION_PAGE_MAP_CONCURRENCY");
+    expect(worker).not.toContain("EXTRACTION_FORMAT_CONCURRENCY");
     expect(worker).toContain("modelCapabilitiesForRoute(route.model)");
     expect(worker).toContain("modelCapabilitiesByTaskKind");
     expect(routingPolicy).toContain("extraction_operational_profile");
@@ -364,7 +359,7 @@ describe("model fallback policy", () => {
     ).toBeNull();
   });
 
-  test("exposes separate quality and fallback routes in operator model settings", () => {
+  test("exposes separate quality, coverage cleanup, and fallback routes in operator model settings", () => {
     const modelCatalog = readFileSync(
       join(__dirname, "../convex/lib/modelCatalog.ts"),
       "utf-8",
@@ -378,20 +373,17 @@ describe("model fallback policy", () => {
       'EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality"',
     );
     expect(modelCatalog).toContain(
-      'EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID =\n  "extraction_form_inventory"',
-    );
-    expect(modelCatalog).toContain(
       'EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =\n  "extraction_coverage_cleanup"',
     );
     expect(modelCatalog).toContain('FALLBACK_MODEL_ROUTE_ID = "fallback"');
     expect(modelCatalog).toContain("Source tree and profile extraction");
-    expect(modelCatalog).toContain("Form inventory");
+    expect(modelCatalog).not.toContain("Form inventory");
     expect(modelCatalog).toContain("Coverage schedule cleanup");
     expect(modelCatalog).toContain("Fallback model");
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
       "extraction_quality",
     );
-    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).not.toContain(
       "extraction_form_inventory",
     );
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(

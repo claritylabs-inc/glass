@@ -269,9 +269,6 @@ export const FALLBACK_MODEL =
 export const EXTRACTION_QUALITY_MODEL =
   MODEL_POLICY_SPECIAL_ROUTES.extraction_quality satisfies ModelRoute;
 
-export const FORM_INVENTORY_MODEL =
-  MODEL_POLICY_SPECIAL_ROUTES.extraction_form_inventory satisfies ModelRoute;
-
 export const COVERAGE_CLEANUP_MODEL =
   MODEL_POLICY_SPECIAL_ROUTES.extraction_coverage_cleanup satisfies ModelRoute;
 
@@ -283,21 +280,17 @@ export const QUALITY_ESCALATION_TASK_KINDS =
 
 export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
 export const EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality" as const;
-export const EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID =
-  "extraction_form_inventory" as const;
 export const EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =
   "extraction_coverage_cleanup" as const;
 export const FALLBACK_MODEL_ROUTE_ID = "fallback" as const;
 export type ModelRouteId =
   | ModelTask
   | typeof EXTRACTION_QUALITY_MODEL_ROUTE_ID
-  | typeof EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID
   | typeof EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID
   | typeof FALLBACK_MODEL_ROUTE_ID;
 export const MODEL_ROUTE_IDS = [
   ...MODEL_TASKS,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
-  EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID,
   EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
   FALLBACK_MODEL_ROUTE_ID,
 ] as ModelRouteId[];
@@ -305,7 +298,6 @@ export const MODEL_ROUTE_IDS = [
 export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_LABELS,
   extraction_quality: "Source tree and profile extraction",
-  extraction_form_inventory: "Form inventory and page ranges",
   extraction_coverage_cleanup: "Coverage schedule cleanup",
   fallback: "Fallback model",
 };
@@ -314,8 +306,6 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_DESCRIPTIONS,
   extraction_quality:
     "Proactive primary route for source-tree generation and operational-profile extraction before any failure occurs.",
-  extraction_form_inventory:
-    "Long-context structured route for extracting declarations, policy forms, notices, endorsements, and page ranges before source-tree grouping.",
   extraction_coverage_cleanup:
     "Source-span review route for repairing malformed policy and endorsement coverage schedule rows before persistence.",
   fallback:
@@ -325,9 +315,6 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
 export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
   if (id === FALLBACK_MODEL_ROUTE_ID) return FALLBACK_MODEL;
   if (id === EXTRACTION_QUALITY_MODEL_ROUTE_ID) return EXTRACTION_QUALITY_MODEL;
-  if (id === EXTRACTION_FORM_INVENTORY_MODEL_ROUTE_ID) {
-    return FORM_INVENTORY_MODEL;
-  }
   if (id === EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID) {
     return COVERAGE_CLEANUP_MODEL;
   }
@@ -389,7 +376,6 @@ export const OPERATOR_MODEL_ROUTE_GROUPS = [
       "classification",
       "extraction",
       "extraction_quality",
-      "extraction_form_inventory",
       "extraction_coverage_cleanup",
       "fallback",
       "document_extraction",
