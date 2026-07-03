@@ -815,9 +815,7 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.policyTypes).toEqual(["critical_illness"]);
-    expect(profile.warnings).toContain(
-      "Policy types inferred from extracted coverage labels because final extraction returned only other.",
-    );
+    expect(profile.warnings).toContain("Policy types augmented from extracted coverage labels.");
   });
 
   it("infers multiple commercial policy types from coverage lines", () => {
@@ -878,6 +876,48 @@ describe("normalizeOperationalProfile", () => {
       "professional_liability",
       "commercial_auto",
     ]);
+  });
+
+  it("keeps a specific model policy type while adding missing coverage-backed types", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["inland_marine"],
+        coverages: [
+          {
+            name: "Motor Truck Cargo Legal Liability",
+            limits: [
+              {
+                kind: "each_occurrence_limit",
+                label: "Per Occurrence Limit",
+                value: "$250,000",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+          {
+            name: "Commercial Auto Physical Damage",
+            limits: [
+              {
+                kind: "other",
+                label: "Maximum Limit at Any One Vehicle",
+                value: "Actual Cash Value of Scheduled Autos",
+                sourceNodeIds: ["policy-number-row"],
+                sourceSpanIds: ["span-policy-number"],
+              },
+            ],
+            sourceNodeIds: ["policy-number-row"],
+            sourceSpanIds: ["span-policy-number"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.policyTypes).toEqual(["inland_marine", "commercial_auto"]);
   });
 
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {

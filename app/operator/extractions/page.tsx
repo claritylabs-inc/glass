@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { ComponentProps, PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import dayjs from "dayjs";
@@ -39,7 +39,13 @@ import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw, XCircle } from "lu
 import type { Id } from "@/convex/_generated/dataModel";
 import { normalizeCoverageName } from "@/convex/lib/coverageNames";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
-import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
+import {
+  SourceEvidenceButton,
+  collectSourceSpanIds,
+  sourceSpanIdsFrom,
+  usePolicySourceSpans,
+  type SourceSpanDoc,
+} from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
@@ -132,7 +138,6 @@ type TraceDetail = {
   fileUrl?: string | null;
   events: TraceEvent[];
 };
-type ExtractionCardsPolicyDocument = ComponentProps<typeof ExtractionCards>["policyDocument"];
 type TracePanelTab = "summary" | "extracted" | "timeline" | "models" | "log";
 const TRACE_PANEL_TABS = ["summary", "extracted", "timeline", "models", "log"] as const;
 
@@ -204,17 +209,32 @@ function sourceBackedDisplay(value: unknown) {
   return {
     value: record.value,
     confidence: typeof record.confidence === "string" ? record.confidence : undefined,
+    sourceSpanIds: sourceSpanIdsFrom(record),
   };
 }
 
-function profileScalarRows(profile: Record<string, unknown>) {
+function profileScalarRows(
+  profile: Record<string, unknown>,
+  sourceSpans: SourceSpanDoc[] | undefined,
+  fileUrl: string | undefined,
+) {
   const rows: Array<{ label: string; value: React.ReactNode }> = [];
   const pushValue = (label: string, key: string) => {
     const display = sourceBackedDisplay(profile[key]);
     if (!display) return;
     rows.push({
       label,
-      value: display.value,
+      value: (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 break-words">{display.value}</span>
+          <SourceEvidenceButton
+            sourceSpanIds={display.sourceSpanIds}
+            sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
+            className="shrink-0"
+          />
+        </span>
+      ),
     });
   };
 
@@ -352,9 +372,9 @@ function coverageLimitTerms(row: Record<string, unknown>) {
       const key = `${label.toLowerCase()}|${value.toLowerCase()}`;
       if (seen.has(key)) return null;
       seen.add(key);
-      return { label, value };
+      return { label, value, sourceSpanIds: sourceSpanIdsFrom(term) };
     })
-    .filter((term): term is { label: string; value: string } => Boolean(term));
+    .filter((term): term is { label: string; value: string; sourceSpanIds: string[] } => Boolean(term));
 }
 
 function ProfileListSection({
@@ -375,9 +395,13 @@ function ProfileListSection({
 function CoverageList({
   title,
   rows,
+  sourceSpans,
+  fileUrl,
 }: {
   title: string;
   rows: Array<Record<string, unknown>>;
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
 }) {
   if (!rows.length) return null;
   return (
@@ -402,9 +426,12 @@ function CoverageList({
               const name = coverageRowTitle(row);
               const limit = profileCellDisplay(row.limit);
               const terms = coverageLimitTerms(row);
+              const coverageSourceSpanIds = sourceSpanIdsFrom(row);
               const visibleTerms = terms.length
                 ? terms
-                : [{ label: "Limit", value: limit }];
+                : limit !== "—"
+                  ? [{ label: "Limit", value: limit, sourceSpanIds: coverageSourceSpanIds }]
+                  : [];
               const metadata = coverageMetadata(row, terms).join(" | ");
               return visibleTerms.map((term, termIndex) => (
                 <tr
@@ -416,8 +443,14 @@ function CoverageList({
                       rowSpan={visibleTerms.length}
                       className="w-[42%] px-4 py-3 align-top [overflow-wrap:anywhere]"
                     >
-                      <div className="text-base font-normal leading-5 text-foreground">
-                        {name}
+                      <div className="flex min-w-0 items-start gap-1.5 text-base font-normal leading-5 text-foreground">
+                        <span className="min-w-0 break-words">{name}</span>
+                        <SourceEvidenceButton
+                          sourceSpanIds={coverageSourceSpanIds}
+                          sourceSpans={sourceSpans}
+                          fileUrl={fileUrl}
+                          className="shrink-0"
+                        />
                       </div>
                       {metadata ? (
                         <div className="mt-1 text-label leading-4 text-muted-foreground">
@@ -430,7 +463,15 @@ function CoverageList({
                     {term.label}
                   </td>
                   <td className="px-4 py-2.5 text-right align-top text-base leading-5 text-foreground [overflow-wrap:anywhere]">
-                    {term.value}
+                    <span className="inline-flex min-w-0 items-center justify-end gap-1.5">
+                      <span className="min-w-0 break-words">{term.value}</span>
+                      <SourceEvidenceButton
+                        sourceSpanIds={term.sourceSpanIds}
+                        sourceSpans={sourceSpans}
+                        fileUrl={fileUrl}
+                        className="shrink-0"
+                      />
+                    </span>
                   </td>
                 </tr>
               ));
@@ -442,7 +483,15 @@ function CoverageList({
   );
 }
 
-function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>> }) {
+function EndorsementSupportList({
+  rows,
+  sourceSpans,
+  fileUrl,
+}: {
+  rows: Array<Record<string, unknown>>;
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
   if (!rows.length) return null;
   return (
     <ProfileListSection title="Endorsement support">
@@ -450,6 +499,7 @@ function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>>
         const kind = profileCellDisplay(row.kind);
         const status = profileCellDisplay(row.status);
         const summary = profileCellDisplay(row.summary);
+        const sourceSpanIds = sourceSpanIdsFrom(row);
         return (
           <OperationalItem
             key={rowIndex}
@@ -459,6 +509,11 @@ function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>>
               <p className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
                 {formatProfileLabel(kind)}
               </p>
+              <SourceEvidenceButton
+                sourceSpanIds={sourceSpanIds}
+                sourceSpans={sourceSpans}
+                fileUrl={fileUrl}
+              />
               {status !== "—" ? (
                 <Badge
                   variant={supportStatusVariant(status)}
@@ -542,7 +597,15 @@ function AdditionalInsuredEligibilityList({
   );
 }
 
-function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unknown>> }) {
+function NamedAdditionalInsuredList({
+  rows,
+  sourceSpans,
+  fileUrl,
+}: {
+  rows: Array<Record<string, unknown>>;
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
   if (!rows.length) return null;
   return (
     <ProfileListSection title="Named additional insureds">
@@ -551,6 +614,7 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
         const status = profileCellDisplay(row.status);
         const scope = profileCellDisplay(row.scope);
         const endorsementTitle = profileCellDisplay(row.endorsementTitle);
+        const sourceSpanIds = sourceSpanIdsFrom(row);
         return (
           <OperationalItem
             key={rowIndex}
@@ -560,6 +624,11 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
               <p className="min-w-0 flex-1 text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
                 {name}
               </p>
+              <SourceEvidenceButton
+                sourceSpanIds={sourceSpanIds}
+                sourceSpans={sourceSpans}
+                fileUrl={fileUrl}
+              />
               {status !== "—" ? (
                 <Badge variant="outline" className="font-normal">
                   {formatProfileLabel(status)}
@@ -583,10 +652,28 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
   );
 }
 
-function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown> | null }) {
+function OperationalProfileSummary({
+  policy,
+  policyId,
+  fileUrl,
+  allowOperatorSourceAccess,
+}: {
+  policy?: Record<string, unknown> | null;
+  policyId?: Id<"policies">;
+  fileUrl?: string;
+  allowOperatorSourceAccess?: boolean;
+}) {
   const profile = recordValue(policy?.operationalProfile);
+  const profileSourceSpanIds = useMemo(
+    () => (profile ? collectSourceSpanIds(profile) : []),
+    [profile],
+  );
+  const sourceSpans = usePolicySourceSpans(policyId, profileSourceSpanIds, {
+    allowOperatorAccess: allowOperatorSourceAccess,
+    maxIds: 512,
+  });
   if (!profile) return null;
-  const scalarRows = profileScalarRows(profile);
+  const scalarRows = profileScalarRows(profile, sourceSpans, fileUrl);
   const coverages = Array.isArray(profile.coverages)
     ? profile.coverages
         .map(recordValue)
@@ -617,10 +704,23 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
           ))}
         </OperationalLabelValueList>
       ) : null}
-      <CoverageList title="Coverage schedules" rows={coverages} />
-      <NamedAdditionalInsuredList rows={additionalInsureds} />
+      <CoverageList
+        title="Coverage schedules"
+        rows={coverages}
+        sourceSpans={sourceSpans}
+        fileUrl={fileUrl}
+      />
+      <NamedAdditionalInsuredList
+        rows={additionalInsureds}
+        sourceSpans={sourceSpans}
+        fileUrl={fileUrl}
+      />
       <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />
-      <EndorsementSupportList rows={endorsementSupport} />
+      <EndorsementSupportList
+        rows={endorsementSupport}
+        sourceSpans={sourceSpans}
+        fileUrl={fileUrl}
+      />
     </div>
   );
 }
@@ -1474,7 +1574,12 @@ export default function OperatorExtractionsPage() {
                   {selected.error ? <OperationalLabelValueRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
                 </OperationalLabelValueList>
                 {!selectedIsRunning ? (
-                  <OperationalProfileSummary policy={detail?.policy} />
+                  <OperationalProfileSummary
+                    policy={detail?.policy}
+                    policyId={selectedPolicyId}
+                    fileUrl={detail?.fileUrl ?? undefined}
+                    allowOperatorSourceAccess
+                  />
                 ) : null}
               </div>
             </TabsContent>
@@ -1485,12 +1590,11 @@ export default function OperatorExtractionsPage() {
                   Extraction is running. Extracted policy data will appear after this run completes.
                 </div>
               ) : detail?.policy ? (
-                <ExtractionCards
+                <OperationalProfileSummary
+                  policy={detail.policy}
                   policyId={selected.policyId as Id<"policies">}
-                  policyDocument={detail.policy as ExtractionCardsPolicyDocument}
                   fileUrl={detail.fileUrl ?? undefined}
                   allowOperatorSourceAccess
-                  sourceHierarchyOnly
                 />
               ) : (
                 <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">

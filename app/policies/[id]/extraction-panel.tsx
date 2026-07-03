@@ -2536,7 +2536,6 @@ export interface ExtractionPanelProps {
   sourceSpansOverride?: SourceSpanDoc[];
   fileUrl?: string;
   allowOperatorSourceAccess?: boolean;
-  sourceHierarchyOnly?: boolean;
 }
 
 /** Renders extraction details as separate, flat cards — one per data type */
@@ -2547,7 +2546,6 @@ export function ExtractionCards({
   sourceSpansOverride,
   fileUrl,
   allowOperatorSourceAccess,
-  sourceHierarchyOnly,
 }: ExtractionPanelProps) {
   const allSourceSpanIds = useMemo(
     () => collectSourceSpanIds(policyDocument),
@@ -2670,24 +2668,6 @@ export function ExtractionCards({
 
   if (!hasAnyData) return null;
   if (!policyDocument) return null;
-
-  if (sourceHierarchyOnly) {
-    return (
-      <div className="space-y-4">
-        {policyId || documentOutline.length > 0 ? (
-          <SourceBackedBreakdown
-            policyId={policyId}
-            policyDocument={policyDocument}
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            allowOperatorSourceAccess={allowOperatorSourceAccess}
-          />
-        ) : (
-          <SourceNativeBreakdownUnavailable />
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-4">
