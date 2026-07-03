@@ -332,7 +332,7 @@ const PREVIEW_JOB_CONCURRENCY = readBoundedIntEnv(
 );
 const EXTRACTION_JOB_CONCURRENCY = readBoundedIntEnv(
   "EXTRACTION_JOB_CONCURRENCY",
-  2,
+  8,
   1,
   1000,
 );
@@ -378,6 +378,23 @@ function nowMs(): number {
 
 function modelAbortSignal() {
   return AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS);
+}
+
+async function withModelCallTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error("The operation was aborted due to timeout"));
+        }, MODEL_CALL_TIMEOUT_MS + 1000);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    void promise.catch(() => {});
+  }
 }
 
 function errorMessage(error: unknown): string {
@@ -1245,7 +1262,7 @@ function buildWorkerExtractor(opts: {
         providerOptions: callProviderOptions,
         trace,
       });
-      const result = await aiGenerateText({
+      const result = await withModelCallTimeout(aiGenerateText({
         model: route.model,
         system: params.system,
         ...buildPromptInput(guidedPrompt, providerOptions, route.route),
@@ -1255,7 +1272,7 @@ function buildWorkerExtractor(opts: {
         maxOutputTokens,
         providerOptions: callProviderOptions,
         abortSignal: modelAbortSignal(),
-      });
+      }));
       const usage = mapUsage(result.usage);
       await recordModelCallComplete({
         job: opts.job,
@@ -1353,7 +1370,7 @@ function buildWorkerExtractor(opts: {
           providerOptions: fallbackProviderOptions,
           trace,
         });
-        const fallbackResult = await aiGenerateText({
+        const fallbackResult = await withModelCallTimeout(aiGenerateText({
           model: fallback.model,
           system: params.system,
           ...buildPromptInput(guidedPrompt, providerOptions, fallback.route),
@@ -1363,7 +1380,7 @@ function buildWorkerExtractor(opts: {
           maxOutputTokens: fallbackMaxOutputTokens,
           providerOptions: fallbackProviderOptions,
           abortSignal: modelAbortSignal(),
-        });
+        }));
         const usage = mapUsage(fallbackResult.usage);
         await recordModelCallComplete({
           job: opts.job,
@@ -1970,7 +1987,7 @@ ${sourceText}`;
   const startedAt = nowMs();
   const label = "Extract provisional policy fields";
   try {
-    const result = await aiGenerateText({
+    const result = await withModelCallTimeout(aiGenerateText({
       model: route.model,
       system,
       prompt,
@@ -1980,7 +1997,7 @@ ${sourceText}`;
       maxOutputTokens,
       providerOptions: callProviderOptions,
       abortSignal: modelAbortSignal(),
-    });
+    }));
     const usage = mapUsage(result.usage);
     await recordModelCallComplete({
       job,
@@ -2043,7 +2060,7 @@ ${sourceText}`;
     const fallbackProviderOptions = providerOptionsForModelCall(fallback, undefined);
     const fallbackStartedAt = nowMs();
     try {
-      const result = await aiGenerateText({
+      const result = await withModelCallTimeout(aiGenerateText({
         model: fallback.model,
         system,
         prompt,
@@ -2053,7 +2070,7 @@ ${sourceText}`;
         maxOutputTokens: fallbackMaxOutputTokens,
         providerOptions: fallbackProviderOptions,
         abortSignal: modelAbortSignal(),
-      });
+      }));
       const usage = mapUsage(result.usage);
       await recordModelCallComplete({
         job,
