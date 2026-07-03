@@ -8,13 +8,15 @@ const read = (path: string) => readFileSync(join(root, path), "utf8");
 describe("toaster layout", () => {
   it("keeps Sonner toasts bounded and consistently stacked", () => {
     const toaster = read("components/ui/toaster.tsx");
+    const banner = read("components/operator-impersonation-banner.tsx");
     const globals = read("app/globals.css");
 
-    expect(toaster).toContain("expand");
+    expect(toaster).not.toContain("\n      expand");
     expect(toaster).toContain('visibleToasts={4}');
+    expect(toaster).toContain('bottom: "calc(var(--glass-app-bottom-inset, 0px) + 1.5rem)"');
     expect(toaster).toContain("mobileOffset={{");
     expect(toaster).toContain(
-      'bottom: "calc(env(safe-area-inset-bottom) + 5.5rem)"',
+      '"calc(var(--glass-app-bottom-inset, 0px) + env(safe-area-inset-bottom) + 5.5rem)"',
     );
     expect(toaster).toContain('"--width": "min(356px, calc(100vw - 2rem))"');
     expect(toaster).toContain('width: "var(--width)"');
@@ -23,5 +25,6 @@ describe("toaster layout", () => {
     expect(globals).toContain('[data-sonner-toaster][data-x-position="right"]');
     expect(globals).toContain("right: var(--mobile-offset-right)");
     expect(globals).toContain("[data-sonner-toast][data-x-position=\"right\"]");
+    expect(banner).toContain("--glass-app-bottom-inset");
   });
 });
