@@ -193,6 +193,7 @@ const FINAL_EXTRACTION_IDENTITY_FIELDS = [
   "broker",
   "effectiveDate",
   "expirationDate",
+  "premium",
 ] as const;
 
 function knownPolicyText(value: unknown): string | undefined {
@@ -223,6 +224,19 @@ function preserveKnownFinalExtractionIdentityFields(
   }
   if (!knownPolicyText(fields.security) && existingSecurity) {
     fields.security = existingSecurity;
+  }
+  if (
+    (!Array.isArray(fields.coverages) || fields.coverages.length === 0) &&
+    Array.isArray(existing.coverages) &&
+    existing.coverages.length > 0
+  ) {
+    fields.coverages = existing.coverages;
+  }
+  if (
+    (!knownPolicyText(fields.fileName) || fields.fileName === "Unknown.pdf") &&
+    knownPolicyText(existing.fileName)
+  ) {
+    fields.fileName = existing.fileName;
   }
 }
 

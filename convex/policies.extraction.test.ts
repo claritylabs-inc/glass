@@ -24,11 +24,12 @@ describe("policies.updateExtractionInternal", () => {
         broker: "Known Broker",
         effectiveDate: "01/01/2026",
         expirationDate: "01/01/2027",
+        fileName: "known-policy.pdf",
         policyTypes: ["general_liability"],
         documentType: "policy",
         policyYear: 2026,
         isRenewal: false,
-        coverages: [],
+        coverages: [{ name: "Known Coverage", limit: "$1,000,000" }],
         extractionDataStage: "preview",
       });
     });
@@ -44,6 +45,8 @@ describe("policies.updateExtractionInternal", () => {
         broker: "",
         effectiveDate: undefined,
         expirationDate: "Unknown",
+        fileName: "Unknown.pdf",
+        coverages: [],
         premium: "$100",
       },
     });
@@ -57,6 +60,8 @@ describe("policies.updateExtractionInternal", () => {
       broker: "Known Broker",
       effectiveDate: "01/01/2026",
       expirationDate: "01/01/2027",
+      fileName: "known-policy.pdf",
+      coverages: [{ name: "Known Coverage", limit: "$1,000,000" }],
       premium: "$100",
       extractionDataStage: "final",
     });
