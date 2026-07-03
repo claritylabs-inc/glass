@@ -286,6 +286,10 @@ const actions = {
 
 const CONVEX_URL = requiredEnv("CONVEX_URL");
 const SECRET = requiredEnv("EXTRACTION_WORKER_SECRET");
+const GLASS_ENV =
+  process.env.GLASS_ENV ??
+  process.env.RAILWAY_ENVIRONMENT_NAME ??
+  "local";
 const WORKER_ID = process.env.EXTRACTION_WORKER_ID ?? `extraction-worker-${process.pid}`;
 const WORKER_VERSION = process.env.EXTRACTION_WORKER_VERSION ?? workerPackage.version ?? "unknown";
 const WORKER_CL_SDK_VERSION =
@@ -326,6 +330,12 @@ const PREVIEW_JOB_CONCURRENCY = readBoundedIntEnv(
   2,
   1,
   8,
+);
+const EXTRACTION_JOB_CONCURRENCY = readBoundedIntEnv(
+  "EXTRACTION_JOB_CONCURRENCY",
+  8,
+  1,
+  1000,
 );
 
 const convex = new ConvexHttpClient(CONVEX_URL);
@@ -1493,11 +1503,14 @@ function startHttpServer(): { close: () => void } | null {
     if (req.method === "GET" && url.pathname === "/health") {
       jsonResponse(res, 200, {
         ok: true,
+        glassEnv: GLASS_ENV,
         workerId: WORKER_ID,
         workerVersion: WORKER_VERSION,
         workerProtocolVersion: WORKER_PROTOCOL_VERSION,
         clSdkVersion: WORKER_CL_SDK_VERSION,
         convexUrl: CONVEX_URL,
+        extractionJobConcurrency: EXTRACTION_JOB_CONCURRENCY,
+        previewJobConcurrency: PREVIEW_JOB_CONCURRENCY,
       });
       return;
     }
@@ -2356,15 +2369,21 @@ async function runPreviewLoop(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log(
-    `Glass extraction worker ${WORKER_ID} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} connected to ${CONVEX_URL}`,
+    `Glass extraction worker ${WORKER_ID} env=${GLASS_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} connected to ${CONVEX_URL}`,
   );
   const httpServer = startHttpServer();
   const previewLoop = runPreviewLoop().catch((error) => {
     console.error("Preview extraction loop failed:", error);
   });
+  const active = new Set<Promise<void>>();
   let lastIdleLogAt = 0;
   try {
     while (!shuttingDown) {
+      if (active.size >= EXTRACTION_JOB_CONCURRENCY) {
+        await Promise.race(active);
+        continue;
+      }
+
       let job: ClaimedJob | null = null;
       try {
         job = await claimJob();
@@ -2374,7 +2393,10 @@ async function main(): Promise<void> {
         continue;
       }
       if (job) {
-        await processJob(job);
+        const task = processJob(job).finally(() => {
+          active.delete(task);
+        });
+        active.add(task);
         continue;
       }
 
@@ -2387,6 +2409,7 @@ async function main(): Promise<void> {
     }
   } finally {
     shuttingDown = true;
+    await Promise.allSettled(active);
     await previewLoop;
     httpServer?.close();
   }
