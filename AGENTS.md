@@ -66,6 +66,7 @@ Railway project `Glass` (`21798fb8-c164-4eed-800c-c964978a9639`):
 Railway worker env wiring:
 
 - Extraction worker requires `CONVEX_URL`, `EXTRACTION_WORKER_SECRET`, provider keys, and `EXTRACTION_WORKER_ID` (`railway-dev-extraction-worker`, `railway-staging-extraction-worker`, or `railway-production-extraction-worker`).
+- `EXTRACTION_JOB_CONCURRENCY` controls how many full policy extraction jobs a single worker process leases at once. Keep the default conservative for PDF/model memory pressure, and raise it only after live worker health and extraction latency prove the container size can handle the load.
 - Mailbox scan worker requires `CONVEX_SITE_URL` and `EMAIL_SCAN_CRON_SECRET`.
 - iMessage worker requires `CONVEX_SITE_URL` and `IMESSAGE_WORKER_SECRET`; production also requires Photon credentials, `SPECTRUM_PROVIDER=imessage`, and `IMESSAGE_ENABLED=true`, while staging/local should use `SPECTRUM_PROVIDER=terminal`, `IMESSAGE_ENABLED=false`, and `IMESSAGE_TERMINAL_ENABLED=true`.
 - Email sending defaults to live behavior unless `EMAIL_DELIVERY_MODE` is set. Production uses `EMAIL_DELIVERY_MODE=live`; staging uses `EMAIL_DELIVERY_MODE=restricted` plus `EMAIL_REDIRECT_TO=staging@claritylabs.inc` and allowlisted internal recipient domains; dev/local uses `EMAIL_DELIVERY_MODE=restricted`, `EMAIL_REDIRECT_TO=staging@claritylabs.inc`, and no recipient allowlist so OTP emails are recoverable while customer/vendor mail is not sent.

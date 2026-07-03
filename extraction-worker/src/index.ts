@@ -332,7 +332,7 @@ const PREVIEW_JOB_CONCURRENCY = readBoundedIntEnv(
 );
 const EXTRACTION_JOB_CONCURRENCY = readBoundedIntEnv(
   "EXTRACTION_JOB_CONCURRENCY",
-  100,
+  2,
   1,
   1000,
 );
