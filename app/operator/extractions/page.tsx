@@ -416,7 +416,7 @@ function CoverageList({
 
         return (
           <OperationalItem key={`${name}-${rowIndex}`} className="px-4">
-            <div className="flex min-w-0 items-start gap-1.5 text-base font-normal leading-5 text-foreground">
+            <div className="flex min-w-0 items-center gap-1.5 text-base font-normal leading-5 text-foreground">
               <span className="min-w-0 break-words">{name}</span>
               <SourceEvidenceButton
                 sourceSpanIds={coverageSourceSpanIds}
