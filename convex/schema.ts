@@ -559,8 +559,9 @@ export default defineSchema({
     .index("by_orgId", ["orgId"]),
 
   brokerClientAssignments: defineTable({
-    orgId: v.id("organizations"), // broker org
+    orgId: v.optional(v.id("organizations")), // connected broker org; omitted for standalone external contacts
     clientOrgId: v.id("organizations"), // client org
+    brokerCompanyName: v.optional(v.string()),
     producerId: v.optional(v.id("users")), // optional broker user
     role: v.union(v.literal("primary"), v.literal("secondary")),
     contactName: v.optional(v.string()),

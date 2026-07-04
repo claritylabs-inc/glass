@@ -21,7 +21,6 @@ type SettingsSource = "client_override" | "broker_default" | "platform_default";
 type SettingsDraft = {
   populateHoldersFromEndorsements: boolean;
   renewalReissueEnabled: boolean;
-  renewalReviewLeadDays: number;
   policyChangeRequestsForHeldCertificatesEnabled: boolean;
 };
 
@@ -35,7 +34,6 @@ type SettingsResult = SettingsDraft & {
 const DEFAULT_SETTINGS: SettingsDraft = {
   populateHoldersFromEndorsements: true,
   renewalReissueEnabled: true,
-  renewalReviewLeadDays: 60,
   policyChangeRequestsForHeldCertificatesEnabled: true,
 };
 
@@ -45,8 +43,6 @@ function toDraft(value?: Partial<SettingsDraft> | null): SettingsDraft {
       value?.populateHoldersFromEndorsements ?? DEFAULT_SETTINGS.populateHoldersFromEndorsements,
     renewalReissueEnabled:
       value?.renewalReissueEnabled ?? DEFAULT_SETTINGS.renewalReissueEnabled,
-    renewalReviewLeadDays:
-      value?.renewalReviewLeadDays ?? DEFAULT_SETTINGS.renewalReviewLeadDays,
     policyChangeRequestsForHeldCertificatesEnabled:
       value?.policyChangeRequestsForHeldCertificatesEnabled ??
       DEFAULT_SETTINGS.policyChangeRequestsForHeldCertificatesEnabled,
@@ -57,7 +53,6 @@ function signature(value: SettingsDraft) {
   return JSON.stringify({
     populateHoldersFromEndorsements: value.populateHoldersFromEndorsements,
     renewalReissueEnabled: value.renewalReissueEnabled,
-    renewalReviewLeadDays: Math.max(0, Math.min(365, Math.round(value.renewalReviewLeadDays || 0))),
     policyChangeRequestsForHeldCertificatesEnabled: value.policyChangeRequestsForHeldCertificatesEnabled,
   });
 }
@@ -149,10 +144,7 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
     setSaveStatus("saving");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
-      const payload = {
-        ...draft,
-        renewalReviewLeadDays: Math.max(0, Math.min(365, Math.round(draft.renewalReviewLeadDays || 0))),
-      };
+      const payload = { ...draft };
       try {
         if (isBroker) {
           await updateBrokerDefault(payload);
@@ -200,18 +192,18 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
     <div className="space-y-4">
       <OperationalPanel>
         <OperationalPanelHeader
-          title="Certificate Workflow"
+          title="Certificates"
           description={isBroker
-            ? "Set broker defaults for holder population, held certificate requests, and renewal review jobs."
-            : "Review inherited certificate workflow settings and add client-owned overrides when needed."}
+            ? "Defaults for holder records, endorsement handoffs, and renewal review jobs."
+            : "Certificate behavior for this client workspace."}
           action={(
             <span className="text-label text-muted-foreground">
               {isInheritedClient ? "Inherited" : saveStatus === "saving" ? "Saving" : saveStatus === "error" ? "Not saved" : "Saved"}
             </span>
           )}
         />
-        <OperationalPanelBody className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2 text-base text-muted-foreground">
+        <OperationalPanelBody className="space-y-0 divide-y divide-foreground/6 py-0">
+          <div className="flex flex-wrap items-center gap-2 py-4 text-base text-muted-foreground">
             <span className="rounded-md border border-foreground/8 px-2 py-1 text-label text-foreground">
               {sourceCopy(result.source)}
             </span>
@@ -224,7 +216,7 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
             </span>
           </div>
           {isInheritedClient && canEdit ? (
-            <div className="flex items-center justify-between gap-4 border-t border-foreground/6 pt-3">
+            <div className="flex items-center justify-between gap-4 py-4">
               <p className="text-base text-muted-foreground">
                 {inheritedClientCopy}
               </p>
@@ -233,15 +225,9 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
               </PillButton>
             </div>
           ) : null}
-        </OperationalPanelBody>
-      </OperationalPanel>
-
-      <OperationalPanel>
-        <OperationalPanelHeader title="Holder Population" />
-        <OperationalPanelBody className="divide-y divide-foreground/6 py-0">
           <ToggleRow
-            title="Populate holders from endorsements"
-            description="Create holder records only from source-backed named parties, scheduled additional insureds, loss payees, mortgagees, or specifically allowed holders."
+            title="Source-backed holder records"
+            description="Save certificate holders found in policy endorsements and schedules."
             checked={draft.populateHoldersFromEndorsements}
             disabled={!editable}
             label="Toggle holder population from endorsements"
@@ -251,8 +237,8 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
             })}
           />
           <ToggleRow
-            title="Held COI broker handoff"
-            description="Prepare a broker follow-up when a certificate request requires an endorsement before issuance."
+            title="Broker follow-up for endorsement requests"
+            description="Draft a broker follow-up instead of issuing when a certificate request needs a policy change."
             checked={draft.policyChangeRequestsForHeldCertificatesEnabled}
             disabled={!editable}
             label="Toggle held COI broker handoff"
@@ -262,15 +248,9 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
                 !draft.policyChangeRequestsForHeldCertificatesEnabled,
             })}
           />
-        </OperationalPanelBody>
-      </OperationalPanel>
-
-      <OperationalPanel>
-        <OperationalPanelHeader title="Renewal Review" />
-        <OperationalPanelBody className="space-y-5">
           <ToggleRow
-            title="Create renewal review jobs"
-            description="Queue review work for active issued certificates when a policy renews; do not automatically send without review."
+            title="Renewal review queue"
+            description="Queue active certificates for review when a renewed policy is uploaded."
             checked={draft.renewalReissueEnabled}
             disabled={!editable}
             label="Toggle renewal review jobs"
@@ -279,23 +259,8 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
               renewalReissueEnabled: !draft.renewalReissueEnabled,
             })}
           />
-          <label className="block max-w-xs space-y-2">
-            <span className="text-label text-muted-foreground">Review lead time (days)</span>
-            <input
-              type="number"
-              min={0}
-              max={365}
-              disabled={!editable || !draft.renewalReissueEnabled}
-              value={draft.renewalReviewLeadDays}
-              onChange={(event) => setDraft({
-                ...draft,
-                renewalReviewLeadDays: Number(event.target.value) || 0,
-              })}
-              className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none transition-colors focus:border-foreground/20 disabled:opacity-50"
-            />
-          </label>
           {isClient && result.clientOverride ? (
-            <div className="flex justify-end">
+            <div className="flex justify-end py-4">
               <PillButton type="button" variant="secondary" onClick={() => void clearOverride()}>
                 Clear client override
               </PillButton>

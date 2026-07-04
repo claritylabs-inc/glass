@@ -29,7 +29,9 @@ function displayValue(value?: string) {
 }
 
 function relationshipLabel(identity: BrokerIdentity) {
-  if (identity.source === "assignment") return "Assigned";
+  if (identity.source === "assignment") {
+    return identity.connected ? "Assigned" : "External broker contact";
+  }
   if (identity.connected) return "Connected broker";
   return "No broker contact";
 }

@@ -29,6 +29,7 @@ import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { ModelsSection } from "@/components/settings/models-section";
 import { PolicyDeliverySection } from "@/components/settings/policy-delivery-section";
 import { CertificateWorkflowSection } from "@/components/settings/certificate-workflow-section";
+import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
 import NotificationPreferencesPage from "./notifications/page";
 
 const AGENT_SETTINGS_SECTION: SettingsSection = { id: "agent", label: "Agent", icon: GlassStarIcon };
@@ -140,6 +141,8 @@ function SectionContent({
     <div>
       {section === "organization" ? (
         <OrganizationSection />
+      ) : section === "broker" && currentOrg?.orgId ? (
+        <BrokerIdentitySection orgId={currentOrg.orgId} />
       ) : section === "team" ? (
         <TeamSection />
       ) : section === "agent" && isStandaloneClient ? (

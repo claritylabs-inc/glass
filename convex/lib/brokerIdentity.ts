@@ -48,6 +48,10 @@ function applyOverrides(
   };
 }
 
+function primaryAssignment(rows: Doc<"brokerClientAssignments">[]) {
+  return rows.find((row) => row.role === "primary") ?? rows[0] ?? null;
+}
+
 export async function resolveBrokerIdentityForClient(
   ctx: BrokerIdentityCtx,
   clientOrg: Doc<"organizations">,
@@ -75,8 +79,7 @@ export async function resolveBrokerIdentityForClient(
         q.eq("orgId", clientOrg.brokerOrgId!).eq("clientOrgId", clientOrg._id),
       )
       .collect();
-    const assignment =
-      assignments.find((row) => row.role === "primary") ?? assignments[0] ?? null;
+    const assignment = primaryAssignment(assignments);
 
     if (assignment) {
       const user = assignment.producerId ? await ctx.db.get(assignment.producerId) : null;
@@ -96,6 +99,23 @@ export async function resolveBrokerIdentityForClient(
       brokerOrgId: brokerOrg._id,
       brokerCompanyName: brokerOrg.name,
       source: "none",
+    };
+  }
+
+  const assignments = await ctx.db
+    .query("brokerClientAssignments")
+    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrg._id))
+    .collect();
+  const assignment =
+    primaryAssignment(assignments.filter((row) => !row.orgId)) ??
+    primaryAssignment(assignments);
+  if (assignment) {
+    return {
+      clientOrgId: clientOrg._id,
+      brokerCompanyName: clean(assignment.brokerCompanyName),
+      ...applyOverrides(assignment, null),
+      source: "assignment",
+      assignmentId: assignment._id,
     };
   }
 

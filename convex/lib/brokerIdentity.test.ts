@@ -138,4 +138,36 @@ describe("resolveBrokerIdentityForClient", () => {
 
     expect(identity).toEqual({ clientOrgId, source: "none" });
   });
+
+  test("uses standalone external broker contact assignments", async () => {
+    const t = convexTest(schema, modules);
+
+    const identity = await t.run(async (ctx) => {
+      const clientOrgId = await ctx.db.insert("organizations", {
+        name: "Standalone Client",
+        type: "client",
+      });
+      await ctx.db.insert("brokerClientAssignments", {
+        clientOrgId,
+        brokerCompanyName: "External Risk Partners",
+        role: "primary",
+        contactName: "Robin Broker",
+        contactEmail: "robin@external.test",
+        contactPhone: "+15555550300",
+        createdAt: 1,
+      });
+
+      const clientOrg = await ctx.db.get(clientOrgId);
+      return await resolveBrokerIdentityForClient(ctx, clientOrg!);
+    });
+
+    expect(identity).toMatchObject({
+      brokerCompanyName: "External Risk Partners",
+      contactName: "Robin Broker",
+      contactEmail: "robin@external.test",
+      contactPhone: "+15555550300",
+      source: "assignment",
+    });
+    expect(identity.brokerOrgId).toBeUndefined();
+  });
 });

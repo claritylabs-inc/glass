@@ -1,8 +1,9 @@
-import { Bell, Brain, Building2, FileBadge2, Mail, Network, Send, Users } from "lucide-react";
+import { Bell, Brain, Briefcase, Building2, FileBadge2, Mail, Network, Send, Users } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type SettingsSectionId =
   | "organization"
+  | "broker"
   | "team"
   | "agent"
   | "memory"
@@ -21,6 +22,7 @@ export interface SettingsSection {
 
 export const CLIENT_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "organization", label: "Organization", icon: Building2 },
+  { id: "broker", label: "Broker", icon: Briefcase },
   { id: "team", label: "Team", icon: Users },
   { id: "memory", label: "Memory", icon: Brain },
   { id: "email", label: "Email", icon: Mail },

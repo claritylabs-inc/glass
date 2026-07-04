@@ -19,13 +19,6 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
@@ -65,11 +58,6 @@ type OrgSettingsArgs = {
 
 type RelatedLegalEntity = {
   legalName: string;
-  relationship?: "current" | "fka" | "dba" | "subsidiary" | "parent" | "affiliate" | "other";
-  incorporationNumber?: string;
-  taxId?: string;
-  jurisdiction?: string;
-  notes?: string;
 };
 
 type BrandingSettingsArgs = {
@@ -236,11 +224,6 @@ export function OrganizationSection() {
     relatedLegalEntities: relatedLegalEntities
       .map((entity) => ({
         legalName: entity.legalName.trim(),
-        relationship: entity.relationship,
-        incorporationNumber: entity.incorporationNumber?.trim() || undefined,
-        taxId: entity.taxId?.trim() || undefined,
-        jurisdiction: entity.jurisdiction?.trim() || undefined,
-        notes: entity.notes?.trim() || undefined,
       }))
       .filter((entity) => entity.legalName),
   };
@@ -390,7 +373,7 @@ export function OrganizationSection() {
   function addRelatedLegalEntity() {
     setRelatedLegalEntities((current) => [
       ...current,
-      { legalName: "", relationship: "fka" },
+      { legalName: "" },
     ]);
   }
 
@@ -504,10 +487,7 @@ export function OrganizationSection() {
               ) : (
                 <div className="space-y-3">
                   {relatedLegalEntities.map((entity, index) => (
-                    <div
-                      key={index}
-                      className="grid gap-2 rounded-lg border border-foreground/8 bg-popover p-3 sm:grid-cols-12"
-                    >
+                    <div key={index} className="flex items-center gap-2">
                       <input
                         type="text"
                         value={entity.legalName}
@@ -516,85 +496,17 @@ export function OrganizationSection() {
                             legalName: event.target.value,
                           })
                         }
-                        placeholder="Actual legal name"
-                        className="sm:col-span-5 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                      <div className="sm:col-span-2">
-                        <Select
-                          value={entity.relationship ?? "other"}
-                          onValueChange={(value) =>
-                            updateRelatedLegalEntity(index, {
-                              relationship:
-                                value as RelatedLegalEntity["relationship"],
-                            })
-                          }
-                        >
-                          <SelectTrigger className="w-full border-foreground/8 bg-popover">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="current">Current</SelectItem>
-                            <SelectItem value="fka">FKA</SelectItem>
-                            <SelectItem value="dba">DBA</SelectItem>
-                            <SelectItem value="subsidiary">Subsidiary</SelectItem>
-                            <SelectItem value="parent">Parent</SelectItem>
-                            <SelectItem value="affiliate">Affiliate</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <input
-                        type="text"
-                        value={entity.incorporationNumber ?? ""}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            incorporationNumber: event.target.value,
-                          })
-                        }
-                        placeholder="Incorp. no."
-                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                      <input
-                        type="text"
-                        value={entity.taxId ?? ""}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            taxId: event.target.value,
-                          })
-                        }
-                        placeholder="EIN / tax ID"
-                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        placeholder="Alternate legal name, DBA, FKA, parent, subsidiary, or affiliate"
+                        className="min-w-0 flex-1 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                       <button
                         type="button"
                         onClick={() => removeRelatedLegalEntity(index)}
-                        className="sm:col-span-1 inline-flex h-9 items-center justify-center rounded-lg border border-foreground/8 text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
+                        className="inline-flex h-9 w-10 items-center justify-center rounded-lg border border-foreground/8 text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
                         aria-label="Remove legal entity"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
-                      <input
-                        type="text"
-                        value={entity.jurisdiction ?? ""}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            jurisdiction: event.target.value,
-                          })
-                        }
-                        placeholder="Jurisdiction"
-                        className="sm:col-span-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                      <input
-                        type="text"
-                        value={entity.notes ?? ""}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            notes: event.target.value,
-                          })
-                        }
-                        placeholder="Notes"
-                        className="sm:col-span-9 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
                     </div>
                   ))}
                 </div>
@@ -663,76 +575,6 @@ export function OrganizationSection() {
 
         {isBroker && <BrandingCard website={website} />}
 
-        {/* Relationship Context section — client orgs only */}
-        {!isBroker && (
-          <OperationalPanel className="mb-4">
-            <OperationalPanelHeader title="Relationship Context" className="px-5 py-3.5" />
-            <OperationalPanelBody className="space-y-4 px-5 py-5">
-              <div>
-                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                  Clients &amp; Customers
-                </label>
-                <input
-                  type="text"
-                  value={clientsContext}
-                  onChange={(e) => setClientsContext(e.target.value)}
-                  placeholder="e.g. Small to mid-size restaurants in the Bay Area"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                  Vendors &amp; Service Providers
-                </label>
-                <input
-                  type="text"
-                  value={vendorsContext}
-                  onChange={(e) => setVendorsContext(e.target.value)}
-                  placeholder="e.g. AWS for cloud, Stripe for payments, WeWork for office space"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                  Insurance Relationships
-                </label>
-                <input
-                  type="text"
-                  value={insuranceContext}
-                  onChange={(e) => setInsuranceContext(e.target.value)}
-                  placeholder="e.g. Marsh as broker, Hartford and Travelers as carriers"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                    Investors &amp; Shareholders
-                  </label>
-                  <input
-                    type="text"
-                    value={investorsContext}
-                    onChange={(e) => setInvestorsContext(e.target.value)}
-                    placeholder="e.g. Series A from Sequoia, angel investors"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                    Partners &amp; Affiliates
-                  </label>
-                  <input
-                    type="text"
-                    value={partnersContext}
-                    onChange={(e) => setPartnersContext(e.target.value)}
-                    placeholder="e.g. Joint venture with ABC Corp, reseller agreement with XYZ"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                  />
-                </div>
-              </div>
-            </OperationalPanelBody>
-          </OperationalPanel>
-        )}
       </div>
 
       {/* Onboarding section */}

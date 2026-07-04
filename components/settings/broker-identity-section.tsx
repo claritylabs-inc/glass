@@ -59,6 +59,7 @@ export type BrokerIdentity = {
 
 type BrokerIdentitySaveArgs = {
   orgId: Id<"organizations">;
+  brokerCompanyName: string;
   producerId?: Id<"users">;
   contactName: string;
   contactEmail: string;
@@ -128,6 +129,9 @@ function BrokerIdentityForm({
   surface: "card" | "plain";
 }) {
   const updateBrokerAssignment = useMutation(api.orgs.updateClientBrokerAssignment);
+  const [brokerCompanyName, setBrokerCompanyName] = useState(
+    identity.brokerCompanyName ?? "",
+  );
   const [producerId, setProducerId] = useState<Id<"users"> | "">(
     identity.selectedContactUserId ?? "",
   );
@@ -142,12 +146,13 @@ function BrokerIdentityForm({
   );
   const currentState = useMemo(
     () => ({
+      brokerCompanyName,
       producerId,
       contactName,
       contactEmail,
       contactPhone,
     }),
-    [producerId, contactName, contactEmail, contactPhone],
+    [brokerCompanyName, producerId, contactName, contactEmail, contactPhone],
   );
   const currentStateKey = useMemo(
     () => JSON.stringify(currentState),
@@ -172,6 +177,7 @@ function BrokerIdentityForm({
     async (args: BrokerIdentitySaveArgs) => {
       await updateBrokerAssignment({
         clientOrgId: args.orgId,
+        brokerCompanyName: args.brokerCompanyName,
         producerId: args.producerId,
         contactName: args.contactName,
         contactEmail: args.contactEmail,
@@ -183,6 +189,7 @@ function BrokerIdentityForm({
 
   const saveArgs: BrokerIdentitySaveArgs = {
     orgId,
+    brokerCompanyName,
     producerId: producerId || undefined,
     contactName,
     contactEmail,
@@ -207,6 +214,7 @@ function BrokerIdentityForm({
 
       const next = {
         ...current,
+        brokerCompanyName: args.brokerCompanyName,
         selectedContactUserId: args.producerId,
         contactName: args.contactName,
         contactEmail: args.contactEmail,
@@ -250,7 +258,9 @@ function BrokerIdentityForm({
       <div
         className={surface === "card" ? "space-y-4 px-5 py-5" : "space-y-4"}
       >
-        {!identity.connected ? (
+        {!identity.connected &&
+        identity.source !== "assignment" &&
+        !identity.canEdit ? (
           <p className="text-base text-muted-foreground">
             No broker is assigned to this client.
           </p>
@@ -262,13 +272,18 @@ function BrokerIdentityForm({
                   Broker company
                 </label>
                 <input
-                  value={identity.brokerCompanyName ?? ""}
-                  disabled
+                  value={
+                    identity.connected
+                      ? identity.brokerCompanyName ?? ""
+                      : brokerCompanyName
+                  }
+                  onChange={(event) => setBrokerCompanyName(event.target.value)}
+                  disabled={!identity.canEdit || identity.connected}
                   placeholder="Broker company"
                   className={INPUT_CLASSES}
                 />
               </div>
-              {identity.canEdit ? (
+              {identity.canEdit && identity.connected ? (
                 <div>
                   <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                     Broker user
@@ -375,6 +390,10 @@ function BrokerIdentityForm({
           {identity.connected && !identity.canEdit ? (
             <p className="text-base text-muted-foreground">
               This broker information is managed by your broker.
+            </p>
+          ) : !identity.connected && !identity.canEdit && identity.source === "assignment" ? (
+            <p className="text-base text-muted-foreground">
+              Only organization admins can edit this broker contact.
             </p>
           ) : (
             <span />
