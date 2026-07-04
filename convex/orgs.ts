@@ -859,6 +859,7 @@ export const updateOrg = mutation({
     autoSendEmails: v.optional(v.boolean()),
     bccRequesterOnAgentEmails: v.optional(v.boolean()),
     emailSendDelay: v.optional(v.number()),
+    connectFeaturesEnabled: v.optional(v.boolean()),
     allowedEmails: v.optional(v.array(v.string())),
     allowedDomains: v.optional(v.array(v.string())),
     emailVerification: v.optional(v.union(v.literal("strict"), v.literal("domain"), v.literal("open"))),

@@ -21,6 +21,7 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
+import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import {
@@ -49,6 +50,7 @@ type OrgSettingsArgs = {
   industry?: string;
   industryVertical?: string;
   relatedLegalEntities?: RelatedLegalEntity[];
+  connectFeaturesEnabled?: boolean;
 };
 
 type RelatedLegalEntity = {
@@ -84,6 +86,7 @@ export function OrganizationSection() {
   const [relatedLegalEntities, setRelatedLegalEntities] = useState<
     RelatedLegalEntity[]
   >([]);
+  const [connectFeaturesEnabled, setConnectFeaturesEnabled] = useState(false);
   const [settingsHydrated, setSettingsHydrated] = useState(false);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
@@ -186,6 +189,7 @@ export function OrganizationSection() {
       setIndustry(org.industry ?? "");
       setIndustryVertical(org.industryVertical ?? "");
       setRelatedLegalEntities(org.relatedLegalEntities ?? []);
+      setConnectFeaturesEnabled(org.connectFeaturesEnabled === true);
       hydratedRef.current = true;
       setSettingsHydrated(true);
     }
@@ -206,6 +210,7 @@ export function OrganizationSection() {
         legalName: entity.legalName.trim(),
       }))
       .filter((entity) => entity.legalName),
+    ...(isBroker ? {} : { connectFeaturesEnabled }),
   };
 
   const saveOrgSettings = useCallback(
@@ -542,6 +547,28 @@ export function OrganizationSection() {
                   placeholder="Brief description of your company, industry, and insurance needs..."
                   rows={4}
                   className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
+                />
+              </div>
+            )}
+
+            {!isBroker && (
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+                <div>
+                  <p className="text-base font-medium text-foreground">
+                    Show Connect features
+                  </p>
+                  <p className="mt-0.5 max-w-md text-label text-muted-foreground/60">
+                    Enables client and vendor connection pages, plus vendor
+                    requirements in Compliance.
+                  </p>
+                </div>
+                <SettingsSwitch
+                  checked={connectFeaturesEnabled}
+                  onCheckedChange={() =>
+                    setConnectFeaturesEnabled((enabled) => !enabled)
+                  }
+                  label="Show Connect features"
+                  className="ml-4"
                 />
               </div>
             )}

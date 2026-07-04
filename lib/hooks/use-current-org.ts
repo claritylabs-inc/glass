@@ -22,6 +22,7 @@ export type CurrentOrgContext = {
   whiteLabelingEnabled: boolean;
   brandingColor: string | undefined;
   agentDisplayName: string | undefined;
+  connectFeaturesEnabled: boolean;
 };
 
 /**
@@ -70,6 +71,7 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
     whiteLabelingEnabled?: boolean;
     brandingColor?: string;
     agentDisplayName?: string;
+    connectFeaturesEnabled?: boolean;
   };
 
   const membership = orgData.membership as {
@@ -95,5 +97,6 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
     whiteLabelingEnabled: org.whiteLabelingEnabled !== false,
     brandingColor: org.brandingColor,
     agentDisplayName: org.agentDisplayName,
+    connectFeaturesEnabled: org.connectFeaturesEnabled === true,
   };
 }

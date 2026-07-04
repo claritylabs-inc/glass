@@ -18,6 +18,23 @@ describe("requirement semantics surfaces", () => {
     expect(page).toContain("Check compliance");
   });
 
+  it("keeps my requirements first and gates Connect-only surfaces", () => {
+    const page = read("components/compliance-page.tsx");
+    const sidebar = read("components/app-sidebar.tsx");
+    const settings = read("components/settings/organization-section.tsx");
+    const schema = read("convex/schema.ts");
+
+    expect(page).toContain('useState<RequirementScope>("own_org")');
+    expect(page.indexOf('TabsTrigger value="own_org"')).toBeLessThan(
+      page.indexOf('TabsTrigger value="vendors"'),
+    );
+    expect(page).toContain("showConnectFeatures && !isPureVendorAccount");
+    expect(sidebar).toContain("showConnectFeatures");
+    expect(sidebar).toContain("isBroker || !showConnectFeatures");
+    expect(settings).toContain("Show Connect features");
+    expect(schema).toContain("connectFeaturesEnabled: v.optional(v.boolean())");
+  });
+
   it("exposes evaluation target in agent requirement context and lookup tools", () => {
     const complianceAgent = read("convex/lib/complianceAgent.ts");
     const chatTools = read("convex/lib/chatTools.ts");

@@ -316,19 +316,24 @@ export function CompliancePage() {
   const orgId = !isBroker
     ? (currentOrg?.orgId as Id<"organizations"> | undefined)
     : undefined;
+  const showConnectFeatures = currentOrg?.connectFeaturesEnabled === true;
   const requirements = useCachedQuery(
     "compliance.listRequirements",
     complianceApi.compliance.listRequirements,
     orgId ? { orgId } : "skip",
   ) as Requirement[] | undefined;
-  const vendorRows = useCachedConnectedVendors(orgId) as
+  const vendorRowsResult = useCachedConnectedVendors(
+    orgId && showConnectFeatures ? orgId : undefined,
+  ) as
     | ConnectedOrgRow[]
     | undefined;
-  const clientRows = useCachedQuery(
+  const clientRowsResult = useCachedQuery(
     "connectedOrgs.listClients",
     complianceApi.connectedOrgs.listClients,
-    orgId ? { orgId } : "skip",
+    orgId && showConnectFeatures ? { orgId } : "skip",
   ) as ConnectedOrgRow[] | undefined;
+  const vendorRows = showConnectFeatures ? vendorRowsResult : [];
+  const clientRows = showConnectFeatures ? clientRowsResult : [];
   const updateRequirements = useUpdateCachedQuery<
     Requirement[],
     { orgId: Id<"organizations"> }
@@ -352,7 +357,7 @@ export function CompliancePage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"bulk" | "manual">("bulk");
   const [requirementScope, setRequirementScope] =
-    useState<RequirementScope>("vendors");
+    useState<RequirementScope>("own_org");
   const [sourceText, setSourceText] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceType, setSourceType] =
@@ -377,14 +382,14 @@ export function CompliancePage() {
     (row) => row.status === "active",
   );
   const isPureVendorAccount =
+    showConnectFeatures &&
     clientRows !== undefined &&
     vendorRows !== undefined &&
     hasActiveClients &&
     !hasActiveVendors;
 
-  const activeRequirementScope: RequirementScope = isPureVendorAccount
-    ? "own_org"
-    : requirementScope;
+  const activeRequirementScope: RequirementScope =
+    !showConnectFeatures || isPureVendorAccount ? "own_org" : requirementScope;
 
   async function submitRequirement(event: FormEvent) {
     event.preventDefault();
@@ -733,7 +738,7 @@ export function CompliancePage() {
       rightPanel={rightPanel}
     >
       <div className="flex w-full flex-col gap-4">
-        {!isPureVendorAccount ? (
+        {showConnectFeatures && !isPureVendorAccount ? (
           <Tabs
             value={requirementScope}
             onValueChange={(value) =>
@@ -741,15 +746,15 @@ export function CompliancePage() {
             }
           >
             <TabsList variant="pill">
-              <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
               <TabsTrigger value="own_org">My requirements</TabsTrigger>
+              <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
             </TabsList>
           </Tabs>
         ) : null}
 
         {requirements === undefined ||
-        clientRows === undefined ||
-        vendorRows === undefined ? (
+        (showConnectFeatures &&
+          (clientRows === undefined || vendorRows === undefined)) ? (
           <RequirementsLoadingSkeleton />
         ) : visibleRequirements.length === 0 ? (
           <ComplianceEmptyState

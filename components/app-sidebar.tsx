@@ -125,6 +125,7 @@ export function AppSidebar({
   const { context: pageContext } = usePageContext();
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
+  const showConnectFeatures = currentOrg?.org?.connectFeaturesEnabled === true;
   const isStandaloneClient =
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const canManageSettings = currentOrg?.role === "admin";
@@ -133,7 +134,8 @@ export function AppSidebar({
   ).filter(
     (item) => item.href !== "/broker" || brokerPageContext?.showBrokerPage,
   );
-  const connectItems = isBroker ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
+  const connectItems =
+    isBroker || !showConnectFeatures ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   useEffect(() => {

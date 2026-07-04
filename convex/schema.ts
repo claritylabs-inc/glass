@@ -319,6 +319,7 @@ export default defineSchema({
     autoSendEmails: v.optional(v.boolean()), // when false, drafted emails from chat require confirmation before sending
     bccRequesterOnAgentEmails: v.optional(v.boolean()), // default true: BCC requesting team member on outbound agent emails
     emailSendDelay: v.optional(v.number()), // seconds before sending emails (default 5, 0 = instant)
+    connectFeaturesEnabled: v.optional(v.boolean()), // opt-in client/vendor connection surfaces
     // Onboarding
     onboardingComplete: v.optional(v.boolean()),
     // Internal operator lifecycle for operator-provisioned tenants. Missing legacy value means live.
