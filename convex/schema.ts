@@ -160,6 +160,11 @@ const certificateVersionStatusValidator = v.union(
   v.literal("void"),
 );
 
+const certificateRequestKindValidator = v.union(
+  v.literal("holder"),
+  v.literal("additional_insured"),
+);
+
 const certificateWorkflowJobStatusValidator = v.union(
   v.literal("review_required"),
   v.literal("blocked_missing_contact"),
@@ -307,12 +312,6 @@ export default defineSchema({
     agentHandle: v.optional(v.string()),
     // Primary insurance contact for the org
     primaryInsuranceContactId: v.optional(v.id("users")),
-    // Manual broker identity for standalone client orgs that are not connected
-    // to a broker org.
-    brokerCompanyName: v.optional(v.string()),
-    brokerContactName: v.optional(v.string()),
-    brokerContactEmail: v.optional(v.string()),
-    brokerContactPhone: v.optional(v.string()),
     // Agent settings
     chatEmailNotifications: v.optional(v.boolean()), // send email notifications for chat responses in email threads
     autoSendEmails: v.optional(v.boolean()), // when false, drafted emails from chat require confirmation before sending
@@ -327,19 +326,7 @@ export default defineSchema({
     // Branding
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
-    type: v.optional(
-      v.union(v.literal("broker"), v.literal("client"), v.literal("partner")),
-    ),
-    partnerKind: v.optional(v.literal("program_admin")),
-    // Partner type — only meaningful when type === "broker"
-    partnerType: v.optional(
-      v.union(
-        v.literal("broker"),
-        v.literal("program_admin"),
-        v.literal("carrier"),
-        v.literal("other"),
-      ),
-    ),
+    type: v.optional(v.union(v.literal("broker"), v.literal("client"))),
     // Set on client orgs only — ID of the managing broker org
     brokerOrgId: v.optional(v.id("organizations")),
     // Client-org lifecycle: "draft" = broker is preparing, "invited" = invite sent and pending,
@@ -367,97 +354,6 @@ export default defineSchema({
     .index("by_type", ["type"])
     .index("by_brokerOrgId", ["brokerOrgId"])
     .index("by_slug", ["slug"]),
-
-  partnerPrograms: defineTable({
-    partnerOrgId: v.id("organizations"),
-    name: v.string(),
-    aliases: v.array(v.string()),
-    description: v.optional(v.string()),
-    categoryLabels: v.optional(v.array(v.string())),
-    securityPanel: v.optional(
-      v.array(
-        v.object({
-          name: v.string(),
-          participationPercent: v.number(),
-        }),
-      ),
-    ),
-    defaultTemplateId: v.optional(v.id("coiTemplates")),
-    approvalMode: v.optional(
-      v.union(
-        v.literal("auto_approve_all"),
-        v.literal("require_approval_all"),
-        v.literal("llm_review"),
-      ),
-    ),
-    approvalRuleText: v.optional(v.string()),
-    status: v.union(v.literal("active"), v.literal("inactive")),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_partnerOrgId", ["partnerOrgId"])
-    .index("by_status", ["status"]),
-
-  coiTemplates: defineTable({
-    partnerOrgId: v.id("organizations"),
-    programId: v.optional(v.id("partnerPrograms")),
-    name: v.string(),
-    templateKind: v.union(
-      v.literal("standard_glass"),
-      v.literal("custom_glass"),
-      v.literal("pdf_overlay"),
-    ),
-    fileId: v.optional(v.id("_storage")),
-    fileName: v.optional(v.string()),
-    outputFileName: v.optional(v.string()),
-    fieldMappings: v.optional(v.any()),
-    certifiedNotice: v.optional(v.string()),
-    fallbackToStandard: v.optional(v.boolean()),
-    status: v.union(v.literal("active"), v.literal("inactive")),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_partnerOrgId", ["partnerOrgId"])
-    .index("by_programId", ["programId"])
-    .index("by_status", ["status"]),
-
-  partnerProgramEmbeddings: defineTable({
-    partnerOrgId: v.id("organizations"),
-    programId: v.id("partnerPrograms"),
-    matchText: v.string(),
-    embedding: v.array(v.float64()),
-    status: v.union(v.literal("active"), v.literal("inactive")),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_partnerOrgId", ["partnerOrgId"])
-    .index("by_programId", ["programId"])
-    .index("by_status", ["status"])
-    .vectorIndex("by_embedding", {
-      vectorField: "embedding",
-      dimensions: 1536,
-      filterFields: ["partnerOrgId", "status"],
-    }),
-
-  standingAuthorizations: defineTable({
-    partnerOrgId: v.id("organizations"),
-    programId: v.id("partnerPrograms"),
-    templateId: v.id("coiTemplates"),
-    status: v.union(
-      v.literal("active"),
-      v.literal("paused"),
-      v.literal("revoked"),
-    ),
-    allowedPolicyTypes: v.optional(v.array(v.string())),
-    allowedCoverageCodes: v.optional(v.array(v.string())),
-    authorizationText: v.optional(v.string()),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_partnerOrgId", ["partnerOrgId"])
-    .index("by_programId", ["programId"])
-    .index("by_templateId", ["templateId"])
-    .index("by_status", ["status"]),
 
   // Org memberships — links users to orgs
   orgMemberships: defineTable({
@@ -510,9 +406,6 @@ export default defineSchema({
       v.literal("client_created"),
       v.literal("client_status_changed"),
       v.literal("client_launch_email_sent"),
-      v.literal("mga_created"),
-      v.literal("mga_status_changed"),
-      v.literal("mga_launch_email_sent"),
       v.literal("impersonation_started"),
       v.literal("impersonation_stopped"),
       v.literal("impersonation_chat_message"),
@@ -668,12 +561,13 @@ export default defineSchema({
   brokerClientAssignments: defineTable({
     orgId: v.id("organizations"), // broker org
     clientOrgId: v.id("organizations"), // client org
-    producerId: v.id("users"), // broker user
+    producerId: v.optional(v.id("users")), // optional broker user
     role: v.union(v.literal("primary"), v.literal("secondary")),
-    contactNameOverride: v.optional(v.string()),
-    contactEmailOverride: v.optional(v.string()),
-    contactPhoneOverride: v.optional(v.string()),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
     createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
   })
     .index("by_orgId_clientOrgId", ["orgId", "clientOrgId"])
     .index("by_orgId_producerId", ["orgId", "producerId"])
@@ -1005,6 +899,7 @@ export default defineSchema({
     orgId: v.optional(v.id("organizations")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
+    uploadFileSha256s: v.optional(v.array(v.string())),
     extractionDataStage: v.optional(extractionDataStageValidator),
     extractionDataStageUpdatedAt: v.optional(v.number()),
     extractionPreviewVersion: v.optional(v.string()),
@@ -1024,22 +919,13 @@ export default defineSchema({
     carrier: v.string(), // backward compat — prefer security for new extractions
     security: v.optional(v.string()), // insurer/underwriter company (e.g. "Lloyd's Underwriters")
     underwriter: v.optional(v.string()), // named individual underwriter (e.g. "Libby Rudd")
-    mga: v.optional(v.string()), // MGA / Program Administrator (e.g. "CFC Tech")
+    mga: v.optional(v.string()), // policy administrator named by the source document
     broker: v.optional(v.string()),
     // Enriched entity fields (cl-sdk 1.2+)
     carrierLegalName: v.optional(v.string()),
     carrierNaicNumber: v.optional(v.string()),
     carrierAmBestRating: v.optional(v.string()),
     carrierAdmittedStatus: v.optional(v.string()), // admitted, non_admitted, surplus_lines
-    partnerOrgId: v.optional(v.id("organizations")),
-    partnerProgramId: v.optional(v.id("partnerPrograms")),
-    partnerMatchSource: v.optional(
-      v.union(
-        v.literal("alias"),
-        v.literal("manual"),
-        v.literal("standing_authorization"),
-      ),
-    ),
     brokerAgency: v.optional(v.string()),
     brokerContactName: v.optional(v.string()),
     brokerLicenseNumber: v.optional(v.string()),
@@ -1492,8 +1378,7 @@ export default defineSchema({
     .index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_partnerOrgId", ["partnerOrgId"]),
+    .index("by_orgId", ["orgId"]),
 
   // Runtime state for policy extraction. Keep high-churn logs, leases, and
   // large resumable checkpoints off the policy document itself.
@@ -1790,31 +1675,9 @@ export default defineSchema({
     policySnapshot: v.optional(v.any()),
     policySnapshotHash: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
-    authorityType: v.optional(
-      v.union(v.literal("non_binding"), v.literal("certified")),
-    ),
-    certificationStatus: v.optional(
-      v.union(
-        v.literal("not_applicable"),
-        v.literal("pending"),
-        v.literal("certified"),
-        v.literal("declined"),
-      ),
-    ),
-    partnerOrgId: v.optional(v.id("organizations")),
-    partnerProgramId: v.optional(v.id("partnerPrograms")),
-    templateId: v.optional(v.id("coiTemplates")),
-    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
-    approvalId: v.optional(v.id("certificateApprovals")),
-    approvalMode: v.optional(
-      v.union(
-        v.literal("auto_approve_all"),
-        v.literal("require_approval_all"),
-        v.literal("llm_review"),
-      ),
-    ),
-    approvalAudit: v.optional(v.any()),
-    disclaimer: v.optional(v.string()),
+    requestKind: v.optional(certificateRequestKindValidator),
+    additionalInsuredName: v.optional(v.string()),
+    requestSignature: v.optional(v.string()),
     legacyCertificateId: v.optional(v.id("certificates")),
     issuedAt: v.optional(v.number()),
     supersededAt: v.optional(v.number()),
@@ -1906,37 +1769,14 @@ export default defineSchema({
       ),
     ),
     createdByUserId: v.optional(v.id("users")),
-    authorityType: v.optional(
-      v.union(v.literal("non_binding"), v.literal("certified")),
-    ),
-    certificationStatus: v.optional(
-      v.union(
-        v.literal("not_applicable"),
-        v.literal("pending"),
-        v.literal("certified"),
-        v.literal("declined"),
-      ),
-    ),
-    partnerOrgId: v.optional(v.id("organizations")),
-    partnerProgramId: v.optional(v.id("partnerPrograms")),
-    templateId: v.optional(v.id("coiTemplates")),
-    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
-    approvalId: v.optional(v.id("certificateApprovals")),
-    approvalMode: v.optional(
-      v.union(
-        v.literal("auto_approve_all"),
-        v.literal("require_approval_all"),
-        v.literal("llm_review"),
-      ),
-    ),
-    approvalAudit: v.optional(v.any()),
-    disclaimer: v.optional(v.string()),
+    requestKind: v.optional(certificateRequestKindValidator),
+    additionalInsuredName: v.optional(v.string()),
+    requestSignature: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
-    .index("by_fileId", ["fileId"])
-    .index("by_partnerOrgId", ["partnerOrgId"]),
+    .index("by_fileId", ["fileId"]),
 
   certificateRequestHolds: defineTable({
     orgId: v.id("organizations"),
@@ -1985,95 +1825,16 @@ export default defineSchema({
     .index("by_policyChangeCaseId", ["policyChangeCaseId"])
     .index("by_status", ["status"]),
 
-  certificateRequests: defineTable({
-    orgId: v.id("organizations"),
-    policyId: v.id("policies"),
-    partnerOrgId: v.id("organizations"),
-    partnerProgramId: v.optional(v.id("partnerPrograms")),
-    templateId: v.optional(v.id("coiTemplates")),
-    holderName: v.string(),
-    certificateHolder: v.optional(v.string()),
-    source: v.optional(
-      v.union(
-        v.literal("policy_page"),
-        v.literal("chat"),
-        v.literal("email"),
-        v.literal("imessage"),
-        v.literal("sms"),
-        v.literal("api"),
-        v.literal("mcp"),
-        v.literal("agent"),
-        v.literal("unknown"),
-      ),
-    ),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("approved"),
-      v.literal("declined"),
-      v.literal("cancelled"),
-    ),
-    createdByUserId: v.optional(v.id("users")),
-    approvalId: v.optional(v.id("certificateApprovals")),
-    certificateId: v.optional(v.id("certificates")),
-    matchCandidates: v.optional(v.any()),
-    approvalMode: v.optional(
-      v.union(
-        v.literal("auto_approve_all"),
-        v.literal("require_approval_all"),
-        v.literal("llm_review"),
-      ),
-    ),
-    approvalAudit: v.optional(v.any()),
-    notes: v.optional(v.string()),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_partnerOrgId_status", ["partnerOrgId", "status"])
-    .index("by_status", ["status"]),
-
-  certificateApprovals: defineTable({
-    orgId: v.id("organizations"),
-    policyId: v.id("policies"),
-    requestId: v.optional(v.id("certificateRequests")),
-    certificateId: v.optional(v.id("certificates")),
-    partnerOrgId: v.id("organizations"),
-    partnerProgramId: v.optional(v.id("partnerPrograms")),
-    templateId: v.optional(v.id("coiTemplates")),
-    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
-    approvalType: v.union(
-      v.literal("human"),
-      v.literal("standing_authorization"),
-    ),
-    status: v.union(v.literal("approved"), v.literal("declined")),
-    approvedByUserId: v.optional(v.id("users")),
-    approvalMode: v.optional(
-      v.union(
-        v.literal("auto_approve_all"),
-        v.literal("require_approval_all"),
-        v.literal("llm_review"),
-      ),
-    ),
-    audit: v.optional(v.any()),
-    notes: v.optional(v.string()),
-    createdAt: v.number(),
-    approvedAt: v.number(),
-  })
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_partnerOrgId", ["partnerOrgId"])
-    .index("by_certificateId", ["certificateId"])
-    .index("by_requestId", ["requestId"]),
-
   // ── Notifications ──
 
   notifications: defineTable({
     orgId: v.id("organizations"),
     userId: v.optional(v.id("users")), // null = org-wide
     type: v.union(
-      // Existing glass types
+      // Retired types kept only so historical rows remain schema-compatible.
       v.literal("merge_suggestion"),
+      v.literal("policy_declaration_discrepancy"),
+      // Active notification types.
       v.literal("coverage_gap"),
       v.literal("renewal_reminder"),
       v.literal("policy_lapsed"),
@@ -2095,9 +1856,6 @@ export default defineSchema({
       v.literal("vendor_compliance_gap"),
       v.literal("vendor_policy_expiring"),
       v.literal("vendor_policy_expired"),
-      v.literal("program_admin_certificate_request"),
-      v.literal("program_admin_pce_request"),
-      v.literal("policy_declaration_discrepancy"),
       v.literal("policy_change_needs_info"),
       v.literal("policy_change_completed"),
     ),
@@ -2114,8 +1872,8 @@ export default defineSchema({
       v.literal("actioned"),
       v.literal("dismissed"),
     ),
-    actionType: v.optional(v.string()), // merge_policies, review_policy, renew_policy, etc.
-    actionPayload: v.optional(v.any()), // e.g. {policyIds: [...]} for merge
+    actionType: v.optional(v.string()),
+    actionPayload: v.optional(v.any()),
     sourceRef: v.optional(v.any()), // what generated this: policyId, emailId, etc.
     createdAt: v.number(),
     expiresAt: v.optional(v.number()), // auto-dismiss after this date
@@ -2327,18 +2085,6 @@ export default defineSchema({
     validationIssues: v.optional(v.any()),
     evidenceSourceIds: v.optional(v.array(v.string())),
     packetId: v.optional(v.id("pcePackets")),
-    partnerOrgId: v.optional(v.id("organizations")),
-    partnerProgramId: v.optional(v.id("partnerPrograms")),
-    partnerApprovalStatus: v.optional(
-      v.union(
-        v.literal("not_required"),
-        v.literal("pending"),
-        v.literal("approved"),
-        v.literal("declined"),
-      ),
-    ),
-    partnerApprovedByUserId: v.optional(v.id("users")),
-    partnerApprovedAt: v.optional(v.number()),
     stagedPolicyUpdate: v.optional(v.any()),
     createdByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
@@ -2346,11 +2092,7 @@ export default defineSchema({
   })
     .index("by_orgId", ["orgId"])
     .index("by_policyId", ["policyId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_partnerOrgId_approval", [
-      "partnerOrgId",
-      "partnerApprovalStatus",
-    ]),
+    .index("by_orgId_status", ["orgId", "status"]),
 
   policyUpdateRuns: defineTable({
     orgId: v.id("organizations"),
@@ -2408,37 +2150,6 @@ export default defineSchema({
     .index("by_orgId_fieldGroup", ["orgId", "fieldGroup"])
     .index("by_policyId_active", ["policyId", "active"])
     .index("by_recordHash", ["recordHash"]),
-
-  declarationDiscrepancies: defineTable({
-    orgId: v.id("organizations"),
-    fieldGroup: v.string(),
-    likelyCurrentValue: v.optional(v.string()),
-    question: v.optional(v.string()),
-    plainLanguageSummary: v.optional(v.string()),
-    recommendedAction: v.optional(v.string()),
-    conflictingValues: v.array(v.any()),
-    affectedPolicyIds: v.array(v.id("policies")),
-    severity: v.union(
-      v.literal("info"),
-      v.literal("warning"),
-      v.literal("critical"),
-    ),
-    status: v.union(
-      v.literal("open"),
-      v.literal("notified"),
-      v.literal("confirmed"),
-      v.literal("dismissed"),
-      v.literal("case_created"),
-    ),
-    notificationId: v.optional(v.id("notifications")),
-    threadId: v.optional(v.id("threads")),
-    caseId: v.optional(v.id("policyChangeCases")),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_orgId_fieldGroup", ["orgId", "fieldGroup"]),
 
   pcePackets: defineTable({
     orgId: v.id("organizations"),
@@ -2809,14 +2520,12 @@ export default defineSchema({
     kind: v.union(
       v.literal("policy"),
       v.literal("certificate"),
-      v.literal("certificate_request"),
       v.literal("policy_change"),
     ),
     policyId: v.optional(v.id("policies")),
     certificateId: v.optional(v.id("certificates")),
     policyCertificateId: v.optional(v.id("policyCertificates")),
     certificateVersionId: v.optional(v.id("certificateVersions")),
-    certificateRequestId: v.optional(v.id("certificateRequests")),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     label: v.optional(v.string()),
     sourceThreadId: v.optional(v.id("threads")),
@@ -2830,7 +2539,6 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_certificateId", ["certificateId"])
     .index("by_policyCertificateId", ["policyCertificateId"])
-    .index("by_certificateRequestId", ["certificateRequestId"])
     .index("by_policyChangeCaseId", ["policyChangeCaseId"]),
 
   imessageChats: defineTable({

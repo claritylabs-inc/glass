@@ -22,11 +22,9 @@ const certificateSourceValidator = v.union(
   v.literal("unknown"),
 );
 
-const certificationStatusValidator = v.union(
-  v.literal("not_applicable"),
-  v.literal("pending"),
-  v.literal("certified"),
-  v.literal("declined"),
+const certificateRequestKindValidator = v.union(
+  v.literal("holder"),
+  v.literal("additional_insured"),
 );
 
 type ReadCtx = QueryCtx | MutationCtx;
@@ -207,17 +205,8 @@ export const findReusableIssuedVersionInternal = internalQuery({
   args: {
     certificateId: v.id("policyCertificates"),
     policyVersionId: v.optional(v.id("policyVersions")),
-    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
-    certificationStatus: v.optional(
-      v.union(
-        v.literal("not_applicable"),
-        v.literal("pending"),
-        v.literal("certified"),
-        v.literal("declined"),
-      ),
-    ),
-    partnerProgramId: v.optional(v.id("partnerPrograms")),
-    templateId: v.optional(v.id("coiTemplates")),
+    requestKind: v.optional(certificateRequestKindValidator),
+    requestSignature: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const parent = await ctx.db.get(args.certificateId);
@@ -225,10 +214,8 @@ export const findReusableIssuedVersionInternal = internalQuery({
     const version = await ctx.db.get(parent.latestIssuedVersionId);
     if (!version || version.status !== "issued" || !version.fileId) return null;
     if (args.policyVersionId && version.policyVersionId !== args.policyVersionId) return null;
-    if (args.authorityType && version.authorityType !== args.authorityType) return null;
-    if (args.certificationStatus && version.certificationStatus !== args.certificationStatus) return null;
-    if (args.partnerProgramId && version.partnerProgramId !== args.partnerProgramId) return null;
-    if (args.templateId && version.templateId !== args.templateId) return null;
+    if (args.requestKind && (version.requestKind ?? "holder") !== args.requestKind) return null;
+    if (args.requestSignature && version.requestSignature !== args.requestSignature) return null;
     return {
       ...version,
       url: await ctx.storage.getUrl(version.fileId),
@@ -241,6 +228,8 @@ export const findReusableIssuedVersionByHolderNameInternal = internalQuery({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
     holderName: v.string(),
+    requestKind: v.optional(certificateRequestKindValidator),
+    requestSignature: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const normalizedName = normalizeCertificateHolderName(args.holderName);
@@ -291,6 +280,12 @@ export const findReusableIssuedVersionByHolderNameInternal = internalQuery({
         if (currentPolicyVersionId && version.policyVersionId !== currentPolicyVersionId) {
           continue;
         }
+        if ((version.requestKind ?? "holder") !== (args.requestKind ?? "holder")) {
+          continue;
+        }
+        if (args.requestSignature && version.requestSignature !== args.requestSignature) {
+          continue;
+        }
         reusable.push({
           parent,
           holder,
@@ -335,21 +330,9 @@ export const recordIssuedVersionInternal = internalMutation({
     policySnapshot: v.optional(v.any()),
     policySnapshotHash: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
-    authorityType: v.optional(v.union(v.literal("non_binding"), v.literal("certified"))),
-    certificationStatus: v.optional(certificationStatusValidator),
-    partnerOrgId: v.optional(v.id("organizations")),
-    partnerProgramId: v.optional(v.id("partnerPrograms")),
-    templateId: v.optional(v.id("coiTemplates")),
-    standingAuthorizationId: v.optional(v.id("standingAuthorizations")),
-    approvalMode: v.optional(
-      v.union(
-        v.literal("auto_approve_all"),
-        v.literal("require_approval_all"),
-        v.literal("llm_review"),
-      ),
-    ),
-    approvalAudit: v.optional(v.any()),
-    disclaimer: v.optional(v.string()),
+    requestKind: v.optional(certificateRequestKindValidator),
+    additionalInsuredName: v.optional(v.string()),
+    requestSignature: v.optional(v.string()),
     createdByUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -391,15 +374,9 @@ export const recordIssuedVersionInternal = internalMutation({
       policySnapshot: args.policySnapshot,
       policySnapshotHash: args.policySnapshotHash,
       source: args.source,
-      authorityType: args.authorityType ?? "non_binding",
-      certificationStatus: args.certificationStatus ?? "not_applicable",
-      partnerOrgId: args.partnerOrgId,
-      partnerProgramId: args.partnerProgramId,
-      templateId: args.templateId,
-      standingAuthorizationId: args.standingAuthorizationId,
-      approvalMode: args.approvalMode,
-      approvalAudit: args.approvalAudit,
-      disclaimer: args.disclaimer,
+      requestKind: args.requestKind ?? "holder",
+      additionalInsuredName: args.additionalInsuredName,
+      requestSignature: args.requestSignature,
       issuedAt: now,
       createdByUserId: args.createdByUserId,
       createdAt: now,

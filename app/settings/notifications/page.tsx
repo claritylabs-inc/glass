@@ -26,7 +26,6 @@ const BROKER_PREF_ROWS: PrefRow[] = [
   { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies" },
   { type: "policy_change_needs_info", label: "Policy change needs info", group: "Policies" },
   { type: "policy_change_completed", label: "Policy change completed", group: "Policies" },
-  { type: "policy_declaration_discrepancy", label: "Policy details do not match", group: "Policies" },
   { type: "renewal_reminder", label: "Renewal reminder", group: "Policies" },
   { type: "policy_lapsed", label: "Policy lapsed", group: "Policies" },
   { type: "vendor_compliance_gap", label: "Vendor compliance gaps", group: "Vendor Compliance" },
@@ -39,18 +38,12 @@ const CLIENT_PREF_ROWS: PrefRow[] = [
   { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies" },
   { type: "policy_change_needs_info", label: "Policy change needs info", group: "Policies" },
   { type: "policy_change_completed", label: "Policy change completed", group: "Policies" },
-  { type: "policy_declaration_discrepancy", label: "Policy details do not match", group: "Policies" },
   { type: "renewal_reminder", label: "Renewal reminder", group: "Policies" },
   { type: "policy_lapsed", label: "Policy lapsed", group: "Policies" },
   { type: "vendor_compliance_gap", label: "Vendor compliance gaps", group: "Vendor Compliance" },
   { type: "vendor_policy_expiring", label: "Vendor policy expiring", group: "Vendor Compliance" },
   { type: "vendor_policy_expired", label: "Vendor policy expired", group: "Vendor Compliance" },
   { type: "vendor_compliance_met", label: "Vendor becomes compliant", group: "Vendor Compliance" },
-];
-
-const PARTNER_PREF_ROWS: PrefRow[] = [
-  { type: "program_admin_certificate_request", label: "Certified COI needs approval", group: "Program Approvals" },
-  { type: "program_admin_pce_request", label: "Policy change needs approval", group: "Program Approvals" },
 ];
 
 const WARN_TYPES = new Set([
@@ -66,15 +59,12 @@ const WARN_TYPES = new Set([
   "vendor_compliance_gap",
   "vendor_policy_expiring",
   "vendor_policy_expired",
-  "program_admin_certificate_request",
-  "program_admin_pce_request",
-  "policy_declaration_discrepancy",
   "policy_change_needs_info",
 ]);
 
 interface NotificationPreferencesPageProps {
   orgId: Id<"organizations">;
-  orgType: "broker" | "client" | "partner";
+  orgType: "broker" | "client";
 }
 
 type NotificationChannel = "in_app" | "email" | "imessage";
@@ -145,16 +135,12 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
   const visibleRows =
     orgType === "broker"
       ? BROKER_PREF_ROWS
-      : orgType === "partner"
-        ? PARTNER_PREF_ROWS
-        : CLIENT_PREF_ROWS;
+      : CLIENT_PREF_ROWS;
   const groups = Array.from(new Set(visibleRows.map((row) => row.group)));
   const descriptor =
     orgType === "broker"
       ? "client, policy, vendor and account events"
-      : orgType === "partner"
-        ? "program approval, certified COI and policy-change events"
-        : "policy and vendor compliance events";
+      : "policy and vendor compliance events";
 
   function prefKey(type: string, channel: NotificationChannel): string {
     return `${type}:${channel}`;

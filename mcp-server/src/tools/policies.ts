@@ -65,7 +65,7 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "list_policy_certificates",
-    "List generated Certificates of Insurance for a policy, including download URLs and non-binding/certified authority metadata.",
+    "List generated informational Certificates of Insurance for a policy, including download URLs and request metadata.",
     {
       policyId: z.string().describe("The policy ID"),
     },
@@ -77,7 +77,7 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "generate_policy_certificate",
-    "Generate or retrieve a Certificate of Insurance PDF for a policy. Same holder/current policy version returns an existing certificate unless explicitReissue is true. Returns non-binding/certified authority metadata or a pending approval request. Requires write scope.",
+    "Generate or retrieve an informational Certificate of Insurance PDF for a policy. Same holder/current policy version returns an existing certificate unless explicitReissue is true. Additional-insured requests generate only when policy evidence supports them; otherwise they create a broker follow-up. Requires write scope.",
     {
       policyId: z.string().describe("The policy ID"),
       holderName: z.string().describe("Certificate holder name"),
@@ -90,6 +90,7 @@ export function registerPolicyTools(server: McpServer, client: GlassClient) {
       postalCode: z.string().optional().describe("Certificate holder ZIP or postal code"),
       requestText: z.string().optional().describe("Full certificate request, including endorsement or special wording language"),
       requestedEndorsements: z.array(z.string()).optional().describe("Requested certificate endorsements or special wording"),
+      additionalInsuredName: z.string().optional().describe("Requested additional insured name when applicable"),
       explicitReissue: z.boolean().optional().describe("Force a new certificate version when an active one already exists for this holder/current policy version"),
     },
     async (input) => {

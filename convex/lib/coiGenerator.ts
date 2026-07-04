@@ -38,11 +38,6 @@ export interface CoiData {
     amBest?: string;
     admitted?: string;
   }>;
-  securityPanel?: Array<{
-    name: string;
-    participationPercent: number;
-  }>;
-
   // Coverage rows — each maps to an ACORD 25 coverage section
   coverages: CoverageLine[];
 
@@ -51,9 +46,6 @@ export interface CoiData {
   revisionNumber?: string;
   certificateHolder?: string;
   description?: string; // "Description of Operations / Locations / Vehicles"
-  authorityType?: "non_binding" | "certified";
-  certificationStatus?: "not_applicable" | "pending" | "certified" | "declined";
-  certificationNotice?: string;
 }
 
 /** One coverage section in the ACORD 25 grid. */
@@ -367,22 +359,6 @@ function joinLines(...values: Array<string | undefined | null | false>): string 
   return parts.length ? parts.join("\n") : undefined;
 }
 
-export function formatSecurityPanel(
-  securityPanel?: Array<{ name?: string; participationPercent?: number }>,
-) {
-  const lines = (securityPanel ?? [])
-    .map((member) => {
-      const name = member.name?.trim();
-      if (!name) return null;
-      const percent = Number.isFinite(member.participationPercent)
-        ? `${member.participationPercent}%`
-        : "";
-      return [name, percent].filter(Boolean).join(" - ");
-    })
-    .filter(Boolean);
-  return lines.length ? lines.join("\n") : undefined;
-}
-
 function buildDescription(policy: any): string | undefined {
   const facts = Array.isArray(policy.supplementaryFacts) ? policy.supplementaryFacts : [];
   const operations = facts
@@ -676,10 +652,8 @@ function drawNoticeAndCompanies(
   data: CoiData,
 ) {
   doc.rect(x, y, w, h).stroke();
-  const notice = data.authorityType === "certified" && data.certificationStatus === "certified"
-    ? (data.certificationNotice ||
-      "This certified certificate was approved by the program administrator for the policy shown below. Coverage remains subject to the terms, conditions and exclusions of the policy.")
-    : "NON-BINDING: This certificate is issued as a matter of information only and confers no rights upon the certificate holder. This certificate does not amend, extend, alter or certify the coverage afforded by the policies below.";
+  const notice =
+    "THIS CERTIFICATE IS ISSUED AS A MATTER OF INFORMATION ONLY AND CONFERS NO RIGHTS UPON THE CERTIFICATE HOLDER. This certificate does not amend, extend, alter or certify the coverage afforded by the policies below.";
   doc.font("Helvetica").fontSize(FS_DISCLAIMER).fillColor(C_BLACK);
   doc.text(notice, x + 5, y + 5, { width: w - 10, height: 30 });
 

@@ -3,8 +3,6 @@
 import dayjs from "dayjs";
 
 export const ALL_NOTIFICATION_TYPES = [
-  // Existing glass types (unchanged)
-  "merge_suggestion",
   "coverage_gap",
   "renewal_reminder",
   "policy_lapsed",
@@ -27,9 +25,6 @@ export const ALL_NOTIFICATION_TYPES = [
   "vendor_compliance_gap",
   "vendor_policy_expiring",
   "vendor_policy_expired",
-  "program_admin_certificate_request",
-  "program_admin_pce_request",
-  "policy_declaration_discrepancy",
   "policy_change_needs_info",
   "policy_change_completed",
 ] as const;
@@ -39,8 +34,6 @@ export type NotificationType = (typeof ALL_NOTIFICATION_TYPES)[number];
 export type NotificationSeverity = "info" | "warning" | "critical";
 
 export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverity> = {
-  // Existing
-  merge_suggestion: "info",
   coverage_gap: "warning",
   renewal_reminder: "warning",
   policy_lapsed: "critical",
@@ -63,9 +56,6 @@ export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverit
   vendor_compliance_gap: "warning",
   vendor_policy_expiring: "warning",
   vendor_policy_expired: "critical",
-  program_admin_certificate_request: "info",
-  program_admin_pce_request: "info",
-  policy_declaration_discrepancy: "warning",
   policy_change_needs_info: "warning",
   policy_change_completed: "info",
 };
@@ -77,7 +67,6 @@ export const COALESCE_WINDOW_MS: Partial<Record<NotificationType, number>> = {
   vendor_compliance_gap: 24 * 60 * 60 * 1000,
   vendor_policy_expiring: 24 * 60 * 60 * 1000,
   vendor_policy_expired: 24 * 60 * 60 * 1000,
-  policy_declaration_discrepancy: 24 * 60 * 60 * 1000,
 };
 
 /**

@@ -43,7 +43,6 @@ import { SidebarHeader } from "./sidebar-header";
 import type {
   BrokerContact,
   ConversationItem,
-  MergeSuggestionPayload,
   NavItemConfig,
 } from "./types";
 
@@ -73,7 +72,6 @@ export function MainSidebarContent({
   onToggleCollapse,
   onToggleNotifications,
   onCloseNotifications,
-  onMergeSuggestion,
   onAskGlass,
   onNewChat,
   onArchiveThread,
@@ -100,7 +98,6 @@ export function MainSidebarContent({
   onToggleCollapse: () => void;
   onToggleNotifications: () => void;
   onCloseNotifications: () => void;
-  onMergeSuggestion: (payload: MergeSuggestionPayload) => void;
   onAskGlass?: () => void;
   onNewChat: () => void | Promise<void>;
   onArchiveThread: (threadId: string, active: boolean) => Promise<void>;
@@ -167,7 +164,6 @@ export function MainSidebarContent({
           <NotificationsPanel
             orgId={orgId}
             onClose={onCloseNotifications}
-            onMergeSuggestion={onMergeSuggestion}
           />
         )}
       </div>

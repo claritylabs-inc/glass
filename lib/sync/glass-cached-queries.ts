@@ -218,10 +218,7 @@ export function useCachedPolicyList() {
         ),
         setPolicySummary(
           { id: policy._id },
-          {
-            ...(policy as unknown as NonNullable<PolicySummary>),
-            partnerProgram: null,
-          },
+          policy as unknown as NonNullable<PolicySummary>,
         ),
       ]),
     );

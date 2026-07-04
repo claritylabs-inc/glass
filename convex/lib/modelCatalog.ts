@@ -114,7 +114,7 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
   analysis:
     "Deeper reasoning route for coverage analysis, compliance review, partner-program matching, policy reconciliation, and policy-change impact.",
   summary:
-    "Summary route for thread titles, COI copy, declaration-discrepancy copy, and compact email/conversation summaries.",
+    "Summary route for thread titles, COI copy, and compact email/conversation summaries.",
   triage:
     "Website-enrichment synthesis route after public web retrieval; this does not control the web search provider.",
   email_extraction:

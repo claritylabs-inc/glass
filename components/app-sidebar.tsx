@@ -11,7 +11,6 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { usePageContext } from "@/hooks/use-page-context";
-import { MergePolicyDialog } from "@/components/merge-policy-dialog";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { ClientDetailSidebarContent } from "@/components/app-sidebar/client-detail-sidebar-content";
 import { MainSidebarContent } from "@/components/app-sidebar/main-sidebar-content";
@@ -21,7 +20,6 @@ import {
   BROKER_NAV_ITEMS,
   CONNECT_ITEMS,
   NO_CONNECT_ITEMS,
-  PARTNER_NAV_ITEMS,
   SHORTCUT_PREFIX_KEY,
   SHORTCUT_SEQUENCE_TIMEOUT_MS,
 } from "@/components/app-sidebar/nav-config";
@@ -29,7 +27,6 @@ import { SettingsSidebarContent } from "@/components/app-sidebar/settings-sideba
 import type {
   ClientThreadItem,
   ConversationItem,
-  MergeSuggestionPayload,
 } from "@/components/app-sidebar/types";
 import {
   getInitials,
@@ -130,14 +127,13 @@ export function AppSidebar({
   const isBroker = currentOrg?.isBroker ?? false;
   const isStandaloneClient =
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
-  const isPartner = currentOrg?.isPartner ?? false;
   const canManageSettings = currentOrg?.role === "admin";
   const navItems = (
-    isPartner ? PARTNER_NAV_ITEMS : isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS
+    isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS
   ).filter(
     (item) => item.href !== "/broker" || brokerPageContext?.showBrokerPage,
   );
-  const connectItems = isBroker || isPartner ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
+  const connectItems = isBroker ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   useEffect(() => {
@@ -179,12 +175,6 @@ export function AppSidebar({
   );
 
   const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
-  const [mergeDialog, setMergeDialog] = useState<{
-    open: boolean;
-    primaryPolicyId: string;
-    secondaryPolicyId: string;
-    notificationId?: Id<"notifications">;
-  }>({ open: false, primaryPolicyId: "", secondaryPolicyId: "" });
   const unreadCount = useCachedQuery(
     "notifications.unreadCount.sidebar",
     api.notifications.unreadCount,
@@ -249,15 +239,6 @@ export function AppSidebar({
       clientMutationId: createClientMutationId("thread"),
     });
     router.push(`/agent/thread/${nextThreadId}`);
-  }
-
-  function handleMergeSuggestion(payload: MergeSuggestionPayload) {
-    setMergeDialog({
-      open: true,
-      primaryPolicyId: payload.primaryPolicyId,
-      secondaryPolicyId: payload.secondaryPolicyId,
-      notificationId: payload.notificationId,
-    });
   }
 
   useEffect(() => {
@@ -378,7 +359,6 @@ export function AppSidebar({
         onToggleCollapse={toggleCollapse}
         onToggleNotifications={() => setNotificationsPanelOpen((v) => !v)}
         onCloseNotifications={() => setNotificationsPanelOpen(false)}
-        onMergeSuggestion={handleMergeSuggestion}
         onAskGlass={onAskGlass}
         onNewChat={handleNewChat}
         onArchiveThread={handleArchiveThread}
@@ -438,7 +418,6 @@ export function AppSidebar({
             orgId={currentOrg.orgId}
             variant="pane"
             onClose={() => setNotificationsPanelOpen(false)}
-            onMergeSuggestion={handleMergeSuggestion}
           />
         </aside>
       )}
@@ -466,14 +445,6 @@ export function AppSidebar({
           </>
         )}
       </AnimatePresence>
-
-      <MergePolicyDialog
-        open={mergeDialog.open}
-        onClose={() => setMergeDialog((d) => ({ ...d, open: false }))}
-        primaryPolicyId={mergeDialog.primaryPolicyId}
-        secondaryPolicyId={mergeDialog.secondaryPolicyId}
-        notificationId={mergeDialog.notificationId}
-      />
     </>
   );
 }

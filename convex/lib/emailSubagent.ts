@@ -22,7 +22,6 @@ import {
   shouldSuppressOriginalPolicyForCoiRequest,
   type RequestedEmailAttachment,
 } from "./coiAttachmentGuards";
-import { formatCertificateProgramSelectionForUser } from "./certificateProgramSelection";
 
 const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
 const GLASS_PUBLIC_URL = getClientPortalUrl();
@@ -649,7 +648,7 @@ async function runEmailSubagent(
     postalCode?: string,
     requestText?: string,
     requestedEndorsements?: string[],
-    partnerProgramId?: string,
+    additionalInsuredName?: string,
   ): Promise<string> => {
     if (!context.userId) {
       return "Cannot generate a COI without an authenticated user context.";
@@ -706,7 +705,7 @@ async function runEmailSubagent(
       postalCode,
       requestText,
       requestedEndorsements,
-      partnerProgramId,
+      additionalInsuredName,
     });
 
     if (generatedAttachment) {
@@ -722,7 +721,6 @@ async function runEmailSubagent(
     if (result && typeof result === "object") {
       const output = result as {
         message?: string;
-        programSelection?: unknown;
         attachment?: EmailAttachmentMeta;
       };
       if (output.attachment?.fileId) {
@@ -732,13 +730,6 @@ async function runEmailSubagent(
         addAttachment(output.attachment);
         generatedCoiAttachmentIds.add(String(output.attachment.fileId));
         return "Attached COI.";
-      }
-      if (output.programSelection) {
-        return formatCertificateProgramSelectionForUser(
-          output.programSelection as Parameters<
-            typeof formatCertificateProgramSelectionForUser
-          >[0],
-        );
       }
       if (output.message) return output.message;
     }
@@ -1073,7 +1064,7 @@ Be careful by default:
 - For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
 - When drafting COIs for multiple recipients, each recipient's email must include only that recipient's generated COI, not the full batch of generated COIs.
 - When the user explicitly asks to bundle all COIs/certificates into one email for a single recipient, attach the requested COIs together in that one email.
-- Use "certified COI" only when the attachment tool says the generated certificate is certified. Otherwise call it a non-binding COI or certificate.
+- Treat generated COIs as informational certificates. Do not call them certified, approved, binding, or reviewed.
 - Do not call an attachment tool for a document that is already listed in preparedAttachments.
 - Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
 - Include only the policy facts that are directly useful to the recipient. Avoid exhaustive coverage memos unless explicitly requested.
@@ -1155,7 +1146,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           postalCode: z.string().optional(),
           requestText: z.string().optional(),
           requestedEndorsements: z.array(z.string()).optional(),
-          partnerProgramId: z.string().optional(),
+          additionalInsuredName: z.string().optional(),
         }),
         execute: async ({
           policyId,
@@ -1170,7 +1161,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           postalCode,
           requestText,
           requestedEndorsements,
-          partnerProgramId,
+          additionalInsuredName,
         }) =>
           generateCoiAttachment(
             policyId,
@@ -1185,7 +1176,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
             postalCode,
             requestText,
             requestedEndorsements,
-            partnerProgramId,
+            additionalInsuredName,
           ),
       }),
       send_or_draft_email: tool({

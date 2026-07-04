@@ -69,9 +69,9 @@ describe("resolveBrokerIdentityForClient", () => {
         clientOrgId,
         producerId,
         role: "primary",
-        contactNameOverride: "Service Team",
-        contactEmailOverride: "service@broker.test",
-        contactPhoneOverride: "+15555550199",
+        contactName: "Service Team",
+        contactEmail: "service@broker.test",
+        contactPhone: "+15555550199",
         createdAt: 1,
       });
 
@@ -87,7 +87,7 @@ describe("resolveBrokerIdentityForClient", () => {
     });
   });
 
-  test("falls back to broker org primary insurance contact", async () => {
+  test("does not fall back to broker org primary insurance contact without an assignment", async () => {
     const t = convexTest(schema, modules);
 
     const identity = await t.run(async (ctx) => {
@@ -112,36 +112,30 @@ describe("resolveBrokerIdentityForClient", () => {
     });
 
     expect(identity).toMatchObject({
-      contactName: "Default Contact",
-      contactEmail: "default@broker.test",
-      contactPhone: "+15555550200",
-      source: "broker_default",
+      brokerCompanyName: "Acme Brokerage",
+      source: "none",
     });
+    expect(identity.contactName).toBeUndefined();
+    expect(identity.contactEmail).toBeUndefined();
+    expect(identity.contactPhone).toBeUndefined();
   });
 
-  test("uses manual broker identity for standalone clients", async () => {
+  test("does not use static broker fields for standalone clients", async () => {
     const t = convexTest(schema, modules);
 
-    const identity = await t.run(async (ctx) => {
+    const { identity, clientOrgId } = await t.run(async (ctx) => {
       const clientOrgId = await ctx.db.insert("organizations", {
         name: "Standalone Client",
         type: "client",
-        brokerCompanyName: "Outside Broker",
-        brokerContactName: "Morgan Broker",
-        brokerContactEmail: "morgan@outside.test",
-        brokerContactPhone: "+15555550300",
       });
 
       const clientOrg = await ctx.db.get(clientOrgId);
-      return await resolveBrokerIdentityForClient(ctx, clientOrg!);
+      return {
+        clientOrgId,
+        identity: await resolveBrokerIdentityForClient(ctx, clientOrg!),
+      };
     });
 
-    expect(identity).toMatchObject({
-      brokerCompanyName: "Outside Broker",
-      contactName: "Morgan Broker",
-      contactEmail: "morgan@outside.test",
-      contactPhone: "+15555550300",
-      source: "manual",
-    });
+    expect(identity).toEqual({ clientOrgId, source: "none" });
   });
 });

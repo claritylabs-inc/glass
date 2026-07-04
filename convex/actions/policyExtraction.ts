@@ -1781,10 +1781,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             (internal as any).declarationFacts.syncPolicyInternal,
             { policyId },
           );
-          await convexCtx.runMutation(
-            (internal as any).declarationFacts.scanOrgInternal,
-            { orgId: finalPolicy.orgId, notifyExternal: false },
-          );
           const certificateWorkflowSettings = await convexCtx.runQuery(
             (internal as any).certificateWorkflowSettings.getEffectiveInternal,
             { orgId: finalPolicy.orgId as Id<"organizations"> },
@@ -1795,10 +1791,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               { policyId },
             );
           }
-          await convexCtx.runAction(
-            (internal as any).actions.declarationDiscrepancyCopy.phraseOpenInternal,
-            { orgId: finalPolicy.orgId },
-          );
           const reviewQuestions = openExtractionReviewQuestions(finalPolicy.extractionReview);
           if (reviewQuestions.length > 0) {
             await notifyExtractionReviewRequired(convexCtx, {
@@ -1817,15 +1809,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             { policyId, sourceKind: "policy" },
           );
         }
-      } catch { /* non-critical */ }
-
-      // Schedule duplicate detection
-      try {
-        await convexCtx.scheduler.runAfter(
-          2000,
-          (internal as any).actions.detectDuplicatePolicies.detectDuplicates,
-          { policyId, orgId: state.orgId },
-        );
       } catch { /* non-critical */ }
 
       await pCtx.log("Post-processing complete");

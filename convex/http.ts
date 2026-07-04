@@ -627,14 +627,6 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
     .filter((line) =>
       !/^(attn|attention|email|e-mail|phone|tel|telephone)\s*:/i.test(line),
     );
-  const selectedPartnerProgramId =
-    (typeof body.selectedPartnerProgramId === "string" &&
-      body.selectedPartnerProgramId.trim()) ||
-    (typeof body.partner_program_id === "string" &&
-      body.partner_program_id.trim()) ||
-    (typeof body.selected_partner_program_id === "string" &&
-      body.selected_partner_program_id.trim()) ||
-    undefined;
   const holderName =
     (typeof body.holderName === "string" && body.holderName.trim()) ||
     (typeof body.certificate_holder_name === "string" &&
@@ -695,9 +687,10 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       (typeof body.request_text === "string" && body.request_text.trim()) ||
       undefined,
     requestedEndorsements,
-    selectedPartnerProgramId: selectedPartnerProgramId as
-      | Id<"partnerPrograms">
-      | undefined,
+    additionalInsuredName:
+      (typeof body.additionalInsuredName === "string" && body.additionalInsuredName.trim()) ||
+      (typeof body.additional_insured_name === "string" && body.additional_insured_name.trim()) ||
+      undefined,
     forceReissue:
       body.forceReissue === true ||
       body.explicitReissue === true ||
@@ -1208,7 +1201,7 @@ const MCP_TOOLS = [
   {
     name: "list_policy_certificates",
     description:
-      "List generated Certificates of Insurance for a policy, including download URLs and non-binding/certified authority metadata.",
+      "List generated Certificates of Insurance for a policy, including download URLs and lifecycle metadata.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1287,7 +1280,7 @@ const MCP_TOOLS = [
   {
     name: "generate_policy_certificate",
     description:
-      "Generate or retrieve a Certificate of Insurance PDF for a policy. Same holder/current policy version returns the existing certificate unless explicitReissue is true. Returns non-binding/certified authority metadata or a pending approval request. Requires write scope.",
+      "Generate or retrieve an informational Certificate of Insurance PDF for a policy. Same holder/current policy version returns the existing certificate unless explicitReissue is true. Additional-insured requests generate only when policy evidence supports them; otherwise they create a broker follow-up. Requires write scope.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1313,6 +1306,10 @@ const MCP_TOOLS = [
           type: "array",
           items: { type: "string" },
           description: "Requested endorsements or special wording",
+        },
+        additionalInsuredName: {
+          type: "string",
+          description: "Requested additional insured name when applicable",
         },
         explicitReissue: {
           type: "boolean",
@@ -3603,7 +3600,7 @@ http.route({
             responses: {
               "201": {
                 description:
-                  "Certificate generated, retrieved, held, or pending approval",
+                  "Certificate generated, retrieved, or held for broker follow-up",
               },
             },
           },

@@ -1,8 +1,26 @@
 // convex/notifications.ts
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { getCurrentOrgAccess as getOrgAccess, requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
-import { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+
+type NotificationVisibilityRow = {
+  status: string;
+  type: string;
+};
+
+function isBaseVisibleNotification(notification: { status: string; type: string }) {
+  return (
+    notification.status !== "dismissed" &&
+    notification.type !== "policy_declaration_discrepancy" &&
+    notification.type !== "merge_suggestion"
+  );
+}
+
+function filterVisibleNotifications<T extends NotificationVisibilityRow>(rows: T[]) {
+  return rows.filter(isBaseVisibleNotification);
+}
 
 // ── Public queries ──────────────────────────────────────────────────────────
 
@@ -32,9 +50,7 @@ export const listInbox = query({
       .order("desc")
       .take(limit * 2); // over-fetch to filter dismissed
 
-    const visible = rows
-      .filter((n) => n.status !== "dismissed")
-      .slice(0, limit);
+    const visible = filterVisibleNotifications(rows).slice(0, limit);
 
     // Enrich with relatedOrg name when present
     const enriched = await Promise.all(
@@ -81,7 +97,7 @@ export const list = query({
       results = await ctx.db
         .query("notifications")
         .withIndex("by_orgId_type", (idx) =>
-          idx.eq("orgId", orgId).eq("type", args.type! as "merge_suggestion")
+          idx.eq("orgId", orgId).eq("type", args.type! as Doc<"notifications">["type"])
         )
         .order("desc")
         .take(effectiveLimit);
@@ -93,7 +109,7 @@ export const list = query({
         .take(effectiveLimit);
     }
 
-    return results;
+    return filterVisibleNotifications(results);
   },
 });
 
@@ -111,7 +127,7 @@ export const unreadCount = query({
         q.eq("orgId", orgId).eq("status", "unread")
       )
       .take(100);
-    return unread.length;
+    return filterVisibleNotifications(unread).length;
   },
 });
 
@@ -188,15 +204,8 @@ export const create = internalMutation({
     return await ctx.db.insert("notifications", {
       ...(args as Parameters<typeof ctx.db.insert<"notifications">>[1]),
       status: "unread",
-      createdAt: Date.now(),
+      createdAt: dayjs().valueOf(),
     });
-  },
-});
-
-export const markActionedInternal = internalMutation({
-  args: { notificationId: v.id("notifications") },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.notificationId, { status: "actioned" });
   },
 });
 
@@ -244,7 +253,7 @@ export const patchImessageStatus = internalMutation({
 export const sweepStale = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const thirtyDaysAgo = dayjs().valueOf() - 30 * 24 * 60 * 60 * 1000;
 
     // Fetch unread info-level notifications older than 30 days
     const old = await ctx.db

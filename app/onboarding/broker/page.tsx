@@ -10,13 +10,6 @@ import { BrandWordmark } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { ArrowRight, Check, Loader2, X } from "lucide-react";
 import { getPublicAgentDomain } from "@/lib/domains";
@@ -308,9 +301,6 @@ export default function BrokerOnboardingPage() {
   const [userTitleInput, setUserTitle] = useState<string | null>(null);
   const [orgNameInput, setOrgName] = useState<string | null>(null);
   const [websiteInput, setWebsite] = useState<string | null>(null);
-  const [partnerType, setPartnerType] = useState<
-    "broker" | "program_admin" | "carrier" | "other"
-  >("broker");
   const [slugInputOverride, setSlugInput] = useState<string | null>(null);
   const [debouncedSlug, setDebouncedSlug] = useState("");
   const [brandingColorOverride, setBrandingColor] = useState<string | null>(
@@ -429,7 +419,6 @@ export default function BrokerOnboardingPage() {
           name: orgName.trim(),
           website: website.trim() || undefined,
           slug: slugInput.trim(),
-          partnerType,
         });
         const now = dayjs().valueOf();
         setViewerOrg({
@@ -440,7 +429,6 @@ export default function BrokerOnboardingPage() {
             website: website.trim() || undefined,
             slug: slugInput.trim(),
             type: "broker",
-            partnerType,
             iconUrl: null,
           },
           membership: {
@@ -572,27 +560,6 @@ export default function BrokerOnboardingPage() {
                   placeholder="Acme Insurance Brokers"
                   className={inputClass}
                 />
-              </div>
-              <div className="space-y-2">
-                <label className={labelClass}>Partner type</label>
-                <Select
-                  value={partnerType}
-                  onValueChange={(value) =>
-                    setPartnerType(value as typeof partnerType)
-                  }
-                >
-                  <SelectTrigger className="w-full border-foreground/8 bg-popover">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="broker">Insurance broker</SelectItem>
-                    <SelectItem value="program_admin">
-                      Program administrator
-                    </SelectItem>
-                    <SelectItem value="carrier">Carrier / insurer</SelectItem>
-                    <SelectItem value="other">Other partner</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               <div className="space-y-2">
                 <label className={labelClass}>Website (optional)</label>

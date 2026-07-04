@@ -5,9 +5,7 @@ import {
   brokerFollowUpOutcome,
 } from "../convex/lib/workflows/brokerFollowUp";
 import {
-  certificateAddressRequiredOutcome,
   certificateGeneratedOutcome,
-  shouldCollectCertificateHolderAddress,
 } from "../convex/lib/workflows/certificateRequest";
 import { mailboxTaskOutcome } from "../convex/lib/workflows/mailboxTasks";
 
@@ -15,37 +13,6 @@ const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("workflow orchestration contract", () => {
-  it("asks only for holder address on a new holder-only certificate request", () => {
-    const result = certificateAddressRequiredOutcome({
-      policyId: "policy-1",
-      holderName: "Blank Ventures",
-      certificateHolder: "Blank Ventures",
-      requestText: "Can you issue a new certificate with Blank Ventures as the holder?",
-    });
-
-    expect(result.workflowOutcome.workflowKind).toBe("certificate_request");
-    expect(result.workflowOutcome.status).toBe("needs_input");
-    expect(result.workflowOutcome.nextAction).toBe("ask_for_holder_address");
-    expect(result.workflowOutcome.requiredSlots).toEqual([
-      expect.objectContaining({ key: "holderAddress" }),
-    ]);
-    expect(result.workflowOutcome.forbiddenQuestions).toEqual(
-      expect.arrayContaining(["holderEmail", "specialWording"]),
-    );
-    expect(result.message).toContain("certificate holder address");
-    expect(result.message).not.toMatch(/holder email|renewal delivery|special wording/i);
-  });
-
-  it("detects holder address from an already supplied holder block", () => {
-    expect(
-      shouldCollectCertificateHolderAddress({
-        policyId: "policy-1",
-        holderName: "Blank Ventures",
-        certificateHolder: "Blank Ventures\n100 Main St\nNew York, NY 10001",
-      }),
-    ).toBe(false);
-  });
-
   it("marks existing certificate reuse as a completed file-return side effect", () => {
     const outcome = certificateGeneratedOutcome({
       params: {
@@ -112,14 +79,12 @@ describe("workflow orchestration wiring", () => {
     const existingLookup = executors.indexOf(
       "findReusableIssuedVersionByHolderNameInternal",
     );
-    const addressGate = executors.indexOf("certificateAddressRequiredOutcome");
     const generator = executors.indexOf("internal.certificates.generateForOrg");
 
     expect(existingLookup).toBeGreaterThan(-1);
-    expect(addressGate).toBeGreaterThan(-1);
     expect(generator).toBeGreaterThan(-1);
     expect(existingLookup).toBeLessThan(generator);
-    expect(addressGate).toBeLessThan(generator);
+    expect(executors).not.toContain("certificateAddressRequiredOutcome");
   });
 
   it("does not expose special wording as proactive COI intake", () => {

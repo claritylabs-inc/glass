@@ -164,7 +164,7 @@ function extractObjections(logs: PublicDemoLog[]) {
       ? "Security or data handling"
       : undefined,
     /\b(real|binding|valid|certificate|coi)\b/.test(text)
-      ? "Certificate authority"
+      ? "Certificate validity"
       : undefined,
     /\b(integration|api|mailbox|email|imap)\b/.test(text)
       ? "Integration workflow"
@@ -255,7 +255,7 @@ function conciseImessageFallback(args: {
     text =
       "Glass can read insurance docs/emails, spot gaps, and draft follow-ups. Want COIs, renewals, or vendor compliance?";
   } else if (/\b(coi|certificate|cert|proof of insurance)\b/.test(combined)) {
-    text = "Glass can draft the COI request and follow-up for approval.";
+    text = "Glass can draft the COI request and broker follow-up.";
   } else if (/\b(vendor|compliance|requirement)\b/.test(combined)) {
     text = "Glass can check vendor evidence against requirements and flag gaps.";
   } else if (/\b(email|inbox|mailbox|renewal|follow[- ]?up)\b/.test(combined)) {
@@ -529,7 +529,7 @@ export const respond = internalAction({
           channel === "imessage"
             ? {
                 summary:
-                  "Glass can draft the COI request and follow-up for approval.",
+                  "Glass can draft the COI request and broker follow-up.",
                 note: "Demo data only. No COI is issued.",
               }
             : {
@@ -537,7 +537,7 @@ export const respond = internalAction({
                 body: [
                   `Hi ${input.recipient ?? "there"},`,
                   "",
-                  "This is a simulated Glass demo email. In a real workspace, Glass would prepare the certificate request from policy evidence, flag endorsements that need review, and route the draft for approval before sending.",
+                  "This is a simulated Glass demo email. In a real workspace, Glass would prepare the certificate request from policy evidence, flag endorsements that need review, and route the draft for send confirmation.",
                   "",
                   "Demo note: no certificate was issued or attached.",
                 ].join("\n"),
@@ -560,7 +560,7 @@ export const respond = internalAction({
                   "Search connected insurance mailboxes for policies, renewals, endorsements, and requirement packets.",
                   "Read bounded message and attachment content.",
                   "Import selected documents into first-class policy or compliance workflows after user confirmation.",
-                  "Draft follow-up with evidence and approvals visible in Glass.",
+                  "Draft follow-up with evidence and send confirmation visible in Glass.",
                 ],
               },
       }),

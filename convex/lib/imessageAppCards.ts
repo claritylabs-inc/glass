@@ -14,12 +14,11 @@ export type ImessageAppCard = {
 };
 
 export type ImessageAppCardCreateArgs = {
-  kind: "policy" | "certificate" | "certificate_request" | "policy_change";
+  kind: "policy" | "certificate" | "policy_change";
   policyId?: Id<"policies">;
   certificateId?: Id<"certificates">;
   policyCertificateId?: Id<"policyCertificates">;
   certificateVersionId?: Id<"certificateVersions">;
-  certificateRequestId?: Id<"certificateRequests">;
   policyChangeCaseId?: Id<"policyChangeCases">;
   label?: string;
 };
@@ -243,24 +242,6 @@ function certificateCardRequest(
   const certificateVersionId = artifactId<"certificateVersions">(
     data.certificateVersionId,
   );
-  const certificateRequestId = artifactId<"certificateRequests">(
-    data.certificateRequestId,
-  );
-
-  if (certificateRequestId) {
-    return {
-      key: `certificate_request:${certificateRequestId}`,
-      createArgs: {
-        kind: "certificate_request",
-        certificateRequestId,
-        label: "Certificate request",
-      },
-      card: {
-        title: "Certificate request",
-        subtitle: "Open the approval request in Glass",
-      },
-    };
-  }
 
   const certificateKey =
     certificateId ?? policyCertificateId ?? certificateVersionId;

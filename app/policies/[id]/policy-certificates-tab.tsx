@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
 import { useAction } from "convex/react";
 import type { AddressAutofillRetrieveResponse } from "@mapbox/search-js-core";
@@ -172,54 +172,17 @@ type CertificateHoldRow = Record<string, unknown> & {
   source?: string;
 };
 
-export type ProgramMatchCandidate = {
-  programId?: Id<"partnerPrograms">;
-  programName?: string;
-  _id?: Id<"partnerPrograms">;
-  name?: string;
-  categoryLabels?: string[];
-  approvalMode?: string;
-  score?: number;
-};
-
-const CERTIFICATE_ENDORSEMENT_OPTIONS = [
-  { value: "additional_insured", label: "Additional insured" },
-  { value: "waiver_of_subrogation", label: "Waiver" },
-  { value: "primary_non_contributory", label: "Primary/non-contributory" },
-  { value: "loss_payee", label: "Loss payee" },
-  { value: "mortgagee", label: "Mortgagee" },
-];
-
-function normalizeProgramMatchCandidate(candidate: ProgramMatchCandidate) {
-  const programId = candidate.programId ?? candidate._id;
-  if (!programId) return null;
-  return {
-    ...candidate,
-    programId,
-    programName: candidate.programName ?? candidate.name ?? "Program",
-  };
-}
-
 export function CertificateCreatePanel({
   open,
   onOpenChange,
   policyId,
-  initialProgram,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   policyId: Id<"policies">;
-  initialProgram?: ProgramMatchCandidate | null;
 }) {
   const generateCertificate = useAction(api.certificates.generateForPolicy);
-  const previewCertificateAuthority = useAction(
-    api.certificates.previewAuthorityForPolicy,
-  );
   const { openWithUrl } = usePdf();
-  const initialProgramCandidate = useMemo(
-    () => normalizeProgramMatchCandidate(initialProgram ?? {}),
-    [initialProgram],
-  );
   const [holderName, setHolderName] = useState("");
   const [holderContactName, setHolderContactName] = useState("");
   const [holderEmail, setHolderEmail] = useState("");
@@ -229,16 +192,8 @@ export function CertificateCreatePanel({
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [postalCode, setPostalCode] = useState("");
-  const [selectedPartnerProgramId, setSelectedPartnerProgramId] = useState<
-    Id<"partnerPrograms"> | undefined
-  >(initialProgramCandidate?.programId);
-  const [requestedEndorsements, setRequestedEndorsements] = useState<string[]>(
-    [],
-  );
-  const [programCandidates, setProgramCandidates] = useState<
-    ProgramMatchCandidate[]
-  >(() => (initialProgramCandidate ? [initialProgramCandidate] : []));
-  const [resolvingProgram, setResolvingProgram] = useState(false);
+  const [includeAdditionalInsured, setIncludeAdditionalInsured] = useState(false);
+  const [additionalInsuredName, setAdditionalInsuredName] = useState("");
   const [generating, setGenerating] = useState(false);
 
   const reset = () => {
@@ -251,12 +206,8 @@ export function CertificateCreatePanel({
     setCity("");
     setState("");
     setPostalCode("");
-    setRequestedEndorsements([]);
-    setSelectedPartnerProgramId(initialProgramCandidate?.programId);
-    setProgramCandidates(
-      initialProgramCandidate ? [initialProgramCandidate] : [],
-    );
-    setResolvingProgram(false);
+    setIncludeAdditionalInsured(false);
+    setAdditionalInsuredName("");
   };
 
   const handleAddressRetrieve = useCallback(
@@ -280,67 +231,22 @@ export function CertificateCreatePanel({
     [],
   );
 
-  useEffect(() => {
-    if (!open) return;
-    if (initialProgramCandidate) return;
-    let cancelled = false;
-
-    void Promise.resolve()
-      .then(() => {
-        if (cancelled) return;
-        setResolvingProgram(true);
-        setSelectedPartnerProgramId(undefined);
-        setProgramCandidates([]);
-        return previewCertificateAuthority({ policyId });
-      })
-      .then((result) => {
-        if (cancelled || !result) return;
-        const selectedProgram = normalizeProgramMatchCandidate(
-          (result as { selectedProgram?: ProgramMatchCandidate | null })
-            .selectedProgram ?? {},
-        );
-        const candidates = (
-          (result as { matchCandidates?: ProgramMatchCandidate[] })
-            .matchCandidates ?? []
-        )
-          .map(normalizeProgramMatchCandidate)
-          .filter(Boolean) as Array<
-          ProgramMatchCandidate & {
-            programId: Id<"partnerPrograms">;
-            programName: string;
-          }
-        >;
-        const nextCandidates = selectedProgram ? [selectedProgram] : candidates;
-        setProgramCandidates(nextCandidates);
-        setSelectedPartnerProgramId(nextCandidates[0]?.programId);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          toast.error(
-            error instanceof Error
-              ? error.message
-              : "Could not check certificate program",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setResolvingProgram(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialProgramCandidate, open, policyId, previewCertificateAuthority]);
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!holderName.trim()) {
       toast.error("Certificate holder is required");
       return;
     }
+    if (includeAdditionalInsured && !additionalInsuredName.trim()) {
+      toast.error("Additional insured name is required");
+      return;
+    }
 
     setGenerating(true);
     try {
+      const additionalInsured = includeAdditionalInsured
+        ? additionalInsuredName.trim()
+        : undefined;
       const result = await generateCertificate({
         policyId,
         holderName: holderName.trim(),
@@ -352,20 +258,14 @@ export function CertificateCreatePanel({
         city: city.trim() || undefined,
         state: state.trim() || undefined,
         postalCode: postalCode.trim() || undefined,
-        selectedPartnerProgramId,
         requestedEndorsements:
-          requestedEndorsements.length > 0 ? requestedEndorsements : undefined,
+          additionalInsured ? ["additional_insured"] : undefined,
+        additionalInsuredName: additionalInsured,
         requestText:
-          requestedEndorsements.length > 0
-            ? `Generate certificate for ${holderName.trim()} with ${requestedEndorsements.join(", ")}.`
+          additionalInsured
+            ? `Generate certificate for ${holderName.trim()} showing ${additionalInsured} as an additional insured.`
             : undefined,
       });
-      if ((result as { status?: string }).status === "pending_approval") {
-        toast.success("Certified COI sent for program administrator approval");
-        onOpenChange(false);
-        reset();
-        return;
-      }
       if (
         (result as { status?: string }).status === "held_policy_change_required"
       ) {
@@ -378,23 +278,12 @@ export function CertificateCreatePanel({
         return;
       }
       if (
-        (result as { status?: string }).status === "needs_program_selection"
+        (result as { status?: string }).status === "source_tree_rebuild_required" ||
+        (result as { status?: string }).status === "extraction_in_progress"
       ) {
-        const candidates = (
-          (result as { matchCandidates?: ProgramMatchCandidate[] })
-            .matchCandidates ?? []
-        )
-          .map(normalizeProgramMatchCandidate)
-          .filter(Boolean) as Array<
-          ProgramMatchCandidate & {
-            programId: Id<"partnerPrograms">;
-            programName: string;
-          }
-        >;
-        setProgramCandidates(candidates);
-        setSelectedPartnerProgramId(candidates[0]?.programId);
         toast.message(
-          "Confirm the correct program before generating this certified COI",
+          (result as { message?: string }).message ??
+            "Policy extraction is still preparing certificate evidence",
         );
         return;
       }
@@ -405,11 +294,7 @@ export function CertificateCreatePanel({
         if (result.url) openWithUrl(result.url);
         return;
       }
-      toast.success(
-        (result as { authorityType?: string }).authorityType === "certified"
-          ? "Certified certificate generated"
-          : "Non-binding certificate generated",
-      );
+      toast.success("Certificate generated");
       onOpenChange(false);
       reset();
       if (result.url) openWithUrl(result.url);
@@ -447,7 +332,7 @@ export function CertificateCreatePanel({
             type="submit"
             form="certificate-create-form"
             size="compact"
-            disabled={generating || resolvingProgram || !holderName.trim()}
+            disabled={generating || !holderName.trim()}
           >
             {generating ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -470,57 +355,6 @@ export function CertificateCreatePanel({
           onSubmit={handleSubmit}
           className="space-y-4"
         >
-          {resolvingProgram || programCandidates.length > 0 ? (
-            <div className="rounded-lg border border-foreground/8 bg-card p-3">
-              <p className="text-base font-medium text-foreground">
-                {programCandidates.length > 1 ? "Choose program" : "Program"}
-              </p>
-              <div className="mt-3 grid gap-2">
-                {resolvingProgram ? (
-                  <div className="rounded-md border border-foreground/8 px-3 py-2">
-                    <div className="flex items-center gap-2 text-base text-muted-foreground">
-                      <Loader2 className="size-3.5 animate-spin" />
-                      Checking policy program...
-                    </div>
-                  </div>
-                ) : (
-                  programCandidates.map((candidate) => {
-                    const selected =
-                      selectedPartnerProgramId === candidate.programId;
-                    return (
-                      <button
-                        key={candidate.programId}
-                        type="button"
-                        className={`rounded-md border px-3 py-2 text-left transition-colors ${
-                          selected
-                            ? "border-foreground/30 bg-foreground/5"
-                            : "border-foreground/8 hover:bg-foreground/[0.03]"
-                        }`}
-                        onClick={() =>
-                          setSelectedPartnerProgramId(candidate.programId)
-                        }
-                        disabled={generating}
-                        aria-pressed={selected}
-                      >
-                        <span className="block text-base font-medium text-foreground">
-                          {candidate.programName}
-                        </span>
-                        <span className="mt-0.5 block text-label text-muted-foreground/70">
-                          {[
-                            candidate.categoryLabels?.join(", "),
-                            candidate.approvalMode,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "Program administrator program"}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          ) : null}
-
           <div className="space-y-2">
             <Label htmlFor="certificate-holder-name">Certificate holder</Label>
             <Input
@@ -653,39 +487,36 @@ export function CertificateCreatePanel({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Requested endorsements</Label>
-            <div className="flex flex-wrap gap-2">
-              {CERTIFICATE_ENDORSEMENT_OPTIONS.map((option) => {
-                const selected = requestedEndorsements.includes(option.value);
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={selected}
-                    disabled={generating}
-                    onClick={() =>
-                      setRequestedEndorsements((current) =>
-                        selected
-                          ? current.filter((value) => value !== option.value)
-                          : [...current, option.value],
-                      )
-                    }
-                    className={`rounded-md border px-2.5 py-1.5 text-label capitalize transition-colors ${
-                      selected
-                        ? "border-foreground/25 bg-foreground/[0.04] text-foreground"
-                        : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-label text-muted-foreground/60">
-              Endorsement-bearing requests are checked against policy wording
-              before Glass issues a certificate.
-            </p>
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 text-base text-foreground">
+              <input
+                type="checkbox"
+                checked={includeAdditionalInsured}
+                disabled={generating}
+                onChange={(event) => {
+                  setIncludeAdditionalInsured(event.target.checked);
+                  if (!event.target.checked) setAdditionalInsuredName("");
+                }}
+                className="size-4 accent-foreground"
+              />
+              Include additional insured
+            </label>
+            {includeAdditionalInsured ? (
+              <div className="space-y-2">
+                <Label htmlFor="certificate-additional-insured">
+                  Additional insured
+                </Label>
+                <Input
+                  id="certificate-additional-insured"
+                  value={additionalInsuredName}
+                  onChange={(event) =>
+                    setAdditionalInsuredName(event.target.value)
+                  }
+                  placeholder="Additional insured name"
+                  disabled={generating}
+                />
+              </div>
+            ) : null}
           </div>
         </form>
       </div>

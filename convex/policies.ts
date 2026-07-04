@@ -46,9 +46,8 @@ type PolicyPipelineLogEntry = {
 async function deactivatePolicyDeclarationFacts(
   ctx: MutationCtx,
   policyId: DataModelId<"policies">,
-  orgId?: DataModelId<"organizations">,
+  _orgId?: DataModelId<"organizations">,
 ) {
-  const now = dayjs().valueOf();
   const facts = await ctx.db
     .query("policyDeclarationFacts")
     .withIndex("by_policyId_active", (q) =>
@@ -57,33 +56,6 @@ async function deactivatePolicyDeclarationFacts(
     .collect();
   for (const fact of facts) {
     await ctx.db.patch(fact._id, { active: false });
-  }
-  if (!orgId) return;
-  const discrepancies = await ctx.db
-    .query("declarationDiscrepancies")
-    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
-    .filter((q) =>
-      q.or(
-        q.eq(q.field("status"), "open"),
-        q.eq(q.field("status"), "notified"),
-      ),
-    )
-    .collect();
-  for (const discrepancy of discrepancies) {
-    if (!discrepancy.affectedPolicyIds.some((id) => id === policyId)) continue;
-    const remainingPolicies = await Promise.all(
-      discrepancy.affectedPolicyIds
-        .filter((id) => id !== policyId)
-        .map((id) => ctx.db.get(id)),
-    );
-    const activeRemainingCount = remainingPolicies.filter(
-      (policy) => policy && !policy.deletedAt,
-    ).length;
-    if (activeRemainingCount > 1) continue;
-    await ctx.db.patch(discrepancy._id, {
-      status: "dismissed",
-      updatedAt: now,
-    });
   }
 }
 
@@ -100,6 +72,23 @@ function isImportantPipelineLog(entry: PolicyPipelineLogEntry) {
 
 function nowMs(): number {
   return dayjs().valueOf();
+}
+
+function normalizeFileSha256(value?: string): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && /^[a-f0-9]{64}$/.test(normalized) ? normalized : undefined;
+}
+
+function normalizeFileSha256s(values?: string[]): string[] | undefined {
+  if (!values) return undefined;
+  const hashes = Array.from(
+    new Set(
+      values
+        .map((value) => normalizeFileSha256(value))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  return hashes.length > 0 ? hashes : undefined;
 }
 
 function effectiveExtractionDataStage(policy: {
@@ -661,21 +650,7 @@ export const get = query({
     } catch {
       return null;
     }
-    const enrichedPolicy = await mergePolicyPipelineState(ctx, policy);
-    const partnerProgram = policy.partnerProgramId
-      ? await ctx.db.get(policy.partnerProgramId)
-      : null;
-    return {
-      ...enrichedPolicy,
-      partnerProgram: partnerProgram && partnerProgram.status === "active"
-        ? {
-          programId: partnerProgram._id,
-          programName: partnerProgram.name,
-          categoryLabels: partnerProgram.categoryLabels,
-          approvalMode: partnerProgram.approvalMode,
-        }
-        : null,
-    };
+    return await mergePolicyPipelineState(ctx, policy);
   },
 });
 
@@ -691,9 +666,6 @@ export const getSummary = query({
     }
 
     const enrichedPolicy = await mergePolicyPipelineState(ctx, policy);
-    const partnerProgram = policy.partnerProgramId
-      ? await ctx.db.get(policy.partnerProgramId)
-      : null;
 
     return {
       _id: enrichedPolicy._id,
@@ -731,14 +703,6 @@ export const getSummary = query({
       extractionPreviewModel: enrichedPolicy.extractionPreviewModel,
       extractionPreviewError: enrichedPolicy.extractionPreviewError,
       extractionReview: enrichedPolicy.extractionReview,
-      partnerProgram: partnerProgram && partnerProgram.status === "active"
-        ? {
-          programId: partnerProgram._id,
-          programName: partnerProgram.name,
-          categoryLabels: partnerProgram.categoryLabels,
-          approvalMode: partnerProgram.approvalMode,
-        }
-        : null,
     };
   },
 });
@@ -1015,6 +979,8 @@ export const insert = mutation({
     orgId: v.optional(v.id("organizations")),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
+    fileSha256: v.optional(v.string()),
+    uploadFileSha256s: v.optional(v.array(v.string())),
     carrier: v.string(),
     security: v.optional(v.string()),
     underwriter: v.optional(v.string()),
@@ -1038,8 +1004,14 @@ export const insert = mutation({
   },
   handler: async (ctx, args) => {
     const now = nowMs();
+    const fileSha256 = normalizeFileSha256(args.fileSha256);
+    const uploadFileSha256s = normalizeFileSha256s(
+      args.uploadFileSha256s ?? (fileSha256 ? [fileSha256] : undefined),
+    );
+    const { fileSha256: _fileSha256, uploadFileSha256s: _uploadFileSha256s, ...fields } = args;
     return await ctx.db.insert("policies", {
-      ...args,
+      ...fields,
+      uploadFileSha256s,
       extractionDataStage: "placeholder",
       extractionDataStageUpdatedAt: now,
     });
@@ -1549,6 +1521,39 @@ export const generateUploadUrl = mutation({
   },
 });
 
+export const checkDuplicateUploadByHash = mutation({
+  args: {
+    orgId: v.id("organizations"),
+    fileSha256: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const fileSha256 = normalizeFileSha256(args.fileSha256);
+    if (!fileSha256) return null;
+
+    const access = await getOrgAccess(ctx, args.orgId);
+    assertCanUploadPolicy(access);
+
+    const policies = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .collect();
+
+    const duplicate = policies.find((policy) => {
+      if (policy.deletedAt) return false;
+      return policy.uploadFileSha256s?.includes(fileSha256) ?? false;
+    });
+
+    if (!duplicate) return null;
+    return {
+      policyId: duplicate._id,
+      fileName: duplicate.fileName ?? null,
+      policyNumber: duplicate.policyNumber ?? null,
+      carrier: duplicate.carrier ?? null,
+      uploadedAt: duplicate._creationTime,
+    };
+  },
+});
+
 // Broker uploads a policy on behalf of a client org.
 // Requires broker_of_client access to the clientOrgId.
 export const createBrokerUpload = mutation({
@@ -1556,6 +1561,8 @@ export const createBrokerUpload = mutation({
     clientOrgId: v.id("organizations"),
     fileId: v.id("_storage"),
     fileName: v.optional(v.string()),
+    fileSha256: v.optional(v.string()),
+    uploadFileSha256s: v.optional(v.array(v.string())),
     documentType: v.literal("policy"),
     note: v.optional(v.string()),
   },
@@ -1563,11 +1570,15 @@ export const createBrokerUpload = mutation({
     const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
     assertCanUploadPolicy(access);
     await assertImpersonatedBrokerTaskWrite(ctx, args.clientOrgId);
+    const fileSha256 = normalizeFileSha256(args.fileSha256);
 
     const policyId = await ctx.db.insert("policies", {
       orgId: args.clientOrgId,
       fileId: args.fileId,
       fileName: args.fileName,
+      uploadFileSha256s: normalizeFileSha256s(
+        args.uploadFileSha256s ?? (fileSha256 ? [fileSha256] : undefined),
+      ),
       documentType: args.documentType,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
@@ -1902,6 +1913,7 @@ export const updateFiles = internalMutation({
     )),
     primaryFileId: v.optional(v.id("_storage")),
     primaryFileName: v.optional(v.string()),
+    uploadFileSha256s: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -1910,6 +1922,8 @@ export const updateFiles = internalMutation({
     if (fields.reconciliationStatus !== undefined) patch.reconciliationStatus = fields.reconciliationStatus;
     if (fields.primaryFileId !== undefined) patch.fileId = fields.primaryFileId;
     if (fields.primaryFileName !== undefined) patch.fileName = fields.primaryFileName;
+    const uploadFileSha256s = normalizeFileSha256s(fields.uploadFileSha256s);
+    if (uploadFileSha256s !== undefined) patch.uploadFileSha256s = uploadFileSha256s;
     await ctx.db.patch(id, patch);
   },
 });

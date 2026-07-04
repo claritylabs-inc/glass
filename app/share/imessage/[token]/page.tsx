@@ -179,8 +179,6 @@ export default async function ImessageSharePage({
               </div>
               <div className="grid gap-5">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Info label="Status" value={labelForStatus(view.certificate.certificationStatus)} />
-                  <Info label="Authority" value={labelForStatus(view.certificate.authorityType)} />
                   <Info label="Issued" value={formatDate(view.certificate.createdAt)} />
                   <Info
                     label="Version"
@@ -199,27 +197,6 @@ export default async function ImessageSharePage({
                     </PillButton>
                   </div>
                 ) : null}
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {view.certificateRequest ? (
-          <section className="border-b border-border py-7">
-            <div className="grid gap-5 md:grid-cols-[240px_1fr]">
-              <div>
-                <h2 className="text-base font-medium tracking-normal text-foreground">
-                  Certificate request
-                </h2>
-                <p className="mt-1 text-base text-muted-foreground">
-                  {view.certificateRequest.holderName}
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Info label="Status" value={labelForStatus(view.certificateRequest.status)} />
-                <Info label="Program administrator" value={view.certificateRequest.partnerName ?? "Not listed"} />
-                <Info label="Created" value={formatDate(view.certificateRequest.createdAt)} />
-                <Info label="Updated" value={formatDate(view.certificateRequest.updatedAt)} />
               </div>
             </div>
           </section>

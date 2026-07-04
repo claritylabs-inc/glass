@@ -23,7 +23,6 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/settings": { label: "Settings" },
   "/profile": { label: "Profile" },
   "/operator": { label: "Operator" },
-  "/partner": { label: "Program admin", href: "/partner/approvals" },
 };
 
 export interface PresenceUser {

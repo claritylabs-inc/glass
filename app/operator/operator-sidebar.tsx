@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Activity, Building2, LogOut, MessageSquareText, ShieldCheck, SlidersHorizontal, Users } from "lucide-react";
+import { Activity, Building2, LogOut, MessageSquareText, SlidersHorizontal, Users } from "lucide-react";
 import { NavItem, SectionHeader } from "@/components/app-sidebar/nav-item";
 import { MENU_ITEM_BASE, MENU_ITEM_INACTIVE } from "@/components/app-sidebar/nav-config";
 import { SidebarHeader } from "@/components/app-sidebar/sidebar-header";
@@ -16,7 +16,7 @@ export function OperatorSidebar({
   collapsed: boolean;
   onToggleCollapse: () => void;
   email?: string;
-  active: "brokers" | "clients" | "mgas" | "demo-leads" | "models" | "extractions";
+  active: "brokers" | "clients" | "demo-leads" | "models" | "extractions";
 }) {
   const { signOut } = useAuthActions();
 
@@ -44,13 +44,6 @@ export function OperatorSidebar({
             label="Clients"
             icon={Users}
             active={active === "clients"}
-            collapsed={collapsed}
-          />
-          <NavItem
-            href="/operator/mgas"
-            label="MGAs"
-            icon={ShieldCheck}
-            active={active === "mgas"}
             collapsed={collapsed}
           />
         </div>

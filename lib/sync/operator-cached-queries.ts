@@ -16,8 +16,6 @@ type OperatorBrokerList = FunctionReturnType<typeof api.operator.listBrokers>;
 type OperatorBrokerRow = OperatorBrokerList[number];
 type OperatorClientList = FunctionReturnType<typeof api.operator.listClients>;
 type OperatorClientRow = OperatorClientList[number];
-type OperatorMGAList = FunctionReturnType<typeof api.operator.listMGAs>;
-type OperatorMGARow = OperatorMGAList[number];
 type OperatorGlobalModelSettings = FunctionReturnType<
   typeof api.modelSettings.getGlobal
 >;
@@ -76,15 +74,6 @@ type OptimisticClientInput = {
   adminName?: string;
   adminPhone?: string;
 };
-type OptimisticMGAInput = {
-  mgaOrgId: Id<"organizations">;
-  name: string;
-  website?: string;
-  programName?: string;
-  adminEmail?: string;
-  adminName?: string;
-};
-
 const extractionRangeMs: Record<Exclude<ExtractionRangeKey, "all">, number> = {
   "24h": 24 * 60 * 60 * 1000,
   "30d": 30 * 24 * 60 * 60 * 1000,
@@ -141,14 +130,6 @@ export function useCachedOperatorClients() {
     api.operator.listClients,
     {},
   ) as OperatorClientList | undefined;
-}
-
-export function useCachedOperatorMGAs() {
-  return useCachedQuery(
-    "operator.listMGAs",
-    api.operator.listMGAs,
-    {},
-  ) as OperatorMGAList | undefined;
 }
 
 export function useCachedOperatorGlobalModelSettings() {
@@ -358,54 +339,6 @@ export function useOperatorClientCacheActions() {
   );
 
   return { seedClient, patchClientStatus, patchClientSettings };
-}
-
-export function useOperatorMGACacheActions() {
-  const upsertMGAs = useUpsertCachedQuery<OperatorMGAList, EmptyArgs>(
-    "operator.listMGAs",
-  );
-  const updateMGAs = useUpdateCachedQuery<OperatorMGAList, EmptyArgs>(
-    "operator.listMGAs",
-  );
-
-  const seedMGA = useCallback(
-    async (input: OptimisticMGAInput) => {
-      const now = dayjs().valueOf();
-      const row = {
-        _id: input.mgaOrgId,
-        name: input.name,
-        website: input.website,
-        iconStorageId: undefined,
-        iconUrl: null,
-        programName: input.programName,
-        operatorStatus: "onboarding",
-        onboardingComplete: true,
-        adminName: input.adminName,
-        adminEmail: input.adminEmail,
-        createdAt: now,
-      } satisfies OperatorMGARow;
-      await upsertMGAs({}, (current) =>
-        sortByCreatedAtDesc([
-          row,
-          ...(current ?? []).filter((mga) => mga._id !== row._id),
-        ]),
-      );
-    },
-    [upsertMGAs],
-  );
-
-  const patchMGAStatus = useCallback(
-    async (mgaOrgId: Id<"organizations">, status: OperatorStatus) => {
-      await updateMGAs({}, (current) =>
-        current.map((mga) =>
-          mga._id === mgaOrgId ? { ...mga, operatorStatus: status } : mga,
-        ),
-      );
-    },
-    [updateMGAs],
-  );
-
-  return { seedMGA, patchMGAStatus };
 }
 
 export function useOperatorGlobalModelSettingsCacheActions() {

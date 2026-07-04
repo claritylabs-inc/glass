@@ -25,6 +25,7 @@ import {
   useSetCachedQuery,
   useUpsertCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
@@ -129,6 +130,9 @@ export function InviteClientDrawer({
   const createDraft = useMutation(api.clientInvitations.createDraftClient);
   const updateDraft = useMutation(api.clientInvitations.updateDraftClient);
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
+  const checkDuplicateUploadByHash = useMutation(
+    api.policies.checkDuplicateUploadByHash,
+  );
   const createBrokerUpload = useMutation(api.policies.createBrokerUpload);
   const sendInvite = useAction(api.clientInvitations.sendDraftInvite);
   const extractCompanyInfo = useAction(api.actions.extractCompanyInfo.extractCompanyInfo);
@@ -282,13 +286,19 @@ export function InviteClientDrawer({
     if (policyFiles.length === 0) return;
     setUploadingPolicies(true);
     try {
+      const candidates = await preparePolicyUploadCandidates(
+        policyFiles,
+        (fileSha256) => checkDuplicateUploadByHash({ orgId: id, fileSha256 }),
+      );
+      if (!candidates) return;
+
       const storageIds: string[] = [];
-      for (const file of policyFiles) {
+      for (const candidate of candidates) {
         const uploadUrl = await generateUploadUrl();
         const res = await fetch(uploadUrl, {
           method: "POST",
           headers: { "Content-Type": "application/pdf" },
-          body: file,
+          body: candidate.file,
         });
         if (!res.ok) throw new Error("Policy upload failed");
         const { storageId } = (await res.json()) as { storageId: string };
@@ -300,12 +310,15 @@ export function InviteClientDrawer({
           const policyId = await createBrokerUpload({
             clientOrgId: id,
             fileId: storageIds[i] as Id<"_storage">,
-            fileName: policyFiles[i].name,
+            fileName: candidates[i].file.name,
+            fileSha256: candidates[i].fileSha256,
+            uploadFileSha256s: [candidates[i].fileSha256],
             documentType: "policy",
           });
           const result = await extractFromUpload({
             fileId: storageIds[i] as Id<"_storage">,
-            fileName: policyFiles[i].name,
+            fileName: candidates[i].file.name,
+            fileSha256: candidates[i].fileSha256,
             policyId,
           });
           if (
@@ -318,19 +331,24 @@ export function InviteClientDrawer({
           }
         }
       } else {
+        const uploadFileSha256s = candidates.map((candidate) => candidate.fileSha256);
         const policyId = await createBrokerUpload({
           clientOrgId: id,
           fileId: storageIds[0] as Id<"_storage">,
-          fileName: policyFiles[0].name,
+          fileName: candidates[0].file.name,
+          fileSha256: candidates[0].fileSha256,
+          uploadFileSha256s,
           documentType: "policy",
         });
         const result = await extractFromUpload({
           fileId: storageIds[0] as Id<"_storage">,
-          fileName: policyFiles[0].name,
+          fileName: candidates[0].file.name,
+          fileSha256: candidates[0].fileSha256,
           policyId,
           additionalFiles: storageIds.slice(1).map((fileId, index) => ({
             fileId: fileId as Id<"_storage">,
-            fileName: policyFiles[index + 1].name,
+            fileName: candidates[index + 1].file.name,
+            fileSha256: candidates[index + 1].fileSha256,
           })),
         });
         if (
@@ -344,8 +362,8 @@ export function InviteClientDrawer({
       }
       setPolicyFiles([]);
       toast.success(
-        policyUploadMode === "separate" && policyFiles.length > 1
-          ? `${policyFiles.length} policies started — extraction will run in the background.`
+        policyUploadMode === "separate" && candidates.length > 1
+          ? `${candidates.length} policies started — extraction will run in the background.`
           : "Policy upload started — extraction will run in the background.",
       );
     } finally {

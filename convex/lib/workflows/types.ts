@@ -12,7 +12,6 @@ export type WorkflowStatus =
   | "completed"
   | "needs_input"
   | "held"
-  | "pending_approval"
   | "running"
   | "failed_recoverably"
   | "failed_terminal";

@@ -6,6 +6,7 @@ import { isValidPhoneNumber } from "react-phone-number-input";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
@@ -16,6 +17,7 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 import {
   useCachedPolicyList,
   useCachedViewerOrg,
@@ -196,6 +198,9 @@ export default function ClientOnboardingSetupPage() {
   const createClientOrg = useMutation(api.orgs.createClientOrg);
   const completeOnboarding = useMutation(api.users.completeOnboarding);
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
+  const checkDuplicateUploadByHash = useMutation(
+    api.policies.checkDuplicateUploadByHash,
+  );
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
@@ -378,13 +383,21 @@ export default function ClientOnboardingSetupPage() {
       if (files.length === 0) return false;
       setUploading(true);
       try {
+        const orgId = viewerOrg?.org?._id as Id<"organizations"> | undefined;
+        if (!orgId) throw new Error("No organization");
+        const candidates = await preparePolicyUploadCandidates(
+          files,
+          (fileSha256) => checkDuplicateUploadByHash({ orgId, fileSha256 }),
+        );
+        if (!candidates) return false;
+
         const storageIds: string[] = [];
-        for (let i = 0; i < files.length; i++) {
+        for (let i = 0; i < candidates.length; i++) {
           const uploadUrl = await generateUploadUrl();
           const res = await fetch(uploadUrl, {
             method: "POST",
             headers: { "Content-Type": "application/pdf" },
-            body: files[i],
+            body: candidates[i].file,
           });
           if (!res.ok) throw new Error("Upload failed");
           const { storageId } = (await res.json()) as { storageId: string };
@@ -395,7 +408,8 @@ export default function ClientOnboardingSetupPage() {
           for (let i = 0; i < storageIds.length; i++) {
             const result = await extractFromUpload({
               fileId: storageIds[i] as never,
-              fileName: files[i].name,
+              fileName: candidates[i].file.name,
+              fileSha256: candidates[i].fileSha256,
             });
             if (
               result &&
@@ -409,10 +423,12 @@ export default function ClientOnboardingSetupPage() {
         } else {
           const result = await extractFromUpload({
             fileId: storageIds[0] as never,
-            fileName: files[0].name,
+            fileName: candidates[0].file.name,
+            fileSha256: candidates[0].fileSha256,
             additionalFiles: storageIds.slice(1).map((fileId, i) => ({
               fileId: fileId as never,
-              fileName: files[i + 1].name,
+              fileName: candidates[i + 1].file.name,
+              fileSha256: candidates[i + 1].fileSha256,
             })),
           });
           if (
@@ -426,10 +442,10 @@ export default function ClientOnboardingSetupPage() {
         }
 
         toast.success(
-          uploadMode === "separate" && files.length > 1
-            ? `${files.length} policies uploaded — extraction runs in the background.`
-            : files.length > 1
-              ? `${files.length} files uploaded and merged — extraction runs in the background.`
+          uploadMode === "separate" && candidates.length > 1
+            ? `${candidates.length} policies uploaded — extraction runs in the background.`
+            : candidates.length > 1
+              ? `${candidates.length} files uploaded and merged — extraction runs in the background.`
               : "Upload started — extraction runs in the background.",
         );
         return true;
@@ -441,7 +457,13 @@ export default function ClientOnboardingSetupPage() {
         setUploading(false);
       }
     },
-    [generateUploadUrl, extractFromUpload, policyUploadMode],
+    [
+      viewerOrg,
+      checkDuplicateUploadByHash,
+      generateUploadUrl,
+      extractFromUpload,
+      policyUploadMode,
+    ],
   );
 
   const handleStep2Continue = useCallback(async () => {

@@ -704,7 +704,6 @@ function formatPolicyChangeCaseForAgent(args: {
           createdAt: args.latestPacket.createdAt,
         }
       : undefined,
-    partnerApprovalStatus: args.changeCase.partnerApprovalStatus,
     createdAt: args.changeCase.createdAt,
     updatedAt: args.changeCase.updatedAt,
     nextAction: policyChangeNextActionForAgent(

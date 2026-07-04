@@ -249,14 +249,9 @@ export interface CertificateDtoSource {
   certificateHolder?: string;
   certificateHolderName?: string;
   source?: string;
-  authorityType?: string;
-  certificationStatus?: string;
-  partnerOrgId?: DtoId;
-  partnerProgramId?: DtoId;
-  templateId?: DtoId;
-  approvalId?: DtoId;
-  standingAuthorizationId?: DtoId;
-  disclaimer?: string;
+  requestKind?: string;
+  additionalInsuredName?: string;
+  requestSignature?: string;
   createdAt: number;
   url?: string | null;
 }
@@ -269,14 +264,9 @@ export interface CertificateDto {
   certificate_holder: string | null;
   certificate_holder_name: string | null;
   source: string | null;
-  authority_type: string;
-  certification_status: string;
-  partner_org_id: string | null;
-  partner_program_id: string | null;
-  template_id: string | null;
-  approval_id: string | null;
-  standing_authorization_id: string | null;
-  disclaimer: string | null;
+  request_kind: string;
+  additional_insured_name: string | null;
+  request_signature: string | null;
   created_at: number;
   url: string | null;
 }
@@ -290,14 +280,9 @@ export function toCertificateDto(certificate: CertificateDtoSource): Certificate
     certificate_holder: certificate.certificateHolder ?? null,
     certificate_holder_name: certificate.certificateHolderName ?? null,
     source: certificate.source ?? null,
-    authority_type: certificate.authorityType ?? "non_binding",
-    certification_status: certificate.certificationStatus ?? "not_applicable",
-    partner_org_id: certificate.partnerOrgId ?? null,
-    partner_program_id: certificate.partnerProgramId ?? null,
-    template_id: certificate.templateId ?? null,
-    approval_id: certificate.approvalId ?? null,
-    standing_authorization_id: certificate.standingAuthorizationId ?? null,
-    disclaimer: certificate.disclaimer ?? null,
+    request_kind: certificate.requestKind ?? "holder",
+    additional_insured_name: certificate.additionalInsuredName ?? null,
+    request_signature: certificate.requestSignature ?? null,
     created_at: certificate.createdAt,
     url: certificate.url ?? null,
   };
@@ -407,13 +392,9 @@ export interface CertificateVersionDtoSource {
   certificateHolderName?: string;
   holderSnapshot?: Jsonish;
   source?: string;
-  authorityType?: string;
-  certificationStatus?: string;
-  partnerOrgId?: DtoId;
-  partnerProgramId?: DtoId;
-  templateId?: DtoId;
-  standingAuthorizationId?: DtoId;
-  approvalId?: DtoId;
+  requestKind?: string;
+  additionalInsuredName?: string;
+  requestSignature?: string;
   issuedAt?: number;
   supersededAt?: number;
   voidedAt?: number;
@@ -450,13 +431,9 @@ export function toCertificateVersionDto(version: CertificateVersionDtoSource) {
     holder_snapshot: version.holderSnapshot ?? null,
     holder: version.holder ? toCertificateHolderDto(version.holder) : null,
     source: version.source ?? null,
-    authority_type: version.authorityType ?? "non_binding",
-    certification_status: version.certificationStatus ?? "not_applicable",
-    partner_org_id: version.partnerOrgId ?? null,
-    partner_program_id: version.partnerProgramId ?? null,
-    template_id: version.templateId ?? null,
-    standing_authorization_id: version.standingAuthorizationId ?? null,
-    approval_id: version.approvalId ?? null,
+    request_kind: version.requestKind ?? "holder",
+    additional_insured_name: version.additionalInsuredName ?? null,
+    request_signature: version.requestSignature ?? null,
     issued_at: version.issuedAt ?? null,
     superseded_at: version.supersededAt ?? null,
     voided_at: version.voidedAt ?? null,

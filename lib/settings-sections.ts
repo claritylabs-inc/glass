@@ -40,11 +40,6 @@ export const BROKER_SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "notifications", label: "Notifications", icon: Bell },
 ];
 
-export const PARTNER_SETTINGS_SECTIONS: SettingsSection[] = [
-  { id: "organization", label: "Organization", icon: Building2 },
-  { id: "team", label: "Team", icon: Users },
-  { id: "notifications", label: "Notifications", icon: Bell },
-];
 export const SETTINGS_SECTIONS = CLIENT_SETTINGS_SECTIONS;
 
 export function insertSettingsSectionAfterTeam(

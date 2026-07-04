@@ -1,8 +1,3 @@
-import {
-  nearDuplicatePolicyIds,
-  type PolicyDuplicateCandidate,
-} from "./policyDuplicateDetection";
-
 export type DeclarationFactInput = {
   orgId: string;
   policyId: string;
@@ -16,39 +11,6 @@ export type DeclarationFactInput = {
   effectiveDate?: string;
   expirationDate?: string;
 };
-
-export type DeclarationDiscrepancyInput = {
-  fieldGroup: string;
-  likelyCurrentValue?: string;
-  conflictingValues: Array<{
-    normalizedValue: string;
-    displayValue: string;
-    policyIds: string[];
-    newestObservedAt: number;
-  }>;
-  affectedPolicyIds: string[];
-  severity: "info" | "warning" | "critical";
-};
-
-const ACTIONABLE_FIELD_GROUPS = new Set([
-  "insured_identity",
-  "policy_number",
-  "carrier",
-  "insurer",
-  "dba",
-  "entity_type",
-  "fein",
-  "mailing_address",
-  "scheduled_location",
-  "additional_named_insured",
-]);
-
-function isUserFacingDiscrepancyGroup(fieldGroup: string): boolean {
-  return !(
-    fieldGroup.startsWith("coverage_limit:") ||
-    fieldGroup.startsWith("coverage_deductible:")
-  );
-}
 
 function stableHash(input: string): string {
   let hash = 2166136261;
@@ -224,60 +186,4 @@ export function extractDeclarationFactsFromPolicy(policy: Record<string, unknown
 
 export function declarationFactHash(fact: Pick<DeclarationFactInput, "policyId" | "fieldPath" | "normalizedValue">): string {
   return stableHash([fact.policyId, fact.fieldPath, fact.normalizedValue].join("|"));
-}
-
-export function findDeclarationDiscrepancies(
-  facts: Array<DeclarationFactInput & { policyId: string; observedAt?: number }>,
-  policies: PolicyDuplicateCandidate[] = [],
-): DeclarationDiscrepancyInput[] {
-  const duplicatePolicyIds = nearDuplicatePolicyIds(policies);
-  if (duplicatePolicyIds.size === 0) return [];
-
-  const byGroup = new Map<string, typeof facts>();
-  for (const fact of facts) {
-    if (!fact.normalizedValue) continue;
-    if (!duplicatePolicyIds.has(fact.policyId)) continue;
-    const rows = byGroup.get(fact.fieldGroup) ?? [];
-    rows.push(fact);
-    byGroup.set(fact.fieldGroup, rows);
-  }
-
-  const discrepancies: DeclarationDiscrepancyInput[] = [];
-  for (const [fieldGroup, rows] of byGroup) {
-    if (!isUserFacingDiscrepancyGroup(fieldGroup)) continue;
-    const values = new Map<string, { displayValue: string; policyIds: Set<string>; newestObservedAt: number }>();
-    for (const row of rows) {
-      const current = values.get(row.normalizedValue) ?? {
-        displayValue: row.displayValue,
-        policyIds: new Set<string>(),
-        newestObservedAt: 0,
-      };
-      current.policyIds.add(row.policyId);
-      current.newestObservedAt = Math.max(current.newestObservedAt, row.observedAt ?? 0);
-      values.set(row.normalizedValue, current);
-    }
-    if (values.size <= 1) continue;
-
-    const conflictingValues = Array.from(values.entries()).map(([normalizedValue, value]) => ({
-      normalizedValue,
-      displayValue: value.displayValue,
-      policyIds: Array.from(value.policyIds),
-      newestObservedAt: value.newestObservedAt,
-    }));
-    conflictingValues.sort((a, b) => b.newestObservedAt - a.newestObservedAt);
-    const affectedPolicyIds = Array.from(new Set(conflictingValues.flatMap((value) => value.policyIds)));
-    if (affectedPolicyIds.length <= 1) continue;
-    discrepancies.push({
-      fieldGroup,
-      likelyCurrentValue: conflictingValues[0]?.displayValue,
-      conflictingValues,
-      affectedPolicyIds,
-      severity: ACTIONABLE_FIELD_GROUPS.has(fieldGroup) ? "warning" : "info",
-    });
-  }
-  return discrepancies;
-}
-
-export function shouldNotifyForDeclarationDiscrepancy(discrepancy: Pick<DeclarationDiscrepancyInput, "fieldGroup" | "severity">): boolean {
-  return ACTIONABLE_FIELD_GROUPS.has(discrepancy.fieldGroup) && discrepancy.severity !== "info";
 }
