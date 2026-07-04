@@ -39,6 +39,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCurrentOrg } from "@/lib/hooks/use-current-org";
 import { useCachedConnectedVendors } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
+import { isFeatureEnabled } from "@/convex/lib/featureFlags";
 import {
   requirementEvaluationTargetLabel,
   requirementSemantics,
@@ -316,7 +317,7 @@ export function CompliancePage() {
   const orgId = !isBroker
     ? (currentOrg?.orgId as Id<"organizations"> | undefined)
     : undefined;
-  const showConnectFeatures = currentOrg?.connectFeaturesEnabled === true;
+  const showConnectFeatures = isFeatureEnabled(currentOrg, "connect_features");
   const requirements = useCachedQuery(
     "compliance.listRequirements",
     complianceApi.compliance.listRequirements,

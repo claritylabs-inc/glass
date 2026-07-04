@@ -21,7 +21,6 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
-import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import {
@@ -37,7 +36,8 @@ type OrganizationsApi = {
   organizations: {
     updateSlug: FunctionReference<"mutation">;
     updateBrokerBranding: FunctionReference<"mutation">;
-    generateLogoUploadUrl: FunctionReference<"mutation">;
+    updateOrgLogo: FunctionReference<"mutation">;
+    generateOrgLogoUploadUrl: FunctionReference<"mutation">;
   };
 };
 
@@ -50,7 +50,6 @@ type OrgSettingsArgs = {
   industry?: string;
   industryVertical?: string;
   relatedLegalEntities?: RelatedLegalEntity[];
-  connectFeaturesEnabled?: boolean;
 };
 
 type RelatedLegalEntity = {
@@ -86,7 +85,6 @@ export function OrganizationSection() {
   const [relatedLegalEntities, setRelatedLegalEntities] = useState<
     RelatedLegalEntity[]
   >([]);
-  const [connectFeaturesEnabled, setConnectFeaturesEnabled] = useState(false);
   const [settingsHydrated, setSettingsHydrated] = useState(false);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
@@ -189,7 +187,6 @@ export function OrganizationSection() {
       setIndustry(org.industry ?? "");
       setIndustryVertical(org.industryVertical ?? "");
       setRelatedLegalEntities(org.relatedLegalEntities ?? []);
-      setConnectFeaturesEnabled(org.connectFeaturesEnabled === true);
       hydratedRef.current = true;
       setSettingsHydrated(true);
     }
@@ -210,7 +207,6 @@ export function OrganizationSection() {
         legalName: entity.legalName.trim(),
       }))
       .filter((entity) => entity.legalName),
-    ...(isBroker ? {} : { connectFeaturesEnabled }),
   };
 
   const saveOrgSettings = useCallback(
@@ -551,31 +547,10 @@ export function OrganizationSection() {
               </div>
             )}
 
-            {!isBroker && (
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
-                <div>
-                  <p className="text-base font-medium text-foreground">
-                    Show Connect features
-                  </p>
-                  <p className="mt-0.5 max-w-md text-label text-muted-foreground/60">
-                    Enables client and vendor connection pages, plus vendor
-                    requirements in Compliance.
-                  </p>
-                </div>
-                <SettingsSwitch
-                  checked={connectFeaturesEnabled}
-                  onCheckedChange={() =>
-                    setConnectFeaturesEnabled((enabled) => !enabled)
-                  }
-                  label="Show Connect features"
-                  className="ml-4"
-                />
-              </div>
-            )}
           </OperationalPanelBody>
         </OperationalPanel>
 
-        {isBroker && <BrandingCard website={website} />}
+        <BrandingCard website={website} />
 
       </div>
 
@@ -648,7 +623,7 @@ export function OrganizationSection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Branding card (broker only)
+// Branding card
 // ─────────────────────────────────────────────────────────────────────────────
 
 const brandingLabelClass =
@@ -660,6 +635,7 @@ type TextOnAccent = "light" | "dark" | "auto";
 function BrandingCard({ website }: { website: string }) {
   const currentOrg = useCurrentOrg();
   const store = useSyncStore();
+  const isBroker = currentOrg?.isBroker ?? false;
   const org = currentOrg?.org as
     | {
         brandingColor?: string;
@@ -676,12 +652,17 @@ function BrandingCard({ website }: { website: string }) {
     organizationsApi.organizations.updateBrokerBranding,
   );
   const generateUploadUrl = useMutation(
-    organizationsApi.organizations.generateLogoUploadUrl,
+    organizationsApi.organizations.generateOrgLogoUploadUrl,
+  );
+  const updateOrgLogo = useMutation(organizationsApi.organizations.updateOrgLogo);
+  const importOrgLogo = useAction(
+    api.actions.extractCompanyInfo.importOrgLogoFromWebsite,
   );
 
   const [brandingColor, setBrandingColor] = useState("#1E293B");
   const [whiteLabelingEnabled, setWhiteLabelingEnabled] = useState(true);
   const [dragActive, setDragActive] = useState(false);
+  const [importingLogo, setImportingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hydratedRef = useRef(false);
   const [brandingHydrated, setBrandingHydrated] = useState(false);
@@ -695,7 +676,7 @@ function BrandingCard({ website }: { website: string }) {
     }
   }, [org]);
 
-  const brandingArgs: BrandingSettingsArgs | null = orgId
+  const brandingArgs: BrandingSettingsArgs | null = orgId && isBroker
     ? {
         brokerOrgId: orgId,
         whiteLabelingEnabled,
@@ -719,7 +700,7 @@ function BrandingCard({ website }: { website: string }) {
       brandingColor,
       brandingTextOnAccent: "auto",
     },
-    enabled: brandingHydrated,
+    enabled: brandingHydrated && isBroker,
     canSave: !!brandingArgs,
     applyLocal: (store, args) =>
       patchCachedViewerOrg(store, {
@@ -734,17 +715,37 @@ function BrandingCard({ website }: { website: string }) {
   async function handleLogoUpload(file: File) {
     if (!orgId) return;
     try {
-      const uploadUrl = await generateUploadUrl({ brokerOrgId: orgId });
+      const uploadUrl = await generateUploadUrl({ orgId });
       const res = await fetch(uploadUrl, {
         method: "POST",
         body: file,
         headers: { "Content-Type": file.type },
       });
       const { storageId } = await res.json();
-      await updateBranding({ brokerOrgId: orgId, logoStorageId: storageId });
+      await updateOrgLogo({ orgId, logoStorageId: storageId });
       patchCachedViewerOrg(store, { iconStorageId: storageId });
     } catch {
       toast.error("Failed to upload logo");
+    }
+  }
+
+  async function handlePullLogo() {
+    if (!orgId || !website.trim()) {
+      toast.error("Add a website first");
+      return;
+    }
+    setImportingLogo(true);
+    try {
+      const result = await importOrgLogo({ orgId, url: website });
+      if (!result.success || !result.iconStorageId) {
+        throw new Error(result.error ?? "Logo not found");
+      }
+      patchCachedViewerOrg(store, { iconStorageId: result.iconStorageId });
+      toast.success("Logo pulled from website");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to pull logo");
+    } finally {
+      setImportingLogo(false);
     }
   }
 
@@ -758,39 +759,41 @@ function BrandingCard({ website }: { website: string }) {
     <OperationalPanel as="div" className="mb-4">
       <OperationalPanelHeader title="Brand" className="px-5 py-3.5" />
       <OperationalPanelBody className="space-y-5 px-5 py-5">
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
-          <div>
-            <p className="text-base font-medium text-foreground">
-              White labeling
-            </p>
-            <p className="text-label text-muted-foreground/60 mt-0.5 max-w-md">
-              Apply your broker logo, accent color, agent name, and branded
-              emails to client-facing surfaces.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setWhiteLabelingEnabled((v) => !v)}
-            role="switch"
-            aria-checked={whiteLabelingEnabled}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 shrink-0 ml-4 ${
-              whiteLabelingEnabled ? "bg-foreground" : "bg-foreground/15"
-            }`}
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                whiteLabelingEnabled ? "translate-x-4.5" : "translate-x-0.5"
+        {isBroker && (
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+            <div>
+              <p className="text-base font-medium text-foreground">
+                White labeling
+              </p>
+              <p className="text-label text-muted-foreground/60 mt-0.5 max-w-md">
+                Apply your broker logo, accent color, agent name, and branded
+                emails to client-facing surfaces.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWhiteLabelingEnabled((v) => !v)}
+              role="switch"
+              aria-checked={whiteLabelingEnabled}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 shrink-0 ml-4 ${
+                whiteLabelingEnabled ? "bg-foreground" : "bg-foreground/15"
               }`}
-            />
-          </button>
-        </div>
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  whiteLabelingEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Logo */}
-        <div className={!whiteLabelingEnabled ? "opacity-50" : undefined}>
+        <div className={isBroker && !whiteLabelingEnabled ? "opacity-50" : undefined}>
           <label className={brandingLabelClass}>Logo</label>
           <button
             type="button"
-            disabled={!whiteLabelingEnabled}
+            disabled={isBroker && !whiteLabelingEnabled}
             onClick={() => fileInputRef.current?.click()}
             onDragEnter={(e) => {
               e.preventDefault();
@@ -805,9 +808,9 @@ function BrandingCard({ website }: { website: string }) {
               if (file) handleLogoUpload(file);
             }}
             className={`flex w-full items-center gap-4 rounded-lg border border-dashed px-4 py-3 text-left transition-colors ${
-              whiteLabelingEnabled ? "" : "cursor-not-allowed"
+              isBroker && !whiteLabelingEnabled ? "cursor-not-allowed" : ""
             } ${
-              dragActive && whiteLabelingEnabled
+              dragActive && (!isBroker || whiteLabelingEnabled)
                 ? "border-foreground/30 bg-foreground/3"
                 : "border-foreground/12 bg-popover hover:border-foreground/20"
             }`}
@@ -831,8 +834,7 @@ function BrandingCard({ website }: { website: string }) {
                 {logoUrl ? "Replace logo" : "Upload logo"}
               </div>
               <div className="text-label text-muted-foreground/70">
-                Drop an image, or click to browse. Auto-filled from your
-                website.
+                Drop an image, click to browse, or pull it from the website.
               </div>
             </div>
             <input
@@ -846,21 +848,35 @@ function BrandingCard({ website }: { website: string }) {
               }}
             />
           </button>
+          <div className="mt-3">
+            <PillButton
+              variant="secondary"
+              onClick={handlePullLogo}
+              disabled={importingLogo || (isBroker && !whiteLabelingEnabled)}
+            >
+              {importingLogo ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              Pull from website
+            </PillButton>
+          </div>
         </div>
 
         {/* Accent color */}
-        <div
-          className={
-            !whiteLabelingEnabled ? "pointer-events-none opacity-50" : undefined
-          }
-        >
-          <label className={brandingLabelClass}>Accent color</label>
-          <AccentColorPicker
-            value={brandingColor}
-            onChange={setBrandingColor}
-            website={website}
-          />
-        </div>
+        {isBroker && (
+          <div
+            className={
+              !whiteLabelingEnabled ? "pointer-events-none opacity-50" : undefined
+            }
+          >
+            <label className={brandingLabelClass}>Accent color</label>
+            <AccentColorPicker
+              value={brandingColor}
+              onChange={setBrandingColor}
+              website={website}
+            />
+          </div>
+        )}
       </OperationalPanelBody>
     </OperationalPanel>
   );

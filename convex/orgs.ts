@@ -29,6 +29,10 @@ import {
   getActiveOperatorImpersonation,
   isBootstrapOperatorEmail,
 } from "./lib/operatorIdentity";
+import {
+  assertFeatureFlagAllowedForOrg,
+  setFeatureFlagPatch,
+} from "./lib/featureFlags";
 
 const internal = _internal as any;
 
@@ -859,7 +863,6 @@ export const updateOrg = mutation({
     autoSendEmails: v.optional(v.boolean()),
     bccRequesterOnAgentEmails: v.optional(v.boolean()),
     emailSendDelay: v.optional(v.number()),
-    connectFeaturesEnabled: v.optional(v.boolean()),
     allowedEmails: v.optional(v.array(v.string())),
     allowedDomains: v.optional(v.array(v.string())),
     emailVerification: v.optional(v.union(v.literal("strict"), v.literal("domain"), v.literal("open"))),
@@ -873,6 +876,21 @@ export const updateOrg = mutation({
     const { orgId } = await requireOrgAdmin(ctx);
     await assertImpersonatedSetupWrite(ctx, orgId);
     await ctx.db.patch(orgId, args);
+  },
+});
+
+export const setFeatureFlag = mutation({
+  args: {
+    flagId: v.literal("connect_features"),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { orgId, org } = await requireOrgAdmin(ctx);
+    await assertImpersonatedSetupWrite(ctx, orgId);
+    assertFeatureFlagAllowedForOrg(args.flagId, org);
+    await ctx.db.patch(orgId, {
+      featureFlags: setFeatureFlagPatch(org.featureFlags, args.flagId, args.enabled),
+    });
   },
 });
 

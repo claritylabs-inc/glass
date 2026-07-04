@@ -280,6 +280,7 @@ export function useOperatorClientCacheActions() {
         primaryContactName: input.adminName,
         primaryContactEmail: input.adminEmail,
         primaryContactPhone: input.adminPhone,
+        featureFlags: {},
         adminUserId: undefined,
         adminName: input.adminName,
         adminEmail: input.adminEmail,
@@ -324,6 +325,7 @@ export function useOperatorClientCacheActions() {
           | "primaryContactName"
           | "primaryContactEmail"
           | "primaryContactPhone"
+          | "featureFlags"
           | "adminName"
           | "adminPhone"
         >

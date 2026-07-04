@@ -36,6 +36,7 @@ import {
 import { useCachedQuery, useSetCachedQuery } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 import { useArchivedThreadCacheActions } from "@/lib/sync/glass-cached-queries";
+import { isFeatureEnabled } from "@/convex/lib/featureFlags";
 
 function sidebarHeaderBranding({
   viewerOrg,
@@ -125,7 +126,7 @@ export function AppSidebar({
   const { context: pageContext } = usePageContext();
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  const showConnectFeatures = currentOrg?.org?.connectFeaturesEnabled === true;
+  const showConnectFeatures = isFeatureEnabled(currentOrg?.org, "connect_features");
   const isStandaloneClient =
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const canManageSettings = currentOrg?.role === "admin";

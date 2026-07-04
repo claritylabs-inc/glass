@@ -16,6 +16,10 @@ import {
   normalizeUserPhone,
 } from "./lib/userPhone";
 import {
+  assertFeatureFlagAllowedForOrg,
+  setFeatureFlagPatch,
+} from "./lib/featureFlags";
+import {
   assertCustomerUser,
   isBootstrapOperatorEmail,
   normalizeOperatorEmail,
@@ -60,6 +64,12 @@ function normalizeHandle(value: string | undefined) {
   const withoutDomain = raw.includes("@") ? raw.split("@")[0] : raw;
   const normalized = withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
   return normalized || undefined;
+}
+
+function normalizeWebsiteUrl(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 function validateAgentHandle(handle: string | undefined) {
@@ -529,6 +539,7 @@ async function listOperatorClientRows(ctx: QueryCtx) {
         primaryContactName: client.primaryContactName,
         primaryContactEmail: client.primaryContactEmail,
         primaryContactPhone: client.primaryContactPhone,
+        featureFlags: client.featureFlags,
         adminUserId: admin?._id,
         adminName: admin?.name,
         adminEmail: admin?.email,
@@ -993,7 +1004,8 @@ export const createSoloClient = action({
     });
     if (!account.user) throw new Error("Could not create client admin");
 
-    return await ctx.runMutation(internalApi.operator.createSoloClientInternal, {
+    const website = normalizeWebsiteUrl(args.website);
+    const result = await ctx.runMutation(internalApi.operator.createSoloClientInternal, {
       operatorUserId: userId,
       adminUserId: account.user._id,
       adminEmail,
@@ -1002,10 +1014,21 @@ export const createSoloClient = action({
       client: {
         name: args.name,
         brokerOrgId: args.brokerOrgId,
-        website: args.website,
+        website,
         agentHandle: args.agentHandle,
       },
     });
+    if (website) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.extractCompanyInfo.extractCompanyInfoForOrgInternal,
+        {
+          orgId: result.clientOrgId,
+          url: website,
+        },
+      );
+    }
+    return result;
   },
 });
 
@@ -1047,6 +1070,30 @@ export const setSoloClientStatus = mutation({
       targetOrgId: args.clientOrgId,
       summary: `${client.name} changed from ${previous} to ${args.status}`,
       metadata: { previous, next: args.status },
+    });
+  },
+});
+
+export const setClientFeatureFlag = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    flagId: v.literal("connect_features"),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const client = await ctx.db.get(args.clientOrgId);
+    if (!client || client.type !== "client") throw new Error("Client not found");
+    assertFeatureFlagAllowedForOrg(args.flagId, client);
+    await ctx.db.patch(args.clientOrgId, {
+      featureFlags: setFeatureFlagPatch(client.featureFlags, args.flagId, args.enabled),
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: `Updated ${args.flagId} for ${client.name}`,
+      metadata: { flagId: args.flagId, enabled: args.enabled },
     });
   },
 });

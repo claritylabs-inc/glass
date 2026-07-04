@@ -9,6 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { FeatureFlagToggleRow } from "@/components/settings/feature-flag-toggle-row";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { Badge } from "@/components/ui/badge";
 import { OperationalPanel } from "@/components/ui/operational-panel";
@@ -35,6 +36,13 @@ import { toast } from "sonner";
 import { OperatorSidebar } from "../operator-sidebar";
 import { getPublicAgentDomain } from "@/lib/domains";
 import {
+  betaFeatureFlagsForOrgType,
+  isFeatureEnabled,
+  setFeatureFlagPatch,
+  type FeatureFlagId,
+  type FeatureFlagMap,
+} from "@/convex/lib/featureFlags";
+import {
   useCachedOperatorBrokers,
   useCachedOperatorClients,
   useCachedOperatorCurrent,
@@ -53,6 +61,7 @@ type ClientRow = {
   primaryContactName?: string;
   primaryContactEmail?: string;
   primaryContactPhone?: string;
+  featureFlags?: FeatureFlagMap;
   adminUserId?: Id<"users">;
   adminName?: string;
   adminEmail?: string;
@@ -142,6 +151,7 @@ export default function OperatorClientsPage() {
   const [busy, setBusy] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaveStatus, setSettingsSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [savingFeatureFlagId, setSavingFeatureFlagId] = useState<FeatureFlagId | null>(null);
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
   const [debouncedAdminPhone, setDebouncedAdminPhone] = useState("");
   const [debouncedEditPrimaryContactPhone, setDebouncedEditPrimaryContactPhone] = useState("");
@@ -164,6 +174,7 @@ export default function OperatorClientsPage() {
   const launchClient = useAction(api.operator.launchSoloClient);
   const setClientStatus = useMutation(api.operator.setSoloClientStatus);
   const updateClientSettings = useMutation(api.operator.updateClientSettings);
+  const setClientFeatureFlag = useMutation(api.operator.setClientFeatureFlag);
   const startImpersonation = useMutation(api.operator.startImpersonation);
   const stopOperatorImpersonation = useStopOperatorImpersonation();
 
@@ -435,6 +446,27 @@ export default function OperatorClientsPage() {
     status: settingsSaveStatus,
     validationError: clientSettingsValidationError,
   });
+  const clientBetaFlags = betaFeatureFlagsForOrgType("client");
+
+  async function updateClientFeatureFlag(
+    client: ClientRow,
+    flagId: FeatureFlagId,
+    enabled: boolean,
+  ) {
+    const previousFlags = client.featureFlags;
+    const nextFlags = setFeatureFlagPatch(previousFlags, flagId, enabled);
+    setSavingFeatureFlagId(flagId);
+    await patchClientSettings(client._id, { featureFlags: nextFlags });
+    try {
+      await setClientFeatureFlag({ clientOrgId: client._id, flagId, enabled });
+      toast.success("Beta feature updated");
+    } catch (error) {
+      await patchClientSettings(client._id, { featureFlags: previousFlags });
+      toast.error(error instanceof Error ? error.message : "Failed to update beta feature");
+    } finally {
+      setSavingFeatureFlagId(null);
+    }
+  }
 
   const rightPanel = (
     <SettingsDrawer
@@ -725,6 +757,21 @@ export default function OperatorClientsPage() {
                 placeholder="(555) 123-4567"
               />
             </Field>
+          </section>
+          <section className="space-y-3 border-t border-foreground/8 pt-4">
+            <p className="text-base font-medium text-foreground">Beta Features</p>
+            {clientBetaFlags.map((flag) => (
+              <FeatureFlagToggleRow
+                key={flag.id}
+                flag={flag}
+                enabled={isFeatureEnabled(selected, flag.id)}
+                onChange={(enabled) =>
+                  void updateClientFeatureFlag(selected, flag.id, enabled)
+                }
+                loading={savingFeatureFlagId === flag.id}
+                disabled={savingFeatureFlagId !== null}
+              />
+            ))}
           </section>
         </div>
       ) : null}

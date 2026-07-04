@@ -10,6 +10,7 @@ import { useSearchParams } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { useIsStoppingOperatorImpersonation } from "@/lib/operator-impersonation-stop-state";
+import type { FeatureFlagMap } from "@/convex/lib/featureFlags";
 
 export type CurrentOrgContext = {
   orgId: Id<"organizations">;
@@ -22,7 +23,7 @@ export type CurrentOrgContext = {
   whiteLabelingEnabled: boolean;
   brandingColor: string | undefined;
   agentDisplayName: string | undefined;
-  connectFeaturesEnabled: boolean;
+  featureFlags: FeatureFlagMap | undefined;
 };
 
 /**
@@ -71,7 +72,7 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
     whiteLabelingEnabled?: boolean;
     brandingColor?: string;
     agentDisplayName?: string;
-    connectFeaturesEnabled?: boolean;
+    featureFlags?: FeatureFlagMap;
   };
 
   const membership = orgData.membership as {
@@ -97,6 +98,6 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
     whiteLabelingEnabled: org.whiteLabelingEnabled !== false,
     brandingColor: org.brandingColor,
     agentDisplayName: org.agentDisplayName,
-    connectFeaturesEnabled: org.connectFeaturesEnabled === true,
+    featureFlags: org.featureFlags,
   };
 }

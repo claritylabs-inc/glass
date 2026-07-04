@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { z } from "zod";
 import { generateText, Output } from "ai";
-import { action } from "../_generated/server";
+import { action, internalAction, type ActionCtx } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { getModelAndRouteForOrg } from "../lib/models";
@@ -48,6 +48,12 @@ type ExtractCompanyInfoResult = {
   industry?: string;
   industryVertical?: string;
 } & Partial<Omit<CompanyInfo, "companyContext" | "industry" | "industryVertical">>;
+
+function normalizeWebsiteUrl(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
 
 async function fetchFavicon(siteUrl: string): Promise<Blob | null> {
   let base: URL;
@@ -99,63 +105,50 @@ async function fetchFavicon(siteUrl: string): Promise<Blob | null> {
   return null;
 }
 
-export const extractCompanyInfo = action({
-  args: { url: v.string(), orgId: v.optional(v.id("organizations")) },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<ExtractCompanyInfoResult> => {
-    const viewer = await ctx.runQuery(api.users.viewer);
-    if (!viewer) throw new Error("Not authenticated");
-    const viewerOrg: { org: { _id: Id<"organizations"> } } | null = await ctx.runQuery(
-      api.orgs.viewerOrg,
-      {},
-    );
-    const targetOrgId = args.orgId ?? viewerOrg?.org?._id;
-    if (!targetOrgId) throw new Error("Organization not found");
-    if (args.orgId && args.orgId !== viewerOrg?.org?._id) {
-      const access = await ctx.runQuery(
-        internal.clientInvitations.resolveAccessInternal,
-        {
-          userId: viewer._id,
-          orgId: args.orgId,
-        },
-      );
-      if (!access) throw new Error("Not authorized");
-    }
+async function storeFaviconForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  url: string,
+) {
+  const iconBlob = await fetchFavicon(url);
+  if (!iconBlob) return null;
+  const iconStorageId = await ctx.storage.store(iconBlob);
+  await ctx.runMutation(internal.orgs.setIconInternal, {
+    orgId,
+    iconStorageId,
+  });
+  return iconStorageId;
+}
 
-    // Favicon — best effort, parallel with content fetch
-    void (async () => {
-      try {
-        const iconBlob = await fetchFavicon(args.url);
-        if (iconBlob) {
-          const iconStorageId = await ctx.storage.store(iconBlob);
-          await ctx.runMutation(internal.orgs.setIconInternal, {
-            orgId: targetOrgId,
-            iconStorageId,
-          });
-        }
-      } catch {
-        // ignore favicon failures
-      }
-    })();
+async function extractAndApplyCompanyInfo(
+  ctx: ActionCtx,
+  targetOrgId: Id<"organizations">,
+  rawUrl: string,
+): Promise<ExtractCompanyInfoResult> {
+  const url = normalizeWebsiteUrl(rawUrl);
+  if (!url) return { error: "Website URL is required" };
 
-    const retrieval = await runWebRetrieval(ctx, targetOrgId, {
-      url: args.url,
-      goal: "Extract factual company profile information from this organization's public website.",
-      maxResults: 1,
-    });
-    const content = retrieval.text;
-    if (!content) {
-      return { error: "Could not retrieve website content" };
-    }
+  const faviconPromise = storeFaviconForOrg(ctx, targetOrgId, url).catch(() => null);
 
-    const modelRoute = await getModelAndRouteForOrg(ctx, targetOrgId, "triage");
-    const { output: object } = (await generateText({
-      model: modelRoute.model,
-      output: Output.object({
-        schema: structuredOutputSchemaForRoute(CompanyInfoSchema, modelRoute.route),
-      }),
-      maxOutputTokens: 2048,
-      prompt: `Extract company information from the website content below.
+  const retrieval = await runWebRetrieval(ctx, targetOrgId, {
+    url,
+    goal: "Extract factual company profile information from this organization's public website.",
+    maxResults: 1,
+  });
+  const content = retrieval.text;
+  if (!content) {
+    await faviconPromise;
+    return { error: "Could not retrieve website content" };
+  }
+
+  const modelRoute = await getModelAndRouteForOrg(ctx, targetOrgId, "triage");
+  const { output: object } = (await generateText({
+    model: modelRoute.model,
+    output: Output.object({
+      schema: structuredOutputSchemaForRoute(CompanyInfoSchema, modelRoute.route),
+    }),
+    maxOutputTokens: 2048,
+    prompt: `Extract company information from the website content below.
 
 Valid industry values and their verticals:
 ${INDUSTRY_REF}
@@ -167,60 +160,119 @@ For atomicFacts, decompose what's on the site into the smallest possible standal
 
 Website content:
 ${content}`,
-    })) as { output: CompanyInfo };
+  })) as { output: CompanyInfo };
 
-    const matchedIndustry = INDUSTRIES.find((i) => i.value === object.industry);
-    const industry = matchedIndustry?.value;
-    const industryVertical = matchedIndustry?.verticals.find(
-      (v) => v.value === object.industryVertical,
-    )?.value;
+  const matchedIndustry = INDUSTRIES.find((i) => i.value === object.industry);
+  const industry = matchedIndustry?.value;
+  const industryVertical = matchedIndustry?.verticals.find(
+    (v) => v.value === object.industryVertical,
+  )?.value;
 
-    const companyContext = object.companyContext;
+  const companyContext = object.companyContext;
+  const orgUpdates: Record<string, string> = { context: companyContext };
+  if (industry) orgUpdates.industry = industry;
+  if (industryVertical) orgUpdates.industryVertical = industryVertical;
+  await ctx.runMutation(internal.orgs.updateProfileInternal, {
+    orgId: targetOrgId,
+    ...orgUpdates,
+  });
 
-    if (targetOrgId) {
-      const orgUpdates: Record<string, string> = { context: companyContext };
-      if (industry) orgUpdates.industry = industry;
-      if (industryVertical) orgUpdates.industryVertical = industryVertical;
-      await ctx.runMutation(internal.orgs.updateProfileInternal, {
-        orgId: targetOrgId,
-        ...orgUpdates,
-      });
+  const seen = new Set<string>();
+  const memoryItems = (object.atomicFacts ?? [])
+    .map((fact) => fact.trim())
+    .filter((fact) => {
+      if (!fact) return false;
+      if (fact.length > 240) return false;
+      const key = fact.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((content) => ({
+      orgId: targetOrgId,
+      type: "fact" as const,
+      content,
+      source: "extraction" as const,
+    }));
 
-      const seen = new Set<string>();
-      const memoryItems = (object.atomicFacts ?? [])
-        .map((fact) => fact.trim())
-        .filter((fact) => {
-          if (!fact) return false;
-          // Skip multi-fact runs that slipped past the prompt rules.
-          if (fact.length > 240) return false;
-          const key = fact.toLowerCase();
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        })
-        .map((content) => ({
-          orgId: targetOrgId,
-          type: "fact" as const,
-          content,
-          source: "extraction" as const,
-        }));
+  if (memoryItems.length > 0) {
+    await ctx.runMutation(internal.orgMemory.bulkInsert, {
+      items: memoryItems,
+    });
+  }
 
-      if (memoryItems.length > 0) {
-        await ctx.runMutation(internal.orgMemory.bulkInsert, {
-          items: memoryItems,
-        });
-      }
+  await faviconPromise;
+
+  return {
+    success: true,
+    companyContext,
+    industry,
+    industryVertical,
+    naicsCode: object.naicsCode || undefined,
+    yearsInBusiness: object.yearsInBusiness || undefined,
+    numberOfEmployees: object.numberOfEmployees || undefined,
+    annualRevenue: object.annualRevenue || undefined,
+  };
+}
+
+async function resolveTargetOrgId(
+  ctx: ActionCtx,
+  orgId: Id<"organizations"> | undefined,
+) {
+  const viewer = await ctx.runQuery(api.users.viewer);
+  if (!viewer) throw new Error("Not authenticated");
+  const viewerOrg: { org: { _id: Id<"organizations"> } } | null = await ctx.runQuery(
+    api.orgs.viewerOrg,
+    {},
+  );
+  const targetOrgId = orgId ?? viewerOrg?.org?._id;
+  if (!targetOrgId) throw new Error("Organization not found");
+  if (orgId && orgId !== viewerOrg?.org?._id) {
+    const access = await ctx.runQuery(
+      internal.clientInvitations.resolveAccessInternal,
+      {
+        userId: viewer._id,
+        orgId,
+      },
+    );
+    if (!access) throw new Error("Not authorized");
+  }
+  return targetOrgId;
+}
+
+export const extractCompanyInfo = action({
+  args: { url: v.string(), orgId: v.optional(v.id("organizations")) },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<ExtractCompanyInfoResult> => {
+    const targetOrgId = await resolveTargetOrgId(ctx, args.orgId);
+
+    return await extractAndApplyCompanyInfo(ctx, targetOrgId, args.url);
+  },
+});
+
+export const importOrgLogoFromWebsite = action({
+  args: { url: v.string(), orgId: v.optional(v.id("organizations")) },
+  returns: v.object({
+    success: v.boolean(),
+    iconStorageId: v.optional(v.id("_storage")),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const targetOrgId = await resolveTargetOrgId(ctx, args.orgId);
+    const url = normalizeWebsiteUrl(args.url);
+    if (!url) return { success: false, error: "Website URL is required" };
+    const iconStorageId = await storeFaviconForOrg(ctx, targetOrgId, url);
+    if (!iconStorageId) {
+      return { success: false, error: "Could not find a logo for this website" };
     }
+    return { success: true, iconStorageId };
+  },
+});
 
-    return {
-      success: true,
-      companyContext,
-      industry,
-      industryVertical,
-      naicsCode: object.naicsCode || undefined,
-      yearsInBusiness: object.yearsInBusiness || undefined,
-      numberOfEmployees: object.numberOfEmployees || undefined,
-      annualRevenue: object.annualRevenue || undefined,
-    };
+export const extractCompanyInfoForOrgInternal = internalAction({
+  args: { url: v.string(), orgId: v.id("organizations") },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<ExtractCompanyInfoResult> => {
+    return await extractAndApplyCompanyInfo(ctx, args.orgId, args.url);
   },
 });
