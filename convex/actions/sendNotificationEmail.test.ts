@@ -221,7 +221,7 @@ describe("sendNotificationEmail", () => {
     expect(callBody.from).toContain("Glass Notifications");
     expect(callBody.html).not.toContain("Notification for thread");
     expect(callBody.html).toContain("Renewal Review");
-    expect(callBody.html).toContain('td align="left"');
+    expect(callBody.html).toContain('<td align="center" style="padding:24px 40px 0 40px;">');
     expect(callBody.text).toContain("Thread: Renewal Review");
 
     vi.unstubAllGlobals();
