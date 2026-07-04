@@ -3,7 +3,6 @@ import { getBrandingContext, getDefaultBranding } from "./branding";
 import { DEFAULT_CLIENT_PORTAL_URL } from "./domains";
 import { buildEmailShell, escapeHtml } from "./emailTemplate";
 
-const GLASS_ACCENT = "#2563eb";
 const SITE_URL_DEFAULT = DEFAULT_CLIENT_PORTAL_URL;
 const NOTIFICATION_FROM_NAME = "Glass Notifications";
 
@@ -47,13 +46,8 @@ export function buildNotificationEmail(
     threadLabel,
   } = args;
 
-  const accentColor =
-    branding.kind === "broker" && branding.accentColor
-      ? branding.accentColor
-      : GLASS_ACCENT;
-
   const escapedTitle = escapeHtml(title);
-  const escapedBody = escapeHtml(body);
+  const escapedBody = escapeHtml(body).replace(/\n/g, "<br>");
   const escapedCtaUrl = escapeHtml(ctaUrl);
   const escapedCtaLabel = escapeHtml(ctaLabel);
   const escapedThreadLabel = threadLabel ? escapeHtml(threadLabel) : null;
@@ -62,27 +56,35 @@ export function buildNotificationEmail(
     branding.kind === "broker"
       ? getBrandingContext({
           agentDisplayName: branding.brokerName,
-          brandingColor: accentColor,
+          brandingColor: branding.accentColor ?? undefined,
           logoUrl: branding.logoUrl ?? undefined,
         })
       : getDefaultBranding();
 
   const threadHtml = escapedThreadLabel
-    ? `<tr><td align="left" style="padding:28px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:600;color:#000000;line-height:1.4;">${escapedThreadLabel}</p>
+    ? `<tr><td align="center" style="padding:24px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#6b7280;line-height:1.5;">${escapedThreadLabel}</p>
 </td></tr>`
     : "";
 
   const bodyHtml = `
 ${threadHtml}
-<tr><td align="left" style="padding:${escapedThreadLabel ? "20px" : "28px"} 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:600;color:#000000;line-height:1.5;">${escapedTitle}</p>
+<tr><td align="center" style="padding:${escapedThreadLabel ? "10px" : "28px"} 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#000000;line-height:1.5;">${escapedTitle}</p>
 </td></tr>
-<tr><td align="left" style="padding:14px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.6;">${escapedBody}</p>
+<tr><td align="center" style="padding:18px 40px 0 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.5;">${escapedBody}</p>
 </td></tr>
-<tr><td align="center" style="padding:26px 40px 0 40px;">
-  <a href="${escapedCtaUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">${escapedCtaLabel}</a>
+<tr><td align="center" style="padding:24px 40px 0 40px;">
+  <a href="${escapedCtaUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">${escapedCtaLabel}</a>
+</td></tr>
+<tr><td style="padding:32px 40px 0 40px;">
+  <div style="height:1px;background-color:rgba(17,24,39,0.06);"></div>
+</td></tr>
+<tr><td align="center" style="padding:20px 40px 32px 40px;">
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.5;">
+    Open in Glass: <a href="${escapedCtaUrl}" style="color:#6b7280;text-decoration:underline;word-break:break-all;">${escapedCtaUrl}</a>
+  </p>
 </td></tr>`;
 
   const html = buildEmailShell({
