@@ -344,25 +344,12 @@ function coverageRowTitle(row: Record<string, unknown>) {
   return "Coverage";
 }
 
-function coverageMetadata(
-  row: Record<string, unknown>,
-  terms: Array<{ label: string; value: string }>,
-) {
-  const retroactiveDate = profileCellValue(row, "retroactiveDate");
-  const hasRetroactiveTerm = terms.some((term) => /retroactive/i.test(term.label));
-  return [
-    profileCellValue(row, "formNumber"),
-    profileCellValue(row, "sectionRef"),
-    retroactiveDate && !hasRetroactiveTerm ? `Retroactive ${retroactiveDate}` : undefined,
-  ].filter((item): item is string => Boolean(item));
-}
-
 function coverageLimitTerms(row: Record<string, unknown>) {
   const terms = Array.isArray(row.limits)
     ? row.limits.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
     : [];
   const seen = new Set<string>();
-  return terms
+  const displayedTerms = terms
     .map((term) => {
       const label = cleanCoverageTitle(profileCellValue(term, "label") ?? profileCellValue(term, "kind"));
       const value = profileCellValue(term, "value")
@@ -375,6 +362,16 @@ function coverageLimitTerms(row: Record<string, unknown>) {
       return { label, value, sourceSpanIds: sourceSpanIdsFrom(term) };
     })
     .filter((term): term is { label: string; value: string; sourceSpanIds: string[] } => Boolean(term));
+  const hasRetroactiveTerm = displayedTerms.some((term) => /retroactive/i.test(term.label));
+  const retroactiveDate = profileCellValue(row, "retroactiveDate");
+  if (retroactiveDate && !hasRetroactiveTerm) {
+    displayedTerms.push({
+      label: "Retroactive Date",
+      value: retroactiveDate,
+      sourceSpanIds: sourceSpanIdsFrom(row.retroactiveDate),
+    });
+  }
+  return displayedTerms;
 }
 
 function ProfileListSection({
@@ -416,7 +413,6 @@ function CoverageList({
           : limit !== "—"
             ? [{ label: "Limit", value: limit, sourceSpanIds: coverageSourceSpanIds }]
             : [];
-        const metadata = coverageMetadata(row, terms).join(" | ");
 
         return (
           <OperationalItem key={`${name}-${rowIndex}`} className="px-4">
@@ -429,11 +425,6 @@ function CoverageList({
                 className="shrink-0"
               />
             </div>
-            {metadata ? (
-              <div className="mt-1 text-label leading-4 text-muted-foreground [overflow-wrap:anywhere]">
-                {metadata}
-              </div>
-            ) : null}
             {visibleTerms.length > 0 ? (
               <dl className="mt-3 divide-y divide-foreground/6">
                 {visibleTerms.map((term, termIndex) => (
