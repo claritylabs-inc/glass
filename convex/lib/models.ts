@@ -111,7 +111,12 @@ type ModelFallbackContext = {
   task?: ModelTask;
   taskKind?: ModelCallTaskKind;
   primaryRoute?: ModelRoute;
+  primaryTransport?: ModelTransport;
+  primaryRouteSource?: ModelRouteSource;
 };
+
+export type ModelTransport = "direct" | "gateway";
+export type ModelRouteSource = "broker" | "global" | "static" | "default";
 
 const MODEL_CALL_TIMEOUT_MS = Math.max(
   30_000,
@@ -133,7 +138,7 @@ export function getProviderOptionsForRoute(route: ModelRoute): ProviderOptions |
 }
 
 function isMissingApiKeyError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorTextForMatching(err);
   return /api key is missing/i.test(message);
 }
 
@@ -288,7 +293,85 @@ function nativeProviderModel(route: ModelRoute): string | null {
   }
 }
 
-function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
+function hasGatewayAccess() {
+  return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+}
+
+function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
+  if (!err || seen.has(err)) return "";
+  seen.add(err);
+
+  if (typeof err === "string") return err;
+  if (err instanceof Error) {
+    const record = err as Error & Record<string, unknown> & { cause?: unknown };
+    return [
+      err.name,
+      err.message,
+      record.code,
+      record.status,
+      record.statusCode,
+      record.error,
+      errorTextForMatching(record.cause, seen),
+    ]
+      .filter(Boolean)
+      .map((field) => String(field))
+      .join(" ");
+  }
+  if (typeof err !== "object") return String(err);
+
+  const record = err as Record<string, unknown>;
+  const fields = [
+    record.code,
+    record.status,
+    record.statusCode,
+    record.message,
+    record.error,
+    record.cause,
+  ];
+  return fields
+    .map((field) => errorTextForMatching(field, seen))
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function isProviderFailoverError(err: unknown): boolean {
+  const text = errorTextForMatching(err);
+  return (
+    /\b429\b|too many requests|rate limit|rate_limit|insufficient_quota|exceeded.*quota|quota.*exceeded|billing/i.test(
+      text,
+    ) && !isMissingApiKeyError(err)
+  );
+}
+
+export function canRetryDirectRouteThroughGateway(args: {
+  error: unknown;
+  primaryRoute?: ModelRoute;
+  primaryTransport?: ModelTransport;
+  primaryRouteSource?: ModelRouteSource;
+}): args is {
+  error: unknown;
+  primaryRoute: ModelRoute;
+  primaryTransport: ModelTransport;
+  primaryRouteSource?: ModelRouteSource;
+} {
+  return (
+    args.primaryTransport === "direct" &&
+    args.primaryRouteSource !== "broker" &&
+    !!args.primaryRoute &&
+    args.primaryRoute.provider !== "moonshot" &&
+    hasGatewayAccess() &&
+    isProviderFailoverError(args.error)
+  );
+}
+
+function modelFromRoute(
+  route: ModelRoute,
+  apiKey?: string,
+  transport: ModelTransport | "auto" = "auto",
+): LanguageModel {
+  if (transport === "gateway") {
+    return gateway(gatewayModelId(route));
+  }
   const nativeModel = nativeProviderModel(route);
   if (apiKey && nativeModel) {
     return providerModel(route.provider, nativeModel, apiKey);
@@ -299,8 +382,11 @@ function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
   return gateway(gatewayModelId(route));
 }
 
-export function getModelForRoute(route: ModelRoute): LanguageModel {
-  return modelFromRoute(route);
+export function getModelForRoute(
+  route: ModelRoute,
+  options?: { transport?: ModelTransport },
+): LanguageModel {
+  return modelFromRoute(route, undefined, options?.transport);
 }
 
 export function getModel(task: ModelTask): LanguageModel {
@@ -328,7 +414,7 @@ export async function getModelAndRouteForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "broker" | "global" | "static" | "default"; transport: "direct" | "gateway" }> {
+): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: ModelRouteSource; transport: ModelTransport }> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
@@ -368,7 +454,7 @@ export async function getModelAndRouteForOrg(
 export async function getModelAndRouteForPublicTask(
   ctx: ActionCtx,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: "global" | "static" | "default"; transport: "direct" | "gateway" }> {
+): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: Extract<ModelRouteSource, "global" | "static" | "default">; transport: ModelTransport }> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
     const route = settings?.routes?.[task] ?? MODEL_ROUTING[task];
@@ -399,19 +485,52 @@ export async function generateTextWithFallback(
   fallbackContext: ModelFallbackContext = {},
 ): Promise<Awaited<ReturnType<typeof import("ai").generateText>>> {
   const { generateText } = await import("ai");
+  let primaryError: unknown;
   try {
     return await generateText(withModelTimeout(options));
   } catch (err: unknown) {
+    primaryError = err;
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
+    const gatewayRetry = { ...fallbackContext, error: err };
+    if (canRetryDirectRouteThroughGateway(gatewayRetry)) {
+      try {
+        console.warn(
+          `Primary direct model (${modelId}) failed with provider quota/rate error. Retrying ${gatewayRetry.primaryRoute.provider}:${gatewayRetry.primaryRoute.model} through Vercel AI Gateway.`,
+        );
+        return await generateText(withModelTimeout({
+          ...options,
+          model: modelFromRoute(gatewayRetry.primaryRoute, undefined, "gateway"),
+          providerOptions: mergeProviderOptions(
+            getProviderOptionsForRoute(gatewayRetry.primaryRoute),
+            options.providerOptions,
+          ),
+        }));
+      } catch (gatewayErr) {
+        primaryError = gatewayErr;
+        console.warn(
+          `Gateway retry for ${gatewayRetry.primaryRoute.provider}:${gatewayRetry.primaryRoute.model} failed: ${
+            gatewayErr instanceof Error ? gatewayErr.message : String(gatewayErr)
+          }`,
+        );
+      }
+    }
     const fallbackRoute = fallbackRouteForCall(fallbackContext);
     if (!fallbackRoute) throw err;
+    const fallbackGatewayRetry = { ...fallbackContext, error: err };
+    const fallbackTransport =
+      canRetryDirectRouteThroughGateway(fallbackGatewayRetry) &&
+      fallbackRoute.provider === fallbackGatewayRetry.primaryRoute.provider
+        ? "gateway"
+        : undefined;
     console.warn(
-      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with ${fallbackRoute.model}.`,
+      `Primary model (${modelId}) failed: ${
+        primaryError instanceof Error ? primaryError.message : String(primaryError)
+      }. Retrying with ${fallbackRoute.model}.`,
     );
     return await generateText(withModelTimeout({
       ...options,
-      model: modelFromRoute(fallbackRoute),
+      model: modelFromRoute(fallbackRoute, undefined, fallbackTransport),
       providerOptions: mergeProviderOptions(
         getProviderOptionsForRoute(fallbackRoute),
         options.providerOptions,
@@ -425,19 +544,52 @@ export async function generateStructuredWithFallback(
   fallbackContext: ModelFallbackContext = {},
 ): Promise<Awaited<ReturnType<typeof import("ai").generateText>>> {
   const { generateText } = await import("ai");
+  let primaryError: unknown;
   try {
     return await generateText(withModelTimeout(options));
   } catch (err: unknown) {
+    primaryError = err;
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
+    const gatewayRetry = { ...fallbackContext, error: err };
+    if (canRetryDirectRouteThroughGateway(gatewayRetry)) {
+      try {
+        console.warn(
+          `Primary direct model (${modelId}) failed with provider quota/rate error. Retrying ${gatewayRetry.primaryRoute.provider}:${gatewayRetry.primaryRoute.model} through Vercel AI Gateway.`,
+        );
+        return await generateText(withModelTimeout({
+          ...options,
+          model: modelFromRoute(gatewayRetry.primaryRoute, undefined, "gateway"),
+          providerOptions: mergeProviderOptions(
+            getProviderOptionsForRoute(gatewayRetry.primaryRoute),
+            options.providerOptions,
+          ),
+        }));
+      } catch (gatewayErr) {
+        primaryError = gatewayErr;
+        console.warn(
+          `Gateway retry for ${gatewayRetry.primaryRoute.provider}:${gatewayRetry.primaryRoute.model} failed: ${
+            gatewayErr instanceof Error ? gatewayErr.message : String(gatewayErr)
+          }`,
+        );
+      }
+    }
     const fallbackRoute = fallbackRouteForCall(fallbackContext);
     if (!fallbackRoute) throw err;
+    const fallbackGatewayRetry = { ...fallbackContext, error: err };
+    const fallbackTransport =
+      canRetryDirectRouteThroughGateway(fallbackGatewayRetry) &&
+      fallbackRoute.provider === fallbackGatewayRetry.primaryRoute.provider
+        ? "gateway"
+        : undefined;
     console.warn(
-      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with ${fallbackRoute.model}.`,
+      `Primary model (${modelId}) failed for structured output: ${
+        primaryError instanceof Error ? primaryError.message : String(primaryError)
+      }. Retrying with ${fallbackRoute.model}.`,
     );
     return await generateText(withModelTimeout({
       ...options,
-      model: modelFromRoute(fallbackRoute),
+      model: modelFromRoute(fallbackRoute, undefined, fallbackTransport),
       providerOptions: mergeProviderOptions(
         getProviderOptionsForRoute(fallbackRoute),
         options.providerOptions,

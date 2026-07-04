@@ -3,8 +3,12 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, stepCountIs } from "ai";
-import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import { stepCountIs } from "ai";
+import {
+  generateTextWithFallback,
+  getModelAndRouteForOrg,
+  getProviderOptionsForRoute,
+} from "../lib/models";
 import {
   createImessageGroupChat,
   coordinateMailboxTask,
@@ -685,15 +689,25 @@ export const processInbound = internalAction({
           : {}),
       };
 
-      const result = await generateText({
-        model: await getModelForOrg(ctx, orgId, "chat"),
-        providerOptions: getProviderOptionsForTask("chat"),
-        maxOutputTokens: 512,
-        system: systemPrompt,
-        messages: modelMessages,
-        tools: imessageTools,
-        stopWhen: stepCountIs(8),
-      });
+      const chatModel = await getModelAndRouteForOrg(ctx, orgId, "chat");
+      const result = await generateTextWithFallback(
+        {
+          model: chatModel.model,
+          providerOptions: getProviderOptionsForRoute(chatModel.route),
+          maxOutputTokens: 512,
+          system: systemPrompt,
+          messages: modelMessages,
+          tools: imessageTools,
+          stopWhen: stepCountIs(8),
+        },
+        {
+          task: "chat",
+          taskKind: "query_reason",
+          primaryRoute: chatModel.route,
+          primaryTransport: chatModel.transport,
+          primaryRouteSource: chatModel.routeSource,
+        },
+      );
 
       const { usedTools, toolCalls, workflowOutcomes } = collectToolAudit(result);
       runState.appendWorkflowOutcomes(workflowOutcomes);

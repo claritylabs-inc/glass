@@ -7,7 +7,9 @@ import {
   MODEL_ROUTING,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
+  canRetryDirectRouteThroughGateway,
   fallbackRouteForCall,
+  isProviderFailoverError,
   modelTaskForCall,
 } from "../convex/lib/models";
 
@@ -62,7 +64,8 @@ describe("thread chat streaming reliability", () => {
     expect(source).toContain("hasStartedSideEffectfulWork");
     expect(source).toContain("resetStreamStateForRetry");
     expect(source).toContain("fallbackRouteForCall({");
-    expect(source).toContain("Retrying chat stream after transient provider error");
+    expect(source).toContain("Retrying chat stream after provider error");
+    expect(source).toContain("via Vercel AI Gateway");
   });
 
   test("keeps heavy mailbox tools behind the coordinator in web chat", () => {
@@ -110,6 +113,62 @@ describe("model fallback policy", () => {
         primaryRoute: FALLBACK_MODEL,
       }),
     ).toBeNull();
+  });
+
+  test("allows non-broker direct quota failures to retry through gateway", () => {
+    const previousGatewayKey = process.env.AI_GATEWAY_API_KEY;
+    process.env.AI_GATEWAY_API_KEY = "test-gateway-key";
+
+    try {
+      const quotaError = new Error(
+        "Failed after 3 attempts. Last error: You exceeded your current quota, please check your plan and billing details.",
+      );
+
+      expect(isProviderFailoverError(quotaError)).toBe(true);
+      expect(
+        canRetryDirectRouteThroughGateway({
+          error: quotaError,
+          primaryRoute: { provider: "openai", model: "gpt-5.4-nano" },
+          primaryTransport: "direct",
+          primaryRouteSource: "global",
+        }),
+      ).toBe(true);
+      expect(
+        canRetryDirectRouteThroughGateway({
+          error: quotaError,
+          primaryRoute: { provider: "openai", model: "gpt-5.4-nano" },
+          primaryTransport: "direct",
+          primaryRouteSource: "broker",
+        }),
+      ).toBe(false);
+      expect(
+        canRetryDirectRouteThroughGateway({
+          error: quotaError,
+          primaryRoute: { provider: "openai", model: "gpt-5.4-nano" },
+          primaryTransport: "gateway",
+          primaryRouteSource: "global",
+        }),
+      ).toBe(false);
+    } finally {
+      if (previousGatewayKey === undefined) {
+        delete process.env.AI_GATEWAY_API_KEY;
+      } else {
+        process.env.AI_GATEWAY_API_KEY = previousGatewayKey;
+      }
+    }
+  });
+
+  test("uses resolved route metadata for iMessage chat fallback", () => {
+    const source = readFileSync(
+      join(__dirname, "../convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("getModelAndRouteForOrg(ctx, orgId, \"chat\")");
+    expect(source).toContain("generateTextWithFallback(");
+    expect(source).toContain("getProviderOptionsForRoute(chatModel.route)");
+    expect(source).toContain("primaryTransport: chatModel.transport");
+    expect(source).toContain("primaryRouteSource: chatModel.routeSource");
   });
 });
 
