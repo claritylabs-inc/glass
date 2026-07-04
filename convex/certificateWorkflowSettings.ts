@@ -10,11 +10,9 @@ import {
 } from "./lib/access";
 
 export const DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS = {
-  populateHoldersFromEndorsements: true,
   renewalReissueEnabled: true,
   renewalReissueMode: "review_queue" as const,
   renewalReviewLeadDays: 60,
-  policyChangeRequestsForHeldCertificatesEnabled: true,
   channels: ["email"] as Array<"email" | "imessage">,
   copyInstructions: undefined as string | undefined,
 };
@@ -22,29 +20,11 @@ export const DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS = {
 type ReadCtx = QueryCtx | MutationCtx;
 
 const settingsArgs = {
-  populateHoldersFromEndorsements: v.boolean(),
   renewalReissueEnabled: v.boolean(),
-  renewalReviewLeadDays: v.optional(v.number()),
-  policyChangeRequestsForHeldCertificatesEnabled: v.optional(v.boolean()),
-  channels: v.optional(v.array(v.union(v.literal("email"), v.literal("imessage")))),
-  copyInstructions: v.optional(v.string()),
 };
-
-function clampLeadDays(value: number | undefined) {
-  if (!Number.isFinite(value)) return DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.renewalReviewLeadDays;
-  return Math.max(0, Math.min(365, Math.round(value as number)));
-}
-
-function cleanOptional(value?: string) {
-  const trimmed = value?.trim();
-  return trimmed || undefined;
-}
 
 function valuesFromRow(row?: Doc<"certificateWorkflowSettings"> | null) {
   return {
-    populateHoldersFromEndorsements:
-      row?.populateHoldersFromEndorsements ??
-      DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.populateHoldersFromEndorsements,
     renewalReissueEnabled:
       row?.renewalReissueEnabled ??
       DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.renewalReissueEnabled,
@@ -52,11 +32,19 @@ function valuesFromRow(row?: Doc<"certificateWorkflowSettings"> | null) {
     renewalReviewLeadDays:
       row?.renewalReviewLeadDays ??
       DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.renewalReviewLeadDays,
-    policyChangeRequestsForHeldCertificatesEnabled:
-      row?.policyChangeRequestsForHeldCertificatesEnabled ??
-      DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.policyChangeRequestsForHeldCertificatesEnabled,
     channels: row?.channels ?? DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.channels,
     copyInstructions: row?.copyInstructions,
+  };
+}
+
+function legacyRowDefaults() {
+  return {
+    populateHoldersFromEndorsements: true,
+    renewalReissueMode: "review_queue" as const,
+    renewalReviewLeadDays: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.renewalReviewLeadDays,
+    policyChangeRequestsForHeldCertificatesEnabled: true,
+    channels: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.channels,
+    copyInstructions: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.copyInstructions,
   };
 }
 
@@ -145,13 +133,8 @@ export const updateBrokerDefault = mutation({
     const patch = {
       brokerOrgId: access.orgId,
       clientOrgId: undefined,
-      populateHoldersFromEndorsements: args.populateHoldersFromEndorsements,
+      ...legacyRowDefaults(),
       renewalReissueEnabled: args.renewalReissueEnabled,
-      renewalReissueMode: "review_queue" as const,
-      renewalReviewLeadDays: clampLeadDays(args.renewalReviewLeadDays),
-      policyChangeRequestsForHeldCertificatesEnabled: args.policyChangeRequestsForHeldCertificatesEnabled,
-      channels: args.channels,
-      copyInstructions: cleanOptional(args.copyInstructions),
       updatedByUserId: access.userId,
       updatedAt: now,
     };
@@ -176,13 +159,8 @@ export const updateClientOverride = mutation({
     const patch = {
       brokerOrgId: access.org.brokerOrgId,
       clientOrgId: access.orgId,
-      populateHoldersFromEndorsements: args.populateHoldersFromEndorsements,
+      ...legacyRowDefaults(),
       renewalReissueEnabled: args.renewalReissueEnabled,
-      renewalReissueMode: "review_queue" as const,
-      renewalReviewLeadDays: clampLeadDays(args.renewalReviewLeadDays),
-      policyChangeRequestsForHeldCertificatesEnabled: args.policyChangeRequestsForHeldCertificatesEnabled,
-      channels: args.channels,
-      copyInstructions: cleanOptional(args.copyInstructions),
       updatedByUserId: access.userId,
       updatedAt: now,
     };
@@ -195,16 +173,5 @@ export const updateClientOverride = mutation({
       ...patch,
       createdAt: now,
     });
-  },
-});
-
-export const clearClientOverride = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const access = await requireCurrentOrgAdmin(ctx);
-    assertClientAdmin(access);
-    const existing = await getClientOverride(ctx, access.orgId);
-    if (existing) await ctx.db.delete(existing._id);
-    return existing?._id ?? null;
   },
 });

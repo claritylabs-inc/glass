@@ -1781,16 +1781,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             (internal as any).declarationFacts.syncPolicyInternal,
             { policyId },
           );
-          const certificateWorkflowSettings = await convexCtx.runQuery(
-            (internal as any).certificateWorkflowSettings.getEffectiveInternal,
-            { orgId: finalPolicy.orgId as Id<"organizations"> },
-          ).catch(() => null);
-          if (certificateWorkflowSettings?.populateHoldersFromEndorsements !== false) {
-            await convexCtx.runMutation(
-              (internal as any).certificateHolders.populateForPolicyInternal,
-              { policyId },
-            );
-          }
+          await convexCtx.runMutation(
+            (internal as any).certificateHolders.populateForPolicyInternal,
+            { policyId },
+          );
           const reviewQuestions = openExtractionReviewQuestions(finalPolicy.extractionReview);
           if (reviewQuestions.length > 0) {
             await notifyExtractionReviewRequired(convexCtx, {

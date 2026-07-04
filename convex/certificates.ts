@@ -80,13 +80,8 @@ function sourceKindForPolicyChange(source: string | undefined):
 function formatGateMessage(args: {
   holderName: string;
   reasonMessage: string;
-  policyChangeCaseId?: Id<"policyChangeCases">;
-  policyChangeRequestsEnabled: boolean;
 }) {
-  const nextStep = args.policyChangeRequestsEnabled
-    ? "I prepared a broker follow-up so the endorsement can be handled before this certificate is issued."
-    : "I can help loop the broker in by email or iMessage.";
-  return `${args.reasonMessage} I put the certificate for ${args.holderName} on hold. ${nextStep}`;
+  return `${args.reasonMessage} I put the certificate for ${args.holderName} on hold and prepared a broker follow-up so the endorsement can be handled before this certificate is issued.`;
 }
 
 const certificateGateReviewSchema = z.object({
@@ -524,12 +519,6 @@ export const generateForOrg = internalAction({
     const org = await ctx.runQuery(internal.orgs.getInternal, {
       id: args.orgId,
     });
-    const workflowSettings = await ctx.runQuery(
-      (internal as any).certificateWorkflowSettings.getEffectiveInternal,
-      { orgId: args.orgId },
-    );
-    const certificateChangeRequestsEnabled =
-      workflowSettings.policyChangeRequestsForHeldCertificatesEnabled !== false;
     const requestMetadata = resolveCertificateRequestMetadata({
       holderName,
       certificateHolder,
@@ -588,33 +577,30 @@ export const generateForOrg = internalAction({
     }
 
     if (gate.status === "held") {
-      let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
-      if (certificateChangeRequestsEnabled) {
-        const brokerIdentity = org?.type === "client"
-          ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-              clientOrgId: args.orgId,
-            })
-          : null;
-        const brokerSubmission = buildBrokerSubmissionFromIdentity(brokerIdentity);
-        policyChangeCaseId = await ctx.runMutation(
-          internal.policyChanges.createFromChatInternal,
-          {
-            orgId: args.orgId,
-            userId: args.createdByUserId,
-            policyId: args.policyId,
-            requestText:
-              args.requestText ??
-              `Certificate request for ${holderName} requires ${gate.requiredChanges.join(", ")} before the COI can be issued.`,
-            sourceKind: sourceKindForPolicyChange(args.source),
-            evidenceSourceIds: gate.evidence.flatMap((item) => item.sourceSpanIds ?? []),
-            missingInfoQuestions: missingBrokerRecipientInfo(
-              brokerSubmission,
-              "certificate",
-            ),
+      const brokerIdentity = org?.type === "client"
+        ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+            clientOrgId: args.orgId,
+          })
+        : null;
+      const brokerSubmission = buildBrokerSubmissionFromIdentity(brokerIdentity);
+      const policyChangeCaseId = await ctx.runMutation(
+        internal.policyChanges.createFromChatInternal,
+        {
+          orgId: args.orgId,
+          userId: args.createdByUserId,
+          policyId: args.policyId,
+          requestText:
+            args.requestText ??
+            `Certificate request for ${holderName} requires ${gate.requiredChanges.join(", ")} before the COI can be issued.`,
+          sourceKind: sourceKindForPolicyChange(args.source),
+          evidenceSourceIds: gate.evidence.flatMap((item) => item.sourceSpanIds ?? []),
+          missingInfoQuestions: missingBrokerRecipientInfo(
             brokerSubmission,
-          },
-        );
-      }
+            "certificate",
+          ),
+          brokerSubmission,
+        },
+      );
 
       const holdId = await ctx.runMutation(internal.certificates.recordHoldInternal, {
         orgId: args.orgId,
@@ -624,7 +610,7 @@ export const generateForOrg = internalAction({
         requestText: args.requestText,
         requestedEndorsements: args.requestedEndorsements,
         source: args.source,
-        status: policyChangeCaseId ? "policy_change_opened" : "broker_handoff_offered",
+        status: "policy_change_opened",
         reasonCode: gate.reasonCode,
         reasonMessage: gate.reasonMessage,
         requiredChanges: gate.requiredChanges,
@@ -643,13 +629,11 @@ export const generateForOrg = internalAction({
         reasonCode: gate.reasonCode,
         reasonMessage: gate.reasonMessage,
         evidence: gate.evidence,
-        policyChangeRequestsEnabled: certificateChangeRequestsEnabled,
-        brokerHandoffOffered: !certificateChangeRequestsEnabled,
+        policyChangeRequestsEnabled: true,
+        brokerHandoffOffered: false,
         message: formatGateMessage({
           holderName,
           reasonMessage: gate.reasonMessage,
-          policyChangeCaseId,
-          policyChangeRequestsEnabled: certificateChangeRequestsEnabled,
         }),
       };
     }
