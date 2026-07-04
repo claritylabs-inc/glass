@@ -97,7 +97,7 @@ describe("source spans and policy update backend surfaces", () => {
     expect(read("convex/lib/access.ts")).toContain("assertCanDraftPolicyChangeSubmission");
     expect(read("convex/policyChanges.ts")).toContain("canCreatePolicyChangeForUserInternal");
     expect(read("convex/policyChanges.ts")).toContain("Broker follow-ups require direct org membership or broker access");
-    expect(read("convex/lib/aiUtils.ts")).toContain("Capture the follow-up and ask for the broker contact");
+    expect(read("convex/lib/aiUtils.ts")).toContain("capture the follow-up and ask for the broker contact");
   });
 
   it("prefers source nodes in agent retrieval context", () => {
