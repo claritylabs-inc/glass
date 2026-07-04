@@ -201,7 +201,6 @@ MCP MODE:
         orgId: args.orgId,
         userId: args.userId,
         scope,
-        org,
         threadId,
         canWrite: args.canWrite,
         writeUnavailableMessage:

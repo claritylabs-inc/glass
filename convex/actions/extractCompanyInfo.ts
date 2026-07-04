@@ -24,11 +24,6 @@ const CompanyInfoSchema = z.object({
   yearsInBusiness: z.string().describe("Years in business if explicitly visible as a number. Empty string if not evident."),
   numberOfEmployees: z.string().describe("Employee count if explicitly visible as a number. Empty string if not evident."),
   annualRevenue: z.string().describe("Annual revenue if explicitly visible. Preserve units/currency. Empty string if not evident."),
-  clientsContext: z.string().describe("Typical clients/customers. Empty string if not evident."),
-  vendorsContext: z.string().describe("Vendors, suppliers, or service providers. Empty string if not evident."),
-  insuranceContext: z.string().describe("Insurance brokers, carriers, or relationships. Empty string if not evident."),
-  investorsContext: z.string().describe("Investors, funding sources, shareholders. Empty string if not evident."),
-  partnersContext: z.string().describe("Business partners, affiliates, joint ventures. Empty string if not evident."),
   atomicFacts: z.array(z.string()).describe(
     [
       "Atomic, durable facts about the company that are useful as long-term memory.",
@@ -186,20 +181,11 @@ ${content}`,
       const orgUpdates: Record<string, string> = { context: companyContext };
       if (industry) orgUpdates.industry = industry;
       if (industryVertical) orgUpdates.industryVertical = industryVertical;
-      if (object.clientsContext) orgUpdates.clientsContext = object.clientsContext;
-      if (object.vendorsContext) orgUpdates.vendorsContext = object.vendorsContext;
-      if (object.insuranceContext) orgUpdates.insuranceContext = object.insuranceContext;
-      if (object.investorsContext) orgUpdates.investorsContext = object.investorsContext;
-      if (object.partnersContext) orgUpdates.partnersContext = object.partnersContext;
       await ctx.runMutation(internal.orgs.updateProfileInternal, {
         orgId: targetOrgId,
         ...orgUpdates,
       });
 
-      // Write extracted facts to orgMemory (website source).
-      // Each memory entry is a single atomic fact — no verbose paragraphs,
-      // no label-prefixed blobs. The verbose companyContext / *Context blobs
-      // continue to live on the organization record itself for UI display.
       const seen = new Set<string>();
       const memoryItems = (object.atomicFacts ?? [])
         .map((fact) => fact.trim())
@@ -235,11 +221,6 @@ ${content}`,
       yearsInBusiness: object.yearsInBusiness || undefined,
       numberOfEmployees: object.numberOfEmployees || undefined,
       annualRevenue: object.annualRevenue || undefined,
-      clientsContext: object.clientsContext || undefined,
-      vendorsContext: object.vendorsContext || undefined,
-      insuranceContext: object.insuranceContext || undefined,
-      investorsContext: object.investorsContext || undefined,
-      partnersContext: object.partnersContext || undefined,
     };
   },
 });

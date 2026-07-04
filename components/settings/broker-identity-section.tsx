@@ -266,7 +266,9 @@ function BrokerIdentityForm({
           </p>
         ) : (
           <>
-            <div className={twoColumnGridClass}>
+            <div
+              className={identity.connected ? twoColumnGridClass : "grid gap-4"}
+            >
               <div>
                 <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                   Broker company
@@ -283,7 +285,7 @@ function BrokerIdentityForm({
                   className={INPUT_CLASSES}
                 />
               </div>
-              {identity.canEdit && identity.connected ? (
+              {identity.connected && identity.canEdit ? (
                 <div>
                   <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                     Broker user
@@ -313,7 +315,7 @@ function BrokerIdentityForm({
                     </SelectContent>
                   </Select>
                 </div>
-              ) : (
+              ) : identity.connected ? (
                 <div>
                   <label className="mb-1.5 block text-label font-medium text-muted-foreground">
                     Broker contact
@@ -325,7 +327,7 @@ function BrokerIdentityForm({
                     className={INPUT_CLASSES}
                   />
                 </div>
-              )}
+              ) : null}
             </div>
 
             <div className={threeColumnGridClass}>

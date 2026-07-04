@@ -1042,7 +1042,6 @@ export const processInbound = internalAction({
             org: {
               name: org.name,
               context: org.context,
-              coiHandling: org.coiHandling,
               broker: brokerIdentity?.brokerCompanyName
                 ? {
                     name: brokerIdentity.brokerCompanyName,
@@ -1252,7 +1251,6 @@ If the broker attached an endorsement or confirmation for this change, use compl
           orgId,
           userId: primaryUserId,
           scope,
-          org,
           threadId: unifiedThreadId,
           defaultPolicyChangeCaseId: correlatedPolicyChangeCaseId,
           availableFileIds,
@@ -1335,8 +1333,6 @@ If the broker attached an endorsement or confirmation for this change, use compl
                   ? false
                   : org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
-                autoGenerateCoi: org.autoGenerateCoi,
-                coiHandling: org.coiHandling,
                 conversationContext: [
                   `Inbound email from ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}`,
                   `Subject: ${subject}`,

@@ -1253,7 +1253,6 @@ export const run = internalAction({
           operatorInitiatedUserMessageId: scope.operatorInitiated
             ? args.userMessageId
             : undefined,
-          org,
           onPolicyReferenced: (policyId) => {
             citedPolicyIds.add(String(policyId));
           },
@@ -1435,8 +1434,6 @@ export const run = internalAction({
                   ? false
                   : org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
-                autoGenerateCoi: org.autoGenerateCoi,
-                coiHandling: org.coiHandling,
                 conversationContext:
                   allMessages
                     .filter(

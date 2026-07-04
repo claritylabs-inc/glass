@@ -477,7 +477,6 @@ export const processInbound = internalAction({
           org: {
             name: org.name,
             context: org.context,
-            coiHandling: org.coiHandling,
             broker: brokerIdentity?.brokerCompanyName
               ? {
                   name: brokerIdentity.brokerCompanyName,
@@ -562,7 +561,6 @@ export const processInbound = internalAction({
           scope: agentScope,
           readOrgIds,
           writableOrgIds: imessageWritableOrgIds,
-          org,
           threadId,
           getCurrentPolicyChangeCaseId: runState.getPolicyChangeCaseId,
           canWrite: currentSenderIsLinked,
@@ -669,8 +667,6 @@ export const processInbound = internalAction({
                   ? false
                   : org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
-                autoGenerateCoi: org.autoGenerateCoi,
-                coiHandling: org.coiHandling,
                 conversationContext:
                   recentConversationContext +
                   (draftEmails.length > 0

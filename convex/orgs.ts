@@ -833,11 +833,6 @@ export const updateOrg = mutation({
     context: v.optional(v.string()),
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
-    clientsContext: v.optional(v.string()),
-    vendorsContext: v.optional(v.string()),
-    insuranceContext: v.optional(v.string()),
-    investorsContext: v.optional(v.string()),
-    partnersContext: v.optional(v.string()),
     relatedLegalEntities: v.optional(
       v.array(
         v.object({
@@ -860,10 +855,6 @@ export const updateOrg = mutation({
         }),
       ),
     ),
-    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
-    autoGenerateCoi: v.optional(v.boolean()),
-    policyChangeRequestsEnabled: v.optional(v.boolean()),
-    certificateChangeRequestsEnabled: v.optional(v.boolean()),
     chatEmailNotifications: v.optional(v.boolean()),
     autoSendEmails: v.optional(v.boolean()),
     bccRequesterOnAgentEmails: v.optional(v.boolean()),
@@ -1561,11 +1552,6 @@ export const updateProfileInternal = internalMutation({
     context: v.optional(v.string()),
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
-    clientsContext: v.optional(v.string()),
-    vendorsContext: v.optional(v.string()),
-    insuranceContext: v.optional(v.string()),
-    investorsContext: v.optional(v.string()),
-    partnersContext: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { orgId, ...patch } = args;

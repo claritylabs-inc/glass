@@ -310,17 +310,6 @@ export const getGenerationContext = query({
       throw new Error("Connected client access is read-only.");
     }
 
-    if (access.org.autoGenerateCoi === false) {
-      const handling = access.org.coiHandling ?? "ignore";
-      if (handling === "broker") {
-        throw new Error("COI auto-generation is off. Contact the broker to obtain this certificate.");
-      }
-      if (handling === "member") {
-        throw new Error("COI auto-generation is off. Route this request to the primary insurance contact.");
-      }
-      throw new Error("COI auto-generation is disabled for this organization.");
-    }
-
     return { orgId: policy.orgId, userId: access.userId };
   },
 });
@@ -334,20 +323,6 @@ export const getGenerationContextForOrg = internalQuery({
     const policy = await ctx.db.get(args.policyId);
     if (!policy || policy.orgId !== args.orgId) {
       throw new Error("Policy not found");
-    }
-
-    const org = await ctx.db.get(args.orgId);
-    if (!org) throw new Error("Organization not found");
-
-    if (org.autoGenerateCoi === false) {
-      const handling = org.coiHandling ?? "ignore";
-      if (handling === "broker") {
-        throw new Error("COI auto-generation is off. Contact the broker to obtain this certificate.");
-      }
-      if (handling === "member") {
-        throw new Error("COI auto-generation is off. Route this request to the primary insurance contact.");
-      }
-      throw new Error("COI auto-generation is disabled for this organization.");
     }
 
     return { orgId: args.orgId };

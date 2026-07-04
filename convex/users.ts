@@ -723,7 +723,6 @@ export const resetAccount = mutation({
         context: undefined,
         industry: undefined,
         industryVertical: undefined,
-        coiHandling: undefined,
         agentHandle: undefined,
         onboardingComplete: false,
       });

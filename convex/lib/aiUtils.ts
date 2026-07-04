@@ -96,7 +96,6 @@ export function buildMessageHistory(messages: ThreadMessage[]): ModelMessage[] {
 interface OrgContext {
   name: string;
   context?: string;
-  coiHandling?: string;
   broker?: {
     name?: string;
     contactName?: string;
@@ -135,7 +134,6 @@ export function buildAgentCapabilityPrompt(params: {
   platform: "email" | "web";
   userName?: string;
   siteUrl?: string;
-  coiHandling?: string;
   broker?: OrgContext["broker"];
   now?: Date;
   timeZone?: string;
@@ -146,7 +144,6 @@ export function buildAgentCapabilityPrompt(params: {
     mode,
     userName,
     siteUrl = getClientPortalUrl(),
-    coiHandling,
     broker,
     now,
     timeZone,
@@ -182,7 +179,7 @@ You may help with insurance operations for ${companyRef}. This includes:
 - Drafting, forwarding, and sending insurance-related emails when the authenticated team member asks you to do so and the recipient passes system validation.
 - Reading email attachments and uploaded files that are provided to you.
 - Starting bound policy, renewal, binder, declaration, endorsement, COI, and related post-binding insurance-document extraction from PDFs.
-- Generating Certificates of Insurance when organization settings allow it.
+- Generating Certificates of Insurance for holder-only requests and source-supported additional-insured requests.
 - Providing original/full policy PDF documents when the authenticated user asks for a policy copy, policy PDF, declarations PDF, wording, or full policy document.
 - Saving durable organization facts, preferences, risk notes, and observations when useful.
 
@@ -195,9 +192,6 @@ BOUNDARIES:
 - Do not impersonate a team member. Emails are sent from Glass on behalf of the company, not as the team member personally.
 - Do not disclose policy numbers, limits, premiums, or other sensitive policy details to anyone other than validated policy holders, authorized org members, or validated thread participants. In mediated or forwarded threads, share only what is relevant to the request.
 - Do not generate code or perform non-insurance business tasks.
-
-COI SETTINGS:
-${coiHandling ? `The organization's COI handling preference is "${coiHandling}".` : "Use organization settings and available tools to decide whether COI generation is allowed."}
 
 RESPONSE STYLE:
 - Be concise and direct. Lead with the answer or action.
@@ -224,7 +218,6 @@ export function buildSystemPromptForContext(params: {
     platform: "email",
     userName,
     siteUrl,
-    coiHandling: org.coiHandling,
     broker: org.broker,
   });
 }

@@ -48,11 +48,6 @@ type OrgSettingsArgs = {
   context?: string;
   industry?: string;
   industryVertical?: string;
-  clientsContext?: string;
-  vendorsContext?: string;
-  insuranceContext?: string;
-  investorsContext?: string;
-  partnersContext?: string;
   relatedLegalEntities?: RelatedLegalEntity[];
 };
 
@@ -86,11 +81,6 @@ export function OrganizationSection() {
   const [context, setContext] = useState("");
   const [industry, setIndustry] = useState("");
   const [industryVertical, setIndustryVertical] = useState("");
-  const [clientsContext, setClientsContext] = useState("");
-  const [vendorsContext, setVendorsContext] = useState("");
-  const [insuranceContext, setInsuranceContext] = useState("");
-  const [investorsContext, setInvestorsContext] = useState("");
-  const [partnersContext, setPartnersContext] = useState("");
   const [relatedLegalEntities, setRelatedLegalEntities] = useState<
     RelatedLegalEntity[]
   >([]);
@@ -195,11 +185,6 @@ export function OrganizationSection() {
       setContext(org.context ?? "");
       setIndustry(org.industry ?? "");
       setIndustryVertical(org.industryVertical ?? "");
-      setClientsContext(org.clientsContext ?? "");
-      setVendorsContext(org.vendorsContext ?? "");
-      setInsuranceContext(org.insuranceContext ?? "");
-      setInvestorsContext(org.investorsContext ?? "");
-      setPartnersContext(org.partnersContext ?? "");
       setRelatedLegalEntities(org.relatedLegalEntities ?? []);
       hydratedRef.current = true;
       setSettingsHydrated(true);
@@ -216,11 +201,6 @@ export function OrganizationSection() {
     context: context || undefined,
     industry: industry || undefined,
     industryVertical: industryVertical || undefined,
-    clientsContext: clientsContext || undefined,
-    vendorsContext: vendorsContext || undefined,
-    insuranceContext: insuranceContext || undefined,
-    investorsContext: investorsContext || undefined,
-    partnersContext: partnersContext || undefined,
     relatedLegalEntities: relatedLegalEntities
       .map((entity) => ({
         legalName: entity.legalName.trim(),
@@ -332,11 +312,6 @@ export function OrganizationSection() {
         setIndustry(result.industry);
         setIndustryVertical(result.industryVertical ?? "");
       }
-      if (result.clientsContext) setClientsContext(result.clientsContext);
-      if (result.vendorsContext) setVendorsContext(result.vendorsContext);
-      if (result.insuranceContext) setInsuranceContext(result.insuranceContext);
-      if (result.investorsContext) setInvestorsContext(result.investorsContext);
-      if (result.partnersContext) setPartnersContext(result.partnersContext);
       toast.success("Company info extracted");
     } catch {
       toast.error("Failed to extract company info");

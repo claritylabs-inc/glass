@@ -102,7 +102,6 @@ export type BuildAgentToolExecutorsOptions = {
   operatorInitiatedUserMessageId?: Id<"threadMessages">;
   readOrgIds?: Id<"organizations">[];
   writableOrgIds?: Id<"organizations">[];
-  org?: Record<string, unknown> | null;
   threadId?: Id<"threads">;
   defaultPolicyChangeCaseId?: Id<"policyChangeCases">;
   getCurrentPolicyChangeCaseId?: () => Id<"policyChangeCases"> | undefined;
@@ -700,15 +699,6 @@ export function buildAgentToolExecutors(
           "certificate generation",
         );
         if (!resolved.ok) return resolved.message;
-        const autoGenerate = options.org?.autoGenerateCoi !== false;
-        if (!autoGenerate) {
-          const handling = options.org?.coiHandling ?? "ignore";
-          if (handling === "broker")
-            return "COI auto-generation is off. Please contact your broker to obtain this certificate.";
-          if (handling === "member")
-            return "COI auto-generation is off. Please route this COI request to your primary insurance contact.";
-          return "COI auto-generation is disabled for this organization.";
-        }
         try {
           const policy = resolved.policy;
           const holderName =

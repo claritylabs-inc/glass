@@ -82,8 +82,6 @@ type EmailExpertContext = {
   policyChangeCaseId?: Id<"policyChangeCases">;
   autoSendEmails?: boolean;
   emailSendDelay?: number;
-  autoGenerateCoi?: boolean;
-  coiHandling?: "broker" | "member" | "ignore";
   conversationContext?: string;
   onResult?: (result: EmailSubagentResult) => void;
 };
@@ -674,10 +672,6 @@ async function runEmailSubagent(
       orgId: context.orgId,
       userId: context.userId,
       scope: singleOrgScope,
-      org: {
-        autoGenerateCoi: context.autoGenerateCoi,
-        coiHandling: context.coiHandling,
-      },
       onPolicyReferenced: (referencedPolicyId) => {
         resolvedPolicyId = referencedPolicyId;
         sourcePolicyIds.add(String(referencedPolicyId));

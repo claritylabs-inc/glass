@@ -301,11 +301,11 @@ export default defineSchema({
     emailVerification: v.optional(
       v.union(v.literal("strict"), v.literal("domain"), v.literal("open")),
     ),
-    // COI handling preference
+    // Legacy ignored certificate settings retained for existing organization records.
     coiHandling: v.optional(
       v.union(v.literal("broker"), v.literal("member"), v.literal("ignore")),
     ),
-    autoGenerateCoi: v.optional(v.boolean()), // when true, generate COI PDFs automatically on request
+    autoGenerateCoi: v.optional(v.boolean()),
     policyChangeRequestsEnabled: v.optional(v.boolean()),
     certificateChangeRequestsEnabled: v.optional(v.boolean()),
     // Agent

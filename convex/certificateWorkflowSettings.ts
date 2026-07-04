@@ -40,7 +40,7 @@ function cleanOptional(value?: string) {
   return trimmed || undefined;
 }
 
-function valuesFromRow(row?: Doc<"certificateWorkflowSettings"> | null, legacyOrg?: Doc<"organizations"> | null) {
+function valuesFromRow(row?: Doc<"certificateWorkflowSettings"> | null) {
   return {
     populateHoldersFromEndorsements:
       row?.populateHoldersFromEndorsements ??
@@ -54,7 +54,6 @@ function valuesFromRow(row?: Doc<"certificateWorkflowSettings"> | null, legacyOr
       DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.renewalReviewLeadDays,
     policyChangeRequestsForHeldCertificatesEnabled:
       row?.policyChangeRequestsForHeldCertificatesEnabled ??
-      legacyOrg?.certificateChangeRequestsEnabled ??
       DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.policyChangeRequestsForHeldCertificatesEnabled,
     channels: row?.channels ?? DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.channels,
     copyInstructions: row?.copyInstructions,
@@ -100,17 +99,9 @@ async function resolveEffectiveForOrg(ctx: ReadCtx, orgId: Id<"organizations">) 
     : brokerDefault
       ? "broker_default"
       : "platform_default";
-  const legacySettingsOrg = clientOverride
-    ? org
-    : brokerOrgId
-      ? await ctx.db.get(brokerOrgId)
-      : org;
-  const values = valuesFromRow(row, legacySettingsOrg);
+  const values = valuesFromRow(row);
   return {
     ...values,
-    policyChangeRequestsForHeldCertificatesEnabled:
-      legacySettingsOrg?.policyChangeRequestsEnabled !== false &&
-      values.policyChangeRequestsForHeldCertificatesEnabled,
     source,
     row,
     brokerDefault,
