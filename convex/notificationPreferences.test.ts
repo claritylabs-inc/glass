@@ -30,7 +30,7 @@ describe("notificationPreferences — upsert logic", () => {
       await ctx.db.insert("notificationPreferences", {
         userId,
         orgId,
-        type: "extraction_error",
+        type: "incomplete_extraction",
         channel: "email",
         enabled: false,
         updatedAt: Date.now(),
@@ -42,7 +42,7 @@ describe("notificationPreferences — upsert logic", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].enabled).toBe(false);
-    expect(rows[0].type).toBe("extraction_error");
+    expect(rows[0].type).toBe("incomplete_extraction");
   });
 
   test("upserts — inserting same key twice updates the row", async () => {
@@ -51,7 +51,7 @@ describe("notificationPreferences — upsert logic", () => {
 
     await t.run(async (ctx) => {
       await ctx.db.insert("notificationPreferences", {
-        userId, orgId, type: "extraction_error",
+        userId, orgId, type: "incomplete_extraction",
         channel: "email", enabled: false, updatedAt: Date.now(),
       });
     });
@@ -62,7 +62,7 @@ describe("notificationPreferences — upsert logic", () => {
         .query("notificationPreferences")
         .withIndex("by_userId_orgId_type_channel", (q) =>
           q.eq("userId", userId).eq("orgId", orgId)
-           .eq("type", "extraction_error").eq("channel", "email")
+           .eq("type", "incomplete_extraction").eq("channel", "email")
         )
         .first();
       if (existing) {
@@ -107,7 +107,7 @@ describe("notificationPreferences — query", () => {
 
     await t.run(async (ctx) => {
       await ctx.db.insert("notificationPreferences", {
-        userId, orgId, type: "coverage_gap", channel: "email",
+        userId, orgId, type: "vendor_compliance_gap", channel: "email",
         enabled: true, updatedAt: Date.now(),
       });
     });
@@ -118,7 +118,7 @@ describe("notificationPreferences — query", () => {
         .collect()
     );
     expect(prefs).toHaveLength(1);
-    expect(prefs[0].type).toBe("coverage_gap");
+    expect(prefs[0].type).toBe("vendor_compliance_gap");
   });
 });
 
@@ -135,14 +135,14 @@ describe("resolveForUser", () => {
       });
       // per-type enables email for this type
       await ctx.db.insert("notificationPreferences", {
-        userId, orgId, type: "extraction_error", channel: "email",
+        userId, orgId, type: "incomplete_extraction", channel: "email",
         enabled: true, updatedAt: Date.now(),
       });
     });
 
     const result = await t.run(async (ctx) => {
       const { resolveEmailPreference } = await import("./lib/notify");
-      return resolveEmailPreference(ctx, userId, orgId, "extraction_error", "warning");
+      return resolveEmailPreference(ctx, userId, orgId, "incomplete_extraction", "warning");
     });
 
     expect(result.shouldEmail).toBe(true);
@@ -154,7 +154,7 @@ describe("resolveForUser", () => {
 
     const result = await t.run(async (ctx) => {
       const { resolveEmailPreference } = await import("./lib/notify");
-      return resolveEmailPreference(ctx, userId, orgId, "policy_delivered_by_broker", "info");
+      return resolveEmailPreference(ctx, userId, orgId, "policy_change_completed", "info");
     });
 
     // info severity defaults to false

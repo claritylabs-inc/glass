@@ -62,6 +62,8 @@ const extractionDataStageValidator = v.union(
 );
 
 const notificationChannelValidator = v.union(
+  // Legacy preference rows can contain in_app. In-app notifications are now
+  // always created for supported events and are not a user-configurable channel.
   v.literal("in_app"),
   v.literal("email"),
   v.literal("imessage"),

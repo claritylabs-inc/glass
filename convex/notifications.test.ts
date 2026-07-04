@@ -25,11 +25,11 @@ describe("notifications.listInbox", () => {
 
     await t.run(async (ctx) => {
       await ctx.db.insert("notifications", {
-        orgId, type: "coverage_gap", title: "A", body: "b",
+        orgId, type: "vendor_compliance_gap", title: "A", body: "b",
         severity: "warning", status: "unread", createdAt: 1000,
       });
       await ctx.db.insert("notifications", {
-        orgId, type: "policy_delivered_by_broker", title: "B", body: "c",
+        orgId, type: "policy_change_completed", title: "B", body: "c",
         severity: "info", status: "unread", createdAt: 2000,
       });
     });
@@ -52,7 +52,7 @@ describe("notifications.listInbox", () => {
 
     await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
-        orgId, type: "coverage_gap", title: "D", body: "d",
+        orgId, type: "vendor_compliance_gap", title: "D", body: "d",
         severity: "warning", status: "dismissed", createdAt: 1000,
       })
     );
@@ -76,11 +76,11 @@ describe("notifications.markRead (batch)", () => {
 
     const ids = await t.run(async (ctx) => {
       const a = await ctx.db.insert("notifications", {
-        orgId, type: "coverage_gap", title: "A", body: "b",
+        orgId, type: "vendor_compliance_gap", title: "A", body: "b",
         severity: "warning", status: "unread", createdAt: 1000,
       });
       const b = await ctx.db.insert("notifications", {
-        orgId, type: "coverage_gap", title: "B", body: "c",
+        orgId, type: "vendor_compliance_gap", title: "B", body: "c",
         severity: "warning", status: "unread", createdAt: 2000,
       });
       return [a, b];
@@ -105,11 +105,11 @@ describe("notifications.unreadCount", () => {
 
     await t.run(async (ctx) => {
       await ctx.db.insert("notifications", {
-        orgId, type: "coverage_gap", title: "A", body: "b",
+        orgId, type: "vendor_compliance_gap", title: "A", body: "b",
         severity: "warning", status: "unread", createdAt: 1000,
       });
       await ctx.db.insert("notifications", {
-        orgId, type: "coverage_gap", title: "B", body: "c",
+        orgId, type: "vendor_compliance_gap", title: "B", body: "c",
         severity: "warning", status: "read", createdAt: 2000,
       });
     });
@@ -134,7 +134,7 @@ describe("access control", () => {
 
     await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
-        orgId, type: "coverage_gap", title: "Private", body: "x",
+        orgId, type: "vendor_compliance_gap", title: "Private", body: "x",
         severity: "warning", status: "unread", createdAt: 1000,
       })
     );

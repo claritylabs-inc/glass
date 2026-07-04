@@ -11,7 +11,6 @@ import {
 } from "./lib/notificationTypes";
 
 const channelValidator = v.union(
-  v.literal("in_app"),
   v.literal("email"),
   v.literal("imessage"),
 );

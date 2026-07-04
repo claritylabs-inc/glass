@@ -37,9 +37,9 @@ describe("sendNotificationEmail", () => {
     const notifId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
         orgId: clientOrgId,
-        type: "policy_delivered_by_broker",
-        title: "Application sent",
-        body: "Smith Insurance sent you an application.",
+        type: "policy_change_completed",
+        title: "Policy update completed",
+        body: "Smith Insurance completed a policy update.",
         severity: "info",
         status: "unread",
         emailStatus: "scheduled",
@@ -54,7 +54,7 @@ describe("sendNotificationEmail", () => {
       ctx.db.insert("notificationPreferences", {
         userId,
         orgId: clientOrgId,
-        type: "policy_delivered_by_broker",
+        type: "policy_change_completed",
         channel: "email",
         enabled: true,
         updatedAt: dayjs().valueOf(),
@@ -146,9 +146,9 @@ describe("sendNotificationEmail", () => {
     const notifId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
         orgId,
-        type: "extraction_error",
-        title: "Integration disconnected",
-        body: "The integration was disconnected.",
+        type: "incomplete_extraction",
+        title: "Policy extraction needs review",
+        body: "The extraction needs attention.",
         severity: "warning",
         status: "unread",
         emailStatus: "scheduled",
@@ -197,7 +197,7 @@ describe("sendNotificationEmail", () => {
     const notifId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
         orgId,
-        type: "extraction_error",
+        type: "incomplete_extraction",
         title: "Review needed",
         body: "The extraction needs attention.",
         severity: "warning",
