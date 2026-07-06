@@ -51,7 +51,7 @@ describe("policy extraction transient artifacts", () => {
     expect(extraction).toContain('status: "running"');
 
     expect(worker).toContain("completeExternalExtractFromStoredPayload");
-    expect(worker).toContain("Replayed stored external extraction completion payload");
+    expect(worker).toContain("Replayed stored completion payload");
   });
 
   it("represents a large pending embedding checkpoint as a compact storage pointer", () => {
