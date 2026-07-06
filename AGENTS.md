@@ -229,20 +229,21 @@ Surfaces:
 
 ## Org Memory
 
-`orgMemory` is the single per-org knowledge store. It replaces the old `orgIntelligence`, `businessContext`, dream consolidation, and proactive analysis pipelines.
+`orgMemory` is the single curated per-org company-context store. It replaces the old `orgIntelligence`, `businessContext`, dream consolidation, and proactive analysis pipelines. Memory is for stable facts about the company itself: legal structure, headquarters, operations, products, employees, revenue, ownership, compliance posture, and business activities. Do not store policy numbers, policy terms, endorsements, COI/certificate details, email drafts, recipients, attachments, agent/tool limitations, workflow status, user requests, or one-off tasks. Policy and endorsement facts must come from source-backed policy tools and first-class policy tables, not memory.
 
 ### Schema: `orgMemory`
 
 Each entry has:
 
 - `orgId`
-- `kind` — `fact` | `preference` | `risk_note` | `observation`
+- `type` — legacy-compatible `fact` | `preference` | `risk_note` | `observation`; new accepted writes are restricted to `fact`
 - `content` — free-text string
-- `source` — `extraction` | `analysis` | `chat` | `email`
-- `sourceRef` — optional ID of originating record
-- `createdAt`
+- `source` — `extraction` | `analysis` | `chat` | `email` | `imessage`
+- `policyId` — legacy optional field; new accepted writes reject policy-specific memory
+- `expiresAt` — optional legacy expiry
+- `createdAt` / `updatedAt`
 
-No embeddings, no supersession graph, no category taxonomy. Retrieval is list-based and filtered by `kind` / `source`.
+No embeddings, no supersession graph, no category taxonomy. Retrieval is list-based, filters out legacy unsafe entries, and only injects curated company-context facts into prompts.
 
 ## Connected Email (IMAP)
 
@@ -260,9 +261,10 @@ Daily mailbox attention scans run from the Railway cron service in `mailbox-scan
 
 | Source                         | Where                                              | Trigger                                   |
 | ------------------------------ | -------------------------------------------------- | ----------------------------------------- |
-| `save_note` chat tool          | `convex/actions/processThreadChat.ts` (buildTools) | Agent tool call during chat               |
+| `save_note` chat tool          | `convex/lib/agentToolExecutors.ts`                 | Explicit user request to remember a stable company fact |
 | Website enrichment             | `convex/actions/extractCompanyInfo.ts`             | Client onboarding step 2 + manual refresh |
-| Email agent post-reply summary | `convex/actions/handleInboundEmail.ts`             | After a tool-using email reply resolves   |
+
+Automatic email/iMessage post-reply memory extraction is disabled. `confirm_policy_fact` updates source-backed policy fields and audit logs only; it does not write `orgMemory`.
 
 ## cl-sdk Integration
 
@@ -367,17 +369,17 @@ Glass uses vector-backed document/conversation stores plus list-based source evi
 - `sourceSpans` — exact PDF evidence/highlight layer
 - `sourceChunks` — non-vector compatibility source-span windows for policies not yet rebuilt into source nodes
 - `documentChunks` — legacy extracted policy structured fact chunks, secondary only
-- `conversationTurns` — cross-thread conversation memory (vector)
-- `orgMemory` — business facts/preferences/risk notes/observations (list, filtered by kind/source)
+- `conversationTurns` — legacy raw cross-thread conversation memory table, no longer written or injected into prompts; clear it with the operator memory purge when cleaning an environment
+- `orgMemory` — curated company-context facts only (list, filtered by the memory policy)
 
 [agentPrompts.ts](convex/lib/agentPrompts.ts) builds agent context:
 
 - `buildDocumentContext()` — embeds the query only for secondary `documentChunks`, ranks source nodes lexically, expands hierarchy context, and attaches stable `sourceSpanIds`. If only legacy chunks exist, it queues `ensurePolicyV3SourceTree()` and warns that exact policy-wording answers require source-tree rebuild.
 - `lookup_policy_section` uses [policyLookup.ts](convex/lib/policyLookup.ts) in web chat, inbound email, iMessage, and MCP chat to return source-node matches with hierarchy path, excerpts, `sourceNodeIds`, `sourceSpanIds`, and PDF location metadata. It still falls back to raw source spans or on-demand PDF parsing for older policies, but source-node evidence is preferred.
-- `confirm_policy_fact` lets agents persist a concise policy fact after `lookup_policy_section` returns supporting original-PDF `sourceSpanIds`. The tool records an `orgMemory` fact and may patch only a constrained set of top-level policy fields when the cited PDF text directly supports the update.
+- `confirm_policy_fact` lets agents confirm a concise policy fact after `lookup_policy_section` returns supporting original-PDF `sourceSpanIds`. The tool may patch only a constrained set of top-level policy fields when the cited PDF text directly supports the update, and records policy audit history rather than long-term memory.
 - SDK query-agent wrappers use [convexSourceRetriever.ts](convex/lib/convexSourceRetriever.ts) to lexically search `sourceNodes`, return hierarchy-expanded packets with exact spans, and fall back to source spans only when no source-node evidence exists.
-- `buildOrgMemoryContext()` — lists recent `orgMemory` entries, grouped by kind.
-- `buildConversationMemoryContext()` — vector search over `conversationTurns` for cross-thread memory.
+- `buildOrgMemoryContext()` / `buildIntelligenceContext()` — lists recent curated `orgMemory` company facts.
+- `buildConversationMemoryContext()` — intentionally returns no context; raw conversation memory should not steer future answers.
 - Web chat composer steering lives in [components/glass-prompt-input.tsx](components/glass-prompt-input.tsx) and [convex/agentTargets.ts](convex/agentTargets.ts). Typing `@` opens a custom picker for policies and requirements; typing `/` opens accessible connected mailboxes. Selected targets are stored on the user `threadMessages` row as `referencedPolicyIds`, `referencedRequirementIds`, and `referencedMailboxIds`, then [processThreadChat.ts](convex/actions/processThreadChat.ts) injects them as explicit context. Selected mailbox IDs are passed into [mailboxCoordinator.ts](convex/actions/mailboxCoordinator.ts), which restricts live IMAP search to those accounts unless the user asks to broaden the search. When a user submits while an agent response is active, the web composer queues that message locally and sends it after activity ends; the queued row's **Send now** action sends immediately, cancels the in-flight agent message, and lets the new message steer the thread.
 - Agent thread UI lives under [components/agent-thread](components/agent-thread). [app/agent/thread/[id]/page.tsx](app/agent/thread/[id]/page.tsx) should stay route/AppShell orchestration only; reusable message rendering belongs in `thread-content.tsx`, shared thread shapes in `types.ts`, and artifact-specific summary cards, right panels, and normalization helpers under `components/agent-thread/artifacts/`.
 
@@ -410,7 +412,7 @@ Storage and retrieval pattern:
 
 - `policies.document` stores the structured extracted document.
 - `sourceNodes` stores canonical non-vector policy hierarchy; `documentChunks` is the remaining embedded policy compatibility corpus.
-- `orgMemory` stores all per-org knowledge.
+- `orgMemory` stores curated company-context facts only. Policy, endorsement, COI, thread, email, and workflow facts live in their first-class tables and must be retrieved with tools.
 
 Important: local Convex changes still require `npx convex dev --once` to reach the dev deployment. Production Convex deploys through `.github/workflows/deploy-convex.yml` on relevant `main` pushes, or manually with `npx convex deploy --yes` when needed.
 
@@ -440,10 +442,10 @@ Inbound email arrives at `POST /resend-inbound` and is handled by `convex/action
   - `confirm_policy_fact`
   - `compare_coverages`
   - `email_expert` — delegates outbound drafting/sending to the shared email subagent when the sender is an authenticated internal team member in direct mode
-  - `save_note` — writes to `orgMemory`
+  - `save_note` — writes only explicit stable company facts to `orgMemory`
   - `generate_coi`
   - `extract_policy_attachment` — extracts PDF attachments via `extractFromUploadInternal`
-- After a reply is produced, a Haiku summarization pass writes a `source: "email"` observation to `orgMemory`.
+- Email replies do not automatically write observations to memory.
 
 ### iMessage Agent (Inbound)
 
@@ -477,9 +479,9 @@ Outbound emails sent by Glass Agent are centralized in `convex/lib/emailSubagent
 ### Agent Q&A (Chat)
 
 1. Load org context, policies, and `orgMemory`.
-2. Build retrieval-backed document context + orgMemory context + conversation memory.
+2. Build retrieval-backed document context + curated company-memory context.
 3. If the user message has attachments (images, PDFs, text), read them from Convex storage and include as AI SDK multipart content parts.
-4. Run chat model via `streamText` with tools: `lookup_policy`, `lookup_policy_section`, `confirm_policy_fact`, `compare_coverages`, `email_expert`, `save_note`, `generate_coi`.
+4. Run chat model via `streamText` with tools: `lookup_policy`, `lookup_policy_section`, `confirm_policy_fact`, `compare_coverages`, `email_expert`, `save_note`, `generate_coi`. `save_note` is only for explicit stable company facts.
 5. Persist conversation state.
 
 ## UI

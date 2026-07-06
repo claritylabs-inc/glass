@@ -119,19 +119,19 @@ export const sendEmail = tool({
 
 export const saveNote = tool({
   description:
-    "Save an observation or note about a policy or the organization for future reference.",
+    "Save an explicit stable company-profile fact for future reference only when the user asks Glass to remember it. Do not save policy details, endorsements, COI/certificate details, draft/email metadata, agent capabilities, tool limitations, workflow status, or one-off requests.",
   inputSchema: z.object({
     content: z.string().describe("The observation or note to save"),
     type: z
       .enum(["fact", "preference", "risk_note", "observation"])
-      .describe("Type of note"),
-    policyId: z.string().optional().describe("Related policy reference if applicable"),
+      .describe("Type of note. Use fact; other types are rejected by memory policy."),
+    policyId: z.string().optional().describe("Deprecated. Policy-specific notes are rejected by memory policy."),
   }),
 });
 
 export const confirmPolicyFact = tool({
   description:
-    "Persist a policy fact that was confirmed from original PDF source evidence. Use only after lookup_policy_section returns original-PDF sourceSpanIds that directly support the fact. This can also update a small set of top-level extracted policy fields when the PDF evidence is clear.",
+    "Confirm a policy fact from original PDF source evidence and optionally update a small set of top-level extracted policy fields. Use only after lookup_policy_section returns original-PDF sourceSpanIds that directly support the fact. This does not save policy details to long-term org memory.",
   inputSchema: z.object({
     policyId: z.string().describe("Policy reference for the fact being confirmed"),
     fact: z

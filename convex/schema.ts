@@ -412,6 +412,7 @@ export default defineSchema({
       v.literal("impersonation_started"),
       v.literal("impersonation_stopped"),
       v.literal("impersonation_chat_message"),
+      v.literal("memory_cleared"),
       v.literal("setup_write"),
     ),
     targetOrgId: v.optional(v.id("organizations")),

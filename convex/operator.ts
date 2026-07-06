@@ -48,6 +48,7 @@ const REMOVED_PROGRAM_ADMIN_TABLES = [
   "certificateApprovals",
 ] as const;
 const REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE = 500;
+const CLEAR_AGENT_MEMORY_CONFIRMATION = "CLEAR_AGENT_MEMORY";
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -472,6 +473,37 @@ export const current = query({
             targetOrgOperatorStatus: targetOrg.operatorStatus ?? "live",
           }
         : null,
+    };
+  },
+});
+
+export const clearAllAgentMemory = mutation({
+  args: {
+    confirmation: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    if (args.confirmation !== CLEAR_AGENT_MEMORY_CONFIRMATION) {
+      throw new Error(`Confirmation must be ${CLEAR_AGENT_MEMORY_CONFIRMATION}`);
+    }
+
+    await ctx.scheduler.runAfter(0, internalApi.memoryMaintenance.clearTableBatch, {
+      table: "orgMemory",
+    });
+    await ctx.scheduler.runAfter(0, internalApi.memoryMaintenance.clearTableBatch, {
+      table: "conversationTurns",
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "memory_cleared",
+      summary: "Scheduled org memory and raw conversation memory purge",
+      metadata: {
+        tables: ["orgMemory", "conversationTurns"],
+      },
+    });
+
+    return {
+      scheduled: ["orgMemory", "conversationTurns"],
     };
   },
 });

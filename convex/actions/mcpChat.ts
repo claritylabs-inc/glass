@@ -6,7 +6,6 @@ import { internal } from "../_generated/api";
 import { generateText, stepCountIs } from "ai";
 import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
 import {
-  buildConversationMemoryContext,
   buildScopedDocumentContext,
   buildScopedOrgMemoryContext,
   buildScopedRequirementsContext,
@@ -144,14 +143,9 @@ export const run = internalAction({
       relevantPolicyIds,
     } = await buildScopedDocumentContext(ctx, scope, policiesByOrg, args.message);
 
-    // Cross-thread conversation memory (vector search)
-    const memoryContext = await buildConversationMemoryContext(
-      ctx,
-      args.orgId,
-      args.message,
-    );
+    const memoryContext = "";
 
-    // Load business intelligence (vector search, deduped against policy context)
+    // Load curated company context.
     const orgMemoryBlock = await buildScopedOrgMemoryContext(
       ctx,
       scope,

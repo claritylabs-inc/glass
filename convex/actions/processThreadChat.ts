@@ -23,7 +23,6 @@ import {
 } from "../lib/chatTools";
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import {
-  buildConversationMemoryContext,
   buildScopedDocumentContext,
   buildScopedOrgMemoryContext,
   buildScopedRequirementsContext,
@@ -870,14 +869,9 @@ export const run = internalAction({
         latestUserContent,
       );
 
-      // Cross-thread conversation memory (vector search)
-      const memoryContext = await buildConversationMemoryContext(
-        ctx,
-        args.orgId,
-        latestUserContent,
-      );
+      const memoryContext = "";
 
-      // Load business intelligence (vector search, deduped against policy context)
+      // Load curated company context.
       const orgMemoryBlock = await buildScopedOrgMemoryContext(
         ctx,
         scope,
