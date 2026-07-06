@@ -330,24 +330,8 @@ export default defineSchema({
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
     type: v.optional(
-      v.union(v.literal("broker"), v.literal("client"), v.literal("partner")),
+      v.union(v.literal("broker"), v.literal("client")),
     ),
-    // Temporary widen-migrate-narrow fields from removed program-admin model.
-    partnerKind: v.optional(v.literal("program_admin")),
-    partnerType: v.optional(
-      v.union(
-        v.literal("broker"),
-        v.literal("program_admin"),
-        v.literal("mga"),
-        v.literal("carrier"),
-        v.literal("other"),
-      ),
-    ),
-    // Temporary widen-migrate-narrow fields from removed static broker contacts.
-    brokerCompanyName: v.optional(v.string()),
-    brokerContactName: v.optional(v.string()),
-    brokerContactEmail: v.optional(v.string()),
-    brokerContactPhone: v.optional(v.string()),
     // Set on client orgs only — ID of the managing broker org
     brokerOrgId: v.optional(v.id("organizations")),
     // Client-org lifecycle: "draft" = broker is preparing, "invited" = invite sent and pending,
@@ -431,10 +415,6 @@ export default defineSchema({
       v.literal("impersonation_stopped"),
       v.literal("impersonation_chat_message"),
       v.literal("setup_write"),
-      // Temporary widen-migrate-narrow types for removed MGA operator events.
-      v.literal("mga_created"),
-      v.literal("mga_status_changed"),
-      v.literal("mga_launch_email_sent"),
     ),
     targetOrgId: v.optional(v.id("organizations")),
     targetUserId: v.optional(v.id("users")),
@@ -1037,10 +1017,6 @@ export default defineSchema({
     ),
     priorPolicyNumber: v.optional(v.string()),
     programName: v.optional(v.string()),
-    // Temporary widen-migrate-narrow fields from removed partner-program matching.
-    partnerMatchSource: v.optional(v.any()),
-    partnerOrgId: v.optional(v.any()),
-    partnerProgramId: v.optional(v.any()),
     isPackage: v.optional(v.boolean()),
     // Insured details (cl-sdk 1.2+)
     insuredDba: v.optional(v.string()),
@@ -1300,15 +1276,6 @@ export default defineSchema({
         extractionReviewStatus: v.optional(v.string()),
         extractionReviewReason: v.optional(v.string()),
         reviewSourceSpanIds: v.optional(v.array(v.string())),
-        // Temporary widen-migrate-narrow fields from removed coverage metadata.
-        coverageOrigin: v.optional(v.any()),
-        coverageOriginConfidence: v.optional(v.any()),
-        coverageOriginReason: v.optional(v.any()),
-        coverageConfidence: v.optional(v.any()),
-        confidence: v.optional(v.any()),
-        reason: v.optional(v.any()),
-        preserveCoverageExtensions: v.optional(v.any()),
-        storedCoverageExtensions: v.optional(v.any()),
       }),
     ),
     premium: v.optional(v.string()),
@@ -1718,18 +1685,6 @@ export default defineSchema({
     additionalInsuredName: v.optional(v.string()),
     requestSignature: v.optional(v.string()),
     legacyCertificateId: v.optional(v.id("certificates")),
-    // Temporary widen-migrate-narrow fields for production rows created by the
-    // removed certified/program-admin COI flow. Do not write these fields.
-    approvalAudit: v.optional(v.any()),
-    approvalId: v.optional(v.any()),
-    approvalMode: v.optional(v.any()),
-    authorityType: v.optional(v.any()),
-    certificationStatus: v.optional(v.any()),
-    disclaimer: v.optional(v.any()),
-    partnerOrgId: v.optional(v.any()),
-    partnerProgramId: v.optional(v.any()),
-    standingAuthorizationId: v.optional(v.any()),
-    templateId: v.optional(v.any()),
     issuedAt: v.optional(v.number()),
     supersededAt: v.optional(v.number()),
     voidedAt: v.optional(v.number()),
@@ -1823,18 +1778,6 @@ export default defineSchema({
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
     requestSignature: v.optional(v.string()),
-    // Temporary widen-migrate-narrow fields for production rows created by the
-    // removed certified/program-admin COI flow. Do not write these fields.
-    approvalAudit: v.optional(v.any()),
-    approvalId: v.optional(v.any()),
-    approvalMode: v.optional(v.any()),
-    authorityType: v.optional(v.any()),
-    certificationStatus: v.optional(v.any()),
-    disclaimer: v.optional(v.any()),
-    partnerOrgId: v.optional(v.any()),
-    partnerProgramId: v.optional(v.any()),
-    standingAuthorizationId: v.optional(v.any()),
-    templateId: v.optional(v.any()),
     createdAt: v.number(),
   })
     .index("by_policyId", ["policyId"])
@@ -1897,9 +1840,6 @@ export default defineSchema({
       // Retired types kept only so historical rows remain schema-compatible.
       v.literal("merge_suggestion"),
       v.literal("policy_declaration_discrepancy"),
-      // Temporary widen-migrate-narrow types for removed program-admin rows.
-      v.literal("program_admin_certificate_request"),
-      v.literal("program_admin_pce_request"),
       // Active notification types.
       v.literal("coverage_gap"),
       v.literal("renewal_reminder"),
@@ -2152,10 +2092,6 @@ export default defineSchema({
     evidenceSourceIds: v.optional(v.array(v.string())),
     packetId: v.optional(v.id("pcePackets")),
     stagedPolicyUpdate: v.optional(v.any()),
-    // Temporary widen-migrate-narrow fields from removed program-admin approvals.
-    partnerApprovalStatus: v.optional(v.any()),
-    partnerOrgId: v.optional(v.any()),
-    partnerProgramId: v.optional(v.any()),
     createdByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),

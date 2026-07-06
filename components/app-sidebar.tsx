@@ -126,15 +126,7 @@ export function AppSidebar({
   const { context: pageContext } = usePageContext();
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  const showConnectFeatures = isFeatureEnabled(
-    currentOrg
-      ? {
-          type: currentOrg.orgType === "broker" ? "broker" : "client",
-          featureFlags: currentOrg.org?.featureFlags,
-        }
-      : undefined,
-    "connect_features",
-  );
+  const showConnectFeatures = isFeatureEnabled(currentOrg?.org, "connect_features");
   const isStandaloneClient =
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const canManageSettings = currentOrg?.role === "admin";

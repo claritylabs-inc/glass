@@ -887,7 +887,6 @@ export const setFeatureFlag = mutation({
   handler: async (ctx, args) => {
     const { orgId, org } = await requireOrgAdmin(ctx);
     await assertImpersonatedSetupWrite(ctx, orgId);
-    if (org.type === "partner") throw new Error("Organization not found");
     assertFeatureFlagAllowedForOrg(args.flagId, {
       type: org.type === "broker" ? "broker" : "client",
       featureFlags: org.featureFlags,

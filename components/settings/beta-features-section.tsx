@@ -15,8 +15,6 @@ import {
   isFeatureEnabled,
   setFeatureFlagPatch,
   type FeatureFlagId,
-  type FeatureFlagMap,
-  type FeatureFlagOrgType,
 } from "@/convex/lib/featureFlags";
 import {
   patchCachedViewerOrg,
@@ -29,16 +27,7 @@ export function BetaFeaturesSection() {
   const store = useSyncStore();
   const setFeatureFlag = useMutation(api.orgs.setFeatureFlag);
   const org = orgData?.org;
-  const featureFlagOrg: {
-    type: FeatureFlagOrgType;
-    featureFlags?: FeatureFlagMap;
-  } | undefined = org
-    ? {
-        type: org.type === "broker" ? "broker" : "client",
-        featureFlags: org.featureFlags,
-      }
-    : undefined;
-  const flags = betaFeatureFlagsForOrgType(getFeatureFlagOrgType(featureFlagOrg));
+  const flags = betaFeatureFlagsForOrgType(getFeatureFlagOrgType(org));
 
   async function updateFeatureFlag(flagId: FeatureFlagId, enabled: boolean) {
     if (!org) return;
@@ -61,7 +50,7 @@ export function BetaFeaturesSection() {
           <FeatureFlagToggleRow
             key={flag.id}
             flag={flag}
-            enabled={isFeatureEnabled(featureFlagOrg, flag.id)}
+            enabled={isFeatureEnabled(org, flag.id)}
             onChange={(enabled) => void updateFeatureFlag(flag.id, enabled)}
           />
         ))}
