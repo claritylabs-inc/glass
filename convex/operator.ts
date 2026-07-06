@@ -75,6 +75,15 @@ const REMOVED_MGA_AUDIT_EVENT_TYPES = new Set([
 ]);
 const REMOVED_MGA_AUDIT_EVENT_CLEANUP_BATCH_SIZE = 500;
 const LEGACY_ORGANIZATION_FIELD_CLEANUP_BATCH_SIZE = 100;
+const LEGACY_COVERAGE_METADATA_FIELDS = [
+  "coverageOrigin",
+  "coverageConfidence",
+  "confidence",
+  "reason",
+  "preserveCoverageExtensions",
+  "storedCoverageExtensions",
+] as const;
+const LEGACY_POLICY_COVERAGE_CLEANUP_BATCH_SIZE = 100;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -1683,6 +1692,45 @@ export const cleanupLegacyOrganizationFieldsInternal = internalMutation({
     return {
       scanned: page.page.length,
       deleted,
+      patched,
+      isDone: page.isDone,
+      continueCursor: page.isDone ? undefined : page.continueCursor,
+    };
+  },
+});
+
+export const cleanupLegacyPolicyCoverageMetadataInternal = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("policies").paginate({
+      cursor: args.cursor ?? null,
+      numItems: LEGACY_POLICY_COVERAGE_CLEANUP_BATCH_SIZE,
+    });
+    let patched = 0;
+    for (const policy of page.page) {
+      let changed = false;
+      const coverages = policy.coverages.map((coverage) => {
+        const next = { ...(coverage as Record<string, unknown>) };
+        for (const field of LEGACY_COVERAGE_METADATA_FIELDS) {
+          if (next[field] === undefined) continue;
+          delete next[field];
+          changed = true;
+        }
+        return next;
+      });
+      if (!changed) continue;
+      await ctx.db.patch(policy._id, { coverages: coverages as any });
+      patched += 1;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupLegacyPolicyCoverageMetadataInternal,
+        { cursor: page.continueCursor },
+      );
+    }
+    return {
+      scanned: page.page.length,
       patched,
       isDone: page.isDone,
       continueCursor: page.isDone ? undefined : page.continueCursor,

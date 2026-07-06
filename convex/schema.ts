@@ -1296,6 +1296,13 @@ export default defineSchema({
         extractionReviewStatus: v.optional(v.string()),
         extractionReviewReason: v.optional(v.string()),
         reviewSourceSpanIds: v.optional(v.array(v.string())),
+        // Temporary widen-migrate-narrow fields from removed coverage metadata.
+        coverageOrigin: v.optional(v.any()),
+        coverageConfidence: v.optional(v.any()),
+        confidence: v.optional(v.any()),
+        reason: v.optional(v.any()),
+        preserveCoverageExtensions: v.optional(v.any()),
+        storedCoverageExtensions: v.optional(v.any()),
       }),
     ),
     premium: v.optional(v.string()),
