@@ -135,7 +135,7 @@ describe("text channel slash commands", () => {
     expect(inbound).toContain("runImessageDeterministicControls");
     expect(deterministicGate).toBeGreaterThan(-1);
     expect(deterministicGate).toBeLessThan(
-      inbound.indexOf("generateTextWithFallback("),
+      inbound.indexOf("generateTextForOrg("),
     );
     expect(controls).toContain("runImessageSlashCommand");
     expect(slashGate).toBeGreaterThan(-1);

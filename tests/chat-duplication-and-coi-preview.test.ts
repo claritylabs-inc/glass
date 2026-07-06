@@ -207,7 +207,8 @@ describe("chat duplicate prevention and COI preview UI", () => {
     const emailArtifact = read("components/agent-thread/artifacts/email.tsx");
 
     expect(emailArtifact).toContain("function EmailHeaderAttachments");
-    expect(emailArtifact).toContain("col-span-1 mt-2");
+    expect(emailArtifact).toContain("col-span-1 pt-0.5");
+    expect(emailArtifact).toContain("col-span-1 min-w-0");
     expect(emailArtifact).toContain("visibleAttachments");
     expect(emailArtifact).toContain("Attachments");
   });
