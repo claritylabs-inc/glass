@@ -1,0 +1,40 @@
+---
+name: glass-primitives
+description: "Use before adding or changing Glass shared primitives: UI components, feature flags, model routes, extraction helpers, workflows, agent tools, auth helpers, notification channels, or cross-cutting backend libraries."
+---
+
+# Glass Primitives
+
+Use this skill before adding a shared abstraction or when a task risks duplicating an existing owner. The canonical catalog is in `AGENTS.md` under `Primitive Catalog And Reuse Rules`; keep this skill and that section aligned.
+
+## Rule
+
+Search before creating:
+
+```bash
+rg "<concept|route|component|table|helper>" AGENTS.md components convex lib hooks app extraction-worker imessage-worker mcp-server
+```
+
+Prefer extending the existing primitive when the meaning matches. Add a new primitive only when reusing the old one would make the API misleading. If a change creates, deletes, renames, or materially changes a primitive, update both `AGENTS.md` and this skill in the same PR.
+
+## Catalog
+
+- App shell and navigation: `components/app-shell.tsx`, `components/app-sidebar/*`, `components/app-sidebar/nav-config.tsx`, and `lib/settings-sections.ts`.
+- Operational UI: `components/ui/operational-panel.tsx`, `components/ui/pill-button.tsx`, `components/ui/select.tsx`, `components/ui/dropdown-menu.tsx`, `components/ui/searchable-select.tsx`, `components/settings/settings-switch.tsx`, and `components/settings/feature-flag-toggle-row.tsx`.
+- Branding: `components/ui/brand-icon.tsx`, `components/ui/org-brand-icon.tsx`, `components/ui/logo-icon.tsx`, `lib/branding.ts`, `lib/viewer-branding.ts`, `convex/lib/branding.ts`, and `convex/lib/orgBranding.ts`.
+- Feature flags: `convex/lib/featureFlags.ts`, `organizations.featureFlags`, `orgs.setFeatureFlag`, `operator.setClientFeatureFlag`, `isFeatureEnabled`, and `/settings?section=beta`.
+- Local-first sync and current org: `lib/sync/use-cached-query.ts`, `lib/sync/glass-cached-queries.ts`, `lib/sync/operator-cached-queries.ts`, `lib/sync/use-local-first-auto-save.ts`, and the existing `useCurrentOrg` hooks.
+- Auth/access: `convex/lib/access.ts`, `convex/lib/operatorIdentity.ts`, `convex/lib/apiAuth.ts`, `convex/lib/mcpAuth.ts`, and `convex/lib/threadAccess.ts`.
+- Model routing: `extraction-worker/src/modelRoutingPolicy.ts`, `convex/lib/modelCatalog.ts`, `convex/lib/models.ts`, and model/provider UI logo primitives.
+- Extraction/source evidence: `extraction-worker/`, `convex/actions/policyExtraction.ts`, `convex/lib/extraction.ts`, `convex/lib/pipelineMutations.ts`, `convex/lib/sourceTree.ts`, `convex/lib/policyDocumentStructure.ts`, `convex/lib/extractionPostProcess.ts`, `convex/lib/declarationFacts.ts`, `convex/lib/coverageBreakdown.ts`, `convex/lib/coverageNames.ts`, `convex/lib/coverageScoping.ts`, and `convex/lib/sdkCallbacks.ts`.
+- Policies and broker follow-ups: `convex/policies.ts`, `convex/lib/policyVersioning.ts`, `convex/lib/policyLookup.ts`, `convex/lib/policyTypes.ts`, `convex/lib/policyChange*.ts`, and `convex/lib/workflows/brokerFollowUp.ts`.
+- Certificates: `convex/certificates.ts`, `convex/lib/workflows/certificateRequest.ts`, `convex/lib/certificateRequestGate.ts`, `convex/lib/certificateHolderPopulation.ts`, `convex/lib/certificateIdentity.ts`, and `convex/lib/coiGenerator.ts`.
+- Compliance and Connect: `convex/actions/complianceRequirements.ts`, `convex/lib/requirementSemantics.ts`, `convex/lib/complianceAgent.ts`, `convex/lib/vendorComplianceTools.ts`, `convex/connectedOrgs.ts`, and the `connect_features` flag.
+- Agent/chat controls: `convex/lib/agentPrompts.ts`, `convex/lib/agentScope.ts`, `convex/lib/chatTools.ts`, `convex/lib/agentToolExecutors.ts`, `convex/lib/agentToolAudit.ts`, `convex/lib/agentMessageHistory.ts`, `convex/lib/taskControlIntent.ts`, `convex/lib/taskControlDecision.ts`, `convex/lib/webChatDeterministicControls.ts`, and `convex/lib/textChannelControls.ts`.
+- Email, notifications, and iMessage: `convex/lib/resend.ts`, `convex/lib/emailTemplate.ts`, `convex/lib/notificationEmailTemplate.ts`, `convex/lib/emailSubagent.ts`, `convex/lib/emailIntentGuards.ts`, `convex/lib/notificationTypes.ts`, `convex/lib/notify.ts`, `convex/lib/imessage*.ts`, and `imessage-worker/`.
+- Public APIs and integrations: `convex/lib/apiAuth.ts`, `convex/lib/apiDto.ts`, `convex/lib/apiError.ts`, and `mcp-server/`.
+- Workers/deploy: `extraction-worker/`, `imessage-worker/`, `mailbox-scan-worker/`, `config/deployments.json`, Railway health/env docs in `AGENTS.md`, and `npm run check:cl-sdk-version`.
+
+## Known Cleanup Targets
+
+When the user asks for primitive cleanup, start with the current-org hook split, branding/email shell split, raw settings switches outside `SettingsSwitch`, and settings/nav section duplication before broader refactors.
