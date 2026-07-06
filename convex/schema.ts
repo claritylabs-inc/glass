@@ -1788,6 +1788,18 @@ export default defineSchema({
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
     requestSignature: v.optional(v.string()),
+    // Temporary widen-migrate-narrow fields for production rows created by the
+    // removed certified/program-admin COI flow. Do not write these fields.
+    approvalAudit: v.optional(v.any()),
+    approvalId: v.optional(v.any()),
+    approvalMode: v.optional(v.any()),
+    authorityType: v.optional(v.any()),
+    certificationStatus: v.optional(v.any()),
+    disclaimer: v.optional(v.any()),
+    partnerOrgId: v.optional(v.any()),
+    partnerProgramId: v.optional(v.any()),
+    standingAuthorizationId: v.optional(v.any()),
+    templateId: v.optional(v.any()),
     createdAt: v.number(),
   })
     .index("by_policyId", ["policyId"])
