@@ -951,9 +951,9 @@ function modelTraceLabel(
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
     extraction_preview: "Extract provisional policy fields",
-    extraction_source_tree: "Build source-native document tree",
-    extraction_operational_profile: "Build operational profile",
-    extraction_coverage_cleanup: "Clean coverage schedules",
+    extraction_source_tree: "Build source tree: forms, sections, schedules",
+    extraction_operational_profile: "Project source tree into policy facts",
+    extraction_coverage_cleanup: "Normalize source-backed coverage rows",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
     extraction_long_list: "Extract long policy lists",
@@ -1461,18 +1461,42 @@ async function logJob(
   message: string,
   level: "info" | "warn" | "error" = "info",
 ): Promise<void> {
+  const messages = operatorLogMessages(message);
   try {
-    await convex.action(actions.logExternalJob, {
-      secret: SECRET,
-      policyId: job.policyId,
-      leaseId: job.leaseId,
-      message,
-      phase: "worker",
-      level,
-    });
+    for (const operatorMessage of messages) {
+      await convex.action(actions.logExternalJob, {
+        secret: SECRET,
+        policyId: job.policyId,
+        leaseId: job.leaseId,
+        message: operatorMessage,
+        phase: "worker",
+        level,
+      });
+    }
   } catch (error) {
     console.warn(`[${job.policyId}] failed to append extraction log: ${errorMessage(error)}`);
   }
+}
+
+function operatorLogMessages(message: string): string[] {
+  const trimmed = message.trim();
+  if (/^Building source-native document tree/i.test(trimmed)) {
+    return [
+      "Source tree: grouping forms, endorsements, schedules, clauses, and tables",
+      "Source tree: linking nodes to source spans, pages, rows, and cells",
+      "Source tree: preparing source-backed policy facts for the operational profile",
+    ];
+  }
+  if (/^Source-tree extraction complete\.?$/i.test(trimmed)) {
+    return ["Source tree complete; source nodes and policy-fact projection are ready"];
+  }
+  if (/^Building form inventory from source spans/i.test(trimmed)) {
+    return ["Source preparation: indexing forms, tables, and evidence spans"];
+  }
+  if (/^Deterministic source tree ready; skipped model organizer/i.test(trimmed)) {
+    return ["Source tree: deterministic hierarchy ready; model organizer skipped"];
+  }
+  return [message];
 }
 
 async function fetchPdfBytes(fileUrl: string): Promise<Uint8Array> {
@@ -2170,7 +2194,7 @@ async function completeJob(
         }
       : undefined,
   };
-  await logJob(job, `External extraction payload sizes: ${payloadSizeSummary(payload)}`);
+  await logJob(job, `Completion payload sizes: ${payloadSizeSummary(payload)}`);
   const savedPayload = await uploadCompletionPayload(job, payload);
 
   const completed = await convex.action(actions.completeExternalExtract, {
@@ -2209,7 +2233,7 @@ async function failJob(job: ClaimedJob, error: unknown): Promise<void> {
 
 async function processJob(job: ClaimedJob): Promise<void> {
   console.log(`[${job.policyId}] claimed external extraction job`);
-  await logJob(job, `External worker ${WORKER_ID} started extraction`);
+  await logJob(job, `Worker ${WORKER_ID} leased extraction job`);
   const heartbeatTimer = setInterval(() => {
     heartbeat(job).catch((error) => {
       console.error(`[${job.policyId}] heartbeat failed:`, error);
@@ -2224,12 +2248,12 @@ async function processJob(job: ClaimedJob): Promise<void> {
       state: job.state,
     });
     if (replayedCompletion.ok) {
-      await logJob(job, "Replayed stored external extraction completion payload");
+      await logJob(job, "Replayed stored completion payload");
       return;
     }
 
     const pdfBytes = await fetchPdfBytes(job.fileUrl);
-    await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
+    await logJob(job, `Downloaded source PDF (${pdfBytes.byteLength} bytes)`);
 
     let result: ExtractionResult;
     let preparedSource: Awaited<ReturnType<typeof buildPdfSourceSpans>>;
@@ -2250,7 +2274,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
       });
       await logJob(
         job,
-        `LiteParse parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; prepared ${converted.sourceSpans.length} hierarchical source spans`,
+        `LiteParse parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; prepared ${converted.sourceSpans.length} source spans and ${converted.sourceChunks.length} source chunks`,
       );
       const extractor = buildWorkerExtractor({
         job,
@@ -2285,7 +2309,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
         sourceKind: "policy_pdf",
       });
       if (preparedSource.sourceSpans.length > 0) {
-        await logJob(job, `Prepared ${preparedSource.sourceSpans.length} PDF.js source spans for source-grounded extraction`);
+        await logJob(job, `PDF.js prepared ${preparedSource.sourceSpans.length} source spans for source-grounded extraction`);
       }
       const extractor = buildWorkerExtractor({
         job,
@@ -2362,7 +2386,7 @@ async function heartbeatPreview(job: ClaimedPreviewJob): Promise<AckResult> {
 
 async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
   console.log(`[${job.policyId}] claimed external preview extraction job`);
-  await logJob(job, `External worker ${WORKER_ID} started provisional extraction`, "info");
+  await logJob(job, `Worker ${WORKER_ID} leased preview extraction job`, "info");
   const heartbeatTimer = setInterval(() => {
     heartbeatPreview(job).catch((error) => {
       console.error(`[${job.policyId}] preview heartbeat failed:`, error);
@@ -2383,7 +2407,7 @@ async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
       sourceSpans = converted.sourceSpans as Array<Record<string, unknown>>;
       await logJob(
         job,
-        `LiteParse prepared ${sourceSpans.length} spans for provisional extraction in ${converted.metadata.parsingMs ?? 0}ms`,
+        `LiteParse prepared ${sourceSpans.length} spans for preview extraction in ${converted.metadata.parsingMs ?? 0}ms`,
         "info",
       );
     } catch (error) {

@@ -64,6 +64,11 @@ const PIPELINE_LOG_MIN_INTERVAL_MS = 10_000;
 const PIPELINE_STALE_REQUEUE_MS = 5 * 60 * 1000;
 const PIPELINE_STALE_REQUEUE_BATCH_LIMIT = 25;
 const EXTERNAL_WORKER_CLAIM_BATCH_LIMIT = 10;
+const pipelineLogAudienceValidator = v.union(
+  v.literal("client"),
+  v.literal("operator"),
+  v.literal("both"),
+);
 
 function isImportantPipelineLog(entry: PolicyPipelineLogEntry) {
   if (entry.level === "warn" || entry.level === "error") return true;
@@ -2114,17 +2119,30 @@ export const pipelineAppendLog = internalMutation({
     message: v.string(),
     phase: v.optional(v.string()),
     level: v.optional(v.string()),
+    audience: v.optional(pipelineLogAudienceValidator),
+    clientMessage: v.optional(v.string()),
   },
-  handler: async (ctx, { jobId, timestamp, message, phase, level }) => {
-    const entry: PolicyPipelineLogEntry = {
+  handler: async (
+    ctx,
+    { jobId, timestamp, message, phase, level, audience, clientMessage },
+  ) => {
+    const operatorEntry: PolicyPipelineLogEntry = {
       timestamp,
       message,
     };
-    if (phase !== undefined) entry.phase = phase;
-    if (level !== undefined) entry.level = level;
+    if (phase !== undefined) operatorEntry.phase = phase;
+    if (level !== undefined) operatorEntry.level = level;
     const policyId = jobId as DataModelId<"policies">;
-    await appendPolicyPipelineLog(ctx, policyId, entry);
-    await insertPipelineTraceLog(ctx, policyId, entry);
+    const target = audience ?? "both";
+    if (target !== "operator") {
+      await appendPolicyPipelineLog(ctx, policyId, {
+        ...operatorEntry,
+        message: clientMessage?.trim() || message,
+      });
+    }
+    if (target !== "client") {
+      await insertPipelineTraceLog(ctx, policyId, operatorEntry);
+    }
   },
 });
 
@@ -2184,7 +2202,7 @@ export const pipelineStartExternalWorkerJob = internalMutation({
     await ctx.db.patch(policyId, policyPatch);
     await appendPolicyPipelineLog(ctx, policyId, {
       timestamp: now,
-      message: "Queued for external extraction worker",
+      message: "Policy extraction is queued.",
       phase: "queue",
       level: "info",
     });
@@ -2274,7 +2292,7 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
       });
       await appendPolicyPipelineLog(ctx, run.policyId, {
         timestamp: now,
-        message: "External extraction worker claimed job",
+        message: "Extraction worker is reviewing the policy.",
         phase: "worker",
         level: "info",
       });
@@ -2526,7 +2544,7 @@ export const pipelineRequeueStale = internalMutation({
         );
         await appendPolicyPipelineLog(ctx, run.policyId, {
           timestamp: now,
-          message: "Marked extraction failed because no resumable checkpoint was available",
+          message: "Extraction stopped because it could not resume safely.",
           phase: "watchdog",
           level: "error",
         });
@@ -2548,7 +2566,7 @@ export const pipelineRequeueStale = internalMutation({
       if (checkpoint.state?.externalWorker && checkpoint.nextPhase === "extract") {
         await appendPolicyPipelineLog(ctx, run.policyId, {
           timestamp: now,
-          message: "Stale external extraction lease detected; clearing lease for worker reclaim",
+          message: "Extraction is taking longer than expected; retrying the worker.",
           phase: "watchdog",
           level: "warn",
         });
@@ -2563,7 +2581,7 @@ export const pipelineRequeueStale = internalMutation({
       } else {
         await appendPolicyPipelineLog(ctx, run.policyId, {
           timestamp: now,
-          message: `Stale extraction lease detected; requeueing ${checkpoint.nextPhase ?? "pipeline"} phase`,
+          message: "Extraction is taking longer than expected; retrying the current step.",
           phase: "watchdog",
           level: "warn",
         });

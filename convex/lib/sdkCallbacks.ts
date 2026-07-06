@@ -130,9 +130,9 @@ function modelTraceLabel(
   }
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
-    extraction_coverage_cleanup: "Clean coverage schedules",
-    extraction_source_tree: "Build source-native document tree",
-    extraction_operational_profile: "Build operational profile",
+    extraction_coverage_cleanup: "Normalize source-backed coverage rows",
+    extraction_source_tree: "Build source tree: forms, sections, schedules",
+    extraction_operational_profile: "Project source tree into policy facts",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
     extraction_long_list: "Extract long policy lists",

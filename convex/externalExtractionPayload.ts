@@ -34,6 +34,7 @@ async function appendPayloadSavedLog(
       message: `Saved external extraction completion payload (${formatBytes(byteLength)})`,
       phase: "worker",
       level: byteLength >= 4 * 1024 * 1024 ? "warn" : "info",
+      audience: "operator",
     });
     return { logSaved: true };
   } catch (error) {

@@ -1109,13 +1109,14 @@ async function advanceLeasedPhase(
   };
 
   const log = async (message: string, level: string = "info") => {
-    const timestamp = Date.now();
+    const timestamp = nowMs();
     await ctx.runMutation(internal.policies.pipelineAppendLog, {
       jobId,
       timestamp,
       message,
       phase: phase.name,
       level,
+      audience: "operator",
     });
   };
 
@@ -1233,6 +1234,44 @@ function makeMutations() {
     appendLog: internal.policies.pipelineAppendLog,
     clearLog: internal.policies.pipelineClearLog,
   };
+}
+
+const clientPhaseMessages: Record<
+  string,
+  { started: string; complete?: string }
+> = {
+  load_pdf: {
+    started: "Preparing the policy file.",
+  },
+  extract: {
+    started: "Reading the policy and organizing coverage details.",
+    complete: "Policy reading is complete; organizing source-backed details.",
+  },
+  embed_and_store: {
+    started: "Saving source-backed policy details.",
+    complete: "Source-backed policy details are saved.",
+  },
+  post_process: {
+    started: "Finishing policy setup.",
+    complete: "Policy enrichment is complete.",
+  },
+};
+
+async function logClientProgress(
+  ctx: ActionCtx,
+  jobId: string,
+  phase: string,
+  message: string,
+  level = "info",
+) {
+  await ctx.runMutation(internal.policies.pipelineAppendLog, {
+    jobId,
+    timestamp: nowMs(),
+    message,
+    phase,
+    level,
+    audience: "client",
+  });
 }
 
 // ─── Phase factory ─────────────────────────────────────────────────────────────
@@ -1823,6 +1862,15 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         label: phase.name,
         status: "started",
       });
+      const clientMessages = clientPhaseMessages[phase.name];
+      if (clientMessages?.started) {
+        await logClientProgress(
+          convexCtx,
+          pCtx.jobId,
+          phase.name,
+          clientMessages.started,
+        );
+      }
       try {
         const result = await phase.run(pCtx);
         await traceEvent(convexCtx, traceId, {
@@ -1833,6 +1881,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           durationMs: nowMs() - startedAt,
           error: result.kind === "error" ? result.error : undefined,
         });
+        if (result.kind !== "error" && clientMessages?.complete) {
+          await logClientProgress(
+            convexCtx,
+            pCtx.jobId,
+            phase.name,
+            clientMessages.complete,
+          );
+        }
         return result;
       } catch (error) {
         await traceEvent(convexCtx, traceId, {
@@ -2133,6 +2189,7 @@ export const logExternalJob = action({
       message: args.message,
       phase: args.phase ?? "worker",
       level: args.level ?? "info",
+      audience: "operator",
     });
     return { ok: true };
   },
@@ -2236,6 +2293,7 @@ async function completeExternalExtractFromPayload(
     message: `External extraction complete. Type: ${String(doc.type ?? "policy")}. ${chunks.length} chunks, ${sourceSpans.length} source spans.`,
     phase: "extract",
     level: "info",
+    clientMessage: "Policy reading is complete; organizing source-backed details.",
   });
   const traceCounters = await ctx.runQuery((internal as any).extractionTraces.getSessionCounters, {
     traceId: state.traceId,
@@ -2250,6 +2308,7 @@ async function completeExternalExtractFromPayload(
       message: `External extraction model calls: ${modelCallCount}; total model time: ${totalSeconds}s`,
       phase: "extract",
       level: "info",
+      audience: "operator",
     });
   }
   const processed = await postProcessExtractionDocument({
@@ -2265,6 +2324,7 @@ async function completeExternalExtractFromPayload(
         message,
         phase: "extract",
         level,
+        audience: "operator",
       });
     },
   });
@@ -2284,6 +2344,7 @@ async function completeExternalExtractFromPayload(
       message: `Extraction review has ${processed.coverageReviewQuestionCount} open question${processed.coverageReviewQuestionCount === 1 ? "" : "s"}`,
       phase: "extract",
       level: "warn",
+      clientMessage: "Some coverage details need review before delivery.",
     });
   }
   const docName = doc.policyNumber || "policy";
@@ -2432,8 +2493,8 @@ export const completeExternalPreview = action({
       jobId: args.policyId,
       timestamp: nowMs(),
       message: updated.updated
-        ? "Provisional policy extraction is ready"
-        : `Provisional policy extraction skipped${updated.reason ? ` (${updated.reason})` : ""}`,
+        ? "Initial policy details are ready while enrichment continues."
+        : "Initial policy details are not ready yet; final extraction continues.",
       phase: "preview",
       level: updated.updated ? "info" : "warn",
     });
@@ -2482,6 +2543,7 @@ export const failExternalPreviewJob = action({
       message: `Provisional policy extraction failed: ${args.error}`,
       phase: "preview",
       level: "warn",
+      audience: "operator",
     });
     await traceEvent(ctx, (args.state as PolicyExtractionState | undefined)?.traceId, {
       kind: "phase",
@@ -2537,6 +2599,7 @@ export const failExternalJob = action({
           message: `External extraction failed after saving completion payload; next worker claim will replay stored payload: ${args.error}`,
           phase: "worker",
           level: "warn",
+          clientMessage: "Extraction hit a temporary issue; retrying saved results.",
         });
       }
       return { ok, replayable: ok };

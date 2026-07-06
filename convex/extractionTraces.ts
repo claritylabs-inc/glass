@@ -5,9 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 const TRACE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
-const PIPELINE_LOG_LIMIT = 500;
 const TRACE_SESSION_HEARTBEAT_MS = 10_000;
-const PIPELINE_PROGRESS_LOG_MIN_INTERVAL_MS = 10_000;
 
 const traceStatusValidator = v.union(
   v.literal("running"),
@@ -46,85 +44,15 @@ function expiresAt(timestamp: number) {
   return timestamp + TRACE_RETENTION_MS;
 }
 
-function formatDuration(ms?: number) {
-  if (ms === undefined) return undefined;
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.round(seconds % 60);
-  return `${minutes}m ${rest}s`;
-}
-
 function defined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined),
   ) as Partial<T>;
 }
 
-function progressMessage(args: {
-  kind: string;
-  label?: string;
-  task?: string;
-  taskKind?: string;
-  phase?: string;
-  status?: string;
-  durationMs?: number;
-  provider?: string;
-  model?: string;
-  routeSource?: string;
-  transport?: string;
-  attempt?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  error?: string;
-}) {
-  const duration = formatDuration(args.durationMs);
-  if (args.kind === "model_call") {
-    const rawLabel = args.label ?? args.taskKind ?? "model call";
-    const label = /generate(Object|Text)/i.test(rawLabel) ? (args.taskKind ?? "Analyzing document") : rawLabel;
-    const route = [
-      [args.provider, args.model].filter(Boolean).join(" / "),
-      args.routeSource,
-      args.transport,
-    ].filter(Boolean).join(", ");
-    const status =
-      args.error ? "failed"
-      : args.status === "complete" ? "completed"
-      : args.status === "soft_failed" ? "returned fallback"
-      : args.status;
-    const attempt = args.attempt ? ` attempt ${args.attempt}` : "";
-    const tokens = args.inputTokens !== undefined || args.outputTokens !== undefined
-      ? `${args.inputTokens ?? 0} in / ${args.outputTokens ?? 0} out`
-      : undefined;
-    return [
-      `${label}${attempt}${status ? ` ${status}` : ""}`,
-      route ? `(${route})` : undefined,
-      duration,
-      tokens,
-      args.error ? `error: ${args.error}` : undefined,
-    ].filter(Boolean).join(" · ");
-  }
-  if (args.error) return args.error;
-  if (args.kind === "embedding_batch") {
-    return `Indexing ${args.label ?? "document"}${duration ? ` · ${duration}` : ""}`;
-  }
-  if (args.kind === "worker" || args.kind === "artifact") {
-    return [args.label ?? args.phase ?? args.kind, args.status, duration ? `in ${duration}` : undefined]
-      .filter(Boolean)
-      .join(" ");
-  }
-  return null;
-}
-
 function traceStatusFromPipeline(status: "complete" | "error", error?: string) {
   if (status === "complete") return "complete" as const;
   return error === "Cancelled by user" ? "cancelled" as const : "error" as const;
-}
-
-function isImportantProgressLog(entry: { message: string; level?: string }) {
-  if (entry.level === "warn" || entry.level === "error") return true;
-  return /\b(complete|completed|cancelled|canceled|failed|error|finished)\b/i.test(entry.message);
 }
 
 async function completeSessionDoc(
@@ -177,30 +105,6 @@ async function completeSessionDoc(
     expiresAt: session.expiresAt,
   }) as any);
   return true;
-}
-
-async function appendProgressLog(
-  ctx: MutationCtx,
-  policyId: Id<"policies">,
-  entry: { timestamp: number; message: string; phase?: string; level?: string },
-) {
-  const run = await ctx.db
-    .query("policyExtractionRuns")
-    .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
-    .first();
-  if (!run) return;
-  const existing = Array.isArray(run.pipelineLog) ? run.pipelineLog : [];
-  const previous = existing.at(-1);
-  const important = isImportantProgressLog(entry);
-  const phaseChanged = previous?.phase !== entry.phase;
-  const enoughTimeElapsed =
-    previous?.timestamp === undefined ||
-    entry.timestamp - previous.timestamp >= PIPELINE_PROGRESS_LOG_MIN_INTERVAL_MS;
-  if (!important && !phaseChanged && !enoughTimeElapsed) return;
-  await ctx.db.patch(run._id, {
-    pipelineLog: [...existing, entry].slice(-PIPELINE_LOG_LIMIT),
-    updatedAt: nowMs(),
-  });
 }
 
 export const startSession = internalMutation({
@@ -353,15 +257,6 @@ export const recordEvent = internalMutation({
       await ctx.db.patch(session._id, patch);
     }
 
-    const message = progressMessage(args);
-    if (message) {
-      await appendProgressLog(ctx, session.policyId, {
-        timestamp,
-        message,
-        phase: args.phase ?? args.task ?? args.kind,
-        level: args.error ? "error" : undefined,
-      });
-    }
     return true;
   },
 });
