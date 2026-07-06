@@ -4,11 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
-import {
-  generateTextWithFallback,
-  getModelAndRouteForOrg,
-  getProviderOptionsForRoute,
-} from "../lib/models";
+import { generateTextForOrg } from "../lib/models";
 import {
   createImessageGroupChat,
   coordinateMailboxTask,
@@ -310,7 +306,7 @@ export const processInbound = internalAction({
       );
 
       const guardedText = enforceInputLimits(args.messageText);
-      const injectionCheck = await classifyPromptInjection(guardedText);
+      const injectionCheck = await classifyPromptInjection(ctx, guardedText, orgId);
       if (!injectionCheck.safe) {
         console.warn("[security] iMessage prompt injection blocked", {
           fromPhone,
@@ -684,24 +680,15 @@ export const processInbound = internalAction({
           : {}),
       };
 
-      const chatModel = await getModelAndRouteForOrg(ctx, orgId, "chat");
-      const result = await generateTextWithFallback(
-        {
-          model: chatModel.model,
-          providerOptions: getProviderOptionsForRoute(chatModel.route),
-          maxOutputTokens: 512,
-          system: systemPrompt,
-          messages: modelMessages,
-          tools: imessageTools,
-          stopWhen: stepCountIs(8),
-        },
-        {
-          task: "chat",
-          taskKind: "query_reason",
-          primaryRoute: chatModel.route,
-          fallbackRoute: chatModel.fallbackRoute,
-        },
-      );
+      const result = await generateTextForOrg(ctx, orgId, "chat", {
+        maxOutputTokens: 512,
+        system: systemPrompt,
+        messages: modelMessages,
+        tools: imessageTools,
+        stopWhen: stepCountIs(8),
+      }, {
+        taskKind: "query_reason",
+      });
 
       const { usedTools, toolCalls, workflowOutcomes } = collectToolAudit(result);
       runState.appendWorkflowOutcomes(workflowOutcomes);

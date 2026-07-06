@@ -11,8 +11,7 @@ import { v } from "convex/values";
 import dayjs from "dayjs";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText } from "ai";
-import { getModelForOrg } from "../lib/models";
+import { generateTextForOrg } from "../lib/models";
 import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
 import { insuranceDocToPolicy } from "../lib/documentMapping";
 import { makeEmbedText } from "../lib/sdkCallbacks";
@@ -98,8 +97,7 @@ Output: a single JSON object representing the merged InsuranceDocument.`;
 
       await log(`Reconciliation: sending ${n} documents to reasoning model for merge.`);
 
-      const result = await generateText({
-        model: await getModelForOrg(ctx, args.orgId, "analysis"),
+      const result = await generateTextForOrg(ctx, args.orgId, "analysis", {
         prompt,
       });
 

@@ -28,8 +28,8 @@ export function buildQueryAgent(
   const embed = makeEmbedText(ctx, orgId);
 
   return createQueryAgent({
-    generateText: makeGenerateText("chat"),
-    generateObject: makeGenerateObject("chat"),
+    generateText: makeGenerateText("chat", { ctx, orgId }),
+    generateObject: makeGenerateObject("chat", { ctx, orgId }),
     documentStore: createConvexDocumentStore(ctx, orgId),
     memoryStore: createConvexMemoryStore(ctx, orgId, embed),
     sourceRetriever: createConvexSourceRetriever(ctx, orgId, embed),

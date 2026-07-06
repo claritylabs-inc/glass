@@ -1,9 +1,8 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getModel } from "./models";
+import { generateTextForOrg } from "./models";
 import { normalizeMemoryContent } from "./orgMemoryPolicy";
-import { generateText } from "ai";
 
 type OrgMemoryType = "fact";
 type OrgMemorySource = "email" | "imessage";
@@ -28,8 +27,7 @@ export async function extractOrgMemoryFromExchange(
   },
 ) {
   try {
-    const memoryExtraction = await generateText({
-      model: getModel("classification"),
+    const memoryExtraction = await generateTextForOrg(ctx, args.orgId, "org_memory_extraction", {
       maxOutputTokens: args.itemLimit > 3 ? 600 : 400,
       system: `Extract only durable company-profile facts about the organization from this ${args.source} exchange.
 Output a strict JSON array of up to ${args.itemLimit} items: [{"type":"fact","content":string}].

@@ -1,6 +1,5 @@
 "use node";
 
-import { generateObject } from "ai";
 import { z } from "zod";
 import dayjs from "dayjs";
 import type { ActionCtx } from "../_generated/server";
@@ -8,8 +7,7 @@ import type { Id } from "../_generated/dataModel";
 import { applyCoverageDeclarationScoping } from "./coverageScoping";
 import { insuranceDocToPolicy } from "./documentMapping";
 import { reviewExtractionFields, type FieldReviewApplication } from "./extractionFieldReview";
-import { getModelAndRouteForOrg } from "./models";
-import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
+import { generateObjectForOrg } from "./models";
 import { applyPolicyPeriodFallback } from "./policyPeriodExtraction";
 
 type SourceSpanLike = {
@@ -435,10 +433,8 @@ async function refineCoverageReviewCopyWithLlm(
   if (questions.length === 0) return fields;
 
   try {
-    const modelRoute = await getModelAndRouteForOrg(ctx, orgId, "extraction");
-    const result = await generateObject({
-      model: modelRoute.model,
-      schema: structuredOutputSchemaForRoute(coverageReviewCopySchema, modelRoute.route),
+    const result = await generateObjectForOrg(ctx, orgId, "extraction", {
+      schema: coverageReviewCopySchema,
       prompt: `Rewrite coverage extraction review questions for a broker or client reviewing an insurance policy.
 
 Rules:
@@ -496,10 +492,8 @@ async function normalizeOrgNamesWithLlm(
   if (!Object.values(candidates).some(Boolean)) return fields;
 
   try {
-    const modelRoute = await getModelAndRouteForOrg(ctx, orgId, "extraction");
-    const result = await generateObject({
-      model: modelRoute.model,
-      schema: structuredOutputSchemaForRoute(orgNameNormalizationSchema, modelRoute.route),
+    const result = await generateObjectForOrg(ctx, orgId, "extraction", {
+      schema: orgNameNormalizationSchema,
       prompt: `Normalize insurance organization display names.
 
 Rules:

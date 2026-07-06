@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import { createRequire } from "module";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { Output, generateText as aiGenerateText, gateway, jsonSchema } from "ai";
+import { Output, generateText as aiGenerateText, jsonSchema } from "ai";
 import type { LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -88,7 +88,7 @@ type ResolvedWorkerModelRoute = {
   model: LanguageModel;
   route: WorkerModelRoute;
   routeSource: WorkerRouteSource;
-  transport: "direct" | "gateway";
+  transport: "direct";
   capabilities: ModelCapabilities;
   providerOptions?: ProviderOptions;
 };
@@ -545,35 +545,37 @@ function providerModel(provider: ModelProvider, model: string, apiKey?: string):
   }
 }
 
+function cleanEnv(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
 function directProviderApiKey(provider: ModelProvider): string | undefined {
   switch (provider) {
     case "openai":
-      return process.env.OPENAI_API_KEY;
+      return cleanEnv(process.env.OPENAI_API_KEY);
     case "anthropic":
-      return process.env.ANTHROPIC_API_KEY;
+      return cleanEnv(process.env.ANTHROPIC_API_KEY);
     case "google":
-      return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY;
+      return cleanEnv(process.env.GOOGLE_GENERATIVE_AI_API_KEY)
+        ?? cleanEnv(process.env.GOOGLE_API_KEY);
     case "xai":
-      return process.env.XAI_API_KEY;
+      return cleanEnv(process.env.XAI_API_KEY);
     case "mistral":
-      return process.env.MISTRAL_API_KEY;
+      return cleanEnv(process.env.MISTRAL_API_KEY);
     case "cohere":
-      return process.env.COHERE_API_KEY;
+      return cleanEnv(process.env.COHERE_API_KEY);
     case "fireworks":
-      return process.env.FIREWORKS_API_KEY;
+      return cleanEnv(process.env.FIREWORKS_API_KEY);
     case "deepseek":
-      return process.env.DEEPSEEK_API_KEY;
+      return cleanEnv(process.env.DEEPSEEK_API_KEY);
   }
-}
-
-function gatewayModelId(route: WorkerModelRoute): string {
-  if (route.provider === "fireworks") return `fireworks/${route.model}`;
-  return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
 }
 
 function nativeProviderModel(route: WorkerModelRoute): string | null {
   switch (route.provider) {
     case "anthropic":
+      if (route.model === "claude-haiku-4.5") return "claude-haiku-4-5-20251001";
       if (route.model === "claude-3-haiku") return "claude-3-haiku-20240307";
       return route.model.replace(/\.(\d+)/g, "-$1");
     case "deepseek":
@@ -622,21 +624,32 @@ function mergeProviderOptions(
   return Object.keys(merged).length > 0 ? (merged as ProviderOptions) : undefined;
 }
 
-function routeTransport(route: WorkerModelRoute, apiKey?: string): "direct" | "gateway" {
-  const nativeModel = nativeProviderModel(route);
-  const canUseDirectProvider = !!nativeModel && !!(apiKey || directProviderApiKey(route.provider));
-  return canUseDirectProvider ? "direct" : "gateway";
+function routeDirectApiKey(route: WorkerModelRoute, apiKey?: string): string | undefined {
+  return cleanEnv(apiKey) ?? directProviderApiKey(route.provider);
+}
+
+function routeHasDirectAccess(route: WorkerModelRoute, apiKey?: string): boolean {
+  return !!nativeProviderModel(route) && !!routeDirectApiKey(route, apiKey);
+}
+
+function routeTransport(_route: WorkerModelRoute, _apiKey?: string): "direct" {
+  return "direct";
 }
 
 function routeToModel(route: WorkerModelRoute, apiKey?: string): LanguageModel {
   const nativeModel = nativeProviderModel(route);
-  if (apiKey && nativeModel) {
-    return providerModel(route.provider, nativeModel, apiKey);
+  if (!nativeModel) {
+    throw new Error(
+      `Model route ${route.provider}/${route.model} is not supported by the direct ${route.provider} provider. Configure a directly supported provider/model route instead.`,
+    );
   }
-  if (nativeModel && directProviderApiKey(route.provider)) {
-    return providerModel(route.provider, nativeModel);
+  const directApiKey = routeDirectApiKey(route, apiKey);
+  if (!directApiKey) {
+    throw new Error(
+      `Direct ${route.provider} API key is missing for model route ${route.provider}/${route.model}. AI Gateway is not a fallback for extraction worker model routing.`,
+    );
   }
-  return gateway(gatewayModelId(route));
+  return providerModel(route.provider, nativeModel, directApiKey);
 }
 
 function modelTaskForTaskKind(taskKind?: string): ModelTask {
@@ -651,7 +664,7 @@ function apiKeyForRoute(
   settings?: WorkerModelSettings,
 ): string | undefined {
   if (routeSource === "broker" || routeSource === "configured") {
-    return settings?.providerKeys?.[route.provider];
+    return cleanEnv(settings?.providerKeys?.[route.provider]);
   }
   return undefined;
 }
@@ -669,15 +682,18 @@ function resolveConfiguredRoute(
   const settingsRoute = settings?.routes?.[routeId];
   const configuredRoute = isWorkerModelRoute(settingsRoute) ? settingsRoute : undefined;
   const configuredRouteSource = readRouteSource(settings?.routeSources?.[routeId]);
-  const hasRequiredBrokerKey =
-    configuredRouteSource !== "broker" ||
-    !!(configuredRoute && settings?.providerKeys?.[configuredRoute.provider]);
-  if (configuredRoute && hasRequiredBrokerKey) {
-    const routeSource = configuredRouteSource ?? "configured";
+  const routeSource = configuredRouteSource ?? "configured";
+  const configuredApiKey = configuredRoute
+    ? apiKeyForRoute(configuredRoute, routeSource, settings)
+    : undefined;
+  const canUseConfiguredRoute =
+    !!configuredRoute &&
+    routeHasDirectAccess(configuredRoute, configuredApiKey);
+  if (canUseConfiguredRoute) {
     return {
       route: configuredRoute,
       routeSource,
-      apiKey: apiKeyForRoute(configuredRoute, routeSource, settings),
+      apiKey: configuredApiKey,
     };
   }
   return { route: defaultRoute, routeSource: defaultRouteSource };
@@ -713,10 +729,13 @@ function resolveModelForTaskKind(
   const settingsRoute = settings?.routes?.[task];
   const configuredRoute = isWorkerModelRoute(settingsRoute) ? settingsRoute : undefined;
   const configuredRouteSource = readRouteSource(settings?.routeSources?.[task]);
-  const hasRequiredBrokerKey =
-    configuredRouteSource !== "broker" ||
-    !!(configuredRoute && settings?.providerKeys?.[configuredRoute.provider]);
-  const canUseConfiguredRoute = !!configuredRoute && hasRequiredBrokerKey;
+  const configuredSource = configuredRouteSource ?? "configured";
+  const configuredApiKey = configuredRoute
+    ? apiKeyForRoute(configuredRoute, configuredSource, settings)
+    : undefined;
+  const canUseConfiguredRoute =
+    !!configuredRoute &&
+    routeHasDirectAccess(configuredRoute, configuredApiKey);
   const baseRoute = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
   const quality = resolveConfiguredQualityRoute(settings);
   const useQualityPrimary =
@@ -728,13 +747,15 @@ function resolveModelForTaskKind(
   const routeSource = coverageCleanup?.routeSource ?? (useQualityPrimary
     ? quality.routeSource
     : canUseConfiguredRoute
-    ? (configuredRouteSource ?? "configured")
+    ? configuredSource
     : "default");
   const apiKey = coverageCleanup
       ? coverageCleanup.apiKey
     : useQualityPrimary
       ? quality.apiKey
-      : apiKeyForRoute(route, routeSource, settings);
+      : canUseConfiguredRoute
+        ? configuredApiKey
+        : apiKeyForRoute(route, routeSource, settings);
   return {
     model: routeToModel(route, apiKey),
     task,

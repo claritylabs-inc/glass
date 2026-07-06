@@ -30,6 +30,8 @@ export const MODEL_POLICY_TASK_ROUTES = {
   extraction: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
   extraction_preview: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
   classification: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
+  requirement_extraction: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
+  org_memory_extraction: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
   analysis: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.glm52 },
   summary: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.glm52 },
   triage: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },

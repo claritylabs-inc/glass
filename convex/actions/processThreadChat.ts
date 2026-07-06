@@ -10,7 +10,7 @@ import mammoth from "mammoth";
 import JSZip from "jszip";
 import {
   fallbackRouteForCall,
-  generateTextWithFallback,
+  generateTextForOrg,
   getModelAndRouteForOrg,
   getModelForRoute,
   getProviderOptionsForRoute,
@@ -101,22 +101,19 @@ function restoreSentenceBoundarySpacing(text: string): string {
 }
 
 async function repairMissingConfidenceMarkers({
+  ctx,
+  orgId,
   content,
-  model,
-  route,
 }: {
+  ctx: ActionCtx;
+  orgId: Id<"organizations">;
   content: string;
-  model: Parameters<typeof generateTextWithFallback>[0]["model"];
-  route: Awaited<ReturnType<typeof getModelAndRouteForOrg>>["route"];
 }): Promise<string> {
   if (!content.trim() || hasConfidenceMarkers(content)) return content;
 
-  const result = await generateTextWithFallback(
-    {
-      model,
-      providerOptions: getProviderOptionsForRoute(route),
-      maxOutputTokens: 4096,
-      system: `You are a precise Markdown editor for Glass chat answers.
+  const result = await generateTextForOrg(ctx, orgId, "chat", {
+    maxOutputTokens: 4096,
+    system: `You are a precise Markdown editor for Glass chat answers.
 
 Rewrite the assistant answer by adding confidence markers to factual phrases.
 Preserve the original wording, order, Markdown structure, table pipes, headings, numbers, and punctuation. Do not add claims. Do not remove claims.
@@ -130,14 +127,10 @@ Wrap factual table cell contents too, while preserving the table shape.
 Leave purely conversational filler and user-facing questions unwrapped.
 Return only the rewritten Markdown. Do not use a code fence.
 The rewritten answer is invalid unless it contains at least one confidence marker.`,
-      prompt: `Assistant answer to annotate:\n\n${content}`,
-    },
-    {
-      task: "chat",
-      taskKind: "query_reason",
-      primaryRoute: route,
-    },
-  );
+    prompt: `Assistant answer to annotate:\n\n${content}`,
+  }, {
+    taskKind: "query_reason",
+  });
 
   return normalizeConfidenceRepair(result.text, content);
 }
@@ -711,7 +704,7 @@ export const run = internalAction({
       );
       if (userMsgForGuard?.content) {
         const sanitizedContent = enforceInputLimits(userMsgForGuard.content);
-        const injectionCheck = await classifyPromptInjection(sanitizedContent);
+        const injectionCheck = await classifyPromptInjection(ctx, sanitizedContent, args.orgId);
         if (!injectionCheck.safe) {
           await ctx.runMutation(internal.threads.updateAgentMessage, {
             id: agentMsgId,
@@ -1756,9 +1749,9 @@ export const run = internalAction({
       const emailResult = emailToolResult.current;
       if (!emailResult && !completedCoiEmailSideEffect) {
         content = await repairMissingConfidenceMarkers({
+          ctx,
+          orgId: args.orgId,
           content,
-          model: chatModel.model,
-          route: chatModel.route,
         });
         content = restoreSentenceBoundarySpacing(content);
       }

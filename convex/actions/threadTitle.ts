@@ -1,10 +1,9 @@
 "use node";
 
 import { v } from "convex/values";
-import { generateText } from "ai";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import { generateTextForOrg } from "../lib/models";
 import { logAiError } from "../lib/aiUtils";
 
 export const TITLE_SYSTEM_PROMPT = `You are a thread title generator for an insurance work assistant.
@@ -155,9 +154,7 @@ export const generate = internalAction({
 
       let title = fallbackTitle(seed);
       try {
-        const { text } = await generateText({
-          model: await getModelForOrg(ctx, thread.orgId, "summary"),
-          providerOptions: getProviderOptionsForTask("summary"),
+        const { text } = await generateTextForOrg(ctx, thread.orgId, "summary", {
           maxOutputTokens: 16,
           system: TITLE_SYSTEM_PROMPT,
           messages: [{ role: "user", content: promptContent }],

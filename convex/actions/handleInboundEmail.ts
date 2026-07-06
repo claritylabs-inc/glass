@@ -4,8 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, stepCountIs, type ModelMessage } from "ai";
-import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import { stepCountIs, type ModelMessage } from "ai";
+import { generateTextForOrg } from "../lib/models";
 import {
   extractPolicyAttachment,
   createImessageGroupChat,
@@ -619,7 +619,7 @@ export const processInbound = internalAction({
       const guardedInput = enforceInputLimits(
         [data.subject ?? "", body].join("\n\n"),
       );
-      const injectionCheck = await classifyPromptInjection(guardedInput);
+      const injectionCheck = await classifyPromptInjection(ctx, guardedInput);
       if (!injectionCheck.safe) {
         console.warn("[security] Prompt injection blocked in public demo email", {
           fromEmail,
@@ -715,7 +715,7 @@ export const processInbound = internalAction({
     const guardedInput = enforceInputLimits(
       [data.subject ?? "", body].join("\n\n"),
     );
-    const injectionCheck = await classifyPromptInjection(guardedInput);
+    const injectionCheck = await classifyPromptInjection(ctx, guardedInput, orgId);
     if (!injectionCheck.safe) {
       console.warn("[security] Prompt injection blocked in inbound email", {
         fromEmail,
@@ -1582,9 +1582,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       if (deterministicControlResult) {
         responseBody = deterministicControlResult.responseBody;
       } else {
-        const result = await generateText({
-          model: await getModelForOrg(ctx, orgId, "email_reply"),
-          providerOptions: getProviderOptionsForTask("email_reply"),
+        const result = await generateTextForOrg(ctx, orgId, "email_reply", {
           maxOutputTokens: 2048,
           system: systemContext,
           messages,

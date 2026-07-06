@@ -104,6 +104,7 @@ export const extractOne = internalAction({
       id: args.policyId,
     }) as any;
     if (!policy) throw new Error("Policy not found");
+    if (!policy.orgId) throw new Error("Policy has no orgId");
     if (!policy.fileId) throw new Error("Policy has no stored PDF");
     if (policy.supplementaryFacts?.length && !args.force) {
       return { skipped: true, reason: "already_has_facts", facts: 0 };
@@ -118,7 +119,10 @@ export const extractOne = internalAction({
     const supplementary = getExtractor("supplementary");
     if (!supplementary) throw new Error("Supplementary extractor not found in SDK");
 
-    const generateObject = makeGenerateObject("extraction");
+    const generateObject = makeGenerateObject("extraction", {
+      ctx,
+      orgId: policy.orgId as Id<"organizations">,
+    });
     const parsedPdfText = await tryBuildParsedPdfText({
       pdfBytes: new Uint8Array(arrayBuffer),
       documentId: String(args.policyId),

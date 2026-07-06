@@ -1,14 +1,9 @@
 "use node";
 
-import { generateObject } from "ai";
 import { z } from "zod";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import {
-  getModelAndRouteForOrg,
-  getProviderOptionsForTask,
-} from "./models";
-import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
+import { generateObjectForOrg } from "./models";
 import {
   rankTaskControlCandidates,
   type TaskControlResponseIntent,
@@ -60,11 +55,8 @@ export async function resolveTaskControlIntent(
   if (!ranking.shouldUseModel) return null;
 
   try {
-    const modelRoute = await getModelAndRouteForOrg(ctx, args.orgId, "classification");
-    const result = await generateObject({
-      model: modelRoute.model,
-      providerOptions: getProviderOptionsForTask("classification"),
-      schema: structuredOutputSchemaForRoute(ModelTaskControlDecisionSchema, modelRoute.route),
+    const result = await generateObjectForOrg(ctx, args.orgId, "classification", {
+      schema: ModelTaskControlDecisionSchema,
       maxOutputTokens: 128,
       system: `You classify whether a short Glass user message is trying to control the current task state.
 

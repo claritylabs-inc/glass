@@ -15,6 +15,8 @@ export type ModelTask =
   | "extraction"
   | "extraction_preview"
   | "classification"
+  | "requirement_extraction"
+  | "org_memory_extraction"
   | "analysis"
   | "summary"
   | "triage"
@@ -88,6 +90,8 @@ export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
   extraction: "Policy extraction",
   extraction_preview: "Fast policy extraction",
   classification: "Classification",
+  requirement_extraction: "Requirement extraction",
+  org_memory_extraction: "Org memory extraction",
   analysis: "Reasoning and review",
   summary: "Summaries",
   triage: "Website enrichment",
@@ -111,6 +115,10 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
     "Fast preview route for policy-list fields extracted from LiteParse text before full enrichment completes.",
   classification:
     "Fast routing route for document kind, request intent, delivery rules, extraction/query classification, and other small decisions.",
+  requirement_extraction:
+    "Structured extraction route for compliance requirements from leases, client contracts, vendor packets, and pasted requirement text.",
+  org_memory_extraction:
+    "Durable organization memory extraction route for stable company-profile facts from email and iMessage exchanges.",
   analysis:
     "Deeper reasoning route for coverage analysis, compliance review, partner-program matching, policy reconciliation, and policy-change impact.",
   summary:
@@ -321,6 +329,27 @@ export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
   return MODEL_ROUTING[id];
 }
 
+export function directProviderModelForRoute(route: ModelRoute): string | null {
+  switch (route.provider) {
+    case "anthropic":
+      if (route.model === "claude-haiku-4.5") {
+        return "claude-haiku-4-5-20251001";
+      }
+      if (route.model === "claude-3-haiku") {
+        return "claude-3-haiku-20240307";
+      }
+      return route.model.replace(/\.(\d+)/g, "-$1");
+    case "deepseek":
+      return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
+        ? route.model
+        : null;
+    case "moonshot":
+      return null;
+    default:
+      return route.model;
+  }
+}
+
 export type ModelRouteGroup<RouteId extends string = string> = {
   id: string;
   label: string;
@@ -350,6 +379,8 @@ export const MODEL_TASK_GROUPS = [
       "Routes used to classify documents and extract structured facts from policies, files, and email text.",
     tasks: [
       "classification",
+      "requirement_extraction",
+      "org_memory_extraction",
       "extraction",
       "document_extraction",
       "email_extraction",
@@ -374,6 +405,8 @@ export const OPERATOR_MODEL_ROUTE_GROUPS = [
       "Routes used to classify documents and extract structured facts from policies, files, and email text.",
     tasks: [
       "classification",
+      "requirement_extraction",
+      "org_memory_extraction",
       "extraction",
       "extraction_quality",
       "extraction_coverage_cleanup",

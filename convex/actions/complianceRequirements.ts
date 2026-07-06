@@ -1,6 +1,5 @@
 "use node";
 
-import { generateObject } from "ai";
 import mammoth from "mammoth";
 import { z } from "zod";
 import { v } from "convex/values";
@@ -9,8 +8,7 @@ import dayjs from "dayjs";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getModel, MODEL_ROUTING } from "../lib/models";
-import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
+import { generateObjectForOrg } from "../lib/models";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import {
   classifyRequirementSemantics,
@@ -330,9 +328,8 @@ async function runRequirementImport(
       },
     );
 
-  const result = await generateObject({
-    model: getModel("chat"),
-    schema: structuredOutputSchemaForRoute(RequirementImportSchema, MODEL_ROUTING.chat),
+  const result = await generateObjectForOrg(ctx, args.orgId, "requirement_extraction", {
+    schema: RequirementImportSchema,
     system:
       "You convert contract and certificate insurance language into coverage-shaped structured compliance requirements for Glass.",
     prompt: buildPrompt({

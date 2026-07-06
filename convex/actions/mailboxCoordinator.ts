@@ -2,13 +2,12 @@
 
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { generateObject, generateText, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import { z } from "zod";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { getModelAndRouteForOrg, getProviderOptionsForTask } from "../lib/models";
-import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
+import { generateObjectForOrg, generateTextForOrg } from "../lib/models";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
 import {
   importConnectedEmailRequirementAttachments,
@@ -123,9 +122,6 @@ export const runInternal = internalAction({
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<Record<string, unknown>> => {
-    const modelRoute = await getModelAndRouteForOrg(ctx, args.orgId, "mailbox_coordinator");
-    const model = modelRoute.model;
-    const providerOptions = getProviderOptionsForTask("mailbox_coordinator");
     const selectedAccounts = args.accountIds?.length
       ? await Promise.all(
           args.accountIds.map((accountId) =>
@@ -188,10 +184,8 @@ export const runInternal = internalAction({
       if (typeof record.emailRef !== "string" || typeof record.filename !== "string") return;
       evidenceAttachments.push(record);
     };
-    const planResult = await generateObject({
-      model,
-      providerOptions,
-      schema: structuredOutputSchemaForRoute(MailboxPlanSchema, modelRoute.route),
+    const planResult = await generateObjectForOrg(ctx, args.orgId, "mailbox_coordinator", {
+      schema: MailboxPlanSchema,
       maxOutputTokens: 768,
       system: `You are planning a Glass mailbox subagent task. Produce a concise operational plan before any mailbox search/read/import work runs.
 
@@ -234,9 +228,7 @@ Rules:
     }
 
     const mailboxSearches: MailboxSearchLog[] = [];
-    const result = await generateText({
-      model,
-      providerOptions,
+    const result = await generateTextForOrg(ctx, args.orgId, "mailbox_coordinator", {
       maxOutputTokens: 4096,
       stopWhen: stepCountIs(20),
       system: `You are the Glass mailbox coordinator. Complete complex insurance mailbox tasks by searching connected IMAP email live, reading relevant messages and attachment text, importing policy PDF attachments, importing lease/contract insurance requirements, and sending vendor access invitations when the user requested that action.
@@ -465,10 +457,8 @@ ${selectedAccountRows.length ? selectedAccountRows.map((account) => `  - ${accou
 
     const evidenceResult =
       evidenceEmails.length > 0 || evidenceAttachments.length > 0
-        ? await generateObject({
-            model,
-            providerOptions,
-            schema: structuredOutputSchemaForRoute(MailboxEvidenceSchema, modelRoute.route),
+        ? await generateObjectForOrg(ctx, args.orgId, "mailbox_coordinator", {
+            schema: MailboxEvidenceSchema,
             maxOutputTokens: 1536,
             system: `Summarize the specific mailbox evidence used by the coordinator for UI artifacts.
 
