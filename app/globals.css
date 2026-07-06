@@ -333,6 +333,11 @@
   outline-offset: 2px;
 }
 
+.text-tag {
+  font-size: var(--text-tag);
+  line-height: var(--text-tag--line-height);
+}
+
 .glass-operational-toast {
   --glass-operational-toast-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   display: flex;
@@ -403,11 +408,6 @@
   transform: translateY(0);
   visibility: visible;
   transition-delay: 0ms;
-}
-
-.text-tag {
-  font-size: var(--text-tag);
-  line-height: var(--text-tag--line-height);
 }
 
 @media (max-width: 600px) {

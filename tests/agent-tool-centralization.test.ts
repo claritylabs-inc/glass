@@ -60,11 +60,12 @@ describe("centralized agent tool execution", () => {
 
   it("keeps email-specific attachment selection out of COI generation", () => {
     const subagent = read("convex/lib/emailSubagent.ts");
+    const draftArtifacts = read("convex/lib/emailDraftArtifacts.ts");
     const imessage = read("convex/actions/handleInboundImessage.ts");
 
     expect(subagent).toContain("buildAgentToolExecutors");
     expect(subagent).toContain("attachUploadedFile");
-    expect(subagent).toContain('["web", "imessage", "mcp"].includes(context.channel)');
+    expect(draftArtifacts).toContain('["web", "imessage", "mcp"].includes(context.channel)');
     expect(imessage).toContain("let pendingEmailIdForResponse");
     expect(imessage).toContain("pendingEmailId: pendingEmailIdForResponse");
     expect(subagent).not.toContain("internal.certificates.generateForOrg");

@@ -1,4 +1,8 @@
 import type { Doc, Id } from "../_generated/dataModel";
+import {
+  formatEmailDraftBlockers,
+  getEmailDraftBlockers,
+} from "./emailWorkflow";
 
 type DraftLike = Pick<
   Doc<"pendingEmails">,
@@ -9,6 +13,7 @@ type DraftLike = Pick<
   | "attachments"
   | "ccAddresses"
   | "bccAddresses"
+  | "sendBlockedReason"
 >;
 
 function truncate(value: string | undefined, max: number) {
@@ -69,6 +74,12 @@ export function buildEmailDraftTextSummary(
     if (draft.ccAddresses?.length) {
       lines.push(`   Cc: ${draft.ccAddresses.join(", ")}`);
     }
+    const blockers = getEmailDraftBlockers(draft);
+    if (blockers.length > 0) {
+      lines.push(
+        `   Needs confirmation: ${truncate(formatEmailDraftBlockers(blockers), 120)}`,
+      );
+    }
     if (options?.includeBodyPreview) {
       lines.push(`   Preview: ${truncate(draft.emailBody, 180) || "(empty body)"}`);
     }
@@ -84,9 +95,16 @@ export function buildEmailDraftTextSummary(
       "Use send_email_drafts with these draft IDs to send a batch, send_email_draft for one draft, or list_email_drafts with showAll=true to see every draft.",
     );
   } else if (options?.commands === "chat") {
+    const blockedCount = drafts.filter(
+      (draft) => getEmailDraftBlockers(draft).length > 0,
+    ).length;
     lines.push(
       "",
-      drafts.length > sample.length
+      blockedCount > 0
+        ? blockedCount === 1
+          ? 'Reply with the correct email address to update it, or "cancel drafts" to cancel.'
+          : 'Some drafts need confirmation. Reply "show more" to review them, or "cancel drafts" to cancel.'
+        : drafts.length > sample.length
         ? 'Reply "show more" to see all drafts, "send all" to send them, or "cancel drafts" to cancel.'
         : 'Reply "send all" to send, or "cancel drafts" to cancel.',
     );

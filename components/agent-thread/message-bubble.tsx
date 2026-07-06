@@ -20,7 +20,8 @@ export function ThreadMessageBubble({
     return (
       <div
         className={cn(
-          "rounded-lg border px-3.5 py-2.5",
+          "rounded-lg border",
+          channel === "imessage" ? "px-3 py-2" : "px-3.5 py-2.5",
           isError
             ? "border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400"
             : "border-foreground/6 bg-popover",
@@ -34,7 +35,8 @@ export function ThreadMessageBubble({
   return (
     <div
       className={cn(
-        "rounded-lg px-3.5 py-2.5 text-base text-foreground",
+        "rounded-lg px-3.5 py-2.5 text-foreground",
+        channel === "imessage" ? "text-sm leading-5" : "text-base",
         channel === "email"
           ? [
               "border border-foreground/6",

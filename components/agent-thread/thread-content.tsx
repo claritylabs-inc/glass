@@ -877,7 +877,7 @@ function MessageFooterActions({
           if (!messageId) return;
           onOpenMailboxArtifact?.({ messageId, index });
         }}
-        className={`inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border bg-transparent px-2 text-tag font-medium transition-colors ${
+        className={`inline-flex h-6 max-w-52 items-center gap-1.5 rounded-full border bg-transparent px-2 text-tag font-medium transition-colors ${
           isSelected
             ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
             : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
@@ -1143,6 +1143,15 @@ function UnifiedThreadActions({
 
 /* ── Shared markdown container styles ── */
 const MARKDOWN_STYLES = "[&_a]:text-primary-light [&_a]:underline";
+const IMESSAGE_MARKDOWN_STYLES =
+  `${MARKDOWN_STYLES} text-sm leading-5 ` +
+  "[&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_ul]:pl-4 [&_ol]:pl-4 " +
+  "[&_li]:my-0.5 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm " +
+  "[&_h4]:text-sm [&_h5]:text-sm [&_h6]:text-sm";
+
+function markdownStylesForChannel(channel?: ThreadMessage["channel"]) {
+  return channel === "imessage" ? IMESSAGE_MARKDOWN_STYLES : MARKDOWN_STYLES;
+}
 
 type FooterPanel = "reasoning" | "tools" | "subagents" | "confidence";
 
@@ -1438,7 +1447,8 @@ export function UnifiedMessageBubble({
                 gfm
                 breaks
                 flagConfidence
-                className={MARKDOWN_STYLES}
+                compact={msg.channel === "imessage"}
+                className={markdownStylesForChannel(msg.channel)}
                 components={markdownComponents}
               >
                 {displayContent}
@@ -1589,7 +1599,8 @@ export function UnifiedMessageBubble({
                     breaks
                     flagConfidence
                     confidenceFullView={showConfidence}
-                    className={MARKDOWN_STYLES}
+                    compact={msg.channel === "imessage"}
+                    className={markdownStylesForChannel(msg.channel)}
                     components={markdownComponents}
                   >
                     {fixedContent}

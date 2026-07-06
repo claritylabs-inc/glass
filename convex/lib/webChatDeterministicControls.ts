@@ -3,10 +3,11 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { isPendingEmailCancelConfirmationPrompt } from "./emailCancelIntent";
 import {
-  isPendingEmailCancelConfirmationPrompt,
-  pendingEmailCancelConfirmationMessage,
-} from "./emailCancelIntent";
+  executeEmailCommand,
+  type EmailCommandDraft,
+} from "./emailCommandExecutor";
 import { resolveTaskControlIntent } from "./taskControlDecision";
 import { taskControlResponse } from "./taskControlIntent";
 import { resolveTextChannelEmailControl } from "./textChannelControls";
@@ -26,7 +27,7 @@ export type WebChatDeterministicControlState = {
   messageText: string;
   threadMessages: WebChatControlMessage[];
   pendingEmails: WebChatEmailControlRecord[];
-  draftEmails: WebChatEmailControlRecord[];
+  draftEmails: EmailCommandDraft[];
   latestCancelledEmail?: WebChatEmailControlRecord | null;
 };
 
@@ -45,7 +46,7 @@ export async function loadWebChatDeterministicControlState(
   const draftEmails = (await ctx.runQuery(
     internal.pendingEmails.listDraftsInternal,
     { threadId: args.threadId, orgId: args.orgId },
-  )) as WebChatEmailControlRecord[];
+  )) as EmailCommandDraft[];
   const latestCancelledEmail = (await ctx.runQuery(
     internal.pendingEmails.findLatestCancelledByThread,
     { threadId: args.threadId, orgId: args.orgId },
@@ -93,98 +94,45 @@ export async function runWebChatEmailControls(
     allowDraftApproval: true,
   });
 
-  if (emailControl?.kind === "restore_cancelled_email") {
-    const restored = await ctx.runMutation(
-      internal.pendingEmails.restoreAsDraftInternal,
-      { id: emailControl.emailId },
-    );
-    await ctx.runMutation(internal.threads.updateAgentMessage, {
-      id: args.agentMessageId,
-      content: restored
-        ? "Email restored as a draft. Review it in the email draft card."
-        : "I couldn't restore that email.",
-      pendingEmailId: restored?.id,
-    });
-    return true;
-  }
+  if (!emailControl) return false;
 
-  if (emailControl?.kind === "cancel_draft_emails") {
-    for (const id of emailControl.emailIds) {
-      await ctx.runMutation(internal.pendingEmails.cancelInternal, { id });
-    }
+  const result = await executeEmailCommand(ctx, emailControl, {
+    draftEmails: args.draftEmails,
+  });
+  if (
+    result.kind === "cancel_draft_emails" ||
+    result.kind === "send_draft_emails"
+  ) {
     await ctx.runMutation(internal.threads.deleteMessageInternal, {
       id: args.agentMessageId,
     });
     return true;
   }
-
-  if (emailControl?.kind === "request_draft_cancel_confirmation") {
-    await ctx.runMutation(internal.threads.updateAgentMessage, {
+  if (result.kind === "send_failed") {
+    await ctx.runMutation(internal.threads.updateAgentError, {
       id: args.agentMessageId,
-      content: pendingEmailCancelConfirmationMessage(
-        "draft",
-        emailControl.count,
-      ),
-    });
-    return true;
-  }
-
-  if (emailControl?.kind === "send_draft_emails") {
-    try {
-      for (const id of emailControl.emailIds) {
-        await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
-          id,
-        });
-      }
-      await ctx.runMutation(internal.threads.deleteMessageInternal, {
-        id: args.agentMessageId,
-      });
-      return true;
-    } catch (err) {
-      await ctx.runMutation(internal.threads.updateAgentError, {
-        id: args.agentMessageId,
-        error: err instanceof Error ? err.message : String(err),
-        content:
-          args.draftEmails.length === 1
-            ? "Failed to send the draft email."
-            : "Failed to send one or more draft emails.",
-      });
-      return true;
-    }
-  }
-
-  if (emailControl?.kind === "cancel_pending_emails") {
-    let cancelledCount = 0;
-    for (const id of emailControl.emailIds) {
-      const ok = await ctx.runMutation(internal.pendingEmails.cancelInternal, {
-        id,
-      });
-      if (ok) cancelledCount++;
-    }
-    if (cancelledCount === 0) return false;
-
-    await ctx.runMutation(internal.threads.updateAgentMessage, {
-      id: args.agentMessageId,
+      error: result.error ?? result.responseBody,
       content:
-        cancelledCount === 1
-          ? "Done - email cancelled."
-          : `Done - ${cancelledCount} pending emails cancelled.`,
+        args.draftEmails.length === 1
+          ? "Failed to send the draft email."
+          : "Failed to send one or more draft emails.",
     });
     return true;
   }
-
-  if (emailControl?.kind === "request_pending_cancel_confirmation") {
-    await ctx.runMutation(internal.threads.updateAgentMessage, {
-      id: args.agentMessageId,
-      content: pendingEmailCancelConfirmationMessage(
-        "pending",
-        emailControl.count,
-      ),
-    });
-    return true;
-  }
-
-  return false;
+  await ctx.runMutation(internal.threads.updateAgentMessage, {
+    id: args.agentMessageId,
+    content:
+      result.kind === "restore_cancelled_email" && result.pendingEmailId
+        ? "Email restored as a draft. Review it in the email draft card."
+        : result.kind === "update_single_draft_recipient" &&
+            result.pendingEmailId
+          ? "Updated the draft recipient. Review it in the email draft card."
+          : result.kind === "cancel_pending_emails"
+            ? `Done - ${result.responseBody}`
+            : result.responseBody,
+    pendingEmailId: result.pendingEmailId,
+  });
+  return true;
 }
 
 export async function runWebChatTaskControl(

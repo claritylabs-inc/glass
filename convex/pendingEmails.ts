@@ -5,51 +5,15 @@ import {
   internalQuery,
   internalMutation,
 } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc } from "./_generated/dataModel";
 import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
-
-async function restoreCancelledEmailAsDraft(
-  ctx: MutationCtx,
-  id: Id<"pendingEmails">,
-) {
-  const pending = await ctx.db.get(id);
-  if (!pending || pending.status !== "cancelled") {
-    return null;
-  }
-
-  await ctx.db.patch(id, {
-    status: "draft",
-    scheduledSendTime: 0,
-    sentMessageId: undefined,
-  });
-
-  if (pending.threadMessageId) {
-    await ctx.db.patch(pending.threadMessageId, {
-      content: pending.emailBody,
-      toAddresses: [pending.recipientEmail],
-      ccAddresses: pending.ccAddresses,
-      bccAddresses: pending.bccAddresses,
-      subject: pending.subject,
-      attachments: pending.attachments,
-      referencedPolicyIds: pending.referencedPolicyIds,
-      pendingEmailId: id,
-      responseMessageId: undefined,
-      status: "draft_email",
-      error: undefined,
-    });
-  }
-
-  if (pending.chatMessageId) {
-    await ctx.db.patch(pending.chatMessageId, {
-      content: "Email restored as a draft. Review it in the email draft card.",
-      status: undefined,
-      pendingEmailId: id,
-    });
-  }
-
-  return pending;
-}
+import {
+  cancelDraftOrPendingEmail,
+  restoreCancelledEmailAsDraft,
+  updateDraftRecipient,
+  withLegacySendBlockedReason,
+} from "./lib/emailDraftService";
+import { extractStoredEmailPayloadFields } from "./lib/emailPayloadFields";
 
 // ── Queries ──
 
@@ -59,7 +23,7 @@ export const get = query({
     const { orgId } = await requireOrgAccess(ctx);
     const pending = await ctx.db.get(args.id);
     if (!pending || pending.orgId !== orgId) return null;
-    return pending;
+    return await withLegacySendBlockedReason(ctx, pending);
   },
 });
 
@@ -123,6 +87,12 @@ export const create = internalMutation({
     bccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     emailBody: v.string(),
+    fromHeader: v.optional(v.string()),
+    replyTo: v.optional(v.string()),
+    inReplyTo: v.optional(v.string()),
+    references: v.optional(v.string()),
+    renderedText: v.optional(v.string()),
+    renderedHtml: v.optional(v.string()),
     attachments: v.optional(
       v.array(
         v.object({
@@ -135,12 +105,31 @@ export const create = internalMutation({
     ),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    sendBlockedReason: v.optional(v.string()),
     status: v.optional(v.union(v.literal("draft"), v.literal("pending"))),
   },
   handler: async (ctx, args) => {
-    const { status, ...fields } = args;
+    const {
+      status,
+      emailPayload,
+      fromHeader,
+      replyTo,
+      inReplyTo,
+      references,
+      renderedText,
+      renderedHtml,
+      ...fields
+    } = args;
+    const payloadFields = extractStoredEmailPayloadFields(emailPayload);
     return await ctx.db.insert("pendingEmails", {
       ...fields,
+      emailPayload,
+      fromHeader: fromHeader ?? payloadFields.fromHeader,
+      replyTo: replyTo ?? payloadFields.replyTo,
+      inReplyTo: inReplyTo ?? payloadFields.inReplyTo,
+      references: references ?? payloadFields.references,
+      renderedText: renderedText ?? payloadFields.renderedText,
+      renderedHtml: renderedHtml ?? payloadFields.renderedHtml,
       status: status ?? "pending",
     });
   },
@@ -165,6 +154,12 @@ export const updateDraftInternal = internalMutation({
     bccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     emailBody: v.string(),
+    fromHeader: v.optional(v.string()),
+    replyTo: v.optional(v.string()),
+    inReplyTo: v.optional(v.string()),
+    references: v.optional(v.string()),
+    renderedText: v.optional(v.string()),
+    renderedHtml: v.optional(v.string()),
     attachments: v.optional(v.array(v.object({
       filename: v.string(),
       contentType: v.string(),
@@ -175,14 +170,44 @@ export const updateDraftInternal = internalMutation({
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     chatMessageId: v.optional(v.id("threadMessages")),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
+    sendBlockedReason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { id, ...patch } = args;
+    const {
+      id,
+      emailPayload,
+      fromHeader,
+      replyTo,
+      inReplyTo,
+      references,
+      renderedText,
+      renderedHtml,
+      ...patch
+    } = args;
+    const payloadFields = extractStoredEmailPayloadFields(emailPayload);
     await ctx.db.patch(id, {
       ...patch,
+      emailPayload,
+      fromHeader: fromHeader ?? payloadFields.fromHeader,
+      replyTo: replyTo ?? payloadFields.replyTo,
+      inReplyTo: inReplyTo ?? payloadFields.inReplyTo,
+      references: references ?? payloadFields.references,
+      renderedText: renderedText ?? payloadFields.renderedText,
+      renderedHtml: renderedHtml ?? payloadFields.renderedHtml,
       status: "draft",
       scheduledSendTime: 0,
+      sendBlockedReason: args.sendBlockedReason,
     });
+  },
+});
+
+export const updateDraftRecipientInternal = internalMutation({
+  args: {
+    id: v.id("pendingEmails"),
+    recipientEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await updateDraftRecipient(ctx, args.id, args.recipientEmail);
   },
 });
 
@@ -202,7 +227,7 @@ export const markSent = internalMutation({
 export const getInternal = internalQuery({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    return await withLegacySendBlockedReason(ctx, await ctx.db.get(args.id));
   },
 });
 
@@ -282,9 +307,15 @@ export const listDraftsInternal = internalQuery({
           .query("pendingEmails")
           .withIndex("by_status", (q) => q.eq("status", "draft"))
           .collect();
-    return rows
+    const drafts = rows
       .filter((row) => row.orgId === args.orgId && row.status === "draft")
       .sort((a, b) => b._creationTime - a._creationTime);
+    const enriched = await Promise.all(
+      drafts.map((draft) => withLegacySendBlockedReason(ctx, draft)),
+    );
+    return enriched.filter(
+      (draft): draft is Doc<"pendingEmails"> => draft !== null,
+    );
   },
 });
 
@@ -292,27 +323,7 @@ export const listDraftsInternal = internalQuery({
 export const cancelInternal = internalMutation({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args) => {
-    const pending = await ctx.db.get(args.id);
-    if (!pending || (pending.status !== "pending" && pending.status !== "draft")) {
-      return false;
-    }
-
-    await ctx.db.patch(args.id, { status: "cancelled" });
-
-    if (pending.threadMessageId) {
-      await ctx.db.patch(pending.threadMessageId, {
-        status: "cancelled",
-      });
-    }
-
-    if (pending.chatMessageId) {
-      await ctx.db.patch(pending.chatMessageId, {
-        content: "Email cancelled.",
-        status: undefined,
-        pendingEmailId: args.id,
-      });
-    }
-    return true;
+    return await cancelDraftOrPendingEmail(ctx, args.id);
   },
 });
 

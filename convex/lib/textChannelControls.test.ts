@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { buildEmailDraftTextSummary } from "./emailDraftSummary";
 import { resolveTextChannelEmailControl } from "./textChannelControls";
 
 describe("resolveTextChannelEmailControl", () => {
@@ -57,6 +58,52 @@ describe("resolveTextChannelEmailControl", () => {
         pendingEmailIds: [],
       }),
     ).toBeNull();
+  });
+
+  test("treats a standalone email address as a single draft recipient correction", () => {
+    expect(
+      resolveTextChannelEmailControl({
+        messageText: "Terry@claritylabs.inc",
+        isCancelConfirmationContext: false,
+        draftEmailIds: ["draft"],
+        pendingEmailIds: [],
+        allowDraftSendAll: true,
+      }),
+    ).toEqual({
+      kind: "update_single_draft_recipient",
+      emailId: "draft",
+      recipientEmail: "terry@claritylabs.inc",
+    });
+
+    expect(
+      resolveTextChannelEmailControl({
+        messageText: "send this to terry@claritylabs.inc",
+        isCancelConfirmationContext: false,
+        draftEmailIds: ["draft"],
+        pendingEmailIds: [],
+        allowDraftSendAll: true,
+      }),
+    ).toBeNull();
+  });
+
+  test("does not advertise send commands for drafts with blocked sends", () => {
+    const summary = buildEmailDraftTextSummary(
+      [
+        {
+          _id: "draft",
+          recipientEmail: "erry@claritylabs.inc",
+          subject: "Policy documents",
+          emailBody: "Attached.",
+          sendBlockedReason:
+            "Confirm that erry@claritylabs.inc is the intended recipient.",
+        },
+      ] as never,
+      { commands: "chat" },
+    );
+
+    expect(summary).toContain("Needs confirmation");
+    expect(summary).toContain("Reply with the correct email address");
+    expect(summary).not.toContain('"send all"');
   });
 
   test("ignores long messages", () => {

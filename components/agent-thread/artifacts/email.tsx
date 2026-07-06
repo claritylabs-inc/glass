@@ -283,7 +283,7 @@ export function EmailSummaryCard({
 
   return (
     <div
-      className={`${compact ? "mt-2" : ""} w-fit min-w-64 max-w-sm overflow-hidden rounded-md border border-foreground/8 bg-card transition-colors hover:border-foreground/15 hover:bg-foreground/[0.025]`}
+      className={`${compact ? "mt-2" : ""} w-fit min-w-64 max-w-md overflow-hidden rounded-md border border-foreground/8 bg-card transition-colors hover:border-foreground/15 hover:bg-foreground/[0.025] sm:min-w-72`}
     >
       <button
         type="button"
@@ -291,23 +291,24 @@ export function EmailSummaryCard({
         className="block w-full min-w-0 px-3 py-2.5 text-left"
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-label font-medium leading-4 text-muted-foreground/45">
+          <span className="block truncate text-xs font-medium leading-4 text-muted-foreground/55">
             {label}
           </span>
-          <span className="block truncate text-base font-medium leading-5 text-foreground/85">
+          <span className="block truncate text-sm font-medium leading-5 text-foreground/90">
             {preview}
           </span>
-          <span className="block truncate text-label leading-4 text-muted-foreground/40">
+          <span className="block truncate text-xs leading-4 text-muted-foreground/55">
             {recipients}
           </span>
         </span>
       </button>
       {isOpen ? null : (
-        <div className="flex items-center justify-end gap-1 border-t border-foreground/6 px-2 py-2">
+        <div className="flex items-center justify-end gap-1.5 border-t border-foreground/6 px-3 py-2.5">
           <PillButton
             type="button"
             size="compact"
             variant="secondary"
+            className="text-xs"
             onClick={(event) => {
               event.stopPropagation();
               onOpen?.(message);
@@ -320,13 +321,14 @@ export function EmailSummaryCard({
               type="button"
               size="compact"
               variant="primary"
+              className="text-xs"
               onClick={handleQuickSend}
               disabled={isSending}
             >
               {isSending ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <MailIcon className="h-3 w-3" />
+                <MailIcon className="h-3.5 w-3.5" />
               )}
               Send
             </PillButton>
@@ -336,13 +338,14 @@ export function EmailSummaryCard({
               type="button"
               size="compact"
               variant="primary"
+              className="text-xs"
               onClick={handleRestore}
               disabled={isRestoring}
             >
               {isRestoring ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <RotateCcw className="h-3 w-3" />
+                <RotateCcw className="h-3.5 w-3.5" />
               )}
               Restore
             </PillButton>
@@ -442,10 +445,10 @@ export function EmailStackCard({
     <div className="w-full max-w-md overflow-hidden rounded-md border border-foreground/8 bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2">
         <div className="min-w-0">
-          <p className="text-label font-medium leading-4 text-muted-foreground/45">
+          <p className="text-xs font-medium leading-4 text-muted-foreground/55">
             Email drafts
           </p>
-          <p className="truncate text-base font-medium leading-5 text-foreground/85">
+          <p className="truncate text-sm font-medium leading-5 text-foreground/90">
             {orderedMessages.length} email
             {orderedMessages.length === 1 ? "" : "s"}
           </p>
@@ -455,13 +458,14 @@ export function EmailStackCard({
             type="button"
             size="compact"
             variant="primary"
+            className="text-xs"
             onClick={handleSendAll}
             disabled={isSendingAll}
           >
             {isSendingAll ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <MailIcon className="h-3 w-3" />
+              <MailIcon className="h-3.5 w-3.5" />
             )}
             Send all
           </PillButton>
@@ -482,22 +486,22 @@ export function EmailStackCard({
             >
               <span className="flex min-w-0 items-start justify-between gap-3">
                 <span className="min-w-0">
-                  <span className="block truncate text-base font-medium leading-5 text-foreground/85">
+                  <span className="block truncate text-sm font-medium leading-5 text-foreground/90">
                     {getEmailSummaryPreview(message)}
                   </span>
-                  <span className="block truncate text-label leading-4 text-muted-foreground/45">
+                  <span className="block truncate text-xs leading-4 text-muted-foreground/55">
                     {getEmailSummaryRecipients(message)}
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5">
                   {attachmentCount > 0 ? (
-                    <span className="text-label leading-4 text-muted-foreground/35">
+                    <span className="text-xs leading-4 text-muted-foreground/45">
                       {attachmentCount} file{attachmentCount === 1 ? "" : "s"}
                     </span>
                   ) : null}
                   <Badge
                     variant="outline"
-                    className="h-5 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55"
+                    className="h-5 border-foreground/10 px-1.5 font-medium text-muted-foreground/60"
                   >
                     {getEmailStatusLabel(message)}
                   </Badge>

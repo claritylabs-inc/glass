@@ -1,12 +1,12 @@
 "use node";
 
-import { internal } from "../_generated/api";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 import {
-  buildEmailDraftTextSummary,
-  isSendAllEmailDraftsIntent,
-  isShowMoreEmailDraftIntent,
-} from "./emailDraftSummary";
+  executeEmailCommand,
+  type EmailCommandDraft,
+  type EmailCommandExecutionCtx,
+} from "./emailCommandExecutor";
+import { resolveTextChannelEmailControl } from "./textChannelControls";
 
 export type InboundEmailDeterministicControlResult = {
   responseBody: string;
@@ -21,14 +21,10 @@ export type InboundEmailDraftControl = Pick<
   | "attachments"
   | "ccAddresses"
   | "bccAddresses"
+  | "sendBlockedReason"
 >;
 
-type InboundEmailControlCtx = {
-  runAction(
-    action: typeof internal.actions.sendPendingEmail.sendDraftInternal,
-    args: { id: Id<"pendingEmails"> },
-  ): Promise<unknown>;
-};
+type InboundEmailControlCtx = EmailCommandExecutionCtx;
 
 export async function runInboundEmailDeterministicControls(
   ctx: InboundEmailControlCtx,
@@ -39,41 +35,30 @@ export async function runInboundEmailDeterministicControls(
   },
 ): Promise<InboundEmailDeterministicControlResult | null> {
   if (args.draftEmails.length === 0) return null;
-
-  const text = args.messageText.trim();
-  if (text.length >= (args.maxControlTextLength ?? 120)) return null;
-
-  if (isShowMoreEmailDraftIntent(text)) {
-    return {
-      responseBody: buildEmailDraftTextSummary(args.draftEmails, {
-        sampleSize: args.draftEmails.length,
-        includeBodyPreview: true,
-        commands: "chat",
-      }),
-    };
+  const command = resolveTextChannelEmailControl({
+    messageText: args.messageText,
+    isCancelConfirmationContext: false,
+    draftEmailIds: args.draftEmails.map((draftEmail) => draftEmail._id),
+    pendingEmailIds: [],
+    allowDraftList: true,
+    allowDraftSendAll: true,
+    maxControlTextLength: args.maxControlTextLength ?? 120,
+  });
+  if (
+    !command ||
+    ![
+      "show_draft_emails",
+      "update_single_draft_recipient",
+      "send_draft_emails",
+    ].includes(command.kind)
+  ) {
+    return null;
   }
 
-  if (!isSendAllEmailDraftsIntent(text)) return null;
-
-  let sentCount = 0;
-  const failed: string[] = [];
-  for (const draftEmail of args.draftEmails) {
-    try {
-      await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
-        id: draftEmail._id,
-      });
-      sentCount += 1;
-    } catch (err) {
-      failed.push(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  return {
-    responseBody:
-      failed.length === 0
-        ? sentCount === 1
-          ? "Sent the draft email."
-          : `Sent ${sentCount} draft emails.`
-        : `Sent ${sentCount} draft email${sentCount === 1 ? "" : "s"}; ${failed.length} failed. ${failed[0]}`,
-  };
+  const result = await executeEmailCommand(ctx, command, {
+    draftEmails: args.draftEmails as EmailCommandDraft[],
+    includeBodyPreview: true,
+    continueOnSendFailure: true,
+  });
+  return { responseBody: result.responseBody };
 }

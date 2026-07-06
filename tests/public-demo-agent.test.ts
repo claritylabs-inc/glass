@@ -129,6 +129,7 @@ describe("public demo agent", () => {
   it("adds deterministic public-demo safety checks after model generation", () => {
     const action = read("convex/actions/publicDemoAgent.ts");
     const emailSubagent = read("convex/lib/emailSubagent.ts");
+    const emailDelivery = read("convex/lib/emailDelivery.ts");
 
     expect(action).toContain("addSimulationNotice");
     expect(action).toContain("no certificate was issued");
@@ -139,7 +140,8 @@ describe("public demo agent", () => {
     expect(action).toContain("buildAgentEmailHtmlBody");
     expect(action).toContain("buildEmailSignature");
     expect(action).toContain("contentHtml: formatted.html");
-    expect(emailSubagent).toContain("export function buildAgentEmailHtmlBody");
+    expect(emailDelivery).toContain("export function buildAgentEmailHtmlBody");
+    expect(emailSubagent).toContain("buildAgentEmailHtmlBody");
   });
 
   it("adds a simple operator archive surface for demo chats", () => {

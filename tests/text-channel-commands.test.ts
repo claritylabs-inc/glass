@@ -125,6 +125,7 @@ describe("text channel slash commands", () => {
     const inbound = read("convex/actions/handleInboundImessage.ts");
     const controls = read("convex/lib/imessageDeterministicControls.ts");
     const executor = read("convex/lib/imessageSlashCommands.ts");
+    const emailCommandExecutor = read("convex/lib/emailCommandExecutor.ts");
     const deterministicGate = inbound.indexOf(
       "const deterministicControlResult",
     );
@@ -150,9 +151,10 @@ describe("text channel slash commands", () => {
       taskControlGate,
     );
     expect(emailControlBlock).toContain("resolveTextChannelEmailControl");
-    expect(emailControlBlock).toContain("restoreAsDraftInternal");
-    expect(emailControlBlock).toContain("sendDraftInternal");
-    expect(emailControlBlock).toContain("cancelInternal");
+    expect(emailControlBlock).toContain("executeEmailCommand");
+    expect(emailCommandExecutor).toContain("restoreAsDraftInternal");
+    expect(emailCommandExecutor).toContain("sendDraftInternal");
+    expect(emailCommandExecutor).toContain("cancelInternal");
     expect(executor).toContain("requiresLinkedSender");
     expect(executor).toContain("sendDraftInternal");
     expect(executor).toContain("cancelInternal");
