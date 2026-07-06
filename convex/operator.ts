@@ -63,6 +63,11 @@ const LEGACY_CERTIFICATE_VERSION_FIELDS = [
 const LEGACY_CERTIFICATE_VERSION_CLEANUP_BATCH_SIZE = 100;
 const LEGACY_CERTIFICATE_FIELDS = LEGACY_CERTIFICATE_VERSION_FIELDS;
 const LEGACY_CERTIFICATE_CLEANUP_BATCH_SIZE = 100;
+const REMOVED_PROGRAM_ADMIN_NOTIFICATION_TYPES = new Set([
+  "program_admin_certificate_request",
+  "program_admin_pce_request",
+]);
+const REMOVED_PROGRAM_ADMIN_NOTIFICATION_CLEANUP_BATCH_SIZE = 500;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -1566,6 +1571,35 @@ export const cleanupLegacyCertificateFieldsInternal = internalMutation({
     return {
       scanned: page.page.length,
       patched,
+      isDone: page.isDone,
+      continueCursor: page.isDone ? undefined : page.continueCursor,
+    };
+  },
+});
+
+export const cleanupRemovedProgramAdminNotificationsInternal = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("notifications").paginate({
+      cursor: args.cursor ?? null,
+      numItems: REMOVED_PROGRAM_ADMIN_NOTIFICATION_CLEANUP_BATCH_SIZE,
+    });
+    let deleted = 0;
+    for (const row of page.page) {
+      if (!REMOVED_PROGRAM_ADMIN_NOTIFICATION_TYPES.has(row.type)) continue;
+      await ctx.db.delete(row._id);
+      deleted += 1;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupRemovedProgramAdminNotificationsInternal,
+        { cursor: page.continueCursor },
+      );
+    }
+    return {
+      scanned: page.page.length,
+      deleted,
       isDone: page.isDone,
       continueCursor: page.isDone ? undefined : page.continueCursor,
     };

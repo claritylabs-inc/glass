@@ -1862,6 +1862,9 @@ export default defineSchema({
       // Retired types kept only so historical rows remain schema-compatible.
       v.literal("merge_suggestion"),
       v.literal("policy_declaration_discrepancy"),
+      // Temporary widen-migrate-narrow types for removed program-admin rows.
+      v.literal("program_admin_certificate_request"),
+      v.literal("program_admin_pce_request"),
       // Active notification types.
       v.literal("coverage_gap"),
       v.literal("renewal_reminder"),
