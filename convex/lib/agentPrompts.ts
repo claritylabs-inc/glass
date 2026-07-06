@@ -4,10 +4,10 @@
  * Agent prompts and context building — cl-sdk
  *
  * SDK exports (unchanged): buildAgentSystemPrompt, buildConversationMemoryGuidance
- * Local implementations: buildDocumentContext (vector search), buildConversationMemoryContext (vector search)
+ * Local implementations: buildDocumentContext (source-backed retrieval), buildConversationMemoryContext (disabled no-op)
  *
  * The old SDK's buildDocumentContext/buildConversationMemoryContext are removed.
- * We replace them with vector-search-backed retrieval from Convex.
+ * Policy retrieval is source-backed; raw conversation recall is intentionally disabled.
  */
 
 // SDK exports (still work)
@@ -127,8 +127,7 @@ export async function buildDocumentContext(
 }
 
 /**
- * Build org memory context — recent facts/preferences/observations captured
- * via chat tool calls, agent email conversations, and website pulls.
+ * Build org memory context from curated company-profile facts.
  */
 export async function buildIntelligenceContext(
   ctx: ActionCtx,
@@ -147,22 +146,21 @@ export async function buildIntelligenceContext(
     for (const m of memories) {
       const bucket = m.type ?? "observation";
       if (!grouped[bucket]) grouped[bucket] = [];
-      const tag = m.source ? ` [${m.source}]` : "";
-      grouped[bucket].push(`- ${m.content}${tag}`);
+      grouped[bucket].push(`- ${m.content}`);
     }
 
     const labels: Record<string, string> = {
       fact: "Facts",
-      preference: "Preferences",
-      risk_note: "Risk Notes",
-      observation: "Observations",
+      preference: "Company Preferences",
+      risk_note: "Company Risk Notes",
+      observation: "Company Observations",
     };
 
     const sections: string[] = [];
     for (const [bucket, items] of Object.entries(grouped)) {
       sections.push(`${labels[bucket] ?? bucket}:\n${items.join("\n")}`);
     }
-    return `\n\nORG MEMORY:\n${sections.join("\n\n")}`;
+    return `\n\nCOMPANY CONTEXT MEMORY:\n${sections.join("\n\n")}`;
   } catch {
     return "";
   }
@@ -647,70 +645,21 @@ function buildFallbackContext(
 }
 
 /**
- * Build conversation memory context using vector search.
- * Falls back to formatting provided conversations if no turns are embedded.
- *
- * For action context with vector search:
+ * Raw cross-thread conversation memory is disabled.
  */
 export async function buildConversationMemoryContext(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   queryText: string,
 ): Promise<string> {
-  try {
-    const embed = makeEmbedText(ctx, orgId);
-    const queryEmbedding = await embed(queryText);
-
-    const results = await ctx.vectorSearch(
-      "conversationTurns",
-      "by_embedding",
-      {
-        vector: queryEmbedding,
-        limit: 10,
-        filter: (q) => q.eq("orgId", orgId),
-      },
-    );
-
-    if (results.length === 0) return "";
-
-    const turns = [];
-    for (const result of results) {
-      const doc = await ctx.runQuery(internal.conversationTurns.get, {
-        id: result._id,
-      });
-      if (doc) turns.push(doc);
-    }
-
-    if (turns.length === 0) return "";
-
-    const MAX_CHARS = 3000;
-    let total = 0;
-    const entries: string[] = [];
-
-    for (const turn of turns) {
-      const date = new Date(turn.createdAt).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
-      const snippet = turn.content.slice(0, 200).replace(/\n+/g, " ");
-      const entry = `[${turn.role}] (${date}): ${snippet}`;
-      if (total + entry.length > MAX_CHARS) break;
-      entries.push(entry);
-      total += entry.length;
-    }
-
-    if (entries.length === 0) return "";
-    return `\n\nCONVERSATION MEMORY (relevant past interactions):\n${entries.join("\n")}`;
-  } catch {
-    // Vector search may fail if no turns exist yet — gracefully degrade
-    return "";
-  }
+  void ctx;
+  void orgId;
+  void queryText;
+  return "";
 }
 
 /**
- * Legacy-compatible conversation memory builder.
- * Takes pre-loaded conversations (for use when vector search isn't available).
+ * Legacy-compatible no-op. Raw conversation snippets should not steer answers.
  */
 export function buildConversationMemoryFromList(
   conversations: Array<{
@@ -722,30 +671,8 @@ export function buildConversationMemoryFromList(
     responseBody?: string;
   }>,
 ): string {
-  if (conversations.length === 0) return "";
-
-  const MAX_CHARS = 3000;
-  let total = 0;
-  const entries: string[] = [];
-
-  for (let i = 0; i < conversations.length; i++) {
-    const c = conversations[i];
-    const date = new Date(c._creationTime).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-    const who = c.fromName ? `${c.fromName} (${c.fromEmail})` : c.fromEmail;
-    const q = c.body.slice(0, 200).replace(/\n+/g, " ");
-    const a = (c.responseBody ?? "").slice(0, 300).replace(/\n+/g, " ");
-    const entry = `[${i + 1}] "${c.subject}" -- Asked by ${who} on ${date}\nQ: ${q}\nA: ${a}`;
-    if (total + entry.length > MAX_CHARS) break;
-    entries.push(entry);
-    total += entry.length;
-  }
-
-  if (entries.length === 0) return "";
-  return `\n\nCONVERSATION MEMORY (past conversations from this organization):\n${entries.join("\n\n")}`;
+  void conversations;
+  return "";
 }
 
 export async function buildScopedDocumentContext(

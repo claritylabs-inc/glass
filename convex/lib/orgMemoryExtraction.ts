@@ -1,18 +1,14 @@
-import { generateText } from "ai";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getModel } from "./models";
+import { normalizeMemoryContent } from "./orgMemoryPolicy";
+import { generateText } from "ai";
 
-type OrgMemoryType = "fact" | "preference" | "risk_note" | "observation";
+type OrgMemoryType = "fact";
 type OrgMemorySource = "email" | "imessage";
 
-const ALLOWED_TYPES = new Set<OrgMemoryType>([
-  "fact",
-  "preference",
-  "risk_note",
-  "observation",
-]);
+const ALLOWED_TYPES = new Set<OrgMemoryType>(["fact"]);
 
 function cleanJsonText(text: string): string {
   return text
@@ -35,9 +31,10 @@ export async function extractOrgMemoryFromExchange(
     const memoryExtraction = await generateText({
       model: getModel("classification"),
       maxOutputTokens: args.itemLimit > 3 ? 600 : 400,
-      system: `Extract durable facts, preferences, risk notes, or observations about an organization from this ${args.source} exchange.
-Output a strict JSON array of up to ${args.itemLimit} items: [{"type":"fact"|"preference"|"risk_note"|"observation","content":string}].
-Only include items worth remembering long-term: company details, operational facts, stated preferences, noted risks, or decisions made. Skip pleasantries, one-off questions, and ephemeral requests. If nothing is worth saving, output [].
+      system: `Extract only durable company-profile facts about the organization from this ${args.source} exchange.
+Output a strict JSON array of up to ${args.itemLimit} items: [{"type":"fact","content":string}].
+Include only stable facts about the company itself, such as legal entity structure, headquarters, operations, products, employees, revenue, ownership, compliance posture, or business activities.
+Do not include policy numbers, policy terms, endorsements, COI/certificate details, drafts, recipients, attachments, agent capabilities, tool limitations, workflow status, user requests, one-off tasks, or decisions about a specific transaction. If nothing is worth saving as company context, output [].
 Output only the JSON array. Do not include prose or code fences.`,
       messages: [{ role: "user", content: args.exchangeText }],
     });
@@ -61,7 +58,7 @@ Output only the JSON array. Do not include prose or code fences.`,
       .map((item) => ({
         orgId: args.orgId,
         type: item.type as OrgMemoryType,
-        content: item.content.trim(),
+        content: normalizeMemoryContent(item.content),
         source: args.source,
       }))
       .filter((item) => item.content.length > 0);

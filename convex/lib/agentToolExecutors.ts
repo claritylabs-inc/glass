@@ -596,13 +596,21 @@ export function buildAgentToolExecutors(
           policyId = resolved.policy._id;
           targetOrgId = resolved.policy.orgId;
         }
-        await ctx.runMutation(internal.orgMemory.upsert, {
+        if (policyId) {
+          return "Not saved. Memory is limited to stable company context; policy-specific facts must come from policy lookup tools.";
+        }
+        if (typeMap(params.type) !== "fact") {
+          return "Not saved. Memory is limited to stable company facts.";
+        }
+        const savedId = await ctx.runMutation(internal.orgMemory.upsert, {
           orgId: targetOrgId,
-          type: typeMap(params.type),
+          type: "fact",
           content: params.content,
           source: orgMemorySourceForSurface(options.surface),
-          policyId,
         });
+        if (!savedId) {
+          return "Not saved. Memory is limited to stable company context, not policy details, agent behavior, drafts, requests, or workflow state.";
+        }
         return "Note saved.";
       },
     },

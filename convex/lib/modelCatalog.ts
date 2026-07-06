@@ -126,7 +126,7 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
   mailbox_coordinator:
     "Coordinator route for multi-step connected-mailbox workflows: search mail, inspect attachments, import policies or requirements, and plan follow-up.",
   embeddings:
-    "Vector embedding route for policies, source chunks, and conversation memory. Must stay compatible with the configured Convex vector dimensions.",
+    "Vector embedding route for policies and source chunks. Must stay compatible with the configured Convex vector dimensions.",
 };
 
 export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {

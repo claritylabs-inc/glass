@@ -36,6 +36,8 @@ export const insert = internalMutation({
     createdAt: v.number(),
   },
   handler: async (ctx, args) => {
-    return ctx.db.insert("conversationTurns", args);
+    void ctx;
+    void args;
+    return null;
   },
 });
