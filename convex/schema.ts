@@ -413,6 +413,10 @@ export default defineSchema({
       v.literal("impersonation_stopped"),
       v.literal("impersonation_chat_message"),
       v.literal("setup_write"),
+      // Temporary widen-migrate-narrow types for removed MGA operator events.
+      v.literal("mga_created"),
+      v.literal("mga_status_changed"),
+      v.literal("mga_launch_email_sent"),
     ),
     targetOrgId: v.optional(v.id("organizations")),
     targetUserId: v.optional(v.id("users")),

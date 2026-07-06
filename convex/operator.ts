@@ -68,6 +68,12 @@ const REMOVED_PROGRAM_ADMIN_NOTIFICATION_TYPES = new Set([
   "program_admin_pce_request",
 ]);
 const REMOVED_PROGRAM_ADMIN_NOTIFICATION_CLEANUP_BATCH_SIZE = 500;
+const REMOVED_MGA_AUDIT_EVENT_TYPES = new Set([
+  "mga_created",
+  "mga_status_changed",
+  "mga_launch_email_sent",
+]);
+const REMOVED_MGA_AUDIT_EVENT_CLEANUP_BATCH_SIZE = 500;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -1594,6 +1600,35 @@ export const cleanupRemovedProgramAdminNotificationsInternal = internalMutation(
       await ctx.scheduler.runAfter(
         0,
         internal.operator.cleanupRemovedProgramAdminNotificationsInternal,
+        { cursor: page.continueCursor },
+      );
+    }
+    return {
+      scanned: page.page.length,
+      deleted,
+      isDone: page.isDone,
+      continueCursor: page.isDone ? undefined : page.continueCursor,
+    };
+  },
+});
+
+export const cleanupRemovedMgaAuditEventsInternal = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("operatorAuditEvents").paginate({
+      cursor: args.cursor ?? null,
+      numItems: REMOVED_MGA_AUDIT_EVENT_CLEANUP_BATCH_SIZE,
+    });
+    let deleted = 0;
+    for (const row of page.page) {
+      if (!REMOVED_MGA_AUDIT_EVENT_TYPES.has(row.type)) continue;
+      await ctx.db.delete(row._id);
+      deleted += 1;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupRemovedMgaAuditEventsInternal,
         { cursor: page.continueCursor },
       );
     }
