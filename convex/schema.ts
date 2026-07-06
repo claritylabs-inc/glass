@@ -341,6 +341,11 @@ export default defineSchema({
         v.literal("other"),
       ),
     ),
+    // Temporary widen-migrate-narrow fields from removed static broker contacts.
+    brokerCompanyName: v.optional(v.string()),
+    brokerContactName: v.optional(v.string()),
+    brokerContactEmail: v.optional(v.string()),
+    brokerContactPhone: v.optional(v.string()),
     // Set on client orgs only — ID of the managing broker org
     brokerOrgId: v.optional(v.id("organizations")),
     // Client-org lifecycle: "draft" = broker is preparing, "invited" = invite sent and pending,

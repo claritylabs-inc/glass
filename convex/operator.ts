@@ -1661,6 +1661,10 @@ export const cleanupLegacyOrganizationFieldsInternal = internalMutation({
       const patch: Record<string, unknown> = {};
       if (record.partnerKind !== undefined) patch.partnerKind = undefined;
       if (record.partnerType !== undefined) patch.partnerType = undefined;
+      if (record.brokerCompanyName !== undefined) patch.brokerCompanyName = undefined;
+      if (record.brokerContactName !== undefined) patch.brokerContactName = undefined;
+      if (record.brokerContactEmail !== undefined) patch.brokerContactEmail = undefined;
+      if (record.brokerContactPhone !== undefined) patch.brokerContactPhone = undefined;
       if (record.type === "partner") patch.type = "broker";
       if (Object.keys(patch).length === 0) continue;
       await ctx.db.patch(org._id, patch);
