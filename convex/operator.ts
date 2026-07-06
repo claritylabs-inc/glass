@@ -77,6 +77,8 @@ const REMOVED_MGA_AUDIT_EVENT_CLEANUP_BATCH_SIZE = 500;
 const LEGACY_ORGANIZATION_FIELD_CLEANUP_BATCH_SIZE = 100;
 const LEGACY_COVERAGE_METADATA_FIELDS = [
   "coverageOrigin",
+  "coverageOriginConfidence",
+  "coverageOriginReason",
   "coverageConfidence",
   "confidence",
   "reason",

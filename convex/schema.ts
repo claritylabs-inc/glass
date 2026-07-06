@@ -1298,6 +1298,8 @@ export default defineSchema({
         reviewSourceSpanIds: v.optional(v.array(v.string())),
         // Temporary widen-migrate-narrow fields from removed coverage metadata.
         coverageOrigin: v.optional(v.any()),
+        coverageOriginConfidence: v.optional(v.any()),
+        coverageOriginReason: v.optional(v.any()),
         coverageConfidence: v.optional(v.any()),
         confidence: v.optional(v.any()),
         reason: v.optional(v.any()),
