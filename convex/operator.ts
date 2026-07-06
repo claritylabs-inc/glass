@@ -85,6 +85,7 @@ const LEGACY_COVERAGE_METADATA_FIELDS = [
   "preserveCoverageExtensions",
   "storedCoverageExtensions",
 ] as const;
+const LEGACY_POLICY_METADATA_FIELDS = ["partnerMatchSource"] as const;
 const LEGACY_POLICY_COVERAGE_CLEANUP_BATCH_SIZE = 100;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
@@ -1711,6 +1712,13 @@ export const cleanupLegacyPolicyCoverageMetadataInternal = internalMutation({
     let patched = 0;
     for (const policy of page.page) {
       let changed = false;
+      const patch: Record<string, unknown> = {};
+      const record = policy as Record<string, unknown>;
+      for (const field of LEGACY_POLICY_METADATA_FIELDS) {
+        if (record[field] === undefined) continue;
+        patch[field] = undefined;
+        changed = true;
+      }
       const coverages = policy.coverages.map((coverage) => {
         const next = { ...(coverage as Record<string, unknown>) };
         for (const field of LEGACY_COVERAGE_METADATA_FIELDS) {
@@ -1721,7 +1729,8 @@ export const cleanupLegacyPolicyCoverageMetadataInternal = internalMutation({
         return next;
       });
       if (!changed) continue;
-      await ctx.db.patch(policy._id, { coverages: coverages as any });
+      patch.coverages = coverages;
+      await ctx.db.patch(policy._id, patch as any);
       patched += 1;
     }
     if (!page.isDone) {

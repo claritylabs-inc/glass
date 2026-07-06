@@ -1037,6 +1037,8 @@ export default defineSchema({
     ),
     priorPolicyNumber: v.optional(v.string()),
     programName: v.optional(v.string()),
+    // Temporary widen-migrate-narrow field from removed partner-program matching.
+    partnerMatchSource: v.optional(v.any()),
     isPackage: v.optional(v.boolean()),
     // Insured details (cl-sdk 1.2+)
     insuredDba: v.optional(v.string()),
