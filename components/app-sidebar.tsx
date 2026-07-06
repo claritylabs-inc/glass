@@ -92,11 +92,6 @@ export function AppSidebar({
 
   const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
   const viewerOrg = useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
-  const brokerPageContext = useCachedQuery(
-    "orgs.getBrokerPageContext",
-    api.orgs.getBrokerPageContext,
-    {},
-  );
   const unifiedThreads = useCachedQuery(
     "threads.list.active",
     api.threads.list,
@@ -130,11 +125,7 @@ export function AppSidebar({
   const isStandaloneClient =
     currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
   const canManageSettings = currentOrg?.role === "admin";
-  const navItems = (
-    isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS
-  ).filter(
-    (item) => item.href !== "/broker" || brokerPageContext?.showBrokerPage,
-  );
+  const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
   const connectItems =
     isBroker || !showConnectFeatures ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");

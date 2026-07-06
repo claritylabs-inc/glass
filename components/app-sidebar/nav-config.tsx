@@ -2,7 +2,6 @@ import {
   Activity,
   ArrowLeft,
   BadgeCheck,
-  Briefcase,
   Building2,
   ClipboardCheck,
   FileText,
@@ -75,12 +74,6 @@ export const INSURANCE_ITEMS: NavItemConfig[] = [
     label: "Certificates",
     icon: BadgeCheck,
     shortcut: navShortcut("e"),
-  },
-  {
-    href: "/broker",
-    label: "Broker",
-    icon: Briefcase,
-    shortcut: navShortcut("b"),
   },
   {
     href: "/compliance",

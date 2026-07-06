@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ClipboardList, FileUp, Inbox, Link2 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   useCachedAgentTargets,
@@ -69,26 +68,18 @@ const GET_STARTED_ACTIONS = [
   {
     label: "Upload a policy",
     href: "/policies",
-    description: "Start coverage lookup, limits summaries and source-backed answers.",
-    icon: FileUp,
   },
   {
     label: "Add requirements",
     href: "/compliance",
-    description: "Create contract or vendor standards Glass can check against.",
-    icon: ClipboardList,
   },
   {
     label: "Connect a mailbox",
     href: "/settings?section=email",
-    description: "Let Glass find renewals, certificates and policy attachments.",
-    icon: Inbox,
   },
   {
     label: "Invite a vendor",
     href: "/connect/vendors",
-    description: "Request records and monitor vendor insurance compliance.",
-    icon: Link2,
   },
 ];
 
@@ -135,29 +126,16 @@ export function NewChatEmptyState({
     return (
       <div className="mx-auto w-full max-w-3xl pt-10 pb-8">
         <p className="mb-4 text-base text-muted-foreground/60">Get started</p>
-        <div className="grid gap-2 border-t border-foreground/10 pt-3 sm:grid-cols-2">
-          {GET_STARTED_ACTIONS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="group flex min-h-20 items-start gap-3 rounded-lg border border-foreground/10 px-3 py-3 text-left transition-colors hover:border-foreground/18 hover:bg-foreground/[0.025]"
-              >
-                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-foreground/10 text-muted-foreground/70 group-hover:text-foreground">
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-base font-medium leading-snug text-foreground/78 group-hover:text-foreground">
-                    {item.label}
-                  </span>
-                  <span className="mt-1 block text-label leading-snug text-muted-foreground/62">
-                    {item.description}
-                  </span>
-                </span>
-              </Link>
-            );
-          })}
+        <div className="border-t border-foreground/10">
+          {GET_STARTED_ACTIONS.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="block w-full border-b border-foreground/10 py-2.5 text-left text-base leading-snug text-foreground/70 transition-colors hover:text-foreground"
+            >
+              {item.label}
+            </Link>
+          ))}
         </div>
       </div>
     );
