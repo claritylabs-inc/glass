@@ -21,7 +21,6 @@ import {
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import { Webhook } from "svix";
 import {
-  buildConversationMemoryContext,
   buildScopedDocumentContext,
   buildScopedOrgMemoryContext,
   buildScopedRequirementsContext,
@@ -62,7 +61,6 @@ import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
   buildEmailDraftTextSummary,
 } from "../lib/emailDraftSummary";
-import { extractOrgMemoryFromExchange } from "../lib/orgMemoryExtraction";
 import { collectToolAudit } from "../lib/agentToolAudit";
 import { runInboundEmailDeterministicControls } from "../lib/inboundEmailDeterministicControls";
 
@@ -1073,12 +1071,7 @@ export const processInbound = internalAction({
         ...relevantPolicyIds.map(String),
       ]);
 
-      // Cross-thread conversation memory (vector search)
-      const memoryContext = await buildConversationMemoryContext(
-        ctx,
-        orgId,
-        subject + " " + body,
-      );
+      const memoryContext = "";
       const orgMemoryBlock = await buildScopedOrgMemoryContext(
         ctx,
         scope,
@@ -1177,7 +1170,7 @@ export const processInbound = internalAction({
         messages.push({ role: "user", content: emailText });
       }
 
-      // Build system context with optional attachment note and conversation memory
+      // Build system context with optional attachment note and curated memory
       let systemContext =
         systemPrompt +
         buildChannelInstructions({
@@ -1779,14 +1772,6 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             ? emailToolArtifacts
             : undefined,
         policyChangeCaseId: correlatedPolicyChangeCaseId,
-      });
-
-      await extractOrgMemoryFromExchange(ctx, {
-        orgId,
-        source: "email",
-        itemLimit: 5,
-        logPrefix: "[email]",
-        exchangeText: `INBOUND EMAIL (from ${fromEmail}):\nSubject: ${subject}\n\n${body}\n\n---\nAGENT REPLY:\n${responseBody}`,
       });
 
       // Audit: log agent references to policies

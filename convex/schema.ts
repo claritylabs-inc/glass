@@ -329,9 +329,7 @@ export default defineSchema({
     // Branding
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
-    type: v.optional(
-      v.union(v.literal("broker"), v.literal("client")),
-    ),
+    type: v.optional(v.union(v.literal("broker"), v.literal("client"))),
     // Set on client orgs only — ID of the managing broker org
     brokerOrgId: v.optional(v.id("organizations")),
     // Client-org lifecycle: "draft" = broker is preparing, "invited" = invite sent and pending,
@@ -414,6 +412,7 @@ export default defineSchema({
       v.literal("impersonation_started"),
       v.literal("impersonation_stopped"),
       v.literal("impersonation_chat_message"),
+      v.literal("memory_cleared"),
       v.literal("setup_write"),
     ),
     targetOrgId: v.optional(v.id("organizations")),

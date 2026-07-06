@@ -39,6 +39,7 @@ const extractionTraceStatusValidator = v.union(
 const internalApi = internal as any;
 const OPERATOR_TRACE_EVENT_LIMIT = 500;
 const CANCELLED_BY_USER = "Cancelled by user";
+const CLEAR_AGENT_MEMORY_CONFIRMATION = "CLEAR_AGENT_MEMORY";
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -375,6 +376,37 @@ export const current = query({
             targetOrgOperatorStatus: targetOrg.operatorStatus ?? "live",
           }
         : null,
+    };
+  },
+});
+
+export const clearAllAgentMemory = mutation({
+  args: {
+    confirmation: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    if (args.confirmation !== CLEAR_AGENT_MEMORY_CONFIRMATION) {
+      throw new Error(`Confirmation must be ${CLEAR_AGENT_MEMORY_CONFIRMATION}`);
+    }
+
+    await ctx.scheduler.runAfter(0, internalApi.memoryMaintenance.clearTableBatch, {
+      table: "orgMemory",
+    });
+    await ctx.scheduler.runAfter(0, internalApi.memoryMaintenance.clearTableBatch, {
+      table: "conversationTurns",
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "memory_cleared",
+      summary: "Scheduled org memory and raw conversation memory purge",
+      metadata: {
+        tables: ["orgMemory", "conversationTurns"],
+      },
+    });
+
+    return {
+      scheduled: ["orgMemory", "conversationTurns"],
     };
   },
 });
@@ -987,10 +1019,7 @@ export const setClientFeatureFlag = mutation({
     const operator = await requireOperator(ctx);
     const client = await ctx.db.get(args.clientOrgId);
     if (!client || client.type !== "client") throw new Error("Client not found");
-    assertFeatureFlagAllowedForOrg(args.flagId, {
-      type: "client",
-      featureFlags: client.featureFlags,
-    });
+    assertFeatureFlagAllowedForOrg(args.flagId, client);
     await ctx.db.patch(args.clientOrgId, {
       featureFlags: setFeatureFlagPatch(client.featureFlags, args.flagId, args.enabled),
     });

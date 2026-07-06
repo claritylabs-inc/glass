@@ -1472,28 +1472,6 @@ export const confirmPolicyFactFromSource = internalMutation({
       await ctx.db.patch(args.id, patch);
     }
 
-    const now = dayjs().valueOf();
-    const memoryContent = `Policy ${policy.policyNumber ?? args.id}: ${args.fact}`;
-    const existingFacts = await ctx.db
-      .query("orgMemory")
-      .withIndex("by_org_type", (q) =>
-        q.eq("orgId", args.orgId).eq("type", "fact"),
-      )
-      .collect();
-    const duplicateFact = existingFacts.find((memory) => memory.content === memoryContent);
-    if (duplicateFact) {
-      await ctx.db.patch(duplicateFact._id, { updatedAt: now });
-    } else {
-      await ctx.db.insert("orgMemory", {
-        orgId: args.orgId,
-        type: "fact",
-        content: memoryContent,
-        source: args.source ?? "chat",
-        policyId: args.id,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId: args.userId,

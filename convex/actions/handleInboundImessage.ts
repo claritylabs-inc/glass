@@ -55,7 +55,6 @@ import {
   type ImessageAppCard,
 } from "../lib/imessageAppCards";
 import { runImessageDeterministicControls } from "../lib/imessageDeterministicControls";
-import { extractOrgMemoryFromExchange } from "../lib/orgMemoryExtraction";
 import { postProcessImessageResponseText } from "../lib/imessageResponsePostProcessing";
 import { collectToolAudit } from "../lib/agentToolAudit";
 import { createImessageAgentRunState } from "../lib/imessageAgentRunState";
@@ -830,16 +829,6 @@ export const processInbound = internalAction({
         policyChangeCaseId,
         usedTools,
       });
-
-      if (currentSenderIsLinked) {
-        await extractOrgMemoryFromExchange(ctx, {
-          orgId: currentParticipant?.orgId ?? orgId,
-          source: "imessage",
-          itemLimit: 3,
-          logPrefix: "[imessage]",
-          exchangeText: `USER: ${args.messageText}\n\nAGENT: ${emailResult?.responseBody ?? responseText}`,
-        });
-      }
 
       return await finish(
         responseAlreadySent ? "" : responseText,

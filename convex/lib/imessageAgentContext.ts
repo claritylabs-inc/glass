@@ -6,7 +6,6 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
   buildComplianceRequirementsContext,
-  buildConversationMemoryContext,
   buildDocumentContext,
   buildIntelligenceContext,
 } from "./agentPrompts";
@@ -107,11 +106,7 @@ export async function buildImessageKnowledgeContext(
     relevantPolicyIds.push(...(built.relevantPolicyIds as Id<"policies">[]));
   }
 
-  const memoryContext = await buildConversationMemoryContext(
-    ctx,
-    args.orgId,
-    args.retrievalQuery,
-  );
+  const memoryContext = "";
   const orgMemoryBlocks = await Promise.all(
     args.readOrgIds.map(async (orgId) => {
       const orgName = args.orgNamesById[String(orgId)] ?? "Linked organization";

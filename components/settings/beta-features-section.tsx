@@ -3,11 +3,6 @@
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
-import {
-  OperationalPanel,
-  OperationalPanelBody,
-  OperationalPanelHeader,
-} from "@/components/ui/operational-panel";
 import { FeatureFlagToggleRow } from "@/components/settings/feature-flag-toggle-row";
 import {
   betaFeatureFlagsForOrgType,
@@ -43,18 +38,15 @@ export function BetaFeaturesSection() {
   }
 
   return (
-    <OperationalPanel>
-      <OperationalPanelHeader title="Beta Features" className="px-5 py-3.5" />
-      <OperationalPanelBody className="space-y-3 px-5 py-5">
-        {flags.map((flag) => (
-          <FeatureFlagToggleRow
-            key={flag.id}
-            flag={flag}
-            enabled={isFeatureEnabled(org, flag.id)}
-            onChange={(enabled) => void updateFeatureFlag(flag.id, enabled)}
-          />
-        ))}
-      </OperationalPanelBody>
-    </OperationalPanel>
+    <div className="w-full space-y-3">
+      {flags.map((flag) => (
+        <FeatureFlagToggleRow
+          key={flag.id}
+          flag={flag}
+          enabled={isFeatureEnabled(org, flag.id)}
+          onChange={(enabled) => void updateFeatureFlag(flag.id, enabled)}
+        />
+      ))}
+    </div>
   );
 }
