@@ -142,17 +142,5 @@ async function createPolicyChangeCaseAfterAccess(
       missingInfoQuestions: brokerMissingInfo,
       brokerSubmission,
     });
-    if (args.policyId) {
-      const partner = await ctx.runQuery(internal.partnerPrograms.resolvePolicyPartner, {
-        policyId: args.policyId,
-      });
-      if (partner?.partnerOrgId) {
-        await ctx.runMutation(internal.partnerPrograms.markPolicyChangePendingPartnerInternal, {
-          caseId,
-          partnerOrgId: partner.partnerOrgId,
-          partnerProgramId: partner.partnerProgramId,
-        });
-      }
-    }
     return { caseId: String(caseId), usedSdkPce: false };
 }

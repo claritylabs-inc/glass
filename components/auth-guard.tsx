@@ -114,13 +114,11 @@ function DashboardLoading() {
 type OperatorNavSection =
   | "brokers"
   | "clients"
-  | "mgas"
   | "models"
   | "extractions";
 
 function getOperatorActiveSection(pathname: string): OperatorNavSection {
   if (pathname.startsWith("/operator/clients")) return "clients";
-  if (pathname.startsWith("/operator/mgas")) return "mgas";
   if (pathname.startsWith("/operator/models")) return "models";
   if (pathname.startsWith("/operator/extractions")) return "extractions";
   return "brokers";

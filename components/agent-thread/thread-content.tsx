@@ -81,7 +81,6 @@ import type {
   VendorComplianceArtifactRef,
 } from "@/components/agent-thread/types";
 import {
-  CertificateProgramSelectionArtifacts,
   CertificateHoldArtifacts,
   EmailStackCard,
   EmailSummaryCard,
@@ -1634,9 +1633,6 @@ export function UnifiedMessageBubble({
                   artifacts={msg.toolArtifacts}
                   openArtifactRef={openVendorComplianceArtifactRef}
                   onOpenArtifact={onOpenVendorCompliance}
-                />
-                <CertificateProgramSelectionArtifacts
-                  artifacts={msg.toolArtifacts}
                 />
                 <CertificateHoldArtifacts
                   artifacts={msg.toolArtifacts}

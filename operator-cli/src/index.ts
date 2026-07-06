@@ -59,7 +59,6 @@ program
   .option("--name <name>", "broker organization name")
   .option("--slug <slug>", "broker workspace slug")
   .option("--website <url>", "broker website")
-  .option("--partner-type <type>", "broker | program_admin | carrier | other")
   .option("--branding-color <hex>", "broker branding hex color")
   .option("--white-labeling-enabled <boolean>", "true or false")
   .option("--agent-display-name <name>", "broker agent display name")
@@ -106,7 +105,6 @@ async function buildProvisionPayload(options: Record<string, unknown>) {
       name,
       slug: optionalString(options.slug),
       website: optionalString(options.website),
-      partnerType: optionalString(options.partnerType),
       brandingColor: optionalString(options.brandingColor),
       whiteLabelingEnabled: parseOptionalBoolean(options.whiteLabelingEnabled),
       agentDisplayName: optionalString(options.agentDisplayName),

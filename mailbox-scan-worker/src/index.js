@@ -1,5 +1,6 @@
 const siteUrl = process.env.CONVEX_SITE_URL;
 const cronSecret = process.env.EMAIL_SCAN_CRON_SECRET;
+const glassEnv = process.env.GLASS_ENV || process.env.RAILWAY_ENVIRONMENT_NAME || "local";
 
 if (!siteUrl) {
   throw new Error("CONVEX_SITE_URL is required");
@@ -11,7 +12,9 @@ if (!cronSecret) {
 
 const url = `${siteUrl.replace(/\/$/, "")}/cron/connected-email/scan`;
 const startedAt = new Date().toISOString();
-console.log(`[mailbox-scan-worker] Starting connected-mailbox scan at ${startedAt}`);
+console.log(`[mailbox-scan-worker] Starting connected-mailbox scan at ${startedAt}`, {
+  glassEnv,
+});
 
 const response = await fetch(url, {
   method: "POST",

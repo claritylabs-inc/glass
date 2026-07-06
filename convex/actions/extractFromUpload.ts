@@ -15,12 +15,14 @@ export const extractFromUpload = action({
   args: {
     fileId: v.id("_storage"),
     fileName: v.optional(v.string()),
+    fileSha256: v.optional(v.string()),
     // Additional files to merge with the primary before extraction
     additionalFiles: v.optional(
       v.array(
         v.object({
           fileId: v.id("_storage"),
           fileName: v.optional(v.string()),
+          fileSha256: v.optional(v.string()),
         }),
       ),
     ),
@@ -37,6 +39,10 @@ export const extractFromUpload = action({
 
     const orgId = orgData.membership.orgId as Id<"organizations">;
     const userId = viewer._id as Id<"users">;
+    const uploadFileSha256s = [
+      args.fileSha256,
+      ...(args.additionalFiles ?? []).map((file) => file.fileSha256),
+    ].filter((hash): hash is string => Boolean(hash));
 
     // If additional files are provided, merge them all into a single PDF and use
     // that as the primary file. Original storage objects are left orphaned.
@@ -71,6 +77,7 @@ export const extractFromUpload = action({
       orgId,
       fileId: primaryFileId,
       fileName: primaryFileName,
+      uploadFileSha256s,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
       policyTypes: ["other"],
@@ -104,6 +111,7 @@ export const extractFromUpload = action({
       reconciliationStatus: "pending" as const,
       primaryFileId,
       primaryFileName: primaryFileName || "upload.pdf",
+      uploadFileSha256s,
     });
 
     await ctx.runMutation(internal.policyAuditLog.append, {

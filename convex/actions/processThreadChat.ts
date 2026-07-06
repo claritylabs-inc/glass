@@ -9,7 +9,6 @@ import { streamText, stepCountIs, type ModelMessage } from "ai";
 import mammoth from "mammoth";
 import JSZip from "jszip";
 import {
-  canRetryDirectRouteThroughGateway,
   fallbackRouteForCall,
   generateTextWithFallback,
   getModelAndRouteForOrg,
@@ -1254,7 +1253,6 @@ export const run = internalAction({
           operatorInitiatedUserMessageId: scope.operatorInitiated
             ? args.userMessageId
             : undefined,
-          org,
           onPolicyReferenced: (policyId) => {
             citedPolicyIds.add(String(policyId));
           },
@@ -1436,8 +1434,6 @@ export const run = internalAction({
                   ? false
                   : org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
-                autoGenerateCoi: org.autoGenerateCoi,
-                coiHandling: org.coiHandling,
                 conversationContext:
                   allMessages
                     .filter(
@@ -1716,35 +1712,20 @@ export const run = internalAction({
           toolArtifacts.length > 0 ||
           responseAttachments.length > 0 ||
           !!policyChangeCaseId;
-        const canGatewayRetry = canRetryDirectRouteThroughGateway({
-          error: streamError,
-          primaryRoute: chatModel.route,
-          primaryTransport: chatModel.transport,
-          primaryRouteSource: chatModel.routeSource,
-        });
-        if (
-          (!isTransientChatStreamError(streamError) && !canGatewayRetry) ||
-          hasStartedSideEffectfulWork
-        ) {
+        if (!isTransientChatStreamError(streamError) || hasStartedSideEffectfulWork) {
           throw streamError;
         }
 
-        const fallbackRoute = canGatewayRetry
-          ? null
-          : fallbackRouteForCall({
-              task: "chat",
-              taskKind: "query_reason",
-              primaryRoute: chatModel.route,
-            });
+        const fallbackRoute = fallbackRouteForCall({
+          task: "chat",
+          taskKind: "query_reason",
+          primaryRoute: chatModel.route,
+          fallbackRoute: chatModel.fallbackRoute,
+        });
         const retryRoute = fallbackRoute ?? chatModel.route;
-        const retryModel = canGatewayRetry
-          ? getModelForRoute(chatModel.route, { transport: "gateway" })
-          : fallbackRoute
-            ? getModelForRoute(fallbackRoute)
-            : chatModel.model;
-        const retryTransport = canGatewayRetry ? " via Vercel AI Gateway" : "";
+        const retryModel = fallbackRoute ? getModelForRoute(fallbackRoute) : chatModel.model;
         console.warn(
-          `[processThreadChat] Retrying chat stream after provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}${retryTransport}. ${errorText(streamError)}`,
+          `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
         );
         await resetStreamStateForRetry();
         const completed = await consumeChatStream(

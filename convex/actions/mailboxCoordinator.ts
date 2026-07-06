@@ -7,7 +7,8 @@ import { z } from "zod";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import { getModelAndRouteForOrg, getProviderOptionsForTask } from "../lib/models";
+import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
 import { getImessageWorkerUrl } from "../lib/imessageConfig";
 import {
   importConnectedEmailRequirementAttachments,
@@ -122,7 +123,8 @@ export const runInternal = internalAction({
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<Record<string, unknown>> => {
-    const model = await getModelForOrg(ctx, args.orgId, "mailbox_coordinator");
+    const modelRoute = await getModelAndRouteForOrg(ctx, args.orgId, "mailbox_coordinator");
+    const model = modelRoute.model;
     const providerOptions = getProviderOptionsForTask("mailbox_coordinator");
     const selectedAccounts = args.accountIds?.length
       ? await Promise.all(
@@ -189,7 +191,7 @@ export const runInternal = internalAction({
     const planResult = await generateObject({
       model,
       providerOptions,
-      schema: MailboxPlanSchema,
+      schema: structuredOutputSchemaForRoute(MailboxPlanSchema, modelRoute.route),
       maxOutputTokens: 768,
       system: `You are planning a Glass mailbox subagent task. Produce a concise operational plan before any mailbox search/read/import work runs.
 
@@ -466,7 +468,7 @@ ${selectedAccountRows.length ? selectedAccountRows.map((account) => `  - ${accou
         ? await generateObject({
             model,
             providerOptions,
-            schema: MailboxEvidenceSchema,
+            schema: structuredOutputSchemaForRoute(MailboxEvidenceSchema, modelRoute.route),
             maxOutputTokens: 1536,
             system: `Summarize the specific mailbox evidence used by the coordinator for UI artifacts.
 

@@ -11,17 +11,16 @@ import {
   createConvexSchedulerAdapter,
 } from "@claritylabs/cl-pipelines/convex";
 import type { Phase, PhaseResult } from "@claritylabs/cl-pipelines";
-import {
-  buildExtractor,
-  summarizeExtractionCheckpoint,
-} from "../lib/extraction";
+import { buildExtractor } from "../lib/extraction";
 import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
 import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
-import type { ExtractionResult, ExtractionState, PipelineCheckpoint } from "../lib/extraction";
+import type { ExtractionResult, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+
+type ExtractionState = Record<string, unknown>;
 import {
   openExtractionReviewQuestions,
   postProcessExtractionDocument,
@@ -44,7 +43,6 @@ const ADVANCE_LEASE_MS = 2 * 60 * 1000;
 const ADVANCE_LEASE_HEARTBEAT_MS = 30 * 1000;
 const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
 const EMBEDDING_CONCURRENCY = readBoundedIntEnv("EXTRACTION_EMBEDDING_CONCURRENCY", 8, 1, 16);
-const CHECKPOINT_LOG_THRESHOLD_BYTES = 256 * 1024;
 const EXTERNAL_WORKER_MODE = process.env.EXTRACTION_WORKER_MODE === "external";
 const EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION =
   process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION;
@@ -166,9 +164,9 @@ export type PolicyExtractionState = {
   policyVersionKind?: "new_policy" | "re_extraction" | "renewal";
   traceId?: string;
   externalWorker?: boolean;
-  /** Deprecated inline SDK checkpoint. Kept for legacy in-flight resumes. */
+  /** Deprecated inline SDK checkpoint. Kept only so legacy stored state can deserialize. */
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
-  /** Storage-backed SDK checkpoint. Prevents near-1MB pipeline state documents. */
+  /** Deprecated storage-backed SDK checkpoint. New source-span SDK runs do not write it. */
   clSdkCheckpointFileId?: string;
   chunkIds?: string[];
   sourceSpanIds?: string[];
@@ -224,7 +222,6 @@ type ExternalCompletionPayload = {
   warnings?: string[];
   tokenUsage?: unknown;
   performanceReport?: unknown;
-  checkpoint?: PipelineCheckpoint<ExtractionState>;
 };
 
 type ExternalClaimResult = {
@@ -233,9 +230,9 @@ type ExternalClaimResult = {
   leaseExpiresAt: number;
   state: PolicyExtractionState;
   fileUrl: string;
-  clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
   modelSettings?: {
     routes?: Record<string, { provider: string; model: string }>;
+    routeSources?: Record<string, string>;
     providerKeys?: Record<string, string>;
   };
 } | null;
@@ -256,7 +253,6 @@ type ExternalPreviewClaimResult = {
 type ExternalAckResult = {
   ok: boolean;
   leaseExpiresAt?: number;
-  checkpointFileId?: string | undefined;
 };
 
 type ExternalCompleteArgs = {
@@ -273,7 +269,6 @@ type ExternalCompleteArgs = {
   warnings?: string[];
   tokenUsage?: unknown;
   performanceReport?: unknown;
-  checkpoint?: unknown;
 };
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
@@ -360,12 +355,6 @@ async function completeTraceSession(
   }
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}
-
 function requireExtractionWorkerSecret(secret: string): void {
   const expected = process.env.EXTRACTION_WORKER_SECRET;
   if (!expected || secret !== expected) {
@@ -403,33 +392,6 @@ function validateExternalWorkerCompatibility(args: {
     }
   }
   return undefined;
-}
-
-function compactClSdkCheckpoint(
-  checkpoint: PipelineCheckpoint<ExtractionState>,
-): {
-  checkpoint: PipelineCheckpoint<ExtractionState>;
-  omittedDocument: boolean;
-} {
-  const raw = checkpoint as PipelineCheckpoint<ExtractionState> & {
-    state?: Record<string, unknown>;
-  };
-
-  // The SDK can checkpoint the assembled document alongside extraction memory.
-  // Memory is sufficient to resume and reassemble, while storing both can push
-  // the JSON artifact close to Convex's practical size/timeout limits.
-  if (checkpoint.phase !== "assemble" || !raw.state || raw.state.document === undefined) {
-    return { checkpoint, omittedDocument: false };
-  }
-
-  const { document: _document, ...stateWithoutDocument } = raw.state;
-  return {
-    checkpoint: {
-      ...checkpoint,
-      state: stateWithoutDocument as ExtractionState,
-    },
-    omittedDocument: true,
-  };
 }
 
 async function runBounded<T>(
@@ -551,6 +513,36 @@ function isCancelledError(error: unknown): boolean {
   return error instanceof Error && error.message === CANCELLED_BY_USER;
 }
 
+async function externalLeaseMatches(
+  ctx: ActionCtx,
+  args: { policyId: string; leaseId: string; state?: unknown },
+): Promise<boolean> {
+  const job = await ctx.runQuery(internal.policies.pipelineGetJob, {
+    jobId: args.policyId,
+  }) as {
+    status?: string;
+    checkpoint?: LeasedPolicyCheckpoint | null;
+  } | null;
+  const checkpoint = job?.checkpoint;
+  if (
+    job?.status !== "running" ||
+    checkpoint?.nextPhase !== "extract" ||
+    checkpoint.lease?.id !== args.leaseId
+  ) {
+    return false;
+  }
+  const claimedState = args.state as PolicyExtractionState | undefined;
+  const currentState = checkpoint.state;
+  if (
+    claimedState?.traceId &&
+    currentState.traceId &&
+    claimedState.traceId !== currentState.traceId
+  ) {
+    return false;
+  }
+  return true;
+}
+
 async function loadPdfBytes(
   ctx: ActionCtx,
   fileId: string,
@@ -608,17 +600,6 @@ async function getLatestArtifactStorageId(
   return artifact?.storageId ? String(artifact.storageId) : undefined;
 }
 
-async function loadClSdkCheckpoint(
-  ctx: ActionCtx,
-  jobId: string,
-  state: PolicyExtractionState,
-): Promise<PipelineCheckpoint<ExtractionState> | undefined> {
-  if (state.clSdkCheckpoint) return state.clSdkCheckpoint;
-  const storageId = state.clSdkCheckpointFileId
-    ?? await getLatestArtifactStorageId(ctx, jobId, "cl_sdk_checkpoint");
-  return await loadJsonArtifact<PipelineCheckpoint<ExtractionState>>(ctx, storageId);
-}
-
 async function storeEmbeddingPayload(
   ctx: ActionCtx,
   jobId: string,
@@ -636,35 +617,6 @@ async function loadExternalCompletionPayload(
 
 function asOptionalId<T extends string>(value: unknown): T | undefined {
   return typeof value === "string" && value.length > 0 ? value as T : undefined;
-}
-
-async function storeClSdkCheckpoint(
-  ctx: ActionCtx,
-  jobId: string,
-  checkpoint: PipelineCheckpoint<ExtractionState>,
-  log?: (message: string, level?: PipelineLogLevel) => Promise<void>,
-): Promise<string> {
-  const compacted = compactClSdkCheckpoint(checkpoint);
-  const stored = await storeJsonArtifact(
-    ctx,
-    jobId,
-    "cl_sdk_checkpoint",
-    compacted.checkpoint,
-  );
-
-  const shouldLog =
-    compacted.omittedDocument ||
-    stored.byteLength >= CHECKPOINT_LOG_THRESHOLD_BYTES ||
-    stored.durationMs >= 1000;
-  if (shouldLog && log) {
-    const compactNote = compacted.omittedDocument ? "; omitted assembled document" : "";
-    await log(
-      `Saved cl-sdk ${checkpoint.phase} checkpoint (${formatBytes(stored.byteLength)} in ${stored.durationMs}ms${compactNote})`,
-      stored.byteLength >= 900 * 1024 ? "warn" : "info",
-    );
-  }
-
-  return stored.storageId;
 }
 
 async function loadEmbeddingPayload(
@@ -758,86 +710,12 @@ const additionalInsuredEligibilitySchema = z.object({
   overallSummary: z.string(),
 });
 
-type OperationalCoverageOrigin = "core" | "endorsement";
-
-type OperationalCoverageWithOrigin = PolicyOperationalProfile["coverages"][number] & {
-  coverageOrigin?: OperationalCoverageOrigin;
-  coverageOriginConfidence?: "low" | "medium" | "high";
-  coverageOriginReason?: string;
-};
-
 type AdditionalInsuredEligibility = z.infer<typeof additionalInsuredEligibilitySchema>;
 
 type OperationalProfileWithEligibility = PolicyOperationalProfile & {
   additionalInsuredEligibility?: AdditionalInsuredEligibility;
   additionalInsureds?: AdditionalInsuredEligibility["additionalInsureds"];
 };
-
-function fallbackCoverageOrigin(
-  coverage: PolicyOperationalProfile["coverages"][number],
-  nodesById: Map<string, DocumentSourceNode>,
-): { origin: OperationalCoverageOrigin; confidence: "low" | "medium"; reason: string } {
-  const evidenceText = coverage.sourceNodeIds
-    .map((nodeId: string) => {
-      const node = nodesById.get(nodeId);
-      if (!node) return "";
-      return [
-        node.kind,
-        node.title,
-        node.description,
-        node.textExcerpt,
-        Array.isArray(node.path) ? node.path.join(" ") : node.path,
-      ].filter(Boolean).join(" ");
-    })
-    .join(" ");
-  if (/\b(endorsement|endorse|amend|amendatory|rider|change endorsement|endt\.?|end\.?|nwc-end)\b/i.test(evidenceText)) {
-    return {
-      origin: "endorsement",
-      confidence: "medium",
-      reason: "Source evidence appears in an endorsement or amendatory form.",
-    };
-  }
-  return {
-    origin: "core",
-    confidence: "low",
-    reason: "No endorsement signal was found in the cited source evidence.",
-  };
-}
-
-function annotateCoverageOriginsFallback(
-  profile: PolicyOperationalProfile,
-  sourceTree: DocumentSourceNode[],
-): PolicyOperationalProfile {
-  const nodesById = new Map(sourceTree.map((node) => [node.id, node]));
-  return {
-    ...profile,
-    coverages: profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => {
-      const existing = coverage as OperationalCoverageWithOrigin;
-      if (existing.coverageOrigin) return coverage;
-      const fallback = fallbackCoverageOrigin(coverage, nodesById);
-      return {
-        ...coverage,
-        coverageOrigin: fallback.origin,
-        coverageOriginConfidence: fallback.confidence,
-        coverageOriginReason: fallback.reason,
-      } as OperationalCoverageWithOrigin;
-    }) as PolicyOperationalProfile["coverages"],
-  };
-}
-
-async function validateOperationalCoverageLines(params: {
-  ctx: ActionCtx;
-  orgId: Id<"organizations">;
-  traceId?: string;
-  policyId: string;
-  sourceTree: DocumentSourceNode[];
-  profile: PolicyOperationalProfile;
-  log?: (message: string, level?: PipelineLogLevel) => Promise<void>;
-}): Promise<PolicyOperationalProfile> {
-  if (params.profile.coverages.length === 0) return params.profile;
-  await params.log?.("Using source-native coverage rows without LLM coverage validation", "info");
-  return annotateCoverageOriginsFallback(params.profile, params.sourceTree);
-}
 
 function additionalInsuredEligibilityExcerpt(sourceTree: DocumentSourceNode[]): {
   text: string;
@@ -1381,8 +1259,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
   };
 
   // ── Phase 2: extract ──────────────────────────────────────────────────────────
-  // Wraps cl-sdk buildExtractor. cl-sdk's internal checkpoint is the ONLY state
-  // this phase carries on cl-pipelines' checkpoint.
   const extractPhase: Phase<PolicyExtractionState> = {
     name: "extract",
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
@@ -1401,7 +1277,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       if (!pdfBytes) return { kind: "error", error: "File not found in storage" };
 
       const policyId = pCtx.jobId;
-      const clSdkCheckpoint = await loadClSdkCheckpoint(convexCtx, policyId, state);
       const pdfSource = await preparePdfTextWithParserFallback({
         pdfBytes,
         documentId: policyId,
@@ -1411,65 +1286,61 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         await pCtx.log(`Prepared ${pdfSource.sourceSpans.length} ${pdfSource.parserBackend} source spans for source-grounded extraction`);
       }
 
-      if (clSdkCheckpoint) {
-        await pCtx.log(`Resuming extraction from cl-sdk phase "${clSdkCheckpoint.phase}"…`);
-      } else {
-        await pCtx.log("Checking whether the PDF is a bound policy document…");
-        try {
-          const gateDecision = await classifyInsuranceExtractability({
-            ctx: convexCtx,
-            orgId: state.orgId as Id<"organizations">,
-            traceId: state.traceId,
-            policyId,
-            pdfBytes,
-            sourceSpans: pdfSource.sourceSpans,
-          });
-          await pCtx.log(
-            `Document gate: ${gateDecision.classification} (${Math.round(gateDecision.confidence * 100)}% confidence) — ${gateDecision.reason}`,
-          );
+      await pCtx.log("Checking whether the PDF is a bound policy document…");
+      try {
+        const gateDecision = await classifyInsuranceExtractability({
+          ctx: convexCtx,
+          orgId: state.orgId as Id<"organizations">,
+          traceId: state.traceId,
+          policyId,
+          pdfBytes,
+          sourceSpans: pdfSource.sourceSpans,
+        });
+        await pCtx.log(
+          `Document gate: ${gateDecision.classification} (${Math.round(gateDecision.confidence * 100)}% confidence) — ${gateDecision.reason}`,
+        );
 
-          if (shouldRejectDocument(gateDecision)) {
-            const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
-            await convexCtx.runMutation(
-              (internal as any).policies.updateExtractionInternal,
-              {
-                id: policyId,
-                fields: {
-                  carrier: "Non-insurance document",
-                  policyNumber: "Not applicable",
-                  policyTypes: ["other"],
-                  insuredName: "Not applicable",
-                  effectiveDate: "Not applicable",
-                  expirationDate: "Not applicable",
-                  summary: rejectionSummary,
-                  excludeFromSearch: true,
-                },
+        if (shouldRejectDocument(gateDecision)) {
+          const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
+          await convexCtx.runMutation(
+            (internal as any).policies.updateExtractionInternal,
+            {
+              id: policyId,
+              fields: {
+                carrier: "Non-insurance document",
+                policyNumber: "Not applicable",
+                policyTypes: ["other"],
+                insuredName: "Not applicable",
+                effectiveDate: "Not applicable",
+                expirationDate: "Not applicable",
+                summary: rejectionSummary,
+                excludeFromSearch: true,
               },
-            );
-
-            if (state.fileId) {
-              await convexCtx.runMutation((internal as any).policies.updateFiles, {
-                id: policyId,
-                files: [
-                  {
-                    fileId: state.fileId as Id<"_storage">,
-                    fileName: state.fileName || "upload.pdf",
-                    fileType: "unknown",
-                    status: "not_insurance",
-                  },
-                ],
-                reconciliationStatus: "error" as const,
-              });
-            }
-
-            return { kind: "error", error: rejectionSummary };
-          }
-        } catch (error) {
-          await pCtx.log(
-            `Warning: document gate failed; continuing extraction (${error instanceof Error ? error.message : String(error)})`,
-            "warn",
+            },
           );
+
+          if (state.fileId) {
+            await convexCtx.runMutation((internal as any).policies.updateFiles, {
+              id: policyId,
+              files: [
+                {
+                  fileId: state.fileId as Id<"_storage">,
+                  fileName: state.fileName || "upload.pdf",
+                  fileType: "unknown",
+                  status: "not_insurance",
+                },
+              ],
+              reconciliationStatus: "error" as const,
+            });
+          }
+
+          return { kind: "error", error: rejectionSummary };
         }
+      } catch (error) {
+        await pCtx.log(
+          `Warning: document gate failed; continuing extraction (${error instanceof Error ? error.message : String(error)})`,
+          "warn",
+        );
       }
 
       const extractor = buildExtractor({
@@ -1481,31 +1352,13 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         onProgress: async (msg) => { await pCtx.log(msg); },
         shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
         pageScreenshots: pdfSource.pageScreenshots,
-        onCheckpointSave: async (cp) => {
-          if (await isExtractionCancelled(convexCtx, policyId)) {
-            throw new Error(CANCELLED_BY_USER);
-          }
-          // Route cl-sdk's checkpoint through cl-pipelines' saveState, storing
-          // the large checkpoint payload outside the hot runtime document.
-          if (cp.phase === "assemble") {
-            await pCtx.log("Saving compact assemble checkpoint...");
-          }
-          const checkpointFileId = await storeClSdkCheckpoint(convexCtx, policyId, cp, pCtx.log);
-          await pCtx.saveState({
-            ...state,
-            clSdkCheckpoint: undefined,
-            clSdkCheckpointFileId: checkpointFileId,
-          });
-          if (cp.phase === "assemble") {
-            await pCtx.log("Assemble checkpoint saved; continuing with summary and formatting...");
-          }
-        },
       });
 
       const extractOptions: ExtractOptions = {
-        ...(clSdkCheckpoint ? { resumeFrom: clSdkCheckpoint } : {}),
         ...(pdfSource.sourceSpans.length > 0
-          ? { sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>> }
+          ? {
+              sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>>,
+            }
           : {}),
       };
 
@@ -1526,20 +1379,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       if (await isExtractionCancelled(convexCtx, pCtx.jobId)) {
         return { kind: "error", error: CANCELLED_BY_USER };
-      }
-
-      if (result.checkpoint) {
-        const checkpointFileId = await storeClSdkCheckpoint(
-          convexCtx,
-          policyId,
-          result.checkpoint,
-          pCtx.log,
-        );
-        await pCtx.saveState({
-          ...state,
-          clSdkCheckpoint: undefined,
-          clSdkCheckpointFileId: checkpointFileId,
-        });
       }
 
       const resultSourceSpans = Array.isArray((result as any).sourceSpans)
@@ -1570,9 +1409,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           `Extraction model calls: ${result.performanceReport.modelCalls.length}; total model time: ${totalSeconds}s`,
         );
       }
-      for (const line of summarizeExtractionCheckpoint(result)) {
-        await pCtx.log(line);
-      }
 
       const processed = await postProcessExtractionDocument({
         ctx: convexCtx,
@@ -1588,9 +1424,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         (result as any).operationalProfile,
         sourceNodes,
         canonicalSpans,
-        doc as Record<string, unknown>,
       );
-      const validatedOperationalProfile = await validateOperationalCoverageLines({
+      const operationalProfile = await extractAdditionalInsuredEligibility({
         ctx: convexCtx,
         orgId: state.orgId as Id<"organizations">,
         traceId: state.traceId,
@@ -1599,18 +1434,12 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         profile: normalizedOperationalProfile,
         log: async (message, level) => { await pCtx.log(message, level); },
       });
-      const operationalProfile = await extractAdditionalInsuredEligibility({
-        ctx: convexCtx,
-        orgId: state.orgId as Id<"organizations">,
-        traceId: state.traceId,
-        policyId,
-        sourceTree: sourceNodes,
-        profile: validatedOperationalProfile,
-        log: async (message, level) => { await pCtx.log(message, level); },
-      });
       const fields = processed.fields;
       const docName = doc.policyNumber || "policy";
       const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
+      const existingPolicy = await convexCtx.runQuery(internal.policies.getInternal, {
+        id: policyId as Id<"policies">,
+      }) as { policyTypes?: string[] } | null;
 
       await convexCtx.runMutation(
         (internal as any).policies.updateExtractionInternal,
@@ -1624,6 +1453,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               operationalProfile,
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
+              existingPolicyTypes: existingPolicy?.policyTypes,
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -1632,16 +1462,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         },
       );
 
-      // Update policyFiles record if present
-      if (state.policyFileId) {
-        await convexCtx.runMutation(
-          (internal as any).policyFiles.updateExtraction,
-          {
-            id: state.policyFileId,
-            extractedData: result.document,
-          },
-        );
-      }
       await convexCtx.runMutation((internal as any).policies.updateFiles, {
         id: policyId,
         files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
@@ -1656,8 +1476,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const chunkIds = chunks.map((c: { id: string }) => c.id);
       const nextState: PolicyExtractionState = {
         ...state,
-        clSdkCheckpoint: undefined, // clear — extraction done
-        clSdkCheckpointFileId: undefined,
         embeddingPayloadFileId,
         chunkIds,
         sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
@@ -1964,22 +1782,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             { policyId },
           );
           await convexCtx.runMutation(
-            (internal as any).declarationFacts.scanOrgInternal,
-            { orgId: finalPolicy.orgId, notifyExternal: false },
-          );
-          const certificateWorkflowSettings = await convexCtx.runQuery(
-            (internal as any).certificateWorkflowSettings.getEffectiveInternal,
-            { orgId: finalPolicy.orgId as Id<"organizations"> },
-          ).catch(() => null);
-          if (certificateWorkflowSettings?.populateHoldersFromEndorsements !== false) {
-            await convexCtx.runMutation(
-              (internal as any).certificateHolders.populateForPolicyInternal,
-              { policyId },
-            );
-          }
-          await convexCtx.runAction(
-            (internal as any).actions.declarationDiscrepancyCopy.phraseOpenInternal,
-            { orgId: finalPolicy.orgId },
+            (internal as any).certificateHolders.populateForPolicyInternal,
+            { policyId },
           );
           const reviewQuestions = openExtractionReviewQuestions(finalPolicy.extractionReview);
           if (reviewQuestions.length > 0) {
@@ -1999,15 +1803,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             { policyId, sourceKind: "policy" },
           );
         }
-      } catch { /* non-critical */ }
-
-      // Schedule duplicate detection
-      try {
-        await convexCtx.scheduler.runAfter(
-          2000,
-          (internal as any).actions.detectDuplicatePolicies.detectDuplicates,
-          { policyId, orgId: state.orgId },
-        );
       } catch { /* non-critical */ }
 
       await pCtx.log("Post-processing complete");
@@ -2171,6 +1966,7 @@ export const claimExternalJob = action({
     let modelSettings:
       | {
           routes?: Record<string, { provider: string; model: string }>;
+          routeSources?: Record<string, string>;
           providerKeys?: Record<string, string>;
         }
       | undefined;
@@ -2192,7 +1988,6 @@ export const claimExternalJob = action({
       leaseExpiresAt,
       state: claimed.checkpoint.state,
       fileUrl,
-      clSdkCheckpoint: await loadClSdkCheckpoint(ctx, claimed.policyId, claimed.checkpoint.state),
       modelSettings,
     };
   },
@@ -2324,12 +2119,14 @@ export const logExternalJob = action({
   args: {
     secret: v.string(),
     policyId: v.string(),
+    leaseId: v.string(),
     message: v.string(),
     phase: v.optional(v.string()),
     level: v.optional(v.union(v.literal("info"), v.literal("warn"), v.literal("error"))),
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
+    if (!await externalLeaseMatches(ctx, args)) return { ok: false };
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: args.policyId,
       timestamp: nowMs(),
@@ -2392,75 +2189,11 @@ export const recordExternalTraceEvent = action({
   },
 });
 
-export const saveExternalCheckpoint = action({
-  args: {
-    secret: v.string(),
-    policyId: v.string(),
-    leaseId: v.string(),
-    state: v.any(),
-    checkpoint: v.any(),
-  },
-  handler: async (ctx, args): Promise<ExternalAckResult> => {
-    requireExtractionWorkerSecret(args.secret);
-    const checkpointFileId = await storeClSdkCheckpoint(
-      ctx,
-      args.policyId,
-      args.checkpoint as PipelineCheckpoint<ExtractionState>,
-      async (message, level = "info") => {
-        await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-          jobId: args.policyId,
-          timestamp: nowMs(),
-          message,
-          phase: "worker",
-          level,
-        });
-      },
-    );
-    const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
-    const ok = await ctx.runMutation((internal as any).policies.pipelineSaveStateForLease, {
-      jobId: args.policyId,
-      leaseId: args.leaseId,
-      nextPhase: "extract",
-      state: {
-        ...(args.state as PolicyExtractionState),
-        externalWorker: true,
-        clSdkCheckpoint: undefined,
-        clSdkCheckpointFileId: checkpointFileId,
-      },
-      leaseExpiresAt,
-    }) as boolean;
-    return { ok, checkpointFileId, leaseExpiresAt };
-  },
-});
-
 async function externalCompletionLeaseIsCurrent(
   ctx: ActionCtx,
   args: ExternalCompleteArgs,
 ): Promise<boolean> {
-  const job = await ctx.runQuery(internal.policies.pipelineGetJob, {
-    jobId: args.policyId,
-  }) as {
-    status?: string;
-    checkpoint?: LeasedPolicyCheckpoint | null;
-  } | null;
-  const checkpoint = job?.checkpoint;
-  if (
-    job?.status !== "running" ||
-    checkpoint?.nextPhase !== "extract" ||
-    checkpoint.lease?.id !== args.leaseId
-  ) {
-    return false;
-  }
-  const claimedState = args.state as PolicyExtractionState;
-  const currentState = checkpoint.state as PolicyExtractionState;
-  if (
-    claimedState.traceId &&
-    currentState.traceId &&
-    claimedState.traceId !== currentState.traceId
-  ) {
-    return false;
-  }
-  return true;
+  return await externalLeaseMatches(ctx, args);
 }
 
 async function completeExternalExtractFromPayload(
@@ -2492,9 +2225,6 @@ async function completeExternalExtractFromPayload(
         totalModelCallDurationMs?: number;
       }
     | undefined;
-  const checkpoint = (payload?.checkpoint ?? args.checkpoint) as
-    | PipelineCheckpoint<ExtractionState>
-    | undefined;
   let doc = document as Record<string, unknown>;
   if (!state.orgId || !state.userId) {
     throw new Error("External extraction completion missing orgId or userId");
@@ -2507,9 +2237,13 @@ async function completeExternalExtractFromPayload(
     phase: "extract",
     level: "info",
   });
-  const modelCallCount = performanceReport?.modelCallCount ?? performanceReport?.modelCalls?.length;
+  const traceCounters = await ctx.runQuery((internal as any).extractionTraces.getSessionCounters, {
+    traceId: state.traceId,
+  }) as { modelCallCount?: number; modelDurationMs?: number } | null;
+  const modelCallCount = traceCounters?.modelCallCount || performanceReport?.modelCallCount || performanceReport?.modelCalls?.length;
   if (modelCallCount) {
-    const totalSeconds = Math.round((performanceReport?.totalModelCallDurationMs ?? 0) / 1000);
+    const totalModelCallDurationMs = traceCounters?.modelDurationMs ?? performanceReport?.totalModelCallDurationMs ?? 0;
+    const totalSeconds = Math.round(totalModelCallDurationMs / 1000);
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: policyId,
       timestamp: nowMs(),
@@ -2518,23 +2252,12 @@ async function completeExternalExtractFromPayload(
       level: "info",
     });
   }
-  if (checkpoint) {
-    for (const line of summarizeExtractionCheckpoint({ checkpoint })) {
-      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-        jobId: policyId,
-        timestamp: nowMs(),
-        message: line,
-        phase: "extract",
-        level: "info",
-      });
-    }
-  }
-
   const processed = await postProcessExtractionDocument({
     ctx,
     orgId: state.orgId as Id<"organizations">,
     document: doc,
     sourceSpans: canonicalSpans,
+    runModelReview: false,
     log: async (message, level = "info") => {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
@@ -2551,42 +2274,8 @@ async function completeExternalExtractFromPayload(
     operationalProfileInput,
     sourceNodes,
     canonicalSpans,
-    doc,
   );
-  const validatedOperationalProfile = await validateOperationalCoverageLines({
-    ctx,
-    orgId: state.orgId as Id<"organizations">,
-    traceId: state.traceId,
-    policyId,
-    sourceTree: sourceNodes,
-    profile: normalizedOperationalProfile,
-    log: async (message, level = "info") => {
-      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-        jobId: policyId,
-        timestamp: nowMs(),
-        message,
-        phase: "extract",
-        level,
-      });
-    },
-  });
-  const operationalProfile = await extractAdditionalInsuredEligibility({
-    ctx,
-    orgId: state.orgId as Id<"organizations">,
-    traceId: state.traceId,
-    policyId,
-    sourceTree: sourceNodes,
-    profile: validatedOperationalProfile,
-    log: async (message, level = "info") => {
-      await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
-        jobId: policyId,
-        timestamp: nowMs(),
-        message,
-        phase: "extract",
-        level,
-      });
-    },
-  });
+  const operationalProfile = normalizedOperationalProfile;
   const fields = processed.fields;
   if (processed.coverageReviewQuestionCount > 0) {
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
@@ -2599,6 +2288,9 @@ async function completeExternalExtractFromPayload(
   }
   const docName = doc.policyNumber || "policy";
   const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
+  const existingPolicy = await ctx.runQuery(internal.policies.getInternal, {
+    id: policyId as Id<"policies">,
+  }) as { policyTypes?: string[] } | null;
 
   await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
     id: policyId,
@@ -2607,9 +2299,10 @@ async function completeExternalExtractFromPayload(
       ...fields,
       ...sourceTreePolicyFields({
         sourceTree: sourceNodes,
-        operationalProfile,
+        operationalProfile: normalizedOperationalProfile,
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
+        existingPolicyTypes: existingPolicy?.policyTypes,
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),
@@ -2617,12 +2310,6 @@ async function completeExternalExtractFromPayload(
     },
   });
 
-  if (state.policyFileId) {
-    await ctx.runMutation((internal as any).policyFiles.updateExtraction, {
-      id: state.policyFileId,
-      extractedData: doc,
-    });
-  }
   if (state.fileId) {
     await ctx.runMutation((internal as any).policies.updateFiles, {
       id: policyId,
@@ -2638,8 +2325,6 @@ async function completeExternalExtractFromPayload(
   });
   const nextState: PolicyExtractionState = {
     ...state,
-    clSdkCheckpoint: undefined,
-    clSdkCheckpointFileId: undefined,
     embeddingPayloadFileId,
     chunkIds: chunks.map((chunk) => String(chunk.id)),
     sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
@@ -2686,7 +2371,6 @@ export const completeExternalExtract = action({
     warnings: v.optional(v.array(v.string())),
     tokenUsage: v.optional(v.any()),
     performanceReport: v.optional(v.any()),
-    checkpoint: v.optional(v.any()),
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
@@ -2821,6 +2505,7 @@ export const failExternalJob = action({
   },
   handler: async (ctx, args) => {
     requireExtractionWorkerSecret(args.secret);
+    if (!await externalLeaseMatches(ctx, args)) return { ok: false };
     const checkpoint = args.state
       ? {
           nextPhase: "extract",
@@ -2856,13 +2541,14 @@ export const failExternalJob = action({
       }
       return { ok, replayable: ok };
     }
-    await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
+    const ok = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
       jobId: args.policyId,
       leaseId: args.leaseId,
       status: "error",
       error: args.error,
       checkpoint,
-    });
+    }) as boolean;
+    if (!ok) return { ok: false };
     await completeTraceSession(
       ctx,
       (args.state as PolicyExtractionState | undefined)?.traceId,
@@ -2941,7 +2627,7 @@ export const rematerializeSourceTreeProfile = internalAction({
     } | null;
     if (!policy) throw new Error("Policy not found");
 
-    const operationalProfile = normalizeStoredOperationalProfile(policy.operationalProfile, policy.document);
+    const operationalProfile = normalizeStoredOperationalProfile(policy.operationalProfile);
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
       fields: operationalProfilePolicyFields(operationalProfile),
@@ -2956,7 +2642,6 @@ export const rematerializeSourceTreeProfile = internalAction({
       expirationDate: operationalProfile.expirationDate?.value,
       premium: operationalProfile.premium?.value,
       policyTypes: operationalProfile.policyTypes,
-      coverageTypes: operationalProfile.coverageTypes,
     };
   },
 });
@@ -3034,6 +2719,7 @@ export const rebuildStoredSourceNodes = internalAction({
       declarations?: unknown;
       documentMetadata?: unknown;
       operationalProfile?: unknown;
+      policyTypes?: string[];
     } | null;
     if (!policy) throw new Error("Policy not found");
     if (!policy.orgId) throw new Error("Policy is missing orgId");
@@ -3064,7 +2750,6 @@ export const rebuildStoredSourceNodes = internalAction({
       policy.operationalProfile,
       sourceNodes,
       canonicalSpans,
-      policy.document,
     );
 
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
@@ -3074,6 +2759,7 @@ export const rebuildStoredSourceNodes = internalAction({
         operationalProfile,
         existingDocumentMetadata: policy.documentMetadata,
         existingDeclarations: policy.declarations,
+        existingPolicyTypes: policy.policyTypes,
       }),
     });
 
@@ -3300,8 +2986,6 @@ export const retryPolicyExtraction = internalAction({
         policyFileId: existingState?.policyFileId,
         policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
         traceId,
-        clSdkCheckpointFileId: mode === "resume" ? existingState?.clSdkCheckpointFileId : undefined,
-        clSdkCheckpoint: mode === "resume" ? existingState?.clSdkCheckpoint : undefined,
       };
       if (!nextState.fileId) throw new Error("Policy source file is missing");
       if (mode === "full") {

@@ -19,13 +19,6 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
@@ -43,7 +36,8 @@ type OrganizationsApi = {
   organizations: {
     updateSlug: FunctionReference<"mutation">;
     updateBrokerBranding: FunctionReference<"mutation">;
-    generateLogoUploadUrl: FunctionReference<"mutation">;
+    updateOrgLogo: FunctionReference<"mutation">;
+    generateOrgLogoUploadUrl: FunctionReference<"mutation">;
   };
 };
 
@@ -55,21 +49,11 @@ type OrgSettingsArgs = {
   context?: string;
   industry?: string;
   industryVertical?: string;
-  clientsContext?: string;
-  vendorsContext?: string;
-  insuranceContext?: string;
-  investorsContext?: string;
-  partnersContext?: string;
   relatedLegalEntities?: RelatedLegalEntity[];
 };
 
 type RelatedLegalEntity = {
   legalName: string;
-  relationship?: "current" | "fka" | "dba" | "subsidiary" | "parent" | "affiliate" | "other";
-  incorporationNumber?: string;
-  taxId?: string;
-  jurisdiction?: string;
-  notes?: string;
 };
 
 type BrandingSettingsArgs = {
@@ -98,11 +82,6 @@ export function OrganizationSection() {
   const [context, setContext] = useState("");
   const [industry, setIndustry] = useState("");
   const [industryVertical, setIndustryVertical] = useState("");
-  const [clientsContext, setClientsContext] = useState("");
-  const [vendorsContext, setVendorsContext] = useState("");
-  const [insuranceContext, setInsuranceContext] = useState("");
-  const [investorsContext, setInvestorsContext] = useState("");
-  const [partnersContext, setPartnersContext] = useState("");
   const [relatedLegalEntities, setRelatedLegalEntities] = useState<
     RelatedLegalEntity[]
   >([]);
@@ -207,11 +186,6 @@ export function OrganizationSection() {
       setContext(org.context ?? "");
       setIndustry(org.industry ?? "");
       setIndustryVertical(org.industryVertical ?? "");
-      setClientsContext(org.clientsContext ?? "");
-      setVendorsContext(org.vendorsContext ?? "");
-      setInsuranceContext(org.insuranceContext ?? "");
-      setInvestorsContext(org.investorsContext ?? "");
-      setPartnersContext(org.partnersContext ?? "");
       setRelatedLegalEntities(org.relatedLegalEntities ?? []);
       hydratedRef.current = true;
       setSettingsHydrated(true);
@@ -228,19 +202,9 @@ export function OrganizationSection() {
     context: context || undefined,
     industry: industry || undefined,
     industryVertical: industryVertical || undefined,
-    clientsContext: clientsContext || undefined,
-    vendorsContext: vendorsContext || undefined,
-    insuranceContext: insuranceContext || undefined,
-    investorsContext: investorsContext || undefined,
-    partnersContext: partnersContext || undefined,
     relatedLegalEntities: relatedLegalEntities
       .map((entity) => ({
         legalName: entity.legalName.trim(),
-        relationship: entity.relationship,
-        incorporationNumber: entity.incorporationNumber?.trim() || undefined,
-        taxId: entity.taxId?.trim() || undefined,
-        jurisdiction: entity.jurisdiction?.trim() || undefined,
-        notes: entity.notes?.trim() || undefined,
       }))
       .filter((entity) => entity.legalName),
   };
@@ -349,11 +313,6 @@ export function OrganizationSection() {
         setIndustry(result.industry);
         setIndustryVertical(result.industryVertical ?? "");
       }
-      if (result.clientsContext) setClientsContext(result.clientsContext);
-      if (result.vendorsContext) setVendorsContext(result.vendorsContext);
-      if (result.insuranceContext) setInsuranceContext(result.insuranceContext);
-      if (result.investorsContext) setInvestorsContext(result.investorsContext);
-      if (result.partnersContext) setPartnersContext(result.partnersContext);
       toast.success("Company info extracted");
     } catch {
       toast.error("Failed to extract company info");
@@ -390,7 +349,7 @@ export function OrganizationSection() {
   function addRelatedLegalEntity() {
     setRelatedLegalEntities((current) => [
       ...current,
-      { legalName: "", relationship: "fka" },
+      { legalName: "" },
     ]);
   }
 
@@ -504,10 +463,7 @@ export function OrganizationSection() {
               ) : (
                 <div className="space-y-3">
                   {relatedLegalEntities.map((entity, index) => (
-                    <div
-                      key={index}
-                      className="grid gap-2 rounded-lg border border-foreground/8 bg-popover p-3 sm:grid-cols-12"
-                    >
+                    <div key={index} className="flex items-center gap-2">
                       <input
                         type="text"
                         value={entity.legalName}
@@ -516,85 +472,17 @@ export function OrganizationSection() {
                             legalName: event.target.value,
                           })
                         }
-                        placeholder="Actual legal name"
-                        className="sm:col-span-5 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                      <div className="sm:col-span-2">
-                        <Select
-                          value={entity.relationship ?? "other"}
-                          onValueChange={(value) =>
-                            updateRelatedLegalEntity(index, {
-                              relationship:
-                                value as RelatedLegalEntity["relationship"],
-                            })
-                          }
-                        >
-                          <SelectTrigger className="w-full border-foreground/8 bg-popover">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="current">Current</SelectItem>
-                            <SelectItem value="fka">FKA</SelectItem>
-                            <SelectItem value="dba">DBA</SelectItem>
-                            <SelectItem value="subsidiary">Subsidiary</SelectItem>
-                            <SelectItem value="parent">Parent</SelectItem>
-                            <SelectItem value="affiliate">Affiliate</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <input
-                        type="text"
-                        value={entity.incorporationNumber ?? ""}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            incorporationNumber: event.target.value,
-                          })
-                        }
-                        placeholder="Incorp. no."
-                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                      <input
-                        type="text"
-                        value={entity.taxId ?? ""}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            taxId: event.target.value,
-                          })
-                        }
-                        placeholder="EIN / tax ID"
-                        className="sm:col-span-2 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        placeholder="Alternate legal name, DBA, FKA, parent, subsidiary, or affiliate"
+                        className="min-w-0 flex-1 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                       <button
                         type="button"
                         onClick={() => removeRelatedLegalEntity(index)}
-                        className="sm:col-span-1 inline-flex h-9 items-center justify-center rounded-lg border border-foreground/8 text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
+                        className="inline-flex h-9 w-10 items-center justify-center rounded-lg border border-foreground/8 text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
                         aria-label="Remove legal entity"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
-                      <input
-                        type="text"
-                        value={entity.jurisdiction ?? ""}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            jurisdiction: event.target.value,
-                          })
-                        }
-                        placeholder="Jurisdiction"
-                        className="sm:col-span-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
-                      <input
-                        type="text"
-                        value={entity.notes ?? ""}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            notes: event.target.value,
-                          })
-                        }
-                        placeholder="Notes"
-                        className="sm:col-span-9 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                      />
                     </div>
                   ))}
                 </div>
@@ -658,81 +546,12 @@ export function OrganizationSection() {
                 />
               </div>
             )}
+
           </OperationalPanelBody>
         </OperationalPanel>
 
-        {isBroker && <BrandingCard website={website} />}
+        <BrandingCard website={website} />
 
-        {/* Relationship Context section — client orgs only */}
-        {!isBroker && (
-          <OperationalPanel className="mb-4">
-            <OperationalPanelHeader title="Relationship Context" className="px-5 py-3.5" />
-            <OperationalPanelBody className="space-y-4 px-5 py-5">
-              <div>
-                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                  Clients &amp; Customers
-                </label>
-                <input
-                  type="text"
-                  value={clientsContext}
-                  onChange={(e) => setClientsContext(e.target.value)}
-                  placeholder="e.g. Small to mid-size restaurants in the Bay Area"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                  Vendors &amp; Service Providers
-                </label>
-                <input
-                  type="text"
-                  value={vendorsContext}
-                  onChange={(e) => setVendorsContext(e.target.value)}
-                  placeholder="e.g. AWS for cloud, Stripe for payments, WeWork for office space"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                  Insurance Relationships
-                </label>
-                <input
-                  type="text"
-                  value={insuranceContext}
-                  onChange={(e) => setInsuranceContext(e.target.value)}
-                  placeholder="e.g. Marsh as broker, Hartford and Travelers as carriers"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                    Investors &amp; Shareholders
-                  </label>
-                  <input
-                    type="text"
-                    value={investorsContext}
-                    onChange={(e) => setInvestorsContext(e.target.value)}
-                    placeholder="e.g. Series A from Sequoia, angel investors"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                    Partners &amp; Affiliates
-                  </label>
-                  <input
-                    type="text"
-                    value={partnersContext}
-                    onChange={(e) => setPartnersContext(e.target.value)}
-                    placeholder="e.g. Joint venture with ABC Corp, reseller agreement with XYZ"
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                  />
-                </div>
-              </div>
-            </OperationalPanelBody>
-          </OperationalPanel>
-        )}
       </div>
 
       {/* Onboarding section */}
@@ -804,7 +623,7 @@ export function OrganizationSection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Branding card (broker only)
+// Branding card
 // ─────────────────────────────────────────────────────────────────────────────
 
 const brandingLabelClass =
@@ -816,6 +635,7 @@ type TextOnAccent = "light" | "dark" | "auto";
 function BrandingCard({ website }: { website: string }) {
   const currentOrg = useCurrentOrg();
   const store = useSyncStore();
+  const isBroker = currentOrg?.isBroker ?? false;
   const org = currentOrg?.org as
     | {
         brandingColor?: string;
@@ -832,12 +652,17 @@ function BrandingCard({ website }: { website: string }) {
     organizationsApi.organizations.updateBrokerBranding,
   );
   const generateUploadUrl = useMutation(
-    organizationsApi.organizations.generateLogoUploadUrl,
+    organizationsApi.organizations.generateOrgLogoUploadUrl,
+  );
+  const updateOrgLogo = useMutation(organizationsApi.organizations.updateOrgLogo);
+  const importOrgLogo = useAction(
+    api.actions.extractCompanyInfo.importOrgLogoFromWebsite,
   );
 
   const [brandingColor, setBrandingColor] = useState("#1E293B");
   const [whiteLabelingEnabled, setWhiteLabelingEnabled] = useState(true);
   const [dragActive, setDragActive] = useState(false);
+  const [importingLogo, setImportingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hydratedRef = useRef(false);
   const [brandingHydrated, setBrandingHydrated] = useState(false);
@@ -851,7 +676,7 @@ function BrandingCard({ website }: { website: string }) {
     }
   }, [org]);
 
-  const brandingArgs: BrandingSettingsArgs | null = orgId
+  const brandingArgs: BrandingSettingsArgs | null = orgId && isBroker
     ? {
         brokerOrgId: orgId,
         whiteLabelingEnabled,
@@ -875,7 +700,7 @@ function BrandingCard({ website }: { website: string }) {
       brandingColor,
       brandingTextOnAccent: "auto",
     },
-    enabled: brandingHydrated,
+    enabled: brandingHydrated && isBroker,
     canSave: !!brandingArgs,
     applyLocal: (store, args) =>
       patchCachedViewerOrg(store, {
@@ -890,17 +715,37 @@ function BrandingCard({ website }: { website: string }) {
   async function handleLogoUpload(file: File) {
     if (!orgId) return;
     try {
-      const uploadUrl = await generateUploadUrl({ brokerOrgId: orgId });
+      const uploadUrl = await generateUploadUrl({ orgId });
       const res = await fetch(uploadUrl, {
         method: "POST",
         body: file,
         headers: { "Content-Type": file.type },
       });
       const { storageId } = await res.json();
-      await updateBranding({ brokerOrgId: orgId, logoStorageId: storageId });
+      await updateOrgLogo({ orgId, logoStorageId: storageId });
       patchCachedViewerOrg(store, { iconStorageId: storageId });
     } catch {
       toast.error("Failed to upload logo");
+    }
+  }
+
+  async function handlePullLogo() {
+    if (!orgId || !website.trim()) {
+      toast.error("Add a website first");
+      return;
+    }
+    setImportingLogo(true);
+    try {
+      const result = await importOrgLogo({ orgId, url: website });
+      if (!result.success || !result.iconStorageId) {
+        throw new Error(result.error ?? "Logo not found");
+      }
+      patchCachedViewerOrg(store, { iconStorageId: result.iconStorageId });
+      toast.success("Logo pulled from website");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to pull logo");
+    } finally {
+      setImportingLogo(false);
     }
   }
 
@@ -914,39 +759,41 @@ function BrandingCard({ website }: { website: string }) {
     <OperationalPanel as="div" className="mb-4">
       <OperationalPanelHeader title="Brand" className="px-5 py-3.5" />
       <OperationalPanelBody className="space-y-5 px-5 py-5">
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
-          <div>
-            <p className="text-base font-medium text-foreground">
-              White labeling
-            </p>
-            <p className="text-label text-muted-foreground/60 mt-0.5 max-w-md">
-              Apply your broker logo, accent color, agent name, and branded
-              emails to client-facing surfaces.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setWhiteLabelingEnabled((v) => !v)}
-            role="switch"
-            aria-checked={whiteLabelingEnabled}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 shrink-0 ml-4 ${
-              whiteLabelingEnabled ? "bg-foreground" : "bg-foreground/15"
-            }`}
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                whiteLabelingEnabled ? "translate-x-4.5" : "translate-x-0.5"
+        {isBroker && (
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+            <div>
+              <p className="text-base font-medium text-foreground">
+                White labeling
+              </p>
+              <p className="text-label text-muted-foreground/60 mt-0.5 max-w-md">
+                Apply your broker logo, accent color, agent name, and branded
+                emails to client-facing surfaces.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWhiteLabelingEnabled((v) => !v)}
+              role="switch"
+              aria-checked={whiteLabelingEnabled}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 shrink-0 ml-4 ${
+                whiteLabelingEnabled ? "bg-foreground" : "bg-foreground/15"
               }`}
-            />
-          </button>
-        </div>
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  whiteLabelingEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Logo */}
-        <div className={!whiteLabelingEnabled ? "opacity-50" : undefined}>
+        <div className={isBroker && !whiteLabelingEnabled ? "opacity-50" : undefined}>
           <label className={brandingLabelClass}>Logo</label>
           <button
             type="button"
-            disabled={!whiteLabelingEnabled}
+            disabled={isBroker && !whiteLabelingEnabled}
             onClick={() => fileInputRef.current?.click()}
             onDragEnter={(e) => {
               e.preventDefault();
@@ -961,9 +808,9 @@ function BrandingCard({ website }: { website: string }) {
               if (file) handleLogoUpload(file);
             }}
             className={`flex w-full items-center gap-4 rounded-lg border border-dashed px-4 py-3 text-left transition-colors ${
-              whiteLabelingEnabled ? "" : "cursor-not-allowed"
+              isBroker && !whiteLabelingEnabled ? "cursor-not-allowed" : ""
             } ${
-              dragActive && whiteLabelingEnabled
+              dragActive && (!isBroker || whiteLabelingEnabled)
                 ? "border-foreground/30 bg-foreground/3"
                 : "border-foreground/12 bg-popover hover:border-foreground/20"
             }`}
@@ -987,8 +834,7 @@ function BrandingCard({ website }: { website: string }) {
                 {logoUrl ? "Replace logo" : "Upload logo"}
               </div>
               <div className="text-label text-muted-foreground/70">
-                Drop an image, or click to browse. Auto-filled from your
-                website.
+                Drop an image, click to browse, or pull it from the website.
               </div>
             </div>
             <input
@@ -1002,21 +848,35 @@ function BrandingCard({ website }: { website: string }) {
               }}
             />
           </button>
+          <div className="mt-3">
+            <PillButton
+              variant="secondary"
+              onClick={handlePullLogo}
+              disabled={importingLogo || (isBroker && !whiteLabelingEnabled)}
+            >
+              {importingLogo ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              Pull from website
+            </PillButton>
+          </div>
         </div>
 
         {/* Accent color */}
-        <div
-          className={
-            !whiteLabelingEnabled ? "pointer-events-none opacity-50" : undefined
-          }
-        >
-          <label className={brandingLabelClass}>Accent color</label>
-          <AccentColorPicker
-            value={brandingColor}
-            onChange={setBrandingColor}
-            website={website}
-          />
-        </div>
+        {isBroker && (
+          <div
+            className={
+              !whiteLabelingEnabled ? "pointer-events-none opacity-50" : undefined
+            }
+          >
+            <label className={brandingLabelClass}>Accent color</label>
+            <AccentColorPicker
+              value={brandingColor}
+              onChange={setBrandingColor}
+              website={website}
+            />
+          </div>
+        )}
       </OperationalPanelBody>
     </OperationalPanel>
   );

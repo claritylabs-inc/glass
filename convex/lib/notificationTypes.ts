@@ -2,87 +2,82 @@
 
 import dayjs from "dayjs";
 
-export const ALL_NOTIFICATION_TYPES = [
-  // Existing glass types (unchanged)
-  "merge_suggestion",
+export const ACTIVE_NOTIFICATION_TYPES = [
+  "broker_action",
+  "incomplete_extraction",
+  "client_invitation_accepted",
+  "client_onboarding_completed",
+  "vendor_compliance_met",
+  "vendor_compliance_gap",
+  "vendor_policy_expiring",
+  "vendor_policy_expired",
+  "policy_change_needs_info",
+  "policy_change_completed",
+] as const;
+
+// Kept out of settings and active notify contracts. The schema still accepts
+// these values so older notification rows remain readable.
+export const RETIRED_NOTIFICATION_TYPES = [
   "coverage_gap",
   "renewal_reminder",
   "policy_lapsed",
   "coverage_limit_concern",
   "missing_coverage",
   "carrier_rating_change",
-  "broker_action",
   "extraction_complete",
   "extraction_error",
-  "incomplete_extraction",
   "stale_data",
   "premium_anomaly",
-  // Broker/client lifecycle
-  "client_invitation_accepted",
-  "client_onboarding_completed",
   "client_document_uploaded",
   "policy_delivered_by_broker",
-  // Vendor compliance
-  "vendor_compliance_met",
-  "vendor_compliance_gap",
-  "vendor_policy_expiring",
-  "vendor_policy_expired",
-  "program_admin_certificate_request",
-  "program_admin_pce_request",
-  "policy_declaration_discrepancy",
-  "policy_change_needs_info",
-  "policy_change_completed",
 ] as const;
 
-export type NotificationType = (typeof ALL_NOTIFICATION_TYPES)[number];
+export const ALL_NOTIFICATION_TYPES = [
+  ...ACTIVE_NOTIFICATION_TYPES,
+  ...RETIRED_NOTIFICATION_TYPES,
+] as const;
+
+export type NotificationType = (typeof ACTIVE_NOTIFICATION_TYPES)[number];
+export type StoredNotificationType = (typeof ALL_NOTIFICATION_TYPES)[number];
 
 export type NotificationSeverity = "info" | "warning" | "critical";
 
-export const NOTIFICATION_SEVERITY: Record<NotificationType, NotificationSeverity> = {
-  // Existing
-  merge_suggestion: "info",
+export const NOTIFICATION_SEVERITY: Record<StoredNotificationType, NotificationSeverity> = {
+  broker_action: "info",
+  incomplete_extraction: "warning",
+  client_invitation_accepted: "info",
+  client_onboarding_completed: "info",
+  vendor_compliance_met: "info",
+  vendor_compliance_gap: "warning",
+  vendor_policy_expiring: "warning",
+  vendor_policy_expired: "critical",
+  policy_change_needs_info: "warning",
+  policy_change_completed: "info",
   coverage_gap: "warning",
   renewal_reminder: "warning",
   policy_lapsed: "critical",
   coverage_limit_concern: "warning",
   missing_coverage: "warning",
   carrier_rating_change: "warning",
-  broker_action: "info",
   extraction_complete: "info",
   extraction_error: "warning",
-  incomplete_extraction: "warning",
   stale_data: "info",
   premium_anomaly: "warning",
-  // Broker/client lifecycle
-  client_invitation_accepted: "info",
-  client_onboarding_completed: "info",
   client_document_uploaded: "info",
   policy_delivered_by_broker: "info",
-  // Vendor compliance
-  vendor_compliance_met: "info",
-  vendor_compliance_gap: "warning",
-  vendor_policy_expiring: "warning",
-  vendor_policy_expired: "critical",
-  program_admin_certificate_request: "info",
-  program_admin_pce_request: "info",
-  policy_declaration_discrepancy: "warning",
-  policy_change_needs_info: "warning",
-  policy_change_completed: "info",
 };
 
-/** Types that coalesce within a 10-minute window. Value is window in ms. */
+/** Active notification types that coalesce. Value is window in ms. */
 export const COALESCE_WINDOW_MS: Partial<Record<NotificationType, number>> = {
-  client_document_uploaded: 10 * 60 * 1000,
   vendor_compliance_met: 24 * 60 * 60 * 1000,
   vendor_compliance_gap: 24 * 60 * 60 * 1000,
   vendor_policy_expiring: 24 * 60 * 60 * 1000,
   vendor_policy_expired: 24 * 60 * 60 * 1000,
-  policy_declaration_discrepancy: 24 * 60 * 60 * 1000,
 };
 
 /**
- * Build a stable coalesce key from an array of parts and the current 10-min bucket.
- * @param parts   e.g. ["client_document_uploaded", brokerOrgId, clientOrgId]
+ * Build a stable coalesce key from an array of parts and the configured time bucket.
+ * @param parts   e.g. ["vendor_compliance_gap", clientOrgId, relationshipId]
  * @param windowMs  the coalesce window in ms (from COALESCE_WINDOW_MS)
  * @param nowMs   current timestamp in ms (injectable for tests)
  */
@@ -100,13 +95,92 @@ export function getEffectiveEmailDefault(severity: NotificationSeverity): boolea
   return severity === "warning" || severity === "critical";
 }
 
-export type NotificationChannel = "in_app" | "email" | "imessage";
+export type NotificationChannel = "email" | "imessage";
 
 export function getEffectiveChannelDefault(
   channel: NotificationChannel,
   severity: NotificationSeverity,
 ): boolean {
-  if (channel === "in_app") return true;
   if (channel === "email") return getEffectiveEmailDefault(severity);
   return false;
+}
+
+export type NotificationSettingsAudience = "broker" | "client";
+
+export interface NotificationSettingsRow {
+  type: NotificationType;
+  label: string;
+  group: string;
+  audiences: readonly NotificationSettingsAudience[];
+}
+
+export const NOTIFICATION_SETTINGS_ROWS: readonly NotificationSettingsRow[] = [
+  {
+    type: "client_invitation_accepted",
+    label: "Client accepted invitation",
+    group: "Client activity",
+    audiences: ["broker"],
+  },
+  {
+    type: "client_onboarding_completed",
+    label: "Client completed onboarding",
+    group: "Client activity",
+    audiences: ["broker"],
+  },
+  {
+    type: "broker_action",
+    label: "Broker action needed",
+    group: "Client activity",
+    audiences: ["broker"],
+  },
+  {
+    type: "incomplete_extraction",
+    label: "Policy extraction needs review",
+    group: "Policies",
+    audiences: ["broker", "client"],
+  },
+  {
+    type: "policy_change_needs_info",
+    label: "Policy change needs info",
+    group: "Policies",
+    audiences: ["broker", "client"],
+  },
+  {
+    type: "policy_change_completed",
+    label: "Policy change completed",
+    group: "Policies",
+    audiences: ["broker", "client"],
+  },
+  {
+    type: "vendor_compliance_gap",
+    label: "Vendor compliance gaps",
+    group: "Vendor compliance",
+    audiences: ["broker", "client"],
+  },
+  {
+    type: "vendor_policy_expiring",
+    label: "Vendor policy expiring",
+    group: "Vendor compliance",
+    audiences: ["broker", "client"],
+  },
+  {
+    type: "vendor_policy_expired",
+    label: "Vendor policy expired",
+    group: "Vendor compliance",
+    audiences: ["broker", "client"],
+  },
+  {
+    type: "vendor_compliance_met",
+    label: "Vendor becomes compliant",
+    group: "Vendor compliance",
+    audiences: ["broker", "client"],
+  },
+];
+
+export function getNotificationSettingsRows(
+  audience: NotificationSettingsAudience,
+): NotificationSettingsRow[] {
+  return NOTIFICATION_SETTINGS_ROWS.filter((row) =>
+    row.audiences.includes(audience),
+  );
 }

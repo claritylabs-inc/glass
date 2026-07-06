@@ -50,8 +50,8 @@ export type CertificateVersionRecord = {
   fileId?: Id<"_storage">;
   fileName?: string;
   fileSize?: number;
-  authorityType?: string;
-  certificationStatus?: string;
+  requestKind?: string;
+  additionalInsuredName?: string;
   issuedAt?: number;
   createdAt: number;
   url?: string | null;
@@ -105,11 +105,7 @@ export function certificateBadge(row: PolicyCertificateRecord) {
   const version = row.currentVersion;
   if (!version) return { label: "No issued version", variant: "outline" as const };
   if (version.status === "issued") {
-    const isCertified = version.authorityType === "certified";
-    return {
-      label: isCertified ? "Certified" : "Non-binding",
-      variant: isCertified ? "secondary" as const : "outline" as const,
-    };
+    return { label: "Issued", variant: "secondary" as const };
   }
   return { label: version.status.replace(/_/g, " "), variant: "outline" as const };
 }

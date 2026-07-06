@@ -2,9 +2,10 @@
 
 import {
   buildDocumentSourceTree as buildSdkDocumentSourceTree,
-  buildDeterministicOperationalProfile as buildSdkOperationalProfile,
-  mergeOperationalProfile,
   normalizeDocumentSourceTreePaths,
+  normalizeOperationalPolicyTypes,
+  PolicyOperationalProfileSchema,
+  resolveOperationalProfilePolicyTypes,
   stableHash,
   type DocumentSourceNode,
   type OperationalCoverageLine,
@@ -17,7 +18,6 @@ import {
 } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
 import { normalizeCoverageName, normalizeText } from "./coverageNames";
-import { POLICY_TYPE_LABELS } from "./policyTypes";
 
 export type {
   DocumentSourceNode,
@@ -101,7 +101,6 @@ const SOURCE_NODE_KINDS = new Set<DocumentSourceNodeKind>([
   "table_cell",
   "text",
 ]);
-const POLICY_TYPE_KEYS = new Set(Object.keys(POLICY_TYPE_LABELS));
 
 function normalizeWhitespace(value: string): string {
   return normalizeText(value);
@@ -605,52 +604,6 @@ export function normalizeSourceTree(
   );
 }
 
-function nodeText(node: DocumentSourceNode): string {
-  return normalizeWhitespace([node.title, node.description, node.textExcerpt].filter(Boolean).join(" "));
-}
-
-function sourceBackedValueFromDocument(
-  value: unknown,
-  nodes: DocumentSourceNode[],
-): SourceBackedValue | undefined {
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  const normalized = normalizeWhitespace(value);
-  const node = nodes.find((candidate) => nodeText(candidate).toLowerCase().includes(normalized.toLowerCase()));
-  if (!node) return undefined;
-  return {
-    value: normalized,
-    confidence: "medium",
-    sourceNodeIds: [node.id],
-    sourceSpanIds: node.sourceSpanIds,
-  };
-}
-
-function sourceBackedValueFromNode(
-  node: DocumentSourceNode,
-  value: string | undefined,
-  confidence: SourceBackedValue["confidence"] = "high",
-): SourceBackedValue | undefined {
-  const normalized = normalizeWhitespace(value ?? "").replace(/^[\s:;#-]+|[\s;,.]+$/g, "");
-  if (!normalized) return undefined;
-  return {
-    value: normalized,
-    confidence,
-    sourceNodeIds: [node.id],
-    sourceSpanIds: node.sourceSpanIds,
-  };
-}
-
-function columnValues(text: string): Map<number, string> {
-  const values = new Map<number, string>();
-  const pattern = /\bColumn\s+(\d+):\s*([\s\S]*?)(?=\s+\|\s+Column\s+\d+:|$)/gi;
-  for (const match of text.matchAll(pattern)) {
-    const index = Number(match[1]);
-    const value = normalizeWhitespace(match[2] ?? "");
-    if (Number.isFinite(index) && value) values.set(index, value);
-  }
-  return values;
-}
-
 function isBadOperationalIdentityValue(value: string | undefined): boolean {
   const text = normalizeWhitespace(value ?? "");
   if (!text) return true;
@@ -658,6 +611,7 @@ function isBadOperationalIdentityValue(value: string | undefined): boolean {
   if (/^[a-z]/.test(text)) return true;
   if (/^(owner|policy owner|applicant)\s*:/i.test(text)) return true;
   if (/\b(?:insured persons?|insurance amount|benefit amount|policy number|owner|plan|premium)\s*:/i.test(text)) return true;
+  if (/\b(?:risk management|notices?\s+contact|mailing address|email:|direct:)\b/i.test(text)) return true;
   if (/[•]/.test(text)) return true;
   if (/^[^A-Za-z0-9]+|[^A-Za-z0-9.)]$/.test(text)) return true;
   const words = text.split(/\s+/).filter(Boolean);
@@ -675,80 +629,31 @@ function isBadBrokerValue(value: string | undefined): boolean {
   return /\b(forms?\/endorsements?|endorsements?\s+at\s+inception|bilateral\s+discovery|discovery\/erp|erp\s+options?|list\s+of\s+forms?|coverage\s+parts?|declarations?|sublimits?|deductibles?|premium|truncated|immunosuppressive|agents)\b/i.test(text);
 }
 
-function isLikelyNamedInsuredValue(value: string): boolean {
-  const text = normalizeWhitespace(value);
-  if (!text || text.length > 140) return false;
-  if (/^(owner|policy owner|applicant|insured|insured person)\s*:/i.test(text)) return false;
-  if (/^(holds|is|are|has|have|with|including|through|provides|administers|licensed|federally)\b/i.test(text)) return false;
-  if (/\b(policy|coverage|deductible|premium|claim|limit|retroactive|endorsement)\b/i.test(text)) return false;
-  return /[A-Za-z]/.test(text);
+function sourceBackedString(value: SourceBackedValue, key: string): string | undefined {
+  const record = value as SourceBackedValue & Record<string, unknown>;
+  const text = record[key];
+  return typeof text === "string" ? normalizeWhitespace(text) : undefined;
 }
 
-function datePhraseFromScheduleValue(value: string): string {
-  const text = normalizeWhitespace(value);
-  const monthDate = text.match(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s*(?:\d{4}|X{4})\b/i);
-  if (monthDate) return monthDate[0];
-  const isoDate = text.match(/\b\d{4}-\d{2}-\d{2}\b/);
-  if (isoDate) return isoDate[0];
-  const slashDate = text.match(/\b\d{1,2}[/-]\d{1,2}[/-](?:\d{2,4}|X{4})\b/);
-  return slashDate ? slashDate[0] : text;
-}
+function preferredIdentityText(
+  value: SourceBackedValue,
+  role?: OperationalParty["role"],
+): string {
+  const raw = normalizeWhitespace(value.value);
+  const normalized = sourceBackedString(value, "normalizedValue");
+  if (!normalized) return raw;
+  const invalidNormalized = role === "broker"
+    ? isBadBrokerValue(normalized)
+    : isBadOperationalIdentityValue(normalized);
+  if (invalidNormalized) return raw;
 
-function sourceTreeText(sourceTree: DocumentSourceNode[], maxNodes = 80): string {
-  return normalizeWhitespace(
-    sourceTree
-      .filter((node) => node.kind !== "document")
-      .slice(0, maxNodes)
-      .map((node) => [node.title, node.description, node.textExcerpt].filter(Boolean).join(" "))
-      .join(" "),
-  );
-}
-
-function inferPersonalPolicyTypesFromText(text: string): string[] {
-  const normalized = text.toLowerCase();
-  const types: string[] = [];
-  const add = (type: string, pattern: RegExp) => {
-    if (pattern.test(normalized) && !types.includes(type)) types.push(type);
-  };
-  add("life", /\b(life insurance|permanent life|term life|whole life|universal life|sun permanent life|sun par protector|manulife par|vitality\s*plus|death benefit)\b/i);
-  add("critical_illness", /\b(critical illness|critical illness insurance|covered critical illness|partial benefit payout)\b/i);
-  add("disability", /\b(disability benefit|total disability|catastrophic disability|disability waiver|waiver of premium disability)\b/i);
-  add("long_term_care", /\b(long[-\s]?term care|long term care conversion)\b/i);
-  return types;
-}
-
-function inferPolicyTypesFromEvidence(
-  profile: PolicyOperationalProfile,
-  sourceTree: DocumentSourceNode[],
-): string[] {
-  return inferPersonalPolicyTypesFromText([
-    sourceTreeText(sourceTree),
-    profile.coverageTypes.join(" "),
-    profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => [
-      coverage.name,
-      coverage.limit,
-      coverage.premium,
-      coverage.limits.map((term: PolicyOperationalProfile["coverages"][number]["limits"][number]) =>
-        `${term.label} ${term.value} ${term.appliesTo ?? ""}`
-      ).join(" "),
-    ].filter(Boolean).join(" ")).join(" "),
-  ].join(" "));
-}
-
-function withEvidencePolicyTypes(
-  profile: PolicyOperationalProfile,
-  sourceTree: DocumentSourceNode[],
-): PolicyOperationalProfile {
-  const inferred = inferPolicyTypesFromEvidence(profile, sourceTree);
-  if (inferred.length === 0) return profile;
-  const current = controlledPolicyTypes(profile.policyTypes);
-  const next = current.every((type) => type === "other")
-    ? inferred
-    : [...current.filter((type) => type !== "other"), ...inferred];
-  return {
-    ...profile,
-    policyTypes: [...new Set(next)].slice(0, 6),
-  };
+  const invalidRaw = role === "broker"
+    ? isBadBrokerValue(raw)
+    : isBadOperationalIdentityValue(raw);
+  if (invalidRaw) return normalized;
+  if (raw.toLowerCase().includes(normalized.toLowerCase())) return normalized;
+  if (normalized.length < raw.length * 0.7) return normalized;
+  return raw;
 }
 
 function valueOfSourceBackedValue(value: unknown): string | undefined {
@@ -768,8 +673,97 @@ function normalizedPolicyNumberValue(value: string | undefined): string | undefi
   return undefined;
 }
 
-function isBadPolicyNumberValue(value: string | undefined): boolean {
-  return !normalizedPolicyNumberValue(value);
+type MoneyCandidate = {
+  value: string;
+  amount: number;
+};
+
+const MONEY_VALUE_PATTERN = /(?:\b(?:CAD|USD)\s*)?\$\s*\d[\d,]*(?:\.\d{1,2})?|\b(?:CAD|USD)\s+\d[\d,]*(?:\.\d{1,2})?/gi;
+
+function moneyNumberFromString(value: string | undefined): number | undefined {
+  const text = normalizeWhitespace(value ?? "");
+  if (!/^\$?\s*\d[\d,\s]*(?:\.\d{1,2})?$/.test(text)) return undefined;
+  const amount = Number(text.replace(/[$,\s]/g, ""));
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+function currencyPrefixFromText(value: string | undefined): string | undefined {
+  const text = normalizeWhitespace(value ?? "");
+  const currency = text.match(/\b(CAD|USD)\b/i)?.[1];
+  return currency ? currency.toUpperCase() : undefined;
+}
+
+function formatMoneyCandidate(
+  amount: number,
+  currencyPrefix: string | undefined,
+  hasCents: boolean,
+): string {
+  const formatted = amount.toLocaleString("en-US", {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
+  return `${currencyPrefix ? `${currencyPrefix} ` : ""}$${formatted}`;
+}
+
+function moneyCandidateFromText(
+  value: string,
+  fallbackCurrencyPrefix?: string,
+): MoneyCandidate | undefined {
+  const amount = moneyNumberFromString(value.replace(/\b(?:CAD|USD)\b/gi, ""));
+  if (amount === undefined) return undefined;
+  const hasCents = /\.\d{1,2}\b/.test(value);
+  const currencyPrefix = currencyPrefixFromText(value) ?? fallbackCurrencyPrefix;
+  return {
+    value: formatMoneyCandidate(amount, currencyPrefix, hasCents),
+    amount,
+  };
+}
+
+function moneyCandidatesFromText(value: string): MoneyCandidate[] {
+  const text = normalizeWhitespace(value);
+  const fallbackCurrencyPrefix = currencyPrefixFromText(text);
+  return [...text.matchAll(MONEY_VALUE_PATTERN)]
+    .map((match) => moneyCandidateFromText(match[0] ?? "", fallbackCurrencyPrefix))
+    .filter((candidate): candidate is MoneyCandidate => Boolean(candidate));
+}
+
+function isPremiumLabelPart(value: string): boolean {
+  return /\bpremium\b/i.test(value) &&
+    !/\b(?:total\s+(?:due|payable|cost)|fees?|tax(?:es)?)\b/i.test(value);
+}
+
+function premiumCandidateFromLabeledParts(parts: string[]): MoneyCandidate | undefined {
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]!;
+    if (!isPremiumLabelPart(part)) continue;
+    const nextPart = parts[index + 1];
+    const nextCandidate = nextPart && !/\b(?:premium|total\s+(?:due|payable|cost)|fees?|tax(?:es)?)\b/i.test(nextPart)
+      ? moneyCandidatesFromText(nextPart)[0]
+      : undefined;
+    const candidate = moneyCandidatesFromText(part)[0] ?? nextCandidate;
+    if (candidate) return candidate;
+  }
+  return undefined;
+}
+
+function preferredPremiumMoneyCandidate(value: SourceBackedValue): MoneyCandidate | undefined {
+  const text = normalizeWhitespace(value.value);
+  const labeledParts = text.split(/\s*[;|]\s*/).filter(Boolean);
+  const partCandidate = premiumCandidateFromLabeledParts(labeledParts);
+  if (partCandidate) return partCandidate;
+
+  const normalizedAmount = moneyNumberFromString(sourceBackedString(value, "normalizedValue"));
+  if (normalizedAmount !== undefined) {
+    const normalizedValue = sourceBackedString(value, "normalizedValue") ?? "";
+    const hasCents = /\.\d{1,2}\b/.test(normalizedValue);
+    return {
+      value: formatMoneyCandidate(normalizedAmount, currencyPrefixFromText(text), hasCents),
+      amount: normalizedAmount,
+    };
+  }
+
+  const candidates = moneyCandidatesFromText(text);
+  return candidates[0];
 }
 
 function isValidPremiumValue(value: string | undefined): boolean {
@@ -798,105 +792,39 @@ function sanitizeOperationalProfileCandidate(
     delete clean.policyNumber;
   }
   const premium = valueOfSourceBackedValue(clean.premium);
-  if (premium && !isValidPremiumValue(premium)) {
+  const premiumCandidate = clean.premium && typeof clean.premium === "object" && !Array.isArray(clean.premium)
+    ? preferredPremiumMoneyCandidate(clean.premium as SourceBackedValue)
+    : undefined;
+  if (premiumCandidate && clean.premium) {
+    clean.premium = {
+      ...(clean.premium as SourceBackedValue),
+      value: premiumCandidate.value,
+      normalizedValue: String(premiumCandidate.amount),
+    };
+  } else if (premium && !isValidPremiumValue(premium)) {
     delete clean.premium;
   }
   for (const key of ["namedInsured", "insurer", "broker"] as const) {
-    const value = valueOfSourceBackedValue(clean[key]);
+    const sourceValue = valueOfSourceBackedValue(clean[key])
+      ? clean[key] as SourceBackedValue
+      : undefined;
+    const value = sourceValue ? preferredIdentityText(sourceValue, key === "broker" ? "broker" : undefined) : undefined;
     const invalid = key === "broker"
       ? isBadBrokerValue(value)
       : isBadOperationalIdentityValue(value);
     if (invalid) {
       delete clean[key];
+    } else if (sourceValue && value && value !== sourceValue.value) {
+      clean[key] = { ...sourceValue, value };
     }
   }
   return clean;
-}
-
-function declarationProfileCandidate(sourceTree: DocumentSourceNode[]): Partial<PolicyOperationalProfile> {
-  const nodes = sourceTree
-    .filter((node) => node.kind !== "document")
-    .sort((left, right) => left.order - right.order);
-  const candidate: Partial<PolicyOperationalProfile> = {};
-
-  for (const node of nodes) {
-    const columns = columnValues(node.textExcerpt ?? "");
-    const label = normalizeWhitespace(columns.get(1) ?? "");
-    const value = normalizeWhitespace(columns.get(2) ?? "");
-    if (!label || !value) continue;
-    const normalizedLabel = label.toLowerCase();
-
-    if (
-      !candidate.namedInsured
-      && /(?:item\s*1\b.*)?(?:named insured|insured name|policyholder|applicant)\b/.test(normalizedLabel)
-      && isLikelyNamedInsuredValue(value)
-    ) {
-      candidate.namedInsured = sourceBackedValueFromNode(node, value);
-    } else if (!candidate.policyNumber && /(?:item\s*2\b.*)?(?:policy|contract)\s*(?:number|no\.?|#)\b/.test(normalizedLabel)) {
-      candidate.policyNumber = sourceBackedValueFromNode(node, value);
-    } else if (/(?:item\s*3\b.*)?(?:policy period|policy term|period of insurance|effective.*(?:expiration|expiry)|from.*to)\b/.test(normalizedLabel)) {
-      const period = value.match(/from:\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})\s+to:\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})/i);
-      if (period) {
-        candidate.effectiveDate ??= sourceBackedValueFromNode(node, period[1]);
-        candidate.expirationDate ??= sourceBackedValueFromNode(node, period[2]);
-      }
-    } else if (!candidate.effectiveDate && /\b(?:policy date|date this policy starts|policy starts)\b/.test(normalizedLabel)) {
-      candidate.effectiveDate = sourceBackedValueFromNode(node, datePhraseFromScheduleValue(value));
-    } else if (!candidate.expirationDate && /\b(?:date this policy ends|policy ends|policy expiry|policy expiration)\b/.test(normalizedLabel)) {
-      candidate.expirationDate = sourceBackedValueFromNode(node, datePhraseFromScheduleValue(value));
-    } else if (!candidate.premium && /\b(?:annual premium|total premium|policy premium|premium due)\b/.test(normalizedLabel)) {
-      candidate.premium = sourceBackedValueFromNode(node, value);
-    } else if (!candidate.broker && /\b(?:broker|broker of record|producer|agent of record)\b/.test(normalizedLabel)) {
-      candidate.broker = sourceBackedValueFromNode(node, value.replace(/\s+RIBO Registration\b.*$/i, ""));
-    }
-  }
-
-  const jacketInsurerNode = nodes.find((node) =>
-    (node.pageStart ?? Number.MAX_SAFE_INTEGER) <= 2
-    && /\b[A-Z][A-Z &'’.-]+INSURANCE COMPANY\b/.test(node.textExcerpt ?? "")
-  );
-  const insurer = jacketInsurerNode?.textExcerpt?.match(/\b([A-Z][A-Z &'’.-]+INSURANCE COMPANY)\b/)?.[1];
-  if (jacketInsurerNode && insurer) {
-    const cleanInsurer = insurer.replace(/^(?:SPECIMEN POLICY\s+—\s+)?FOR TESTING ONLY\s+/i, "");
-    candidate.insurer = sourceBackedValueFromNode(jacketInsurerNode, titleCase(cleanInsurer.toLowerCase()));
-  }
-
-  if (!candidate.insurer) {
-    const manulifeNode = nodes.find((node) =>
-      (node.pageStart ?? Number.MAX_SAFE_INTEGER) <= 3
-      && /\bManulife\b/i.test([node.title, node.description, node.textExcerpt].filter(Boolean).join(" ")),
-    );
-    if (manulifeNode) {
-      candidate.insurer = sourceBackedValueFromNode(manulifeNode, "Manulife");
-    }
-  }
-
-  const brokerNode = nodes.find((node) => /\bItem\s*12\.\s*Broker of Record\b/i.test(node.textExcerpt ?? ""));
-  const broker = brokerNode?.textExcerpt?.match(/\bItem\s*12\.\s*Broker of Record\s+(.+?)(?=\s+Item\s*13\.|\s+SLS-[A-Z]|\s+This Policy\b|\s+Countersigned\b|$)/i)?.[1];
-  if (brokerNode && broker) {
-    candidate.broker = sourceBackedValueFromNode(brokerNode, broker.replace(/\s+RIBO Registration\b.*$/i, ""));
-  }
-
-  return candidate;
 }
 
 const POLICY_NUMBER_PATTERNS = [
   /\b(?:policy|contract)\s*(?:number|no\.?|#)\s*:?\s*([A-Z0-9][A-Z0-9,.-]{4,}[A-Z0-9])/i,
   /\b(?:policy|contract)\s*[:#]\s*([A-Z0-9][A-Z0-9,.-]{4,}[A-Z0-9])/i,
 ];
-
-const POLICY_TYPE_ALIASES: Record<string, string> = {
-  "life insurance": "life",
-  "permanent life": "life",
-  "term life": "life",
-  "whole life": "life",
-  "universal life": "life",
-  "critical illness": "critical_illness",
-  "critical illness insurance": "critical_illness",
-  "disability insurance": "disability",
-  "long term care": "long_term_care",
-  "long-term care": "long_term_care",
-};
 
 function policyNumberCandidateFromText(text: string): string | undefined {
   for (const pattern of POLICY_NUMBER_PATTERNS) {
@@ -905,72 +833,6 @@ function policyNumberCandidateFromText(text: string): string | undefined {
     if (clean) return clean;
   }
   return undefined;
-}
-
-function policyNumberEvidenceScore(node: DocumentSourceNode): number {
-  const text = normalizeWhitespace([
-    node.path,
-    node.title,
-    node.description,
-    node.textExcerpt,
-  ].filter(Boolean).join(" ")).toLowerCase();
-  let score = 0;
-  if (/\b(policy\s+summary|declarations?|declaration\s+page|schedule)\b/.test(text)) score += 80;
-  if (/\b(plan|policy\s+date|insured\s+person|named\s+insured|insurance\s+amount|benefit\s+amount)\b/.test(text)) score += 35;
-  if (node.kind === "table_row" || node.kind === "table_cell" || node.kind === "text") score += 20;
-  if (node.kind === "page") score += 10;
-  if (typeof node.pageStart === "number" && node.pageStart > 1 && node.pageStart <= 10) score += 20;
-  if (typeof node.pageStart === "number" && node.pageStart === 1) score -= 30;
-  if (/\b(notices?\s+and\s+jacket|policy\s+jacket|front\s+matter|table\s+of\s+contents)\b/.test(text)) score -= 70;
-  if (node.kind === "page_group" || node.kind === "form") score -= 30;
-  return score;
-}
-
-function repairPolicyNumberFromSourceTree(
-  profile: PolicyOperationalProfile,
-  sourceTree: DocumentSourceNode[],
-): PolicyOperationalProfile {
-  const current = profile.policyNumber?.value;
-  const candidateNodes = sourceTree
-    .filter((node) => node.kind !== "document")
-    .slice(0, 120)
-    .map((node) => ({
-      node,
-      value: policyNumberCandidateFromText([node.title, node.description, node.textExcerpt].filter(Boolean).join(" ")),
-      score: policyNumberEvidenceScore(node),
-    }))
-    .filter((item): item is { node: DocumentSourceNode; value: string; score: number } => Boolean(item.value))
-    .sort((left, right) =>
-      right.score - left.score ||
-      (left.node.pageStart ?? Number.MAX_SAFE_INTEGER) - (right.node.pageStart ?? Number.MAX_SAFE_INTEGER) ||
-      left.node.order - right.node.order,
-    );
-  const candidateNode = candidateNodes[0];
-  if (!candidateNode?.value) return profile;
-  if (current && candidateNode.value === current) return profile;
-  if (current && !isBadPolicyNumberValue(current) && !candidateNode.value.startsWith(current) && candidateNode.score < 80) {
-    return profile;
-  }
-  return {
-    ...profile,
-    policyNumber: sourceBackedValueFromNode(candidateNode.node, candidateNode.value, "high"),
-  };
-}
-
-function controlledPolicyTypes(values: unknown): string[] {
-  const types = Array.isArray(values)
-    ? values.filter((value): value is string => typeof value === "string")
-    : [];
-  const controlled = types
-    .map((type) => type.trim().toLowerCase().replace(/\s+/g, " "))
-    .map((type) => POLICY_TYPE_ALIASES[type] ?? type.replace(/[\s-]+/g, "_"))
-    .filter((type) => POLICY_TYPE_KEYS.has(type));
-  const unique = [...new Set(controlled)].slice(0, 6);
-  return unique.length ? unique : ["other"];
-}
-
-function controlledCoverageTypes(policyTypes: string[]): string[] {
-  return policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
 }
 
 const COVERAGE_TERM_KINDS = new Set([
@@ -990,6 +852,40 @@ function stringValues(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
     : [];
+}
+
+function cleanCoverageScalar(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = normalizeWhitespace(value).replace(/\s+\/$/g, "");
+  return text || undefined;
+}
+
+function hasMonetaryCoverageValue(value: string | undefined): boolean {
+  const text = normalizeWhitespace(value ?? "");
+  return /\$|(?:\b(?:USD|CAD)\b)|(?:\b\d+(?:,\d{3})*(?:\.\d+)?\s*%)/i.test(text);
+}
+
+function isUnusableCoverageName(name: string): boolean {
+  return /^(?:coverage\s+part\s+[A-Z]\)?|aggregate|claim|proceeding|each\s+(?:claim|loss|occurrence))$/i.test(name)
+    || /^\$[\d,.]+\s+policy$/i.test(name);
+}
+
+function isCoverageNameEcho(value: string | undefined, coverageName: string): boolean {
+  if (!value || hasMonetaryCoverageValue(value)) return false;
+  const normalized = normalizeCoverageName(value);
+  return Boolean(normalized && normalized.toLowerCase() === coverageName.toLowerCase());
+}
+
+function preferredCoverageLimit(
+  currentLimit: string | undefined,
+  coverageName: string,
+  limits: Array<{ label: string; value: string }>,
+): string | undefined {
+  if (currentLimit && !isCoverageNameEcho(currentLimit, coverageName)) return currentLimit;
+  return limits.find((term) =>
+    hasMonetaryCoverageValue(term.value) &&
+    !/\b(?:deductible|retention|premium)\b/i.test(term.label)
+  )?.value;
 }
 
 function cleanCoverageTerms(value: unknown): Array<{
@@ -1016,7 +912,7 @@ function cleanCoverageTerms(value: unknown): Array<{
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const record = item as Record<string, unknown>;
     const label = typeof record.label === "string" ? normalizeWhitespace(record.label) : "";
-    const termValue = typeof record.value === "string" ? normalizeWhitespace(record.value) : "";
+    const termValue = cleanCoverageScalar(record.value) ?? "";
     if (!label || !termValue) continue;
     const sourceNodeIds = stringValues(record.sourceNodeIds);
     const sourceSpanIds = stringValues(record.sourceSpanIds);
@@ -1046,39 +942,42 @@ function cleanOperationalCoverages(
   const seen = new Set<string>();
   for (const coverage of coverages) {
     const name = normalizeCoverageName(coverage.name);
-    if (!name) continue;
+    if (!name || isUnusableCoverageName(name)) continue;
     const record = coverage as OperationalCoverageLine & {
       limits?: unknown;
       retroactiveDate?: unknown;
-      coverageOrigin?: unknown;
       endorsementNumber?: unknown;
     };
-    const limits = cleanCoverageTerms(record.limits);
+    const limits = cleanCoverageTerms(record.limits)
+      .filter((term) => !isCoverageNameEcho(term.value, name));
+    const limit = preferredCoverageLimit(cleanCoverageScalar(coverage.limit), name, limits);
+    const deductible = cleanCoverageScalar(coverage.deductible);
+    const premium = cleanCoverageScalar(coverage.premium);
     if (
-      !coverage.limit &&
-      !coverage.deductible &&
-      !coverage.premium &&
+      !limit &&
+      !deductible &&
+      !premium &&
       !record.retroactiveDate &&
       limits.length === 0 &&
       !coverage.formNumber &&
-      !coverage.sectionRef &&
-      record.coverageOrigin !== "core" &&
-      record.coverageOrigin !== "endorsement"
+      !coverage.sectionRef
     ) {
       continue;
     }
-    if (coverage.sourceNodeIds.length === 0 && coverage.sourceSpanIds.length === 0 && limits.every((term) => term.sourceNodeIds.length === 0 && term.sourceSpanIds.length === 0)) {
-      continue;
-    }
+    const coverageBase = { ...coverage } as OperationalCoverageLine & { limits?: unknown };
+    delete coverageBase.limit;
+    delete coverageBase.deductible;
+    delete coverageBase.premium;
+    delete coverageBase.limits;
     const normalized: OperationalCoverageLine = {
-      ...coverage,
+      ...coverageBase,
       name,
+      ...(limit ? { limit } : {}),
+      ...(deductible ? { deductible } : {}),
+      ...(premium ? { premium } : {}),
       ...(limits.length ? { limits } : {}),
       ...(typeof record.retroactiveDate === "string" && record.retroactiveDate.trim()
         ? { retroactiveDate: record.retroactiveDate.trim() }
-        : {}),
-      ...(record.coverageOrigin === "core" || record.coverageOrigin === "endorsement"
-        ? { coverageOrigin: record.coverageOrigin }
         : {}),
       ...(typeof record.endorsementNumber === "string" && record.endorsementNumber.trim()
         ? { endorsementNumber: record.endorsementNumber.trim() }
@@ -1088,9 +987,9 @@ function cleanOperationalCoverages(
     } as OperationalCoverageLine;
     const key = [
       normalized.name.toLowerCase(),
-      normalized.limit ?? "",
-      normalized.deductible ?? "",
-      normalized.premium ?? "",
+      limit ?? "",
+      deductible ?? "",
+      premium ?? "",
       (normalized as OperationalCoverageLine & { retroactiveDate?: string }).retroactiveDate ?? "",
       JSON.stringify((normalized as OperationalCoverageLine & { limits?: unknown[] }).limits ?? []),
       normalized.formNumber ?? "",
@@ -1103,183 +1002,10 @@ function cleanOperationalCoverages(
   return cleaned;
 }
 
-const PLACEHOLDER_AMOUNT_PATTERN = /\$[A-Z]{1,3}(?:,[A-Z]{3})*(?:\.[A-Z]{2})?/g;
-
-function repairPlaceholderAmountFromSource(value: string, sourceText: string): string {
-  if (!/\$[A-Z]/.test(value)) return value;
-  const candidates = [...sourceText.matchAll(PLACEHOLDER_AMOUNT_PATTERN)]
-    .map((match) => match[0])
-    .filter((candidate) => candidate.toLowerCase().startsWith(value.toLowerCase()))
-    .sort((left, right) => right.length - left.length);
-  return candidates[0] ?? value;
-}
-
-function sourceTextForIds(nodeTextById: Map<string, string>, ids: string[]): string {
-  return normalizeWhitespace(ids.map((id) => nodeTextById.get(id) ?? "").filter(Boolean).join(" "));
-}
-
-function repairCoverageTermsFromSourceTree(
-  profile: PolicyOperationalProfile,
-  sourceTree: DocumentSourceNode[],
-): PolicyOperationalProfile {
-  const nodeTextById = new Map(sourceTree.map((node) => [
-    node.id,
-    [node.title, node.description, node.textExcerpt].filter(Boolean).join(" "),
-  ]));
-  let changed = false;
-  const coverages = profile.coverages.map((coverage: OperationalCoverageLine) => {
-    const record = coverage as OperationalCoverageLine & { limits?: unknown[] };
-    if (!Array.isArray(record.limits) || record.limits.length === 0) return coverage;
-    const limits = record.limits.map((term: unknown) => {
-      if (!term || typeof term !== "object" || Array.isArray(term)) return term;
-      const termRecord = term as {
-        value?: unknown;
-        sourceNodeIds?: unknown;
-      };
-      if (typeof termRecord.value !== "string" || !Array.isArray(termRecord.sourceNodeIds)) return term;
-      const sourceNodeIds = termRecord.sourceNodeIds.filter((id): id is string => typeof id === "string");
-      const sourceText = sourceTextForIds(nodeTextById, sourceNodeIds);
-      const repaired = repairPlaceholderAmountFromSource(termRecord.value, sourceText);
-      if (repaired === termRecord.value) return term;
-      changed = true;
-      return { ...termRecord, value: repaired };
-    });
-    return { ...coverage, limits } as OperationalCoverageLine;
-  });
-  return changed ? { ...profile, coverages } : profile;
-}
-
-function coverageHasTerm(coverage: OperationalCoverageLine, label: RegExp): boolean {
-  const record = coverage as OperationalCoverageLine & { limits?: unknown[] };
-  return Array.isArray(record.limits) && record.limits.some((term: unknown) =>
-    Boolean(term) &&
-    typeof term === "object" &&
-    !Array.isArray(term) &&
-    typeof (term as { label?: unknown }).label === "string" &&
-    label.test((term as { label: string }).label),
-  );
-}
-
-function withSourceBackedPersonalBenefitTerms(
-  profile: PolicyOperationalProfile,
-  sourceTree: DocumentSourceNode[],
-): PolicyOperationalProfile {
-  const disabilityIndex = profile.coverages.findIndex((coverage: OperationalCoverageLine) => /\bdisability\s+benefit\b/i.test(coverage.name));
-  if (disabilityIndex < 0 || coverageHasTerm(profile.coverages[disabilityIndex], /\bcatastrophic\s+disability\b/i)) {
-    return profile;
-  }
-  const nodes = sourceTree.filter((node) => node.kind !== "document");
-  const catastrophicHeading = nodes.find((node) =>
-    /\bcatastrophic\s+disability\b/i.test(normalizeWhitespace(node.textExcerpt ?? node.title ?? "")) &&
-    normalizeWhitespace(node.textExcerpt ?? node.title ?? "").length <= 80,
-  );
-  const catastrophicAgeWindow = nodes.find((node) =>
-    /\bany\s+catastrophic\s+disability\s+must\s+occur\b/i.test(normalizeWhitespace(node.textExcerpt ?? node.description ?? "")),
-  );
-  const catastrophicCategories = nodes.find((node) =>
-    /\b4\s+categories\s+of\s+catastrophic\s+disability\b/i.test(normalizeWhitespace(node.textExcerpt ?? node.description ?? "")),
-  );
-  if (!catastrophicHeading && !catastrophicAgeWindow && !catastrophicCategories) return profile;
-
-  const termNodes = [catastrophicHeading, catastrophicAgeWindow, catastrophicCategories]
-    .filter((node): node is DocumentSourceNode => Boolean(node));
-  const sourceNodeIds = [...new Set(termNodes.map((node) => node.id))];
-  const sourceSpanIds = [...new Set(termNodes.flatMap((node) => node.sourceSpanIds))];
-  const catastrophicTerm = {
-    kind: "other",
-    label: "Catastrophic disability",
-    value: "Any catastrophic disability must occur on or after the policy anniversary nearest the insured person's 18th birthday; the policy lists 4 categories of catastrophic disability.",
-    appliesTo: "Disability benefit",
-    sourceNodeIds,
-    sourceSpanIds,
-  };
-  const coverages = profile.coverages.map((coverage: OperationalCoverageLine, index: number) => {
-    if (index !== disabilityIndex) return coverage;
-    const record = coverage as OperationalCoverageLine & { limits?: unknown[] };
-    return {
-      ...coverage,
-      limits: [...(Array.isArray(record.limits) ? record.limits : []), catastrophicTerm],
-      sourceNodeIds: [...new Set([...coverage.sourceNodeIds, ...sourceNodeIds])],
-      sourceSpanIds: [...new Set([...coverage.sourceSpanIds, ...sourceSpanIds])],
-    } as OperationalCoverageLine;
-  });
-  return { ...profile, coverages };
-}
-
-type OperationalCoverageExtension = {
-  coverageOrigin?: "core" | "endorsement";
-  coverageOriginConfidence?: "low" | "medium" | "high";
-  coverageOriginReason?: string;
-};
-
 type OperationalProfileExtensions = {
   additionalInsuredEligibility?: unknown;
   additionalInsureds?: unknown;
 };
-
-function coverageExtensionKey(coverage: Record<string, unknown>): string {
-  const sourceNodeIds = Array.isArray(coverage.sourceNodeIds)
-    ? coverage.sourceNodeIds.filter((id): id is string => typeof id === "string")
-    : [];
-  const sourceSpanIds = Array.isArray(coverage.sourceSpanIds)
-    ? coverage.sourceSpanIds.filter((id): id is string => typeof id === "string")
-    : [];
-  return [
-    normalizeWhitespace(String(coverage.name ?? "")).toLowerCase(),
-    normalizeWhitespace(String(coverage.limit ?? "")).toLowerCase(),
-    normalizeWhitespace(String(coverage.deductible ?? "")).toLowerCase(),
-    normalizeWhitespace(String(coverage.premium ?? "")).toLowerCase(),
-    sourceNodeIds.join(","),
-    sourceSpanIds.join(","),
-  ].join("|");
-}
-
-function storedCoverageExtensions(rawProfile: unknown): Map<string, OperationalCoverageExtension> {
-  const extensions = new Map<string, OperationalCoverageExtension>();
-  const rows = rawProfile
-    && typeof rawProfile === "object"
-    && !Array.isArray(rawProfile)
-    && Array.isArray((rawProfile as Record<string, unknown>).coverages)
-    ? (rawProfile as { coverages: unknown[] }).coverages
-    : [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-    const record = row as Record<string, unknown>;
-    const coverageOrigin = record.coverageOrigin === "core" || record.coverageOrigin === "endorsement"
-      ? record.coverageOrigin
-      : undefined;
-    const coverageOriginConfidence = record.coverageOriginConfidence === "low"
-      || record.coverageOriginConfidence === "medium"
-      || record.coverageOriginConfidence === "high"
-      ? record.coverageOriginConfidence
-      : undefined;
-    const coverageOriginReason = typeof record.coverageOriginReason === "string"
-      ? record.coverageOriginReason
-      : undefined;
-    if (!coverageOrigin && !coverageOriginConfidence && !coverageOriginReason) continue;
-    extensions.set(coverageExtensionKey(record), {
-      coverageOrigin,
-      coverageOriginConfidence,
-      coverageOriginReason,
-    });
-  }
-  return extensions;
-}
-
-function preserveCoverageExtensions(
-  profile: PolicyOperationalProfile,
-  rawProfile: unknown,
-): PolicyOperationalProfile {
-  const extensions = storedCoverageExtensions(rawProfile);
-  if (extensions.size === 0) return profile;
-  return {
-    ...profile,
-    coverages: profile.coverages.map((coverage: OperationalCoverageLine) => ({
-      ...coverage,
-      ...extensions.get(coverageExtensionKey(coverage as unknown as Record<string, unknown>)),
-    })),
-  };
-}
 
 function storedProfileExtensions(rawProfile: unknown): OperationalProfileExtensions {
   if (!rawProfile || typeof rawProfile !== "object" || Array.isArray(rawProfile)) return {};
@@ -1299,7 +1025,7 @@ function preserveOperationalProfileExtensions(
   rawProfile: unknown,
 ): PolicyOperationalProfile {
   return {
-    ...preserveCoverageExtensions(profile, rawProfile),
+    ...profile,
     ...storedProfileExtensions(rawProfile),
   } as PolicyOperationalProfile;
 }
@@ -1333,10 +1059,11 @@ function finalizeSourceBackedIdentity(
   role?: OperationalParty["role"],
 ): SourceBackedValue | undefined {
   if (!value) return undefined;
-  if (role === "broker" ? isBadBrokerValue(value.value) : isBadOperationalIdentityValue(value.value)) {
+  const identityValue = preferredIdentityText(value, role);
+  if (role === "broker" ? isBadBrokerValue(identityValue) : isBadOperationalIdentityValue(identityValue)) {
     return undefined;
   }
-  return { ...value, value: restoreLegalSuffixPunctuation(value.value) };
+  return { ...value, value: restoreLegalSuffixPunctuation(identityValue) };
 }
 
 function finalizeSourceBackedPolicyNumber(value: SourceBackedValue | undefined): SourceBackedValue | undefined {
@@ -1345,92 +1072,29 @@ function finalizeSourceBackedPolicyNumber(value: SourceBackedValue | undefined):
 }
 
 function finalizeSourceBackedPremium(value: SourceBackedValue | undefined): SourceBackedValue | undefined {
-  return value && isValidPremiumValue(value.value) ? value : undefined;
-}
-
-function sourceIds(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && id.trim().length > 0) : [];
-}
-
-function isLikelyCoverageNamedInsuredValue(value: string): boolean {
-  const text = normalizeWhitespace(value);
-  if (!isLikelyNamedInsuredValue(text) || isBadOperationalIdentityValue(text)) return false;
-  return !/\b(?:insurance\s+amount|benefit\s+amount|premium|risk\s+classification|policy\s+date|date\s+this\s+policy\s+ends|plan)\b\s*:?\s*$/i.test(text);
-}
-
-function namedInsuredFromCoverageTerms(coverages: OperationalCoverageLine[]): SourceBackedValue | undefined {
-  for (const coverage of coverages) {
-    const coverageRecord = coverage as OperationalCoverageLine & { limits?: unknown[] };
-    if (!Array.isArray(coverageRecord.limits)) continue;
-
-    for (const term of coverageRecord.limits) {
-      if (!term || typeof term !== "object" || Array.isArray(term)) continue;
-      const record = term as Record<string, unknown>;
-      const label = normalizeWhitespace(typeof record.label === "string" ? record.label : "");
-      const value = normalizeWhitespace(typeof record.value === "string" ? record.value : "");
-      if (!/\binsured\s+persons?\b/i.test(label) || !isLikelyCoverageNamedInsuredValue(value)) continue;
-
-      const sourceNodeIds = sourceIds(record.sourceNodeIds);
-      const sourceSpanIds = sourceIds(record.sourceSpanIds);
-      if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0) continue;
-
-      return {
-        value,
-        confidence: "medium",
-        sourceNodeIds,
-        sourceSpanIds,
-      };
-    }
-  }
-  return undefined;
-}
-
-function normalizedIdentityComparison(value: string): string {
-  return normalizeWhitespace(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function preferCoverageNamedInsured(
-  current: SourceBackedValue | undefined,
-  candidate: SourceBackedValue | undefined,
-  policyTypes: string[],
-): SourceBackedValue | undefined {
-  if (!candidate) return current;
-  if (!current) return candidate;
-
-  const currentText = normalizedIdentityComparison(current.value);
-  const candidateText = normalizedIdentityComparison(candidate.value);
-  if (!currentText || !candidateText || currentText === candidateText) return current;
-
-  if (policyTypes.some((type) => ["life", "critical_illness", "disability", "long_term_care"].includes(type))) {
-    return candidate;
-  }
-
-  const currentWordCount = currentText.split(/\s+/).length;
-  const candidateWordCount = candidateText.split(/\s+/).length;
-  if (candidateText.includes(currentText) && candidateWordCount > currentWordCount) {
-    return candidate;
-  }
-  return current;
+  if (!value) return undefined;
+  const premiumCandidate = preferredPremiumMoneyCandidate(value);
+  if (!premiumCandidate) return isValidPremiumValue(value.value) ? value : undefined;
+  return {
+    ...value,
+    value: premiumCandidate.value,
+    normalizedValue: String(premiumCandidate.amount),
+  };
 }
 
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
-  const policyTypes = controlledPolicyTypes(profile.policyTypes);
   const coverages = cleanOperationalCoverages(profile.coverages);
-  const namedInsured = preferCoverageNamedInsured(
-    finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
-    namedInsuredFromCoverageTerms(coverages),
-    policyTypes,
-  );
+  const resolvedTypes = resolveOperationalProfilePolicyTypes({
+    profileTypes: profile.policyTypes,
+    coverages,
+  });
   const finalized: PolicyOperationalProfile = {
     ...profile,
-    policyTypes,
-    coverageTypes: controlledCoverageTypes(policyTypes),
+    policyTypes: resolvedTypes.policyTypes,
     coverages,
+    warnings: profile.warnings,
     policyNumber: finalizeSourceBackedPolicyNumber(profile.policyNumber),
-    namedInsured,
+    namedInsured: finalizeSourceBackedIdentity(profile.namedInsured, "named_insured"),
     insurer: finalizeSourceBackedIdentity(profile.insurer, "insurer"),
     broker: finalizeSourceBackedIdentity(profile.broker, "broker"),
     premium: finalizeSourceBackedPremium(profile.premium),
@@ -1448,141 +1112,208 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
   return finalized;
 }
 
-export function withControlledPolicyTypes(
-  profile: PolicyOperationalProfile,
-  policyTypes: string[],
-): PolicyOperationalProfile {
-  return finalizeOperationalProfile({
-    ...profile,
-    policyTypes: controlledPolicyTypes(policyTypes),
+function sameStringArray(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function emptyOperationalProfile(): PolicyOperationalProfile {
+  return PolicyOperationalProfileSchema.parse({
+    documentType: "policy",
+    policyTypes: ["other"],
+    coverages: [],
+    parties: [],
+    endorsementSupport: [],
+    sourceNodeIds: [],
+    sourceSpanIds: [],
+    warnings: [],
   });
 }
 
-function documentProfileCandidate(
-  document: Record<string, unknown> | undefined,
-  sourceTree: DocumentSourceNode[],
-): Partial<PolicyOperationalProfile> {
-  if (!document) return {};
-  const nodes = sourceTree.filter((node) => node.kind !== "document");
-  const documentCoverages = Array.isArray(document.coverages)
-    ? (document.coverages as Array<Record<string, unknown>>)
-        .map((coverage): OperationalCoverageLine | undefined => {
-          if (typeof coverage.name !== "string" || !coverage.name.trim()) return undefined;
-          const nodeId = typeof coverage.documentNodeId === "string" ? coverage.documentNodeId : undefined;
-          const node = nodeId ? sourceTree.find((item) => item.id === nodeId) : undefined;
-          const sourceSpanIds = Array.isArray(coverage.sourceSpanIds)
-            ? coverage.sourceSpanIds.filter((id): id is string => typeof id === "string")
-            : node?.sourceSpanIds ?? [];
-          if (!node && sourceSpanIds.length === 0) return undefined;
-          return {
-            name: coverage.name.trim(),
-            coverageCode: typeof coverage.coverageCode === "string" ? coverage.coverageCode : undefined,
-            limit: typeof coverage.limit === "string" ? coverage.limit : undefined,
-            deductible: typeof coverage.deductible === "string" ? coverage.deductible : undefined,
-            premium: typeof coverage.premium === "string" ? coverage.premium : typeof coverage.coveragePremium === "string" ? coverage.coveragePremium : undefined,
-            retroactiveDate: typeof coverage.retroactiveDate === "string" ? coverage.retroactiveDate : undefined,
-            formNumber: typeof coverage.formNumber === "string" ? coverage.formNumber : undefined,
-            sectionRef: typeof coverage.sectionRef === "string" ? coverage.sectionRef : undefined,
-            coverageOrigin: coverage.coverageOrigin === "core" || coverage.coverageOrigin === "endorsement"
-              ? coverage.coverageOrigin
-              : undefined,
-            endorsementNumber: typeof coverage.endorsementNumber === "string" ? coverage.endorsementNumber : undefined,
-            limits: cleanCoverageTerms(coverage.limits),
-            sourceNodeIds: node ? [node.id] : nodeId ? [nodeId] : [],
-            sourceSpanIds,
-          } as OperationalCoverageLine;
-        })
-        .filter((coverage): coverage is OperationalCoverageLine => Boolean(coverage))
-    : [];
+function validSourceIds(value: unknown, validIds: Set<string>): string[] {
+  return [...new Set(stringValues(value).filter((id) => validIds.has(id)))];
+}
+
+function normalizeRawSourceBackedValue(
+  value: unknown,
+  validNodeIds: Set<string>,
+  validSpanIds: Set<string>,
+): SourceBackedValue | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const text = cleanCoverageScalar(record.value);
+  const sourceNodeIds = validSourceIds(record.sourceNodeIds, validNodeIds);
+  const sourceSpanIds = validSourceIds(record.sourceSpanIds, validSpanIds);
+  if (!text) return undefined;
+  const hasSource = sourceNodeIds.length > 0 || sourceSpanIds.length > 0;
+  const confidence = record.confidence === "low" || record.confidence === "medium" || record.confidence === "high"
+    ? record.confidence
+    : undefined;
   return {
-    policyTypes: Array.isArray(document.policyTypes)
-      ? document.policyTypes.filter((type): type is string => typeof type === "string")
-      : undefined,
-    policyNumber: sourceBackedValueFromDocument(document.policyNumber, nodes),
-    namedInsured: sourceBackedValueFromDocument(document.insuredName, nodes),
-    insurer: sourceBackedValueFromDocument(document.security ?? document.carrier, nodes),
-    broker: sourceBackedValueFromDocument(document.broker, nodes),
-    effectiveDate: sourceBackedValueFromDocument(document.effectiveDate, nodes),
-    expirationDate: sourceBackedValueFromDocument(document.expirationDate, nodes),
-    retroactiveDate: sourceBackedValueFromDocument(document.retroactiveDate, nodes),
-    premium: sourceBackedValueFromDocument(document.premium ?? document.totalCost, nodes),
-    coverages: documentCoverages.length ? documentCoverages : undefined,
+    value: text,
+    ...(typeof record.normalizedValue === "string" && record.normalizedValue.trim()
+      ? { normalizedValue: normalizeWhitespace(record.normalizedValue) }
+      : {}),
+    ...(hasSource
+      ? confidence ? { confidence } : {}
+      : { confidence: "low" as const }),
+    sourceNodeIds,
+    sourceSpanIds,
   };
 }
 
-export function buildDeterministicOperationalProfile(
-  sourceTree: DocumentSourceNode[],
-  document?: Record<string, unknown>,
+function normalizeRawCoverageTerm(
+  value: unknown,
+  validNodeIds: Set<string>,
+  validSpanIds: Set<string>,
+): NonNullable<OperationalCoverageLine["limits"]>[number] | undefined {
+  const [term] = cleanCoverageTerms([value]);
+  if (!term) return undefined;
+  const sourceNodeIds = validSourceIds(term.sourceNodeIds, validNodeIds);
+  const sourceSpanIds = validSourceIds(term.sourceSpanIds, validSpanIds);
+  return {
+    ...term,
+    sourceNodeIds,
+    sourceSpanIds,
+  };
+}
+
+function normalizeRawCoverage(
+  value: unknown,
+  validNodeIds: Set<string>,
+  validSpanIds: Set<string>,
+): OperationalCoverageLine | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const name = cleanCoverageScalar(record.name);
+  if (!name) return undefined;
+  const limits = Array.isArray(record.limits)
+    ? record.limits
+        .map((term) => normalizeRawCoverageTerm(term, validNodeIds, validSpanIds))
+        .filter((term): term is NonNullable<OperationalCoverageLine["limits"]>[number] => Boolean(term))
+    : [];
+  const sourceNodeIds = validSourceIds([
+    ...stringValues(record.sourceNodeIds),
+    ...limits.flatMap((term) => term.sourceNodeIds),
+  ], validNodeIds);
+  const sourceSpanIds = validSourceIds([
+    ...stringValues(record.sourceSpanIds),
+    ...limits.flatMap((term) => term.sourceSpanIds),
+  ], validSpanIds);
+  return {
+    name,
+    ...(cleanCoverageScalar(record.coverageCode) ? { coverageCode: cleanCoverageScalar(record.coverageCode) } : {}),
+    ...(cleanCoverageScalar(record.limit) ? { limit: cleanCoverageScalar(record.limit) } : {}),
+    ...(cleanCoverageScalar(record.deductible) ? { deductible: cleanCoverageScalar(record.deductible) } : {}),
+    ...(cleanCoverageScalar(record.premium) ? { premium: cleanCoverageScalar(record.premium) } : {}),
+    ...(cleanCoverageScalar(record.retroactiveDate) ? { retroactiveDate: cleanCoverageScalar(record.retroactiveDate) } : {}),
+    ...(cleanCoverageScalar(record.formNumber) ? { formNumber: cleanCoverageScalar(record.formNumber) } : {}),
+    ...(cleanCoverageScalar(record.sectionRef) ? { sectionRef: cleanCoverageScalar(record.sectionRef) } : {}),
+    ...(cleanCoverageScalar(record.endorsementNumber) ? { endorsementNumber: cleanCoverageScalar(record.endorsementNumber) } : {}),
+    limits,
+    sourceNodeIds,
+    sourceSpanIds,
+  };
+}
+
+function normalizeRawEndorsementSupport(
+  value: unknown,
+  validNodeIds: Set<string>,
+  validSpanIds: Set<string>,
+): PolicyOperationalProfile["endorsementSupport"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const kind = cleanCoverageScalar(record.kind);
+    const summary = cleanCoverageScalar(record.summary);
+    const sourceNodeIds = validSourceIds(record.sourceNodeIds, validNodeIds);
+    const sourceSpanIds = validSourceIds(record.sourceSpanIds, validSpanIds);
+    const status = record.status === "supported" || record.status === "excluded" || record.status === "requires_review"
+      ? record.status
+      : undefined;
+    if (!kind || !summary || !status || (sourceNodeIds.length === 0 && sourceSpanIds.length === 0)) return [];
+    return [{ kind, status, summary, sourceNodeIds, sourceSpanIds }];
+  });
+}
+
+function normalizeRawOperationalProfile(
+  rawProfile: unknown,
+  validNodeIds: Set<string>,
+  validSpanIds: Set<string>,
 ): PolicyOperationalProfile {
-  const documentId = sourceTree[0]?.documentId ?? "document";
-  const sdkSpans = sourceSpansForSdk([], documentId);
-  const fallback = buildSdkOperationalProfile({ sourceTree, sourceSpans: sdkSpans });
-  const candidate = documentProfileCandidate(document, sourceTree);
-  const withDocument = mergeOperationalProfile(
-    fallback,
-    sanitizeOperationalProfileCandidate(candidate),
-    new Set(sourceTree.map((node) => node.id)),
-    new Set(sourceTree.flatMap((node) => node.sourceSpanIds)),
-  );
-  const withDeclarations = mergeOperationalProfile(
-    withDocument,
-    declarationProfileCandidate(sourceTree),
-    new Set(sourceTree.map((node) => node.id)),
-    new Set(sourceTree.flatMap((node) => node.sourceSpanIds)),
-  );
-  const repaired = withSourceBackedPersonalBenefitTerms(
-    repairCoverageTermsFromSourceTree(
-      repairPolicyNumberFromSourceTree(withEvidencePolicyTypes(withDeclarations, sourceTree), sourceTree),
-      sourceTree,
+  if (!rawProfile || typeof rawProfile !== "object" || Array.isArray(rawProfile)) {
+    return emptyOperationalProfile();
+  }
+  const candidate = sanitizeOperationalProfileCandidate(rawProfile as Partial<PolicyOperationalProfile>);
+  const candidateCoverages: unknown[] = Array.isArray(candidate.coverages)
+    ? candidate.coverages
+    : [];
+  const coverages = candidateCoverages.length > 0
+    ? candidateCoverages
+        .map((coverage) => normalizeRawCoverage(coverage, validNodeIds, validSpanIds))
+        .filter((coverage): coverage is OperationalCoverageLine => Boolean(coverage))
+    : [];
+  const values = [
+    candidate.policyNumber,
+    candidate.namedInsured,
+    candidate.insurer,
+    candidate.broker,
+    candidate.effectiveDate,
+    candidate.expirationDate,
+    candidate.retroactiveDate,
+    candidate.premium,
+  ].map((value) => normalizeRawSourceBackedValue(value, validNodeIds, validSpanIds));
+  const sourceNodeIds = [...new Set([
+    ...values.flatMap((value) => value?.sourceNodeIds ?? []),
+    ...coverages.flatMap((coverage) => coverage.sourceNodeIds),
+  ])];
+  const sourceSpanIds = [...new Set([
+    ...values.flatMap((value) => value?.sourceSpanIds ?? []),
+    ...coverages.flatMap((coverage) => coverage.sourceSpanIds),
+  ])];
+  return PolicyOperationalProfileSchema.parse({
+    documentType: candidate.documentType === "quote" ? "quote" : "policy",
+    policyTypes: normalizeOperationalPolicyTypes(candidate.policyTypes),
+    policyNumber: values[0],
+    namedInsured: values[1],
+    insurer: values[2],
+    broker: values[3],
+    effectiveDate: values[4],
+    expirationDate: values[5],
+    retroactiveDate: values[6],
+    premium: values[7],
+    coverages,
+    parties: [],
+    endorsementSupport: normalizeRawEndorsementSupport(
+      (candidate as { endorsementSupport?: unknown }).endorsementSupport,
+      validNodeIds,
+      validSpanIds,
     ),
-    sourceTree,
-  );
-  return finalizeOperationalProfile(repaired);
+    sourceNodeIds,
+    sourceSpanIds,
+    warnings: Array.isArray(candidate.warnings)
+      ? (candidate.warnings as unknown[]).filter((warning): warning is string => typeof warning === "string")
+      : [],
+  });
 }
 
 export function normalizeOperationalProfile(
   rawProfile: unknown,
   sourceTree: DocumentSourceNode[],
   sourceSpans: SourceSpanLike[],
-  document?: Record<string, unknown>,
 ): PolicyOperationalProfile {
   const sdkSpans = sourceSpansForSdk(sourceSpans, sourceTree[0]?.documentId ?? "document");
   const validNodeIds = new Set(sourceTree.map((node) => node.id));
   const validSpanIds = new Set(sdkSpans.map((span) => span.id));
-  const fallback = buildSdkOperationalProfile({ sourceTree, sourceSpans: sdkSpans });
-  const withDocument = mergeOperationalProfile(
-    fallback,
-    sanitizeOperationalProfileCandidate(documentProfileCandidate(document, sourceTree)),
-    validNodeIds,
-    validSpanIds,
+  const normalized = normalizeRawOperationalProfile(rawProfile, validNodeIds, validSpanIds);
+  return preserveOperationalProfileExtensions(
+    finalizeOperationalProfile(normalized),
+    rawProfile,
   );
-  const withDeclarations = mergeOperationalProfile(
-    withDocument,
-    declarationProfileCandidate(sourceTree),
-    validNodeIds,
-    validSpanIds,
-  );
-  const withRaw = rawProfile && typeof rawProfile === "object" && !Array.isArray(rawProfile)
-    ? mergeOperationalProfile(
-      withDeclarations,
-      sanitizeOperationalProfileCandidate(rawProfile as Partial<PolicyOperationalProfile>),
-      validNodeIds,
-      validSpanIds,
-    )
-    : withDeclarations;
-  const repaired = withSourceBackedPersonalBenefitTerms(
-    repairCoverageTermsFromSourceTree(
-      repairPolicyNumberFromSourceTree(withEvidencePolicyTypes(withRaw, sourceTree), sourceTree),
-      sourceTree,
-    ),
-    sourceTree,
-  );
-  return preserveOperationalProfileExtensions(finalizeOperationalProfile(repaired), rawProfile);
 }
 
 export function normalizeStoredOperationalProfile(
   rawProfile: unknown,
-  document?: Record<string, unknown>,
 ): PolicyOperationalProfile {
   const nodeIds = new Set<string>();
   const spanIds = new Set<string>();
@@ -1649,7 +1380,7 @@ export function normalizeStoredOperationalProfile(
       metadata: {},
     })),
   ];
-  return normalizeOperationalProfile(rawProfile, sourceTree, sourceSpans, document);
+  return normalizeOperationalProfile(rawProfile, sourceTree, sourceSpans);
 }
 
 function profileValue(profile: PolicyOperationalProfile, key: keyof PolicyOperationalProfile): string | undefined {
@@ -1827,8 +1558,24 @@ export function sourceTreePolicyFields(params: {
   operationalProfile: PolicyOperationalProfile;
   existingDocumentMetadata?: unknown;
   existingDeclarations?: unknown;
+  existingPolicyTypes?: unknown;
 }): Record<string, unknown> {
-  const { sourceTree, operationalProfile } = params;
+  const { sourceTree } = params;
+  const resolvedTypes = resolveOperationalProfilePolicyTypes({
+    profileTypes: params.operationalProfile.policyTypes,
+    existingTypes: params.existingPolicyTypes,
+    coverages: params.operationalProfile.coverages,
+  });
+  const policyTypesChanged = !sameStringArray(
+    resolvedTypes.policyTypes,
+    params.operationalProfile.policyTypes,
+  );
+  const operationalProfile: PolicyOperationalProfile = policyTypesChanged
+    ? {
+        ...params.operationalProfile,
+        policyTypes: resolvedTypes.policyTypes,
+      }
+    : params.operationalProfile;
   const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);
   const hasEvidenceNodes = sourceTree.some((node) => node.kind !== "document");
   const existingMetadata = params.existingDocumentMetadata && typeof params.existingDocumentMetadata === "object" && !Array.isArray(params.existingDocumentMetadata)
@@ -1882,7 +1629,13 @@ export function operationalProfilePolicyFields(
   const effectiveDate = profileValue(operationalProfile, "effectiveDate");
   const expirationDate = profileValue(operationalProfile, "expirationDate");
   const retroactiveDate = profileValue(operationalProfile, "retroactiveDate");
-  const premium = profileValue(operationalProfile, "premium");
+  const premiumField = profileField(operationalProfile, "premium");
+  const premium = premiumField?.value;
+  const premiumNormalizedValue = premiumField
+    ? sourceBackedString(premiumField, "normalizedValue")
+    : undefined;
+  const premiumAmount = moneyNumberFromString(premiumNormalizedValue)
+    ?? moneyNumberFromString(premium);
   fields.policyNumber = policyNumber ?? "Unknown";
   fields.insuredName = namedInsured ?? "Unknown";
   if (insurer) {
@@ -1897,14 +1650,19 @@ export function operationalProfilePolicyFields(
   if (expirationDate) fields.expirationDate = expirationDate;
   if (retroactiveDate) fields.retroactiveDate = retroactiveDate;
   fields.premium = premium ?? undefined;
+  if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.policyTypes.length > 0) fields.policyTypes = operationalProfile.policyTypes;
+  const summary = [
+    insurer && insurer !== "Unknown" ? insurer : undefined,
+    policyNumber && policyNumber !== "Unknown" ? `policy #${policyNumber}` : "policy",
+    namedInsured && namedInsured !== "Unknown" ? `for ${namedInsured}` : undefined,
+    operationalProfile.policyTypes.length > 0 ? `covering ${operationalProfile.policyTypes.slice(0, 5).join(", ")}` : undefined,
+  ].filter(Boolean).join(" ");
+  if (summary) fields.summary = summary;
   if (operationalProfile.coverages.length > 0) {
     fields.coverages = operationalProfile.coverages.map((coverage: OperationalCoverageLine) => {
       const coverageRecord = coverage as OperationalCoverageLine & {
-        coverageOrigin?: "core" | "endorsement";
-        coverageOriginConfidence?: "low" | "medium" | "high";
-        coverageOriginReason?: string;
         endorsementNumber?: string;
         retroactiveDate?: string;
         limits?: unknown[];
@@ -1918,9 +1676,6 @@ export function operationalProfilePolicyFields(
         retroactiveDate: coverageRecord.retroactiveDate,
         formNumber: coverage.formNumber,
         sectionRef: coverage.sectionRef,
-        coverageOrigin: coverageRecord.coverageOrigin,
-        coverageOriginConfidence: coverageRecord.coverageOriginConfidence,
-        coverageOriginReason: coverageRecord.coverageOriginReason,
         endorsementNumber: coverageRecord.endorsementNumber,
         limits: coverageRecord.limits,
         documentNodeId: coverage.sourceNodeIds[0],

@@ -1,25 +1,16 @@
-import {
-  parseCertificateHolderBlock,
-  type CertificateHolderAddressInput,
-} from "../certificateIdentity";
 import { inferCertificateEndorsements } from "../certificateRequestGate";
-import { workflowCommsPlan, workflowToolMessage } from "./comms";
+import { workflowCommsPlan } from "./comms";
 import type {
   WorkflowArtifact,
   WorkflowAuditEntry,
   WorkflowOutcome,
   WorkflowSideEffect,
-  WorkflowSlot,
-  WorkflowToolResult,
 } from "./types";
 
 export type CertificateRequestNextAction =
   | "return_existing_certificate"
-  | "ask_for_holder_address"
   | "generate_certificate"
   | "hold_for_broker_follow_up"
-  | "request_program_approval"
-  | "choose_program"
   | "wait_for_extraction"
   | "wait_for_source_tree"
   | "report_failure";
@@ -31,7 +22,6 @@ export type CertificateRequestWorkflowParams = {
   holderContactName?: string;
   holderEmail?: string;
   holderPhone?: string;
-  holderAddress?: CertificateHolderAddressInput;
   requestText?: string;
   requestedEndorsements?: string[];
 };
@@ -45,25 +35,7 @@ export const CERTIFICATE_FORBIDDEN_QUESTIONS = [
 export const CERTIFICATE_FORBIDDEN_CLAIMS = [
   "certificate_generated_without_file",
   "certificate_emailed_without_send_side_effect",
-  "certified_without_authority",
 ];
-
-function hasAddress(address?: CertificateHolderAddressInput) {
-  return Boolean(
-    address?.formatted?.trim() ||
-      address?.line1?.trim() ||
-      address?.city?.trim() ||
-      address?.state?.trim() ||
-      address?.postalCode?.trim(),
-  );
-}
-
-export function extractHolderAddress(params: CertificateRequestWorkflowParams) {
-  return (
-    params.holderAddress ??
-    parseCertificateHolderBlock(params.certificateHolder, params.holderName).address
-  );
-}
 
 export function certificateRequestRequiresEndorsementReview(
   params: CertificateRequestWorkflowParams,
@@ -89,54 +61,6 @@ function baseAudit(params: CertificateRequestWorkflowParams): WorkflowAuditEntry
         : "holder_only",
     },
   ];
-}
-
-export function certificateAddressRequiredOutcome(
-  params: CertificateRequestWorkflowParams,
-): WorkflowToolResult<{
-  status: "needs_holder_address";
-  policyId: string;
-  holderName: string;
-}> {
-  const requiredSlots: WorkflowSlot[] = [
-    {
-      key: "holderAddress",
-      label: "Certificate holder address",
-      prompt: `What is the certificate holder address for ${params.holderName}?`,
-      required: true,
-      reason: "A new certificate needs the holder address printed on the COI.",
-    },
-  ];
-  const outcome: WorkflowOutcome<"certificate_request", CertificateRequestNextAction> = {
-    workflowKind: "certificate_request",
-    status: "needs_input",
-    nextAction: "ask_for_holder_address",
-    requiredSlots,
-    forbiddenQuestions: CERTIFICATE_FORBIDDEN_QUESTIONS,
-    forbiddenClaims: CERTIFICATE_FORBIDDEN_CLAIMS,
-    sideEffects: [],
-    artifacts: [{ type: "certificate_holder", data: { holderName: params.holderName } }],
-    comms: workflowCommsPlan({
-      headline: `I can issue that certificate for ${params.holderName}.`,
-      questions: requiredSlots.map((slot) => slot.prompt),
-      nextActionLabel: "Collect holder address",
-    }),
-    audit: [
-      ...baseAudit(params),
-      {
-        step: "holder_address_required",
-        decision: "needs_input",
-        detail: "No reusable certificate was found and the holder address is not known.",
-      },
-    ],
-  };
-  return {
-    status: "needs_holder_address",
-    policyId: params.policyId,
-    holderName: params.holderName,
-    workflowOutcome: outcome,
-    message: workflowToolMessage(outcome),
-  };
 }
 
 function certificateArtifact(data: Record<string, unknown>): WorkflowArtifact {
@@ -249,38 +173,6 @@ export function certificateHeldOutcome(args: {
   };
 }
 
-export function certificatePendingApprovalOutcome(args: {
-  params: CertificateRequestWorkflowParams;
-  generated: Record<string, unknown>;
-  artifactData: Record<string, unknown>;
-}): WorkflowOutcome<"certificate_request", CertificateRequestNextAction> {
-  return {
-    workflowKind: "certificate_request",
-    status: "pending_approval",
-    nextAction: "request_program_approval",
-    requiredSlots: [],
-    forbiddenQuestions: CERTIFICATE_FORBIDDEN_QUESTIONS,
-    forbiddenClaims: CERTIFICATE_FORBIDDEN_CLAIMS,
-    sideEffects: [
-      {
-        kind: "record_created",
-        targetType: "certificateRequest",
-        targetId: String(args.generated.requestId ?? ""),
-        description: "Created a certified certificate approval request.",
-      },
-    ],
-    artifacts: [{ type: "certificate_result", data: args.artifactData }],
-    comms: workflowCommsPlan({
-      headline: "Certified COI request created and sent to the program administrator for approval.",
-      nextActionLabel: "Await approval",
-    }),
-    audit: [
-      ...baseAudit(args.params),
-      { step: "pending_program_approval", decision: "approval_requested" },
-    ],
-  };
-}
-
 export function certificateRecoverableOutcome(args: {
   params: CertificateRequestWorkflowParams;
   status: string;
@@ -306,10 +198,4 @@ export function certificateRecoverableOutcome(args: {
       { step: args.status, decision: "blocked_recoverably" },
     ],
   };
-}
-
-export function shouldCollectCertificateHolderAddress(
-  params: CertificateRequestWorkflowParams,
-) {
-  return !hasAddress(extractHolderAddress(params));
 }

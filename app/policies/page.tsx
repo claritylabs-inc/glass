@@ -24,6 +24,7 @@ import {
   showPolicyExtractionQueuedToast,
   showPolicyExtractionReadyToast,
 } from "@/components/shared/extraction-banner";
+import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -54,6 +55,9 @@ export default function PoliciesPage() {
   const viewerOrg = useCachedViewerOrg();
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
+  const checkDuplicateUploadByHash = useMutation(
+    api.policies.checkDuplicateUploadByHash,
+  );
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
@@ -112,22 +116,31 @@ export default function PoliciesPage() {
       if (files.length === 0) return;
       setUploading(true);
       try {
+        const orgId = viewerOrg?.org?._id as Id<"organizations"> | undefined;
+        if (!orgId) throw new Error("No organization");
+        const candidates = await preparePolicyUploadCandidates(
+          files,
+          (fileSha256) => checkDuplicateUploadByHash({ orgId, fileSha256 }),
+        );
+        if (!candidates) return;
+
         const storageIds: Id<"_storage">[] = [];
-        for (let i = 0; i < files.length; i++) {
-          toast.info(`Uploading ${i + 1} of ${files.length}…`);
-          const id = await uploadOne(files[i]);
+        for (let i = 0; i < candidates.length; i++) {
+          toast.info(`Uploading ${i + 1} of ${candidates.length}…`);
+          const id = await uploadOne(candidates[i].file);
           storageIds.push(id as Id<"_storage">);
         }
 
-        if (files.length > 1 && uploadMode === "combined") {
-          toast.info(`Merging ${files.length} files…`);
+        if (candidates.length > 1 && uploadMode === "combined") {
+          toast.info(`Merging ${candidates.length} files…`);
         }
 
         if (uploadMode === "separate") {
           for (let i = 0; i < storageIds.length; i++) {
             const result = (await extractFromUpload({
               fileId: storageIds[i],
-              fileName: files[i].name,
+              fileName: candidates[i].file.name,
+              fileSha256: candidates[i].fileSha256,
             })) as
               | { error: string }
               | { success: true; type: string; id: string };
@@ -138,20 +151,22 @@ export default function PoliciesPage() {
             showPolicyExtractionQueuedToast({
               policyId: result.id,
               documentType: "policy",
-              fileName: files[i].name,
+              fileName: candidates[i].file.name,
             });
             pendingExtractionToastsRef.current[result.id] = {
-              fileName: files[i].name,
+              fileName: candidates[i].file.name,
             };
             resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
           }
         } else {
           const result = (await extractFromUpload({
             fileId: storageIds[0],
-            fileName: files[0].name,
+            fileName: candidates[0].file.name,
+            fileSha256: candidates[0].fileSha256,
             additionalFiles: storageIds.slice(1).map((fileId, i) => ({
               fileId,
-              fileName: files[i + 1].name,
+              fileName: candidates[i + 1].file.name,
+              fileSha256: candidates[i + 1].fileSha256,
             })),
           })) as
             | { error: string }
@@ -161,9 +176,9 @@ export default function PoliciesPage() {
             throw new Error(result.error);
           }
           const displayFileName =
-            files.length > 1
-              ? `${files[0].name.replace(/\.pdf$/i, "")} + ${files.length - 1} more.pdf`
-              : files[0].name;
+            candidates.length > 1
+              ? `${candidates[0].file.name.replace(/\.pdf$/i, "")} + ${candidates.length - 1} more.pdf`
+              : candidates[0].file.name;
           showPolicyExtractionQueuedToast({
             policyId: result.id,
             documentType: "policy",
@@ -182,7 +197,14 @@ export default function PoliciesPage() {
         setUploading(false);
       }
     },
-    [uploadOne, extractFromUpload, policies, resolvePendingExtractionToasts],
+    [
+      viewerOrg,
+      checkDuplicateUploadByHash,
+      uploadOne,
+      extractFromUpload,
+      policies,
+      resolvePendingExtractionToasts,
+    ],
   );
 
   const handleDrawerUpload = useCallback(

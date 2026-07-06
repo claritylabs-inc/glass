@@ -2,7 +2,7 @@
 import { v } from "convex/values";
 import dayjs from "dayjs";
 import { mutation, query, internalQuery, MutationCtx } from "./_generated/server";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import { Id } from "./_generated/dataModel";
 import {
   getEffectiveChannelDefault,
@@ -11,7 +11,6 @@ import {
 } from "./lib/notificationTypes";
 
 const channelValidator = v.union(
-  v.literal("in_app"),
   v.literal("email"),
   v.literal("imessage"),
 );

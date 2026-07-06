@@ -5,9 +5,10 @@ import { z } from "zod";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
-  getModelForOrg,
+  getModelAndRouteForOrg,
   getProviderOptionsForTask,
 } from "./models";
+import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import {
   rankTaskControlCandidates,
   type TaskControlResponseIntent,
@@ -59,10 +60,11 @@ export async function resolveTaskControlIntent(
   if (!ranking.shouldUseModel) return null;
 
   try {
+    const modelRoute = await getModelAndRouteForOrg(ctx, args.orgId, "classification");
     const result = await generateObject({
-      model: await getModelForOrg(ctx, args.orgId, "classification"),
+      model: modelRoute.model,
       providerOptions: getProviderOptionsForTask("classification"),
-      schema: ModelTaskControlDecisionSchema,
+      schema: structuredOutputSchemaForRoute(ModelTaskControlDecisionSchema, modelRoute.route),
       maxOutputTokens: 128,
       system: `You classify whether a short Glass user message is trying to control the current task state.
 

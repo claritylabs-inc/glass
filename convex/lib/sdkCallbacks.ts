@@ -9,24 +9,35 @@
 
 import dayjs from "dayjs";
 import { Output, embed, embedMany, gateway } from "ai";
-import type { EmbeddingModel, LanguageModelUsage } from "ai";
+import type { EmbeddingModel, LanguageModel, LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createFireworks } from "@ai-sdk/fireworks";
 import {
   getModel,
   getModelAndRouteForOrg,
+  getModelForRoute,
+  getProviderOptionsForRoute,
   getProviderOptionsForTask,
   generateStructuredWithFallback,
   generateTextWithFallback,
   mergeProviderOptions,
   modelTaskForCall,
+  MODEL_ROUTING,
+  primaryRouteForCall,
   type ModelCallTaskKind,
   type ModelProvider,
   type ModelRoute,
   type ModelTask,
 } from "./models";
-import { modelCapabilitiesForRoute, modelCapabilitiesForTask } from "./modelCatalog";
+import {
+  COVERAGE_CLEANUP_MODEL,
+  modelCapabilitiesForRoute,
+  modelCapabilitiesForTask,
+  modelSupportsImageInput,
+} from "./modelCatalog";
+import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -72,6 +83,11 @@ type ParamsWithOptionalTaskKind = {
   trace?: unknown;
 };
 
+type GenerateObjectParams = Parameters<GenerateObject>[0];
+type GlassGenerateObject = (
+  params: Omit<GenerateObjectParams, "taskKind"> & { taskKind?: ModelCallTaskKind },
+) => ReturnType<GenerateObject>;
+
 type ModelCallTraceDetails = {
   label?: string;
   extractorName?: string;
@@ -114,7 +130,9 @@ function modelTraceLabel(
   }
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
-    extraction_form_inventory: "Extract form inventory",
+    extraction_coverage_cleanup: "Clean coverage schedules",
+    extraction_source_tree: "Build source-native document tree",
+    extraction_operational_profile: "Build operational profile",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
     extraction_long_list: "Extract long policy lists",
@@ -214,6 +232,7 @@ function modelTraceDetails(params: {
   prompt: string;
   system?: string;
   maxOutputTokens: number;
+  routePurpose?: string;
   providerOptions?: ProviderOptions;
   trace?: ModelCallTraceDetails;
   output?: unknown;
@@ -226,6 +245,7 @@ function modelTraceDetails(params: {
     taskKind: params.taskKind,
     trace: params.trace,
     maxOutputTokens: params.maxOutputTokens,
+    routePurpose: params.routePurpose,
     systemPreview: traceTextPreview(params.system),
     promptPreview: traceTextPreview(params.prompt),
     inputSummary: providerInputSummary(params.providerOptions),
@@ -283,27 +303,36 @@ function addPolicyPeriodGuidance(prompt: string): string {
 
 function getEffectiveMaxTokens(
   task: ModelTask,
+  taskKind: ModelCallTaskKind | undefined,
   maxTokens: number,
   route?: ModelRoute,
 ): number {
   const routeCapabilities = route ? modelCapabilitiesForRoute(route) : modelCapabilitiesForTask(task);
-  return routeCapabilities?.maxOutputTokens ?? maxTokens;
+  const routeMax = taskKind
+    ? routeCapabilities?.taskOutputTokens?.[taskKind] ?? routeCapabilities?.maxOutputTokens
+    : routeCapabilities?.maxOutputTokens;
+  return routeMax ? Math.min(maxTokens, routeMax) : maxTokens;
 }
 
 function buildPromptInput(
   prompt: string,
   providerOptions?: Record<string, unknown>,
+  route?: ModelRoute,
 ) {
   const options = providerOptions as ExtractionProviderOptions | undefined;
   const images = options?.images;
-  const pdfPart = buildPdfFilePart({
-    pdfUrl: options?.pdfUrl,
-    pdfBytes: options?.pdfBytes,
-    pdfBase64: options?.pdfBase64,
-    mimeType: options?.mimeType,
-  });
+  const supportsPdfFileInput = route?.provider !== "fireworks";
+  const supportsImageInput = route ? modelSupportsImageInput(route) : true;
+  const pdfPart = supportsPdfFileInput
+    ? buildPdfFilePart({
+        pdfUrl: options?.pdfUrl,
+        pdfBytes: options?.pdfBytes,
+        pdfBase64: options?.pdfBase64,
+        mimeType: options?.mimeType,
+      })
+    : null;
 
-  if (images?.length) {
+  if (supportsImageInput && images?.length) {
     return {
       messages: [
         {
@@ -335,7 +364,7 @@ function buildPromptInput(
 
   // Fallback: older cl-sdk calls may embed base64 PDF directly in the prompt
   // text instead of using providerOptions. Detect and lift it into a file part.
-  const extracted = extractEmbeddedPdf(prompt);
+  const extracted = supportsPdfFileInput ? extractEmbeddedPdf(prompt) : null;
   if (extracted) {
     return {
       messages: [
@@ -356,6 +385,17 @@ function buildPromptInput(
   }
 
   return { prompt };
+}
+
+function coverageCleanupRouteOverride(
+  taskKind: ModelCallTaskKind | undefined,
+  trace: ModelCallTraceDetails | undefined,
+  coverageCleanupRoute: ModelRoute | undefined,
+): ModelRoute | null {
+  if (taskKind !== "extraction_coverage_cleanup" && trace?.phase !== "coverage_cleanup") {
+    return null;
+  }
+  return coverageCleanupRoute ?? COVERAGE_CLEANUP_MODEL;
 }
 
 /**
@@ -387,7 +427,7 @@ async function recordModelTrace(
     transport?: string;
     durationMs: number;
     usage?: TokenUsage;
-    status: "complete" | "error";
+    status: "complete" | "error" | "soft_failed";
     error?: string;
     details?: Record<string, unknown>;
   },
@@ -432,33 +472,69 @@ export function makeGenerateText(
     const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
     let primaryRoute: ModelRoute | undefined;
+    let qualityRoute: ModelRoute | undefined;
+    let qualityRouteSource: string | undefined;
+    let coverageCleanupRoute: ModelRoute | undefined;
+    let coverageCleanupRouteSource: string | undefined;
+    let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
+    let routePurpose: string | undefined;
     let transport: string | undefined;
-    const model = routing?.ctx && routing.orgId
+    let model: LanguageModel = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
+        qualityRoute = resolved.qualityRoute;
+        qualityRouteSource = resolved.qualityRouteSource;
+        coverageCleanupRoute = resolved.coverageCleanupRoute;
+        coverageCleanupRouteSource = resolved.coverageCleanupRouteSource;
+        fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
         transport = resolved.transport;
         return resolved.model;
       })
-      : getModel(effectiveTask);
-    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
+      : (() => {
+        primaryRoute = MODEL_ROUTING[effectiveTask];
+        routeSource = "static";
+        return getModel(effectiveTask);
+      })();
+    const primaryRouteOverride = primaryRouteForCall({ task: effectiveTask, taskKind, primaryRoute, qualityRoute });
+    if (primaryRouteOverride) {
+      primaryRoute = primaryRouteOverride;
+      routeSource = qualityRouteSource ?? routeSource;
+      routePurpose = "extraction_quality";
+      transport = undefined;
+      model = getModelForRoute(primaryRouteOverride);
+    }
+    const coverageCleanupRouteOverrideValue = coverageCleanupRouteOverride(taskKind, trace, coverageCleanupRoute);
+    if (coverageCleanupRouteOverrideValue) {
+      primaryRoute = coverageCleanupRouteOverrideValue;
+      routeSource = coverageCleanupRouteSource ?? routeSource;
+      routePurpose = "extraction_coverage_cleanup";
+      transport = undefined;
+      model = getModelForRoute(coverageCleanupRouteOverrideValue);
+    }
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, taskKind, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateText", taskKind, effectiveTask, trace);
     try {
       const result = await generateTextWithFallback({
         model,
         system,
-        ...buildPromptInput(guidedPrompt, providerOptions as Record<string, unknown> | undefined),
+        ...buildPromptInput(
+          guidedPrompt,
+          providerOptions as Record<string, unknown> | undefined,
+          primaryRoute,
+        ),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
-          getProviderOptionsForTask(effectiveTask),
+          primaryRoute ? getProviderOptionsForRoute(primaryRoute) : getProviderOptionsForTask(effectiveTask),
           providerOptions as ProviderOptions,
         ),
       }, {
         task: effectiveTask,
         taskKind,
         primaryRoute,
+        fallbackRoute,
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
@@ -479,6 +555,7 @@ export function makeGenerateText(
           prompt: guidedPrompt,
           system,
           maxOutputTokens: effectiveMaxTokens,
+          routePurpose,
           providerOptions: providerOptions as ProviderOptions,
           trace,
           output: result.text,
@@ -508,6 +585,7 @@ export function makeGenerateText(
           prompt: guidedPrompt,
           system,
           maxOutputTokens: effectiveMaxTokens,
+          routePurpose,
           providerOptions: providerOptions as ProviderOptions,
           trace,
         }),
@@ -524,7 +602,7 @@ export function makeGenerateText(
 export function makeGenerateObject(
   task: ModelTask = "extraction",
   routing?: ModelRoutingContext,
-): GenerateObject {
+): GlassGenerateObject {
   return async (params) => {
     const { prompt, system, schema, maxTokens, providerOptions } = params;
     const guidedPrompt = addPolicyPeriodGuidance(prompt);
@@ -532,34 +610,70 @@ export function makeGenerateObject(
     const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
     const effectiveTask = modelTaskForCall(task, taskKind);
     let primaryRoute: ModelRoute | undefined;
+    let qualityRoute: ModelRoute | undefined;
+    let qualityRouteSource: string | undefined;
+    let coverageCleanupRoute: ModelRoute | undefined;
+    let coverageCleanupRouteSource: string | undefined;
+    let fallbackRoute: ModelRoute | undefined;
     let routeSource: string | undefined;
+    let routePurpose: string | undefined;
     let transport: string | undefined;
-    const model = routing?.ctx && routing.orgId
+    let model: LanguageModel = routing?.ctx && routing.orgId
       ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask).then((resolved) => {
         primaryRoute = resolved.route;
+        qualityRoute = resolved.qualityRoute;
+        qualityRouteSource = resolved.qualityRouteSource;
+        coverageCleanupRoute = resolved.coverageCleanupRoute;
+        coverageCleanupRouteSource = resolved.coverageCleanupRouteSource;
+        fallbackRoute = resolved.fallbackRoute;
         routeSource = resolved.routeSource;
         transport = resolved.transport;
         return resolved.model;
       })
-      : getModel(effectiveTask);
-    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, maxTokens, primaryRoute);
+      : (() => {
+        primaryRoute = MODEL_ROUTING[effectiveTask];
+        routeSource = "static";
+        return getModel(effectiveTask);
+      })();
+    const primaryRouteOverride = primaryRouteForCall({ task: effectiveTask, taskKind, primaryRoute, qualityRoute });
+    if (primaryRouteOverride) {
+      primaryRoute = primaryRouteOverride;
+      routeSource = qualityRouteSource ?? routeSource;
+      routePurpose = "extraction_quality";
+      transport = undefined;
+      model = getModelForRoute(primaryRouteOverride);
+    }
+    const coverageCleanupRouteOverrideValue = coverageCleanupRouteOverride(taskKind, trace, coverageCleanupRoute);
+    if (coverageCleanupRouteOverrideValue) {
+      primaryRoute = coverageCleanupRouteOverrideValue;
+      routeSource = coverageCleanupRouteSource ?? routeSource;
+      routePurpose = "extraction_coverage_cleanup";
+      transport = undefined;
+      model = getModelForRoute(coverageCleanupRouteOverrideValue);
+    }
+    const effectiveMaxTokens = getEffectiveMaxTokens(effectiveTask, taskKind, maxTokens, primaryRoute);
     const startedAt = nowMs();
     const label = modelTraceLabel("generateObject", taskKind, effectiveTask, trace);
     try {
       const result = await generateStructuredWithFallback({
         model,
         system,
-        ...buildPromptInput(guidedPrompt, providerOptions as Record<string, unknown> | undefined),
-        output: Output.object({ schema }),
+        ...buildPromptInput(
+          guidedPrompt,
+          providerOptions as Record<string, unknown> | undefined,
+          primaryRoute,
+        ),
+        output: Output.object({ schema: structuredOutputSchemaForRoute(schema, primaryRoute) }),
         maxOutputTokens: effectiveMaxTokens,
         providerOptions: mergeProviderOptions(
-          getProviderOptionsForTask(effectiveTask),
+          primaryRoute ? getProviderOptionsForRoute(primaryRoute) : getProviderOptionsForTask(effectiveTask),
           providerOptions as ProviderOptions,
         ),
       }, {
         task: effectiveTask,
         taskKind,
         primaryRoute,
+        fallbackRoute,
       });
       const usage = mapUsage(result.usage);
       await recordModelTrace(routing, {
@@ -580,6 +694,7 @@ export function makeGenerateObject(
           prompt: guidedPrompt,
           system,
           maxOutputTokens: effectiveMaxTokens,
+          routePurpose,
           providerOptions: providerOptions as ProviderOptions,
           trace,
           output: result.output,
@@ -604,7 +719,7 @@ export function makeGenerateObject(
           routeSource,
           transport,
           durationMs: nowMs() - startedAt,
-          status: "error",
+          status: "soft_failed",
           error: message,
           details: modelTraceDetails({
             kind: "generateObject",
@@ -614,6 +729,7 @@ export function makeGenerateObject(
             prompt: guidedPrompt,
             system,
             maxOutputTokens: effectiveMaxTokens,
+            routePurpose,
             providerOptions: providerOptions as ProviderOptions,
             trace,
             output: { sections: [] },
@@ -644,6 +760,7 @@ export function makeGenerateObject(
           prompt: guidedPrompt,
           system,
           maxOutputTokens: effectiveMaxTokens,
+          routePurpose,
           providerOptions: providerOptions as ProviderOptions,
           trace,
         }),
@@ -666,18 +783,27 @@ function google() {
   return _google;
 }
 
+let _fireworks: ReturnType<typeof createFireworks> | null = null;
+function fireworks() {
+  if (!_fireworks) _fireworks = createFireworks();
+  return _fireworks;
+}
+
 function directEmbeddingApiKey(provider: ModelProvider): string | undefined {
   switch (provider) {
     case "openai":
       return process.env.OPENAI_API_KEY;
     case "google":
       return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY;
+    case "fireworks":
+      return process.env.FIREWORKS_API_KEY;
     default:
       return undefined;
   }
 }
 
 function embeddingGatewayModelId(route: ModelRoute) {
+  if (route.provider === "fireworks") return `fireworks/${route.model}`;
   return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
 }
 
@@ -687,6 +813,8 @@ function embeddingProviderModel(route: ModelRoute, apiKey?: string): EmbeddingMo
       return (apiKey ? createOpenAI({ apiKey }) : openai()).embeddingModel(route.model);
     case "google":
       return (apiKey ? createGoogleGenerativeAI({ apiKey }) : google()).embeddingModel(route.model);
+    case "fireworks":
+      return (apiKey ? createFireworks({ apiKey }) : fireworks()).embeddingModel(route.model);
     default:
       return gateway.embeddingModel(embeddingGatewayModelId(route));
   }
@@ -698,6 +826,12 @@ function embeddingProviderOptions(route: ModelRoute): ProviderOptions | undefine
   }
   if (route.provider === "google" && route.model === "gemini-embedding-001") {
     return { google: { outputDimensionality: EMBEDDING_DIMENSIONS } };
+  }
+  if (
+    route.provider === "fireworks" &&
+    route.model === "accounts/fireworks/models/qwen3-embedding-8b"
+  ) {
+    return { fireworks: { dimensions: EMBEDDING_DIMENSIONS } };
   }
   return undefined;
 }

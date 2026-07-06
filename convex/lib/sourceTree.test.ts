@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeOperationalProfile, normalizeSourceTree, sourceTreePolicyFields, withControlledPolicyTypes, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
+import { normalizeOperationalProfile, normalizeSourceTree, operationalProfilePolicyFields, sourceTreePolicyFields, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
 
 const sourceSpans: SourceSpanLike[] = [
   { id: "span-jacket", text: "THIS IS A CLAIMS-MADE AND REPORTED POLICY. PLEASE READ IT CAREFULLY.", pageStart: 1 },
@@ -154,7 +154,7 @@ const sourceTree: DocumentSourceNode[] = [
 ];
 
 describe("normalizeOperationalProfile", () => {
-  it("lets exact declarations rows override polluted raw identity values", () => {
+  it("drops polluted raw identity values instead of deriving declaration replacements", () => {
     const profile = normalizeOperationalProfile(
       {
         namedInsured: {
@@ -175,20 +175,202 @@ describe("normalizeOperationalProfile", () => {
       sourceSpans,
     );
 
-    expect(profile.namedInsured?.value).toBe("Cios Technologies Inc.");
-    expect(profile.policyNumber?.value).toBe("SLS-EO-26-110482");
-    expect(profile.effectiveDate?.value).toBe("02/01/2026");
-    expect(profile.expirationDate?.value).toBe("02/01/2027");
-    expect(profile.premium?.value).toBe("CAD $42,000");
-    expect(profile.broker?.value).toBe("Wellington Risk Partners Inc.");
-    expect(profile.insurer?.value).toBe("Saint Lawrence Specialty Insurance Company");
+    expect(profile.namedInsured).toBeUndefined();
+    expect(profile.policyNumber).toBeUndefined();
+    expect(profile.effectiveDate).toBeUndefined();
+    expect(profile.expirationDate).toBeUndefined();
+    expect(profile.premium).toBeUndefined();
+    expect(profile.broker).toBeUndefined();
+    expect(profile.insurer).toBeUndefined();
     expect(profile.policyTypes).toEqual(["professional_liability"]);
-    expect(profile.coverageTypes).toEqual(["Professional Liability"]);
-    expect(profile.parties.find((party: PolicyOperationalProfile["parties"][number]) => party.role === "named_insured")?.name).toBe("Cios Technologies Inc.");
-    expect(profile.parties.some((party: PolicyOperationalProfile["parties"][number]) => /claims-made/i.test(party.name))).toBe(false);
+    expect(profile.parties).toEqual([]);
   });
 
-  it("handles declaration row labels that do not use fixed item numbers", () => {
+  it("persists normalized source-backed identity values instead of address/contact blobs", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        namedInsured: {
+          value: "Clarity Labs Inc. 1070 Bridgeview Way San Francisco, CA 94121 Risk Management & Notices Contact: Terrence Wang",
+          normalizedValue: "Clarity Labs Inc.",
+          confidence: "high",
+          sourceNodeIds: ["named-insured-row"],
+          sourceSpanIds: ["span-named-insured"],
+        },
+        policyTypes: ["professional_liability"],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.namedInsured?.value).toBe("Clarity Labs Inc.");
+    expect(profile.parties.find((party: PolicyOperationalProfile["parties"][number]) => party.role === "named_insured")?.name)
+      .toBe("Clarity Labs Inc.");
+    expect(operationalProfilePolicyFields(profile).insuredName).toBe("Clarity Labs Inc.");
+  });
+
+  it("keeps inferred scalar values when provenance is unavailable", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyNumber: {
+          value: "SLS-EO-26-110482",
+          confidence: "high",
+          sourceNodeIds: ["missing-node"],
+          sourceSpanIds: ["missing-span"],
+        },
+        policyTypes: ["professional_liability"],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.policyNumber?.value).toBe("SLS-EO-26-110482");
+    expect(profile.policyNumber?.confidence).toBe("low");
+    expect(profile.policyNumber?.sourceNodeIds).toEqual([]);
+    expect(profile.policyNumber?.sourceSpanIds).toEqual([]);
+  });
+
+  it("keeps inferred coverage rows and terms when provenance is unavailable", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        coverages: [
+          {
+            name: "Technology Professional Liability",
+            sourceNodeIds: ["missing-node"],
+            sourceSpanIds: ["missing-span"],
+            limits: [
+              {
+                kind: "each_claim_limit",
+                label: "Each Claim",
+                value: "$2,000,000",
+                sourceNodeIds: ["missing-node"],
+                sourceSpanIds: ["missing-span"],
+              },
+              {
+                kind: "deductible",
+                label: "Deductible",
+                value: "$10,000",
+              },
+            ],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.coverages).toHaveLength(1);
+    expect(profile.coverages[0].sourceNodeIds).toEqual([]);
+    expect(profile.coverages[0].sourceSpanIds).toEqual([]);
+    expect(profile.coverages[0].limits?.map((term: { label: string; value: string }) => [term.label, term.value])).toEqual([
+      ["Each Claim", "$2,000,000"],
+      ["Deductible", "$10,000"],
+    ]);
+  });
+
+  it("drops torn declaration table coverage fragments and repairs self-referential limits", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        coverages: [
+          {
+            name: "C. Regulatory Proceedings Sub-Limit",
+            limit: "C. Regulatory Proceedings Sub-Limit",
+            deductible: "$5,000 Each",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+            limits: [
+              {
+                kind: "sublimit",
+                label: "Aggregate (sub-limit, part of and not in addition to Aggregate Policy Limit)",
+                value: "C. Regulatory Proceedings Sub-Limit",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+              {
+                kind: "each_claim_limit",
+                label: "Claim",
+                value: "$100,000 Each Proceeding /",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+          },
+          {
+            name: "Coverage Part B)",
+            limit: "Coverage Part B)",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+            limits: [
+              {
+                kind: "other",
+                label: "Aggregate (sub-limit, part of",
+                value: "Coverage Part B)",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name))
+      .toContain("C. Regulatory Proceedings Sub-Limit");
+    expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name))
+      .not.toContain("Coverage Part B)");
+    const regulatory = profile.coverages.find((coverage: PolicyOperationalProfile["coverages"][number]) =>
+      coverage.name === "C. Regulatory Proceedings Sub-Limit"
+    );
+    expect(regulatory?.limit).toBe("$100,000 Each Proceeding");
+    expect(regulatory?.limits?.map((term: NonNullable<PolicyOperationalProfile["coverages"][number]["limits"]>[number]) => term.value))
+      .toEqual(["$100,000 Each Proceeding"]);
+  });
+
+  it("preserves model-provided endorsement support with source citations", () => {
+    const endorsementSpans: SourceSpanLike[] = [
+      {
+        id: "loss-payee-1",
+        text: "D. Loss Payee. For avoidance of doubt, no Scheduled Additional Insured is named as a loss payee, mortgageholder, or assignee of policy proceeds; nothing in this Endorsement entitles any Scheduled",
+        pageStart: 28,
+      },
+      {
+        id: "loss-payee-2",
+        text: "Additional Insured to receive direct payment of any proceeds of this Policy.",
+        pageStart: 28,
+      },
+    ];
+    const endorsementTree = normalizeSourceTree([], endorsementSpans, "endorsement-policy");
+    const lossPayeeNode = endorsementTree.find((node) => node.sourceSpanIds.includes("loss-payee-1"));
+    if (!lossPayeeNode) throw new Error("Expected loss payee source node");
+
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        endorsementSupport: [
+          {
+            kind: "loss_payee",
+            status: "excluded",
+            summary: `${endorsementSpans[0].text} ${endorsementSpans[1].text}`,
+            sourceNodeIds: [lossPayeeNode.id],
+            sourceSpanIds: ["loss-payee-1", "loss-payee-2"],
+          },
+        ],
+      },
+      endorsementTree,
+      endorsementSpans,
+    );
+
+    const lossPayee = profile.endorsementSupport.find((row: PolicyOperationalProfile["endorsementSupport"][number]) =>
+      row.kind === "loss_payee"
+    );
+    expect(lossPayee?.status).toBe("excluded");
+    expect(lossPayee?.summary).toContain("direct payment of any proceeds");
+  });
+
+  it("persists model-backed declaration fields from flexible source rows", () => {
     const flexibleSpans: SourceSpanLike[] = [
       { id: "named", text: "Column 1: Named Insured | Column 2: Example Holdings Ltd.", pageStart: 1 },
       { id: "number", text: "Column 1: Policy No. | Column 2: GL-100", pageStart: 1 },
@@ -223,9 +405,48 @@ describe("normalizeOperationalProfile", () => {
       })),
     ];
 
-    const profile = withControlledPolicyTypes(
-      normalizeOperationalProfile(undefined, flexibleTree, flexibleSpans),
-      ["general_liability"],
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["general_liability"],
+        namedInsured: {
+          value: "Example Holdings Ltd.",
+          confidence: "high",
+          sourceNodeIds: ["row-0"],
+          sourceSpanIds: ["named"],
+        },
+        policyNumber: {
+          value: "GL-100",
+          confidence: "high",
+          sourceNodeIds: ["row-1"],
+          sourceSpanIds: ["number"],
+        },
+        effectiveDate: {
+          value: "03/01/2026",
+          confidence: "high",
+          sourceNodeIds: ["row-2"],
+          sourceSpanIds: ["term"],
+        },
+        expirationDate: {
+          value: "03/01/2027",
+          confidence: "high",
+          sourceNodeIds: ["row-2"],
+          sourceSpanIds: ["term"],
+        },
+        premium: {
+          value: "$12,500",
+          confidence: "high",
+          sourceNodeIds: ["row-3"],
+          sourceSpanIds: ["premium"],
+        },
+        broker: {
+          value: "Northshore Risk Advisors Inc.",
+          confidence: "high",
+          sourceNodeIds: ["row-4"],
+          sourceSpanIds: ["broker"],
+        },
+      },
+      flexibleTree,
+      flexibleSpans,
     );
 
     expect(profile.namedInsured?.value).toBe("Example Holdings Ltd.");
@@ -235,10 +456,9 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.premium?.value).toBe("$12,500");
     expect(profile.broker?.value).toBe("Northshore Risk Advisors Inc.");
     expect(profile.policyTypes).toEqual(["general_liability"]);
-    expect(profile.coverageTypes).toEqual(["General Liability"]);
   });
 
-  it("keeps model-backed life policy fields above weaker document and declaration candidates", () => {
+  it("keeps model-backed life policy fields without document fallback candidates", () => {
     const lifeSpans: SourceSpanLike[] = [
       { id: "life-insurer-good", text: "Sun Life Assurance Company of Canada", pageStart: 1 },
       { id: "life-insurer-bad", text: "This phrase can mean Sun Life Assurance Company of Canad in context.", pageStart: 2 },
@@ -306,7 +526,6 @@ describe("normalizeOperationalProfile", () => {
           {
             name: "Sun Permanent Life - Basic insurance coverage",
             limit: "$X,XXX,XXX",
-            coverageOrigin: "core",
             sourceNodeIds: ["node-coverage"],
             sourceSpanIds: ["life-coverage"],
           },
@@ -314,17 +533,9 @@ describe("normalizeOperationalProfile", () => {
       },
       lifeTree,
       lifeSpans,
-      {
-        policyTypes: ["other"],
-        policyNumber: "LI-1234",
-        security: "mean Sun Life Assurance Company of Canad",
-        carrier: "mean Sun Life Assurance Company of Canad",
-        broker: "s • immunosuppressive agents •",
-      },
     );
 
     expect(profile.policyTypes).toEqual(["life"]);
-    expect(profile.coverageTypes).toEqual(["Life"]);
     expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
     expect(profile.namedInsured?.value).toBe("Jim Doe");
     expect(profile.insurer?.value).toBe("Sun Life Assurance Company of Canada");
@@ -334,7 +545,7 @@ describe("normalizeOperationalProfile", () => {
     ]);
   });
 
-  it("preserves descriptive source-backed life benefit rows", () => {
+  it("preserves descriptive source-backed life benefit rows without adding uncited terms", () => {
     const benefitSpans: SourceSpanLike[] = [
       { id: "benefit-product", text: "Manulife Par with VitalityPlusTM", pageStart: 1 },
       { id: "benefit-death", text: "The death benefit is the amount we pay when the insured person dies.", pageStart: 3 },
@@ -377,13 +588,11 @@ describe("normalizeOperationalProfile", () => {
           {
             name: "Manulife Par with VitalityPlusTM",
             formNumber: "1118-995",
-            coverageOrigin: "core",
             sourceNodeIds: ["benefit-node-1"],
             sourceSpanIds: ["benefit-product"],
           },
           {
             name: "Death benefit",
-            coverageOrigin: "core",
             limits: [
               {
                 kind: "other",
@@ -399,7 +608,6 @@ describe("normalizeOperationalProfile", () => {
           },
           {
             name: "Disability benefit",
-            coverageOrigin: "core",
             limits: [
               {
                 kind: "other",
@@ -425,24 +633,18 @@ describe("normalizeOperationalProfile", () => {
     );
 
     expect(profile.policyTypes).toEqual(["life", "disability"]);
-    expect(profile.coverageTypes).toEqual(["Life", "Disability"]);
     expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name)).toEqual([
       "Manulife Par with VitalityPlusTM",
       "Death benefit",
       "Disability benefit",
     ]);
     expect(profile.coverages.find((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name === "Death benefit")?.limits?.[0]?.value)
-      .toBe("The death benefit is the amount we pay when the insured person dies");
+      .toBe("The death benefit is the amount we pay when the insured person dies.");
     expect(profile.coverages.find((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name === "Disability benefit")?.limits)
-      .toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          label: "Catastrophic disability",
-          value: "Any catastrophic disability must occur on or after the policy anniversary nearest the insured person's 18th birthday; the policy lists 4 categories of catastrophic disability.",
-        }),
-      ]));
+      .toHaveLength(1);
   });
 
-  it("repairs life policy type and full policy number from source evidence when model output is generic", () => {
+  it("keeps model-provided policy type and policy number without source-tree repair", () => {
     const spans: SourceSpanLike[] = [
       { id: "life-title", text: "Sun Permanent Life", pageStart: 1 },
       { id: "life-policy-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
@@ -473,12 +675,11 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.policyTypes).toEqual(["life"]);
-    expect(profile.coverageTypes).toEqual(["Life"]);
-    expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
+    expect(profile.policyTypes).toEqual(["other"]);
+    expect(profile.policyNumber?.value).toBe("LI-1234");
   });
 
-  it("prefers policy summary policy numbers over jacket cover numbers", () => {
+  it("keeps cited model policy numbers instead of replacing them from other source nodes", () => {
     const spans: SourceSpanLike[] = [
       { id: "cover-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
       { id: "summary-page", text: "Policy summary Plan: Sun Critical Illness Insurance - Term 75 Policy number: LI-1234,567-9 Policy date: October 2, 2017 Insured person: John Doe", pageStart: 4 },
@@ -499,11 +700,11 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.policyNumber?.value).toBe("LI-1234,567-9");
-    expect(profile.policyNumber?.sourceSpanIds).toContain("summary-page");
+    expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
+    expect(profile.policyNumber?.sourceSpanIds).toEqual(["cover-number"]);
   });
 
-  it("repairs personal policy end dates from policy summary schedule rows", () => {
+  it("does not synthesize personal policy dates when the model omits them", () => {
     const spans: SourceSpanLike[] = [
       { id: "policy-date", text: "Column 1: Policy date | Column 2: 2021-10-18", pageStart: 4 },
       { id: "policy-ends", text: "Column 1: Date this policy ends | Column 2: 15 policy years Non-smoker / Smoker October 2, XXXX", pageStart: 5 },
@@ -518,11 +719,11 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.effectiveDate?.value).toBe("2021-10-18");
-    expect(profile.expirationDate?.value).toBe("October 2, XXXX");
+    expect(profile.effectiveDate).toBeUndefined();
+    expect(profile.expirationDate).toBeUndefined();
   });
 
-  it("repairs label-only policy numbers from source evidence", () => {
+  it("drops label-only policy numbers instead of repairing them from source evidence", () => {
     const spans: SourceSpanLike[] = [
       { id: "cover-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
       { id: "summary", text: "Policy summary Sun Par Protector II Policy number: LI-1234,567-8 Insured persons: John Doe Mary Doe", pageStart: 4 },
@@ -543,11 +744,10 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
-    expect(profile.policyNumber?.sourceSpanIds).toContain("summary");
+    expect(profile.policyNumber).toBeUndefined();
   });
 
-  it("repairs placeholder premiums from cited source-node text", () => {
+  it("keeps model-provided placeholder coverage terms without source repair", () => {
     const spans: SourceSpanLike[] = [
       { id: "annual-premium", text: "If paying annually, the total initial annual premium for this policy is $XXX.XX.", pageStart: 5 },
     ];
@@ -561,7 +761,6 @@ describe("normalizeOperationalProfile", () => {
         coverages: [
           {
             name: "Joint last-to-die basic insurance coverage",
-            coverageOrigin: "core",
             limits: [
               {
                 kind: "premium",
@@ -581,10 +780,10 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.coverages[0].limits?.[0]?.value).toBe("$XXX.XX");
+    expect(profile.coverages[0].limits?.[0]?.value).toBe("$XXX");
   });
 
-  it("infers critical illness benefit policy types from source evidence", () => {
+  it("infers policy types from extracted coverage labels when the model returns other", () => {
     const spans: SourceSpanLike[] = [
       { id: "term-title", text: "Critical illness insurance", pageStart: 1 },
       { id: "term-benefits", text: "Critical illness insurance benefit | Total disability waiver | Long term care conversion option", pageStart: 5 },
@@ -597,6 +796,15 @@ describe("normalizeOperationalProfile", () => {
         coverages: [
           {
             name: "Critical illness insurance benefit",
+            limits: [
+              {
+                kind: "other",
+                label: "Benefit",
+                value: "$50,000",
+                sourceNodeIds: ["term-policy:source_node:text:term-benefits"],
+                sourceSpanIds: ["term-benefits"],
+              },
+            ],
             sourceNodeIds: ["term-policy:source_node:text:term-benefits"],
             sourceSpanIds: ["term-benefits"],
           },
@@ -606,16 +814,138 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
+    expect(profile.policyTypes).toEqual(["critical_illness"]);
+    expect(profile.warnings).toEqual([]);
+  });
+
+  it("infers multiple commercial policy types from coverage lines", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["other"],
+        coverages: [
+          {
+            name: "Commercial General Liability",
+            limits: [
+              {
+                kind: "aggregate_limit",
+                label: "General Aggregate Limit",
+                value: "$5,000,000",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+          {
+            name: "Errors and Omissions Liability - Claims Made",
+            limits: [
+              {
+                kind: "each_claim_limit",
+                label: "Each Claim Limit",
+                value: "$250,000",
+                sourceNodeIds: ["policy-number-row"],
+                sourceSpanIds: ["span-policy-number"],
+              },
+            ],
+            sourceNodeIds: ["policy-number-row"],
+            sourceSpanIds: ["span-policy-number"],
+          },
+          {
+            name: "Commercial Auto Physical Damage",
+            limits: [
+              {
+                kind: "each_loss_limit",
+                label: "Maximum per Auto",
+                value: "$250,000",
+                sourceNodeIds: ["premium-row"],
+                sourceSpanIds: ["span-premium"],
+              },
+            ],
+            sourceNodeIds: ["premium-row"],
+            sourceSpanIds: ["span-premium"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
     expect(profile.policyTypes).toEqual([
-      "critical_illness",
-      "disability",
-      "long_term_care",
+      "general_liability",
+      "professional_liability",
+      "commercial_auto",
     ]);
-    expect(profile.coverageTypes).toEqual([
-      "Critical Illness",
-      "Disability",
-      "Long Term Care",
-    ]);
+  });
+
+  it("uses coverage-backed policy types before specific model hints", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["inland_marine"],
+        coverages: [
+          {
+            name: "Motor Truck Cargo Legal Liability",
+            limits: [
+              {
+                kind: "each_occurrence_limit",
+                label: "Per Occurrence Limit",
+                value: "$250,000",
+                sourceNodeIds: ["named-insured-row"],
+                sourceSpanIds: ["span-named-insured"],
+              },
+            ],
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+          {
+            name: "Commercial Auto Physical Damage",
+            limits: [
+              {
+                kind: "other",
+                label: "Maximum Limit at Any One Vehicle",
+                value: "Actual Cash Value of Scheduled Autos",
+                sourceNodeIds: ["policy-number-row"],
+                sourceSpanIds: ["span-policy-number"],
+              },
+            ],
+            sourceNodeIds: ["policy-number-row"],
+            sourceSpanIds: ["span-policy-number"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.policyTypes).toEqual(["inland_marine", "commercial_auto"]);
+  });
+
+  it("does not keep a conflicting model policy type when coverage evidence is specific", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        policyTypes: ["cyber"],
+        coverages: [
+          {
+            name: "Commercial Auto Physical Damage",
+            limits: [
+              {
+                kind: "other",
+                label: "Maximum Limit at Any One Vehicle",
+                value: "Actual Cash Value of Scheduled Autos",
+                sourceNodeIds: ["policy-number-row"],
+                sourceSpanIds: ["span-policy-number"],
+              },
+            ],
+            sourceNodeIds: ["policy-number-row"],
+            sourceSpanIds: ["span-policy-number"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(profile.policyTypes).toEqual(["commercial_auto"]);
   });
 
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
@@ -863,6 +1193,31 @@ describe("normalizeSourceTree", () => {
 });
 
 describe("sourceTreePolicyFields", () => {
+  it("uses preliminary policy types as hints when coverage evidence is not classifiable", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        policyTypes: ["other"],
+        namedInsured: {
+          value: "Cios Technologies Inc.",
+          sourceNodeIds: ["named-insured-row"],
+          sourceSpanIds: ["span-named-insured"],
+        },
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+      existingPolicyTypes: ["professional_liability"],
+    });
+
+    expect(fields.policyTypes).toEqual(["professional_liability"]);
+    expect((fields.operationalProfile as PolicyOperationalProfile).policyTypes).toEqual(["professional_liability"]);
+    expect((fields.operationalProfile as PolicyOperationalProfile).warnings).toEqual([]);
+  });
+
   it("preserves SDK multi-policy types when materializing stored policy fields", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
@@ -895,10 +1250,6 @@ describe("sourceTreePolicyFields", () => {
       "professional_liability",
       "cyber",
     ]);
-    expect(operationalProfile.coverageTypes).toEqual([
-      "Professional Liability",
-      "Cyber",
-    ]);
     expect(fields.policyTypes).toEqual(["professional_liability", "cyber"]);
     expect(
       (fields.operationalProfile as PolicyOperationalProfile).policyTypes,
@@ -912,7 +1263,6 @@ describe("sourceTreePolicyFields", () => {
         coverages: [
           {
             name: "Death benefit",
-            coverageOrigin: "core",
             sourceNodeIds: ["named-insured-row"],
             sourceSpanIds: ["span-named-insured"],
             limits: [
@@ -941,7 +1291,7 @@ describe("sourceTreePolicyFields", () => {
     expect(coverages[0]?.limits?.[0]?.appliesTo).toBe("Death benefit");
   });
 
-  it("promotes more complete source-backed insured persons coverage terms to policy insured name", () => {
+  it("does not promote coverage terms into named insured fields", () => {
     const spans: SourceSpanLike[] = [
       { id: "sunpar-policy-number", text: "Policy number: LI-1234,567-8", pageStart: 1 },
       { id: "sunpar-insured", text: "Insured persons: John Doe Mary Doe", pageStart: 4 },
@@ -988,13 +1338,13 @@ describe("sourceTreePolicyFields", () => {
       operationalProfile,
     });
 
-    expect(operationalProfile.namedInsured?.value).toBe("John Doe; Mary Doe");
-    expect(fields.insuredName).toBe("John Doe; Mary Doe");
+    expect(operationalProfile.namedInsured?.value).toBe("Jim Doe");
+    expect(fields.insuredName).toBe("Jim Doe");
     expect(operationalProfile.parties.find((party: PolicyOperationalProfile["parties"][number]) => party.role === "named_insured")?.name)
-      .toBe("John Doe; Mary Doe");
+      .toBe("Jim Doe");
   });
 
-  it("uses source-backed sample brand and clears unsupported insured identity fields", () => {
+  it("clears unsupported insured identity fields without deriving carrier or type", () => {
     const spans: SourceSpanLike[] = [
       { id: "manulife-product", text: "1118-995 | 024 09 30E Manulife Par with Vitality PlusTM", pageStart: 1 },
       { id: "manulife-death", text: "If the insured person dies during the grace period, we reduce the death benefit by the amount of the missed premium.", pageStart: 2 },
@@ -1031,30 +1381,74 @@ describe("sourceTreePolicyFields", () => {
       operationalProfile,
     });
 
-    expect(fields.policyTypes).toEqual(["life"]);
+    expect(fields.policyTypes).toEqual(["other"]);
     expect(fields.policyNumber).toBe("Unknown");
     expect(fields.insuredName).toBe("Unknown");
-    expect(fields.carrier).toBe("Manulife");
-    expect(fields.security).toBe("Manulife");
+    expect(fields.carrier).toBe("Unknown");
+    expect(fields.security).toBeUndefined();
     expect(fields).toHaveProperty("premium", undefined);
     expect(fields.premium).toBeUndefined();
     expect(operationalProfile.premium).toBeUndefined();
+  });
+
+  it("normalizes mixed annual premium and total due strings to the annual premium scalar", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        policyTypes: ["professional_liability"],
+        premium: {
+          value: "Total Due: $15,203.99 | Annual Premium | $14475",
+          confidence: "high",
+          sourceNodeIds: ["premium-row"],
+          sourceSpanIds: ["span-premium"],
+        },
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect(operationalProfile.premium?.value).toBe("$14,475");
+    expect(operationalProfile.premium?.normalizedValue).toBe("14475");
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+    });
+    expect(fields.premium).toBe("$14,475");
+    expect(fields.premiumAmount).toBe(14475);
   });
 
   it("repairs polluted declaration fields from source-backed operational profile values", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
         namedInsured: {
-          value: ". THIS IS A CLAIMS-MADE AND REPORTED POLICY. PLEASE READ IT CAREFULLY. _________________________ Page 1 of 27",
+          value: "Cios Technologies Inc.",
           confidence: "high",
-          sourceNodeIds: ["jacket"],
-          sourceSpanIds: ["span-jacket"],
+          sourceNodeIds: ["named-insured-row"],
+          sourceSpanIds: ["span-named-insured"],
         },
         insurer: {
-          value: "policy jacket and claims-made notice. SAINT LAWRENCE SPECIALTY INSURANCE COMPANY Compagnie d'assurance spécialisée Saint",
+          value: "Saint Lawrence Specialty Insurance Company",
           confidence: "high",
-          sourceNodeIds: ["jacket"],
-          sourceSpanIds: ["span-jacket"],
+          sourceNodeIds: ["insurer"],
+          sourceSpanIds: ["span-insurer"],
+        },
+        effectiveDate: {
+          value: "02/01/2026",
+          confidence: "high",
+          sourceNodeIds: ["period-row"],
+          sourceSpanIds: ["span-period"],
+        },
+        expirationDate: {
+          value: "02/01/2027",
+          confidence: "high",
+          sourceNodeIds: ["period-row"],
+          sourceSpanIds: ["span-period"],
+        },
+        premium: {
+          value: "CAD $42,000",
+          confidence: "high",
+          sourceNodeIds: ["premium-row"],
+          sourceSpanIds: ["span-premium"],
         },
         policyTypes: ["professional_liability"],
       },

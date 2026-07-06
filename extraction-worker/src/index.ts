@@ -11,18 +11,28 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
 import { createXai } from "@ai-sdk/xai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import {
   createExtractor,
   type GenerateObject,
-  type GenerateText,
   type ExtractionResult,
-  type ExtractionState,
   type ModelCapabilities,
-  type PipelineCheckpoint,
+  type ModelTaskKind,
 } from "@claritylabs/cl-sdk";
 import { modelCapabilitiesForRoute } from "./modelCapabilities.js";
+import {
+  MODEL_POLICY_QUALITY_ESCALATION_TASK_KINDS,
+  MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS,
+  MODEL_POLICY_SPECIAL_ROUTES,
+  MODEL_POLICY_TASK_ROUTES,
+  modelPolicySupportsImageInput,
+} from "./modelRoutingPolicy.js";
+import {
+  normalizeJsonSchemaForFireworks,
+  structuredOutputSchemaForProvider,
+} from "./fireworksStructuredOutput.js";
 import { buildPdfSourceSpans } from "./pdfSourceSpans.js";
 import { convertPdfWithLiteParse, type PageScreenshot } from "./liteparse.js";
 
@@ -33,7 +43,6 @@ type WorkerState = {
   orgId: string;
   userId: string;
   policyFileId?: string;
-  clSdkCheckpointFileId?: string;
   traceId?: string;
   externalWorker?: boolean;
 };
@@ -44,11 +53,10 @@ type ClaimedJob = {
   leaseExpiresAt: number;
   state: WorkerState;
   fileUrl: string;
-  clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
   modelSettings?: WorkerModelSettings;
 };
 
-type ClaimedPreviewJob = Omit<ClaimedJob, "clSdkCheckpoint">;
+type ClaimedPreviewJob = ClaimedJob;
 
 type ModelProvider =
   | "openai"
@@ -57,6 +65,7 @@ type ModelProvider =
   | "xai"
   | "mistral"
   | "cohere"
+  | "fireworks"
   | "deepseek";
 
 type ModelTask = "extraction" | "extraction_preview" | "classification";
@@ -98,7 +107,6 @@ type ModelCallTrace = {
 type AckResult = {
   ok: boolean;
   leaseExpiresAt?: number;
-  checkpointFileId?: string;
   replayed?: boolean;
 };
 
@@ -122,6 +130,7 @@ const actions = {
     {
       secret: string;
       policyId: string;
+      leaseId: string;
       payload: unknown;
     },
     CompletionPayloadSaveResult
@@ -138,6 +147,7 @@ const actions = {
     {
       secret: string;
       policyId: string;
+      leaseId: string;
       storageId: string;
       byteLength: number;
     },
@@ -180,23 +190,13 @@ const actions = {
     {
       secret: string;
       policyId: string;
+      leaseId: string;
       message: string;
       phase?: string;
       level?: "info" | "warn" | "error";
     },
     AckResult
   >("actions/policyExtraction.js:logExternalJob"),
-  saveExternalCheckpoint: makeFunctionReference<
-    "action",
-    {
-      secret: string;
-      policyId: string;
-      leaseId: string;
-      state: WorkerState;
-      checkpoint: PipelineCheckpoint<ExtractionState>;
-    },
-    AckResult
-  >("actions/policyExtraction.js:saveExternalCheckpoint"),
   completeExternalExtract: makeFunctionReference<
     "action",
     {
@@ -214,7 +214,6 @@ const actions = {
       warnings?: string[];
       tokenUsage?: unknown;
       performanceReport?: unknown;
-      checkpoint?: PipelineCheckpoint<ExtractionState>;
     },
     AckResult
   >("actions/policyExtraction.js:completeExternalExtract"),
@@ -381,6 +380,23 @@ function modelAbortSignal() {
   return AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS);
 }
 
+async function withModelCallTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error("The operation was aborted due to timeout"));
+        }, MODEL_CALL_TIMEOUT_MS + 1000);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    void promise.catch(() => {});
+  }
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -440,15 +456,19 @@ function readSourceKind(value: unknown): "policy_pdf" | "email" | "attachment" |
 }
 
 const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
-  classification: { provider: "openai", model: "gpt-5.4-nano" },
-  extraction: { provider: "openai", model: "gpt-5.4-nano" },
-  extraction_preview: { provider: "openai", model: "gpt-5.4-nano" },
+  classification: MODEL_POLICY_TASK_ROUTES.classification,
+  extraction: MODEL_POLICY_TASK_ROUTES.extraction,
+  extraction_preview: MODEL_POLICY_TASK_ROUTES.extraction_preview,
 };
 
-const WORKER_FALLBACK_ROUTE: WorkerModelRoute = {
-  provider: "openai",
-  model: "gpt-5.4-mini",
-};
+const WORKER_COVERAGE_CLEANUP_ROUTE: WorkerModelRoute =
+  MODEL_POLICY_SPECIAL_ROUTES.extraction_coverage_cleanup;
+
+const WORKER_QUALITY_ROUTE: WorkerModelRoute =
+  MODEL_POLICY_SPECIAL_ROUTES.extraction_quality;
+
+const WORKER_FALLBACK_ROUTE: WorkerModelRoute =
+  MODEL_POLICY_SPECIAL_ROUTES.fallback;
 
 const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([
   "openai",
@@ -457,13 +477,17 @@ const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>([
   "xai",
   "mistral",
   "cohere",
+  "fireworks",
   "deepseek",
 ]);
 
-const QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
-  "extraction_review",
-  "extraction_referential_lookup",
-]);
+const QUALITY_ESCALATION_TASK_KINDS = new Set<string>(
+  MODEL_POLICY_QUALITY_ESCALATION_TASK_KINDS,
+);
+const QUALITY_PRIMARY_TASK_KINDS = new Set<string>(
+  MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS,
+);
+const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
 function isModelProvider(value: string): value is ModelProvider {
   return WORKER_MODEL_PROVIDERS.has(value as ModelProvider);
@@ -508,6 +532,14 @@ function providerModel(provider: ModelProvider, model: string, apiKey?: string):
       return (apiKey ? createMistral({ apiKey }) : createMistral())(model);
     case "cohere":
       return (apiKey ? createCohere({ apiKey }) : createCohere())(model);
+    case "fireworks":
+      return createOpenAICompatible({
+        name: "fireworks",
+        baseURL: FIREWORKS_BASE_URL,
+        apiKey: apiKey ?? process.env.FIREWORKS_API_KEY,
+        includeUsage: true,
+        supportsStructuredOutputs: true,
+      })(model);
     case "deepseek":
       return (apiKey ? createDeepSeek({ apiKey }) : createDeepSeek())(model);
   }
@@ -527,12 +559,15 @@ function directProviderApiKey(provider: ModelProvider): string | undefined {
       return process.env.MISTRAL_API_KEY;
     case "cohere":
       return process.env.COHERE_API_KEY;
+    case "fireworks":
+      return process.env.FIREWORKS_API_KEY;
     case "deepseek":
       return process.env.DEEPSEEK_API_KEY;
   }
 }
 
 function gatewayModelId(route: WorkerModelRoute): string {
+  if (route.provider === "fireworks") return `fireworks/${route.model}`;
   return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
 }
 
@@ -545,6 +580,8 @@ function nativeProviderModel(route: WorkerModelRoute): string | null {
       return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
         ? route.model
         : null;
+    case "fireworks":
+      return route.model;
     default:
       return route.model;
   }
@@ -619,6 +656,55 @@ function apiKeyForRoute(
   return undefined;
 }
 
+function resolveConfiguredRoute(
+  routeId: string,
+  defaultRoute: WorkerModelRoute,
+  defaultRouteSource: WorkerRouteSource,
+  settings?: WorkerModelSettings,
+): {
+  route: WorkerModelRoute;
+  routeSource: WorkerRouteSource;
+  apiKey?: string;
+} {
+  const settingsRoute = settings?.routes?.[routeId];
+  const configuredRoute = isWorkerModelRoute(settingsRoute) ? settingsRoute : undefined;
+  const configuredRouteSource = readRouteSource(settings?.routeSources?.[routeId]);
+  const hasRequiredBrokerKey =
+    configuredRouteSource !== "broker" ||
+    !!(configuredRoute && settings?.providerKeys?.[configuredRoute.provider]);
+  if (configuredRoute && hasRequiredBrokerKey) {
+    const routeSource = configuredRouteSource ?? "configured";
+    return {
+      route: configuredRoute,
+      routeSource,
+      apiKey: apiKeyForRoute(configuredRoute, routeSource, settings),
+    };
+  }
+  return { route: defaultRoute, routeSource: defaultRouteSource };
+}
+
+function resolveConfiguredFallbackRoute(settings?: WorkerModelSettings) {
+  return resolveConfiguredRoute("fallback", WORKER_FALLBACK_ROUTE, "fallback", settings);
+}
+
+function resolveConfiguredQualityRoute(settings?: WorkerModelSettings) {
+  return resolveConfiguredRoute(
+    "extraction_quality",
+    WORKER_QUALITY_ROUTE,
+    "static",
+    settings,
+  );
+}
+
+function resolveConfiguredCoverageCleanupRoute(settings?: WorkerModelSettings) {
+  return resolveConfiguredRoute(
+    "extraction_coverage_cleanup",
+    WORKER_COVERAGE_CLEANUP_ROUTE,
+    "static",
+    settings,
+  );
+}
+
 function resolveModelForTaskKind(
   taskKind: string | undefined,
   settings?: WorkerModelSettings,
@@ -631,11 +717,24 @@ function resolveModelForTaskKind(
     configuredRouteSource !== "broker" ||
     !!(configuredRoute && settings?.providerKeys?.[configuredRoute.provider]);
   const canUseConfiguredRoute = !!configuredRoute && hasRequiredBrokerKey;
-  const route = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
-  const routeSource = canUseConfiguredRoute
+  const baseRoute = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
+  const quality = resolveConfiguredQualityRoute(settings);
+  const useQualityPrimary =
+    !!taskKind && QUALITY_PRIMARY_TASK_KINDS.has(taskKind);
+  const coverageCleanup = taskKind === "extraction_coverage_cleanup"
+    ? resolveConfiguredCoverageCleanupRoute(settings)
+    : null;
+  const route = coverageCleanup?.route ?? (useQualityPrimary ? quality.route : baseRoute);
+  const routeSource = coverageCleanup?.routeSource ?? (useQualityPrimary
+    ? quality.routeSource
+    : canUseConfiguredRoute
     ? (configuredRouteSource ?? "configured")
-    : "default";
-  const apiKey = apiKeyForRoute(route, routeSource, settings);
+    : "default");
+  const apiKey = coverageCleanup
+      ? coverageCleanup.apiKey
+    : useQualityPrimary
+      ? quality.apiKey
+      : apiKeyForRoute(route, routeSource, settings);
   return {
     model: routeToModel(route, apiKey),
     task,
@@ -655,20 +754,21 @@ function resolveFallbackModel(
   task: ModelTask,
   taskKind: string | undefined,
   primaryRoute: WorkerModelRoute,
+  settings?: WorkerModelSettings,
 ): ResolvedWorkerModelRoute | null {
-  if (task === "extraction_preview") return null;
   if (task === "classification" || task === "extraction") {
     if (!taskKind || !QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) return null;
   }
-  if (sameRoute(primaryRoute, WORKER_FALLBACK_ROUTE)) return null;
+  const fallback = resolveConfiguredFallbackRoute(settings);
+  if (sameRoute(primaryRoute, fallback.route)) return null;
   return {
     task,
-    model: routeToModel(WORKER_FALLBACK_ROUTE),
-    route: WORKER_FALLBACK_ROUTE,
-    routeSource: "fallback",
-    transport: routeTransport(WORKER_FALLBACK_ROUTE),
-    capabilities: modelCapabilitiesForRoute(WORKER_FALLBACK_ROUTE.model),
-    providerOptions: getProviderOptionsForRoute(WORKER_FALLBACK_ROUTE),
+    model: routeToModel(fallback.route, fallback.apiKey),
+    route: fallback.route,
+    routeSource: fallback.routeSource,
+    transport: routeTransport(fallback.route, fallback.apiKey),
+    capabilities: modelCapabilitiesForRoute(fallback.route.model),
+    providerOptions: getProviderOptionsForRoute(fallback.route),
   };
 }
 
@@ -718,6 +818,60 @@ async function recordModelCallError(
   });
 }
 
+async function recordModelCallStart(
+  opts: {
+    job: Pick<ClaimedJob, "state">;
+    route: ResolvedWorkerModelRoute;
+    label: string;
+    taskKind?: string;
+    attempt: number;
+    maxOutputTokens: number;
+    providerOptions?: ProviderOptions;
+    trace?: ModelCallTrace;
+  },
+) {
+  await recordTraceEvent(opts.job, {
+    kind: "worker",
+    phase: "model_call",
+    label: opts.label,
+    task: opts.route.task,
+    taskKind: opts.taskKind,
+    ...modelRouteTrace(opts.route),
+    attempt: opts.attempt,
+    status: "started",
+    details: stripUndefined({
+      maxOutputTokens: opts.maxOutputTokens,
+      trace: opts.trace,
+      inputSummary: providerInputSummary(opts.providerOptions),
+    }),
+  });
+}
+
+async function recordModelCallSoftFailure(
+  opts: {
+    job: Pick<ClaimedJob, "state">;
+    route: ResolvedWorkerModelRoute;
+    label: string;
+    taskKind?: string;
+    startedAt: number;
+    error?: unknown;
+    details: unknown;
+  },
+) {
+  await recordTraceEvent(opts.job, {
+    kind: "model_call",
+    label: opts.label,
+    task: opts.route.task,
+    taskKind: opts.taskKind,
+    ...modelRouteTrace(opts.route),
+    attempt: 1,
+    status: "soft_failed",
+    durationMs: nowMs() - opts.startedAt,
+    ...(opts.error === undefined ? {} : { error: errorMessage(opts.error) }),
+    details: opts.details,
+  });
+}
+
 async function recordModelCallComplete(
   opts: {
     job: Pick<ClaimedJob, "state">;
@@ -752,8 +906,15 @@ function shouldReturnEmptySections(prompt: string, error: unknown): boolean {
   );
 }
 
-function maxOutputTokensForRoute(maxTokens: number, route: ResolvedWorkerModelRoute): number {
-  return route.capabilities.maxOutputTokens ?? maxTokens;
+function maxOutputTokensForRoute(
+  maxTokens: number,
+  route: ResolvedWorkerModelRoute,
+  taskKind?: string,
+): number {
+  const routeMax = taskKind
+    ? route.capabilities.taskOutputTokens?.[taskKind as ModelTaskKind] ?? route.capabilities.maxOutputTokens
+    : route.capabilities.maxOutputTokens;
+  return routeMax ? Math.min(maxTokens, routeMax) : maxTokens;
 }
 
 function logFallback(
@@ -790,7 +951,9 @@ function modelTraceLabel(
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
     extraction_preview: "Extract provisional policy fields",
-    extraction_form_inventory: "Extract form inventory",
+    extraction_source_tree: "Build source-native document tree",
+    extraction_operational_profile: "Build operational profile",
+    extraction_coverage_cleanup: "Clean coverage schedules",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
     extraction_long_list: "Extract long policy lists",
@@ -965,15 +1128,23 @@ function extractEmbeddedPdf(prompt: string): { text: string; pdfBase64: string }
   };
 }
 
-function buildPromptInput(prompt: string, providerOptions?: Record<string, unknown>) {
+function buildPromptInput(
+  prompt: string,
+  providerOptions?: Record<string, unknown>,
+  route?: WorkerModelRoute,
+) {
   const options = providerOptions as ExtractionProviderOptions | undefined;
-  const pdfPart = buildPdfFilePart({
-    pdfUrl: options?.pdfUrl,
-    pdfBytes: options?.pdfBytes,
-    pdfBase64: options?.pdfBase64,
-    mimeType: options?.mimeType,
-  });
-  if (options?.images?.length) {
+  const supportsPdfFileInput = route?.provider !== "fireworks";
+  const supportsImageInput = route ? routeSupportsImageInput(route) : true;
+  const pdfPart = supportsPdfFileInput
+    ? buildPdfFilePart({
+        pdfUrl: options?.pdfUrl,
+        pdfBytes: options?.pdfBytes,
+        pdfBase64: options?.pdfBase64,
+        mimeType: options?.mimeType,
+      })
+    : null;
+  if (supportsImageInput && options?.images?.length) {
     return {
       messages: [
         {
@@ -1003,7 +1174,7 @@ function buildPromptInput(prompt: string, providerOptions?: Record<string, unkno
     };
   }
 
-  const embedded = extractEmbeddedPdf(prompt);
+  const embedded = supportsPdfFileInput ? extractEmbeddedPdf(prompt) : null;
   if (embedded) {
     return {
       messages: [
@@ -1024,6 +1195,10 @@ function buildPromptInput(prompt: string, providerOptions?: Record<string, unkno
   }
 
   return { prompt };
+}
+
+function routeSupportsImageInput(route: WorkerModelRoute): boolean {
+  return modelPolicySupportsImageInput(route);
 }
 
 
@@ -1060,155 +1235,9 @@ async function recordTraceEvent(job: Pick<ClaimedJob, "state">, event: {
 function buildWorkerExtractor(opts: {
   job: ClaimedJob;
   log: (message: string) => Promise<void>;
-  onCheckpointSave: (checkpoint: PipelineCheckpoint<ExtractionState>) => Promise<void>;
   modelSettings?: WorkerModelSettings;
   pageScreenshots?: PageScreenshot[];
 }) {
-  const generateText: GenerateText = async (params) => {
-    const taskKind = readTaskKind(params);
-    const trace = readTraceDetails(params);
-    const guidedPrompt = addPolicyPeriodGuidance(params.prompt);
-    const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
-    const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
-    const label = modelTraceLabel("generateText", taskKind, route.task, trace);
-    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route);
-    const callProviderOptions = providerOptionsForModelCall(
-      route,
-      providerOptions as ProviderOptions | undefined,
-    );
-    const startedAt = nowMs();
-    try {
-      const result = await aiGenerateText({
-        model: route.model,
-        system: params.system,
-        ...buildPromptInput(guidedPrompt, providerOptions),
-        maxOutputTokens,
-        providerOptions: callProviderOptions,
-        abortSignal: modelAbortSignal(),
-      });
-      const usage = mapUsage(result.usage);
-      await recordModelCallComplete({
-        job: opts.job,
-        route,
-        label,
-        taskKind,
-        attempt: 1,
-        startedAt,
-        usage,
-        details: modelTraceDetails({
-          kind: "generateText",
-          label,
-          task: route.task,
-          taskKind,
-          prompt: guidedPrompt,
-          system: params.system,
-          maxOutputTokens,
-          providerOptions: callProviderOptions,
-          trace,
-          output: result.text,
-          outputKind: "text",
-        }),
-      });
-      return {
-        text: result.text,
-        usage,
-      };
-    } catch (error) {
-      await recordModelCallError({
-        job: opts.job,
-        route,
-        label,
-        taskKind,
-        attempt: 1,
-        startedAt,
-        error,
-        details: modelTraceDetails({
-          kind: "generateText",
-          label,
-          task: route.task,
-          taskKind,
-          prompt: guidedPrompt,
-          system: params.system,
-          maxOutputTokens,
-          providerOptions: callProviderOptions,
-          trace,
-        }),
-      });
-
-      const fallback = isMissingApiKeyError(error)
-        ? null
-        : resolveFallbackModel(route.task, taskKind, route.route);
-      if (!fallback) throw error;
-
-      logFallback(route, fallback, error);
-      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback);
-      const fallbackProviderOptions = providerOptionsForModelCall(
-        fallback,
-        providerOptions as ProviderOptions | undefined,
-      );
-      const fallbackStartedAt = nowMs();
-      try {
-        const fallbackResult = await aiGenerateText({
-          model: fallback.model,
-          system: params.system,
-          ...buildPromptInput(guidedPrompt, providerOptions),
-          maxOutputTokens: fallbackMaxOutputTokens,
-          providerOptions: fallbackProviderOptions,
-          abortSignal: modelAbortSignal(),
-        });
-        const usage = mapUsage(fallbackResult.usage);
-        await recordModelCallComplete({
-          job: opts.job,
-          route: fallback,
-          label,
-          taskKind,
-          attempt: 2,
-          startedAt: fallbackStartedAt,
-          usage,
-          details: modelTraceDetails({
-            kind: "generateText",
-            label,
-            task: fallback.task,
-            taskKind,
-            prompt: guidedPrompt,
-            system: params.system,
-            maxOutputTokens: fallbackMaxOutputTokens,
-            providerOptions: fallbackProviderOptions,
-            trace,
-            output: fallbackResult.text,
-            outputKind: "text",
-          }),
-        });
-        return {
-          text: fallbackResult.text,
-          usage,
-        };
-      } catch (fallbackError) {
-        await recordModelCallError({
-          job: opts.job,
-          route: fallback,
-          label,
-          taskKind,
-          attempt: 2,
-          startedAt: fallbackStartedAt,
-          error: fallbackError,
-          details: modelTraceDetails({
-            kind: "generateText",
-            label,
-            task: fallback.task,
-            taskKind,
-            prompt: guidedPrompt,
-            system: params.system,
-            maxOutputTokens: fallbackMaxOutputTokens,
-            providerOptions: fallbackProviderOptions,
-            trace,
-          }),
-        });
-        throw fallbackError;
-      }
-    }
-  };
-
   const generateObject: GenerateObject = async (params) => {
     const taskKind = readTaskKind(params);
     const trace = readTraceDetails(params);
@@ -1216,22 +1245,34 @@ function buildWorkerExtractor(opts: {
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
     const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
     const label = modelTraceLabel("generateObject", taskKind, route.task, trace);
-    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route);
+    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route, taskKind);
     const callProviderOptions = providerOptionsForModelCall(
       route,
       providerOptions as ProviderOptions | undefined,
     );
     const startedAt = nowMs();
     try {
-      const result = await aiGenerateText({
+      await recordModelCallStart({
+        job: opts.job,
+        route,
+        label,
+        taskKind,
+        attempt: 1,
+        maxOutputTokens,
+        providerOptions: callProviderOptions,
+        trace,
+      });
+      const result = await withModelCallTimeout(aiGenerateText({
         model: route.model,
         system: params.system,
-        ...buildPromptInput(guidedPrompt, providerOptions),
-        output: Output.object({ schema: params.schema }),
+        ...buildPromptInput(guidedPrompt, providerOptions, route.route),
+        output: Output.object({
+          schema: structuredOutputSchemaForProvider(params.schema, route.route.provider),
+        }),
         maxOutputTokens,
         providerOptions: callProviderOptions,
         abortSignal: modelAbortSignal(),
-      });
+      }));
       const usage = mapUsage(result.usage);
       await recordModelCallComplete({
         job: opts.job,
@@ -1261,12 +1302,11 @@ function buildWorkerExtractor(opts: {
       };
     } catch (error) {
       if (shouldReturnEmptySections(guidedPrompt, error)) {
-        await recordModelCallError({
+        await recordModelCallSoftFailure({
           job: opts.job,
           route,
           label,
           taskKind,
-          attempt: 1,
           startedAt,
           error,
           details: modelTraceDetails({
@@ -1309,26 +1349,38 @@ function buildWorkerExtractor(opts: {
 
       const fallback = isMissingApiKeyError(error)
         ? null
-        : resolveFallbackModel(route.task, taskKind, route.route);
+        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
-      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback);
+      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback, taskKind);
       const fallbackProviderOptions = providerOptionsForModelCall(
         fallback,
         providerOptions as ProviderOptions | undefined,
       );
       const fallbackStartedAt = nowMs();
       try {
-        const fallbackResult = await aiGenerateText({
+        await recordModelCallStart({
+          job: opts.job,
+          route: fallback,
+          label,
+          taskKind,
+          attempt: 2,
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+          trace,
+        });
+        const fallbackResult = await withModelCallTimeout(aiGenerateText({
           model: fallback.model,
           system: params.system,
-          ...buildPromptInput(guidedPrompt, providerOptions),
-          output: Output.object({ schema: params.schema }),
+          ...buildPromptInput(guidedPrompt, providerOptions, fallback.route),
+          output: Output.object({
+            schema: structuredOutputSchemaForProvider(params.schema, fallback.route.provider),
+          }),
           maxOutputTokens: fallbackMaxOutputTokens,
           providerOptions: fallbackProviderOptions,
           abortSignal: modelAbortSignal(),
-        });
+        }));
         const usage = mapUsage(fallbackResult.usage);
         await recordModelCallComplete({
           job: opts.job,
@@ -1382,32 +1434,30 @@ function buildWorkerExtractor(opts: {
     }
   };
 
-  const concurrency = readBoundedIntEnv("EXTRACTION_CONCURRENCY", 6, 1, 8);
   const extractionRoute = resolveModelForTaskKind("extraction_focused", opts.modelSettings);
+  const modelCapabilitiesByTaskKind = Object.fromEntries(
+    ([
+      "extraction_source_tree",
+      "extraction_operational_profile",
+      "extraction_coverage_cleanup",
+      "extraction_review",
+      "extraction_referential_lookup",
+    ] satisfies ModelTaskKind[]).map((taskKind) => [
+      taskKind,
+      resolveModelForTaskKind(taskKind, opts.modelSettings).capabilities,
+    ]),
+  ) as Partial<Record<ModelTaskKind, ModelCapabilities>>;
   return createExtractor({
-    generateText,
     generateObject,
-    concurrency,
-    pageMapConcurrency: readBoundedIntEnv("EXTRACTION_PAGE_MAP_CONCURRENCY", concurrency, 1, 8),
-    extractorConcurrency: readBoundedIntEnv("EXTRACTION_EXTRACTOR_CONCURRENCY", concurrency, 1, 8),
-    formatConcurrency: readBoundedIntEnv("EXTRACTION_FORMAT_CONCURRENCY", concurrency, 1, 8),
-    maxReviewRounds: readBoundedIntEnv("EXTRACTION_MAX_REVIEW_ROUNDS", 1, 0, 2),
-    reviewMode: readReviewModeEnv("EXTRACTION_REVIEW_MODE", "skip"),
     log: opts.log,
     onProgress: opts.log,
-    onCheckpointSave: opts.onCheckpointSave,
     modelCapabilities: extractionRoute.capabilities,
+    modelCapabilitiesByTaskKind,
   });
 }
 
-function readReviewModeEnv(name: string, fallback: "always" | "auto" | "skip"): "always" | "auto" | "skip" {
-  const raw = process.env[name];
-  if (raw === "always" || raw === "auto" || raw === "skip") return raw;
-  return fallback;
-}
-
 async function logJob(
-  job: Pick<ClaimedJob, "policyId">,
+  job: Pick<ClaimedJob, "policyId" | "leaseId">,
   message: string,
   level: "info" | "warn" | "error" = "info",
 ): Promise<void> {
@@ -1415,6 +1465,7 @@ async function logJob(
     await convex.action(actions.logExternalJob, {
       secret: SECRET,
       policyId: job.policyId,
+      leaseId: job.leaseId,
       message,
       phase: "worker",
       level,
@@ -1509,6 +1560,9 @@ function startHttpServer(): { close: () => void } | null {
         workerProtocolVersion: WORKER_PROTOCOL_VERSION,
         clSdkVersion: WORKER_CL_SDK_VERSION,
         convexUrl: CONVEX_URL,
+        railwayEnvironment: process.env.RAILWAY_ENVIRONMENT_NAME,
+        gitSha: process.env.RAILWAY_GIT_COMMIT_SHA,
+        gitBranch: process.env.RAILWAY_GIT_BRANCH,
         extractionJobConcurrency: EXTRACTION_JOB_CONCURRENCY,
         previewJobConcurrency: PREVIEW_JOB_CONCURRENCY,
       });
@@ -1540,27 +1594,6 @@ async function heartbeat(job: ClaimedJob): Promise<void> {
   if (!result.ok) {
     throw new Error(`Lost external extraction lease for ${job.policyId}`);
   }
-}
-
-async function saveCheckpoint(
-  job: ClaimedJob,
-  checkpoint: PipelineCheckpoint<ExtractionState>,
-): Promise<void> {
-  const result = await convex.action(actions.saveExternalCheckpoint, {
-    secret: SECRET,
-    policyId: job.policyId,
-    leaseId: job.leaseId,
-    state: job.state,
-    checkpoint,
-  });
-  if (!result.ok) {
-    throw new Error(`Failed to persist checkpoint for ${job.policyId}`);
-  }
-  job.state = {
-    ...job.state,
-    clSdkCheckpointFileId: result.checkpointFileId,
-    externalWorker: true,
-  };
 }
 
 function jsonByteLength(value: unknown): number {
@@ -1612,6 +1645,7 @@ async function uploadCompletionPayload(
       return await convex.action(actions.finalizeExternalCompletionPayload, {
         secret: SECRET,
         policyId: job.policyId,
+        leaseId: job.leaseId,
         storageId: uploaded.storageId,
         byteLength,
       });
@@ -1632,6 +1666,7 @@ async function uploadCompletionPayload(
     return await convex.action(actions.saveExternalCompletionPayload, {
       secret: SECRET,
       policyId: job.policyId,
+      leaseId: job.leaseId,
       payload,
     });
   }
@@ -1805,6 +1840,15 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
 const previewExtractionOutputSchema =
   jsonSchema<Record<string, unknown>>(previewExtractionSchema);
 
+function previewExtractionOutputSchemaForProvider(provider: string) {
+  if (provider !== "fireworks") return previewExtractionOutputSchema;
+  return jsonSchema<Record<string, unknown>>(
+    normalizeJsonSchemaForFireworks(previewExtractionSchema) as Parameters<
+      typeof jsonSchema<Record<string, unknown>>
+    >[0],
+  );
+}
+
 function cleanPreviewString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.replace(/\s+/g, " ").trim();
@@ -1927,7 +1971,7 @@ function previewTextFromSourceSpans(sourceSpans: Array<Record<string, unknown>>)
 async function extractPreviewFields(job: ClaimedPreviewJob, sourceText: string) {
   const route = resolveModelForTaskKind("extraction_preview", job.modelSettings);
   const maxOutputTokens = Math.min(
-    maxOutputTokensForRoute(4096, route),
+    maxOutputTokensForRoute(4096, route, "extraction_preview"),
     8192,
   );
   const system = `You extract a fast provisional first read from already-bound insurance policy text.
@@ -1945,15 +1989,17 @@ ${sourceText}`;
   const startedAt = nowMs();
   const label = "Extract provisional policy fields";
   try {
-    const result = await aiGenerateText({
+    const result = await withModelCallTimeout(aiGenerateText({
       model: route.model,
       system,
       prompt,
-      output: Output.object({ schema: previewExtractionOutputSchema }),
+      output: Output.object({
+        schema: previewExtractionOutputSchemaForProvider(route.route.provider),
+      }),
       maxOutputTokens,
       providerOptions: callProviderOptions,
       abortSignal: modelAbortSignal(),
-    });
+    }));
     const usage = mapUsage(result.usage);
     await recordModelCallComplete({
       job,
@@ -2002,7 +2048,81 @@ ${sourceText}`;
         trace: { phase: "preview", label },
       }),
     });
-    throw error;
+
+    const fallback = isMissingApiKeyError(error)
+      ? null
+      : resolveFallbackModel(route.task, "extraction_preview", route.route, job.modelSettings);
+    if (!fallback) throw error;
+
+    logFallback(route, fallback, error);
+    const fallbackMaxOutputTokens = Math.min(
+      maxOutputTokensForRoute(4096, fallback, "extraction_preview"),
+      8192,
+    );
+    const fallbackProviderOptions = providerOptionsForModelCall(fallback, undefined);
+    const fallbackStartedAt = nowMs();
+    try {
+      const result = await withModelCallTimeout(aiGenerateText({
+        model: fallback.model,
+        system,
+        prompt,
+        output: Output.object({
+          schema: previewExtractionOutputSchemaForProvider(fallback.route.provider),
+        }),
+        maxOutputTokens: fallbackMaxOutputTokens,
+        providerOptions: fallbackProviderOptions,
+        abortSignal: modelAbortSignal(),
+      }));
+      const usage = mapUsage(result.usage);
+      await recordModelCallComplete({
+        job,
+        route: fallback,
+        label,
+        taskKind: "extraction_preview",
+        attempt: 2,
+        startedAt: fallbackStartedAt,
+        usage,
+        details: modelTraceDetails({
+          kind: "generateObject",
+          label,
+          task: fallback.task,
+          taskKind: "extraction_preview",
+          prompt,
+          system,
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+          trace: { phase: "preview", label },
+          output: result.output,
+          outputKind: "object",
+        }),
+      });
+      return {
+        fields: normalizePreviewFields(result.output),
+        route: fallback,
+      };
+    } catch (fallbackError) {
+      await recordModelCallError({
+        job,
+        route: fallback,
+        label,
+        taskKind: "extraction_preview",
+        attempt: 2,
+        startedAt: fallbackStartedAt,
+        error: fallbackError,
+        details: modelTraceDetails({
+          kind: "generateObject",
+          label,
+          task: fallback.task,
+          taskKind: "extraction_preview",
+          prompt,
+          system,
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+          trace: { phase: "preview", label },
+        }),
+      });
+      throw fallbackError;
+    }
   }
 }
 
@@ -2111,10 +2231,6 @@ async function processJob(job: ClaimedJob): Promise<void> {
     const pdfBytes = await fetchPdfBytes(job.fileUrl);
     await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
 
-    if (job.clSdkCheckpoint) {
-      await logJob(job, `Resuming extraction from cl-sdk phase "${job.clSdkCheckpoint.phase}"`);
-    }
-
     let result: ExtractionResult;
     let preparedSource: Awaited<ReturnType<typeof buildPdfSourceSpans>>;
     const extractStartedAt = nowMs();
@@ -2139,9 +2255,6 @@ async function processJob(job: ClaimedJob): Promise<void> {
       const extractor = buildWorkerExtractor({
         job,
         log: async (message) => logJob(job, message),
-        onCheckpointSave: async (checkpoint) => {
-          await saveCheckpoint(job, checkpoint);
-        },
         modelSettings: job.modelSettings,
         pageScreenshots: converted.pageScreenshots,
       });
@@ -2153,9 +2266,10 @@ async function processJob(job: ClaimedJob): Promise<void> {
         pdfBytes,
         job.policyId,
         {
-          ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
           ...(converted.sourceSpans.length > 0
-            ? { sourceSpans: converted.sourceSpans as unknown as Array<Record<string, unknown>> }
+            ? {
+                sourceSpans: converted.sourceSpans as unknown as Array<Record<string, unknown>>,
+              }
             : {}),
         },
       );
@@ -2176,18 +2290,16 @@ async function processJob(job: ClaimedJob): Promise<void> {
       const extractor = buildWorkerExtractor({
         job,
         log: async (message) => logJob(job, message),
-        onCheckpointSave: async (checkpoint) => {
-          await saveCheckpoint(job, checkpoint);
-        },
         modelSettings: job.modelSettings,
       });
       result = await extractor.extract(
         pdfBytes,
         job.policyId,
         {
-          ...(job.clSdkCheckpoint ? { resumeFrom: job.clSdkCheckpoint } : {}),
           ...(preparedSource.sourceSpans.length > 0
-            ? { sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>> }
+            ? {
+                sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>>,
+              }
             : {}),
         },
       );

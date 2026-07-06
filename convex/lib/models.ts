@@ -7,13 +7,19 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createXai } from "@ai-sdk/xai";
 import { createMistral } from "@ai-sdk/mistral";
 import { createCohere } from "@ai-sdk/cohere";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { gateway, type LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
+  EXTRACTION_QUALITY_MODEL,
   FALLBACK_MODEL,
+  COVERAGE_CLEANUP_MODEL,
+  FIREWORKS_MODEL_IDS,
+  QUALITY_ESCALATION_TASK_KINDS,
+  QUALITY_PRIMARY_TASK_KINDS,
   MODEL_ROUTING,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
@@ -29,7 +35,8 @@ import {
  * All models accessed via Vercel AI SDK's provider-agnostic interface.
  *
  * Env vars needed:
- *   OPENAI_API_KEY — direct OpenAI access for default Glass routes
+ *   FIREWORKS_API_KEY — direct Fireworks access for default Glass language routes
+ *   OPENAI_API_KEY — direct OpenAI access for embedding routes during the migration
  *   AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN — Vercel AI Gateway access for routes whose provider is not directly configured
  */
 
@@ -41,6 +48,8 @@ let _google: ReturnType<typeof createGoogleGenerativeAI> | null = null;
 let _xai: ReturnType<typeof createXai> | null = null;
 let _mistral: ReturnType<typeof createMistral> | null = null;
 let _cohere: ReturnType<typeof createCohere> | null = null;
+let _fireworks: ReturnType<typeof createOpenAICompatible> | null = null;
+const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
 function anthropic() {
   if (!_anthropic) _anthropic = createAnthropic();
@@ -77,8 +86,24 @@ function cohere() {
   return _cohere;
 }
 
+function createFireworksLanguageProvider(apiKey?: string) {
+  return createOpenAICompatible({
+    name: "fireworks",
+    baseURL: FIREWORKS_BASE_URL,
+    apiKey: apiKey ?? process.env.FIREWORKS_API_KEY,
+    includeUsage: true,
+    supportsStructuredOutputs: true,
+  });
+}
+
+function fireworks() {
+  if (!_fireworks) _fireworks = createFireworksLanguageProvider();
+  return _fireworks;
+}
+
 export {
   FALLBACK_MODEL,
+  FIREWORKS_MODEL_IDS,
   MODEL_ROUTING,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
@@ -89,7 +114,9 @@ export {
 
 export type ModelCallTaskKind =
   | "extraction_classify"
-  | "extraction_form_inventory"
+  | "extraction_source_tree"
+  | "extraction_operational_profile"
+  | "extraction_coverage_cleanup"
   | "extraction_page_map"
   | "extraction_focused"
   | "extraction_long_list"
@@ -111,8 +138,9 @@ type ModelFallbackContext = {
   task?: ModelTask;
   taskKind?: ModelCallTaskKind;
   primaryRoute?: ModelRoute;
-  primaryTransport?: ModelTransport;
-  primaryRouteSource?: ModelRouteSource;
+  qualityRoute?: ModelRoute;
+  fallbackRoute?: ModelRoute;
+  allowFallback?: boolean;
 };
 
 export type ModelTransport = "direct" | "gateway";
@@ -149,18 +177,8 @@ const LOW_COST_NO_ESCALATION_TASKS = new Set<ModelTask>([
   "document_extraction",
 ]);
 
-const INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS = new Set<string>([
-  // Validation / repair passes over extracted or reasoned output.
-  "extraction_review",
-  "query_verify",
-  // Ambiguous synthesis over retrieved evidence or requested changes.
-  "query_reason",
-  "pce_impact_analysis",
-  // Source-evidence support where the cheap path may fail to resolve references.
-  "extraction_referential_lookup",
-  // High-risk carrier-facing packet generation.
-  "pce_packet_generation",
-]);
+const QUALITY_ESCALATION_TASK_KIND_SET = new Set<string>(QUALITY_ESCALATION_TASK_KINDS);
+const QUALITY_PRIMARY_TASK_KIND_SET = new Set<string>(QUALITY_PRIMARY_TASK_KINDS);
 
 function sameRoute(left?: ModelRoute, right?: ModelRoute): boolean {
   return !!left && !!right && left.provider === right.provider && left.model === right.model;
@@ -180,22 +198,37 @@ export function fallbackRouteForCall({
   task,
   taskKind,
   primaryRoute,
+  fallbackRoute = FALLBACK_MODEL,
+  allowFallback = true,
 }: ModelFallbackContext): ModelRoute | null {
+  if (!allowFallback) return null;
+
   const effectiveTask = task && modelTaskForCall(task, taskKind);
   const effectivePrimaryRoute =
     primaryRoute ?? (effectiveTask ? MODEL_ROUTING[effectiveTask] : undefined);
 
-  if (sameRoute(effectivePrimaryRoute, FALLBACK_MODEL)) return null;
+  if (sameRoute(effectivePrimaryRoute, fallbackRoute)) return null;
 
-  if (taskKind && INTENTIONAL_QUALITY_ESCALATION_TASK_KINDS.has(taskKind)) {
-    return FALLBACK_MODEL;
+  if (taskKind && QUALITY_ESCALATION_TASK_KIND_SET.has(taskKind)) {
+    return fallbackRoute;
   }
 
   if (effectiveTask && LOW_COST_NO_ESCALATION_TASKS.has(effectiveTask)) {
     return null;
   }
 
-  return FALLBACK_MODEL;
+  return fallbackRoute;
+}
+
+export function primaryRouteForCall({
+  task,
+  taskKind,
+  qualityRoute = EXTRACTION_QUALITY_MODEL,
+}: ModelFallbackContext): ModelRoute | null {
+  if (!taskKind || !QUALITY_PRIMARY_TASK_KIND_SET.has(taskKind)) return null;
+  const effectiveTask = task && modelTaskForCall(task, taskKind);
+  if (effectiveTask !== "extraction") return null;
+  return qualityRoute;
 }
 
 export function getProviderOptionsForTask(task: ModelTask): ProviderOptions | undefined {
@@ -244,6 +277,8 @@ function providerModel(provider: ModelProvider, model: string, apiKey?: string):
       return (apiKey ? createMistral({ apiKey }) : mistral())(model);
     case "cohere":
       return (apiKey ? createCohere({ apiKey }) : cohere())(model);
+    case "fireworks":
+      return (apiKey ? createFireworksLanguageProvider(apiKey) : fireworks())(model);
     case "moonshot":
       throw new Error("Moonshot routing is disabled");
     case "deepseek":
@@ -265,6 +300,8 @@ function directProviderApiKey(provider: ModelProvider): string | undefined {
       return process.env.MISTRAL_API_KEY;
     case "cohere":
       return process.env.COHERE_API_KEY;
+    case "fireworks":
+      return process.env.FIREWORKS_API_KEY;
     case "deepseek":
       return process.env.DEEPSEEK_API_KEY;
     case "moonshot":
@@ -273,6 +310,7 @@ function directProviderApiKey(provider: ModelProvider): string | undefined {
 }
 
 function gatewayModelId(route: ModelRoute): string {
+  if (route.provider === "fireworks") return `fireworks/${route.model}`;
   return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
 }
 
@@ -286,15 +324,13 @@ function nativeProviderModel(route: ModelRoute): string | null {
       return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
         ? route.model
         : null;
+    case "fireworks":
+      return route.model;
     case "moonshot":
       return null;
     default:
       return route.model;
   }
-}
-
-function hasGatewayAccess() {
-  return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
 }
 
 function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
@@ -334,44 +370,7 @@ function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
     .join(" ");
 }
 
-export function isProviderFailoverError(err: unknown): boolean {
-  const text = errorTextForMatching(err);
-  return (
-    /\b429\b|too many requests|rate limit|rate_limit|insufficient_quota|exceeded.*quota|quota.*exceeded|billing/i.test(
-      text,
-    ) && !isMissingApiKeyError(err)
-  );
-}
-
-export function canRetryDirectRouteThroughGateway(args: {
-  error: unknown;
-  primaryRoute?: ModelRoute;
-  primaryTransport?: ModelTransport;
-  primaryRouteSource?: ModelRouteSource;
-}): args is {
-  error: unknown;
-  primaryRoute: ModelRoute;
-  primaryTransport: ModelTransport;
-  primaryRouteSource?: ModelRouteSource;
-} {
-  return (
-    args.primaryTransport === "direct" &&
-    args.primaryRouteSource !== "broker" &&
-    !!args.primaryRoute &&
-    args.primaryRoute.provider !== "moonshot" &&
-    hasGatewayAccess() &&
-    isProviderFailoverError(args.error)
-  );
-}
-
-function modelFromRoute(
-  route: ModelRoute,
-  apiKey?: string,
-  transport: ModelTransport | "auto" = "auto",
-): LanguageModel {
-  if (transport === "gateway") {
-    return gateway(gatewayModelId(route));
-  }
+function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
   const nativeModel = nativeProviderModel(route);
   if (apiKey && nativeModel) {
     return providerModel(route.provider, nativeModel, apiKey);
@@ -382,11 +381,8 @@ function modelFromRoute(
   return gateway(gatewayModelId(route));
 }
 
-export function getModelForRoute(
-  route: ModelRoute,
-  options?: { transport?: ModelTransport },
-): LanguageModel {
-  return modelFromRoute(route, undefined, options?.transport);
+export function getModelForRoute(route: ModelRoute): LanguageModel {
+  return modelFromRoute(route);
 }
 
 export function getModel(task: ModelTask): LanguageModel {
@@ -414,11 +410,27 @@ export async function getModelAndRouteForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: ModelRouteSource; transport: ModelTransport }> {
+): Promise<{
+  model: LanguageModel;
+  route: ModelRoute;
+  routeSource: ModelRouteSource;
+  transport: ModelTransport;
+  qualityRoute: ModelRoute;
+  qualityRouteSource: "broker" | "global" | "static";
+  coverageCleanupRoute: ModelRoute;
+  coverageCleanupRouteSource: "broker" | "global" | "static";
+  fallbackRoute: ModelRoute;
+}> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
     const routeSource = settings?.routeSources?.[task];
+    const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+    const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
+    const coverageCleanupRoute =
+      settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
+    const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
+    const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const configuredApiKey = routeSource === "broker" && configuredRoute
       ? settings?.providerKeys?.[configuredRoute.provider]
       : undefined;
@@ -437,6 +449,11 @@ export async function getModelAndRouteForOrg(
       route,
       routeSource: canUseConfiguredRoute ? (routeSource ?? "global") : "default",
       transport,
+      qualityRoute,
+      qualityRouteSource,
+      coverageCleanupRoute,
+      coverageCleanupRouteSource,
+      fallbackRoute,
     };
   } catch (err) {
     console.warn(
@@ -447,18 +464,44 @@ export async function getModelAndRouteForOrg(
     const route = MODEL_ROUTING[task];
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
-    return { model: getModel(task), route, routeSource: "default", transport };
+    return {
+      model: getModel(task),
+      route,
+      routeSource: "default",
+      transport,
+      qualityRoute: EXTRACTION_QUALITY_MODEL,
+      qualityRouteSource: "static",
+      coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
+      coverageCleanupRouteSource: "static",
+      fallbackRoute: FALLBACK_MODEL,
+    };
   }
 }
 
 export async function getModelAndRouteForPublicTask(
   ctx: ActionCtx,
   task: ModelTask,
-): Promise<{ model: LanguageModel; route: ModelRoute; routeSource: Extract<ModelRouteSource, "global" | "static" | "default">; transport: ModelTransport }> {
+): Promise<{
+  model: LanguageModel;
+  route: ModelRoute;
+  routeSource: "global" | "static" | "default";
+  transport: ModelTransport;
+  qualityRoute: ModelRoute;
+  qualityRouteSource: "global" | "static";
+  coverageCleanupRoute: ModelRoute;
+  coverageCleanupRouteSource: "global" | "static";
+  fallbackRoute: ModelRoute;
+}> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
     const route = settings?.routes?.[task] ?? MODEL_ROUTING[task];
     const routeSource = settings?.routeSources?.[task] ?? "static";
+    const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+    const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
+    const coverageCleanupRoute =
+      settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
+    const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
+    const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
     return {
@@ -466,6 +509,11 @@ export async function getModelAndRouteForPublicTask(
       route,
       routeSource,
       transport,
+      qualityRoute,
+      qualityRouteSource,
+      coverageCleanupRoute,
+      coverageCleanupRouteSource,
+      fallbackRoute,
     };
   } catch (err) {
     console.warn(
@@ -476,7 +524,17 @@ export async function getModelAndRouteForPublicTask(
     const route = MODEL_ROUTING[task];
     const nativeModel = nativeProviderModel(route);
     const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
-    return { model: getModel(task), route, routeSource: "default", transport };
+    return {
+      model: getModel(task),
+      route,
+      routeSource: "default",
+      transport,
+      qualityRoute: EXTRACTION_QUALITY_MODEL,
+      qualityRouteSource: "static",
+      coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
+      coverageCleanupRouteSource: "static",
+      fallbackRoute: FALLBACK_MODEL,
+    };
   }
 }
 
@@ -485,52 +543,21 @@ export async function generateTextWithFallback(
   fallbackContext: ModelFallbackContext = {},
 ): Promise<Awaited<ReturnType<typeof import("ai").generateText>>> {
   const { generateText } = await import("ai");
-  let primaryError: unknown;
   try {
     return await generateText(withModelTimeout(options));
   } catch (err: unknown) {
-    primaryError = err;
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
-    const gatewayRetry = { ...fallbackContext, error: err };
-    if (canRetryDirectRouteThroughGateway(gatewayRetry)) {
-      try {
-        console.warn(
-          `Primary direct model (${modelId}) failed with provider quota/rate error. Retrying ${gatewayRetry.primaryRoute.provider}:${gatewayRetry.primaryRoute.model} through Vercel AI Gateway.`,
-        );
-        return await generateText(withModelTimeout({
-          ...options,
-          model: modelFromRoute(gatewayRetry.primaryRoute, undefined, "gateway"),
-          providerOptions: mergeProviderOptions(
-            getProviderOptionsForRoute(gatewayRetry.primaryRoute),
-            options.providerOptions,
-          ),
-        }));
-      } catch (gatewayErr) {
-        primaryError = gatewayErr;
-        console.warn(
-          `Gateway retry for ${gatewayRetry.primaryRoute.provider}:${gatewayRetry.primaryRoute.model} failed: ${
-            gatewayErr instanceof Error ? gatewayErr.message : String(gatewayErr)
-          }`,
-        );
-      }
-    }
     const fallbackRoute = fallbackRouteForCall(fallbackContext);
     if (!fallbackRoute) throw err;
-    const fallbackGatewayRetry = { ...fallbackContext, error: err };
-    const fallbackTransport =
-      canRetryDirectRouteThroughGateway(fallbackGatewayRetry) &&
-      fallbackRoute.provider === fallbackGatewayRetry.primaryRoute.provider
-        ? "gateway"
-        : undefined;
     console.warn(
       `Primary model (${modelId}) failed: ${
-        primaryError instanceof Error ? primaryError.message : String(primaryError)
+        err instanceof Error ? err.message : String(err)
       }. Retrying with ${fallbackRoute.model}.`,
     );
     return await generateText(withModelTimeout({
       ...options,
-      model: modelFromRoute(fallbackRoute, undefined, fallbackTransport),
+      model: modelFromRoute(fallbackRoute),
       providerOptions: mergeProviderOptions(
         getProviderOptionsForRoute(fallbackRoute),
         options.providerOptions,
@@ -544,52 +571,21 @@ export async function generateStructuredWithFallback(
   fallbackContext: ModelFallbackContext = {},
 ): Promise<Awaited<ReturnType<typeof import("ai").generateText>>> {
   const { generateText } = await import("ai");
-  let primaryError: unknown;
   try {
     return await generateText(withModelTimeout(options));
   } catch (err: unknown) {
-    primaryError = err;
     const modelId = (options.model as Record<string, unknown>)?.modelId as string || "unknown";
     if (isMissingApiKeyError(err)) throw err;
-    const gatewayRetry = { ...fallbackContext, error: err };
-    if (canRetryDirectRouteThroughGateway(gatewayRetry)) {
-      try {
-        console.warn(
-          `Primary direct model (${modelId}) failed with provider quota/rate error. Retrying ${gatewayRetry.primaryRoute.provider}:${gatewayRetry.primaryRoute.model} through Vercel AI Gateway.`,
-        );
-        return await generateText(withModelTimeout({
-          ...options,
-          model: modelFromRoute(gatewayRetry.primaryRoute, undefined, "gateway"),
-          providerOptions: mergeProviderOptions(
-            getProviderOptionsForRoute(gatewayRetry.primaryRoute),
-            options.providerOptions,
-          ),
-        }));
-      } catch (gatewayErr) {
-        primaryError = gatewayErr;
-        console.warn(
-          `Gateway retry for ${gatewayRetry.primaryRoute.provider}:${gatewayRetry.primaryRoute.model} failed: ${
-            gatewayErr instanceof Error ? gatewayErr.message : String(gatewayErr)
-          }`,
-        );
-      }
-    }
     const fallbackRoute = fallbackRouteForCall(fallbackContext);
     if (!fallbackRoute) throw err;
-    const fallbackGatewayRetry = { ...fallbackContext, error: err };
-    const fallbackTransport =
-      canRetryDirectRouteThroughGateway(fallbackGatewayRetry) &&
-      fallbackRoute.provider === fallbackGatewayRetry.primaryRoute.provider
-        ? "gateway"
-        : undefined;
     console.warn(
       `Primary model (${modelId}) failed for structured output: ${
-        primaryError instanceof Error ? primaryError.message : String(primaryError)
+        err instanceof Error ? err.message : String(err)
       }. Retrying with ${fallbackRoute.model}.`,
     );
     return await generateText(withModelTimeout({
       ...options,
-      model: modelFromRoute(fallbackRoute, undefined, fallbackTransport),
+      model: modelFromRoute(fallbackRoute),
       providerOptions: mergeProviderOptions(
         getProviderOptionsForRoute(fallbackRoute),
         options.providerOptions,
@@ -606,6 +602,7 @@ export function availableProviders(): string[] {
   if (process.env.XAI_API_KEY) providers.push("xai");
   if (process.env.MISTRAL_API_KEY) providers.push("mistral");
   if (process.env.COHERE_API_KEY) providers.push("cohere");
+  if (process.env.FIREWORKS_API_KEY) providers.push("fireworks");
   if (process.env.DEEPSEEK_API_KEY) providers.push("deepseek");
   if (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN) providers.push("gateway");
   return providers;

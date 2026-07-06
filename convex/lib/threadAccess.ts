@@ -1,6 +1,6 @@
 import type { Id, Doc } from "../_generated/dataModel";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
-import { requireOrgAccess } from "./orgAuth";
+import { requireCurrentOrgAccess as requireOrgAccess } from "./access";
 
 type ThreadLike = { orgId: Id<"organizations"> };
 type ClientOrgLike = { _id: Id<"organizations">; brokerOrgId?: Id<"organizations"> };

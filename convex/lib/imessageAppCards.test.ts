@@ -33,8 +33,8 @@ describe("buildImessageAppCardRequests", () => {
     ]);
   });
 
-  test("builds certificate request and policy change app-card requests from artifacts", () => {
-    const certificateRequestId = "certificate-request-1" as Id<"certificateRequests">;
+  test("builds certificate and policy change app-card requests from artifacts", () => {
+    const certificateVersionId = "certificate-version-1" as Id<"certificateVersions">;
     const policyChangeCaseId = "policy-change-1" as Id<"policyChangeCases">;
 
     expect(
@@ -43,7 +43,7 @@ describe("buildImessageAppCardRequests", () => {
         artifacts: [
           {
             type: "certificate_result",
-            data: { certificateRequestId },
+            data: { certificateVersionId },
           },
           {
             type: "policy_change_result",
@@ -54,8 +54,8 @@ describe("buildImessageAppCardRequests", () => {
       }),
     ).toMatchObject([
       {
-        key: `certificate_request:${certificateRequestId}`,
-        createArgs: { kind: "certificate_request", certificateRequestId },
+        key: `certificate:${certificateVersionId}`,
+        createArgs: { kind: "certificate", certificateVersionId },
       },
       {
         key: `policy_change:${policyChangeCaseId}`,

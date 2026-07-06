@@ -87,6 +87,7 @@ export class GlassClient {
     postalCode?: string;
     requestText?: string;
     requestedEndorsements?: string[];
+    additionalInsuredName?: string;
     explicitReissue?: boolean;
   }) {
     return this.post("/mcp/policies/certificates/generate", input);

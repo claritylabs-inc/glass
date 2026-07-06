@@ -4,8 +4,6 @@ const POLICY_VERSION_SNAPSHOT_KEYS = [
   "underwriter",
   "mga",
   "broker",
-  "partnerOrgId",
-  "partnerProgramId",
   "policyNumber",
   "policyTypes",
   "policyTermType",

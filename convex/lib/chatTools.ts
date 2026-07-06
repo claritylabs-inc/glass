@@ -33,7 +33,7 @@ export const lookupPolicy = tool({
 
 export const compareCoverages = tool({
   description:
-    "Compare two policies side by side — coverage types, limits, deductibles, and premium.",
+    "Compare two policies side by side — policy types, limits, deductibles, and premium.",
   inputSchema: z.object({
     policyId1: z.string().describe("Policy reference for the first policy to compare"),
     policyId2: z.string().describe("Policy reference for the second policy to compare"),
@@ -187,7 +187,7 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate or retrieve a Certificate of Insurance (COI) PDF for a specific policy. Include requestedEndorsements/requestText only when the user explicitly asks for additional insured, waiver of subrogation, primary and non-contributory, loss payee, mortgagee, or another endorsement-bearing certificate.",
+    "Generate or retrieve a Certificate of Insurance (COI) PDF for a specific policy. Holder-only requests generate immediately. Additional-insured requests generate only when policy evidence supports them; unsupported endorsement requests become broker follow-ups.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     certificateHolder: z
@@ -225,10 +225,10 @@ export const generateCoi = tool({
       .array(z.string())
       .optional()
       .describe("Specific endorsement requests only when the user explicitly asks for them, such as additional insured, waiver of subrogation, primary and non-contributory, loss payee, or mortgagee. Do not invent extra wording."),
-    partnerProgramId: z
+    additionalInsuredName: z
       .string()
       .optional()
-      .describe("Optional program administrator program ID to use when Glass asks the broker to choose a program"),
+      .describe("Name of the requested additional insured when the user asks to add or show one on the certificate."),
     explicitReissue: z
       .boolean()
       .optional()

@@ -2,12 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   TEST_FIELD_REVIEW_GROUPS,
   applyFieldReviewResults,
+  fieldReviewRouteForPrimary,
   selectEvidenceForFieldGroup,
 } from "../convex/lib/extractionFieldReview";
+import { FALLBACK_MODEL, FIREWORKS_MODEL_IDS } from "../convex/lib/modelCatalog";
 
 const financialGroup = TEST_FIELD_REVIEW_GROUPS.find((group) => group.id === "financial_terms")!;
 
 describe("extraction field review", () => {
+  it("uses the reliable review route directly for Fireworks extraction", () => {
+    expect(
+      fieldReviewRouteForPrimary({
+        provider: "fireworks",
+        model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+      }),
+    ).toEqual(FALLBACK_MODEL);
+  });
+
   it("selects field-group evidence from source spans and document sections", () => {
     const evidence = selectEvidenceForFieldGroup({
       group: financialGroup,

@@ -118,7 +118,7 @@ export function PolicyPreview({
           ...(citedSourceSpanIds ?? []),
           ...collectSourceSpanIds(documentOutline),
         ]),
-      ],
+      ].slice(0, 256),
     [citedSourceSpanIds, documentOutline],
   );
   const fileUrl = useCachedQuery(
@@ -225,7 +225,7 @@ export function PolicyPreview({
         {types.length > 0 && (
           <div className="min-w-0">
             <p className="text-label text-muted-foreground/50 mb-1.5">
-              Coverage types
+              Policy types
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {visibleTypes.map((t) => (

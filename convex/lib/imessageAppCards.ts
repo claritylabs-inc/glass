@@ -3,7 +3,8 @@ import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Id, TableNames } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getModelForOrg, getProviderOptionsForTask } from "./models";
+import { getModelAndRouteForOrg, getProviderOptionsForTask } from "./models";
+import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 
 export type ImessageAppCard = {
   url: string;
@@ -13,12 +14,11 @@ export type ImessageAppCard = {
 };
 
 export type ImessageAppCardCreateArgs = {
-  kind: "policy" | "certificate" | "certificate_request" | "policy_change";
+  kind: "policy" | "certificate" | "policy_change";
   policyId?: Id<"policies">;
   certificateId?: Id<"certificates">;
   policyCertificateId?: Id<"policyCertificates">;
   certificateVersionId?: Id<"certificateVersions">;
-  certificateRequestId?: Id<"certificateRequests">;
   policyChangeCaseId?: Id<"policyChangeCases">;
   label?: string;
 };
@@ -184,10 +184,11 @@ export async function decidePolicyAppCardCreation(
     });
 
   try {
+    const modelRoute = await getModelAndRouteForOrg(ctx, params.orgId, "classification");
     const result = await generateObject({
-      model: await getModelForOrg(ctx, params.orgId, "classification"),
+      model: modelRoute.model,
       providerOptions: getProviderOptionsForTask("classification"),
-      schema: PolicyAppCardDecisionSchema,
+      schema: structuredOutputSchemaForRoute(PolicyAppCardDecisionSchema, modelRoute.route),
       maxOutputTokens: 160,
       system: `Decide whether this Glass iMessage response should include app-card links to candidate policy records.
 
@@ -241,24 +242,6 @@ function certificateCardRequest(
   const certificateVersionId = artifactId<"certificateVersions">(
     data.certificateVersionId,
   );
-  const certificateRequestId = artifactId<"certificateRequests">(
-    data.certificateRequestId,
-  );
-
-  if (certificateRequestId) {
-    return {
-      key: `certificate_request:${certificateRequestId}`,
-      createArgs: {
-        kind: "certificate_request",
-        certificateRequestId,
-        label: "Certificate request",
-      },
-      card: {
-        title: "Certificate request",
-        subtitle: "Open the approval request in Glass",
-      },
-    };
-  }
 
   const certificateKey =
     certificateId ?? policyCertificateId ?? certificateVersionId;

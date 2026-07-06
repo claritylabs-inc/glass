@@ -1,11 +1,12 @@
 "use client";
 
 import {
-  OperationalItem,
   OperationalPanel,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
+
+type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
 function normalizedCoverageText(value: string | undefined) {
   return value
@@ -15,14 +16,7 @@ function normalizedCoverageText(value: string | undefined) {
     .trim();
 }
 
-function stripParentheticalText(value: string | undefined) {
-  return value
-    ?.replace(/\s*\([^)]*\)/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
-function coverageTermRows(row: CoverageBreakdown["core"][number]) {
+function coverageTermRows(row: CoverageBreakdownRow) {
   const terms = [...(row.limits ?? [])];
   const seen = new Set(
     terms.map(
@@ -30,11 +24,8 @@ function coverageTermRows(row: CoverageBreakdown["core"][number]) {
         `${normalizedCoverageText(term.label)}|${normalizedCoverageText(term.value)}`,
     ),
   );
-  const hasLabel = (label: string) =>
-    terms.some(
-      (term) =>
-        normalizedCoverageText(term.label) === normalizedCoverageText(label),
-    );
+  const hasLabel = (pattern: RegExp) =>
+    terms.some((term) => pattern.test(normalizedCoverageText(term.label) ?? ""));
   const push = (label: string, value: string | undefined) => {
     if (!value) return;
     const key = `${normalizedCoverageText(label)}|${normalizedCoverageText(value)}`;
@@ -44,62 +35,71 @@ function coverageTermRows(row: CoverageBreakdown["core"][number]) {
   };
 
   if (!row.limits?.length) push("Limit", row.limit);
-  if (!hasLabel("Deductible")) push("Deductible", row.deductible);
-  if (!hasLabel("Premium")) push("Premium", row.premium);
-  if (!hasLabel("Retroactive Date")) {
+  if (!hasLabel(/\bdeductible\b|\bretention\b/)) {
+    push("Deductible", row.deductible);
+  }
+  if (!hasLabel(/\bpremium\b/)) push("Premium", row.premium);
+  if (!hasLabel(/\bretroactive\b/)) {
     push("Retroactive Date", row.retroactiveDate);
   }
   return terms;
 }
 
-function CoverageLimitPanel({
-  title,
+function formLabel(row: CoverageBreakdownRow) {
+  return [row.formNumber, row.sectionRef].filter(Boolean).join(" | ");
+}
+
+function CoverageScheduleList({
   rows,
-  hideParentheticalText = false,
+  title,
 }: {
+  rows: CoverageBreakdownRow[];
   title: string;
-  rows: CoverageBreakdown["core"];
-  hideParentheticalText?: boolean;
 }) {
   if (!rows.length) return null;
-  const displayText = (value: string | undefined) =>
-    hideParentheticalText ? stripParentheticalText(value) : value;
 
   return (
-    <OperationalPanel className="mb-6">
+    <OperationalPanel>
       <OperationalPanelHeader title={title} />
       <div>
         {rows.map((row, rowIndex) => {
           const terms = coverageTermRows(row);
+          const visibleTerms = terms.length
+            ? terms
+            : [{ label: "Limit", value: row.limit ?? "—" }];
+          const form = formLabel(row);
 
           return (
-            <OperationalItem
+            <section
               key={`${row.name}:${row.limit ?? ""}:${rowIndex}`}
-              className="w-full px-4 py-3"
+              className="border-t border-foreground/6 px-4 py-3 first:border-t-0"
             >
               <div className="min-w-0">
-                <p className="text-base font-medium leading-5 text-foreground wrap:anywhere">
-                  {displayText(row.name)}
-                </p>
-              </div>
-              {terms.length > 0 ? (
-                <div className="mt-3 w-full divide-y divide-foreground/6">
-                  {terms.map((term) => (
-                    <div
-                      key={`${term.label}:${term.value}`}
-                      className="grid w-full grid-cols-2 items-center gap-6 py-2 first:pt-0 last:pb-0"
-                    >
-                      <p className="min-w-0 text-base leading-5 text-muted-foreground wrap:anywhere">
-                        {displayText(term.label)}
-                      </p>
-                      <p className="max-w-[min(48rem,60vw)] text-right text-base font-medium leading-5 tabular-nums text-foreground wrap:anywhere">
-                        {displayText(term.value)}
-                      </p>
-                    </div>
-                  ))}
+                <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+                  {row.name}
                 </div>
-              ) : null}
-            </OperationalItem>
+                {form ? (
+                  <div className="mt-1 text-label leading-4 text-muted-foreground [overflow-wrap:anywhere]">
+                    {form}
+                  </div>
+                ) : null}
+              </div>
+              <dl className="mt-3 divide-y divide-foreground/6">
+                {visibleTerms.map((term, termIndex) => (
+                  <div
+                    key={`${term.label}:${termIndex}`}
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0"
+                  >
+                    <dt className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                      {term.label}
+                    </dt>
+                    <dd className="min-w-0 text-right text-base font-medium leading-5 tabular-nums text-foreground [overflow-wrap:anywhere]">
+                      {term.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
           );
         })}
       </div>
@@ -114,13 +114,11 @@ export function CoverageBreakdownCards({
 }) {
   if (!breakdown.all.length) return null;
   return (
-    <>
-      <CoverageLimitPanel title="Core coverage limits" rows={breakdown.core} />
-      <CoverageLimitPanel
-        title="Endorsement coverage limits"
-        rows={breakdown.endorsements}
-        hideParentheticalText
+    <div className="mb-6 space-y-3">
+      <CoverageScheduleList
+        rows={breakdown.all}
+        title="Coverage schedules"
       />
-    </>
+    </div>
   );
 }

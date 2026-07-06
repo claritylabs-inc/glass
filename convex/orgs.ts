@@ -3,10 +3,15 @@ import { query, mutation, action, internalQuery, internalMutation } from "./_gen
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import dayjs from "dayjs";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
-import { requireOrgAccess, requireOrgAdmin, getOrgAccess } from "./lib/orgAuth";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal as _internal } from "./_generated/api";
-import { getOrgAccess as getOrgAccessNew, assertBrokerOrg } from "./lib/access";
+import {
+  assertBrokerOrg,
+  getCurrentOrgAccess as getOrgAccess,
+  getOrgAccess as getOrgAccessNew,
+  requireCurrentOrgAccess as requireOrgAccess,
+  requireCurrentOrgAdmin as requireOrgAdmin,
+} from "./lib/access";
 import type { Id } from "./_generated/dataModel";
 import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
 import { normalizeOptionalEmail, resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
@@ -24,6 +29,10 @@ import {
   getActiveOperatorImpersonation,
   isBootstrapOperatorEmail,
 } from "./lib/operatorIdentity";
+import {
+  assertFeatureFlagAllowedForOrg,
+  setFeatureFlagPatch,
+} from "./lib/featureFlags";
 
 const internal = _internal as any;
 
@@ -429,7 +438,7 @@ export const pendingInvitationForViewer = query({
 
 // ── Mutations ──
 
-/** Create a broker org during partner signup wizard. */
+/** Create a broker org during signup. */
 export const createBrokerOrg = mutation({
   args: {
     name: v.string(),
@@ -439,12 +448,6 @@ export const createBrokerOrg = mutation({
     whiteLabelingEnabled: v.optional(v.boolean()),
     agentDisplayName: v.optional(v.string()),
     agentHandle: v.optional(v.string()),
-    partnerType: v.optional(v.union(
-      v.literal("broker"),
-      v.literal("program_admin"),
-      v.literal("carrier"),
-      v.literal("other"),
-    )),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -475,7 +478,6 @@ export const createBrokerOrg = mutation({
     const orgId = await ctx.db.insert("organizations", {
       name: args.name,
       type: "broker",
-      partnerType: args.partnerType ?? "broker",
       slug: normalized,
       primaryInsuranceContactId: userId,
       ...(args.website && { website: args.website }),
@@ -492,48 +494,6 @@ export const createBrokerOrg = mutation({
       userId,
       role: "admin",
     });
-
-    return orgId;
-  },
-});
-
-/** Create a program administrator partner org. */
-export const createPartnerOrg = mutation({
-  args: {
-    name: v.string(),
-    website: v.optional(v.string()),
-    programName: v.optional(v.string()),
-    aliases: v.optional(v.array(v.string())),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-    await assertCustomerUser(ctx, userId);
-
-    const orgId = await ctx.db.insert("organizations", {
-      name: args.name.trim(),
-      type: "partner",
-      partnerKind: "program_admin",
-      primaryInsuranceContactId: userId,
-      ...(args.website && { website: args.website }),
-    });
-
-    await ctx.db.insert("orgMemberships", {
-      orgId,
-      userId,
-      role: "admin",
-    });
-
-    await ctx.db.insert("partnerPrograms", {
-      partnerOrgId: orgId,
-      name: args.programName?.trim() || args.name.trim(),
-      aliases: args.aliases ?? [],
-      status: "active",
-      createdAt: dayjs().valueOf(),
-      updatedAt: dayjs().valueOf(),
-    });
-    await ctx.db.patch(userId, { onboardingComplete: true });
-    await ctx.db.patch(orgId, { onboardingComplete: true });
 
     return orgId;
   },
@@ -638,20 +598,16 @@ export const getBrokerIdentity = query({
     if (!org || (org.type ?? "client") !== "client") return null;
 
     const identity = await resolveBrokerIdentityForClient(ctx, org);
-    const canEditConnected =
-      !!identity.brokerOrgId &&
-      access.accessType === "broker_of_client" &&
-      access.role === "admin";
-    const canEditManual =
-      !identity.brokerOrgId &&
-      access.accessType === "member" &&
-      access.role === "admin";
+    const canEdit =
+      identity.brokerOrgId
+        ? access.accessType === "broker_of_client" && access.role === "admin"
+        : access.accessType === "member" && access.role === "admin";
 
     const assignment = identity.assignmentId
       ? await ctx.db.get(identity.assignmentId)
       : null;
     const brokerMembers =
-      canEditConnected && identity.brokerOrgId
+      canEdit && identity.brokerOrgId
         ? await Promise.all(
             (
               await ctx.db
@@ -676,14 +632,13 @@ export const getBrokerIdentity = query({
     return {
       ...identity,
       connected: !!identity.brokerOrgId,
-      canEditConnected,
-      canEditManual,
+      canEdit,
       selectedContactUserId: identity.contactUserId,
       overrides: assignment
         ? {
-            contactName: assignment.contactNameOverride,
-            contactEmail: assignment.contactEmailOverride,
-            contactPhone: assignment.contactPhoneOverride,
+            contactName: assignment.contactName,
+            contactEmail: assignment.contactEmail,
+            contactPhone: assignment.contactPhone,
           }
         : null,
       brokerMembers,
@@ -722,76 +677,93 @@ export const getBrokerPageContext = query({
   },
 });
 
-export const updateStandaloneBrokerIdentity = mutation({
-  args: {
-    orgId: v.id("organizations"),
-    brokerCompanyName: v.optional(v.string()),
-    brokerContactName: v.optional(v.string()),
-    brokerContactEmail: v.optional(v.string()),
-    brokerContactPhone: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccessNew(ctx, args.orgId);
-    if (access.accessType !== "member" || access.role !== "admin") {
-      throw new Error("Client admin access required");
-    }
-    const org = await ctx.db.get(args.orgId);
-    if (!org || (org.type ?? "client") !== "client") {
-      throw new Error("Client organization not found");
-    }
-    if (org.brokerOrgId) {
-      throw new Error("Connected broker identity is managed by the broker org");
-    }
-    await ctx.db.patch(args.orgId, {
-      brokerCompanyName: cleanOptionalString(args.brokerCompanyName),
-      brokerContactName: cleanOptionalString(args.brokerContactName),
-      brokerContactEmail: normalizeOptionalEmail(args.brokerContactEmail, { strict: true }),
-      brokerContactPhone: normalizeBrokerPhone(args.brokerContactPhone),
-    });
-  },
-});
-
-export const updateConnectedClientBrokerIdentity = mutation({
+export const updateClientBrokerAssignment = mutation({
   args: {
     clientOrgId: v.id("organizations"),
-    producerId: v.id("users"),
-    contactNameOverride: v.optional(v.string()),
-    contactEmailOverride: v.optional(v.string()),
-    contactPhoneOverride: v.optional(v.string()),
+    brokerCompanyName: v.optional(v.string()),
+    producerId: v.optional(v.id("users")),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const clientOrg = await ctx.db.get(args.clientOrgId);
-    if (!clientOrg || (clientOrg.type ?? "client") !== "client" || !clientOrg.brokerOrgId) {
-      throw new Error("Client is not connected to a broker org");
+    if (!clientOrg || (clientOrg.type ?? "client") !== "client") {
+      throw new Error("Client organization required");
     }
-    const brokerAccess = await getOrgAccessNew(ctx, clientOrg.brokerOrgId);
-    assertBrokerOrg(brokerAccess);
-    if (brokerAccess.role !== "admin") {
-      throw new Error("Broker admin access required");
+    const connectedBrokerOrgId = clientOrg.brokerOrgId;
+    if (connectedBrokerOrgId) {
+      const brokerAccess = await getOrgAccessNew(ctx, connectedBrokerOrgId);
+      assertBrokerOrg(brokerAccess);
+      if (brokerAccess.role !== "admin") {
+        throw new Error("Broker admin access required");
+      }
+      await assertImpersonatedSetupWrite(ctx, connectedBrokerOrgId);
+    } else {
+      const clientAccess = await getOrgAccessNew(ctx, args.clientOrgId);
+      if (
+        clientAccess.accessType !== "member" ||
+        clientAccess.orgType !== "client" ||
+        clientAccess.role !== "admin"
+      ) {
+        throw new Error("Client admin access required");
+      }
     }
-    await assertImpersonatedSetupWrite(ctx, clientOrg.brokerOrgId);
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
-        q.eq("orgId", clientOrg.brokerOrgId!).eq("userId", args.producerId),
-      )
-      .first();
-    if (!membership) throw new Error("Producer must be a broker org member");
+    if (args.producerId && connectedBrokerOrgId) {
+      const membership = await ctx.db
+        .query("orgMemberships")
+        .withIndex("by_orgId_userId", (q) =>
+          q.eq("orgId", connectedBrokerOrgId).eq("userId", args.producerId!),
+        )
+        .first();
+      if (!membership) throw new Error("Producer must be a broker org member");
+    }
+    if (args.producerId && !connectedBrokerOrgId) {
+      throw new Error("Producer selection requires a connected broker org");
+    }
 
-    const assignments = await ctx.db
-      .query("brokerClientAssignments")
-      .withIndex("by_orgId_clientOrgId", (q) =>
-        q.eq("orgId", clientOrg.brokerOrgId!).eq("clientOrgId", args.clientOrgId),
-      )
-      .collect();
+    const assignments = connectedBrokerOrgId
+      ? await ctx.db
+          .query("brokerClientAssignments")
+          .withIndex("by_orgId_clientOrgId", (q) =>
+            q.eq("orgId", connectedBrokerOrgId).eq("clientOrgId", args.clientOrgId),
+          )
+          .collect()
+      : (
+          await ctx.db
+            .query("brokerClientAssignments")
+            .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId))
+            .collect()
+        ).filter((assignment) => !assignment.orgId);
+    const brokerCompanyName = connectedBrokerOrgId
+      ? undefined
+      : cleanOptionalString(args.brokerCompanyName);
+    const contactName = cleanOptionalString(args.contactName);
+    const contactEmail = normalizeOptionalEmail(args.contactEmail, { strict: true });
+    const contactPhone = normalizeBrokerPhone(args.contactPhone);
+    if (
+      !connectedBrokerOrgId &&
+      !brokerCompanyName &&
+      !contactName &&
+      !contactEmail &&
+      !contactPhone
+    ) {
+      for (const assignment of assignments) await ctx.db.delete(assignment._id);
+      return;
+    }
     const existing = assignments.find(
       (assignment) => assignment.producerId === args.producerId,
-    );
+    ) ?? assignments.find((assignment) => assignment.role === "primary");
+    const now = dayjs().valueOf();
     const patch = {
       role: "primary" as const,
-      contactNameOverride: cleanOptionalString(args.contactNameOverride),
-      contactEmailOverride: normalizeOptionalEmail(args.contactEmailOverride, { strict: true }),
-      contactPhoneOverride: normalizeBrokerPhone(args.contactPhoneOverride),
+      orgId: connectedBrokerOrgId,
+      brokerCompanyName,
+      producerId: connectedBrokerOrgId ? args.producerId : undefined,
+      contactName,
+      contactEmail,
+      contactPhone,
+      updatedAt: now,
     };
 
     for (const assignment of assignments) {
@@ -803,11 +775,9 @@ export const updateConnectedClientBrokerIdentity = mutation({
     }
     if (!existing) {
       await ctx.db.insert("brokerClientAssignments", {
-        orgId: clientOrg.brokerOrgId,
         clientOrgId: args.clientOrgId,
-        producerId: args.producerId,
         ...patch,
-        createdAt: dayjs().valueOf(),
+        createdAt: now,
       });
     }
   },
@@ -867,11 +837,6 @@ export const updateOrg = mutation({
     context: v.optional(v.string()),
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
-    clientsContext: v.optional(v.string()),
-    vendorsContext: v.optional(v.string()),
-    insuranceContext: v.optional(v.string()),
-    investorsContext: v.optional(v.string()),
-    partnersContext: v.optional(v.string()),
     relatedLegalEntities: v.optional(
       v.array(
         v.object({
@@ -894,10 +859,6 @@ export const updateOrg = mutation({
         }),
       ),
     ),
-    coiHandling: v.optional(v.union(v.literal("broker"), v.literal("member"), v.literal("ignore"))),
-    autoGenerateCoi: v.optional(v.boolean()),
-    policyChangeRequestsEnabled: v.optional(v.boolean()),
-    certificateChangeRequestsEnabled: v.optional(v.boolean()),
     chatEmailNotifications: v.optional(v.boolean()),
     autoSendEmails: v.optional(v.boolean()),
     bccRequesterOnAgentEmails: v.optional(v.boolean()),
@@ -915,6 +876,21 @@ export const updateOrg = mutation({
     const { orgId } = await requireOrgAdmin(ctx);
     await assertImpersonatedSetupWrite(ctx, orgId);
     await ctx.db.patch(orgId, args);
+  },
+});
+
+export const setFeatureFlag = mutation({
+  args: {
+    flagId: v.literal("connect_features"),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { orgId, org } = await requireOrgAdmin(ctx);
+    await assertImpersonatedSetupWrite(ctx, orgId);
+    assertFeatureFlagAllowedForOrg(args.flagId, org);
+    await ctx.db.patch(orgId, {
+      featureFlags: setFeatureFlagPatch(org.featureFlags, args.flagId, args.enabled),
+    });
   },
 });
 
@@ -1595,11 +1571,6 @@ export const updateProfileInternal = internalMutation({
     context: v.optional(v.string()),
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
-    clientsContext: v.optional(v.string()),
-    vendorsContext: v.optional(v.string()),
-    insuranceContext: v.optional(v.string()),
-    investorsContext: v.optional(v.string()),
-    partnersContext: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { orgId, ...patch } = args;

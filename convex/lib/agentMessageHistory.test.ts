@@ -2,28 +2,22 @@ import { describe, expect, test } from "vitest";
 import { buildAssistantMessageContentWithArtifacts } from "./agentMessageHistory";
 
 describe("buildAssistantMessageContentWithArtifacts", () => {
-  test("appends pending certificate program choices for model context", () => {
+  test("does not append tool artifact data to assistant content", () => {
     expect(
       buildAssistantMessageContentWithArtifacts({
-        content: "Choose a program.",
+        content: "Certificate follow-up is on hold.",
         toolArtifacts: [
           {
-            type: "certificate_program_selection",
+            type: "certificate_hold",
             data: {
               policyId: "policy-1",
               holderName: "Example Holder",
-              candidates: [
-                {
-                  programId: "program-1",
-                  programName: "Example Program",
-                },
-              ],
               source: "imessage",
             },
           },
         ],
       }),
-    ).toContain("PENDING CERTIFIED COI PROGRAM SELECTION:");
+    ).toBe("Certificate follow-up is on hold.");
   });
 
   test("leaves ordinary assistant content unchanged", () => {

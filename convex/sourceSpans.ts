@@ -45,6 +45,26 @@ const sourceChunkInsertFields = {
 };
 
 type SourceSpanDoc = Doc<"sourceSpans">;
+type ClientSourceSpan = Pick<
+  SourceSpanDoc,
+  | "spanId"
+  | "pageStart"
+  | "pageEnd"
+  | "sectionId"
+  | "formNumber"
+  | "sourceUnit"
+  | "parentSpanId"
+  | "location"
+  | "text"
+  | "bbox"
+> & {
+  table?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+const BULK_SPAN_LOOKUP_THRESHOLD = 32;
+const MAX_CLIENT_SPAN_LOOKUP_IDS = 256;
+const MAX_PARENT_LOOKUP_ROUNDS = 8;
 
 function parentFor(span: SourceSpanDoc) {
   const metadata = span.metadata && typeof span.metadata === "object"
@@ -63,6 +83,49 @@ function parentFor(span: SourceSpanDoc) {
   return typeof parent === "string" && parent.length > 0 ? parent : undefined;
 }
 
+function compactObjectKeys(
+  value: unknown,
+  keys: string[],
+): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const compacted: Record<string, unknown> = {};
+  for (const key of keys) {
+    const item = source[key];
+    if (item !== undefined) compacted[key] = item;
+  }
+  return Object.keys(compacted).length > 0 ? compacted : undefined;
+}
+
+function clientSpan(span: SourceSpanDoc): ClientSourceSpan {
+  const table = compactObjectKeys(span.table, ["rowSpanId", "tableSpanId"]);
+  const metadata = compactObjectKeys(span.metadata, [
+    "sourceUnit",
+    "elementType",
+    "parentSpanId",
+    "rowSpanId",
+    "tableSpanId",
+    "bboxCoordinateWidth",
+    "bboxCoordinateHeight",
+    "pageWidth",
+    "pageHeight",
+  ]);
+  return {
+    spanId: span.spanId,
+    pageStart: span.pageStart,
+    pageEnd: span.pageEnd,
+    sectionId: span.sectionId,
+    formNumber: span.formNumber,
+    sourceUnit: span.sourceUnit,
+    parentSpanId: span.parentSpanId,
+    table,
+    location: span.location,
+    text: span.text,
+    bbox: span.bbox,
+    metadata,
+  };
+}
+
 export const listSpansByPolicyAndSpanIds = query({
   args: {
     policyId: v.id("policies"),
@@ -78,12 +141,25 @@ export const listSpansByPolicyAndSpanIds = query({
       if (!operatorAccess) return [];
     }
 
-    const wanted = new Set(args.spanIds);
+    const wanted = new Set([...new Set(args.spanIds)].slice(0, MAX_CLIENT_SPAN_LOOKUP_IDS));
     if (wanted.size === 0) return [];
     const relatedIds = new Set(wanted);
     const byId = new Map<string, SourceSpanDoc>();
+    let policySpanMap: Map<string, SourceSpanDoc> | undefined;
+    if (wanted.size >= BULK_SPAN_LOOKUP_THRESHOLD) {
+      const spans = await ctx.db
+        .query("sourceSpans")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .collect();
+      policySpanMap = new Map(spans.map((span) => [span.spanId, span]));
+    }
     const loadSpan = async (spanId: string) => {
       if (byId.has(spanId)) return byId.get(spanId);
+      if (policySpanMap) {
+        const span = policySpanMap.get(spanId);
+        if (span) byId.set(spanId, span);
+        return span;
+      }
       const span = await ctx.db
         .query("sourceSpans")
         .withIndex("by_policyId_spanId", (q) =>
@@ -95,7 +171,9 @@ export const listSpansByPolicyAndSpanIds = query({
     };
 
     let changed = true;
-    while (changed) {
+    let rounds = 0;
+    while (changed && rounds < MAX_PARENT_LOOKUP_ROUNDS) {
+      rounds += 1;
       changed = false;
       for (const spanId of [...relatedIds]) {
         const span = await loadSpan(spanId);
@@ -108,24 +186,10 @@ export const listSpansByPolicyAndSpanIds = query({
       }
     }
 
-    for (const spanId of [...relatedIds]) {
-      const children = await ctx.db
-        .query("sourceSpans")
-        .withIndex("by_policyId_parentSpanId", (q) =>
-          q.eq("policyId", args.policyId).eq("parentSpanId", spanId),
-        )
-        .collect();
-      for (const child of children) {
-        if (!relatedIds.has(child.spanId)) {
-          relatedIds.add(child.spanId);
-        }
-        byId.set(child.spanId, child);
-      }
-    }
-
     return [...relatedIds]
       .map((spanId) => byId.get(spanId))
-      .filter((span): span is NonNullable<typeof span> => Boolean(span));
+      .filter((span): span is NonNullable<typeof span> => Boolean(span))
+      .map(clientSpan);
   },
 });
 

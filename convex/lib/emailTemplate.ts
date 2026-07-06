@@ -82,9 +82,6 @@ export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
 </table>`;
 }
 
-/** @deprecated Use buildEmailLogoHtml(branding). */
-export const EMAIL_PRISM_LOGO = buildEmailLogoHtml();
-
 /** Shared email shell: flat white body, branded logo header, platform footer.
  * Callers provide the unique middle content via `bodyHtml`. */
 export function buildEmailShell({

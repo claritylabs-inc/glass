@@ -96,7 +96,6 @@ export function buildMessageHistory(messages: ThreadMessage[]): ModelMessage[] {
 interface OrgContext {
   name: string;
   context?: string;
-  coiHandling?: string;
   broker?: {
     name?: string;
     contactName?: string;
@@ -135,7 +134,6 @@ export function buildAgentCapabilityPrompt(params: {
   platform: "email" | "web";
   userName?: string;
   siteUrl?: string;
-  coiHandling?: string;
   broker?: OrgContext["broker"];
   now?: Date;
   timeZone?: string;
@@ -146,7 +144,6 @@ export function buildAgentCapabilityPrompt(params: {
     mode,
     userName,
     siteUrl = getClientPortalUrl(),
-    coiHandling,
     broker,
     now,
     timeZone,
@@ -182,7 +179,7 @@ You may help with insurance operations for ${companyRef}. This includes:
 - Drafting, forwarding, and sending insurance-related emails when the authenticated team member asks you to do so and the recipient passes system validation.
 - Reading email attachments and uploaded files that are provided to you.
 - Starting bound policy, renewal, binder, declaration, endorsement, COI, and related post-binding insurance-document extraction from PDFs.
-- Generating Certificates of Insurance when organization settings allow it.
+- Generating Certificates of Insurance for holder-only requests and source-supported additional-insured requests.
 - Providing original/full policy PDF documents when the authenticated user asks for a policy copy, policy PDF, declarations PDF, wording, or full policy document.
 - Saving durable organization facts, preferences, risk notes, and observations when useful.
 
@@ -195,9 +192,6 @@ BOUNDARIES:
 - Do not impersonate a team member. Emails are sent from Glass on behalf of the company, not as the team member personally.
 - Do not disclose policy numbers, limits, premiums, or other sensitive policy details to anyone other than validated policy holders, authorized org members, or validated thread participants. In mediated or forwarded threads, share only what is relevant to the request.
 - Do not generate code or perform non-insurance business tasks.
-
-COI SETTINGS:
-${coiHandling ? `The organization's COI handling preference is "${coiHandling}".` : "Use organization settings and available tools to decide whether COI generation is allowed."}
 
 RESPONSE STYLE:
 - Be concise and direct. Lead with the answer or action.
@@ -224,7 +218,6 @@ export function buildSystemPromptForContext(params: {
     platform: "email",
     userName,
     siteUrl,
-    coiHandling: org.coiHandling,
     broker: org.broker,
   });
 }
@@ -246,16 +239,16 @@ TOOLS AND ANALYSIS:
 - Answer policy questions from the current policy record/version by default. Only use policy-version or certificate-version history tools when the user explicitly asks for history, prior terms, renewals, endorsements, re-extractions, certificate issue history, or reissue history.
 - For COI/certificate requests, describe the action as generating or retrieving a COI/certificate from policy data and holder details. Do not offer to "pull COI wording" or "pull the right COI wording"; COIs are generated artifacts, not wording excerpts.
 - Same-holder COI requests return the latest existing certificate for that holder and current policy version unless the user explicitly asks to reissue/regenerate a new version. If the tool returns status "existing", say you found/returned the existing certificate; do not claim a new certificate was generated. Set explicitReissue only when the user clearly asks for a reissue/new version.
-- Do not ask for a bundle of COI intake fields. For ordinary new-holder certificate requests, call generate_coi with the holder name first; if the workflow asks for missing input, ask only for the listed field. Holder address is the required field for generating a new certificate when no reusable certificate exists. Holder email is needed only when the user explicitly asks Glass to send/email the certificate. Do not proactively ask for "special wording"; only pass requestedEndorsements/requestText when the user explicitly asks for additional insured, waiver, primary/non-contributory, loss payee, mortgagee, or other endorsement-bearing terms.
-- Distinguish non-binding COIs from certified COIs. Brokers may generate non-binding COIs for non-network underwriters. A COI is certified only when the tool result includes certified authority or a program-administrator approval/standing-authorization record; never call an ordinary generated certificate certified.
+- Do not ask for a bundle of COI intake fields. For ordinary new-holder certificate requests, call generate_coi with the holder name first. Holder address is optional; generate holder-only certificates without it. Holder email is needed only when the user explicitly asks Glass to send/email the certificate. Do not proactively ask for "special wording"; only pass requestedEndorsements/requestText when the user explicitly asks for additional insured, waiver, primary/non-contributory, loss payee, mortgagee, or other endorsement-bearing terms.
+- Treat every generated COI as informational. Do not call certificates certified, approved, binding, or reviewed.
 - For requests to generate and email/send COIs, use the email expert tool when email is available. A chat response that says you are sending is not enough. For multiple distinct recipients, call the email expert once per recipient. Never say COIs were generated, attached, sent, emailed, or are being emailed unless a COI or email tool result confirms that action.
 - Treat policy-change requests as simple broker follow-ups. Do not create one for certificate-holder-only COI instructions. Use create_policy_change_request when the user explicitly asks to change policy terms/records or requests an endorsement such as named insured, additional insured, waiver of subrogation, primary and non-contributory, limits, deductibles, locations, vehicles, cancellation, nonrenewal, or renewal updates.
 - For location, mailing address, named-insured, DBA, FEIN, entity-type, vehicle, or scheduled-location updates, a policy number plus the requested new value is enough. Do not ask "if you want me to proceed" once the user has already asked for the change; capture the follow-up and move toward drafting or sending the broker email. Ask only for missing practical details such as broker recipient/contact or carrier-required effective date.
 - Do not tell the user you could "re-open" or retry with an internal policy ID when lookup_policy identified the policy. Use the resolved policy ID in create_policy_change_request yourself.
 - Missing recipient information should not block capturing the follow-up; it should block sending. Draft the email from the user's plain-language request and ask for the broker contact when Glass does not already know it.
-- Client policy updates are broker-mediated. Do not describe them as PCEs or case workflows. Route the email to a connected broker contact, manual broker contact, or explicit broker contact provided by the user.
-- If a client org has no connected broker, do not refuse solely because no connected broker org exists. Capture the follow-up and ask for the broker contact needed to draft or send the email.
-- Never invent carrier, underwriter, market, or broker recipients. Use only connected/manual broker identity or explicit user-provided broker contact details before drafting or sending.
+- Client policy updates are broker-mediated. Do not describe them as PCEs or case workflows. Route the email to the broker assignment contact or an explicit broker contact provided by the user.
+- If no broker assignment contact exists, capture the follow-up and ask for the broker contact needed to draft or send the email.
+- Never invent carrier, underwriter, market, or broker recipients. Use only broker assignment identity or explicit user-provided broker contact details before drafting or sending.
 - When the user asks for the status of a policy update, endorsement, broker follow-up, or sent change email, use check_policy_change_status.
 - Glass no longer owns sales, unbound insurance quote, carrier application, renewal application, broker submission, or application-intake workflows. Do not claim that you started, can start, prepared, submitted, or can track a quote or application in Glass. For those requests, say that sales and applications are handled outside Glass and offer to help with Glass-owned bound policy records, existing policy documents, renewals, COIs, compliance, broker follow-ups, or post-binding document extraction.
 - When coverage, compliance, or policy-change uncertainty requires human collaboration, proactively suggest starting an iMessage group chat with the broker, teammate, client, or vendor who can resolve it. Do not create the group until the user explicitly confirms. If the user confirms, use the group-chat tool and include a useful opening message.
@@ -322,7 +315,7 @@ export function policySearchScore(
   const q = query.toLowerCase().trim();
   const words = q.split(/\s+/).filter((w) => w.length > 2);
   const policyTypes = (policy.policyTypes as string[] | undefined) ?? [];
-  const coverages = (policy.coverages as Array<{ name?: string; limit?: string; coverageOrigin?: string }> | undefined) ?? [];
+  const coverages = (policy.coverages as Array<{ name?: string; limit?: string }> | undefined) ?? [];
   const outlineText = flattenDocumentOutline(getPolicyDocumentOutline(policy))
     .slice(0, 20)
     .map(({ node }) => [
@@ -339,7 +332,7 @@ export function policySearchScore(
     policy.policyNumber,
     policy.summary,
     ...policyTypes,
-    ...coverages.flatMap((c) => [c.name, c.limit, c.coverageOrigin]),
+    ...coverages.flatMap((c) => [c.name, c.limit]),
     outlineText,
   ].filter(Boolean).join(" ").toLowerCase();
 
@@ -475,7 +468,7 @@ export function searchPolicyDocument(
   }
 
   if (metadataContext) {
-    addResult("document_metadata", "Document metadata and form inventory", metadataContext, {
+    addResult("document_metadata", "Document metadata and source outline", metadataContext, {
       evidenceKind: "navigation",
     });
   }
@@ -527,7 +520,6 @@ export function searchPolicyDocument(
     if (cov.limit) parts.push(`Limit: ${cov.limit}`);
     if (cov.deductible) parts.push(`Deductible: ${cov.deductible}`);
     if (cov.coverageCode) parts.push(`Code: ${cov.coverageCode}`);
-    if (cov.coverageOrigin) parts.push(`Origin: ${cov.coverageOrigin}`);
     if (cov.originalContent) parts.push(cov.originalContent);
     addResult("coverage", cov.name, parts.join("\n"), {}, 1);
   }
@@ -548,7 +540,6 @@ export function searchPolicyDocument(
           content: coverages
             .map((c) => [
               c.name,
-              c.coverageOrigin ? `Origin: ${c.coverageOrigin}` : undefined,
               c.limit ? `Limit: ${c.limit}` : undefined,
               c.deductible ? `Deductible: ${c.deductible}` : undefined,
             ]

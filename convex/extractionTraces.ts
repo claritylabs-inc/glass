@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
@@ -33,6 +33,7 @@ const modelProviderValidator = v.union(
   v.literal("xai"),
   v.literal("mistral"),
   v.literal("cohere"),
+  v.literal("fireworks"),
   v.literal("moonshot"),
   v.literal("deepseek"),
 );
@@ -64,22 +65,47 @@ function defined<T extends Record<string, unknown>>(value: T) {
 function progressMessage(args: {
   kind: string;
   label?: string;
+  task?: string;
   taskKind?: string;
   phase?: string;
   status?: string;
   durationMs?: number;
   provider?: string;
   model?: string;
+  routeSource?: string;
+  transport?: string;
+  attempt?: number;
+  inputTokens?: number;
+  outputTokens?: number;
   error?: string;
 }) {
   const duration = formatDuration(args.durationMs);
-  if (args.error) return args.error;
   if (args.kind === "model_call") {
     const rawLabel = args.label ?? args.taskKind ?? "model call";
     const label = /generate(Object|Text)/i.test(rawLabel) ? (args.taskKind ?? "Analyzing document") : rawLabel;
-    const model = [args.provider, args.model].filter(Boolean).join(" / ");
-    return `${label}${model ? ` (${model})` : ""}${duration ? ` · ${duration}` : ""}`;
+    const route = [
+      [args.provider, args.model].filter(Boolean).join(" / "),
+      args.routeSource,
+      args.transport,
+    ].filter(Boolean).join(", ");
+    const status =
+      args.error ? "failed"
+      : args.status === "complete" ? "completed"
+      : args.status === "soft_failed" ? "returned fallback"
+      : args.status;
+    const attempt = args.attempt ? ` attempt ${args.attempt}` : "";
+    const tokens = args.inputTokens !== undefined || args.outputTokens !== undefined
+      ? `${args.inputTokens ?? 0} in / ${args.outputTokens ?? 0} out`
+      : undefined;
+    return [
+      `${label}${attempt}${status ? ` ${status}` : ""}`,
+      route ? `(${route})` : undefined,
+      duration,
+      tokens,
+      args.error ? `error: ${args.error}` : undefined,
+    ].filter(Boolean).join(" · ");
   }
+  if (args.error) return args.error;
   if (args.kind === "embedding_batch") {
     return `Indexing ${args.label ?? "document"}${duration ? ` · ${duration}` : ""}`;
   }
@@ -118,14 +144,26 @@ async function completeSessionDoc(
 ) {
   if (session.status !== "running") return false;
   const timestamp = nowMs();
-  await ctx.db.patch(session._id, defined({
+  const patch: {
+    status: "complete" | "error" | "cancelled";
+    completedAt: number;
+    lastEventAt: number;
+    totalDurationMs: number;
+    updatedAt: number;
+    error?: string | undefined;
+  } = {
     status,
     completedAt: timestamp,
     lastEventAt: timestamp,
     totalDurationMs: timestamp - session.startedAt,
-    error,
     updatedAt: timestamp,
-  }));
+  };
+  if (status === "complete") {
+    patch.error = undefined;
+  } else if (error !== undefined) {
+    patch.error = error;
+  }
+  await ctx.db.patch(session._id, patch);
   await ctx.db.insert("policyExtractionTraceEvents", defined({
     traceId: session.traceId,
     policyId: session.policyId,
@@ -343,6 +381,26 @@ export const completeSession = internalMutation({
       .first();
     if (!session) return false;
     return await completeSessionDoc(ctx, session, args.status, args.error);
+  },
+});
+
+export const getSessionCounters = internalQuery({
+  args: {
+    traceId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!args.traceId) return null;
+    const session = await ctx.db
+      .query("policyExtractionTraceSessions")
+      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId!))
+      .first();
+    if (!session) return null;
+    return {
+      modelCallCount: session.modelCallCount ?? 0,
+      modelDurationMs: session.modelDurationMs ?? 0,
+      inputTokens: session.inputTokens ?? 0,
+      outputTokens: session.outputTokens ?? 0,
+    };
   },
 });
 

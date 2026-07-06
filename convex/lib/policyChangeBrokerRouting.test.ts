@@ -17,7 +17,7 @@ function brokerIdentity(
     contactName: "Tom Wong",
     contactEmail: "tom@montgomeryrisk.com",
     contactPhone: "+14155550123",
-    source: "broker_default",
+    source: "assignment",
     ...overrides,
   };
 }
@@ -46,7 +46,7 @@ describe("policy change broker recipient reconciliation", () => {
     expect(result.case.status).toBe("ready_to_submit");
     expect(result.case.brokerSubmission).toMatchObject({
       routingStatus: "recipient_ready",
-      source: "broker_default",
+      source: "assignment",
       brokerCompanyName: "Montgomery Risk",
       recipientEmail: "tom@montgomeryrisk.com",
       recipientName: "Tom Wong",

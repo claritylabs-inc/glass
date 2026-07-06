@@ -7,14 +7,9 @@ export type CoverageBreakdownRow = {
   retroactiveDate?: string;
   formNumber?: string;
   sectionRef?: string;
-  origin?: "core" | "endorsement" | string;
-  originConfidence?: string;
-  originReason?: string;
 };
 
 export type CoverageBreakdown = {
-  core: CoverageBreakdownRow[];
-  endorsements: CoverageBreakdownRow[];
   all: CoverageBreakdownRow[];
 };
 
@@ -75,9 +70,6 @@ function coverageRowsFrom(value: unknown): CoverageBreakdownRow[] {
         retroactiveDate: realText(row.retroactiveDate),
         formNumber: realText(row.formNumber),
         sectionRef: realText(row.sectionRef),
-        origin: realText(row.coverageOrigin) ?? realText(row.origin),
-        originConfidence: realText(row.coverageOriginConfidence),
-        originReason: realText(row.coverageOriginReason),
       };
     })
     .filter((row) =>
@@ -99,34 +91,38 @@ export function buildCoverageBreakdown(policy: unknown): CoverageBreakdown {
   const profile = recordValue(record?.operationalProfile);
   const profileRows = coverageRowsFrom(profile?.coverages);
   const rows = profileRows.length > 0 ? profileRows : coverageRowsFrom(record?.coverages);
-  const core = rows.filter((row) => row.origin !== "endorsement");
-  const endorsements = rows.filter((row) => row.origin === "endorsement");
-  return { core, endorsements, all: rows };
+  return { all: rows };
 }
 
 export function formatCoverageBreakdownForPrompt(policy: unknown, maxRows = 16): string {
   const breakdown = buildCoverageBreakdown(policy);
   if (breakdown.all.length === 0) return "";
   const lines: string[] = [];
+  let remainingRows = maxRows;
   const addRows = (label: string, rows: CoverageBreakdownRow[]) => {
-    if (rows.length === 0) return;
+    if (rows.length === 0 || remainingRows <= 0) return;
     lines.push(`${label}:`);
-    for (const row of rows.slice(0, maxRows)) {
-      const facts = [
-        ...(row.limits?.map((term) => `${term.label} ${term.value}`) ?? []),
-        row.limit && !row.limits?.length ? `limit ${row.limit}` : undefined,
-        row.deductible ? `deductible ${row.deductible}` : undefined,
-        row.premium ? `premium ${row.premium}` : undefined,
-        row.retroactiveDate ? `retroactive ${row.retroactiveDate}` : undefined,
-        row.formNumber ? `form ${row.formNumber}` : undefined,
-        row.sectionRef ? `section ${row.sectionRef}` : undefined,
-      ].filter(Boolean);
-      lines.push(`- ${row.name}${facts.length ? `: ${facts.join(", ")}` : ""}`);
+    for (const row of rows.slice(0, remainingRows)) {
+      remainingRows -= 1;
+      lines.push(formatCoverageBreakdownRow(row));
     }
   };
-  addRows("Core coverage limits", breakdown.core);
-  addRows("Endorsement coverage limits", breakdown.endorsements);
+
+  addRows("Coverage schedules", breakdown.all);
   return lines.join("\n");
+}
+
+function formatCoverageBreakdownRow(row: CoverageBreakdownRow): string {
+  const facts = [
+    ...(row.limits?.map((term) => `${term.label} ${term.value}`) ?? []),
+    row.limit && !row.limits?.length ? `limit ${row.limit}` : undefined,
+    row.deductible ? `deductible ${row.deductible}` : undefined,
+    row.premium ? `premium ${row.premium}` : undefined,
+    row.retroactiveDate ? `retroactive ${row.retroactiveDate}` : undefined,
+    row.formNumber ? `form ${row.formNumber}` : undefined,
+    row.sectionRef ? `section ${row.sectionRef}` : undefined,
+  ].filter(Boolean);
+  return `- ${row.name}${facts.length ? `: ${facts.join(", ")}` : ""}`;
 }
 
 export function coverageBreakdownForTool(policy: unknown): CoverageBreakdown {

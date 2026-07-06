@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalMutation } from "./_generated/server";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 
 const PRESENCE_TIMEOUT_MS = 30_000; // 30 seconds
 const STALE_TIMEOUT_MS = 60_000; // 60 seconds

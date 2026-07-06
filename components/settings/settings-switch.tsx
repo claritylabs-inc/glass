@@ -9,11 +9,13 @@ export function SettingsSwitch({
   onCheckedChange,
   label,
   className,
+  disabled,
 }: {
   checked: boolean;
   onCheckedChange: () => void;
   label: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -21,10 +23,12 @@ export function SettingsSwitch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={onCheckedChange}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10",
         !checked && "bg-foreground/15",
+        disabled && "cursor-not-allowed opacity-50",
         className,
       )}
       style={checked ? { backgroundColor: LOGO_ICON_BLUE } : undefined}

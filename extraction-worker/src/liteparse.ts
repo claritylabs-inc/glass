@@ -7,6 +7,8 @@ import {
   type SourceKind,
   type SourceSpan,
 } from "@claritylabs/cl-sdk";
+import { shouldEmitStructuredLiteParseTable } from "./liteparseTableConfidence.js";
+import { classifyLiteParseTextElement } from "./liteparseTextClassification.js";
 
 type SourceKindInput = Extract<SourceKind, "policy_pdf" | "email" | "attachment" | "manual_note">;
 
@@ -314,20 +316,6 @@ function continuesCurrentTable(row: PositionedRow, next: PositionedRow | undefin
   return Boolean(next && isTableLikeRow(next) && /\b(coverage|endorsement|aggregate|claim|loss|sublimit|sub-limit|defense)\b/i.test(row.text));
 }
 
-function classifyTextElement(row: PositionedRow, pageRows: PositionedRow[]): "title" | "paragraph" {
-  const text = row.text.trim();
-  const heights = pageRows
-    .map((item) => item.bbox.height)
-    .filter((value) => Number.isFinite(value) && value > 0)
-    .sort((a, b) => a - b);
-  const medianHeight = heights.length > 0 ? heights[Math.floor(heights.length / 2)] : row.bbox.height;
-  const looksLikeHeading =
-    row.bbox.height >= medianHeight * 1.2 ||
-    (/^[A-Z0-9][A-Z0-9\s,.'&/():-]{6,}$/.test(text) && text.length <= 120) ||
-    /^(section|coverage|endorsement|declarations?|schedule|exclusions?|conditions?)\b/i.test(text);
-  return looksLikeHeading ? "title" : "paragraph";
-}
-
 function normalizeHeader(value: string, index: number): string {
   const normalized = normalizeWhitespace(value).replace(/[:*]+$/g, "");
   return normalized || `Column ${index + 1}`;
@@ -352,6 +340,18 @@ function rowTextWithHeaders(row: PositionedRow, headers: string[]): string {
   return row.cells
     .map((cell, index) => `${alignedHeaders[index]}: ${cell.text}`)
     .join(" | ");
+}
+
+function shouldEmitStructuredTableGroup(rows: PositionedRow[]): boolean {
+  return shouldEmitStructuredLiteParseTable(rows.map((row) => ({
+    text: row.text,
+    isHeader: isHeaderRow(row),
+    cells: row.cells.map((cell) => ({
+      text: cell.text,
+      x: cell.item.x,
+      width: cell.item.width,
+    })),
+  })));
 }
 
 function buildLiteParseSourceSpans(params: {
@@ -386,117 +386,131 @@ function buildLiteParseSourceSpans(params: {
     }
 
     const rows = normalizeLiteParseRows(groupRows(page), page.height);
-    let currentHeaders: string[] = [];
     let tableIndex = 0;
-    let rowIndex = 0;
-    let inTable = false;
+    let pendingTableRows: PositionedRow[] = [];
 
-    for (const [index, row] of rows.entries()) {
-      const tableLike = isTableLikeRow(row) || (inTable && continuesCurrentTable(row, rows[index + 1]));
-      if (!tableLike) {
-        inTable = false;
-        currentHeaders = [];
-        if (row.text.length >= 12) {
-          const elementType = classifyTextElement(row, rows);
-          const textSpan = spanWithBbox(buildSourceSpan({
-            documentId: params.documentId,
-            sourceKind: params.sourceKind,
-            text: row.text,
-            pageStart: page.pageNum,
-            pageEnd: page.pageNum,
-            sourceUnit: "text",
-            metadata: {
-              sourceSystem: "liteparse",
-              sourceUnit: elementType,
-              elementType,
-              pageWidth: formatNumber(page.width),
-              pageHeight: formatNumber(page.height),
-            },
-          }, sourceSpans.length), row.bbox, { width: page.width, height: page.height });
-          sourceSpans.push(textSpan);
-        }
-        continue;
-      }
-
-      if (!inTable) {
-        tableIndex += 1;
-        rowIndex = 0;
-        inTable = true;
-      }
-
-      const tableId = `${params.documentId}:liteparse:p${page.pageNum}:table${tableIndex}`;
-      const headerRow = isHeaderRow(row);
-      const rowText = headerRow ? row.cells.map((cell) => cell.text).join(" | ") : rowTextWithHeaders(row, currentHeaders);
-      const rowSpan = spanWithBbox(buildSourceSpan({
+    const emitTextRow = (row: PositionedRow, minLength = 4) => {
+      if (row.text.length < minLength) return;
+      const elementType = classifyLiteParseTextElement(row, rows);
+      const textSpan = spanWithBbox(buildSourceSpan({
         documentId: params.documentId,
         sourceKind: params.sourceKind,
-        text: rowText,
+        text: row.text,
         pageStart: page.pageNum,
         pageEnd: page.pageNum,
-        sourceUnit: "table_row",
-        table: {
-          tableId,
-          rowIndex,
-          isHeader: headerRow,
-        },
+        sourceUnit: "text",
         metadata: {
           sourceSystem: "liteparse",
-          sourceUnit: "table_row",
-          elementType: headerRow ? "table_header" : "table_row",
-          tableId,
-          isHeader: String(headerRow),
+          sourceUnit: elementType,
+          elementType,
           pageWidth: formatNumber(page.width),
           pageHeight: formatNumber(page.height),
         },
       }, sourceSpans.length), row.bbox, { width: page.width, height: page.height });
-      sourceSpans.push(rowSpan);
+      sourceSpans.push(textSpan);
+    };
 
-      const alignedHeaders = alignHeaders(currentHeaders, row.cells);
-      for (const [columnIndex, cell] of row.cells.entries()) {
-        const cellBbox = {
-          page: page.pageNum,
-          x: cell.item.x,
-          y: cell.item.y,
-          width: cell.item.width,
-          height: cell.item.height,
-        };
-        const columnName = alignedHeaders[columnIndex];
-        const cellSpan = spanWithBbox(buildSourceSpan({
+    const emitTableRows = (tableRows: PositionedRow[]) => {
+      if (tableRows.length === 0) return;
+      if (!shouldEmitStructuredTableGroup(tableRows)) {
+        for (const row of tableRows) emitTextRow(row);
+        return;
+      }
+
+      tableIndex += 1;
+      const tableId = `${params.documentId}:liteparse:p${page.pageNum}:table${tableIndex}`;
+      let currentHeaders: string[] = [];
+      let rowIndex = 0;
+      for (const row of tableRows) {
+        const headerRow = isHeaderRow(row);
+        const rowText = headerRow ? row.cells.map((cell) => cell.text).join(" | ") : rowTextWithHeaders(row, currentHeaders);
+        const rowSpan = spanWithBbox(buildSourceSpan({
           documentId: params.documentId,
           sourceKind: params.sourceKind,
-          text: cell.text,
+          text: rowText,
           pageStart: page.pageNum,
           pageEnd: page.pageNum,
-          sourceUnit: "table_cell",
-          parentSpanId: rowSpan.id,
+          sourceUnit: "table_row",
           table: {
             tableId,
             rowIndex,
-            columnIndex,
-            columnName,
-            rowSpanId: rowSpan.id,
             isHeader: headerRow,
           },
           metadata: {
             sourceSystem: "liteparse",
-            sourceUnit: "table_cell",
-            elementType: "table_cell",
+            sourceUnit: "table_row",
+            elementType: headerRow ? "table_header" : "table_row",
             tableId,
-            parentSpanId: rowSpan.id,
-            columnName: columnName ?? "",
             isHeader: String(headerRow),
             pageWidth: formatNumber(page.width),
             pageHeight: formatNumber(page.height),
           },
-        }, sourceSpans.length), cellBbox, { width: page.width, height: page.height });
-        sourceSpans.push(cellSpan);
+        }, sourceSpans.length), row.bbox, { width: page.width, height: page.height });
+        sourceSpans.push(rowSpan);
+
+        const alignedHeaders = alignHeaders(currentHeaders, row.cells);
+        for (const [columnIndex, cell] of row.cells.entries()) {
+          const cellBbox = {
+            page: page.pageNum,
+            x: cell.item.x,
+            y: cell.item.y,
+            width: cell.item.width,
+            height: cell.item.height,
+          };
+          const columnName = alignedHeaders[columnIndex];
+          const cellSpan = spanWithBbox(buildSourceSpan({
+            documentId: params.documentId,
+            sourceKind: params.sourceKind,
+            text: cell.text,
+            pageStart: page.pageNum,
+            pageEnd: page.pageNum,
+            sourceUnit: "table_cell",
+            parentSpanId: rowSpan.id,
+            table: {
+              tableId,
+              rowIndex,
+              columnIndex,
+              columnName,
+              rowSpanId: rowSpan.id,
+              isHeader: headerRow,
+            },
+            metadata: {
+              sourceSystem: "liteparse",
+              sourceUnit: "table_cell",
+              elementType: "table_cell",
+              tableId,
+              parentSpanId: rowSpan.id,
+              columnName: columnName ?? "",
+              isHeader: String(headerRow),
+              pageWidth: formatNumber(page.width),
+              pageHeight: formatNumber(page.height),
+            },
+          }, sourceSpans.length), cellBbox, { width: page.width, height: page.height });
+          sourceSpans.push(cellSpan);
+        }
+
+        if (headerRow) {
+          currentHeaders = row.cells.map((cell, index) => normalizeHeader(cell.text, index));
+        }
+        rowIndex += 1;
+      }
+    };
+
+    for (const [index, row] of rows.entries()) {
+      const tableLike =
+        isTableLikeRow(row) ||
+        (pendingTableRows.length > 0 && continuesCurrentTable(row, rows[index + 1]));
+      if (tableLike) {
+        pendingTableRows.push(row);
+        continue;
       }
 
-      if (headerRow) {
-        currentHeaders = row.cells.map((cell, index) => normalizeHeader(cell.text, index));
-      }
-      rowIndex += 1;
+      emitTableRows(pendingTableRows);
+      pendingTableRows = [];
+      emitTextRow(row, 12);
     }
+
+    emitTableRows(pendingTableRows);
   }
 
   return sourceSpans;

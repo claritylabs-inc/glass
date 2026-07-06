@@ -8,13 +8,6 @@ import type { ActionCtx } from "./_generated/server";
 import { getAuthSiteUrl } from "./lib/domains";
 import { assertCustomerUser, isBootstrapOperatorEmail } from "./lib/operatorIdentity";
 
-const partnerTypeValidator = v.union(
-  v.literal("broker"),
-  v.literal("program_admin"),
-  v.literal("carrier"),
-  v.literal("other"),
-);
-
 const emailVerificationValidator = v.union(
   v.literal("strict"),
   v.literal("domain"),
@@ -171,7 +164,6 @@ export const provisionBroker = action({
       name: v.string(),
       slug: v.optional(v.string()),
       website: v.optional(v.string()),
-      partnerType: v.optional(partnerTypeValidator),
       brandingColor: v.optional(v.string()),
       whiteLabelingEnabled: v.optional(v.boolean()),
       agentDisplayName: v.optional(v.string()),
@@ -298,7 +290,6 @@ export const upsertProvisionedBroker = internalMutation({
       name: v.string(),
       slug: v.optional(v.string()),
       website: v.optional(v.string()),
-      partnerType: v.optional(partnerTypeValidator),
       brandingColor: v.optional(v.string()),
       whiteLabelingEnabled: v.optional(v.boolean()),
       agentDisplayName: v.optional(v.string()),
@@ -354,7 +345,6 @@ export const upsertProvisionedBroker = internalMutation({
     const brokerPatch = {
       name: brokerName,
       type: "broker" as const,
-      partnerType: args.broker.partnerType ?? "broker" as const,
       slug,
       website: args.broker.website?.trim() || undefined,
       brandingColor: args.broker.brandingColor?.trim() || undefined,

@@ -188,4 +188,103 @@ describe("operator teardown policy-detail queries", () => {
       mailboxes: [],
     });
   });
+
+  test("source span evidence lookup does not fan out to sibling children", async () => {
+    const { t, operatorUserId, clientOrgId, policyId } =
+      await seedOperatorPolicyFixture();
+    const now = dayjs().valueOf();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("sourceSpans", {
+        orgId: clientOrgId,
+        policyId,
+        spanId: "page-1",
+        documentId: "doc-a",
+        sourceKind: "policy_pdf",
+        sourceUnit: "page",
+        text: "Page 1",
+        textHash: "page-1",
+        createdAt: now,
+      });
+      await ctx.db.insert("sourceSpans", {
+        orgId: clientOrgId,
+        policyId,
+        spanId: "row-1",
+        documentId: "doc-a",
+        sourceKind: "policy_pdf",
+        sourceUnit: "table_row",
+        parentSpanId: "page-1",
+        text: "Coverage row",
+        textHash: "row-1",
+        createdAt: now,
+      });
+      await ctx.db.insert("sourceSpans", {
+        orgId: clientOrgId,
+        policyId,
+        spanId: "cell-a",
+        documentId: "doc-a",
+        sourceKind: "policy_pdf",
+        sourceUnit: "table_cell",
+        parentSpanId: "row-1",
+        text: "Requested cell",
+        textHash: "cell-a",
+        createdAt: now,
+      });
+      await ctx.db.insert("sourceSpans", {
+        orgId: clientOrgId,
+        policyId,
+        spanId: "cell-b",
+        documentId: "doc-a",
+        sourceKind: "policy_pdf",
+        sourceUnit: "table_cell",
+        parentSpanId: "row-1",
+        text: "Sibling cell",
+        textHash: "cell-b",
+        createdAt: now,
+      });
+    });
+    const operatorSession = t.withIdentity({
+      subject: `${operatorUserId}|session`,
+    });
+
+    const spans = await operatorSession.query(listSpansByPolicyAndSpanIdsFn, {
+      policyId,
+      spanIds: ["cell-a"],
+    });
+    const spanIds = spans.map((span: { spanId: string }) => span.spanId);
+
+    expect(spanIds).toEqual(expect.arrayContaining(["cell-a", "row-1", "page-1"]));
+    expect(spanIds).not.toContain("cell-b");
+  });
+
+  test("source span evidence lookup caps oversized client requests", async () => {
+    const { t, operatorUserId, clientOrgId, policyId } =
+      await seedOperatorPolicyFixture();
+    const now = dayjs().valueOf();
+    const requestedSpanIds = Array.from({ length: 300 }, (_, index) => `bulk-${index}`);
+    await t.run(async (ctx) => {
+      for (const spanId of requestedSpanIds) {
+        await ctx.db.insert("sourceSpans", {
+          orgId: clientOrgId,
+          policyId,
+          spanId,
+          documentId: "doc-a",
+          sourceKind: "policy_pdf",
+          text: `Bulk source evidence ${spanId}`,
+          textHash: spanId,
+          createdAt: now,
+        });
+      }
+    });
+    const operatorSession = t.withIdentity({
+      subject: `${operatorUserId}|session`,
+    });
+
+    const spans = await operatorSession.query(listSpansByPolicyAndSpanIdsFn, {
+      policyId,
+      spanIds: requestedSpanIds,
+    });
+
+    expect(spans).toHaveLength(256);
+    expect(spans.map((span: { spanId: string }) => span.spanId)).not.toContain("bulk-299");
+  });
 });

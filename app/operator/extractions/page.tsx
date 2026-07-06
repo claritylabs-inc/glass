@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { ComponentProps, PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import dayjs from "dayjs";
@@ -39,7 +39,13 @@ import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw, XCircle } from "lu
 import type { Id } from "@/convex/_generated/dataModel";
 import { normalizeCoverageName } from "@/convex/lib/coverageNames";
 import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
-import { ExtractionCards } from "@/app/policies/[id]/extraction-panel";
+import {
+  SourceEvidenceButton,
+  collectSourceSpanIds,
+  sourceSpanIdsFrom,
+  usePolicySourceSpans,
+  type SourceSpanDoc,
+} from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
@@ -103,6 +109,16 @@ type ModelCallDebugDetails = {
   promptPreview?: string;
   outputPreview?: string;
   outputKind?: string;
+  routePurpose?: string;
+  trace?: {
+    batchIndex?: number;
+    batchCount?: number;
+    coverageGroup?: string;
+    itemCount?: number;
+    startPage?: number;
+    endPage?: number;
+    sourceBacked?: boolean;
+  };
   inputSummary?: {
     hasPdfBase64?: boolean;
     pdfBase64Chars?: number;
@@ -122,7 +138,6 @@ type TraceDetail = {
   fileUrl?: string | null;
   events: TraceEvent[];
 };
-type ExtractionCardsPolicyDocument = ComponentProps<typeof ExtractionCards>["policyDocument"];
 type TracePanelTab = "summary" | "extracted" | "timeline" | "models" | "log";
 const TRACE_PANEL_TABS = ["summary", "extracted", "timeline", "models", "log"] as const;
 
@@ -194,25 +209,38 @@ function sourceBackedDisplay(value: unknown) {
   return {
     value: record.value,
     confidence: typeof record.confidence === "string" ? record.confidence : undefined,
+    sourceSpanIds: sourceSpanIdsFrom(record),
   };
 }
 
-function profileScalarRows(profile: Record<string, unknown>) {
+function profileScalarRows(
+  profile: Record<string, unknown>,
+  sourceSpans: SourceSpanDoc[] | undefined,
+  fileUrl: string | undefined,
+) {
   const rows: Array<{ label: string; value: React.ReactNode }> = [];
   const pushValue = (label: string, key: string) => {
     const display = sourceBackedDisplay(profile[key]);
     if (!display) return;
     rows.push({
       label,
-      value: display.value,
+      value: (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 break-words">{display.value}</span>
+          <SourceEvidenceButton
+            sourceSpanIds={display.sourceSpanIds}
+            sourceSpans={sourceSpans}
+            fileUrl={fileUrl}
+            className="shrink-0"
+          />
+        </span>
+      ),
     });
   };
 
-  if (typeof profile.documentType === "string") {
-    rows.push({ label: "Document type", value: profile.documentType });
-  }
   const policyTypes = stringArray(profile.policyTypes);
-  if (policyTypes.length) rows.push({ label: "Policy types", value: policyTypes.join(", ") });
+  const policyTypeLabels = policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
+  if (policyTypeLabels.length) rows.push({ label: "Policy types", value: policyTypeLabels.join(", ") });
   pushValue("Policy number", "policyNumber");
   pushValue("Named insured", "namedInsured");
   pushValue("Insurer", "insurer");
@@ -221,10 +249,6 @@ function profileScalarRows(profile: Record<string, unknown>) {
   pushValue("Expiration", "expirationDate");
   pushValue("Retroactive", "retroactiveDate");
   pushValue("Premium", "premium");
-  const coverageTypes = policyTypes
-    .map((type) => POLICY_TYPE_LABELS[type] ?? undefined)
-    .filter((label): label is string => Boolean(label));
-  if (coverageTypes.length) rows.push({ label: "Coverage types", value: coverageTypes.join(", ") });
   const warnings = stringArray(profile.warnings);
   if (warnings.length) rows.push({ label: "Warnings", value: warnings.join(" | ") });
   return rows;
@@ -266,7 +290,7 @@ function profileCellValue(row: Record<string, unknown>, key: string) {
 function supportStatusVariant(status: string) {
   const normalized = status.toLowerCase();
   if (normalized === "supported") return "secondary";
-  if (normalized === "unsupported" || normalized === "conflicting") return "destructive";
+  if (normalized === "unsupported" || normalized === "excluded" || normalized === "conflicting") return "destructive";
   return "outline";
 }
 
@@ -315,24 +339,9 @@ function cleanCoverageTitle(value?: string) {
 }
 
 function coverageRowTitle(row: Record<string, unknown>) {
-  const origin = profileCellValue(row, "coverageOrigin");
-  if (origin === "endorsement") {
-    const fromSection = cleanCoverageTitle(profileCellValue(row, "sectionRef"));
-    if (fromSection) return fromSection;
-  }
-  return cleanCoverageTitle(profileCellValue(row, "name")) ?? "Coverage";
-}
-
-function coverageMetadata(
-  row: Record<string, unknown>,
-  terms: Array<{ label: string; value: string }>,
-) {
-  const retroactiveDate = profileCellValue(row, "retroactiveDate");
-  const hasRetroactiveTerm = terms.some((term) => /retroactive/i.test(term.label));
-  return [
-    profileCellValue(row, "formNumber"),
-    retroactiveDate && !hasRetroactiveTerm ? `Retroactive ${retroactiveDate}` : undefined,
-  ].filter((item): item is string => Boolean(item));
+  const fromName = cleanCoverageTitle(profileCellValue(row, "name"));
+  if (fromName) return fromName;
+  return "Coverage";
 }
 
 function coverageLimitTerms(row: Record<string, unknown>) {
@@ -340,7 +349,7 @@ function coverageLimitTerms(row: Record<string, unknown>) {
     ? row.limits.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
     : [];
   const seen = new Set<string>();
-  return terms
+  const displayedTerms = terms
     .map((term) => {
       const label = cleanCoverageTitle(profileCellValue(term, "label") ?? profileCellValue(term, "kind"));
       const value = profileCellValue(term, "value")
@@ -350,9 +359,19 @@ function coverageLimitTerms(row: Record<string, unknown>) {
       const key = `${label.toLowerCase()}|${value.toLowerCase()}`;
       if (seen.has(key)) return null;
       seen.add(key);
-      return { label, value };
+      return { label, value, sourceSpanIds: sourceSpanIdsFrom(term) };
     })
-    .filter((term): term is { label: string; value: string } => Boolean(term));
+    .filter((term): term is { label: string; value: string; sourceSpanIds: string[] } => Boolean(term));
+  const hasRetroactiveTerm = displayedTerms.some((term) => /retroactive/i.test(term.label));
+  const retroactiveDate = profileCellValue(row, "retroactiveDate");
+  if (retroactiveDate && !hasRetroactiveTerm) {
+    displayedTerms.push({
+      label: "Retroactive Date",
+      value: retroactiveDate,
+      sourceSpanIds: sourceSpanIdsFrom(row.retroactiveDate),
+    });
+  }
+  return displayedTerms;
 }
 
 function ProfileListSection({
@@ -373,9 +392,13 @@ function ProfileListSection({
 function CoverageList({
   title,
   rows,
+  sourceSpans,
+  fileUrl,
 }: {
   title: string;
   rows: Array<Record<string, unknown>>;
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
 }) {
   if (!rows.length) return null;
   return (
@@ -384,48 +407,49 @@ function CoverageList({
         const name = coverageRowTitle(row);
         const limit = profileCellDisplay(row.limit);
         const terms = coverageLimitTerms(row);
-        const metadata = coverageMetadata(row, terms);
+        const coverageSourceSpanIds = sourceSpanIdsFrom(row);
+        const visibleTerms = terms.length
+          ? terms
+          : limit !== "—"
+            ? [{ label: "Limit", value: limit, sourceSpanIds: coverageSourceSpanIds }]
+            : [];
+
         return (
-          <OperationalItem
-            key={rowIndex}
-            className="px-4"
-          >
-            <div className="min-w-0 space-y-2">
-              <div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
-                <div className="min-w-0">
-                  <p className="text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
-                    {name}
-                  </p>
-                  {metadata.length ? (
-                    <p className="mt-1 text-label leading-4 text-muted-foreground">
-                      {metadata.join(" | ")}
-                    </p>
-                  ) : null}
-                </div>
-                {terms.length === 0 && limit !== "—" ? (
-                  <span className="text-base font-normal tabular-nums text-foreground sm:text-right">
-                    {limit}
-                  </span>
-                ) : null}
-              </div>
-              {terms.length ? (
-                <dl className="divide-y divide-foreground/6">
-                  {terms.map((term) => (
-                    <div
-                      key={`${term.label}-${term.value}`}
-                      className="grid gap-1 py-2 first:pt-1 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.55fr)] sm:gap-4"
-                    >
-                      <dt className="min-w-0 text-base font-normal leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-                        {term.label}
-                      </dt>
-                      <dd className="min-w-0 text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
-                        {term.value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : null}
+          <OperationalItem key={`${name}-${rowIndex}`} className="px-4">
+            <div className="flex min-w-0 items-center gap-1.5 text-base font-normal leading-5 text-foreground">
+              <span className="min-w-0 break-words">{name}</span>
+              <SourceEvidenceButton
+                sourceSpanIds={coverageSourceSpanIds}
+                sourceSpans={sourceSpans}
+                fileUrl={fileUrl}
+                className="shrink-0"
+              />
             </div>
+            {visibleTerms.length > 0 ? (
+              <dl className="mt-3 divide-y divide-foreground/6">
+                {visibleTerms.map((term, termIndex) => (
+                  <div
+                    key={`${term.label}-${termIndex}`}
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0"
+                  >
+                    <dt className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                      {term.label}
+                    </dt>
+                    <dd className="min-w-0 text-right text-base leading-5 text-foreground [overflow-wrap:anywhere]">
+                      <span className="inline-flex min-w-0 items-center justify-end gap-1.5">
+                        <span className="min-w-0 break-words">{term.value}</span>
+                        <SourceEvidenceButton
+                          sourceSpanIds={term.sourceSpanIds}
+                          sourceSpans={sourceSpans}
+                          fileUrl={fileUrl}
+                          className="shrink-0"
+                        />
+                      </span>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
           </OperationalItem>
         );
       })}
@@ -433,26 +457,15 @@ function CoverageList({
   );
 }
 
-function PartyList({ rows }: { rows: Array<Record<string, unknown>> }) {
-  if (!rows.length) return null;
-  return (
-    <OperationalLabelValueList title="Parties">
-      {rows.map((row, rowIndex) => {
-        const role = profileCellDisplay(row.role);
-        const name = profileCellDisplay(row.name);
-        return (
-          <OperationalLabelValueRow
-            key={rowIndex}
-            label={formatProfileLabel(role)}
-            value={name}
-          />
-        );
-      })}
-    </OperationalLabelValueList>
-  );
-}
-
-function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>> }) {
+function EndorsementSupportList({
+  rows,
+  sourceSpans,
+  fileUrl,
+}: {
+  rows: Array<Record<string, unknown>>;
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
   if (!rows.length) return null;
   return (
     <ProfileListSection title="Endorsement support">
@@ -460,6 +473,7 @@ function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>>
         const kind = profileCellDisplay(row.kind);
         const status = profileCellDisplay(row.status);
         const summary = profileCellDisplay(row.summary);
+        const sourceSpanIds = sourceSpanIdsFrom(row);
         return (
           <OperationalItem
             key={rowIndex}
@@ -469,6 +483,11 @@ function EndorsementSupportList({ rows }: { rows: Array<Record<string, unknown>>
               <p className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
                 {formatProfileLabel(kind)}
               </p>
+              <SourceEvidenceButton
+                sourceSpanIds={sourceSpanIds}
+                sourceSpans={sourceSpans}
+                fileUrl={fileUrl}
+              />
               {status !== "—" ? (
                 <Badge
                   variant={supportStatusVariant(status)}
@@ -552,7 +571,15 @@ function AdditionalInsuredEligibilityList({
   );
 }
 
-function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unknown>> }) {
+function NamedAdditionalInsuredList({
+  rows,
+  sourceSpans,
+  fileUrl,
+}: {
+  rows: Array<Record<string, unknown>>;
+  sourceSpans?: SourceSpanDoc[];
+  fileUrl?: string;
+}) {
   if (!rows.length) return null;
   return (
     <ProfileListSection title="Named additional insureds">
@@ -561,6 +588,7 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
         const status = profileCellDisplay(row.status);
         const scope = profileCellDisplay(row.scope);
         const endorsementTitle = profileCellDisplay(row.endorsementTitle);
+        const sourceSpanIds = sourceSpanIdsFrom(row);
         return (
           <OperationalItem
             key={rowIndex}
@@ -570,6 +598,11 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
               <p className="min-w-0 flex-1 text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
                 {name}
               </p>
+              <SourceEvidenceButton
+                sourceSpanIds={sourceSpanIds}
+                sourceSpans={sourceSpans}
+                fileUrl={fileUrl}
+              />
               {status !== "—" ? (
                 <Badge variant="outline" className="font-normal">
                   {formatProfileLabel(status)}
@@ -593,20 +626,30 @@ function NamedAdditionalInsuredList({ rows }: { rows: Array<Record<string, unkno
   );
 }
 
-function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown> | null }) {
+function OperationalProfileSummary({
+  policy,
+  policyId,
+  fileUrl,
+  allowOperatorSourceAccess,
+}: {
+  policy?: Record<string, unknown> | null;
+  policyId?: Id<"policies">;
+  fileUrl?: string;
+  allowOperatorSourceAccess?: boolean;
+}) {
   const profile = recordValue(policy?.operationalProfile);
+  const profileSourceSpanIds = useMemo(
+    () => (profile ? collectSourceSpanIds(profile) : []),
+    [profile],
+  );
+  const sourceSpans = usePolicySourceSpans(policyId, profileSourceSpanIds, {
+    allowOperatorAccess: allowOperatorSourceAccess,
+    maxIds: 512,
+  });
   if (!profile) return null;
-  const scalarRows = profileScalarRows(profile);
+  const scalarRows = profileScalarRows(profile, sourceSpans, fileUrl);
   const coverages = Array.isArray(profile.coverages)
     ? profile.coverages
-        .map(recordValue)
-        .filter((item): item is Record<string, unknown> => Boolean(item))
-        .map(profileTableRow)
-    : [];
-  const coreCoverages = coverages.filter((row) => row.coverageOrigin !== "endorsement");
-  const endorsementCoverages = coverages.filter((row) => row.coverageOrigin === "endorsement");
-  const parties = Array.isArray(profile.parties)
-    ? profile.parties
         .map(recordValue)
         .filter((item): item is Record<string, unknown> => Boolean(item))
         .map(profileTableRow)
@@ -635,12 +678,23 @@ function OperationalProfileSummary({ policy }: { policy?: Record<string, unknown
           ))}
         </OperationalLabelValueList>
       ) : null}
-      <CoverageList title="Core coverage limits" rows={coreCoverages} />
-      <CoverageList title="Endorsement coverage limits" rows={endorsementCoverages} />
-      <PartyList rows={parties} />
-      <NamedAdditionalInsuredList rows={additionalInsureds} />
+      <CoverageList
+        title="Coverage schedules"
+        rows={coverages}
+        sourceSpans={sourceSpans}
+        fileUrl={fileUrl}
+      />
+      <NamedAdditionalInsuredList
+        rows={additionalInsureds}
+        sourceSpans={sourceSpans}
+        fileUrl={fileUrl}
+      />
       <AdditionalInsuredEligibilityList eligibility={additionalInsuredEligibility} />
-      <EndorsementSupportList rows={endorsementSupport} />
+      <EndorsementSupportList
+        rows={endorsementSupport}
+        sourceSpans={sourceSpans}
+        fileUrl={fileUrl}
+      />
     </div>
   );
 }
@@ -650,7 +704,6 @@ function humanizeTaskKind(value?: string) {
   if (!value) return undefined;
   const labels: Record<string, string> = {
     extraction_classify: "Classify document",
-    extraction_form_inventory: "Extract form inventory",
     extraction_page_map: "Map policy pages",
     extraction_focused: "Extract policy fields",
     extraction_long_list: "Extract long policy lists",
@@ -680,6 +733,34 @@ function modelCallTitle(event: TraceEvent) {
   return humanizeTaskKind(event.taskKind) ?? humanizeTaskKind(event.task) ?? "Model call";
 }
 
+function traceEventStatusLabel(event: TraceEvent) {
+  if (event.error) return "failed";
+  if (event.status === "complete") return "completed";
+  if (event.status === "soft_failed") return "returned fallback";
+  return event.status;
+}
+
+function traceEventRouteLabel(event: TraceEvent) {
+  return [
+    [event.provider, event.model].filter(Boolean).join(" / "),
+    event.routeSource?.replace(/_/g, " "),
+    event.transport,
+  ].filter(Boolean).join(" · ");
+}
+
+function traceEventAttemptLabel(event: TraceEvent) {
+  return event.attempt ? `attempt ${event.attempt}` : undefined;
+}
+
+function traceEventMaxTokens(event: TraceEvent) {
+  const details = modelCallDebugDetails(event);
+  return details?.maxOutputTokens;
+}
+
+function traceEventRoutePurpose(event: TraceEvent) {
+  return modelCallDebugDetails(event)?.routePurpose?.replace(/_/g, " ");
+}
+
 function eventTitle(event: TraceEvent) {
   if (event.kind === "model_call") return modelCallTitle(event);
   return event.label ?? humanizeTaskKind(event.taskKind) ?? event.phase ?? event.message ?? event.kind;
@@ -688,9 +769,13 @@ function eventTitle(event: TraceEvent) {
 function eventCaption(event: TraceEvent) {
   if (event.kind === "model_call") {
     return [
-      [event.provider, event.model].filter(Boolean).join(" / "),
+      traceEventRouteLabel(event),
+      traceEventRoutePurpose(event),
       event.taskKind,
-      event.status,
+      traceEventAttemptLabel(event),
+      traceEventMaxTokens(event) ? `max ${traceEventMaxTokens(event)?.toLocaleString()} out` : undefined,
+      traceEventStatusLabel(event),
+      event.error ? `error: ${event.error}` : undefined,
     ].filter(Boolean).join(" · ");
   }
   return [event.kind, event.status].filter(Boolean).join(" · ");
@@ -830,17 +915,21 @@ function buildTimelineRows(events: TraceEvent[], session: TraceRow) {
     .sort((a, b) => a.startMs - b.startMs || b.durationMs - a.durationMs);
 }
 
-function timelineColor(kind: TraceEvent["kind"]) {
-  if (kind === "model_call") return "bg-blue-500";
-  if (kind === "phase") return "bg-foreground";
-  if (kind === "embedding_batch") return "bg-emerald-500";
-  if (kind === "worker") return "bg-violet-500";
-  if (kind === "artifact") return "bg-amber-500";
+function timelineColor(event: TraceEvent) {
+  if (event.kind === "model_call") {
+    if (event.error || event.status === "error") return "bg-red-500";
+    if (event.status === "soft_failed") return "bg-amber-500";
+    return "bg-blue-500";
+  }
+  if (event.kind === "phase") return "bg-foreground";
+  if (event.kind === "embedding_batch") return "bg-emerald-500";
+  if (event.kind === "worker") return "bg-violet-500";
+  if (event.kind === "artifact") return "bg-amber-500";
   return "bg-muted-foreground";
 }
 
-function timelineInsideTextColor(kind: TraceEvent["kind"]) {
-  return kind === "phase" ? "text-background" : "text-white";
+function timelineInsideTextColor(event: TraceEvent) {
+  return event.kind === "phase" ? "text-background" : "text-white";
 }
 
 function modelCallDebugDetails(event?: TraceEvent): ModelCallDebugDetails | null {
@@ -877,6 +966,7 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
     );
   }
   const inputSummary = details.inputSummary;
+  const trace = details.trace;
   const inputRows = [
     inputSummary?.mimeType ? ["MIME type", inputSummary.mimeType] : null,
     inputSummary?.fileId ? ["File ID", inputSummary.fileId] : null,
@@ -884,6 +974,13 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
     inputSummary?.hasPdfBytes ? ["PDF bytes", inputSummary.pdfBytes?.toLocaleString() ?? "present"] : null,
     inputSummary?.hasPdfBase64 ? ["PDF base64", `${inputSummary.pdfBase64Chars?.toLocaleString() ?? "present"} chars`] : null,
     inputSummary?.images?.length ? ["Images", `${inputSummary.images.length} image${inputSummary.images.length === 1 ? "" : "s"}`] : null,
+  ].filter((row): row is [string, string] => !!row);
+  const traceRows = [
+    trace?.batchIndex || trace?.batchCount ? ["Batch", `${trace.batchIndex ?? "?"} / ${trace.batchCount ?? "?"}`] : null,
+    trace?.coverageGroup ? ["Coverage group", trace.coverageGroup.replace(/_/g, " ")] : null,
+    trace?.itemCount !== undefined ? ["Items", trace.itemCount.toLocaleString()] : null,
+    trace?.startPage ? ["Pages", trace.endPage && trace.endPage !== trace.startPage ? `${trace.startPage}-${trace.endPage}` : String(trace.startPage)] : null,
+    trace?.sourceBacked !== undefined ? ["Source-backed", trace.sourceBacked ? "yes" : "no"] : null,
   ].filter((row): row is [string, string] => !!row);
 
   return (
@@ -913,6 +1010,19 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
           <h4 className="mb-1.5 text-base font-medium text-muted-foreground">Input attachments</h4>
           <dl className="grid gap-x-8 gap-y-1.5 text-base text-muted-foreground sm:grid-cols-2">
             {inputRows.map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="inline font-medium text-foreground">{label}</dt>
+                <dd className="ml-2 inline break-words">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </OperationalPanel>
+      ) : null}
+      {traceRows.length ? (
+        <OperationalPanel as="section" className="px-3 py-3">
+          <h4 className="mb-1.5 text-base font-medium text-muted-foreground">Trace metadata</h4>
+          <dl className="grid gap-x-8 gap-y-1.5 text-base text-muted-foreground sm:grid-cols-2">
+            {traceRows.map(([label, value]) => (
               <div key={label} className="min-w-0">
                 <dt className="inline font-medium text-foreground">{label}</dt>
                 <dd className="ml-2 inline break-words">{value}</dd>
@@ -1032,7 +1142,7 @@ function TimelineWaterfall({
                 return (
                   <div
                     key={row.id}
-                    className="grid min-h-7 border-b border-foreground/6 text-left hover:bg-muted/40"
+                    className="grid min-h-9 border-b border-foreground/6 text-left hover:bg-muted/40"
                     style={{ gridTemplateColumns }}
                   >
                     <div className={`min-w-0 py-1.5 pr-2.5 ${row.level > 0 ? "pl-5" : "pl-2.5"}`}>
@@ -1054,10 +1164,13 @@ function TimelineWaterfall({
                         )}
                         <p className="min-w-0 truncate text-label font-medium text-foreground">{row.label}</p>
                       </div>
+                      {row.caption ? (
+                        <p className="ml-5 mt-0.5 min-w-0 truncate text-label text-muted-foreground">{row.caption}</p>
+                      ) : null}
                     </div>
                     <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
                       <div
-                        className={`absolute top-1.5 flex h-4 items-center justify-center rounded-sm px-1 ${timelineColor(row.kind)}`}
+                        className={`absolute top-1.5 flex h-4 items-center justify-center rounded-sm px-1 ${timelineColor(row.event)}`}
                         style={{
                           left: `${constrainedLeft}%`,
                           width: `${constrainedWidth}%`,
@@ -1065,7 +1178,7 @@ function TimelineWaterfall({
                         title={`${row.label} · ${durationLabel} · ${row.caption}`}
                       >
                         {showDurationInside ? (
-                          <span className={`truncate text-label font-medium ${timelineInsideTextColor(row.kind)}`}>
+                          <span className={`truncate text-label font-medium ${timelineInsideTextColor(row.event)}`}>
                             {durationLabel}
                           </span>
                         ) : null}
@@ -1092,6 +1205,8 @@ function TimelineWaterfall({
         <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-label text-muted-foreground">
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-amber-500" />model fallback</span>
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-red-500" />model error</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500" />embedding</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-500" />worker</span>
         </div>
@@ -1140,11 +1255,20 @@ function ModelCallSelector({
           label="Model"
           value={[selectedEvent.provider, selectedEvent.model].filter(Boolean).join(" / ") || "—"}
         />
+        <OperationalLabelValueRow label="Route" value={[selectedEvent.routeSource, selectedEvent.transport].filter(Boolean).join(" / ") || "—"} />
+        <OperationalLabelValueRow label="Route purpose" value={traceEventRoutePurpose(selectedEvent) ?? "—"} />
+        <OperationalLabelValueRow label="Status" value={traceEventStatusLabel(selectedEvent) ?? "—"} />
+        <OperationalLabelValueRow label="Attempt" value={selectedEvent.attempt ? String(selectedEvent.attempt) : "—"} />
+        <OperationalLabelValueRow label="Task" value={selectedEvent.taskKind ?? selectedEvent.task ?? "—"} />
+        <OperationalLabelValueRow label="Max tokens" value={traceEventMaxTokens(selectedEvent)?.toLocaleString() ?? "—"} />
         <OperationalLabelValueRow label="Time" value={formatDuration(selectedEvent.durationMs)} />
         <OperationalLabelValueRow
           label="Tokens"
           value={formatTokens(selectedEvent.inputTokens, selectedEvent.outputTokens)}
         />
+        {selectedEvent.error ? (
+          <OperationalLabelValueRow label="Error" value={selectedEvent.error} />
+        ) : null}
       </OperationalLabelValueList>
     </div>
   );
@@ -1153,6 +1277,8 @@ function ModelCallSelector({
 function modelCallSelectLabel(event: TraceEvent) {
   return [
     eventTitle(event),
+    traceEventAttemptLabel(event),
+    traceEventStatusLabel(event),
     formatDuration(event.durationMs),
     formatCompactTokens(event.inputTokens, event.outputTokens) !== "—"
       ? formatCompactTokens(event.inputTokens, event.outputTokens)
@@ -1422,7 +1548,12 @@ export default function OperatorExtractionsPage() {
                   {selected.error ? <OperationalLabelValueRow label="Error" value={<span className="text-destructive">{selected.error}</span>} /> : null}
                 </OperationalLabelValueList>
                 {!selectedIsRunning ? (
-                  <OperationalProfileSummary policy={detail?.policy} />
+                  <OperationalProfileSummary
+                    policy={detail?.policy}
+                    policyId={selectedPolicyId}
+                    fileUrl={detail?.fileUrl ?? undefined}
+                    allowOperatorSourceAccess
+                  />
                 ) : null}
               </div>
             </TabsContent>
@@ -1433,12 +1564,11 @@ export default function OperatorExtractionsPage() {
                   Extraction is running. Extracted policy data will appear after this run completes.
                 </div>
               ) : detail?.policy ? (
-                <ExtractionCards
+                <OperationalProfileSummary
+                  policy={detail.policy}
                   policyId={selected.policyId as Id<"policies">}
-                  policyDocument={detail.policy as ExtractionCardsPolicyDocument}
                   fileUrl={detail.fileUrl ?? undefined}
                   allowOperatorSourceAccess
-                  sourceHierarchyOnly
                 />
               ) : (
                 <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">

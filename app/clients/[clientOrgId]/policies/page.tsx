@@ -29,6 +29,7 @@ import {
   showPolicyExtractionQueuedToast,
   showPolicyExtractionReadyToast,
 } from "@/components/shared/extraction-banner";
+import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 
 type BrokerPolicyRow = {
   _id: Id<"policies">;
@@ -124,6 +125,9 @@ export default function ClientPoliciesPage() {
   );
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
+  const checkDuplicateUploadByHash = useMutation(
+    api.policies.checkDuplicateUploadByHash,
+  );
   const createBrokerUpload = useMutation(api.policies.createBrokerUpload);
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
@@ -178,27 +182,36 @@ export default function ClientPoliciesPage() {
       if (!clientOrgId || files.length === 0) return;
       setUploading(true);
       try {
+        const orgId = clientOrgId as Id<"organizations">;
+        const candidates = await preparePolicyUploadCandidates(
+          files,
+          (fileSha256) => checkDuplicateUploadByHash({ orgId, fileSha256 }),
+        );
+        if (!candidates) return;
+
         const storageIds: string[] = [];
-        for (let i = 0; i < files.length; i++) {
-          toast.info(`Uploading ${i + 1} of ${files.length}…`);
-          storageIds.push(await uploadStorage(files[i]));
+        for (let i = 0; i < candidates.length; i++) {
+          toast.info(`Uploading ${i + 1} of ${candidates.length}…`);
+          storageIds.push(await uploadStorage(candidates[i].file));
         }
 
         if (uploadMode === "separate") {
           for (let i = 0; i < storageIds.length; i++) {
             const policyId = (await createBrokerUpload({
-              clientOrgId: clientOrgId as Id<"organizations">,
+              clientOrgId: orgId,
               fileId: storageIds[i] as Id<"_storage">,
-              fileName: files[i].name,
+              fileName: candidates[i].file.name,
+              fileSha256: candidates[i].fileSha256,
+              uploadFileSha256s: [candidates[i].fileSha256],
               documentType: "policy",
             })) as Id<"policies">;
             showPolicyExtractionQueuedToast({
               policyId,
               documentType: "policy",
-              fileName: files[i].name,
+              fileName: candidates[i].file.name,
             });
             pendingExtractionToastsRef.current[policyId] = {
-              fileName: files[i].name,
+              fileName: candidates[i].file.name,
             };
             resolvePendingExtractionToasts(
               policies as BrokerPolicyRow[] | undefined,
@@ -206,7 +219,8 @@ export default function ClientPoliciesPage() {
 
             const result = await extractFromUpload({
               fileId: storageIds[i] as Id<"_storage">,
-              fileName: files[i].name,
+              fileName: candidates[i].file.name,
+              fileSha256: candidates[i].fileSha256,
               policyId,
             });
             if (
@@ -219,16 +233,19 @@ export default function ClientPoliciesPage() {
             }
           }
         } else {
+          const uploadFileSha256s = candidates.map((candidate) => candidate.fileSha256);
           const policyId = (await createBrokerUpload({
-            clientOrgId: clientOrgId as Id<"organizations">,
+            clientOrgId: orgId,
             fileId: storageIds[0] as Id<"_storage">,
-            fileName: files[0].name,
+            fileName: candidates[0].file.name,
+            fileSha256: candidates[0].fileSha256,
+            uploadFileSha256s,
             documentType: "policy",
           })) as Id<"policies">;
           const displayFileName =
-            files.length > 1
-              ? `${files[0].name.replace(/\.pdf$/i, "")} + ${files.length - 1} more.pdf`
-              : files[0].name;
+            candidates.length > 1
+              ? `${candidates[0].file.name.replace(/\.pdf$/i, "")} + ${candidates.length - 1} more.pdf`
+              : candidates[0].file.name;
           showPolicyExtractionQueuedToast({
             policyId,
             documentType: "policy",
@@ -241,14 +258,18 @@ export default function ClientPoliciesPage() {
             policies as BrokerPolicyRow[] | undefined,
           );
 
-          if (files.length > 1) toast.info(`Merging ${files.length} files…`);
+          if (candidates.length > 1) {
+            toast.info(`Merging ${candidates.length} files…`);
+          }
           const result = await extractFromUpload({
             fileId: storageIds[0] as Id<"_storage">,
-            fileName: files[0].name,
+            fileName: candidates[0].file.name,
+            fileSha256: candidates[0].fileSha256,
             policyId,
             additionalFiles: storageIds.slice(1).map((fileId, i) => ({
               fileId: fileId as Id<"_storage">,
-              fileName: files[i + 1].name,
+              fileName: candidates[i + 1].file.name,
+              fileSha256: candidates[i + 1].fileSha256,
             })),
           });
           if (
@@ -269,6 +290,7 @@ export default function ClientPoliciesPage() {
     },
     [
       clientOrgId,
+      checkDuplicateUploadByHash,
       uploadStorage,
       createBrokerUpload,
       extractFromUpload,

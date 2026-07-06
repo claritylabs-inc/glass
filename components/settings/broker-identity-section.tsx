@@ -40,10 +40,9 @@ export type BrokerIdentity = {
   contactName?: string;
   contactEmail?: string;
   contactPhone?: string;
-  source?: "assignment" | "broker_default" | "manual" | "none";
+  source?: "assignment" | "none";
   connected: boolean;
-  canEditConnected: boolean;
-  canEditManual: boolean;
+  canEdit: boolean;
   selectedContactUserId?: Id<"users">;
   overrides?: {
     contactName?: string;
@@ -58,27 +57,18 @@ export type BrokerIdentity = {
   }>;
 };
 
-type BrokerIdentitySaveArgs =
-  | {
-      mode: "manual";
-      orgId: Id<"organizations">;
-      brokerCompanyName: string;
-      brokerContactName: string;
-      brokerContactEmail: string;
-      brokerContactPhone: string;
-    }
-  | {
-      mode: "connected";
-      orgId: Id<"organizations">;
-      producerId: Id<"users">;
-      overrideName: string;
-      overrideEmail: string;
-      overridePhone: string;
-    };
+type BrokerIdentitySaveArgs = {
+  orgId: Id<"organizations">;
+  brokerCompanyName: string;
+  producerId?: Id<"users">;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+};
 
 function identityKey(identity: BrokerIdentity) {
   return [
-    identity.connected ? "connected" : "manual",
+    identity.connected ? "connected" : "none",
     identity.brokerCompanyName ?? "",
     identity.contactName ?? "",
     identity.contactEmail ?? "",
@@ -138,55 +128,31 @@ function BrokerIdentityForm({
   identity: BrokerIdentity;
   surface: "card" | "plain";
 }) {
-  const updateManual = useMutation(api.orgs.updateStandaloneBrokerIdentity);
-  const updateConnected = useMutation(
-    api.orgs.updateConnectedClientBrokerIdentity,
-  );
+  const updateBrokerAssignment = useMutation(api.orgs.updateClientBrokerAssignment);
   const [brokerCompanyName, setBrokerCompanyName] = useState(
     identity.brokerCompanyName ?? "",
-  );
-  const [brokerContactName, setBrokerContactName] = useState(
-    identity.contactName ?? "",
-  );
-  const [brokerContactEmail, setBrokerContactEmail] = useState(
-    identity.contactEmail ?? "",
-  );
-  const [brokerContactPhone, setBrokerContactPhone] = useState(
-    identity.contactPhone ?? "",
   );
   const [producerId, setProducerId] = useState<Id<"users"> | "">(
     identity.selectedContactUserId ?? "",
   );
-  const [overrideName, setOverrideName] = useState(
-    identity.overrides?.contactName ?? "",
+  const [contactName, setContactName] = useState(
+    identity.overrides?.contactName ?? identity.contactName ?? "",
   );
-  const [overrideEmail, setOverrideEmail] = useState(
-    identity.overrides?.contactEmail ?? "",
+  const [contactEmail, setContactEmail] = useState(
+    identity.overrides?.contactEmail ?? identity.contactEmail ?? "",
   );
-  const [overridePhone, setOverridePhone] = useState(
-    identity.overrides?.contactPhone ?? "",
+  const [contactPhone, setContactPhone] = useState(
+    identity.overrides?.contactPhone ?? identity.contactPhone ?? "",
   );
   const currentState = useMemo(
     () => ({
       brokerCompanyName,
-      brokerContactName,
-      brokerContactEmail,
-      brokerContactPhone,
       producerId,
-      overrideName,
-      overrideEmail,
-      overridePhone,
+      contactName,
+      contactEmail,
+      contactPhone,
     }),
-    [
-      brokerCompanyName,
-      brokerContactName,
-      brokerContactEmail,
-      brokerContactPhone,
-      producerId,
-      overrideName,
-      overrideEmail,
-      overridePhone,
-    ],
+    [brokerCompanyName, producerId, contactName, contactEmail, contactPhone],
   );
   const currentStateKey = useMemo(
     () => JSON.stringify(currentState),
@@ -196,20 +162,12 @@ function BrokerIdentityForm({
     () => identity.brokerMembers.find((member) => member.userId === producerId),
     [identity.brokerMembers, producerId],
   );
-  const manualPhoneInvalid =
-    identity.canEditManual &&
-    brokerContactPhone.trim().length > 0 &&
-    !isValidPhoneNumber(brokerContactPhone);
-  const overridePhoneInvalid =
-    identity.canEditConnected &&
-    overridePhone.trim().length > 0 &&
-    !isValidPhoneNumber(overridePhone);
-  const phoneInvalid = manualPhoneInvalid || overridePhoneInvalid;
-  const manualEmailInvalid =
-    identity.canEditManual && optionalEmailInvalid(brokerContactEmail);
-  const overrideEmailInvalid =
-    identity.canEditConnected && optionalEmailInvalid(overrideEmail);
-  const emailInvalid = manualEmailInvalid || overrideEmailInvalid;
+  const phoneInvalid =
+    identity.canEdit &&
+    contactPhone.trim().length > 0 &&
+    !isValidPhoneNumber(contactPhone);
+  const emailInvalid =
+    identity.canEdit && optionalEmailInvalid(contactEmail);
   const twoColumnGridClass =
     surface === "plain" ? "grid gap-4" : "grid gap-4 sm:grid-cols-2";
   const threeColumnGridClass =
@@ -217,53 +175,33 @@ function BrokerIdentityForm({
 
   const saveBrokerIdentity = useCallback(
     async (args: BrokerIdentitySaveArgs) => {
-      if (args.mode === "connected") {
-        await updateConnected({
-          clientOrgId: args.orgId,
-          producerId: args.producerId,
-          contactNameOverride: args.overrideName,
-          contactEmailOverride: args.overrideEmail,
-          contactPhoneOverride: args.overridePhone,
-        });
-        return;
-      }
-
-      await updateManual({
-        orgId: args.orgId,
+      await updateBrokerAssignment({
+        clientOrgId: args.orgId,
         brokerCompanyName: args.brokerCompanyName,
-        brokerContactName: args.brokerContactName,
-        brokerContactEmail: args.brokerContactEmail,
-        brokerContactPhone: args.brokerContactPhone,
+        producerId: args.producerId,
+        contactName: args.contactName,
+        contactEmail: args.contactEmail,
+        contactPhone: args.contactPhone,
       });
     },
-    [updateConnected, updateManual],
+    [updateBrokerAssignment],
   );
 
-  const saveArgs: BrokerIdentitySaveArgs = identity.canEditConnected
-    ? {
-        mode: "connected",
-        orgId,
-        producerId: producerId as Id<"users">,
-        overrideName,
-        overrideEmail,
-        overridePhone,
-      }
-    : {
-        mode: "manual",
-        orgId,
-        brokerCompanyName,
-        brokerContactName,
-        brokerContactEmail,
-        brokerContactPhone,
-      };
+  const saveArgs: BrokerIdentitySaveArgs = {
+    orgId,
+    brokerCompanyName,
+    producerId: producerId || undefined,
+    contactName,
+    contactEmail,
+    contactPhone,
+  };
 
   const autoSave = useLocalFirstAutoSave({
     mutationName: `brokerIdentity.update.${orgId}`,
     args: saveArgs,
     valueKey: currentStateKey,
     canSave:
-      (identity.canEditManual || identity.canEditConnected) &&
-      (!identity.canEditConnected || !!producerId) &&
+      identity.canEdit &&
       !phoneInvalid &&
       !emailInvalid,
     applyLocal: (store, args) => {
@@ -274,24 +212,19 @@ function BrokerIdentityForm({
       const current = store.getCollection(collection, argsKey)?.[0]?.value;
       if (!current) return;
 
-      const next =
-        args.mode === "connected"
-          ? {
-              ...current,
-              selectedContactUserId: args.producerId,
-              overrides: {
-                contactName: args.overrideName,
-                contactEmail: args.overrideEmail,
-                contactPhone: args.overridePhone,
-              },
-            }
-          : {
-              ...current,
-              brokerCompanyName: args.brokerCompanyName,
-              contactName: args.brokerContactName,
-              contactEmail: args.brokerContactEmail,
-              contactPhone: args.brokerContactPhone,
-            };
+      const next = {
+        ...current,
+        brokerCompanyName: args.brokerCompanyName,
+        selectedContactUserId: args.producerId,
+        contactName: args.contactName,
+        contactEmail: args.contactEmail,
+        contactPhone: args.contactPhone,
+        overrides: {
+          contactName: args.contactName,
+          contactEmail: args.contactEmail,
+          contactPhone: args.contactPhone,
+        },
+      };
 
       void store.upsertCollection(collection, argsKey, [
         {
@@ -306,9 +239,7 @@ function BrokerIdentityForm({
       toast.error(
         error instanceof Error
           ? error.message
-          : identity.canEditConnected
-            ? "Failed to save broker contact"
-            : "Failed to save broker information",
+          : "Failed to save broker contact",
       ),
   });
 
@@ -327,191 +258,149 @@ function BrokerIdentityForm({
       <div
         className={surface === "card" ? "space-y-4 px-5 py-5" : "space-y-4"}
       >
-        <div className={twoColumnGridClass}>
-          <div>
-            <label className="mb-1.5 block text-label font-medium text-muted-foreground">
-              Broker company
-            </label>
-            <input
-              value={
-                identity.connected
-                  ? (identity.brokerCompanyName ?? "")
-                  : brokerCompanyName
-              }
-              onChange={(event) => setBrokerCompanyName(event.target.value)}
-              disabled={identity.connected || !identity.canEditManual}
-              placeholder="Broker company"
-              className={INPUT_CLASSES}
-            />
-          </div>
-          {identity.canEditConnected ? (
-            <div>
-              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
-                Broker contact
-              </label>
-              <Select
-                value={producerId || NO_PRODUCER_ID}
-                onValueChange={(value) =>
-                  setProducerId(
-                    value === NO_PRODUCER_ID ? "" : (value as Id<"users">),
-                  )
-                }
-              >
-                <SelectTrigger className="w-full border-foreground/8 bg-popover">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_PRODUCER_ID}>
-                    Select a broker user
-                  </SelectItem>
-                  {identity.brokerMembers.map((member) => (
-                    <SelectItem key={member.userId} value={member.userId}>
-                      {member.name ?? member.email ?? "Team member"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : (
-            <div>
-              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
-                Contact name
-              </label>
-              <input
-                value={
-                  identity.connected
-                    ? (identity.contactName ?? "")
-                    : brokerContactName
-                }
-                onChange={(event) => setBrokerContactName(event.target.value)}
-                disabled={identity.connected || !identity.canEditManual}
-                placeholder="Contact name"
-                className={INPUT_CLASSES}
-              />
-            </div>
-          )}
-        </div>
-
-        {identity.canEditConnected ? (
-          <div className={threeColumnGridClass}>
-            <div>
-              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
-                Name override
-              </label>
-              <input
-                value={overrideName}
-                onChange={(event) => setOverrideName(event.target.value)}
-                placeholder={selectedMember?.name ?? "Use selected user's name"}
-                className={INPUT_CLASSES}
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
-                Email override
-              </label>
-              <input
-                value={overrideEmail}
-                onChange={(event) => setOverrideEmail(event.target.value)}
-                placeholder={
-                  selectedMember?.email ?? "Use selected user's email"
-                }
-                type="email"
-                className={INPUT_CLASSES}
-              />
-              <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
-                {overrideEmailInvalid ? (
-                  <span className="text-red-500/80">
-                    Enter a valid email address.
-                  </span>
-                ) : null}
-              </p>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
-                Phone override
-              </label>
-              <PhoneInput
-                value={overridePhone || undefined}
-                onChange={(value) => setOverridePhone(value ?? "")}
-                defaultCountry="US"
-                placeholder={
-                  selectedMember?.phone ?? "Use selected user's phone"
-                }
-              />
-              <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
-                {overridePhoneInvalid ? (
-                  <span className="text-red-500/80">
-                    Enter a valid phone number with country code.
-                  </span>
-                ) : (
-                  "Used when starting iMessage conversations with this broker contact."
-                )}
-              </p>
-            </div>
-          </div>
+        {!identity.connected &&
+        identity.source !== "assignment" &&
+        !identity.canEdit ? (
+          <p className="text-base text-muted-foreground">
+            No broker is assigned to this client.
+          </p>
         ) : (
-          <div className={twoColumnGridClass}>
-            <div>
-              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
-                Contact email
-              </label>
-              <input
-                value={
-                  identity.connected
-                    ? (identity.contactEmail ?? "")
-                    : brokerContactEmail
-                }
-                onChange={(event) => setBrokerContactEmail(event.target.value)}
-                disabled={identity.connected || !identity.canEditManual}
-                placeholder="broker@example.com"
-                type="email"
-                className={INPUT_CLASSES}
-              />
-              <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
-                {manualEmailInvalid ? (
-                  <span className="text-red-500/80">
-                    Enter a valid email address.
-                  </span>
-                ) : null}
-              </p>
+          <>
+            <div
+              className={identity.connected ? twoColumnGridClass : "grid gap-4"}
+            >
+              <div>
+                <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+                  Broker company
+                </label>
+                <input
+                  value={
+                    identity.connected
+                      ? identity.brokerCompanyName ?? ""
+                      : brokerCompanyName
+                  }
+                  onChange={(event) => setBrokerCompanyName(event.target.value)}
+                  disabled={!identity.canEdit || identity.connected}
+                  placeholder="Broker company"
+                  className={INPUT_CLASSES}
+                />
+              </div>
+              {identity.connected && identity.canEdit ? (
+                <div>
+                  <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+                    Broker user
+                  </label>
+                  <Select
+                    value={producerId || NO_PRODUCER_ID}
+                    onValueChange={(value) =>
+                      setProducerId(
+                        value === NO_PRODUCER_ID
+                          ? ""
+                          : (value as Id<"users">),
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-full border-foreground/8 bg-popover">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_PRODUCER_ID}>
+                        No specific user
+                      </SelectItem>
+                      {identity.brokerMembers.map((member) => (
+                        <SelectItem key={member.userId} value={member.userId}>
+                          {member.name ?? member.email ?? "Team member"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : identity.connected ? (
+                <div>
+                  <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+                    Broker contact
+                  </label>
+                  <input
+                    value={identity.contactName ?? ""}
+                    disabled
+                    placeholder="Contact name"
+                    className={INPUT_CLASSES}
+                  />
+                </div>
+              ) : null}
             </div>
-            <div>
-              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
-                Contact phone
-              </label>
-              <PhoneInput
-                value={
-                  (identity.connected
-                    ? identity.contactPhone
-                    : brokerContactPhone) || undefined
-                }
-                onChange={(value) => setBrokerContactPhone(value ?? "")}
-                defaultCountry="US"
-                disabled={identity.connected || !identity.canEditManual}
-                placeholder="(555) 555-5555"
-              />
-              <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
-                {manualPhoneInvalid ? (
-                  <span className="text-red-500/80">
-                    Enter a valid phone number with country code.
-                  </span>
-                ) : (
-                  "Used when starting iMessage conversations with this broker contact."
-                )}
-              </p>
+
+            <div className={threeColumnGridClass}>
+              <div>
+                <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+                  Contact name
+                </label>
+                <input
+                  value={contactName}
+                  onChange={(event) => setContactName(event.target.value)}
+                  placeholder={selectedMember?.name ?? "Contact name"}
+                  disabled={!identity.canEdit}
+                  className={INPUT_CLASSES}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+                  Contact email
+                </label>
+                <input
+                  value={contactEmail}
+                  onChange={(event) => setContactEmail(event.target.value)}
+                  placeholder={selectedMember?.email ?? "broker@example.com"}
+                  disabled={!identity.canEdit}
+                  type="email"
+                  className={INPUT_CLASSES}
+                />
+                <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
+                  {emailInvalid ? (
+                    <span className="text-red-500/80">
+                      Enter a valid email address.
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+                  Contact phone
+                </label>
+                <PhoneInput
+                  value={contactPhone || undefined}
+                  onChange={(value) => setContactPhone(value ?? "")}
+                  defaultCountry="US"
+                  disabled={!identity.canEdit}
+                  placeholder={selectedMember?.phone ?? "(555) 555-5555"}
+                />
+                <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
+                  {phoneInvalid ? (
+                    <span className="text-red-500/80">
+                      Enter a valid phone number with country code.
+                    </span>
+                  ) : (
+                    "Used when starting iMessage conversations with this broker contact."
+                  )}
+                </p>
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         <div className="flex min-h-5 items-center justify-between gap-3">
-          {identity.connected && !identity.canEditConnected ? (
+          {identity.connected && !identity.canEdit ? (
             <p className="text-base text-muted-foreground">
               This broker information is managed by your broker.
+            </p>
+          ) : !identity.connected && !identity.canEdit && identity.source === "assignment" ? (
+            <p className="text-base text-muted-foreground">
+              Only organization admins can edit this broker contact.
             </p>
           ) : (
             <span />
           )}
-          {identity.canEditManual || identity.canEditConnected ? (
+          {identity.canEdit ? (
             <span className="flex items-center gap-1.5 text-label text-muted-foreground">
               {saving ? (
                 <>

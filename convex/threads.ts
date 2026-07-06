@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { query, mutation, internalQuery, internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireOrgAccess, getOrgAccess } from "./lib/orgAuth";
+import { requireCurrentOrgAccess as requireOrgAccess, getCurrentOrgAccess as getOrgAccess } from "./lib/access";
 import { getBrokerAccessToClientForQuery } from "./lib/access";
 import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
 import { getActiveOperatorImpersonation, writeOperatorAudit } from "./lib/operatorIdentity";

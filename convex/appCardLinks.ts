@@ -9,7 +9,6 @@ import { getClientPortalUrl } from "./lib/domains";
 const appCardKindValidator = v.union(
   v.literal("policy"),
   v.literal("certificate"),
-  v.literal("certificate_request"),
   v.literal("policy_change"),
 );
 
@@ -53,7 +52,6 @@ function formatCoverage(coverage: Doc<"policies">["coverages"][number]) {
     name: coverage.name,
     limit: coverage.limit,
     deductible: coverage.deductible,
-    origin: coverage.coverageOrigin,
   };
 }
 
@@ -114,8 +112,6 @@ async function buildCertificateView(
     fileName: string;
     certificateHolder?: string;
     certificateHolderName?: string;
-    authorityType?: "non_binding" | "certified";
-    certificationStatus?: "not_applicable" | "pending" | "certified" | "declined";
     fileUrl?: string | null;
     versionNumber?: number;
     createdAt: number;
@@ -134,8 +130,6 @@ async function buildCertificateView(
       fileName: legacyCertificate.fileName,
       certificateHolder: legacyCertificate.certificateHolder,
       certificateHolderName: legacyCertificate.certificateHolderName,
-      authorityType: legacyCertificate.authorityType,
-      certificationStatus: legacyCertificate.certificationStatus,
       fileUrl: await ctx.storage.getUrl(legacyCertificate.fileId),
       createdAt: legacyCertificate.createdAt,
     };
@@ -161,8 +155,6 @@ async function buildCertificateView(
       fileName: certificateVersion.fileName ?? "certificate-of-insurance.pdf",
       certificateHolder: certificateVersion.certificateHolder,
       certificateHolderName: certificateVersion.certificateHolderName,
-      authorityType: certificateVersion.authorityType,
-      certificationStatus: certificateVersion.certificationStatus,
       fileUrl: certificateVersion.fileId
         ? await ctx.storage.getUrl(certificateVersion.fileId)
         : null,
@@ -187,8 +179,6 @@ async function buildCertificateView(
       holderName,
       fileName: certificate.fileName,
       fileUrl: certificate.fileUrl ?? null,
-      authorityType: certificate.authorityType,
-      certificationStatus: certificate.certificationStatus,
       versionNumber: certificate.versionNumber,
       policyCertificateId: policyCertificate?._id,
       createdAt: certificate.createdAt,
@@ -197,41 +187,15 @@ async function buildCertificateView(
   };
 }
 
-async function buildCertificateRequestView(
-  ctx: QueryCtx,
-  link: Doc<"appCardAccessLinks">,
-) {
-  if (!link.certificateRequestId) return null;
-  const request = await ctx.db.get(link.certificateRequestId);
-  if (!request || String(request.orgId) !== String(link.orgId)) return null;
-  const policy = await getPolicyForLink(ctx, request.policyId, link.orgId);
-  if (!policy) return null;
-  const partner = await ctx.db.get(request.partnerOrgId);
-  return {
-    title: `COI approval request for ${request.holderName}`,
-    subtitle: policyTitle(policy),
-    certificateRequest: {
-      id: request._id,
-      holderName: request.holderName,
-      status: request.status,
-      partnerName: partner?.name,
-      createdAt: request.createdAt,
-      updatedAt: request.updatedAt,
-    },
-    policy: publicPolicy(policy),
-  };
-}
-
 async function resolveOrgIdForCreate(
   ctx: MutationCtx,
   args: {
-    kind: "policy" | "certificate" | "certificate_request" | "policy_change";
+    kind: "policy" | "certificate" | "policy_change";
     orgId?: Id<"organizations">;
     policyId?: Id<"policies">;
     certificateId?: Id<"certificates">;
     policyCertificateId?: Id<"policyCertificates">;
     certificateVersionId?: Id<"certificateVersions">;
-    certificateRequestId?: Id<"certificateRequests">;
     policyChangeCaseId?: Id<"policyChangeCases">;
   },
 ) {
@@ -259,14 +223,6 @@ async function resolveOrgIdForCreate(
     }
     throw new Error("certificateId, policyCertificateId, or certificateVersionId is required.");
   }
-  if (args.kind === "certificate_request") {
-    if (!args.certificateRequestId) {
-      throw new Error("certificateRequestId is required for certificate request app cards.");
-    }
-    const request = await ctx.db.get(args.certificateRequestId);
-    if (!request) throw new Error("Certificate request not found.");
-    return request.orgId;
-  }
   if (!args.policyChangeCaseId) {
     throw new Error("policyChangeCaseId is required for policy change app cards.");
   }
@@ -283,7 +239,6 @@ export const createInternal = internalMutation({
     certificateId: v.optional(v.id("certificates")),
     policyCertificateId: v.optional(v.id("policyCertificates")),
     certificateVersionId: v.optional(v.id("certificateVersions")),
-    certificateRequestId: v.optional(v.id("certificateRequests")),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     label: v.optional(v.string()),
     sourceThreadId: v.optional(v.id("threads")),
@@ -306,7 +261,6 @@ export const createInternal = internalMutation({
       certificateId: args.certificateId,
       policyCertificateId: args.policyCertificateId,
       certificateVersionId: args.certificateVersionId,
-      certificateRequestId: args.certificateRequestId,
       policyChangeCaseId: args.policyChangeCaseId,
       label: args.label,
       sourceThreadId: args.sourceThreadId,
@@ -357,17 +311,6 @@ export const getByToken = query({
         orgName: org.name,
         label: link.label,
         ...certificateView,
-      };
-    }
-
-    if (link.kind === "certificate_request") {
-      const requestView = await buildCertificateRequestView(ctx, link);
-      if (!requestView) return null;
-      return {
-        kind: link.kind,
-        orgName: org.name,
-        label: link.label,
-        ...requestView,
       };
     }
 

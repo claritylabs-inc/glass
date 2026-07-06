@@ -1605,7 +1605,7 @@ function inlineContentForDisplay(nodes: DocumentOutlineNode[]) {
 
 function shouldRenderTextChild(parent: DocumentOutlineNode) {
   const kind = nodeKind(parent);
-  return kind === undefined || !["document", "page_group", "form", "table"].includes(kind);
+  return kind === undefined || !["document", "table"].includes(kind);
 }
 
 function sourceSpanIdsForTableRow(
@@ -2536,7 +2536,6 @@ export interface ExtractionPanelProps {
   sourceSpansOverride?: SourceSpanDoc[];
   fileUrl?: string;
   allowOperatorSourceAccess?: boolean;
-  sourceHierarchyOnly?: boolean;
 }
 
 /** Renders extraction details as separate, flat cards — one per data type */
@@ -2547,7 +2546,6 @@ export function ExtractionCards({
   sourceSpansOverride,
   fileUrl,
   allowOperatorSourceAccess,
-  sourceHierarchyOnly,
 }: ExtractionPanelProps) {
   const allSourceSpanIds = useMemo(
     () => collectSourceSpanIds(policyDocument),
@@ -2615,7 +2613,7 @@ export function ExtractionCards({
       value: `${policyDocument.effectiveDate ?? "—"} – ${policyDocument.expirationDate ?? "—"}`,
     },
     policyDocument?.policyTypes?.length && {
-      label: "Coverage types",
+      label: "Policy types",
       value: policyDocument.policyTypes
         .map(
           (type) =>
@@ -2671,24 +2669,6 @@ export function ExtractionCards({
   if (!hasAnyData) return null;
   if (!policyDocument) return null;
 
-  if (sourceHierarchyOnly) {
-    return (
-      <div className="space-y-4">
-        {policyId || documentOutline.length > 0 ? (
-          <SourceBackedBreakdown
-            policyId={policyId}
-            policyDocument={policyDocument}
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            allowOperatorSourceAccess={allowOperatorSourceAccess}
-          />
-        ) : (
-          <SourceNativeBreakdownUnavailable />
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       {topLevelRows.length > 0 && (
@@ -2718,8 +2698,8 @@ export function ExtractionCards({
           title="Coverages"
           items={coverages}
           getTitle={(coverage) =>
-            coverage.coverageSourceContext ??
             coverage.name ??
+            coverage.coverageSourceContext ??
             "Unnamed coverage"
           }
           getTrailing={(coverage) => coverage.limit}

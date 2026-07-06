@@ -7,7 +7,7 @@ import {
   internalMutation,
 } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import {
   normalizeRequestedScopes,
   parseScopesFromToken,

@@ -4,7 +4,7 @@ import { createAccount, getAuthUserId } from "@convex-dev/auth/server";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
@@ -15,6 +15,10 @@ import {
   normalizeAvailableUserPhone,
   normalizeUserPhone,
 } from "./lib/userPhone";
+import {
+  assertFeatureFlagAllowedForOrg,
+  setFeatureFlagPatch,
+} from "./lib/featureFlags";
 import {
   assertCustomerUser,
   isBootstrapOperatorEmail,
@@ -35,6 +39,15 @@ const extractionTraceStatusValidator = v.union(
 const internalApi = internal as any;
 const OPERATOR_TRACE_EVENT_LIMIT = 500;
 const CANCELLED_BY_USER = "Cancelled by user";
+const REMOVED_PROGRAM_ADMIN_TABLES = [
+  "partnerPrograms",
+  "partnerProgramEmbeddings",
+  "coiTemplates",
+  "standingAuthorizations",
+  "certificateRequests",
+  "certificateApprovals",
+] as const;
+const REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE = 500;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -51,6 +64,12 @@ function normalizeHandle(value: string | undefined) {
   const withoutDomain = raw.includes("@") ? raw.split("@")[0] : raw;
   const normalized = withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
   return normalized || undefined;
+}
+
+function normalizeWebsiteUrl(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 function validateAgentHandle(handle: string | undefined) {
@@ -80,6 +99,94 @@ function normalizeOptionalContactPhone(value: string | undefined) {
     throw new Error("Enter a valid contact phone number");
   }
   return parsed.number;
+}
+
+function isRemovedProgramAdminOrg(org: Doc<"organizations">) {
+  const raw = org as Record<string, unknown>;
+  return (
+    raw.type === "program_admin" ||
+    raw.type === "mga" ||
+    raw.partnerType === "program_admin" ||
+    raw.partnerType === "mga" ||
+    raw.partnerKind === "program_admin" ||
+    raw.partnerKind === "mga"
+  );
+}
+
+async function deleteUnsafeTableBatch(
+  ctx: MutationCtx,
+  table: string,
+): Promise<{ deleted: number; skipped?: boolean; error?: string }> {
+  try {
+    const rows = await ctx.db
+      .query(table as TableNames)
+      .take(REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE);
+    for (const row of rows) await ctx.db.delete(row._id);
+    return { deleted: rows.length };
+  } catch (error) {
+    return {
+      deleted: 0,
+      skipped: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function deleteRemovedProgramAdminOrgData(
+  ctx: MutationCtx,
+  orgId: Id<"organizations">,
+) {
+  let deleted = 0;
+  const memberships = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .collect();
+  const invitations = await ctx.db
+    .query("orgInvitations")
+    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .collect();
+  for (const row of [...memberships, ...invitations]) {
+    await ctx.db.delete(row._id);
+    deleted += 1;
+  }
+
+  const brokerAssignments = await ctx.db
+    .query("brokerClientAssignments")
+    .withIndex("by_orgId_clientOrgId", (q) => q.eq("orgId", orgId))
+    .collect();
+  const clientAssignments = await ctx.db
+    .query("brokerClientAssignments")
+    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", orgId))
+    .collect();
+  for (const assignment of [...brokerAssignments, ...clientAssignments]) {
+    await ctx.db.delete(assignment._id);
+    deleted += 1;
+  }
+
+  const clientRelationships = await ctx.db
+    .query("connectedOrgRelationships")
+    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", orgId))
+    .collect();
+  const vendorRelationships = await ctx.db
+    .query("connectedOrgRelationships")
+    .withIndex("by_vendorOrgId", (q) => q.eq("vendorOrgId", orgId))
+    .collect();
+  for (const relationship of [...clientRelationships, ...vendorRelationships]) {
+    await ctx.db.delete(relationship._id);
+    deleted += 1;
+  }
+
+  const clientInvitations = await ctx.db
+    .query("clientInvitations")
+    .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", orgId))
+    .collect();
+  for (const invitation of clientInvitations) {
+    await ctx.db.delete(invitation._id);
+    deleted += 1;
+  }
+
+  await ctx.db.delete(orgId);
+  return deleted + 1;
 }
 
 async function clearOperatorExtractionQueue(
@@ -143,6 +250,15 @@ function normalizeCoverageContextText(value: string) {
     .replace(/\s+/g, " ")
     .replace(/\s+[|/:-]+$/g, "")
     .trim();
+}
+
+function operatorCoverageName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const name = normalizeCoverageName(value);
+  if (!name) return undefined;
+  if (/^(?:limit of liability|deductible|retroactive date|aggregate|claim|proceeding|source)$/i.test(name)) return undefined;
+  if (/\$[\d,.]+/.test(name) && /\b(?:limit|liability|deductible|aggregate|claim|policy)\b/i.test(name)) return undefined;
+  return name;
 }
 
 function coverageSourceContext(
@@ -234,9 +350,7 @@ async function policyWithOperatorCoverageContext(
           entry?.node ?? undefined,
           entry?.children ?? [],
         );
-        const name = normalizeCoverageName(context) ?? normalizeCoverageName(
-          typeof coverage.name === "string" ? coverage.name : undefined,
-        );
+        const name = operatorCoverageName(coverage.name) ?? operatorCoverageName(context);
         return name ? { ...coverage, name } : coverage;
       }),
     },
@@ -425,6 +539,7 @@ async function listOperatorClientRows(ctx: QueryCtx) {
         primaryContactName: client.primaryContactName,
         primaryContactEmail: client.primaryContactEmail,
         primaryContactPhone: client.primaryContactPhone,
+        featureFlags: client.featureFlags,
         adminUserId: admin?._id,
         adminName: admin?.name,
         adminEmail: admin?.email,
@@ -450,38 +565,6 @@ export const listSoloClients = query({
   handler: async (ctx) => {
     await requireOperator(ctx);
     return await listOperatorClientRows(ctx);
-  },
-});
-
-export const listMGAs = query({
-  args: {},
-  handler: async (ctx) => {
-    await requireOperator(ctx);
-    const partners = await ctx.db
-      .query("organizations")
-      .withIndex("by_type", (q) => q.eq("type", "partner"))
-      .take(300);
-    const mgas = partners.filter((partner) => partner.partnerKind === "program_admin");
-    return await Promise.all(
-      mgas.map(async (mga) => {
-        const admin = await getOrgAdmin(ctx, mga._id);
-        const program = await ctx.db
-          .query("partnerPrograms")
-          .withIndex("by_partnerOrgId", (q) => q.eq("partnerOrgId", mga._id))
-          .first();
-        return {
-          _id: mga._id,
-          name: mga.name,
-          ...(await orgBrandFields(ctx, mga)),
-          programName: program?.name,
-          operatorStatus: mga.operatorStatus ?? "live",
-          onboardingComplete: mga.onboardingComplete,
-          adminName: admin?.name,
-          adminEmail: admin?.email,
-          createdAt: mga._creationTime,
-        };
-      }),
-    );
   },
 });
 
@@ -921,7 +1004,8 @@ export const createSoloClient = action({
     });
     if (!account.user) throw new Error("Could not create client admin");
 
-    return await ctx.runMutation(internalApi.operator.createSoloClientInternal, {
+    const website = normalizeWebsiteUrl(args.website);
+    const result = await ctx.runMutation(internalApi.operator.createSoloClientInternal, {
       operatorUserId: userId,
       adminUserId: account.user._id,
       adminEmail,
@@ -930,56 +1014,21 @@ export const createSoloClient = action({
       client: {
         name: args.name,
         brokerOrgId: args.brokerOrgId,
-        website: args.website,
+        website,
         agentHandle: args.agentHandle,
       },
     });
-  },
-});
-
-export const createMGA = action({
-  args: {
-    name: v.string(),
-    website: v.optional(v.string()),
-    programName: v.optional(v.string()),
-    adminEmail: v.string(),
-    adminName: v.optional(v.string()),
-  },
-  handler: async (ctx, args): Promise<{ mgaOrgId: Id<"organizations"> }> => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
-
-    const adminEmail = normalizeOperatorEmail(args.adminEmail);
-    if (!adminEmail || isBootstrapOperatorEmail(adminEmail)) {
-      throw new Error("MGA admin email must be a customer email");
+    if (website) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.extractCompanyInfo.extractCompanyInfoForOrgInternal,
+        {
+          orgId: result.clientOrgId,
+          url: website,
+        },
+      );
     }
-    const now = dayjs().valueOf();
-    const account = await createAccount(ctx, {
-      provider: "resend-otp",
-      account: { id: adminEmail },
-      profile: {
-        email: adminEmail,
-        name: args.adminName?.trim() || undefined,
-        accountKind: "customer",
-        emailVerificationTime: now,
-        onboardingComplete: true,
-      },
-      shouldLinkViaEmail: true,
-    });
-    if (!account.user) throw new Error("Could not create MGA admin");
-
-    return await ctx.runMutation(internalApi.operator.createMGAInternal, {
-      operatorUserId: userId,
-      adminUserId: account.user._id,
-      adminEmail,
-      adminName: args.adminName,
-      mga: {
-        name: args.name,
-        website: args.website,
-        programName: args.programName,
-      },
-    });
+    return result;
   },
 });
 
@@ -1021,6 +1070,30 @@ export const setSoloClientStatus = mutation({
       targetOrgId: args.clientOrgId,
       summary: `${client.name} changed from ${previous} to ${args.status}`,
       metadata: { previous, next: args.status },
+    });
+  },
+});
+
+export const setClientFeatureFlag = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    flagId: v.literal("connect_features"),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const client = await ctx.db.get(args.clientOrgId);
+    if (!client || client.type !== "client") throw new Error("Client not found");
+    assertFeatureFlagAllowedForOrg(args.flagId, client);
+    await ctx.db.patch(args.clientOrgId, {
+      featureFlags: setFeatureFlagPatch(client.featureFlags, args.flagId, args.enabled),
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: `Updated ${args.flagId} for ${client.name}`,
+      metadata: { flagId: args.flagId, enabled: args.enabled },
     });
   },
 });
@@ -1170,29 +1243,6 @@ export const updateBrokerSettings = mutation({
   },
 });
 
-export const setMGAStatus = mutation({
-  args: {
-    mgaOrgId: v.id("organizations"),
-    status: brokerStatusValidator,
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    const mga = await ctx.db.get(args.mgaOrgId);
-    if (!mga || mga.type !== "partner" || mga.partnerKind !== "program_admin") {
-      throw new Error("MGA not found");
-    }
-    const previous = mga.operatorStatus ?? "live";
-    await ctx.db.patch(args.mgaOrgId, { operatorStatus: args.status });
-    await writeOperatorAudit(ctx, {
-      operatorUserId: operator.userId,
-      type: "mga_status_changed",
-      targetOrgId: args.mgaOrgId,
-      summary: `${mga.name} changed from ${previous} to ${args.status}`,
-      metadata: { previous, next: args.status },
-    });
-  },
-});
-
 export const launchBroker = action({
   args: { brokerOrgId: v.id("organizations") },
   handler: async (ctx, args): Promise<{ loginUrl: string }> => {
@@ -1312,64 +1362,6 @@ export const launchSoloClient = action({
   },
 });
 
-export const launchMGA = action({
-  args: { mgaOrgId: v.id("organizations") },
-  handler: async (ctx, args): Promise<{ loginUrl: string }> => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
-    const launch: {
-      mgaOrgId: Id<"organizations">;
-      name: string;
-      adminUserId?: Id<"users">;
-      adminEmail?: string;
-      adminName?: string;
-    } | null = await ctx.runQuery(internalApi.operator.getMGALaunchContextInternal, args);
-    if (!launch) throw new Error("MGA launch context not found");
-    if (!launch.adminEmail) throw new Error("MGA has no admin email");
-
-    const siteUrl = getAuthSiteUrl();
-    const loginUrl = `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
-    const subject = `${launch.name} is ready on Glass`;
-    const bodyHtml = `
-<tr><td style="padding:28px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
-    Your Glass workspace for <strong>${escapeHtml(launch.name)}</strong> is ready.
-  </p>
-</td></tr>
-<tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${escapeHtml(loginUrl)}" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Open Glass</a>
-</td></tr>
-<tr><td style="padding:20px 40px 32px 40px;">
-  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
-    Sign in with ${escapeHtml(launch.adminEmail)}. You can also copy this link:<br>
-    <a href="${escapeHtml(loginUrl)}" style="color:#6b7280;word-break:break-all;">${escapeHtml(loginUrl)}</a>
-  </p>
-</td></tr>`;
-    const html = buildEmailShell({ title: subject, bodyHtml, siteUrl });
-    const text = `Your Glass workspace for ${launch.name} is ready.\n\nOpen Glass:\n${loginUrl}\n\nSign in with ${launch.adminEmail}.`;
-    const result = await sendResendEmail(
-      {
-        from: getAuthFromAddress("Glass"),
-        to: launch.adminName
-          ? `${launch.adminName} <${launch.adminEmail}>`
-          : launch.adminEmail,
-        subject,
-        html,
-        text,
-      },
-      { retries: 2 },
-    );
-    if (!result.ok) throw new Error(`Failed to send launch email: ${result.error}`);
-    await ctx.runMutation(internalApi.operator.markMGALaunchedInternal, {
-      mgaOrgId: args.mgaOrgId,
-      operatorUserId: userId,
-      adminUserId: launch.adminUserId,
-    });
-    return { loginUrl };
-  },
-});
-
 export const startImpersonation = mutation({
   args: {
     targetOrgId: v.id("organizations"),
@@ -1426,6 +1418,67 @@ export const stopImpersonation = mutation({
         summary: "Stopped operator impersonation",
       });
     }
+  },
+});
+
+export const cleanupRemovedProgramAdminData = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireOperator(ctx);
+
+    const tableResults: Record<
+      string,
+      { deleted: number; skipped?: boolean; error?: string }
+    > = {};
+    for (const table of REMOVED_PROGRAM_ADMIN_TABLES) {
+      tableResults[table] = await deleteUnsafeTableBatch(ctx, table);
+      if (tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.operator.cleanupRemovedProgramAdminDataInternal,
+          { table },
+        );
+      }
+    }
+
+    const orgs = await ctx.db.query("organizations").collect();
+    let deletedProgramAdminOrgs = 0;
+    let deletedRelatedRows = 0;
+    for (const org of orgs) {
+      if (!isRemovedProgramAdminOrg(org)) continue;
+      deletedRelatedRows += await deleteRemovedProgramAdminOrgData(ctx, org._id);
+      deletedProgramAdminOrgs += 1;
+    }
+
+    return {
+      droppedTables: tableResults,
+      deletedProgramAdminOrgs,
+      deletedRelatedRows,
+    };
+  },
+});
+
+export const cleanupRemovedProgramAdminDataInternal = internalMutation({
+  args: {
+    table: v.union(
+      v.literal("partnerPrograms"),
+      v.literal("partnerProgramEmbeddings"),
+      v.literal("coiTemplates"),
+      v.literal("standingAuthorizations"),
+      v.literal("certificateRequests"),
+      v.literal("certificateApprovals"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const result = await deleteUnsafeTableBatch(ctx, args.table);
+    if (result.deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupRemovedProgramAdminDataInternal,
+        { table: args.table },
+      );
+    }
+    return result;
   },
 });
 
@@ -1487,7 +1540,6 @@ export const upsertBrokerInternal = internalMutation({
     const patch = {
       name: brokerName,
       type: "broker" as const,
-      partnerType: "broker" as const,
       slug,
       website: args.broker.website?.trim() || undefined,
       agentHandle,
@@ -1640,70 +1692,6 @@ export const createSoloClientInternal = internalMutation({
   },
 });
 
-export const createMGAInternal = internalMutation({
-  args: {
-    operatorUserId: v.id("users"),
-    adminUserId: v.id("users"),
-    adminEmail: v.string(),
-    adminName: v.optional(v.string()),
-    mga: v.object({
-      name: v.string(),
-      website: v.optional(v.string()),
-      programName: v.optional(v.string()),
-    }),
-  },
-  handler: async (ctx, args) => {
-    await assertCustomerUser(ctx, args.adminUserId);
-    const mgaName = args.mga.name.trim();
-    if (!mgaName) throw new Error("MGA name is required");
-    const otherMembership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", args.adminUserId))
-      .first();
-    if (otherMembership) throw new Error("MGA admin already belongs to another organization");
-
-    const mgaOrgId = await ctx.db.insert("organizations", {
-      name: mgaName,
-      type: "partner",
-      partnerKind: "program_admin",
-      website: args.mga.website?.trim() || undefined,
-      allowedEmails: [args.adminEmail],
-      emailVerification: "strict",
-      primaryInsuranceContactId: args.adminUserId,
-      onboardingComplete: true,
-      operatorStatus: "onboarding",
-    });
-    await ctx.db.insert("orgMemberships", {
-      orgId: mgaOrgId,
-      userId: args.adminUserId,
-      role: "admin",
-    });
-    await ctx.db.patch(args.adminUserId, {
-      accountKind: "customer",
-      email: args.adminEmail,
-      name: args.adminName?.trim() || undefined,
-      onboardingComplete: true,
-    });
-    await ctx.db.insert("partnerPrograms", {
-      partnerOrgId: mgaOrgId,
-      name: args.mga.programName?.trim() || mgaName,
-      aliases: [],
-      status: "active",
-      createdAt: dayjs().valueOf(),
-      updatedAt: dayjs().valueOf(),
-    });
-    await writeOperatorAudit(ctx, {
-      operatorUserId: args.operatorUserId,
-      type: "mga_created",
-      targetOrgId: mgaOrgId,
-      targetUserId: args.adminUserId,
-      summary: `Created MGA ${mgaName}`,
-      metadata: { adminEmail: args.adminEmail },
-    });
-    return { mgaOrgId };
-  },
-});
-
 export const getBrokerLaunchContextInternal = internalQuery({
   args: { brokerOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
@@ -1738,22 +1726,6 @@ export const getSoloClientLaunchContextInternal = internalQuery({
       adminUserId: admin?._id,
       adminEmail: admin?.email ?? client.primaryContactEmail,
       adminName: admin?.name ?? client.primaryContactName,
-    };
-  },
-});
-
-export const getMGALaunchContextInternal = internalQuery({
-  args: { mgaOrgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    const mga = await ctx.db.get(args.mgaOrgId);
-    if (!mga || mga.type !== "partner" || mga.partnerKind !== "program_admin") return null;
-    const admin = await getOrgAdmin(ctx, args.mgaOrgId);
-    return {
-      mgaOrgId: mga._id,
-      name: mga.name,
-      adminUserId: admin?._id,
-      adminEmail: admin?.email,
-      adminName: admin?.name,
     };
   },
 });
@@ -1794,28 +1766,6 @@ export const markSoloClientLaunchedInternal = internalMutation({
       targetOrgId: args.clientOrgId,
       targetUserId: args.adminUserId,
       summary: `Launched ${client.name} and sent client login email`,
-    });
-  },
-});
-
-export const markMGALaunchedInternal = internalMutation({
-  args: {
-    mgaOrgId: v.id("organizations"),
-    operatorUserId: v.id("users"),
-    adminUserId: v.optional(v.id("users")),
-  },
-  handler: async (ctx, args) => {
-    const mga = await ctx.db.get(args.mgaOrgId);
-    if (!mga || mga.type !== "partner" || mga.partnerKind !== "program_admin") {
-      throw new Error("MGA not found");
-    }
-    await ctx.db.patch(args.mgaOrgId, { operatorStatus: "live", onboardingComplete: true });
-    await writeOperatorAudit(ctx, {
-      operatorUserId: args.operatorUserId,
-      type: "mga_launch_email_sent",
-      targetOrgId: args.mgaOrgId,
-      targetUserId: args.adminUserId,
-      summary: `Launched ${mga.name} and sent MGA login email`,
     });
   },
 });

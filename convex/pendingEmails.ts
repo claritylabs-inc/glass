@@ -7,7 +7,7 @@ import {
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireOrgAccess } from "./lib/orgAuth";
+import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 
 async function restoreCancelledEmailAsDraft(
   ctx: MutationCtx,

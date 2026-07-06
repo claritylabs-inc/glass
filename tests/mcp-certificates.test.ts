@@ -35,9 +35,9 @@ describe("certificate API surfaces", () => {
     expect(http).toContain('name: "list_certificate_review_jobs"');
     expect(http).toContain("toCertificateDto");
     expect(http).toContain("forceReissue");
-    expect(apiDto).toContain("authority_type");
-    expect(apiDto).toContain("certification_status");
-    expect(apiDto).toContain("standing_authorization_id");
+    expect(apiDto).toContain("request_kind");
+    expect(apiDto).toContain("additional_insured_name");
+    expect(apiDto).not.toContain("standing_authorization_id");
     expect(apiDto).toContain("policy_certificate_id");
     expect(apiDto).toContain("version_kind");
     expect(apiDto).toContain("recipient_email");

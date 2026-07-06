@@ -5,7 +5,14 @@ import { z } from "zod";
 import { sanitizeNulls } from "@claritylabs/cl-sdk";
 import type { ActionCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
-import { getModelForOrg } from "./models";
+import {
+  fallbackRouteForCall,
+  getModelAndRouteForOrg,
+  getModelForRoute,
+  getProviderOptionsForRoute,
+} from "./models";
+import type { ModelRoute } from "./modelCatalog";
+import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import { normalizeExtractedString } from "./valueNormalization";
 
 type SourceLike = {
@@ -378,6 +385,40 @@ function shouldReviewGroup(document: Record<string, unknown>, group: FieldReview
   return group.fields.some((field) => isMissingValue(document[field]));
 }
 
+function sameModelRoute(left: ModelRoute, right: ModelRoute) {
+  return left.provider === right.provider && left.model === right.model;
+}
+
+export function fieldReviewRouteForPrimary(primaryRoute: ModelRoute, fallbackRoute?: ModelRoute): ModelRoute {
+  return fallbackRouteForCall({
+    task: "extraction",
+    taskKind: "extraction_review",
+    primaryRoute,
+    fallbackRoute,
+  }) ?? primaryRoute;
+}
+
+async function generateReviewObject<T>(
+  options: FieldReviewOptions,
+  params: {
+    schema: z.ZodType<T>;
+    maxOutputTokens: number;
+    prompt: string;
+    label: string;
+  },
+): Promise<T> {
+  const primary = await getModelAndRouteForOrg(options.ctx, options.orgId, "extraction");
+  const reviewRoute = fieldReviewRouteForPrimary(primary.route, primary.fallbackRoute);
+  const result = await generateObject({
+    model: sameModelRoute(reviewRoute, primary.route) ? primary.model : getModelForRoute(reviewRoute),
+    schema: structuredOutputSchemaForRoute(params.schema, reviewRoute),
+    maxOutputTokens: params.maxOutputTokens,
+    providerOptions: getProviderOptionsForRoute(reviewRoute),
+    prompt: params.prompt,
+  });
+  return result.object;
+}
+
 function financialEvidence(document: Record<string, unknown>, sourceSpans: SourceLike[]) {
   const group = FIELD_REVIEW_GROUPS.find((item) => item.id === "financial_terms");
   if (!group) return [];
@@ -474,12 +515,11 @@ async function reviewGroup(options: FieldReviewOptions, group: FieldReviewGroup)
   });
   if (!shouldReviewGroup(options.document, group, evidence.length)) return null;
 
-  const model = await getModelForOrg(options.ctx, options.orgId, "classification");
   const current = compactDocumentForGroup(options.document, group);
-  const result = await generateObject({
-    model,
+  const object = await generateReviewObject(options, {
     schema: fieldReviewSchema,
     maxOutputTokens: 2500,
+    label: `Field review for ${group.label}`,
     prompt: `Review extracted insurance policy fields against source evidence.
 
 Group: ${group.label}
@@ -507,7 +547,7 @@ ${JSON.stringify(evidence, null, 2)}`,
 
   return {
     groupId: group.id,
-    corrections: result.object.corrections.flatMap((correction): ReviewCorrection[] => {
+    corrections: object.corrections.flatMap((correction): ReviewCorrection[] => {
       const value = correctionValue(correction);
       if (value === undefined) return [];
       return [{
@@ -525,15 +565,14 @@ async function reconcileFinancialTable(options: FieldReviewOptions): Promise<Rev
   const evidence = financialEvidence(options.document, options.sourceSpans);
   if (evidence.length === 0) return null;
 
-  const model = await getModelForOrg(options.ctx, options.orgId, "chat");
   const current = compactDocumentForGroup(
     options.document,
     FIELD_REVIEW_GROUPS.find((item) => item.id === "financial_terms")!,
   );
-  const result = await generateObject({
-    model,
+  const object = await generateReviewObject(options, {
     schema: financialReconciliationSchema,
     maxOutputTokens: 1800,
+    label: "Financial table reconciliation",
     prompt: `Reconcile the policy premium table against source evidence.
 
 Return the best source-backed financial fields for the policy. Use only rows and values directly supported by the evidence.
@@ -561,7 +600,7 @@ Evidence:
 ${JSON.stringify(evidence, null, 2)}`,
   });
 
-  if (result.object.confidence === "low" || !normalizeText(result.object.evidenceQuote)) {
+  if (object.confidence === "low" || !normalizeText(object.evidenceQuote)) {
     return null;
   }
 
@@ -571,30 +610,30 @@ ${JSON.stringify(evidence, null, 2)}`,
     corrections.push({
       field,
       value,
-      confidence: result.object.confidence,
+      confidence: object.confidence,
       reason: "Reconciled financial table from source evidence.",
-      evidenceQuote: result.object.evidenceQuote ?? "",
+      evidenceQuote: object.evidenceQuote ?? "",
     });
   };
 
-  const premium = rowAmount(result.object.premiumRow) ?? result.object.premium;
-  const totalCost = rowAmount(result.object.totalCostRow) ?? result.object.totalCost;
-  const minimumPremium = result.object.minimumPremium ?? rowAmount(result.object.minimumPremiumRow);
+  const premium = rowAmount(object.premiumRow) ?? object.premium;
+  const totalCost = rowAmount(object.totalCostRow) ?? object.totalCost;
+  const minimumPremium = object.minimumPremium ?? rowAmount(object.minimumPremiumRow);
 
   add("premium", premium);
-  add("premiumAmount", result.object.premiumAmount);
+  add("premiumAmount", object.premiumAmount);
   add("totalCost", totalCost);
-  add("totalCostAmount", result.object.totalCostAmount);
+  add("totalCostAmount", object.totalCostAmount);
   add("minimumPremium", minimumPremium);
-  add("minimumPremiumAmount", result.object.minimumPremiumAmount);
-  add("depositPremium", result.object.depositPremium);
-  add("depositPremiumAmount", result.object.depositPremiumAmount);
-  add("paymentPlan", result.object.paymentPlan);
-  add("premiumBreakdown", result.object.premiumBreakdown);
-  add("taxesAndFees", result.object.taxesAndFees);
-  if (minimumPremium && result.object.minimumPremiumAmount === null) add("minimumPremiumAmount", clearFieldCorrection());
-  if (minimumPremium && result.object.depositPremium === null) add("depositPremium", clearFieldCorrection());
-  if (minimumPremium && result.object.depositPremiumAmount === null) add("depositPremiumAmount", clearFieldCorrection());
+  add("minimumPremiumAmount", object.minimumPremiumAmount);
+  add("depositPremium", object.depositPremium);
+  add("depositPremiumAmount", object.depositPremiumAmount);
+  add("paymentPlan", object.paymentPlan);
+  add("premiumBreakdown", object.premiumBreakdown);
+  add("taxesAndFees", object.taxesAndFees);
+  if (minimumPremium && object.minimumPremiumAmount === null) add("minimumPremiumAmount", clearFieldCorrection());
+  if (minimumPremium && object.depositPremium === null) add("depositPremium", clearFieldCorrection());
+  if (minimumPremium && object.depositPremiumAmount === null) add("depositPremiumAmount", clearFieldCorrection());
 
   return corrections.length > 0
     ? { groupId: "financial_terms", corrections }
@@ -605,11 +644,10 @@ async function reconcileMinimumPremium(options: FieldReviewOptions): Promise<Rev
   const evidence = minimumPremiumEvidence(options.document, options.sourceSpans);
   if (evidence.length === 0) return null;
 
-  const model = await getModelForOrg(options.ctx, options.orgId, "classification");
-  const result = await generateObject({
-    model,
+  const object = await generateReviewObject(options, {
     schema: minimumPremiumSchema,
     maxOutputTokens: 900,
+    label: "Minimum premium reconciliation",
     prompt: `Find the policy's minimum earned premium, minimum premium, or deposit premium term from the source evidence.
 
 Rules:
@@ -635,7 +673,7 @@ Evidence:
 ${JSON.stringify(evidence, null, 2)}`,
   });
 
-  if (result.object.confidence === "low" || !normalizeText(result.object.evidenceQuote)) {
+  if (object.confidence === "low" || !normalizeText(object.evidenceQuote)) {
     return null;
   }
 
@@ -645,19 +683,19 @@ ${JSON.stringify(evidence, null, 2)}`,
     corrections.push({
       field,
       value,
-      confidence: result.object.confidence,
+      confidence: object.confidence,
       reason: "Reconciled minimum premium term from source evidence.",
-      evidenceQuote: result.object.evidenceQuote ?? "",
+      evidenceQuote: object.evidenceQuote ?? "",
     });
   };
 
-  add("minimumPremium", result.object.minimumPremium);
-  add("minimumPremiumAmount", result.object.minimumPremiumAmount);
-  add("depositPremium", result.object.depositPremium);
-  add("depositPremiumAmount", result.object.depositPremiumAmount);
-  if (result.object.clearMinimumPremiumAmount) add("minimumPremiumAmount", clearFieldCorrection());
-  if (result.object.clearDepositPremium) add("depositPremium", clearFieldCorrection());
-  if (result.object.clearDepositPremiumAmount) add("depositPremiumAmount", clearFieldCorrection());
+  add("minimumPremium", object.minimumPremium);
+  add("minimumPremiumAmount", object.minimumPremiumAmount);
+  add("depositPremium", object.depositPremium);
+  add("depositPremiumAmount", object.depositPremiumAmount);
+  if (object.clearMinimumPremiumAmount) add("minimumPremiumAmount", clearFieldCorrection());
+  if (object.clearDepositPremium) add("depositPremium", clearFieldCorrection());
+  if (object.clearDepositPremiumAmount) add("depositPremiumAmount", clearFieldCorrection());
 
   return corrections.length > 0
     ? { groupId: "financial_terms", corrections }

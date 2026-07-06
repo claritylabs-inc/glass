@@ -97,7 +97,7 @@ describe("MCP policy DTO helpers", () => {
 });
 
 describe("toCertificateDto", () => {
-  it("maps certificate summaries with legacy default metadata", () => {
+  it("maps certificate summaries with request metadata", () => {
     const dto = toCertificateDto({
       _id: "c1",
       policyId: "p1",
@@ -110,8 +110,8 @@ describe("toCertificateDto", () => {
       id: "c1",
       policy_id: "p1",
       file_id: "f1",
-      authority_type: "non_binding",
-      certification_status: "not_applicable",
+      request_kind: "holder",
+      additional_insured_name: null,
       url: null,
     });
   });

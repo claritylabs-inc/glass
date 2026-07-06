@@ -9,75 +9,20 @@ import { Mail, MessageSquareText } from "lucide-react";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import {
+  getEffectiveChannelDefault,
+  getNotificationSettingsRows,
+  NOTIFICATION_SEVERITY,
+  type NotificationChannel,
+} from "@/convex/lib/notificationTypes";
+import {
   useCachedQuery,
   useUpsertCachedQuery,
 } from "@/lib/sync/use-cached-query";
 
-interface PrefRow {
-  type: string;
-  label: string;
-  group: string;
-}
-
-const BROKER_PREF_ROWS: PrefRow[] = [
-  { type: "client_document_uploaded", label: "Client uploads document", group: "Client Activity" },
-  { type: "client_invitation_accepted", label: "Client accepted invitation", group: "Client Activity" },
-  { type: "client_onboarding_completed", label: "Client completed onboarding", group: "Client Activity" },
-  { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies" },
-  { type: "policy_change_needs_info", label: "Policy change needs info", group: "Policies" },
-  { type: "policy_change_completed", label: "Policy change completed", group: "Policies" },
-  { type: "policy_declaration_discrepancy", label: "Policy details do not match", group: "Policies" },
-  { type: "renewal_reminder", label: "Renewal reminder", group: "Policies" },
-  { type: "policy_lapsed", label: "Policy lapsed", group: "Policies" },
-  { type: "vendor_compliance_gap", label: "Vendor compliance gaps", group: "Vendor Compliance" },
-  { type: "vendor_policy_expiring", label: "Vendor policy expiring", group: "Vendor Compliance" },
-  { type: "vendor_policy_expired", label: "Vendor policy expired", group: "Vendor Compliance" },
-  { type: "vendor_compliance_met", label: "Vendor becomes compliant", group: "Vendor Compliance" },
-];
-
-const CLIENT_PREF_ROWS: PrefRow[] = [
-  { type: "policy_delivered_by_broker", label: "Policy delivered", group: "Policies" },
-  { type: "policy_change_needs_info", label: "Policy change needs info", group: "Policies" },
-  { type: "policy_change_completed", label: "Policy change completed", group: "Policies" },
-  { type: "policy_declaration_discrepancy", label: "Policy details do not match", group: "Policies" },
-  { type: "renewal_reminder", label: "Renewal reminder", group: "Policies" },
-  { type: "policy_lapsed", label: "Policy lapsed", group: "Policies" },
-  { type: "vendor_compliance_gap", label: "Vendor compliance gaps", group: "Vendor Compliance" },
-  { type: "vendor_policy_expiring", label: "Vendor policy expiring", group: "Vendor Compliance" },
-  { type: "vendor_policy_expired", label: "Vendor policy expired", group: "Vendor Compliance" },
-  { type: "vendor_compliance_met", label: "Vendor becomes compliant", group: "Vendor Compliance" },
-];
-
-const PARTNER_PREF_ROWS: PrefRow[] = [
-  { type: "program_admin_certificate_request", label: "Certified COI needs approval", group: "Program Approvals" },
-  { type: "program_admin_pce_request", label: "Policy change needs approval", group: "Program Approvals" },
-];
-
-const WARN_TYPES = new Set([
-  "renewal_reminder",
-  "policy_lapsed",
-  "coverage_gap",
-  "coverage_limit_concern",
-  "missing_coverage",
-  "carrier_rating_change",
-  "extraction_error",
-  "incomplete_extraction",
-  "premium_anomaly",
-  "vendor_compliance_gap",
-  "vendor_policy_expiring",
-  "vendor_policy_expired",
-  "program_admin_certificate_request",
-  "program_admin_pce_request",
-  "policy_declaration_discrepancy",
-  "policy_change_needs_info",
-]);
-
 interface NotificationPreferencesPageProps {
   orgId: Id<"organizations">;
-  orgType: "broker" | "client" | "partner";
+  orgType: "broker" | "client";
 }
-
-type NotificationChannel = "in_app" | "email" | "imessage";
 
 function MasterNotificationRow({
   icon: Icon,
@@ -142,19 +87,12 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
     { orgId: Id<"organizations"> }
   >("notificationPreferences.getForUser");
   const [optimisticPrefs, setOptimisticPrefs] = useState<Record<string, boolean>>({});
-  const visibleRows =
-    orgType === "broker"
-      ? BROKER_PREF_ROWS
-      : orgType === "partner"
-        ? PARTNER_PREF_ROWS
-        : CLIENT_PREF_ROWS;
+  const visibleRows = getNotificationSettingsRows(orgType);
   const groups = Array.from(new Set(visibleRows.map((row) => row.group)));
   const descriptor =
     orgType === "broker"
-      ? "client, policy, vendor and account events"
-      : orgType === "partner"
-        ? "program approval, certified COI and policy-change events"
-        : "policy and vendor compliance events";
+      ? "client, policy, and vendor events"
+      : "policy and vendor compliance events";
 
   function prefKey(type: string, channel: NotificationChannel): string {
     return `${type}:${channel}`;
@@ -168,12 +106,10 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
       (p) => p.type === type && p.channel === channel
     );
     if (row) return row.enabled;
-    // Severity-default for email: warning/critical types default on, info defaults off
-    if (channel === "email") {
-      return WARN_TYPES.has(type);
-    }
-    if (channel === "imessage") return false;
-    return true; // in_app defaults on
+    return getEffectiveChannelDefault(
+      channel,
+      NOTIFICATION_SEVERITY[type as keyof typeof NOTIFICATION_SEVERITY] ?? "info",
+    );
   }
 
   const allEmailRow = (prefs as Array<{ type: string; channel: string; enabled: boolean }>).find(
@@ -275,7 +211,8 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
       <div>
         <h1 className="text-lg font-medium text-foreground">Notifications</h1>
         <p className="mt-1 text-base text-muted-foreground/70">
-          Choose how Glass should notify your team about {descriptor}.
+          Choose outbound notifications for {descriptor}. In-app notifications
+          always appear in Glass.
         </p>
       </div>
 
@@ -305,15 +242,11 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
                 <col />
                 <col className="w-28" />
                 <col className="w-28" />
-                <col className="w-28" />
               </colgroup>
               <thead>
                 <tr className="border-b border-foreground/6">
                   <th className="px-5 py-3.5 text-left text-base font-medium text-foreground">
                     {group}
-                  </th>
-                  <th className="px-3 py-3.5 text-center text-label font-medium text-muted-foreground/70">
-                    In-app
                   </th>
                   <th className="px-3 py-3.5 text-center text-label font-medium text-muted-foreground/70">
                     Email
@@ -327,7 +260,7 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
                 {visibleRows.filter((r) => r.group === group).map((row) => (
                   <tr key={row.type} className="border-b border-foreground/6 last:border-b-0">
                     <td className="px-5 py-3.5 text-base text-foreground">{row.label}</td>
-                    {(["in_app", "email", "imessage"] as const).map((channel) => {
+                    {(["email", "imessage"] as const).map((channel) => {
                       const enabled = getEnabled(row.type, channel);
                       return (
                         <td key={channel} className="px-3 py-3.5">
@@ -336,11 +269,7 @@ export default function NotificationPreferencesPage({ orgId, orgType }: Notifica
                               checked={enabled}
                               onCheckedChange={() => void togglePreference(row.type, channel)}
                               label={`${row.label} ${
-                                channel === "in_app"
-                                  ? "in-app"
-                                  : channel === "imessage"
-                                    ? "iMessage"
-                                    : "email"
+                                channel === "imessage" ? "iMessage" : "email"
                               }`}
                             />
                           </div>

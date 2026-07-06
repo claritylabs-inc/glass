@@ -6,7 +6,7 @@ import {
   internalQuery,
   internalMutation,
 } from "./_generated/server";
-import { requireOrgAdmin } from "./lib/orgAuth";
+import { requireCurrentOrgAdmin as requireOrgAdmin } from "./lib/access";
 
 async function sha256Hex(input: string): Promise<string> {
   const encoder = new TextEncoder();

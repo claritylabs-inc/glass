@@ -182,7 +182,7 @@ describe("public demo agent", () => {
     const models = read("convex/lib/models.ts");
 
     expect(settings).toContain("resolvePublicDefaults");
-    expect(settings).toContain("globalSettings?.routes?.[task]");
+    expect(settings).toContain("globalRoutes?.[task]");
     expect(models).toContain("getModelAndRouteForPublicTask");
     expect(models).toContain("internal.modelSettings.resolvePublicDefaults");
   });

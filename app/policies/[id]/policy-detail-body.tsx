@@ -58,7 +58,6 @@ import {
   CertificateCreatePanel,
   CertificatesTab,
   ViewPdfButton,
-  type ProgramMatchCandidate,
 } from "./policy-certificates-tab";
 import {
   useCachedPolicyDetail,
@@ -134,8 +133,6 @@ const POLICY_VERSION_FIELD_LABEL_OVERRIDES: Record<string, string> = {
   insuredDba: "Insured DBA",
   mga: "Administrator",
   isRenewal: "Renewal flag",
-  partnerOrgId: "Partner org",
-  partnerProgramId: "Partner program",
 };
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
@@ -660,10 +657,6 @@ export function PolicyDetailBody({
           open={showCertificateSheet}
           onOpenChange={setShowCertificateSheet}
           policyId={policy._id}
-          initialProgram={
-            (policy as { partnerProgram?: ProgramMatchCandidate | null })
-              .partnerProgram ?? null
-          }
         />,
       );
       return () => onRightPanel(null);

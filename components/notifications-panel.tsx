@@ -15,37 +15,9 @@ import {
 
 dayjs.extend(relativeTime);
 
-type NotificationType =
-  | "merge_suggestion"
-  | "coverage_gap"
-  | "renewal_reminder"
-  | "policy_lapsed"
-  | "coverage_limit_concern"
-  | "missing_coverage"
-  | "carrier_rating_change"
-  | "broker_action"
-  | "extraction_complete"
-  | "extraction_error"
-  | "incomplete_extraction"
-  | "stale_data"
-  | "premium_anomaly"
-  | "client_invitation_accepted"
-  | "client_onboarding_completed"
-  | "client_document_uploaded"
-  | "policy_delivered_by_broker"
-  | "vendor_compliance_met"
-  | "vendor_compliance_gap"
-  | "vendor_policy_expiring"
-  | "vendor_policy_expired"
-  | "program_admin_certificate_request"
-  | "program_admin_pce_request"
-  | "policy_declaration_discrepancy"
-  | "policy_change_needs_info"
-  | "policy_change_completed";
-
 interface Notification {
   _id: Id<"notifications">;
-  type: NotificationType;
+  type: string;
   title: string;
   body: string;
   status: "unread" | "read" | "actioned" | "dismissed";
@@ -61,18 +33,11 @@ interface Notification {
 interface NotificationsPanelProps {
   orgId: Id<"organizations">;
   onClose: () => void;
-  onMergeSuggestion?: (payload: {
-    primaryPolicyId: string;
-    secondaryPolicyId: string;
-  }) => void;
   variant?: "popover" | "pane";
 }
 
 function notificationActionLabel(notification: Notification) {
   if (!notification.actionType) return undefined;
-  if (notification.type === "policy_declaration_discrepancy") {
-    return "Review declaration mismatches";
-  }
   switch (notification.actionType) {
     case "view_policy":
       return "Open policy";
@@ -92,7 +57,6 @@ function notificationDisplayTitle(notification: Notification) {
 export function NotificationsPanel({
   orgId,
   onClose,
-  onMergeSuggestion,
   variant = "popover",
 }: NotificationsPanelProps) {
   const router = useRouter();
@@ -159,19 +123,6 @@ export function NotificationsPanel({
       }
       onClose();
       return;
-    }
-
-    // Legacy merge_suggestion
-    if (
-      notification.type === "merge_suggestion" &&
-      notification.actionPayload &&
-      onMergeSuggestion
-    ) {
-      const payload = notification.actionPayload as {
-        primaryPolicyId: string;
-        secondaryPolicyId: string;
-      };
-      onMergeSuggestion(payload);
     }
   }
 
@@ -281,9 +232,7 @@ export function NotificationsPanel({
           activeNotifications.map((notification: Notification) => {
             const isUnread = notification.status === "unread";
             const isClickable =
-              !!(notification.actionType && notification.actionPayload) ||
-              (notification.type === "merge_suggestion" &&
-                !!notification.actionPayload);
+              !!(notification.actionType && notification.actionPayload);
             const actionLabel = notificationActionLabel(notification);
 
             return (

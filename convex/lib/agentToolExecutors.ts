@@ -20,20 +20,12 @@ import {
 } from "./chatTools";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
 import {
-  buildCertificateProgramSelection,
-  normalizeSelectedPartnerProgramId,
-} from "./certificateProgramSelection";
-import {
   brokerFollowUpOutcome,
 } from "./workflows/brokerFollowUp";
 import {
-  certificateAddressRequiredOutcome,
   certificateGeneratedOutcome,
   certificateHeldOutcome,
-  certificatePendingApprovalOutcome,
   certificateRecoverableOutcome,
-  certificateRequestRequiresEndorsementReview,
-  shouldCollectCertificateHolderAddress,
   type CertificateRequestWorkflowParams,
 } from "./workflows/certificateRequest";
 import {
@@ -110,7 +102,6 @@ export type BuildAgentToolExecutorsOptions = {
   operatorInitiatedUserMessageId?: Id<"threadMessages">;
   readOrgIds?: Id<"organizations">[];
   writableOrgIds?: Id<"organizations">[];
-  org?: Record<string, unknown> | null;
   threadId?: Id<"threads">;
   defaultPolicyChangeCaseId?: Id<"policyChangeCases">;
   getCurrentPolicyChangeCaseId?: () => Id<"policyChangeCases"> | undefined;
@@ -141,12 +132,6 @@ function certificateSourceForSurface(surface: AgentToolSurface) {
 function orgMemorySourceForSurface(surface: AgentToolSurface) {
   if (surface === "email" || surface === "imessage") return surface;
   return "chat" as const;
-}
-
-function programSelectionSourceForSurface(surface: AgentToolSurface) {
-  if (surface === "email" || surface === "imessage") return surface;
-  if (surface === "web") return "chat" as const;
-  return "agent" as const;
 }
 
 function typeMap(
@@ -184,7 +169,6 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
       name: coverage.name,
       limit: coverage.limit,
       deductible: coverage.deductible,
-      origin: coverage.coverageOrigin,
     })),
     coverageBreakdown: coverageBreakdownForTool(policy),
   };
@@ -705,7 +689,7 @@ export function buildAgentToolExecutors(
         postalCode?: string;
         requestText?: string;
         requestedEndorsements?: string[];
-        partnerProgramId?: string;
+        additionalInsuredName?: string;
         explicitReissue?: boolean;
       }) => {
         const resolved = await resolveFinalWritablePolicy(
@@ -715,36 +699,11 @@ export function buildAgentToolExecutors(
           "certificate generation",
         );
         if (!resolved.ok) return resolved.message;
-        const autoGenerate = options.org?.autoGenerateCoi !== false;
-        if (!autoGenerate) {
-          const handling = options.org?.coiHandling ?? "ignore";
-          if (handling === "broker")
-            return "COI auto-generation is off. Please contact your broker to obtain this certificate.";
-          if (handling === "member")
-            return "COI auto-generation is off. Please route this COI request to your primary insurance contact.";
-          return "COI auto-generation is disabled for this organization.";
-        }
         try {
           const policy = resolved.policy;
           const holderName =
             params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
             "Certificate holder";
-          const holderAddress =
-            [
-              params.addressLine1,
-              params.addressLine2,
-              params.city,
-              params.state,
-              params.postalCode,
-            ].some((value) => value?.trim())
-              ? {
-                  line1: params.addressLine1,
-                  line2: params.addressLine2,
-                  city: params.city,
-                  state: params.state,
-                  postalCode: params.postalCode,
-                }
-              : undefined;
           const workflowParams: CertificateRequestWorkflowParams = {
             policyId: String(policy._id),
             holderName,
@@ -752,11 +711,14 @@ export function buildAgentToolExecutors(
             holderContactName: params.holderContactName,
             holderEmail: params.holderEmail,
             holderPhone: params.holderPhone,
-            holderAddress,
             requestText: params.requestText,
             requestedEndorsements: params.requestedEndorsements,
           };
-          if (!params.explicitReissue) {
+          const hasPolicyChangeRequest =
+            Boolean(params.additionalInsuredName?.trim()) ||
+            Boolean(params.requestText?.trim()) ||
+            (params.requestedEndorsements?.length ?? 0) > 0;
+          if (!params.explicitReissue && !hasPolicyChangeRequest) {
             const reusable = await ctx.runQuery(
               (internal as any).certificateLifecycle
                 .findReusableIssuedVersionByHolderNameInternal,
@@ -764,6 +726,7 @@ export function buildAgentToolExecutors(
                 orgId: policy.orgId,
                 policyId: policy._id,
                 holderName,
+                requestKind: "holder",
               },
             );
             if (reusable?.fileId) {
@@ -781,8 +744,8 @@ export function buildAgentToolExecutors(
                 certificateVersionId: reusable._id,
                 holderId: reusable.holderId,
                 versionNumber: reusable.versionNumber,
-                authorityType: reusable.authorityType,
-                certificationStatus: reusable.certificationStatus,
+                requestKind: reusable.requestKind ?? "holder",
+                additionalInsuredName: reusable.additionalInsuredName,
               };
               const workflowOutcome = certificateGeneratedOutcome({
                 params: workflowParams,
@@ -810,67 +773,6 @@ export function buildAgentToolExecutors(
               return output;
             }
           }
-          const hasEndorsementReview =
-            certificateRequestRequiresEndorsementReview(workflowParams);
-          if (
-            !hasEndorsementReview &&
-            shouldCollectCertificateHolderAddress(workflowParams)
-          ) {
-            return certificateAddressRequiredOutcome(workflowParams);
-          }
-          if (
-            hasEndorsementReview &&
-            shouldCollectCertificateHolderAddress(workflowParams)
-          ) {
-            const dryRun = await ctx.runAction(
-              internal.certificates.generateForOrg,
-              {
-                policyId: policy._id,
-                orgId: policy.orgId,
-                holderName,
-                certificateHolder: params.certificateHolder,
-                holderContactName: params.holderContactName,
-                holderEmail: params.holderEmail,
-                holderPhone: params.holderPhone,
-                requestText: params.requestText,
-                requestedEndorsements: params.requestedEndorsements,
-                selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
-                  params.partnerProgramId,
-                ),
-                forceReissue: params.explicitReissue,
-                source: certificateSourceForSurface(options.surface),
-                createdByUserId: options.userId,
-                dryRun: true,
-              },
-            );
-            if (dryRun?.status === "gate_allowed") {
-              return certificateAddressRequiredOutcome(workflowParams);
-            }
-            if (
-              dryRun?.status === "source_tree_rebuild_required" ||
-              dryRun?.status === "extraction_in_progress"
-            ) {
-              const workflowOutcome = certificateRecoverableOutcome({
-                params: workflowParams,
-                status: dryRun.status,
-                message: dryRun.message,
-                nextAction:
-                  dryRun.status === "source_tree_rebuild_required"
-                    ? "wait_for_source_tree"
-                    : "wait_for_extraction",
-                artifactData: {
-                  status: dryRun.status,
-                  policyId: policy._id,
-                },
-              });
-              return {
-                message: dryRun.message,
-                status: dryRun.status,
-                policyId: policy._id,
-                workflowOutcome,
-              };
-            }
-          }
           const generated = await ctx.runAction(
             internal.certificates.generateForOrg,
             {
@@ -888,9 +790,7 @@ export function buildAgentToolExecutors(
               postalCode: params.postalCode,
               requestText: params.requestText,
               requestedEndorsements: params.requestedEndorsements,
-              selectedPartnerProgramId: normalizeSelectedPartnerProgramId(
-                params.partnerProgramId,
-              ),
+              additionalInsuredName: params.additionalInsuredName,
               forceReissue: params.explicitReissue,
               source: certificateSourceForSurface(options.surface),
               createdByUserId: options.userId,
@@ -928,69 +828,6 @@ export function buildAgentToolExecutors(
               await options.onPolicyChangeCase?.(
                 generated.policyChangeCaseId as Id<"policyChangeCases">,
               );
-            }
-            return output;
-          }
-          if (generated.status === "pending_approval") {
-            const artifactData = {
-              status: generated.status,
-              policyId: policy._id,
-              certificateRequestId: generated.requestId,
-              holderName,
-              authorityType: generated.authorityType,
-              certificationStatus: generated.certificationStatus,
-            };
-            await options.onToolArtifact?.({
-              type: "certificate_result",
-              data: artifactData,
-            });
-            return {
-              message:
-                "Certified COI request created and sent to the program administrator for approval.",
-              requestId: generated.requestId,
-              authorityType: generated.authorityType,
-              certificationStatus: generated.certificationStatus,
-              workflowOutcome: certificatePendingApprovalOutcome({
-                params: workflowParams,
-                generated,
-                artifactData,
-              }),
-            };
-          }
-          if (generated.status === "needs_program_selection") {
-            const selection = buildCertificateProgramSelection({
-              policyId: String(policy._id),
-              holderName,
-              certificateHolder: params.certificateHolder,
-              candidates: generated.matchCandidates,
-              source: programSelectionSourceForSurface(options.surface),
-            });
-            const output = {
-              message:
-                "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
-              candidates: generated.matchCandidates,
-              programSelection: selection,
-              authorityType: generated.authorityType,
-              certificationStatus: generated.certificationStatus,
-              workflowOutcome: certificateRecoverableOutcome({
-                params: workflowParams,
-                status: generated.status,
-                message:
-                  "I found multiple possible program administrator programs. Choose one to generate the certified COI.",
-                nextAction: "choose_program",
-                artifactData: {
-                  status: generated.status,
-                  policyId: policy._id,
-                  programSelection: selection,
-                  candidates: generated.matchCandidates,
-                },
-              }),
-            };
-            if (selection) {
-              await options.onToolArtifact?.({
-                type: "certificate_program_selection",
-                data: selection,
-              });
             }
             return output;
           }
@@ -1047,14 +884,12 @@ export function buildAgentToolExecutors(
               certificateVersionId: generated.certificateVersionId,
               holderId: generated.holderId,
               versionNumber: generated.versionNumber,
-              authorityType: generated.authorityType,
-              certificationStatus: generated.certificationStatus,
+              requestKind: generated.requestKind ?? "holder",
+              additionalInsuredName: generated.additionalInsuredName,
             };
             const output = {
               message:
-                generated.authorityType === "certified"
-                  ? "I found an existing certified COI for this holder and current policy version and attached it to this response."
-                  : "I found an existing non-binding COI for this holder and current policy version and attached it to this response.",
+                "I found an existing COI for this holder and current policy version and attached it to this response.",
               attachment,
               holderId: generated.holderId,
               policyCertificateId: generated.policyCertificateId,
@@ -1082,14 +917,11 @@ export function buildAgentToolExecutors(
             certificateVersionId: generated.certificateVersionId,
             holderId: generated.holderId,
             versionNumber: generated.versionNumber,
-            authorityType: generated.authorityType,
-            certificationStatus: generated.certificationStatus,
+            requestKind: generated.requestKind ?? "holder",
+            additionalInsuredName: generated.additionalInsuredName,
           };
           const output = {
-            message:
-              generated.authorityType === "certified"
-                ? "Certified COI generated and attached to this response."
-                : "Non-binding COI generated and attached to this response.",
+            message: "COI generated and attached to this response.",
             attachment,
             certificateId: generated.certificateId,
             holderId: generated.holderId,

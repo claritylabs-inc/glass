@@ -41,6 +41,7 @@ type ProviderId =
   | "xai"
   | "mistral"
   | "cohere"
+  | "fireworks"
   | "deepseek";
 type Route = { provider: ProviderId; model: string };
 type Routes = Record<string, Route | null>;
@@ -56,9 +57,16 @@ type TaskConfig = {
   description: string;
   isEmbedding: boolean;
 };
+type TaskGroupConfig = {
+  id: string;
+  label: string;
+  description: string;
+  tasks: string[];
+};
 type Settings = {
   providers: ProviderConfig[];
   tasks: TaskConfig[];
+  groups: TaskGroupConfig[];
   routes: Routes;
   providerKeys: Record<
     ProviderId,
@@ -74,37 +82,11 @@ const VISIBLE_PROVIDERS: ProviderId[] = [
   "xai",
   "mistral",
   "cohere",
+  "fireworks",
   "deepseek",
 ];
 const DEFAULT_VALUE = "__default__";
 const SELECT_WIDTH_CLASS = "w-full md:w-76";
-const TASK_GROUPS = [
-  {
-    id: "agents",
-    label: "Agent conversations",
-    tasks: ["chat", "email_reply", "email_draft", "mailbox_coordinator"],
-  },
-  {
-    id: "reasoning",
-    label: "Reasoning and authoring",
-    tasks: ["analysis", "summary"],
-  },
-  {
-    id: "ingestion",
-    label: "Ingestion and extraction",
-    tasks: [
-      "classification",
-      "extraction",
-      "document_extraction",
-      "email_extraction",
-    ],
-  },
-  {
-    id: "platform",
-    label: "Platform utilities",
-    tasks: ["triage", "security", "embeddings"],
-  },
-] as const;
 
 function ProviderLogo({
   provider,
@@ -408,7 +390,7 @@ export function ModelsSection() {
         </OperationalPanel>
       ) : (
         <div className="grid gap-4">
-          {TASK_GROUPS.map((group) => {
+          {settings.groups.map((group) => {
             const tasks = group.tasks
               .map((taskId) =>
                 settings.tasks.find((task) => task.id === taskId),
@@ -417,7 +399,11 @@ export function ModelsSection() {
             if (tasks.length === 0) return null;
             return (
               <OperationalPanel key={group.id}>
-                <OperationalPanelHeader title={group.label} className="px-4 py-3" />
+                <OperationalPanelHeader
+                  title={group.label}
+                  description={group.description}
+                  className="px-4 py-3"
+                />
                 <div className="divide-y divide-foreground/6 px-4">
                   {tasks.map((task: TaskConfig) => {
                     const availableProviders = configuredProviders(

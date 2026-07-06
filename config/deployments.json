@@ -1,0 +1,71 @@
+{
+  "production": {
+    "branch": "main",
+    "glassEnv": "production",
+    "convexAgentHealthUrl": "https://merry-platypus-82.convex.site/agent-health",
+    "clientPortalUrl": "https://app.glass.insure",
+    "extractionWorkerHealthUrl": "https://glass-extraction-worker-production.up.railway.app/health",
+    "imessageWorkerHealthUrl": "https://glass-production-4618.up.railway.app/health",
+    "imessage": {
+      "transport": "imessage",
+      "imessageEnabled": true,
+      "photonConfigured": true,
+      "requiredHttpPorts": [3001]
+    },
+    "email": {
+      "deliveryMode": "live",
+      "agentDomain": "glass.insure",
+      "notificationDomain": "notifications.glass.insure",
+      "authDomain": "auth.glass.insure"
+    },
+    "workers": {
+      "extractionProtocol": "source-tree-v1"
+    }
+  },
+  "staging": {
+    "branch": "staging",
+    "glassEnv": "staging",
+    "convexAgentHealthUrlEnv": "GLASS_STAGING_CONVEX_AGENT_HEALTH_URL",
+    "convexAgentHealthUrl": "https://flexible-greyhound-425.convex.site/agent-health",
+    "clientPortalUrl": "https://staging.glass.insure",
+    "extractionWorkerHealthUrlEnv": "GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL",
+    "extractionWorkerHealthUrl": "https://glass-extraction-worker-staging.up.railway.app/health",
+    "imessageWorkerHealthUrlEnv": "GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL",
+    "imessageWorkerHealthUrl": "https://imessage-worker-staging.up.railway.app/health",
+    "imessage": {
+      "transport": "terminal",
+      "imessageEnabled": false,
+      "photonConfigured": false,
+      "requiredHttpPorts": []
+    },
+    "email": {
+      "deliveryMode": "restricted",
+      "agentDomain": "agent.staging.glass.insure",
+      "notificationDomain": "notifications.staging.glass.insure",
+      "authDomain": "auth.staging.glass.insure"
+    },
+    "workers": {
+      "extractionProtocol": "source-tree-v1"
+    }
+  },
+  "local": {
+    "branch": "*",
+    "glassEnv": "local",
+    "convexAgentHealthUrl": "http://localhost:3210/agent-health",
+    "clientPortalUrl": "http://localhost:8080",
+    "extractionWorkerHealthUrl": "http://localhost:8787/health",
+    "imessageWorkerHealthUrl": "http://localhost:3001/health",
+    "imessage": {
+      "transport": "terminal",
+      "imessageEnabled": false,
+      "photonConfigured": false,
+      "requiredHttpPorts": []
+    },
+    "email": {
+      "deliveryMode": "capture"
+    },
+    "workers": {
+      "extractionProtocol": "source-tree-v1"
+    }
+  }
+}

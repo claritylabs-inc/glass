@@ -1,4 +1,3 @@
-import type { Id } from "@/convex/_generated/dataModel";
 import type React from "react";
 
 export type NavShortcut = {
@@ -42,9 +41,3 @@ export type BrokerContact = {
     title?: string;
   } | null;
 } | null;
-
-export type MergeSuggestionPayload = {
-  primaryPolicyId: string;
-  secondaryPolicyId: string;
-  notificationId?: Id<"notifications">;
-};

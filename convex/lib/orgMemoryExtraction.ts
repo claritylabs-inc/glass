@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { haikuModel } from "./ai";
+import { getModel } from "./models";
 
 type OrgMemoryType = "fact" | "preference" | "risk_note" | "observation";
 type OrgMemorySource = "email" | "imessage";
@@ -33,7 +33,7 @@ export async function extractOrgMemoryFromExchange(
 ) {
   try {
     const memoryExtraction = await generateText({
-      model: haikuModel,
+      model: getModel("classification"),
       maxOutputTokens: args.itemLimit > 3 ? 600 : 400,
       system: `Extract durable facts, preferences, risk notes, or observations about an organization from this ${args.source} exchange.
 Output a strict JSON array of up to ${args.itemLimit} items: [{"type":"fact"|"preference"|"risk_note"|"observation","content":string}].

@@ -12,16 +12,17 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import { LogoIcon } from "@/components/ui/logo-icon";
-import { ModelProviderLogo } from "@/components/model-provider-logo";
+import {
+  getModelDisplayName,
+  ModelProviderLogo,
+  ModelRouteLogo,
+} from "@/components/model-provider-logo";
 import { toast } from "sonner";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
@@ -37,6 +38,7 @@ type ProviderId =
   | "xai"
   | "mistral"
   | "cohere"
+  | "fireworks"
   | "deepseek";
 type Route = { provider: ProviderId; model: string };
 type Routes = Record<string, Route | null>;
@@ -54,6 +56,8 @@ type ModelCapability = {
 type ProviderConfig = {
   id: ProviderId;
   label: string;
+  configured: boolean;
+  transport: "direct" | "gateway" | null;
   languageModels: string[];
   embeddingModels: string[];
 };
@@ -63,6 +67,12 @@ type TaskConfig = {
   description: string;
   isEmbedding: boolean;
   defaultRoute: Route;
+};
+type TaskGroupConfig = {
+  id: string;
+  label: string;
+  description: string;
+  tasks: string[];
 };
 type WebRetrievalProviderConfig = {
   id: WebRetrievalProviderId;
@@ -74,6 +84,7 @@ type WebRetrievalProviderConfig = {
 type Settings = {
   providers: ProviderConfig[];
   tasks: TaskConfig[];
+  groups: TaskGroupConfig[];
   routes: Routes;
   webRetrieval: WebRetrieval;
   webRetrievalProviders: WebRetrievalProviderConfig[];
@@ -82,35 +93,25 @@ type Settings = {
 };
 
 const DEFAULT_VALUE = "__default__";
-const EXA_VALUE = "exa";
-const SELECT_WIDTH_CLASS = "w-full md:w-80";
-const TASK_GROUPS = [
-  {
-    id: "agents",
-    label: "Agent conversations",
-    tasks: ["chat", "email_reply", "email_draft", "mailbox_coordinator"],
-  },
-  {
-    id: "reasoning",
-    label: "Reasoning and authoring",
-    tasks: ["analysis", "summary"],
-  },
-  {
-    id: "ingestion",
-    label: "Ingestion and extraction",
-    tasks: [
-      "classification",
-      "extraction",
-      "document_extraction",
-      "email_extraction",
-    ],
-  },
-  {
-    id: "platform",
-    label: "Platform utilities",
-    tasks: ["triage", "security", "embeddings"],
-  },
-] as const;
+const PROVIDER_SELECT_WIDTH_CLASS = "w-full xl:w-44";
+const MODEL_SELECT_WIDTH_CLASS = "w-full xl:w-[30rem]";
+const PROVIDER_PRIORITY: ProviderId[] = [
+  "fireworks",
+  "openai",
+  "anthropic",
+  "google",
+  "xai",
+  "mistral",
+  "cohere",
+  "deepseek",
+];
+const WEB_RETRIEVAL_PRIORITY: WebRetrievalProviderId[] = [
+  "exa",
+  "openai",
+  "google",
+  "anthropic",
+  "xai",
+];
 function ProviderLogo({
   provider,
   size = 14,
@@ -188,8 +189,184 @@ function capabilitySummary(
   return parts.join(" / ");
 }
 
-function routeLabel(route: Route) {
-  return `${route.provider}:${route.model}`;
+function routeIsDefaultOverride(route: Route, task: TaskConfig) {
+  return sameRoute(route, task.defaultRoute) ? null : route;
+}
+
+function providerSortIndex(provider: ProviderId) {
+  const index = PROVIDER_PRIORITY.indexOf(provider);
+  return index === -1 ? PROVIDER_PRIORITY.length : index;
+}
+
+function webProviderSortIndex(provider: WebRetrievalProviderId) {
+  const index = WEB_RETRIEVAL_PRIORITY.indexOf(provider);
+  return index === -1 ? WEB_RETRIEVAL_PRIORITY.length : index;
+}
+
+function webProviderOptions(
+  providers: WebRetrievalProviderConfig[],
+  selectedProvider: WebRetrievalProviderId,
+) {
+  return providers
+    .filter((provider) => provider.configured || provider.id === selectedProvider)
+    .sort(
+      (left, right) =>
+        webProviderSortIndex(left.id) - webProviderSortIndex(right.id),
+    );
+}
+
+function WebBrowsingRouteRow({
+  webRetrieval,
+  providers,
+  saving,
+  onCommit,
+}: {
+  webRetrieval: WebRetrieval;
+  providers: WebRetrievalProviderConfig[];
+  saving: boolean;
+  onCommit: (next: WebRetrieval) => void | Promise<void>;
+}) {
+  const providersById = Object.fromEntries(
+    providers.map((provider) => [provider.id, provider]),
+  ) as Partial<Record<WebRetrievalProviderId, WebRetrievalProviderConfig>>;
+  const selectedProvider = providersById[webRetrieval.primary];
+  const selectedRoute =
+    webRetrieval.primary === "exa"
+      ? null
+      : (webRetrieval.route ?? selectedProvider?.defaultRoute ?? null);
+  const selectedModels = selectedProvider?.models ?? [];
+
+  function commitProvider(primary: WebRetrievalProviderId) {
+    if (primary === "exa") {
+      void onCommit({ primary: "exa" });
+      return;
+    }
+
+    const provider = providersById[primary];
+    const existingModel =
+      webRetrieval.primary === primary ? webRetrieval.route?.model : null;
+    const model =
+      existingModel && provider?.models.includes(existingModel)
+        ? existingModel
+        : (provider?.defaultRoute?.model ?? provider?.models[0]);
+    if (!model) return;
+
+    void onCommit({
+      primary,
+      route: { provider: primary, model },
+    });
+  }
+
+  return (
+    <div className="grid gap-3 py-3.5 xl:grid-cols-[1fr_auto] xl:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-base font-medium text-foreground">Web browsing</p>
+          <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label text-muted-foreground">
+            {webRetrieval.primary === "exa" ? "Default" : "Override"}
+          </span>
+        </div>
+      </div>
+      <div className="flex w-full flex-col gap-2 justify-self-start xl:w-auto xl:flex-row xl:justify-self-end">
+        {saving ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground xl:self-center" />
+        ) : null}
+        <Select
+          value={webRetrieval.primary}
+          onValueChange={(nextProvider) => {
+            if (!nextProvider) return;
+            commitProvider(nextProvider as WebRetrievalProviderId);
+          }}
+          disabled={saving}
+        >
+          <SelectTrigger className={PROVIDER_SELECT_WIDTH_CLASS}>
+            <SelectValue>
+              <span className="flex min-w-0 items-center gap-2">
+                <WebRetrievalLogo provider={webRetrieval.primary} size={15} />
+                <span className="truncate text-sm">
+                  {selectedProvider?.label ?? webRetrieval.primary}
+                </span>
+              </span>
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent className="min-w-56">
+            {webProviderOptions(providers, webRetrieval.primary).map(
+              (provider) => (
+                <SelectItem
+                  key={provider.id}
+                  value={provider.id}
+                  disabled={!provider.configured}
+                >
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <WebRetrievalLogo provider={provider.id} size={15} />
+                    <span className="truncate text-sm">{provider.label}</span>
+                    <span className="ml-auto shrink-0 text-label text-muted-foreground/60">
+                      {provider.configured ? "Env" : "Unavailable"}
+                    </span>
+                  </span>
+                </SelectItem>
+              ),
+            )}
+          </SelectContent>
+        </Select>
+        <Select
+          value={selectedRoute?.model ?? DEFAULT_VALUE}
+          onValueChange={(model) => {
+            if (!model || !selectedRoute || webRetrieval.primary === "exa") {
+              return;
+            }
+            void onCommit({
+              primary: webRetrieval.primary,
+              route: {
+                provider: selectedRoute.provider,
+                model,
+              },
+            });
+          }}
+          disabled={saving || webRetrieval.primary === "exa"}
+        >
+          <SelectTrigger className={MODEL_SELECT_WIDTH_CLASS}>
+            <SelectValue>
+              {selectedRoute ? (
+                <span className="flex min-w-0 items-center gap-2">
+                  <ModelRouteLogo route={selectedRoute} size={16} />
+                  <span
+                    className="min-w-0 truncate text-base"
+                    title={selectedRoute.model}
+                  >
+                    {getModelDisplayName(selectedRoute)}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-base text-muted-foreground">
+                  No model
+                </span>
+              )}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent className="min-w-[min(42rem,calc(100vw-2rem))]">
+            {selectedModels.map((model) => {
+              if (!selectedRoute) return null;
+              const optionRoute = {
+                provider: selectedRoute.provider,
+                model,
+              };
+              return (
+                <SelectItem key={model} value={model}>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ModelRouteLogo route={optionRoute} size={16} />
+                    <span className="truncate text-base" title={model}>
+                      {getModelDisplayName(optionRoute)}
+                    </span>
+                  </span>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
 }
 
 export default function OperatorModelsPage() {
@@ -254,6 +431,31 @@ export default function OperatorModelsPage() {
       : (item?.languageModels ?? []);
   }
 
+  function providersForTask(task: TaskConfig, selectedProvider: ProviderId) {
+    return [...(settings?.providers ?? [])]
+      .filter((provider) => {
+        const hasModels = modelsForProvider(provider.id, task.isEmbedding).length > 0;
+        return (
+          hasModels && (provider.configured || provider.id === selectedProvider)
+        );
+      })
+      .sort(
+        (left, right) =>
+          providerSortIndex(left.id) - providerSortIndex(right.id),
+      );
+  }
+
+  function modelsForSelectedRoute(task: TaskConfig, route: Route) {
+    const models = modelsForProvider(route.provider, task.isEmbedding);
+    return models.includes(route.model) ? models : [route.model, ...models];
+  }
+
+  function providerTransportLabel(provider: ProviderConfig) {
+    if (provider.transport === "gateway") return "Gateway";
+    if (provider.transport === "direct") return "Env";
+    return "Unavailable";
+  }
+
   const actions = settings?.updatedAt ? (
     <span className="text-label text-muted-foreground">
       Updated {dayjs(settings.updatedAt).format("MMM D")}
@@ -286,7 +488,7 @@ export default function OperatorModelsPage() {
           </OperationalPanel>
         ) : (
           <div className="grid gap-4">
-            {TASK_GROUPS.map((group) => {
+            {settings.groups.map((group) => {
               const tasks = group.tasks
                 .map((taskId) =>
                   settings.tasks.find((task) => task.id === taskId),
@@ -305,32 +507,30 @@ export default function OperatorModelsPage() {
                       );
                       const displayRoute = routeIsDefault ? null : route;
                       const saving = savingTask === task.id;
-                      const value = displayRoute
-                        ? routeLabel(displayRoute)
-                        : DEFAULT_VALUE;
 
-                      function onChange(next: string | null) {
-                        if (!next || next === DEFAULT_VALUE) {
-                          void commitRoute(task.id, null);
-                          return;
-                        }
-                        const [provider, ...modelParts] = next.split(":");
-                        const selectedRoute = {
-                          provider: provider as ProviderId,
-                          model: modelParts.join(":"),
-                        };
+                      const selectedRoute = displayRoute ?? task.defaultRoute;
+                      const selectedProvider =
+                        providersById[selectedRoute.provider];
+                      const providerOptions = providersForTask(
+                        task,
+                        selectedRoute.provider,
+                      );
+                      const modelOptions = modelsForSelectedRoute(
+                        task,
+                        selectedRoute,
+                      );
+
+                      function commitSelectedRoute(nextRoute: Route) {
                         void commitRoute(
                           task.id,
-                          sameRoute(selectedRoute, task.defaultRoute)
-                            ? null
-                            : selectedRoute,
+                          routeIsDefaultOverride(nextRoute, task),
                         );
                       }
 
                       return (
                         <div
                           key={task.id}
-                          className="grid gap-3 py-3.5 md:grid-cols-[1fr_auto] md:items-center"
+                          className="grid gap-3 py-3.5 xl:grid-cols-[1fr_auto] xl:items-center"
                         >
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
@@ -341,86 +541,140 @@ export default function OperatorModelsPage() {
                                 {displayRoute ? "Override" : "Default"}
                               </span>
                             </div>
-                            <p className="mt-0.5 text-label text-muted-foreground/60">
-                              {task.description}
-                            </p>
                           </div>
-                          <div className="flex w-full items-center gap-2 justify-self-start md:w-auto md:justify-self-end">
+                          <div className="flex w-full flex-col gap-2 justify-self-start xl:w-auto xl:flex-row xl:justify-self-end">
                             {saving ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground xl:self-center" />
                             ) : null}
                             <Select
-                              value={value}
-                              onValueChange={onChange}
+                              value={selectedRoute.provider}
+                              onValueChange={(nextProvider) => {
+                                if (!nextProvider) return;
+                                const provider = nextProvider as ProviderId;
+                                const models = modelsForProvider(
+                                  provider,
+                                  task.isEmbedding,
+                                );
+                                const model = models.includes(selectedRoute.model)
+                                  ? selectedRoute.model
+                                  : models[0];
+                                if (!model) return;
+                                commitSelectedRoute({ provider, model });
+                              }}
                               disabled={saving}
                             >
-                              <SelectTrigger className={SELECT_WIDTH_CLASS}>
+                              <SelectTrigger className={PROVIDER_SELECT_WIDTH_CLASS}>
                                 <SelectValue>
-                                  {displayRoute ? (
-                                    <span className="flex items-center gap-2">
-                                      <ProviderLogo
-                                        provider={displayRoute.provider}
-                                      />
-                                      <span className="text-base">
-                                        {displayRoute.model}
-                                      </span>
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <ProviderLogo
+                                      provider={selectedRoute.provider}
+                                      size={15}
+                                    />
+                                    <span className="truncate text-sm">
+                                      {selectedProvider?.label ??
+                                        selectedRoute.provider}
                                     </span>
-                                  ) : (
-                                    <span className="flex items-center gap-2 text-muted-foreground">
-                                      <LogoIcon size={14} static />
-                                      <span>{task.defaultRoute.model}</span>
-                                    </span>
-                                  )}
+                                  </span>
                                 </SelectValue>
                               </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={DEFAULT_VALUE}>
-                                  <span className="text-muted-foreground">
-                                    Reset to default
-                                  </span>
-                                </SelectItem>
-                                <SelectSeparator />
-                                {settings.providers.map((provider) => {
-                                  const models = modelsForProvider(
-                                    provider.id,
-                                    task.isEmbedding,
-                                  );
-                                  if (models.length === 0) return null;
-                                  return (
-                                    <SelectGroup key={provider.id}>
-                                      <SelectLabel className="flex items-center gap-1.5">
-                                        <ProviderLogo
-                                          provider={provider.id}
-                                          size={12}
-                                        />
+                              <SelectContent className="min-w-56">
+                                {providerOptions.map((provider) => (
+                                  <SelectItem
+                                    key={provider.id}
+                                    value={provider.id}
+                                    disabled={!provider.configured}
+                                  >
+                                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                                      <ProviderLogo
+                                        provider={provider.id}
+                                        size={15}
+                                      />
+                                      <span className="truncate text-sm">
                                         {provider.label}
-                                      </SelectLabel>
-                                      {models.map((model) => {
-                                        const optionRoute = {
-                                          provider: provider.id,
-                                          model,
-                                        };
-                                        const capability =
-                                          modelCapabilities[
-                                            capabilityKey(optionRoute)
-                                          ];
-                                        return (
-                                          <SelectItem
-                                            key={`${provider.id}:${model}`}
-                                            value={`${provider.id}:${model}`}
+                                      </span>
+                                      <span className="ml-auto shrink-0 text-label text-muted-foreground/60">
+                                        {providerTransportLabel(provider)}
+                                      </span>
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={selectedRoute.model}
+                              onValueChange={(model) => {
+                                if (!model) return;
+                                if (model === DEFAULT_VALUE) {
+                                  void commitRoute(task.id, null);
+                                  return;
+                                }
+                                commitSelectedRoute({
+                                  provider: selectedRoute.provider,
+                                  model,
+                                });
+                              }}
+                              disabled={saving}
+                            >
+                              <SelectTrigger className={MODEL_SELECT_WIDTH_CLASS}>
+                                <SelectValue>
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <ModelRouteLogo
+                                      route={selectedRoute}
+                                      size={16}
+                                    />
+                                    <span
+                                      className="min-w-0 truncate text-base"
+                                      title={selectedRoute.model}
+                                    >
+                                      {getModelDisplayName(selectedRoute)}
+                                    </span>
+                                  </span>
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent className="min-w-[min(42rem,calc(100vw-2rem))]">
+                                {displayRoute ? (
+                                  <>
+                                    <SelectItem value={DEFAULT_VALUE}>
+                                      <span className="text-muted-foreground">
+                                        Reset to{" "}
+                                        {getModelDisplayName(task.defaultRoute)}
+                                      </span>
+                                    </SelectItem>
+                                    <SelectSeparator />
+                                  </>
+                                ) : null}
+                                {modelOptions.map((model) => {
+                                  const optionRoute = {
+                                    provider: selectedRoute.provider,
+                                    model,
+                                  };
+                                  const capability =
+                                    modelCapabilities[
+                                      capabilityKey(optionRoute)
+                                    ];
+                                  return (
+                                    <SelectItem key={model} value={model}>
+                                      <span className="flex min-w-0 flex-1 items-center justify-between gap-4">
+                                        <span className="flex min-w-0 items-center gap-2">
+                                          <ModelRouteLogo
+                                            route={optionRoute}
+                                            size={16}
+                                          />
+                                          <span
+                                            className="truncate text-base"
+                                            title={model}
                                           >
-                                            <span className="flex min-w-0 items-center justify-between gap-4">
-                                              <span className="truncate">
-                                                {model}
-                                              </span>
-                                              <span className="shrink-0 text-label text-muted-foreground/60">
-                                                {capabilitySummary(capability)}
-                                              </span>
-                                            </span>
-                                          </SelectItem>
-                                        );
-                                      })}
-                                    </SelectGroup>
+                                            {getModelDisplayName(optionRoute)}
+                                          </span>
+                                        </span>
+                                        <span className="shrink-0 text-label text-muted-foreground/60">
+                                          {capabilitySummary(
+                                            capability,
+                                            task.id,
+                                          )}
+                                        </span>
+                                      </span>
+                                    </SelectItem>
                                   );
                                 })}
                               </SelectContent>
@@ -430,132 +684,12 @@ export default function OperatorModelsPage() {
                       );
                     })}
                     {group.id === "platform" ? (
-                      <div className="grid gap-3 py-3.5 md:grid-cols-[1fr_auto] md:items-center">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-base font-medium text-foreground">
-                              Web browsing
-                            </p>
-                            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label text-muted-foreground">
-                              {settings.webRetrieval.primary === "exa"
-                                ? "Default"
-                                : "Override"}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-label text-muted-foreground/60">
-                            Public web retrieval for website enrichment and
-                            agent web research.
-                          </p>
-                        </div>
-                        <div className="flex w-full items-center gap-2 justify-self-start md:w-auto md:justify-self-end">
-                          {savingWebRetrieval ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                          ) : null}
-                          <Select
-                            value={
-                              settings.webRetrieval.primary === "exa"
-                                ? DEFAULT_VALUE
-                                : `${settings.webRetrieval.primary}:${settings.webRetrieval.route?.model ?? ""}`
-                            }
-                            onValueChange={(next) => {
-                              if (!next) return;
-                              if (
-                                next === DEFAULT_VALUE ||
-                                next === EXA_VALUE
-                              ) {
-                                void commitWebRetrieval({ primary: "exa" });
-                                return;
-                              }
-                              const [provider, ...modelParts] = next.split(":");
-                              const primary = provider as Exclude<
-                                WebRetrievalProviderId,
-                                "exa"
-                              >;
-                              void commitWebRetrieval({
-                                primary,
-                                route: {
-                                  provider: primary,
-                                  model: modelParts.join(":"),
-                                },
-                              });
-                            }}
-                            disabled={savingWebRetrieval}
-                          >
-                            <SelectTrigger className={SELECT_WIDTH_CLASS}>
-                              <SelectValue>
-                                <span className="flex items-center gap-2">
-                                  <WebRetrievalLogo
-                                    provider={settings.webRetrieval.primary}
-                                  />
-                                  <span className="text-base">
-                                    {settings.webRetrieval.primary === "exa"
-                                      ? "Exa"
-                                      : settings.webRetrieval.route?.model}
-                                  </span>
-                                </span>
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={DEFAULT_VALUE}>
-                                <span className="text-muted-foreground">
-                                  Reset to default
-                                </span>
-                              </SelectItem>
-                              <SelectSeparator />
-                              {settings.webRetrievalProviders.map(
-                                (provider) => {
-                                  if (provider.id === "exa") {
-                                    return (
-                                      <SelectGroup key={provider.id}>
-                                        <SelectLabel className="flex items-center gap-1.5">
-                                          <WebRetrievalLogo
-                                            provider="exa"
-                                            size={12}
-                                          />
-                                          Exa{" "}
-                                          {!provider.configured
-                                            ? "(missing key)"
-                                            : ""}
-                                        </SelectLabel>
-                                        <SelectItem
-                                          value={EXA_VALUE}
-                                          disabled={!provider.configured}
-                                        >
-                                          Exa
-                                        </SelectItem>
-                                      </SelectGroup>
-                                    );
-                                  }
-                                  if (provider.models.length === 0) return null;
-                                  return (
-                                    <SelectGroup key={provider.id}>
-                                      <SelectLabel className="flex items-center gap-1.5">
-                                        <WebRetrievalLogo
-                                          provider={provider.id}
-                                          size={12}
-                                        />
-                                        {provider.label}{" "}
-                                        {!provider.configured
-                                          ? "(missing key)"
-                                          : ""}
-                                      </SelectLabel>
-                                      {provider.models.map((model) => (
-                                        <SelectItem
-                                          key={`${provider.id}:${model}`}
-                                          value={`${provider.id}:${model}`}
-                                          disabled={!provider.configured}
-                                        >
-                                          {model}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectGroup>
-                                  );
-                                },
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
+                      <WebBrowsingRouteRow
+                        webRetrieval={settings.webRetrieval}
+                        providers={settings.webRetrievalProviders}
+                        saving={savingWebRetrieval}
+                        onCommit={commitWebRetrieval}
+                      />
                     ) : null}
                   </div>
                 </OperationalPanel>

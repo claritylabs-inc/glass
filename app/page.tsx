@@ -9,9 +9,7 @@ export default function RootPage() {
   const currentOrg = useCurrentOrg();
   const targetHref = !currentOrg
     ? null
-    : currentOrg.isPartner
-      ? "/partner/approvals"
-      : currentOrg.isBroker
+    : currentOrg.isBroker
         ? "/clients"
         : "/policies";
 

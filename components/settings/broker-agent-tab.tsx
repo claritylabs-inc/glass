@@ -27,8 +27,6 @@ type AgentSettingsArgs = {
   autoSendEmails: boolean;
   bccRequesterOnAgentEmails: boolean;
   emailSendDelay: number;
-  policyChangeRequestsEnabled: boolean;
-  certificateChangeRequestsEnabled: boolean;
 };
 
 function AgentSwitchRow({
@@ -77,8 +75,6 @@ export function BrokerAgentTab() {
         autoSendEmails?: boolean;
         bccRequesterOnAgentEmails?: boolean;
         emailSendDelay?: number;
-        policyChangeRequestsEnabled?: boolean;
-        certificateChangeRequestsEnabled?: boolean;
       }
     | undefined;
 
@@ -92,10 +88,6 @@ export function BrokerAgentTab() {
   const [bccRequesterOnAgentEmails, setBccRequesterOnAgentEmails] =
     useState(true);
   const [emailSendDelay, setEmailSendDelay] = useState<number>(5);
-  const [policyChangeRequestsEnabled, setPolicyChangeRequestsEnabled] =
-    useState(true);
-  const [certificateChangeRequestsEnabled, setCertificateChangeRequestsEnabled] =
-    useState(true);
   const [settingsHydrated, setSettingsHydrated] = useState(false);
 
   const hydratedRef = useRef(false);
@@ -110,10 +102,6 @@ export function BrokerAgentTab() {
       setAutoSendEmails(org.autoSendEmails ?? false);
       setBccRequesterOnAgentEmails(org.bccRequesterOnAgentEmails ?? true);
       setEmailSendDelay(org.emailSendDelay ?? 5);
-      setPolicyChangeRequestsEnabled(org.policyChangeRequestsEnabled ?? true);
-      setCertificateChangeRequestsEnabled(
-        org.certificateChangeRequestsEnabled ?? true,
-      );
       hydratedRef.current = true;
       setSettingsHydrated(true);
     }
@@ -126,16 +114,12 @@ export function BrokerAgentTab() {
         autoSendEmails,
         bccRequesterOnAgentEmails,
         emailSendDelay,
-        policyChangeRequestsEnabled,
-        certificateChangeRequestsEnabled,
       }),
     [
       autoSendEmails,
       bccRequesterOnAgentEmails,
-      certificateChangeRequestsEnabled,
       chatEmailNotifications,
       emailSendDelay,
-      policyChangeRequestsEnabled,
     ],
   );
 
@@ -153,8 +137,6 @@ export function BrokerAgentTab() {
       autoSendEmails,
       bccRequesterOnAgentEmails,
       emailSendDelay,
-      policyChangeRequestsEnabled,
-      certificateChangeRequestsEnabled,
     },
     valueKey: settingsValueKey,
     enabled: settingsHydrated,
@@ -344,40 +326,6 @@ export function BrokerAgentTab() {
           />
         </OperationalPanelBody>
       </OperationalPanel>
-
-      {isBroker ? (
-        <OperationalPanel>
-          <OperationalPanelHeader title="Certificate safeguards" />
-          <OperationalPanelBody className="divide-y divide-foreground/6 px-5 py-2">
-            <AgentSwitchRow
-              title="Broker change handoff"
-              description="Let Glass draft broker follow-ups when a policy update or endorsement is needed."
-              checked={policyChangeRequestsEnabled}
-              onCheckedChange={() => {
-                setPolicyChangeRequestsEnabled((value) => {
-                  const next = !value;
-                  if (!next) setCertificateChangeRequestsEnabled(false);
-                  return next;
-                });
-              }}
-              label="Toggle broker change handoff"
-            />
-            <AgentSwitchRow
-              title="Held COI handoff"
-              description="When a COI needs an endorsement, Glass keeps it held and prepares the broker follow-up."
-              checked={
-                policyChangeRequestsEnabled && certificateChangeRequestsEnabled
-              }
-              onCheckedChange={() =>
-                setCertificateChangeRequestsEnabled((value) =>
-                  policyChangeRequestsEnabled ? !value : false,
-                )
-              }
-              label="Toggle held COI handoff"
-            />
-          </OperationalPanelBody>
-        </OperationalPanel>
-      ) : null}
 
       <OperationalPanel>
         <OperationalPanelHeader title="Send delay" />

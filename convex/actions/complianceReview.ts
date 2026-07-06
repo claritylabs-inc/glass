@@ -8,7 +8,8 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { getModelForOrg } from "../lib/models";
+import { getModelAndRouteForOrg } from "../lib/models";
+import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
 
 const ComplianceReviewSchema = z.object({
   status: z.enum(["met", "missing", "expiring_soon", "expired", "needs_review"]),
@@ -85,9 +86,10 @@ export const recheckOwnRequirement = action({
       ),
     );
     const today = dayjs().format("YYYY-MM-DD");
+    const modelRoute = await getModelAndRouteForOrg(ctx, args.orgId, "analysis");
     const result = await generateObject({
-      model: await getModelForOrg(ctx, args.orgId, "analysis"),
-      schema: ComplianceReviewSchema,
+      model: modelRoute.model,
+      schema: structuredOutputSchemaForRoute(ComplianceReviewSchema, modelRoute.route),
       system:
         "You are a careful commercial insurance compliance reviewer. Decide whether the organization's current policies satisfy a single insurance requirement using only the provided structured policy evidence. Do not guess. If the evidence is ambiguous, incomplete, internally inconsistent, or requires human interpretation, return needs_review.",
       prompt: `Today is ${today}.

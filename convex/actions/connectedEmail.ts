@@ -18,7 +18,8 @@ import {
   resolveImapDestination,
   type ResolvedImapDestination,
 } from "../lib/imapDestination";
-import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import { getModelAndRouteForOrg, getProviderOptionsForTask } from "../lib/models";
+import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
 import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
 
 type ConnectedEmailAccount = {
@@ -1131,10 +1132,11 @@ export const scanPreviousDayForOrg = action({
 
     if (rows.length === 0) return { status: "no_messages" as const };
 
+    const modelRoute = await getModelAndRouteForOrg(ctx, args.orgId, "mailbox_coordinator");
     const classification = await generateObject({
-      model: await getModelForOrg(ctx, args.orgId, "mailbox_coordinator"),
+      model: modelRoute.model,
       providerOptions: getProviderOptionsForTask("mailbox_coordinator"),
-      schema: DailyAttentionSchema,
+      schema: structuredOutputSchemaForRoute(DailyAttentionSchema, modelRoute.route),
       system:
         "You review yesterday's mailbox summaries for a commercial insurance team. Return only messages that appear to need insurance-specific attention, such as policy renewals, certificates, claims, compliance requirements, vendor insurance, lease/contract insurance language, cancellations, nonrenewals, premium issues, or broker/client follow-up. Ignore marketing, newsletters, receipts, generic scheduling, and unrelated personal mail.",
       prompt: JSON.stringify(rows),

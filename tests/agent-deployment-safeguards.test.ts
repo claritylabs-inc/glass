@@ -1,9 +1,108 @@
+import { execFile } from "child_process";
 import { readFileSync } from "fs";
+import { createServer, type Server, type ServerResponse } from "http";
+import type { AddressInfo } from "net";
 import { join } from "path";
-import { describe, expect, it } from "vitest";
+import { promisify } from "util";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf-8");
+const execFileAsync = promisify(execFile);
+
+const workerPackage = JSON.parse(read("extraction-worker/package.json"));
+const expectedClSdkSpec = workerPackage.dependencies?.["@claritylabs/cl-sdk"];
+if (!expectedClSdkSpec) throw new Error("extraction-worker package is missing @claritylabs/cl-sdk");
+
+let healthServer: Server;
+let healthBaseUrl: string;
+
+function writeJson(res: ServerResponse, payload: unknown) {
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify(payload));
+}
+
+function convexHealth(expectedClSdkVersion: string) {
+  return {
+    ok: true,
+    glassEnv: "staging",
+    emailDeliveryMode: "restricted",
+    checks: {
+      extractionWorkerModeExternal: true,
+      extractionWorkerSecretConfigured: true,
+      extractionWorkerUrlConfigured: true,
+      extractionWorkerExpectedProtocolConfigured: true,
+      extractionWorkerExpectedClSdkConfigured: true,
+    },
+    extractionWorker: {
+      mode: "external",
+      expectedProtocolVersion: "source-tree-v1",
+      expectedClSdkVersion,
+    },
+  };
+}
+
+function imessageHealth() {
+  return {
+    ok: true,
+    service: "glass-imessage-worker",
+    glassEnv: "staging",
+    transport: "terminal",
+    imessageEnabled: false,
+    convexSiteConfigured: true,
+    workerSecretConfigured: true,
+    photonConfigured: false,
+    httpPorts: [],
+  };
+}
+
+function extractionWorkerHealth(clSdkVersion: string) {
+  return {
+    ok: true,
+    glassEnv: "staging",
+    workerProtocolVersion: "source-tree-v1",
+    clSdkVersion,
+  };
+}
+
+async function runAgentHealth(convexPath: string) {
+  return execFileAsync(
+    process.execPath,
+    ["scripts/check-agent-deployment-health.mjs", "--env=staging"],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        AGENT_HEALTH_ATTEMPTS: "1",
+        AGENT_HEALTH_RETRY_DELAY_MS: "1",
+        GLASS_CONVEX_AGENT_HEALTH_URL: `${healthBaseUrl}${convexPath}`,
+        GLASS_IMESSAGE_WORKER_HEALTH_URL: `${healthBaseUrl}/imessage`,
+        GLASS_EXTRACTION_WORKER_HEALTH_URL: `${healthBaseUrl}/extraction-worker`,
+      },
+      timeout: 10_000,
+    },
+  );
+}
+
+beforeAll(async () => {
+  healthServer = createServer((req, res) => {
+    if (req.url === "/convex-aligned") return writeJson(res, convexHealth(expectedClSdkSpec));
+    if (req.url === "/convex-stale-sdk") return writeJson(res, convexHealth("^0.0.0"));
+    if (req.url === "/imessage") return writeJson(res, imessageHealth());
+    if (req.url === "/extraction-worker") return writeJson(res, extractionWorkerHealth(expectedClSdkSpec));
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise<void>((resolve) => healthServer.listen(0, "127.0.0.1", resolve));
+  const address = healthServer.address() as AddressInfo;
+  healthBaseUrl = `http://127.0.0.1:${address.port}`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    healthServer.close((error) => (error ? reject(error) : resolve()));
+  });
+});
 
 describe("agent deployment safeguards", () => {
   it("builds every mission-critical worker before deploys can pass", () => {
@@ -58,17 +157,35 @@ describe("agent deployment safeguards", () => {
   it("smoke-checks production agent health on a schedule", () => {
     const workflow = read(".github/workflows/agent-safeguards.yml");
     const script = read("scripts/check-agent-deployment-health.mjs");
+    const deployments = read("config/deployments.json");
     const http = read("convex/http.ts");
 
     expect(workflow).toContain('cron: "*/15 * * * *"');
     expect(workflow).toContain("node scripts/check-agent-deployment-health.mjs");
     expect(workflow).toContain("AGENT_HEALTH_ATTEMPTS: 30");
-    expect(script).toContain("https://merry-platypus-82.convex.site/agent-health");
-    expect(script).toContain("https://glass-production-4618.up.railway.app/health");
+    expect(deployments).toContain("https://merry-platypus-82.convex.site/agent-health");
+    expect(deployments).toContain("https://glass-production-4618.up.railway.app/health");
+    expect(deployments).toContain("GLASS_STAGING_CONVEX_AGENT_HEALTH_URL");
+    expect(deployments).toContain("GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL");
+    expect(deployments).toContain("GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL");
+    expect(script).toContain("config/deployments.json");
     expect(script).toContain("AGENT_HEALTH_RETRY_DELAY_MS");
-    expect(script).toContain("worker is not listening on Railway public target port 3001");
+    expect(script).toContain("worker is not listening on required port");
     expect(http).toContain('path: "/agent-health"');
     expect(http).toContain("emailInboundWebhookSecretConfigured");
     expect(http).toContain("imessageWorkerSecretConfigured");
+    expect(http).toContain("emailOutboundConfigured");
+  });
+
+  it("fails deployment health when Convex expects a stale cl-sdk worker version", async () => {
+    await expect(runAgentHealth("/convex-stale-sdk")).rejects.toMatchObject({
+      stderr: expect.stringContaining("extractionWorker.expectedClSdkVersion"),
+    });
+  });
+
+  it("accepts deployment health only when Convex, worker health, and package spec agree", async () => {
+    const result = await runAgentHealth("/convex-aligned");
+
+    expect(result.stdout).toContain("[agent-health] staging deployment health passed");
   });
 });

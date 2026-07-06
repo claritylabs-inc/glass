@@ -51,16 +51,41 @@ type CompletionPayloadSaveResult = {
   logError?: string;
 };
 
+async function externalLeaseMatches(
+  ctx: ActionCtx,
+  args: { policyId: string; leaseId?: string },
+): Promise<boolean> {
+  if (!args.leaseId) return true;
+  const job = await ctx.runQuery(internal.policies.pipelineGetJob, {
+    jobId: args.policyId,
+  }) as {
+    status?: string;
+    checkpoint?: {
+      nextPhase?: string;
+      lease?: { id?: string };
+    } | null;
+  } | null;
+  return (
+    job?.status === "running" &&
+    job.checkpoint?.nextPhase === "extract" &&
+    job.checkpoint.lease?.id === args.leaseId
+  );
+}
+
 export const saveExternalCompletionPayload = action({
   args: {
     secret: v.string(),
     policyId: v.string(),
+    leaseId: v.optional(v.string()),
     payload: v.any(),
   },
   handler: async (ctx, args): Promise<CompletionPayloadSaveResult> => {
     requireExtractionWorkerSecret(args.secret);
     const json = JSON.stringify(args.payload);
     const byteLength = new TextEncoder().encode(json).byteLength;
+    if (!await externalLeaseMatches(ctx, args)) {
+      throw new Error("Stale external extraction lease");
+    }
     const storageId = String(await ctx.storage.store(new Blob([json], {
       type: "application/json",
     })));
@@ -91,11 +116,20 @@ export const finalizeExternalCompletionPayload = action({
   args: {
     secret: v.string(),
     policyId: v.string(),
+    leaseId: v.optional(v.string()),
     storageId: v.string(),
     byteLength: v.number(),
   },
   handler: async (ctx, args): Promise<CompletionPayloadSaveResult> => {
     requireExtractionWorkerSecret(args.secret);
+    if (!await externalLeaseMatches(ctx, args)) {
+      return {
+        storageId: args.storageId,
+        byteLength: args.byteLength,
+        logSaved: false,
+        logError: "Stale external extraction lease",
+      };
+    }
     await ctx.runMutation(internal.policies.pipelineSaveArtifact, {
       jobId: args.policyId,
       kind: "external_completion_payload",

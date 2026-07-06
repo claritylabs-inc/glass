@@ -23,7 +23,7 @@ export type Policy = {
 };
 
 export type AppCardView = {
-  kind: "policy" | "certificate" | "certificate_request" | "policy_change";
+  kind: "policy" | "certificate" | "policy_change";
   orgName: string;
   title: string;
   subtitle?: string;
@@ -33,17 +33,8 @@ export type AppCardView = {
     holderName: string;
     fileName: string;
     fileUrl?: string | null;
-    authorityType?: string;
-    certificationStatus?: string;
     versionNumber?: number;
     createdAt: number;
-  };
-  certificateRequest?: {
-    holderName: string;
-    status: string;
-    partnerName?: string;
-    createdAt: number;
-    updatedAt: number;
   };
   policyChange?: {
     status: string;
@@ -98,14 +89,6 @@ export function metadataDescription(view: AppCardView) {
   if (view.certificate) {
     return compactList([
       view.certificate.holderName,
-      labelForStatus(view.certificate.certificationStatus),
-      view.orgName,
-    ]);
-  }
-  if (view.certificateRequest) {
-    return compactList([
-      view.certificateRequest.holderName,
-      labelForStatus(view.certificateRequest.status),
       view.orgName,
     ]);
   }

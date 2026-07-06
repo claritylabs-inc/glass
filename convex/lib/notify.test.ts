@@ -12,7 +12,6 @@ describe("notify() — coalesce logic", () => {
   test("two events within the window collapse into one notification", async () => {
     const t = convexTest(schema, modules);
 
-    // Create a broker org
     const brokerOrgId = await t.run(async (ctx) => {
       return await ctx.db.insert("organizations", {
         name: "Broker Co",
@@ -25,26 +24,24 @@ describe("notify() — coalesce logic", () => {
     // First event
     const id1 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "client_document_uploaded",
-      title: "Application submitted",
-      body: "Acme submitted an application",
-      severity: "info",
-      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
+      type: "vendor_compliance_gap",
+      title: "Vendor compliance gap",
+      body: "Acme is missing a vendor requirement",
+      severity: "warning",
+      coalesceKeyParts: ["vendor_compliance_gap", brokerOrgId, "clientOrg1"],
       nowMs: now,
     });
 
-    // Second event within same 10-min bucket
     const id2 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "client_document_uploaded",
-      title: "Application submitted",
-      body: "Acme submitted another application",
-      severity: "info",
-      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
+      type: "vendor_compliance_gap",
+      title: "Vendor compliance gap",
+      body: "Acme is still missing a vendor requirement",
+      severity: "warning",
+      coalesceKeyParts: ["vendor_compliance_gap", brokerOrgId, "clientOrg1"],
       nowMs: now + 60_000, // 1 minute later, same bucket
     });
 
-    // Should be same notification id
     expect(id1).toBe(id2);
 
 
@@ -60,25 +57,25 @@ describe("notify() — coalesce logic", () => {
     });
 
     const now = 1_000_000_000_000;
-    const windowMs = 10 * 60 * 1000;
+    const windowMs = 24 * 60 * 60 * 1000;
 
     const id1 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "client_document_uploaded",
-      title: "App submitted",
+      type: "vendor_compliance_gap",
+      title: "Vendor compliance gap",
       body: "First",
-      severity: "info",
-      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
+      severity: "warning",
+      coalesceKeyParts: ["vendor_compliance_gap", brokerOrgId, "clientOrg1"],
       nowMs: now,
     });
 
     const id2 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "client_document_uploaded",
-      title: "App submitted",
+      type: "vendor_compliance_gap",
+      title: "Vendor compliance gap",
       body: "Second",
-      severity: "info",
-      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
+      severity: "warning",
+      coalesceKeyParts: ["vendor_compliance_gap", brokerOrgId, "clientOrg1"],
       nowMs: now + windowMs + 1, // different bucket
     });
 
@@ -96,11 +93,11 @@ describe("notify() — coalesce logic", () => {
 
     const id1 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "client_document_uploaded",
-      title: "App submitted",
+      type: "vendor_compliance_gap",
+      title: "Vendor compliance gap",
       body: "First",
-      severity: "info",
-      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
+      severity: "warning",
+      coalesceKeyParts: ["vendor_compliance_gap", brokerOrgId, "clientOrg1"],
       nowMs: now,
     });
 
@@ -109,11 +106,11 @@ describe("notify() — coalesce logic", () => {
 
     const id2 = await t.mutation(notifyInternalFn, {
       orgId: brokerOrgId,
-      type: "client_document_uploaded",
-      title: "App submitted",
+      type: "vendor_compliance_gap",
+      title: "Vendor compliance gap",
       body: "Second",
-      severity: "info",
-      coalesceKeyParts: ["client_document_uploaded", brokerOrgId, "clientOrg1"],
+      severity: "warning",
+      coalesceKeyParts: ["vendor_compliance_gap", brokerOrgId, "clientOrg1"],
       nowMs: now + 60_000, // same bucket, but first is read
     });
 
@@ -149,7 +146,7 @@ describe("notify() — preference resolution", () => {
       ctx.db.insert("notificationPreferences", {
         userId,
         orgId,
-        type: "extraction_error",
+        type: "incomplete_extraction",
         channel: "email",
         enabled: true,
         updatedAt: Date.now(),
@@ -158,7 +155,7 @@ describe("notify() — preference resolution", () => {
 
     const { shouldEmail } = await t.run(async (ctx) => {
       const { resolveEmailPreference } = await import("./notify");
-      return resolveEmailPreference(ctx, userId, orgId, "extraction_error", "warning");
+      return resolveEmailPreference(ctx, userId, orgId, "incomplete_extraction", "warning");
     });
 
     expect(shouldEmail).toBe(true);
@@ -177,7 +174,7 @@ describe("notify() — preference resolution", () => {
     // No preference rows at all
     const { shouldEmail } = await t.run(async (ctx) => {
       const { resolveEmailPreference } = await import("./notify");
-      return resolveEmailPreference(ctx, userId, orgId, "policy_delivered_by_broker", "info");
+      return resolveEmailPreference(ctx, userId, orgId, "policy_change_completed", "info");
     });
 
     // info severity defaults to false
