@@ -88,7 +88,7 @@ type ResolvedWorkerModelRoute = {
   model: LanguageModel;
   route: WorkerModelRoute;
   routeSource: WorkerRouteSource;
-  transport: "direct" | "gateway";
+  transport: "direct";
   capabilities: ModelCapabilities;
   providerOptions?: ProviderOptions;
 };
@@ -632,7 +632,7 @@ function routeHasDirectAccess(route: WorkerModelRoute, apiKey?: string): boolean
   return !!nativeProviderModel(route) && !!routeDirectApiKey(route, apiKey);
 }
 
-function routeTransport(_route: WorkerModelRoute, _apiKey?: string): "direct" | "gateway" {
+function routeTransport(_route: WorkerModelRoute, _apiKey?: string): "direct" {
   return "direct";
 }
 

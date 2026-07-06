@@ -41,8 +41,8 @@ import {
  *   FIREWORKS_API_KEY — direct Fireworks access for default Glass language routes
  *   OPENAI_API_KEY — direct OpenAI access for embedding routes during the migration
  *
- * Main Glass model routing is direct-provider only. Vercel AI Gateway remains
- * isolated to web retrieval in convex/lib/webRetrieval.ts.
+ * Glass model routing is direct-provider only. Vercel AI Gateway is not a
+ * fallback for language, extraction, embedding, or web retrieval routes.
  */
 
 // Lazy provider factories

@@ -57,7 +57,7 @@ type ProviderConfig = {
   id: ProviderId;
   label: string;
   configured: boolean;
-  transport: "direct" | "gateway" | null;
+  transport: "direct" | null;
   languageModels: string[];
   embeddingModels: string[];
 };
@@ -451,7 +451,6 @@ export default function OperatorModelsPage() {
   }
 
   function providerTransportLabel(provider: ProviderConfig) {
-    if (provider.transport === "gateway") return "Gateway";
     if (provider.transport === "direct") return "Env";
     return "Unavailable";
   }

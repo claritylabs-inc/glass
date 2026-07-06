@@ -1,7 +1,7 @@
 "use node";
 
 import { isIP } from "node:net";
-import { gateway, generateText } from "ai";
+import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -58,10 +58,6 @@ type ProviderResult = {
   sources: WebRetrievalSource[];
 };
 
-function hasGatewayAccess() {
-  return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
-}
-
 function hasProviderAccess(provider: WebRetrievalProvider) {
   switch (provider) {
     case "exa":
@@ -69,11 +65,11 @@ function hasProviderAccess(provider: WebRetrievalProvider) {
     case "openai":
       return !!process.env.OPENAI_API_KEY;
     case "google":
-      return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY) || hasGatewayAccess();
+      return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY);
     case "anthropic":
       return !!process.env.ANTHROPIC_API_KEY;
     case "xai":
-      return !!process.env.XAI_API_KEY || hasGatewayAccess();
+      return !!process.env.XAI_API_KEY;
   }
 }
 
@@ -271,22 +267,16 @@ function nativePrompt(input: NormalizedInput, provider: WebRetrievalProvider) {
   ].filter(Boolean).join("\n");
 }
 
-function gatewayModelId(route: ModelRoute) {
-  return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
-}
-
 function providerModel(provider: WebRetrievalProvider, route: ModelRoute) {
   switch (provider) {
     case "openai":
       return createOpenAI()(route.model);
     case "google":
-      return process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY
-        ? createGoogleGenerativeAI()(route.model)
-        : gateway(gatewayModelId(route));
+      return createGoogleGenerativeAI()(route.model);
     case "anthropic":
       return createAnthropic()(normalizeAnthropicModel(route.model));
     case "xai":
-      return process.env.XAI_API_KEY ? createXai().responses(route.model) : gateway(gatewayModelId(route));
+      return createXai().responses(route.model);
     case "exa":
       throw new Error("Exa does not use a model route");
   }
