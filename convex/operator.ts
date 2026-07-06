@@ -48,6 +48,19 @@ const REMOVED_PROGRAM_ADMIN_TABLES = [
   "certificateApprovals",
 ] as const;
 const REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE = 500;
+const LEGACY_CERTIFICATE_VERSION_FIELDS = [
+  "approvalAudit",
+  "approvalId",
+  "approvalMode",
+  "authorityType",
+  "certificationStatus",
+  "disclaimer",
+  "partnerOrgId",
+  "partnerProgramId",
+  "standingAuthorizationId",
+  "templateId",
+] as const;
+const LEGACY_CERTIFICATE_VERSION_CLEANUP_BATCH_SIZE = 100;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -1479,6 +1492,43 @@ export const cleanupRemovedProgramAdminDataInternal = internalMutation({
       );
     }
     return result;
+  },
+});
+
+export const cleanupLegacyCertificateVersionFieldsInternal = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("certificateVersions")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: LEGACY_CERTIFICATE_VERSION_CLEANUP_BATCH_SIZE,
+      });
+    let patched = 0;
+    for (const row of page.page) {
+      const record = row as Record<string, unknown>;
+      const hasLegacyField = LEGACY_CERTIFICATE_VERSION_FIELDS.some(
+        (field) => record[field] !== undefined,
+      );
+      if (!hasLegacyField) continue;
+      await ctx.db.patch(row._id, Object.fromEntries(
+        LEGACY_CERTIFICATE_VERSION_FIELDS.map((field) => [field, undefined]),
+      ));
+      patched += 1;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupLegacyCertificateVersionFieldsInternal,
+        { cursor: page.continueCursor },
+      );
+    }
+    return {
+      scanned: page.page.length,
+      patched,
+      isDone: page.isDone,
+      continueCursor: page.isDone ? undefined : page.continueCursor,
+    };
   },
 });
 
