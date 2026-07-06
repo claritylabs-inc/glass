@@ -321,6 +321,27 @@ export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
   return MODEL_ROUTING[id];
 }
 
+export function directProviderModelForRoute(route: ModelRoute): string | null {
+  switch (route.provider) {
+    case "anthropic":
+      if (route.model === "claude-haiku-4.5") {
+        return "claude-haiku-4-5-20251001";
+      }
+      if (route.model === "claude-3-haiku") {
+        return "claude-3-haiku-20240307";
+      }
+      return route.model.replace(/\.(\d+)/g, "-$1");
+    case "deepseek":
+      return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
+        ? route.model
+        : null;
+    case "moonshot":
+      return null;
+    default:
+      return route.model;
+  }
+}
+
 export type ModelRouteGroup<RouteId extends string = string> = {
   id: string;
   label: string;

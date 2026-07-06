@@ -26,6 +26,7 @@ import {
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   WEB_RETRIEVAL_LABELS,
   WEB_RETRIEVAL_MODEL_CATALOG,
+  directProviderModelForRoute,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
   type ModelProvider,
@@ -123,6 +124,11 @@ function assertSupportedRoute(routeId: ModelRouteId, route: ModelRoute) {
   if (isRetiredModelRoute(route)) {
     throw new Error(`Retired model ${route.model} is no longer selectable`);
   }
+  if (!directProviderModelForRoute(route)) {
+    throw new Error(
+      `${PROVIDER_LABELS[route.provider]} model ${route.model} is not available through direct provider routing`,
+    );
+  }
   const models = routeId === "embeddings"
     ? EMBEDDING_MODEL_CATALOG[route.provider]
     : LANGUAGE_MODEL_CATALOG[route.provider];
@@ -167,46 +173,53 @@ function gatewayConfigured() {
   return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
 }
 
+function configuredEnv(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
 function languageProviderEnvConfigured(provider: ModelProvider) {
   switch (provider) {
     case "fireworks":
-      return !!process.env.FIREWORKS_API_KEY;
+      return !!configuredEnv(process.env.FIREWORKS_API_KEY);
     case "openai":
-      return !!process.env.OPENAI_API_KEY;
+      return !!configuredEnv(process.env.OPENAI_API_KEY);
     case "anthropic":
-      return !!process.env.ANTHROPIC_API_KEY;
+      return !!configuredEnv(process.env.ANTHROPIC_API_KEY);
     case "google":
       return !!(
-        process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY
+        configuredEnv(process.env.GOOGLE_GENERATIVE_AI_API_KEY) ??
+        configuredEnv(process.env.GOOGLE_API_KEY)
       );
     case "xai":
-      return !!process.env.XAI_API_KEY;
+      return !!configuredEnv(process.env.XAI_API_KEY);
     case "mistral":
-      return !!process.env.MISTRAL_API_KEY;
+      return !!configuredEnv(process.env.MISTRAL_API_KEY);
     case "cohere":
-      return !!process.env.COHERE_API_KEY;
+      return !!configuredEnv(process.env.COHERE_API_KEY);
     case "deepseek":
-      return !!process.env.DEEPSEEK_API_KEY;
+      return !!configuredEnv(process.env.DEEPSEEK_API_KEY);
     case "moonshot":
       return false;
   }
 }
 
-function gatewayRoutableProvider(provider: ModelProvider) {
+function routeDirectlyConfigured(route: ModelRoute) {
   return (
-    provider === "openai" ||
-    provider === "anthropic" ||
-    provider === "google" ||
-    provider === "xai"
+    !!directProviderModelForRoute(route) &&
+    languageProviderEnvConfigured(route.provider)
   );
 }
 
 function providerTransport(provider: ModelProvider) {
-  if (languageProviderEnvConfigured(provider)) return "direct";
-  if (gatewayConfigured() && gatewayRoutableProvider(provider)) {
-    return "gateway";
-  }
-  return null;
+  if (!languageProviderEnvConfigured(provider)) return null;
+  const routes = [
+    ...(LANGUAGE_MODEL_CATALOG[provider] ?? []),
+    ...(EMBEDDING_MODEL_CATALOG[provider] ?? []),
+  ];
+  return routes.some((model) => directProviderModelForRoute({ provider, model }))
+    ? "direct"
+    : null;
 }
 
 function globalProviderConfigured(provider: ModelProvider) {
@@ -221,6 +234,7 @@ function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefine
         task,
         route &&
         !isRetiredModelRoute(route) &&
+        directProviderModelForRoute(route) &&
         isConfigurableProvider(route.provider) &&
         keys?.[route.provider]
           ? route
@@ -234,9 +248,26 @@ function nullableGlobalRoutes(routes: GlobalRoutes | undefined) {
   return Object.fromEntries(
     MODEL_ROUTE_IDS.map((id) => {
       const route = routes?.[id];
-      return [id, route && !isRetiredModelRoute(route) ? route : null];
+      return [
+        id,
+        route && !isRetiredModelRoute(route) && routeDirectlyConfigured(route)
+          ? route
+          : null,
+      ];
     }),
   ) as Record<ModelRouteId, ModelRoute | null>;
+}
+
+function availableLanguageModels(provider: ModelProvider) {
+  return (LANGUAGE_MODEL_CATALOG[provider] ?? []).filter((model) =>
+    directProviderModelForRoute({ provider, model }),
+  );
+}
+
+function availableEmbeddingModels(provider: ModelProvider) {
+  return (EMBEDDING_MODEL_CATALOG[provider] ?? []).filter((model) =>
+    directProviderModelForRoute({ provider, model }),
+  );
 }
 
 function configurableProviderKeys(keys: ProviderKeys | undefined) {
@@ -321,8 +352,8 @@ export const get = query({
       providers: CONFIGURABLE_MODEL_PROVIDERS.map((id) => ({
         id,
         label: PROVIDER_LABELS[id],
-        languageModels: LANGUAGE_MODEL_CATALOG[id],
-        embeddingModels: EMBEDDING_MODEL_CATALOG[id] ?? [],
+        languageModels: availableLanguageModels(id),
+        embeddingModels: availableEmbeddingModels(id),
       })),
       tasks: MODEL_TASKS.map((id) => ({
         id,
@@ -431,8 +462,8 @@ export const getGlobal = query({
         label: PROVIDER_LABELS[id],
         configured: globalProviderConfigured(id),
         transport: providerTransport(id),
-        languageModels: LANGUAGE_MODEL_CATALOG[id],
-        embeddingModels: EMBEDDING_MODEL_CATALOG[id] ?? [],
+        languageModels: availableLanguageModels(id),
+        embeddingModels: availableEmbeddingModels(id),
       })),
       tasks: MODEL_ROUTE_IDS.map((id) => ({
         id,
@@ -473,6 +504,11 @@ export const updateGlobalRoutes = mutation({
       if (!route) continue;
       if (!isModelRouteId(task)) throw new Error(`Unknown model route ${task}`);
       assertSupportedRoute(task, route);
+      if (!routeDirectlyConfigured(route)) {
+        throw new Error(
+          `${PROVIDER_LABELS[route.provider]} is not configured for direct model routing`,
+        );
+      }
     }
 
     const now = dayjs().valueOf();
@@ -557,6 +593,7 @@ export const resolveForOrg = internalQuery({
         brokerRoute &&
         brokerRoute.provider !== "moonshot" &&
         !isRetiredModelRoute(brokerRoute) &&
+        directProviderModelForRoute(brokerRoute) &&
         providerKeys[brokerRoute.provider]
       ) {
         routes[task] = brokerRoute;
@@ -567,7 +604,8 @@ export const resolveForOrg = internalQuery({
       if (
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
-        !isRetiredModelRoute(globalRoute)
+        !isRetiredModelRoute(globalRoute) &&
+        routeDirectlyConfigured(globalRoute)
       ) {
         routes[task] = globalRoute;
         routeSources[task] = "global";
@@ -585,7 +623,8 @@ export const resolveForOrg = internalQuery({
       if (
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
-        !isRetiredModelRoute(globalRoute)
+        !isRetiredModelRoute(globalRoute) &&
+        routeDirectlyConfigured(globalRoute)
       ) {
         routes[routeId] = globalRoute;
         routeSources[routeId] = "global";
@@ -619,7 +658,8 @@ export const resolvePublicDefaults = internalQuery({
       if (
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
-        !isRetiredModelRoute(globalRoute)
+        !isRetiredModelRoute(globalRoute) &&
+        routeDirectlyConfigured(globalRoute)
       ) {
         routes[task] = globalRoute;
         routeSources[task] = "global";
@@ -637,7 +677,8 @@ export const resolvePublicDefaults = internalQuery({
       if (
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
-        !isRetiredModelRoute(globalRoute)
+        !isRetiredModelRoute(globalRoute) &&
+        routeDirectlyConfigured(globalRoute)
       ) {
         routes[routeId] = globalRoute;
         routeSources[routeId] = "global";

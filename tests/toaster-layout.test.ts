@@ -27,4 +27,15 @@ describe("toaster layout", () => {
     expect(globals).toContain("[data-sonner-toast][data-x-position=\"right\"]");
     expect(banner).toContain("--glass-app-bottom-inset");
   });
+
+  it("uses the custom PillButton layout for duplicate upload confirmation", () => {
+    const duplicateUpload = read("lib/policy-upload-duplicates.tsx");
+
+    expect(duplicateUpload).toContain("toast.custom");
+    expect(duplicateUpload).toContain("<PillButton");
+    expect(duplicateUpload).toContain("Continue upload");
+    expect(duplicateUpload).not.toContain("toast.warning");
+    expect(duplicateUpload).not.toContain("action: {");
+    expect(duplicateUpload).not.toContain("cancel: {");
+  });
 });
