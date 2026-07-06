@@ -2152,6 +2152,10 @@ export default defineSchema({
     evidenceSourceIds: v.optional(v.array(v.string())),
     packetId: v.optional(v.id("pcePackets")),
     stagedPolicyUpdate: v.optional(v.any()),
+    // Temporary widen-migrate-narrow fields from removed program-admin approvals.
+    partnerApprovalStatus: v.optional(v.any()),
+    partnerOrgId: v.optional(v.any()),
+    partnerProgramId: v.optional(v.any()),
     createdByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),

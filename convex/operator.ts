@@ -91,6 +91,12 @@ const LEGACY_POLICY_METADATA_FIELDS = [
   "partnerProgramId",
 ] as const;
 const LEGACY_POLICY_COVERAGE_CLEANUP_BATCH_SIZE = 100;
+const LEGACY_POLICY_CHANGE_CASE_FIELDS = [
+  "partnerApprovalStatus",
+  "partnerOrgId",
+  "partnerProgramId",
+] as const;
+const LEGACY_POLICY_CHANGE_CASE_CLEANUP_BATCH_SIZE = 100;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -1741,6 +1747,41 @@ export const cleanupLegacyPolicyCoverageMetadataInternal = internalMutation({
       await ctx.scheduler.runAfter(
         0,
         internal.operator.cleanupLegacyPolicyCoverageMetadataInternal,
+        { cursor: page.continueCursor },
+      );
+    }
+    return {
+      scanned: page.page.length,
+      patched,
+      isDone: page.isDone,
+      continueCursor: page.isDone ? undefined : page.continueCursor,
+    };
+  },
+});
+
+export const cleanupLegacyPolicyChangeCaseFieldsInternal = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("policyChangeCases").paginate({
+      cursor: args.cursor ?? null,
+      numItems: LEGACY_POLICY_CHANGE_CASE_CLEANUP_BATCH_SIZE,
+    });
+    let patched = 0;
+    for (const changeCase of page.page) {
+      const record = changeCase as Record<string, unknown>;
+      const patch: Record<string, unknown> = {};
+      for (const field of LEGACY_POLICY_CHANGE_CASE_FIELDS) {
+        if (record[field] === undefined) continue;
+        patch[field] = undefined;
+      }
+      if (Object.keys(patch).length === 0) continue;
+      await ctx.db.patch(changeCase._id, patch as any);
+      patched += 1;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupLegacyPolicyChangeCaseFieldsInternal,
         { cursor: page.continueCursor },
       );
     }
