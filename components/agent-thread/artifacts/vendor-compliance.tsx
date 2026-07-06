@@ -142,7 +142,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                     <h3 className="min-w-0 truncate text-base font-medium text-foreground">
                       {row.name ?? "Vendor"}
                     </h3>
-                    <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/60">
+                    <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 font-medium text-muted-foreground/60">
                       {vendorStatusLabel(row.status)}
                     </Badge>
                   </div>
@@ -154,7 +154,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                 {row.vendorOrgId ? (
                   <Link
                     href={`/connect/vendors/${row.vendorOrgId}/policies`}
-                    className="shrink-0 rounded-full border border-foreground/8 px-2.5 py-1 text-label font-medium text-muted-foreground transition-colors hover:border-foreground/14 hover:text-foreground"
+                    className="shrink-0 rounded-full border border-foreground/8 px-2.5 py-1 text-tag font-medium text-muted-foreground transition-colors hover:border-foreground/14 hover:text-foreground"
                   >
                     View vendor
                   </Link>
@@ -174,7 +174,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                         <span className="min-w-0 flex-1 truncate text-label font-medium text-foreground/85">
                           {check.title ?? "Requirement"}
                         </span>
-                        <Badge variant="outline" className={`h-5 gap-1 px-1.5 text-label font-medium ${meta.className}`}>
+                        <Badge variant="outline" className={`h-5 gap-1 px-1.5 font-medium ${meta.className}`}>
                           <StatusIcon className="h-3 w-3" />
                           {meta.label}
                         </Badge>
@@ -233,7 +233,7 @@ function VendorComplianceSummaryCard({
         <span className="truncate text-base font-medium text-foreground/85">
           Vendor compliance checks
         </span>
-        <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55">
+        <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
           {rows.length} vendor{rows.length === 1 ? "" : "s"}
         </Badge>
       </div>
@@ -281,7 +281,7 @@ export function VendorComplianceSidebar({
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="truncate text-base font-semibold text-foreground">Vendor compliance checks</h2>
-          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55">
+          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
             {rows.length} vendor{rows.length === 1 ? "" : "s"}
           </Badge>
         </div>

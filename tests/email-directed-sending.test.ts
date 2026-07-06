@@ -212,8 +212,16 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/lib/webChatDeterministicControls.ts"),
       "utf-8",
     );
+    const commandExecutorSource = readFileSync(
+      join(__dirname, "..", "convex/lib/emailCommandExecutor.ts"),
+      "utf-8",
+    );
     const subagentSource = readFileSync(
       join(__dirname, "..", "convex/lib/emailSubagent.ts"),
+      "utf-8",
+    );
+    const draftArtifactsSource = readFileSync(
+      join(__dirname, "..", "convex/lib/emailDraftArtifacts.ts"),
       "utf-8",
     );
     const senderSource = readFileSync(
@@ -234,18 +242,19 @@ describe("directed email sending", () => {
     );
 
     expect(subagentSource).toContain("upsertEmailDraftArtifact");
-    expect(subagentSource).toContain("findDraftByThreadAndRecipient");
-    expect(subagentSource).toContain("attachPendingEmailToAgentMessage");
+    expect(draftArtifactsSource).toContain("findDraftByThreadAndRecipient");
+    expect(draftArtifactsSource).toContain("attachPendingEmailToAgentMessage");
     expect(processSource).toContain("runWebChatEmailControls");
-    expect(webChatControlsSource).toContain("sendDraftInternal");
+    expect(webChatControlsSource).toContain("executeEmailCommand");
+    expect(commandExecutorSource).toContain("sendDraftInternal");
     expect(webChatControlsSource).toContain("resolveTextChannelEmailControl");
-    expect(webChatControlsSource).toContain(
+    expect(commandExecutorSource).toContain(
       "pendingEmailCancelConfirmationMessage",
     );
     expect(webChatControlsSource).toContain(
       "isPendingEmailCancelConfirmationPrompt",
     );
-    expect(webChatControlsSource).toContain("restoreAsDraftInternal");
+    expect(commandExecutorSource).toContain("restoreAsDraftInternal");
     expect(cancelIntentSource).toContain("isPendingEmailCancelIntent");
     expect(cancelIntentSource).toContain('/^(cancel|undo|stop|abort|nevermind|never mind|hold on|wait|no)$/');
     expect(cancelIntentSource).toContain("isPendingEmailRestoreIntent");
@@ -254,8 +263,8 @@ describe("directed email sending", () => {
       "\\b(cancel|undo|stop|don'?t send|abort",
     );
     expect(imessageSource).toContain("isPendingEmailCancelConfirmationPrompt");
-    expect(imessageSource).toContain("pendingEmailCancelConfirmationMessage");
-    expect(imessageSource).toContain("restoreAsDraftInternal");
+    expect(imessageSource).toContain("executeEmailCommand");
+    expect(commandExecutorSource).toContain("restoreAsDraftInternal");
     expect(emailArtifactSource).toContain("restoreAsDraft");
     expect(emailArtifactSource).toContain("Restore draft");
     expect(processSource).toContain("`${content.trim()}\\n\\n${draftNotice}`");
@@ -297,10 +306,14 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/lib/emailSubagent.ts"),
       "utf-8",
     );
+    const deliverySource = readFileSync(
+      join(__dirname, "..", "convex/lib/emailDelivery.ts"),
+      "utf-8",
+    );
 
     expect(source).toContain("cc: z.array(z.string()).optional()");
     expect(source).toContain("bcc: z.array(z.string()).optional()");
-    expect(source).toContain("payload.bcc = params.bcc");
+    expect(deliverySource).toContain("payload.bcc = params.bcc");
     expect(source).toContain('If the request says "email me"');
     expect(source).not.toContain("Confirm the recipient name.");
   });
@@ -398,6 +411,10 @@ describe("directed email sending", () => {
       join(__dirname, "..", "convex/lib/inboundEmailDeterministicControls.ts"),
       "utf-8",
     );
+    const commandExecutorSource = readFileSync(
+      join(__dirname, "..", "convex/lib/emailCommandExecutor.ts"),
+      "utf-8",
+    );
     const httpSource = readFileSync(
       join(__dirname, "..", "convex/http.ts"),
       "utf-8",
@@ -413,10 +430,10 @@ describe("directed email sending", () => {
     expect(summarySource).toContain("isShowMoreEmailDraftIntent");
     expect(summarySource).toContain("isSendAllEmailDraftsIntent");
     expect(inboundEmailSource).toContain("runInboundEmailDeterministicControls");
-    expect(inboundEmailControlsSource).toContain("isShowMoreEmailDraftIntent");
-    expect(inboundEmailControlsSource).toContain("isSendAllEmailDraftsIntent");
-    expect(inboundEmailControlsSource).toContain("sendDraftInternal");
-    expect(imessageSource).toContain("buildEmailDraftTextSummary");
+    expect(inboundEmailControlsSource).toContain("resolveTextChannelEmailControl");
+    expect(inboundEmailControlsSource).toContain("executeEmailCommand");
+    expect(commandExecutorSource).toContain("sendDraftInternal");
+    expect(commandExecutorSource).toContain("buildEmailDraftTextSummary");
     expect(imessageSource).toContain("resolveTextChannelEmailControl");
     expect(imessageSource).toContain("allowDraftList: true");
     expect(imessageSource).toContain("allowDraftSendAll: true");

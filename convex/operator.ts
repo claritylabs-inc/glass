@@ -4,7 +4,7 @@ import { createAccount, getAuthUserId } from "@convex-dev/auth/server";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
@@ -39,6 +39,15 @@ const extractionTraceStatusValidator = v.union(
 const internalApi = internal as any;
 const OPERATOR_TRACE_EVENT_LIMIT = 500;
 const CANCELLED_BY_USER = "Cancelled by user";
+const REMOVED_PROGRAM_ADMIN_TABLES = [
+  "partnerPrograms",
+  "partnerProgramEmbeddings",
+  "coiTemplates",
+  "standingAuthorizations",
+  "certificateRequests",
+  "certificateApprovals",
+] as const;
+const REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE = 500;
 const CLEAR_AGENT_MEMORY_CONFIRMATION = "CLEAR_AGENT_MEMORY";
 
 type OperatorSourceNode = Doc<"sourceNodes">;
@@ -91,6 +100,94 @@ function normalizeOptionalContactPhone(value: string | undefined) {
     throw new Error("Enter a valid contact phone number");
   }
   return parsed.number;
+}
+
+function isRemovedProgramAdminOrg(org: Doc<"organizations">) {
+  const raw = org as Record<string, unknown>;
+  return (
+    raw.type === "program_admin" ||
+    raw.type === "mga" ||
+    raw.partnerType === "program_admin" ||
+    raw.partnerType === "mga" ||
+    raw.partnerKind === "program_admin" ||
+    raw.partnerKind === "mga"
+  );
+}
+
+async function deleteUnsafeTableBatch(
+  ctx: MutationCtx,
+  table: string,
+): Promise<{ deleted: number; skipped?: boolean; error?: string }> {
+  try {
+    const rows = await ctx.db
+      .query(table as TableNames)
+      .take(REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE);
+    for (const row of rows) await ctx.db.delete(row._id);
+    return { deleted: rows.length };
+  } catch (error) {
+    return {
+      deleted: 0,
+      skipped: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function deleteRemovedProgramAdminOrgData(
+  ctx: MutationCtx,
+  orgId: Id<"organizations">,
+) {
+  let deleted = 0;
+  const memberships = await ctx.db
+    .query("orgMemberships")
+    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .collect();
+  const invitations = await ctx.db
+    .query("orgInvitations")
+    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .collect();
+  for (const row of [...memberships, ...invitations]) {
+    await ctx.db.delete(row._id);
+    deleted += 1;
+  }
+
+  const brokerAssignments = await ctx.db
+    .query("brokerClientAssignments")
+    .withIndex("by_orgId_clientOrgId", (q) => q.eq("orgId", orgId))
+    .collect();
+  const clientAssignments = await ctx.db
+    .query("brokerClientAssignments")
+    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", orgId))
+    .collect();
+  for (const assignment of [...brokerAssignments, ...clientAssignments]) {
+    await ctx.db.delete(assignment._id);
+    deleted += 1;
+  }
+
+  const clientRelationships = await ctx.db
+    .query("connectedOrgRelationships")
+    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", orgId))
+    .collect();
+  const vendorRelationships = await ctx.db
+    .query("connectedOrgRelationships")
+    .withIndex("by_vendorOrgId", (q) => q.eq("vendorOrgId", orgId))
+    .collect();
+  for (const relationship of [...clientRelationships, ...vendorRelationships]) {
+    await ctx.db.delete(relationship._id);
+    deleted += 1;
+  }
+
+  const clientInvitations = await ctx.db
+    .query("clientInvitations")
+    .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", orgId))
+    .collect();
+  for (const invitation of clientInvitations) {
+    await ctx.db.delete(invitation._id);
+    deleted += 1;
+  }
+
+  await ctx.db.delete(orgId);
+  return deleted + 1;
 }
 
 async function clearOperatorExtractionQueue(
@@ -1353,6 +1450,67 @@ export const stopImpersonation = mutation({
         summary: "Stopped operator impersonation",
       });
     }
+  },
+});
+
+export const cleanupRemovedProgramAdminData = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireOperator(ctx);
+
+    const tableResults: Record<
+      string,
+      { deleted: number; skipped?: boolean; error?: string }
+    > = {};
+    for (const table of REMOVED_PROGRAM_ADMIN_TABLES) {
+      tableResults[table] = await deleteUnsafeTableBatch(ctx, table);
+      if (tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.operator.cleanupRemovedProgramAdminDataInternal,
+          { table },
+        );
+      }
+    }
+
+    const orgs = await ctx.db.query("organizations").collect();
+    let deletedProgramAdminOrgs = 0;
+    let deletedRelatedRows = 0;
+    for (const org of orgs) {
+      if (!isRemovedProgramAdminOrg(org)) continue;
+      deletedRelatedRows += await deleteRemovedProgramAdminOrgData(ctx, org._id);
+      deletedProgramAdminOrgs += 1;
+    }
+
+    return {
+      droppedTables: tableResults,
+      deletedProgramAdminOrgs,
+      deletedRelatedRows,
+    };
+  },
+});
+
+export const cleanupRemovedProgramAdminDataInternal = internalMutation({
+  args: {
+    table: v.union(
+      v.literal("partnerPrograms"),
+      v.literal("partnerProgramEmbeddings"),
+      v.literal("coiTemplates"),
+      v.literal("standingAuthorizations"),
+      v.literal("certificateRequests"),
+      v.literal("certificateApprovals"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const result = await deleteUnsafeTableBatch(ctx, args.table);
+    if (result.deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupRemovedProgramAdminDataInternal,
+        { table: args.table },
+      );
+    }
+    return result;
   },
 });
 

@@ -7,18 +7,20 @@ import {
   isSendAllEmailDraftsIntent,
   isShowMoreEmailDraftIntent,
 } from "./emailDraftSummary";
+import { extractEmailAddress } from "./emailAddress";
+import type { EmailCommand } from "./emailWorkflow";
 
 const DRAFT_APPROVAL_PATTERN =
   /^(yes|yep|yeah|ok|okay|approved|approve|confirmed|confirm|send|send it|looks good|this is good|go ahead|do it|please send)\.?!?$/i;
 
-export type TextChannelEmailControl<EmailId> =
-  | { kind: "restore_cancelled_email"; emailId: EmailId }
-  | { kind: "cancel_draft_emails"; emailIds: EmailId[] }
-  | { kind: "request_draft_cancel_confirmation"; count: number }
-  | { kind: "show_draft_emails" }
-  | { kind: "send_draft_emails"; emailIds: EmailId[] }
-  | { kind: "cancel_pending_emails"; emailIds: EmailId[] }
-  | { kind: "request_pending_cancel_confirmation"; count: number };
+export type TextChannelEmailControl<EmailId> = EmailCommand<EmailId>;
+
+function extractStandaloneEmailAddress(text: string): string | null {
+  if (!/^\s*<?[\w.+-]+@[\w.-]+\.\w+>?\s*[.!?]?\s*$/.test(text)) {
+    return null;
+  }
+  return extractEmailAddress(text);
+}
 
 export function resolveTextChannelEmailControl<EmailId>(args: {
   messageText: string;
@@ -42,6 +44,14 @@ export function resolveTextChannelEmailControl<EmailId>(args: {
   }
 
   if (args.draftEmailIds.length > 0) {
+    const correctedRecipient = extractStandaloneEmailAddress(text);
+    if (correctedRecipient && args.draftEmailIds.length === 1) {
+      return {
+        kind: "update_single_draft_recipient",
+        emailId: args.draftEmailIds[0],
+        recipientEmail: correctedRecipient,
+      };
+    }
     if (
       args.isCancelConfirmationContext &&
       isPendingEmailCancelConfirmation(text)

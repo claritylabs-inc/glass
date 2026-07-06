@@ -17,7 +17,10 @@ function draft(id: string, subject = "Coverage update"): InboundEmailDraftContro
 
 describe("runInboundEmailDeterministicControls", () => {
   test("shows all draft details before invoking the model", async () => {
-    const ctx = { runAction: vi.fn(async () => null) };
+    const ctx = {
+      runAction: vi.fn(async () => null),
+      runMutation: vi.fn(async () => null),
+    };
 
     await expect(
       runInboundEmailDeterministicControls(ctx, {
@@ -31,7 +34,10 @@ describe("runInboundEmailDeterministicControls", () => {
   });
 
   test("sends all drafts for short send-all commands", async () => {
-    const ctx = { runAction: vi.fn(async () => null) };
+    const ctx = {
+      runAction: vi.fn(async () => null),
+      runMutation: vi.fn(async () => null),
+    };
 
     await expect(
       runInboundEmailDeterministicControls(ctx, {
@@ -42,8 +48,41 @@ describe("runInboundEmailDeterministicControls", () => {
     expect(ctx.runAction).toHaveBeenCalledTimes(2);
   });
 
+  test("updates a single draft recipient from a standalone email address", async () => {
+    const updated = {
+      ...draft("draft-1"),
+      _creationTime: 1,
+      orgId: "org-1" as Id<"organizations">,
+      status: "draft" as const,
+      emailPayload: "{}",
+      scheduledSendTime: 0,
+      recipientEmail: "terry@claritylabs.inc",
+    };
+    const ctx = {
+      runAction: vi.fn(async () => null),
+      runMutation: vi.fn(async () => updated),
+    };
+
+    await expect(
+      runInboundEmailDeterministicControls(ctx, {
+        messageText: "Terry@claritylabs.inc",
+        draftEmails: [draft("draft-1")],
+      }),
+    ).resolves.toMatchObject({
+      responseBody: expect.stringContaining("terry@claritylabs.inc"),
+    });
+    expect(ctx.runAction).not.toHaveBeenCalled();
+    expect(ctx.runMutation).toHaveBeenCalledWith(expect.anything(), {
+      id: "draft-1",
+      recipientEmail: "terry@claritylabs.inc",
+    });
+  });
+
   test("ignores long or unrelated messages", async () => {
-    const ctx = { runAction: vi.fn(async () => null) };
+    const ctx = {
+      runAction: vi.fn(async () => null),
+      runMutation: vi.fn(async () => null),
+    };
 
     await expect(
       runInboundEmailDeterministicControls(ctx, {

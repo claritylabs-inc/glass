@@ -948,7 +948,7 @@ function StructuredItemsCard<T>({
                     {badges.map((badge) => (
                       <span
                         key={badge.label}
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium ${badge.className}`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium ${badge.className}`}
                       >
                         {badge.label}
                       </span>
@@ -973,7 +973,7 @@ function StructuredItemsCard<T>({
                     {badges.map((badge) => (
                       <span
                         key={badge.label}
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium ${badge.className}`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium ${badge.className}`}
                       >
                         {badge.label}
                       </span>
@@ -1013,7 +1013,7 @@ function ContactCard({
           <p className="text-base font-medium text-foreground">{contact.name}</p>
         )}
         {showType && contact.type && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium bg-foreground/5 text-muted-foreground">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-foreground/5 text-muted-foreground">
             {contact.type}
           </span>
         )}

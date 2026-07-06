@@ -380,7 +380,7 @@ export function ModelsSection() {
               provider key to customize routing.
             </span>
             <span
-              className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5 text-label text-muted-foreground"
+              className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5 text-tag text-muted-foreground"
               title="Glass automatically picks the best model for every task. Add a provider key to override."
             >
               <LogoIcon size={12} static className="text-muted-foreground" />
@@ -437,7 +437,7 @@ export function ModelsSection() {
                             <p className="text-base font-medium text-foreground">
                               {task.label}
                             </p>
-                            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label text-muted-foreground">
+                            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
                               {route ? "Broker override" : "Glass default"}
                             </span>
                           </div>

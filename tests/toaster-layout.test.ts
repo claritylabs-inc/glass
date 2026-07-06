@@ -28,6 +28,26 @@ describe("toaster layout", () => {
     expect(banner).toContain("--glass-app-bottom-inset");
   });
 
+  it("keeps operational status toasts parent-hover expandable", () => {
+    const operationalToast = read("components/ui/operational-toast.tsx");
+    const extractionBanner = read("components/shared/extraction-banner.tsx");
+    const globals = read("app/globals.css");
+
+    expect(operationalToast).toContain("function OperationalStatusToast");
+    expect(operationalToast).toContain("glass-operational-toast__reveal");
+    expect(operationalToast).toContain('data-collapsed={collapsible && hasRevealContent && isCollapsed}');
+    expect(operationalToast).not.toContain("onMouseEnter");
+    expect(operationalToast).not.toContain("onMouseLeave");
+    expect(extractionBanner).toContain("showOperationalStatusToast");
+    expect(extractionBanner).not.toContain("function ExtractionStatusToast");
+    expect(globals).toContain(
+      '[data-sonner-toast]:is(:hover, :focus-within, [data-expanded="true"])',
+    );
+    expect(globals).toContain(".glass-operational-toast__reveal");
+    expect(globals).toContain("grid-template-rows: 0fr");
+    expect(globals).toContain("visibility: visible");
+  });
+
   it("uses the custom PillButton layout for duplicate upload confirmation", () => {
     const duplicateUpload = read("lib/policy-upload-duplicates.tsx");
 

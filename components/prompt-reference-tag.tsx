@@ -101,7 +101,7 @@ export function PromptReferenceTag({
   return (
     <span
       className={cn(
-        "inline-flex h-6 max-w-[min(16rem,100%)] shrink-0 items-center gap-1.5 align-middle rounded-full bg-foreground/5 px-2.5 text-label font-medium text-foreground/75",
+        "inline-flex h-5 max-w-[min(16rem,100%)] shrink-0 items-center gap-1 align-middle rounded-4xl bg-foreground/5 px-2 text-tag font-medium text-foreground/70",
         className,
       )}
     >
@@ -116,9 +116,9 @@ export function PromptReferenceTag({
           type="button"
           onClick={onRemove}
           title={`Remove ${label}`}
-          className="-mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+          className="-mr-1 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
         >
-          <X className="h-3 w-3" />
+          <X className="h-2.5 w-2.5" />
         </button>
       ) : null}
     </span>

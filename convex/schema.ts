@@ -2592,8 +2592,15 @@ export default defineSchema({
       v.literal("cancelled"),
     ),
     emailPayload: v.string(), // JSON-serialized Resend payload
+    fromHeader: v.optional(v.string()),
+    replyTo: v.optional(v.string()),
+    inReplyTo: v.optional(v.string()),
+    references: v.optional(v.string()),
+    renderedText: v.optional(v.string()),
+    renderedHtml: v.optional(v.string()),
     scheduledSendTime: v.number(), // timestamp when it should actually send
     sentMessageId: v.optional(v.string()), // Resend message ID after send
+    sendBlockedReason: v.optional(v.string()),
     // For updating the chat message after send
     chatMessageId: v.optional(v.id("threadMessages")),
     threadMessageId: v.optional(v.id("threadMessages")),
@@ -2619,6 +2626,39 @@ export default defineSchema({
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
   })
     .index("by_threadId", ["threadId"])
+    .index("by_status", ["status"]),
+
+  emailDeliveryAttempts: defineTable({
+    orgId: v.id("organizations"),
+    pendingEmailId: v.optional(v.id("pendingEmails")),
+    threadId: v.optional(v.id("threads")),
+    threadMessageId: v.optional(v.id("threadMessages")),
+    source: v.union(
+      v.literal("pending_email"),
+      v.literal("email_subagent"),
+      v.literal("policy_delivery"),
+      v.literal("inbound_email"),
+    ),
+    provider: v.literal("resend"),
+    deliveryMode: v.optional(v.string()),
+    status: v.union(
+      v.literal("attempting"),
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("blocked"),
+    ),
+    recipientEmail: v.string(),
+    ccAddresses: v.optional(v.array(v.string())),
+    bccAddresses: v.optional(v.array(v.string())),
+    subject: v.string(),
+    messageId: v.optional(v.string()),
+    resendEmailId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_pendingEmailId", ["pendingEmailId"])
+    .index("by_orgId", ["orgId"])
     .index("by_status", ["status"]),
 
   // ── Presence ──

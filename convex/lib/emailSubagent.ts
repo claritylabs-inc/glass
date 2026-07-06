@@ -7,14 +7,20 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import dayjs from "dayjs";
 import { generateTextForOrg } from "./models";
-import { sendResendEmail, getAgentDomain } from "./resend";
-import { markdownToHtml, stripMarkdown } from "./aiUtils";
-import { isWhiteLabelingEnabled } from "./branding";
-import { buildGlassEmailIconHtml } from "./emailTemplate";
-import { getClientPortalUrl } from "./domains";
 import { buildAgentToolExecutors } from "./agentToolExecutors";
 import type { AgentScope } from "./agentScope";
 import { extractEmailAddress, normalizeEmailAddress } from "./emailAddress";
+import { upsertEmailDraftArtifact } from "./emailDraftArtifacts";
+import {
+  buildEmailPayload,
+  sendTrackedResendEmail,
+  toResendAttachments,
+  type EmailAttachmentMeta,
+} from "./emailDelivery";
+import {
+  buildEmailSignature,
+  type BrokerBranding,
+} from "./emailIdentity";
 import {
   isCoiAttachmentFilename,
   normalizeAttachmentText,
@@ -23,15 +29,19 @@ import {
   type RequestedEmailAttachment,
 } from "./coiAttachmentGuards";
 
-const MAX_EMAIL_SIZE = 38 * 1024 * 1024; // Resend limit is 40MB after Base64 encoding.
-const GLASS_PUBLIC_URL = getClientPortalUrl();
-
-export type EmailAttachmentMeta = {
-  filename: string;
-  contentType: string;
-  size: number;
-  fileId: Id<"_storage">;
-};
+export {
+  buildAgentEmailHtmlBody,
+  buildEmailPayload,
+  toResendAttachments,
+  type EmailAttachmentMeta,
+} from "./emailDelivery";
+export {
+  buildEmailSignature,
+  getEmailAgentFromName,
+  resolveEmailAgentIdentity,
+  type BrokerBranding,
+} from "./emailIdentity";
+export { upsertEmailDraftArtifact } from "./emailDraftArtifacts";
 
 export type EmailSubagentResult = {
   status: "draft" | "needs_confirmation" | "pending" | "sent" | "error";
@@ -46,12 +56,6 @@ export type EmailSubagentResult = {
   pendingEmailId?: Id<"pendingEmails">;
   attachments?: EmailAttachmentMeta[];
   allowMultipleCoiAttachments?: boolean;
-};
-
-export type BrokerBranding = {
-  name?: string;
-  logoUrl?: string | null;
-  agentDisplayName?: string | null;
 };
 
 type EmailExpertContext = {
@@ -86,105 +90,6 @@ type EmailExpertContext = {
   onResult?: (result: EmailSubagentResult) => void;
 };
 
-export function getEmailAgentFromName(broker?: BrokerBranding): string {
-  if (broker?.name || broker?.agentDisplayName) {
-    const base = broker.agentDisplayName || broker.name;
-    return `${base} Agent`;
-  }
-  return "Glass from Clarity Labs";
-}
-
-export function buildEmailSignature(
-  agentEmail: string,
-  broker?: BrokerBranding,
-): { text: string; html: string } {
-  const poweredByUrl = GLASS_PUBLIC_URL;
-  const hasBroker = !!(broker?.name || broker?.agentDisplayName);
-  const agentName = getEmailAgentFromName(broker);
-
-  const text = [
-    "",
-    "-",
-    agentName,
-    agentEmail,
-    ...(hasBroker
-      ? ["", `powered by Glass from Clarity Labs - ${poweredByUrl}`]
-      : []),
-  ].join("\n");
-
-  const logoHtml =
-    hasBroker && broker?.logoUrl
-      ? `<img src="${broker.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:4px;margin-right:8px;object-fit:cover;border:0;" />`
-      : buildGlassEmailIconHtml({
-          size: 20,
-          borderRadius: 4,
-          margin: "0 8px 0 0",
-        });
-
-  const html = [
-    `<br><p style="color:#999;font-size:13px;margin:0">-</p>`,
-    `<p style="font-size:13px;margin:4px 0 2px">${logoHtml}<strong>${agentName}</strong></p>`,
-    `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
-    ...(hasBroker
-      ? [
-          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`,
-        ]
-      : []),
-  ].join("\n");
-
-  return { text, html };
-}
-
-export async function resolveEmailAgentIdentity(
-  ctx: ActionCtx,
-  org: Record<string, unknown>,
-): Promise<{
-  canSend: boolean;
-  agentAddress?: string;
-  fromHeader?: string;
-  brokerBranding?: BrokerBranding;
-  reason?: string;
-}> {
-  let sendingOrg = org;
-  if (org.type === "client" && org.brokerOrgId) {
-    const brokerOrg = await ctx.runQuery(internal.orgs.getInternal, {
-      id: org.brokerOrgId as Id<"organizations">,
-    });
-    if (brokerOrg) sendingOrg = brokerOrg;
-  }
-
-  const handle =
-    typeof sendingOrg.agentHandle === "string" && sendingOrg.agentHandle.trim()
-      ? sendingOrg.agentHandle
-      : "agent";
-
-  const whiteLabelingEnabled = isWhiteLabelingEnabled(
-    sendingOrg as { whiteLabelingEnabled?: boolean },
-  );
-  const logoUrl =
-    whiteLabelingEnabled && sendingOrg.iconStorageId
-      ? await ctx.storage.getUrl(sendingOrg.iconStorageId as Id<"_storage">)
-      : null;
-  const brokerBranding: BrokerBranding | undefined = whiteLabelingEnabled
-    ? {
-        name: typeof sendingOrg.name === "string" ? sendingOrg.name : undefined,
-        logoUrl,
-        agentDisplayName:
-          typeof sendingOrg.agentDisplayName === "string"
-            ? sendingOrg.agentDisplayName
-            : undefined,
-      }
-    : undefined;
-
-  const agentAddress = `${handle}@${getAgentDomain()}`;
-  return {
-    canSend: true,
-    agentAddress,
-    fromHeader: `${getEmailAgentFromName(brokerBranding)} <${agentAddress}>`,
-    brokerBranding,
-  };
-}
-
 function formatDraft(params: {
   to?: string;
   cc?: string[];
@@ -213,218 +118,6 @@ function formatDraft(params: {
   ]
     .filter((line) => line !== null)
     .join("\n");
-}
-
-export function buildAgentEmailHtmlBody(
-  body: string,
-  signature: { html: string },
-): string {
-  return (
-    body
-      .split("\n\n")
-      .map(
-        (p) =>
-          `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`,
-      )
-      .join("\n") + signature.html
-  );
-}
-
-export function buildEmailPayload(params: {
-  fromHeader: string;
-  to: string;
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  body: string;
-  signature: { text: string; html: string };
-  inReplyTo?: string;
-  references?: string;
-  replyTo?: string;
-}) {
-  const plainText = stripMarkdown(params.body) + params.signature.text;
-  const html = buildAgentEmailHtmlBody(params.body, {
-    html: params.signature.html,
-  });
-  const payload: Record<string, unknown> = {
-    from: params.fromHeader,
-    to: params.to,
-    subject: params.subject,
-    text: plainText,
-    html,
-  };
-  if (params.cc.length > 0) payload.cc = params.cc;
-  if (params.bcc.length > 0) payload.bcc = params.bcc;
-  if (params.replyTo) payload.reply_to = params.replyTo;
-  const headers: Record<string, string> = {};
-  if (params.inReplyTo) headers["In-Reply-To"] = params.inReplyTo;
-  if (params.references ?? params.inReplyTo) {
-    headers.References = params.references ?? params.inReplyTo!;
-  }
-  if (Object.keys(headers).length > 0) payload.headers = headers;
-  return payload;
-}
-
-export async function upsertEmailDraftArtifact(
-  ctx: ActionCtx,
-  context: EmailExpertContext,
-  params: {
-    to: string;
-    cc: string[];
-    bcc: string[];
-    subject: string;
-    body: string;
-    attachments: EmailAttachmentMeta[];
-    allowMultipleCoiAttachments?: boolean;
-    referencedPolicyIds?: Id<"policies">[];
-    policyChangeCaseId?: Id<"policyChangeCases">;
-  },
-): Promise<Id<"pendingEmails"> | undefined> {
-  if (
-    !["web", "imessage", "mcp"].includes(context.channel) ||
-    !context.threadId
-  )
-    return undefined;
-
-  const signature = buildEmailSignature(
-    context.agentAddress,
-    context.brokerBranding,
-  );
-  const emailPayload = buildEmailPayload({
-    fromHeader: context.fromHeader,
-    to: params.to,
-    cc: params.cc,
-    bcc: params.bcc,
-    subject: params.subject,
-    body: params.body,
-    signature,
-    inReplyTo: context.inReplyTo,
-    references: context.references,
-    replyTo: context.replyTo,
-  });
-
-  const existing = await ctx.runQuery(
-    internal.pendingEmails.findDraftByThreadAndRecipient,
-    {
-      threadId: context.threadId,
-      recipientEmail: params.to,
-    },
-  );
-
-  if (existing) {
-    await ctx.runMutation(internal.pendingEmails.updateDraftInternal, {
-      id: existing._id,
-      emailPayload: JSON.stringify(emailPayload),
-      recipientEmail: params.to,
-      ccAddresses: params.cc.length > 0 ? params.cc : undefined,
-      bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,
-      subject: params.subject,
-      emailBody: params.body,
-      attachments:
-        params.attachments.length > 0 ? params.attachments : undefined,
-      allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
-      referencedPolicyIds: params.referencedPolicyIds,
-      policyChangeCaseId: params.policyChangeCaseId,
-      chatMessageId: context.chatMessageId,
-    });
-    if (existing.threadMessageId) {
-      await ctx.runMutation(internal.threads.updateEmailMessage, {
-        id: existing.threadMessageId,
-        content: params.body,
-        toAddresses: [params.to],
-        ccAddresses: params.cc.length > 0 ? params.cc : undefined,
-        bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,
-        subject: params.subject,
-        attachments:
-          params.attachments.length > 0 ? params.attachments : undefined,
-        referencedPolicyIds: params.referencedPolicyIds,
-        policyChangeCaseId: params.policyChangeCaseId,
-        pendingEmailId: existing._id,
-        status: "draft_email",
-      });
-    }
-    if (context.chatMessageId) {
-      await ctx.runMutation(internal.threads.attachPendingEmailToAgentMessage, {
-        id: context.chatMessageId,
-        pendingEmailId: existing._id,
-      });
-    }
-    return existing._id;
-  }
-
-  const pendingEmailId = await ctx.runMutation(internal.pendingEmails.create, {
-    orgId: context.orgId,
-    threadId: context.threadId,
-    emailPayload: JSON.stringify(emailPayload),
-    scheduledSendTime: 0,
-    chatMessageId: context.chatMessageId,
-    recipientEmail: params.to,
-    ccAddresses: params.cc.length > 0 ? params.cc : undefined,
-    bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,
-    subject: params.subject,
-    emailBody: params.body,
-    attachments: params.attachments.length > 0 ? params.attachments : undefined,
-    allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
-    referencedPolicyIds: params.referencedPolicyIds,
-    policyChangeCaseId: params.policyChangeCaseId,
-    status: "draft",
-  });
-  const draftMessageId = await ctx.runMutation(
-    internal.threads.insertEmailMessage,
-    {
-      threadId: context.threadId,
-      orgId: context.orgId,
-      role: "agent",
-      fromEmail: context.agentAddress,
-      fromName: getEmailAgentFromName(context.brokerBranding),
-      content: params.body,
-      toAddresses: [params.to],
-      ccAddresses: params.cc.length > 0 ? params.cc : undefined,
-      bccAddresses: params.bcc.length > 0 ? params.bcc : undefined,
-      subject: params.subject,
-      attachments:
-        params.attachments.length > 0 ? params.attachments : undefined,
-      referencedPolicyIds: params.referencedPolicyIds,
-      policyChangeCaseId: params.policyChangeCaseId,
-      status: "draft_email",
-      pendingEmailId,
-    },
-  );
-  await ctx.runMutation(internal.pendingEmails.setThreadMessage, {
-    id: pendingEmailId,
-    threadMessageId: draftMessageId,
-  });
-  if (context.chatMessageId) {
-    await ctx.runMutation(internal.threads.attachPendingEmailToAgentMessage, {
-      id: context.chatMessageId,
-      pendingEmailId,
-    });
-  }
-
-  return pendingEmailId;
-}
-
-export async function toResendAttachments(
-  ctx: ActionCtx,
-  attachments: EmailAttachmentMeta[],
-): Promise<Array<{ filename: string; content: string }>> {
-  let encodedSize = 0;
-  const result: Array<{ filename: string; content: string }> = [];
-
-  for (const att of attachments) {
-    const blob = await ctx.storage.get(att.fileId);
-    if (!blob)
-      throw new Error(`Attachment "${att.filename}" is no longer available.`);
-    const buffer = Buffer.from(await blob.arrayBuffer());
-    const content = buffer.toString("base64");
-    encodedSize += Buffer.byteLength(content, "utf8");
-    if (encodedSize > MAX_EMAIL_SIZE) {
-      throw new Error("Attachments are too large to send in one email.");
-    }
-    result.push({ filename: att.filename, content });
-  }
-
-  return result;
 }
 
 function uniqueAttachments(
@@ -890,6 +583,8 @@ async function runEmailSubagent(
 
     if (uncertainty.length > 0 || (!autoSend && !approvedToSend)) {
       const status = uncertainty.length > 0 ? "needs_confirmation" : "draft";
+      const sendBlockedReason =
+        uncertainty.length > 0 ? uncertainty.join(" ") : undefined;
       const referencedPolicyIds =
         sourcePolicyIds.size > 0
           ? ([...sourcePolicyIds] as Id<"policies">[])
@@ -905,6 +600,7 @@ async function runEmailSubagent(
               attachments,
               allowMultipleCoiAttachments,
               referencedPolicyIds,
+              sendBlockedReason,
             })
           : undefined;
       finalResult = {
@@ -967,6 +663,12 @@ async function runEmailSubagent(
           bccAddresses: bcc.length > 0 ? bcc : undefined,
           subject,
           emailBody: body,
+          fromHeader: context.fromHeader,
+          replyTo: context.replyTo,
+          inReplyTo: context.inReplyTo,
+          references: context.references,
+          renderedText: emailPayload.text,
+          renderedHtml: emailPayload.html,
           attachments: attachments.length > 0 ? attachments : undefined,
           allowMultipleCoiAttachments,
           referencedPolicyIds:
@@ -998,9 +700,16 @@ async function runEmailSubagent(
     if (attachments.length > 0) {
       emailPayload.attachments = await toResendAttachments(ctx, attachments);
     }
-    const sendOutcome = await sendResendEmail(
-      emailPayload as Parameters<typeof sendResendEmail>[0],
-    );
+    const sendOutcome = await sendTrackedResendEmail(ctx, {
+      source: "email_subagent",
+      orgId: context.orgId,
+      threadId: context.threadId,
+      recipientEmail: sendTo,
+      ccAddresses: cc.length > 0 ? cc : undefined,
+      bccAddresses: bcc.length > 0 ? bcc : undefined,
+      subject,
+      payload: emailPayload,
+    });
     if (!sendOutcome.ok)
       throw new Error(`Failed to send email: ${sendOutcome.error}`);
     const sentMessageId = sendOutcome.id;

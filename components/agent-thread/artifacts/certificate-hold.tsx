@@ -86,7 +86,7 @@ export function CertificateHoldArtifacts({
                     </p>
                     <Badge
                       variant="outline"
-                      className="h-5 border-amber-500/25 px-1.5 text-label capitalize text-amber-700"
+                      className="h-5 border-amber-500/25 px-1.5 capitalize text-amber-700"
                     >
                       broker review
                     </Badge>
@@ -102,7 +102,7 @@ export function CertificateHoldArtifacts({
                   {requiredChanges.map((change) => (
                     <span
                       key={change}
-                      className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-label text-muted-foreground"
+                      className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-tag text-muted-foreground"
                     >
                       {labelForChange(change)}
                     </span>

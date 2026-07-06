@@ -204,7 +204,7 @@ export default function ClientSettingsPage() {
               {emails.map((e) => (
                 <span
                   key={e}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover pl-3 pr-1.5 py-1 text-label text-foreground"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover pl-3 pr-1.5 py-1 text-tag text-foreground"
                 >
                   {e}
                   <button
@@ -252,7 +252,7 @@ export default function ClientSettingsPage() {
               {domains.map((d) => (
                 <span
                   key={d}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover pl-3 pr-1.5 py-1 text-label text-foreground"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover pl-3 pr-1.5 py-1 text-tag text-foreground"
                 >
                   @{d}
                   <button
@@ -279,7 +279,7 @@ export default function ClientSettingsPage() {
                   key={d}
                   type="button"
                   onClick={() => addDomain(d)}
-                  className="rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-label text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                  className="rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-tag text-muted-foreground hover:text-foreground hover:border-foreground/30"
                 >
                   + @{d}
                 </button>

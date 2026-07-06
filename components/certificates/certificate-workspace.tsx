@@ -269,7 +269,7 @@ export function CertificateRow({
             {holderContact}
           </p>
         </div>
-        <Badge variant={badge.variant} className="shrink-0 self-start text-label capitalize">
+        <Badge variant={badge.variant} className="shrink-0 self-start capitalize">
           {badge.label}
         </Badge>
       </div>
@@ -329,11 +329,11 @@ function CertificateVersionRow({
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {isCurrent ? (
-            <Badge variant="secondary" className="text-label">
+            <Badge variant="secondary">
               Current
             </Badge>
           ) : null}
-          <Badge variant={badge.variant} className="text-label capitalize">
+          <Badge variant={badge.variant} className="capitalize">
             {badge.label}
           </Badge>
         </div>
@@ -368,12 +368,12 @@ export function CertificateDetailPanel({
         row ? (
           <div className="flex shrink-0 items-center gap-2">
             {badge ? (
-              <Badge variant={badge.variant} className="text-label capitalize">
+              <Badge variant={badge.variant} className="capitalize">
                 {badge.label}
               </Badge>
             ) : null}
             {currentVersion ? (
-              <Badge variant="outline" className="text-label">
+              <Badge variant="outline">
                 Version {currentVersion.versionNumber}
               </Badge>
             ) : null}

@@ -71,7 +71,7 @@ describe("removed program-admin surfaces", () => {
     }
   });
 
-  it("removes active program-admin tables and one-time cleanup helpers", () => {
+  it("removes active program-admin tables while keeping a cleanup mutation for old data", () => {
     const schema = readFileSync(join(ROOT, "convex/schema.ts"), "utf-8");
     const operator = readFileSync(join(ROOT, "convex/operator.ts"), "utf-8");
     const removedTables = [
@@ -85,10 +85,10 @@ describe("removed program-admin surfaces", () => {
 
     for (const table of removedTables) {
       expect(schema).not.toContain(`${table}: defineTable`);
-      expect(operator).not.toContain(table);
+      expect(operator).toContain(table);
     }
-    expect(operator).not.toContain("cleanupRemovedProgramAdminData");
-    expect(operator).not.toContain("isRemovedProgramAdminOrg");
+    expect(operator).toContain("cleanupRemovedProgramAdminData");
+    expect(operator).toContain("isRemovedProgramAdminOrg");
   });
 
   it("removes program IDs and certificate authority fields from tool-facing schemas", () => {

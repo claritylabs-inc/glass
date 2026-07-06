@@ -298,7 +298,7 @@ function ThreadAttachmentList({
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
         aria-expanded={isExpanded}
-        className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+        className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
       >
         <Paperclip className="h-3 w-3" />
         {attachments.length} files
@@ -328,7 +328,7 @@ function ThreadAttachmentList({
             size="sm"
             onClick={handleDownloadAll}
             disabled={!urls?.length || isDownloadingAll}
-            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-label font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
+            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-tag font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
           >
             <Download className="h-3.5 w-3.5" />
             {isDownloadingAll ? "Preparing..." : "Download all"}
@@ -662,7 +662,7 @@ function ReasoningFooterButton({
       type="button"
       onClick={onToggle}
       aria-expanded={isOpen}
-      className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+      className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
     >
       <Brain className="h-3 w-3" />
       Reasoning
@@ -688,7 +688,7 @@ function ConfidenceFooterButton({
       type="button"
       onClick={onToggle}
       aria-pressed={isActive}
-      className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-label font-medium transition-colors ${
+      className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-tag font-medium transition-colors ${
         isActive
           ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
           : "border-foreground/8 bg-transparent text-muted-foreground/55 hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
@@ -877,7 +877,7 @@ function MessageFooterActions({
           if (!messageId) return;
           onOpenMailboxArtifact?.({ messageId, index });
         }}
-        className={`inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border bg-transparent px-2 text-label font-medium transition-colors ${
+        className={`inline-flex h-6 max-w-52 items-center gap-1.5 rounded-full border bg-transparent px-2 text-tag font-medium transition-colors ${
           isSelected
             ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
             : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
@@ -922,7 +922,7 @@ function MessageFooterActions({
               type="button"
               onClick={onToggleToolCalls}
               aria-expanded={showToolCalls}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
             >
               <ClipboardList className="h-3 w-3" />
               {toolCalls.length} tool{toolCalls.length === 1 ? "" : "s"}
@@ -939,7 +939,7 @@ function MessageFooterActions({
               type="button"
               onClick={() => setIsAttachmentExpanded((value) => !value)}
               aria-expanded={isAttachmentExpanded}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
             >
               <Paperclip className="h-3 w-3" />
               {attachmentList.length} files
@@ -950,7 +950,7 @@ function MessageFooterActions({
               type="button"
               onClick={onToggleSubagentActivity}
               aria-expanded={showSubagentActivity}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
+              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
             >
               <LogoIcon size={12} static className="h-3 w-3" />
               {subagentActivityCount} subagent
@@ -965,7 +965,7 @@ function MessageFooterActions({
                 type="button"
                 onClick={() => setIsMailboxExpanded((value) => !value)}
                 aria-expanded={isMailboxExpanded}
-                className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+                className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
               >
                 {mailboxTasks.length} background agents
               </button>
@@ -1026,7 +1026,7 @@ function MessageFooterActions({
             size="sm"
             onClick={handleDownloadAttachments}
             disabled={!attachmentUrls?.length || isDownloadingAttachments}
-            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-label font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
+            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-tag font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
           >
             <Download className="h-3.5 w-3.5" />
             {isDownloadingAttachments ? "Preparing..." : "Download all"}
@@ -1143,6 +1143,15 @@ function UnifiedThreadActions({
 
 /* ── Shared markdown container styles ── */
 const MARKDOWN_STYLES = "[&_a]:text-primary-light [&_a]:underline";
+const IMESSAGE_MARKDOWN_STYLES =
+  `${MARKDOWN_STYLES} text-sm leading-5 ` +
+  "[&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_ul]:pl-4 [&_ol]:pl-4 " +
+  "[&_li]:my-0.5 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm " +
+  "[&_h4]:text-sm [&_h5]:text-sm [&_h6]:text-sm";
+
+function markdownStylesForChannel(channel?: ThreadMessage["channel"]) {
+  return channel === "imessage" ? IMESSAGE_MARKDOWN_STYLES : MARKDOWN_STYLES;
+}
 
 type FooterPanel = "reasoning" | "tools" | "subagents" | "confidence";
 
@@ -1291,7 +1300,7 @@ function AgentProcessingActivity({
 
   return (
     <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
-      <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[length:var(--text-label)] font-medium text-muted-foreground/60">
+      <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/60">
         <LogoIcon
           size={12}
           static
@@ -1303,12 +1312,12 @@ function AgentProcessingActivity({
         <button
           type="button"
           onClick={onOpenBackgroundProcess}
-          className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[length:var(--text-label)] font-medium text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04]"
+          className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04]"
         >
           {backgroundProcessContent}
         </button>
       ) : backgroundProcessCount > 0 ? (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-[length:var(--text-label)] font-medium text-muted-foreground/55">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/55">
           {backgroundProcessContent}
         </span>
       ) : null}
@@ -1438,7 +1447,8 @@ export function UnifiedMessageBubble({
                 gfm
                 breaks
                 flagConfidence
-                className={MARKDOWN_STYLES}
+                compact={msg.channel === "imessage"}
+                className={markdownStylesForChannel(msg.channel)}
                 components={markdownComponents}
               >
                 {displayContent}
@@ -1589,7 +1599,8 @@ export function UnifiedMessageBubble({
                     breaks
                     flagConfidence
                     confidenceFullView={showConfidence}
-                    className={MARKDOWN_STYLES}
+                    compact={msg.channel === "imessage"}
+                    className={markdownStylesForChannel(msg.channel)}
                     components={markdownComponents}
                   >
                     {fixedContent}

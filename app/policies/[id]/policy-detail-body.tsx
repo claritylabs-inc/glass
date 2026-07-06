@@ -283,7 +283,7 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
                   </span>
                 ) : null}
                 {index === 0 ? (
-                  <Badge variant="secondary" className="text-label">
+                  <Badge variant="secondary">
                     Current
                   </Badge>
                 ) : null}
@@ -861,7 +861,7 @@ export function PolicyDetailBody({
               {tab.id === "review" ? (
                 <span className="inline-flex items-center gap-1.5">
                   Review
-                  <span className="rounded-full border border-foreground/10 px-1.5 text-label leading-4 text-muted-foreground">
+                  <span className="rounded-full border border-foreground/10 px-1.5 text-tag text-muted-foreground">
                     {reviewQuestions.length}
                   </span>
                 </span>

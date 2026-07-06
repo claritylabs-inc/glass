@@ -3,10 +3,18 @@
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { getAgentDomain, sendResendEmail } from "../lib/resend";
-import { toResendAttachments } from "../lib/emailSubagent";
+import { getAgentDomain } from "../lib/resend";
+import {
+  buildPendingEmailResendPayload,
+  sendTrackedResendEmail,
+  toResendAttachments,
+} from "../lib/emailDelivery";
 import { shouldBlockUnapprovedCoiAttachmentBatch } from "../lib/coiAttachmentGuards";
 import { sendOutboundImessage } from "../lib/imessageOutbound";
+import {
+  formatEmailDraftBlockers,
+  getEmailDraftSendability,
+} from "../lib/emailWorkflow";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
@@ -54,143 +62,171 @@ async function sendPendingEmailById(
     notifyImessage: boolean;
   },
 ): Promise<SendEmailResult> {
-  const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
+  const pending = (await ctx.runQuery(internal.pendingEmails.getInternal, {
     id,
-  }) as Doc<"pendingEmails"> | null;
-    if (!pending || !options.allowedStatuses.includes(pending.status)) {
-      return null; // cancelled or already sent
-    }
-    if (!pending.recipientEmail || !pending.subject || !pending.emailBody) {
+  })) as Doc<"pendingEmails"> | null;
+  if (!pending || !options.allowedStatuses.includes(pending.status)) {
+    return null; // cancelled or already sent
+  }
+  const sendability = getEmailDraftSendability(pending, {
+    allowedStatuses: options.allowedStatuses,
+  });
+  if (sendability.status === "blocked") {
+    if (
+      sendability.blockers.some((blocker) =>
+        ["missing_recipient", "missing_subject", "missing_body"].includes(
+          blocker.code,
+        ),
+      )
+    ) {
       throw new Error("Draft is missing required email fields.");
     }
-    assertSafeDraftAttachments(pending);
+    throw new Error(
+      `Draft needs confirmation before sending: ${formatEmailDraftBlockers(sendability.blockers)}`,
+    );
+  }
+  assertSafeDraftAttachments(pending);
 
-    try {
-      const payload = JSON.parse(pending.emailPayload);
-      const thread = pending.threadId
-        ? await ctx.runQuery(internal.threads.getInternal, {
-            id: pending.threadId,
-          })
-        : null;
-      const outboundMessageId = outboundMessageIdForPending(id);
-      payload.headers = {
-        ...(payload.headers && typeof payload.headers === "object" ? payload.headers : {}),
-        "Message-ID": outboundMessageId,
-      };
-      if (thread?.threadEmail && payload.reply_to === thread.threadEmail) {
-        delete payload.reply_to;
-      }
-      if (pending.attachments && pending.attachments.length > 0) {
-        payload.attachments = await toResendAttachments(ctx, pending.attachments);
-      }
-      const result = await sendResendEmail(payload);
-      if (!result.ok) throw new Error(`Failed to send email: ${result.error}`);
-      const sentMessageId = result.id;
+  try {
+    const thread = pending.threadId
+      ? await ctx.runQuery(internal.threads.getInternal, {
+          id: pending.threadId,
+        })
+      : null;
+    const outboundMessageId = outboundMessageIdForPending(id);
+    const payload = buildPendingEmailResendPayload(pending, {
+      outboundMessageId,
+      threadEmail: thread?.threadEmail,
+    });
+    if (pending.attachments && pending.attachments.length > 0) {
+      payload.attachments = await toResendAttachments(
+        ctx,
+        pending.attachments,
+      );
+    }
+    const result = await sendTrackedResendEmail(ctx, {
+      source: "pending_email",
+      orgId: pending.orgId,
+      pendingEmailId: id,
+      threadId: pending.threadId,
+      threadMessageId: pending.threadMessageId,
+      recipientEmail: pending.recipientEmail,
+      ccAddresses: pending.ccAddresses,
+      bccAddresses: pending.bccAddresses,
+      subject: pending.subject,
+      messageId: outboundMessageId,
+      payload,
+    });
+    if (!result.ok) throw new Error(`Failed to send email: ${result.error}`);
+    const sentMessageId = result.id;
 
-      // Mark as sent
-      await ctx.runMutation(internal.pendingEmails.markSent, {
-        id,
-        sentMessageId,
+    // Mark as sent
+    await ctx.runMutation(internal.pendingEmails.markSent, {
+      id,
+      sentMessageId,
+    });
+
+    if (options.updateChatMessage && pending.chatMessageId) {
+      const ccNote =
+        pending.ccAddresses && pending.ccAddresses.length > 0
+          ? ` (CC: ${pending.ccAddresses.join(", ")})`
+          : "";
+      await ctx.runMutation(internal.threads.updateAgentMessage, {
+        id: pending.chatMessageId,
+        content: `Email sent to ${pending.recipientEmail}${ccNote}.`,
       });
+    }
 
-      if (options.updateChatMessage && pending.chatMessageId) {
-        const ccNote =
-          pending.ccAddresses && pending.ccAddresses.length > 0
-            ? ` (CC: ${pending.ccAddresses.join(", ")})`
-            : "";
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: pending.chatMessageId,
-          content: `Email sent to ${pending.recipientEmail}${ccNote}.`,
-        });
-      }
-
-      if (pending.threadId) {
-        if (pending.threadMessageId) {
-          await ctx.runMutation(internal.threads.updateEmailMessage, {
-            id: pending.threadMessageId,
-            content: pending.emailBody,
-            toAddresses: [pending.recipientEmail],
-            ccAddresses: pending.ccAddresses,
-            bccAddresses: pending.bccAddresses,
-            subject: pending.subject,
-            messageId: outboundMessageId,
-            responseMessageId: sentMessageId,
-            resendEmailId: sentMessageId,
-            attachments: pending.attachments,
-            referencedPolicyIds: pending.referencedPolicyIds,
-            policyChangeCaseId: pending.policyChangeCaseId,
-            clearStatus: true,
-          });
-        } else {
-          await ctx.runMutation(internal.threads.insertEmailMessage, {
-            threadId: pending.threadId,
-            orgId: pending.orgId,
-            role: "agent",
-            content: pending.emailBody,
-            toAddresses: [pending.recipientEmail],
-            ccAddresses: pending.ccAddresses,
-            bccAddresses: pending.bccAddresses,
-            subject: pending.subject,
-            messageId: outboundMessageId,
-            responseMessageId: sentMessageId,
-            resendEmailId: sentMessageId,
-            attachments: pending.attachments,
-            referencedPolicyIds: pending.referencedPolicyIds,
-            pendingEmailId: id,
-            policyChangeCaseId: pending.policyChangeCaseId,
-          });
-        }
-        if (pending.policyChangeCaseId) {
-          await ctx.runMutation(internal.policyChanges.markBrokerEmailSentInternal, {
-            caseId: pending.policyChangeCaseId,
-            recipientEmail: pending.recipientEmail,
-            content: pending.emailBody,
-          });
-        }
-
-        if (options.notifyImessage && thread?.threadPhone) {
-          const ccNote =
-            pending.ccAddresses && pending.ccAddresses.length > 0
-              ? ` CC ${pending.ccAddresses.join(", ")}`
-              : "";
-          const confirmation = `Email sent to ${pending.recipientEmail}.${ccNote}`;
-          const sent = await sendTextConfirmation({
-            toPhone: thread.threadPhone,
-            chatGuid: thread.imessageChatGuid,
-            message: confirmation,
-          });
-          if (sent) {
-            await ctx.runMutation(internal.threads.insertImessageMessage, {
-              threadId: pending.threadId,
-              orgId: pending.orgId,
-              role: "agent",
-              content: confirmation,
-              responseMessageId: `${id}:sent-confirmation`,
-              pendingEmailId: id,
-            });
-          }
-        }
-      }
-
-      return { recipientEmail: pending.recipientEmail };
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error("Failed to send pending email:", errMsg);
-
-      if (options.updateChatMessage && pending.chatMessageId) {
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: pending.chatMessageId,
-          content: `_Failed to send email: ${errMsg}_`,
-        });
-      }
+    if (pending.threadId) {
       if (pending.threadMessageId) {
         await ctx.runMutation(internal.threads.updateEmailMessage, {
           id: pending.threadMessageId,
-          error: errMsg,
+          content: pending.emailBody,
+          toAddresses: [pending.recipientEmail],
+          ccAddresses: pending.ccAddresses,
+          bccAddresses: pending.bccAddresses,
+          subject: pending.subject,
+          messageId: outboundMessageId,
+          responseMessageId: sentMessageId,
+          resendEmailId: sentMessageId,
+          attachments: pending.attachments,
+          referencedPolicyIds: pending.referencedPolicyIds,
+          policyChangeCaseId: pending.policyChangeCaseId,
+          clearStatus: true,
+        });
+      } else {
+        await ctx.runMutation(internal.threads.insertEmailMessage, {
+          threadId: pending.threadId,
+          orgId: pending.orgId,
+          role: "agent",
+          content: pending.emailBody,
+          toAddresses: [pending.recipientEmail],
+          ccAddresses: pending.ccAddresses,
+          bccAddresses: pending.bccAddresses,
+          subject: pending.subject,
+          messageId: outboundMessageId,
+          responseMessageId: sentMessageId,
+          resendEmailId: sentMessageId,
+          attachments: pending.attachments,
+          referencedPolicyIds: pending.referencedPolicyIds,
+          pendingEmailId: id,
+          policyChangeCaseId: pending.policyChangeCaseId,
         });
       }
-      throw err;
+      if (pending.policyChangeCaseId) {
+        await ctx.runMutation(
+          internal.policyChanges.markBrokerEmailSentInternal,
+          {
+            caseId: pending.policyChangeCaseId,
+            recipientEmail: pending.recipientEmail,
+            content: pending.emailBody,
+          },
+        );
+      }
+
+      if (options.notifyImessage && thread?.threadPhone) {
+        const ccNote =
+          pending.ccAddresses && pending.ccAddresses.length > 0
+            ? ` CC ${pending.ccAddresses.join(", ")}`
+            : "";
+        const confirmation = `Email sent to ${pending.recipientEmail}.${ccNote}`;
+        const sent = await sendTextConfirmation({
+          toPhone: thread.threadPhone,
+          chatGuid: thread.imessageChatGuid,
+          message: confirmation,
+        });
+        if (sent) {
+          await ctx.runMutation(internal.threads.insertImessageMessage, {
+            threadId: pending.threadId,
+            orgId: pending.orgId,
+            role: "agent",
+            content: confirmation,
+            responseMessageId: `${id}:sent-confirmation`,
+            pendingEmailId: id,
+          });
+        }
+      }
     }
+
+    return { recipientEmail: pending.recipientEmail };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("Failed to send pending email:", errMsg);
+
+    if (options.updateChatMessage && pending.chatMessageId) {
+      await ctx.runMutation(internal.threads.updateAgentMessage, {
+        id: pending.chatMessageId,
+        content: `_Failed to send email: ${errMsg}_`,
+      });
+    }
+    if (pending.threadMessageId) {
+      await ctx.runMutation(internal.threads.updateEmailMessage, {
+        id: pending.threadMessageId,
+        error: errMsg,
+      });
+    }
+    throw err;
+  }
 }
 
 export const sendPending = internalAction({

@@ -262,7 +262,7 @@ function WebBrowsingRouteRow({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-base font-medium text-foreground">Web browsing</p>
-          <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label text-muted-foreground">
+          <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
             {webRetrieval.primary === "exa" ? "Default" : "Override"}
           </span>
         </div>
@@ -536,7 +536,7 @@ export default function OperatorModelsPage() {
                               <p className="text-base font-medium text-foreground">
                                 {task.label}
                               </p>
-                              <span className="rounded-full bg-muted/55 px-2 py-0.5 text-label text-muted-foreground">
+                              <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
                                 {displayRoute ? "Override" : "Default"}
                               </span>
                             </div>

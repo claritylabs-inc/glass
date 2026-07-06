@@ -12,7 +12,7 @@ import { taskControlResponse } from "./taskControlIntent";
 
 type PendingEmailForCommand = Pick<
   Doc<"pendingEmails">,
-  "_id" | "recipientEmail" | "subject"
+  "_id" | "recipientEmail" | "subject" | "sendBlockedReason"
 >;
 
 type ImessageCommandHistoryMessage = {
@@ -64,6 +64,9 @@ function formatDrafts(
     lines.push(
       `${index + 1}. ${draft.recipientEmail} - ${truncate(draft.subject, 64) || "(no subject)"}`,
     );
+    if (draft.sendBlockedReason) {
+      lines.push(`   Needs confirmation: ${truncate(draft.sendBlockedReason, 96)}`);
+    }
   }
   if (drafts.length > sample.length) {
     lines.push(`${drafts.length - sample.length} more. Use /drafts all.`);
