@@ -15,6 +15,8 @@ export type ModelTask =
   | "extraction"
   | "extraction_preview"
   | "classification"
+  | "requirement_extraction"
+  | "org_memory_extraction"
   | "analysis"
   | "summary"
   | "triage"
@@ -88,6 +90,8 @@ export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
   extraction: "Policy extraction",
   extraction_preview: "Fast policy extraction",
   classification: "Classification",
+  requirement_extraction: "Requirement extraction",
+  org_memory_extraction: "Org memory extraction",
   analysis: "Reasoning and review",
   summary: "Summaries",
   triage: "Website enrichment",
@@ -111,6 +115,10 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
     "Fast preview route for policy-list fields extracted from LiteParse text before full enrichment completes.",
   classification:
     "Fast routing route for document kind, request intent, delivery rules, extraction/query classification, and other small decisions.",
+  requirement_extraction:
+    "Structured extraction route for compliance requirements from leases, client contracts, vendor packets, and pasted requirement text.",
+  org_memory_extraction:
+    "Durable organization memory extraction route for stable company-profile facts from email and iMessage exchanges.",
   analysis:
     "Deeper reasoning route for coverage analysis, compliance review, partner-program matching, policy reconciliation, and policy-change impact.",
   summary:
@@ -371,6 +379,8 @@ export const MODEL_TASK_GROUPS = [
       "Routes used to classify documents and extract structured facts from policies, files, and email text.",
     tasks: [
       "classification",
+      "requirement_extraction",
+      "org_memory_extraction",
       "extraction",
       "document_extraction",
       "email_extraction",
@@ -395,6 +405,8 @@ export const OPERATOR_MODEL_ROUTE_GROUPS = [
       "Routes used to classify documents and extract structured facts from policies, files, and email text.",
     tasks: [
       "classification",
+      "requirement_extraction",
+      "org_memory_extraction",
       "extraction",
       "extraction_quality",
       "extraction_coverage_cleanup",

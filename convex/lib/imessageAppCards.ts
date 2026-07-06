@@ -1,10 +1,8 @@
-import { generateObject } from "ai";
 import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Id, TableNames } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getModelAndRouteForOrg, getProviderOptionsForTask } from "./models";
-import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
+import { generateObjectForOrg } from "./models";
 
 export type ImessageAppCard = {
   url: string;
@@ -184,11 +182,8 @@ export async function decidePolicyAppCardCreation(
     });
 
   try {
-    const modelRoute = await getModelAndRouteForOrg(ctx, params.orgId, "classification");
-    const result = await generateObject({
-      model: modelRoute.model,
-      providerOptions: getProviderOptionsForTask("classification"),
-      schema: structuredOutputSchemaForRoute(PolicyAppCardDecisionSchema, modelRoute.route),
+    const result = await generateObjectForOrg(ctx, params.orgId, "classification", {
+      schema: PolicyAppCardDecisionSchema,
       maxOutputTokens: 160,
       system: `Decide whether this Glass iMessage response should include app-card links to candidate policy records.
 

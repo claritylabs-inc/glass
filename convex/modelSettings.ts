@@ -82,6 +82,8 @@ const modelTaskRoutesValidator = v.object({
   extraction: v.optional(routeUpdateValidator),
   extraction_preview: v.optional(routeUpdateValidator),
   classification: v.optional(routeUpdateValidator),
+  requirement_extraction: v.optional(routeUpdateValidator),
+  org_memory_extraction: v.optional(routeUpdateValidator),
   analysis: v.optional(routeUpdateValidator),
   summary: v.optional(routeUpdateValidator),
   triage: v.optional(routeUpdateValidator),
@@ -99,6 +101,8 @@ const globalRoutesValidator = v.object({
   extraction: v.optional(routeUpdateValidator),
   extraction_preview: v.optional(routeUpdateValidator),
   classification: v.optional(routeUpdateValidator),
+  requirement_extraction: v.optional(routeUpdateValidator),
+  org_memory_extraction: v.optional(routeUpdateValidator),
   analysis: v.optional(routeUpdateValidator),
   summary: v.optional(routeUpdateValidator),
   triage: v.optional(routeUpdateValidator),
@@ -157,7 +161,7 @@ async function requireCurrentBrokerAdmin(ctx: QueryCtx | MutationCtx) {
 function maskProviderKeys(keys: ProviderKeys | undefined) {
   return Object.fromEntries(
     CONFIGURABLE_MODEL_PROVIDERS.map((provider) => {
-      const value = keys?.[provider];
+      const value = keys?.[provider]?.trim();
       return [
         provider,
         {
@@ -170,7 +174,10 @@ function maskProviderKeys(keys: ProviderKeys | undefined) {
 }
 
 function gatewayConfigured() {
-  return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+  return !!(
+    configuredEnv(process.env.AI_GATEWAY_API_KEY) ||
+    configuredEnv(process.env.VERCEL_OIDC_TOKEN)
+  );
 }
 
 function configuredEnv(value: string | undefined) {
@@ -273,25 +280,28 @@ function availableEmbeddingModels(provider: ModelProvider) {
 function configurableProviderKeys(keys: ProviderKeys | undefined) {
   return Object.fromEntries(
     CONFIGURABLE_MODEL_PROVIDERS.flatMap((provider) => {
-      const value = keys?.[provider];
+      const value = keys?.[provider]?.trim();
       return value ? [[provider, value]] : [];
     }),
   ) as ProviderKeys;
 }
 
 function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
-  const hasGatewayAccess = !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+  const hasGatewayAccess = gatewayConfigured();
   switch (provider) {
     case "exa":
-      return !!process.env.EXA_API_KEY;
+      return !!configuredEnv(process.env.EXA_API_KEY);
     case "openai":
-      return !!process.env.OPENAI_API_KEY;
+      return !!configuredEnv(process.env.OPENAI_API_KEY);
     case "google":
-      return !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY) || hasGatewayAccess;
+      return !!(
+        configuredEnv(process.env.GOOGLE_GENERATIVE_AI_API_KEY) ??
+        configuredEnv(process.env.GOOGLE_API_KEY)
+      ) || hasGatewayAccess;
     case "anthropic":
-      return !!process.env.ANTHROPIC_API_KEY;
+      return !!configuredEnv(process.env.ANTHROPIC_API_KEY);
     case "xai":
-      return !!process.env.XAI_API_KEY || hasGatewayAccess;
+      return !!configuredEnv(process.env.XAI_API_KEY) || hasGatewayAccess;
   }
 }
 

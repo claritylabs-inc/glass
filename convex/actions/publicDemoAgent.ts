@@ -1,15 +1,14 @@
 "use node";
 
 import { createHash } from "node:crypto";
-import { generateText, stepCountIs, tool, type ModelMessage } from "ai";
+import { stepCountIs, tool, type ModelMessage } from "ai";
 import { z } from "zod";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
-  getModelAndRouteForPublicTask,
-  getProviderOptionsForRoute,
+  generateTextForPublicTask,
   type ModelTask,
 } from "../lib/models";
 import { markdownToHtml, stripMarkdown } from "../lib/aiUtils";
@@ -456,7 +455,6 @@ export const respond = internalAction({
       email: channel === "email" ? args.fromEmail : undefined,
     });
     const task: ModelTask = channel === "email" ? "email_reply" : "chat";
-    const routed = await getModelAndRouteForPublicTask(ctx, task);
 
     const tools = {
       record_lead_context: tool({
@@ -610,9 +608,7 @@ export const respond = internalAction({
       },
     ];
 
-    const result = await generateText({
-      model: routed.model,
-      providerOptions: getProviderOptionsForRoute(routed.route),
+    const result = await generateTextForPublicTask(ctx, task, {
       maxOutputTokens: channel === "imessage" ? 120 : 700,
       system,
       messages,
@@ -694,10 +690,10 @@ export const respond = internalAction({
         subject: args.subject,
         content: responseText,
         contentHtml: formatted.html,
-        modelProvider: routed.route.provider,
-        model: routed.route.model,
-        routeSource: routed.routeSource,
-        transport: routed.transport,
+        modelProvider: result.route.provider,
+        model: result.route.model,
+        routeSource: result.routeSource,
+        transport: result.transport,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         ctaUrl,
         deliveryStatus: "generated",
@@ -742,8 +738,8 @@ export const respond = internalAction({
       text: formatted.text,
       html: formatted.html,
       ctaUrl,
-      route: routed.route,
-      routeSource: routed.routeSource,
+      route: result.route,
+      routeSource: result.routeSource,
     };
   },
 });

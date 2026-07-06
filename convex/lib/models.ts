@@ -8,11 +8,13 @@ import { createXai } from "@ai-sdk/xai";
 import { createMistral } from "@ai-sdk/mistral";
 import { createCohere } from "@ai-sdk/cohere";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModel } from "ai";
+import { Output, type LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
+import type { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import {
   EXTRACTION_QUALITY_MODEL,
   FALLBACK_MODEL,
@@ -146,7 +148,35 @@ type ModelFallbackContext = {
   allowFallback?: boolean;
 };
 
-export type ModelTransport = "direct" | "gateway";
+type ResolvedModelRoute = {
+  model: LanguageModel;
+  route: ModelRoute;
+  routeSource?: string;
+  transport?: ModelTransport;
+  fallbackRoute: ModelRoute;
+};
+
+type AiGenerateTextOptions = Parameters<typeof import("ai").generateText>[0];
+type AiGenerateTextResult = Awaited<ReturnType<typeof import("ai").generateText>>;
+type RoutedGenerateTextOptions = Omit<AiGenerateTextOptions, "model">;
+type RoutedGenerateObjectOptions<T> =
+  Omit<AiGenerateTextOptions, "model" | "output"> & {
+    schema: z.ZodType<T>;
+  };
+type RoutedGenerateTextResult = AiGenerateTextResult & {
+  route: ModelRoute;
+  routeSource?: string;
+  transport?: ModelTransport;
+};
+type RoutedGenerateObjectResult<T> = Omit<AiGenerateTextResult, "output" | "object"> & {
+  output: T;
+  object: T;
+  route: ModelRoute;
+  routeSource?: string;
+  transport?: ModelTransport;
+};
+
+export type ModelTransport = "direct";
 export type ModelRouteSource = "broker" | "global" | "static" | "default";
 
 const MODEL_CALL_TIMEOUT_MS = Math.max(
@@ -180,6 +210,9 @@ function isMissingApiKeyError(err: unknown): boolean {
 const LOW_COST_NO_ESCALATION_TASKS = new Set<ModelTask>([
   "classification",
   "extraction",
+  "extraction_preview",
+  "requirement_extraction",
+  "org_memory_extraction",
   "email_extraction",
   "document_extraction",
 ]);
@@ -380,8 +413,7 @@ export function getModelForRoute(route: ModelRoute): LanguageModel {
 
 export function getModel(task: ModelTask): LanguageModel {
   if (task === "embeddings") {
-    console.warn('Embeddings requested through getModel(), falling back to chat');
-    return modelFromRoute(MODEL_ROUTING.chat);
+    throw new Error("Embeddings must use makeEmbedText or makeEmbedTexts, not getModel()");
   }
   return modelFromRoute(MODEL_ROUTING[task] ?? MODEL_ROUTING.chat);
 }
@@ -423,7 +455,7 @@ export async function getModelAndRouteForOrg(
       ? settings?.providerKeys?.[configuredRoute.provider]
       : undefined;
     const canUseConfiguredRoute =
-      configuredRoute &&
+      !!configuredRoute &&
       configuredRoute.provider !== "moonshot" &&
       !!directProviderModelForRoute(configuredRoute) &&
       !!routeDirectApiKey(configuredRoute, configuredApiKey);
@@ -477,8 +509,15 @@ export async function getModelAndRouteForPublicTask(
 }> {
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
-    const route = settings?.routes?.[task] ?? MODEL_ROUTING[task];
-    const routeSource = settings?.routeSources?.[task] ?? "static";
+    const configuredRoute = settings?.routes?.[task];
+    const configuredRouteSource = settings?.routeSources?.[task];
+    const canUseConfiguredRoute =
+      !!configuredRoute &&
+      configuredRoute.provider !== "moonshot" &&
+      !!directProviderModelForRoute(configuredRoute) &&
+      !!routeDirectApiKey(configuredRoute);
+    const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
+    const routeSource = canUseConfiguredRoute ? (configuredRouteSource ?? "global") : "static";
     const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
     const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
     const coverageCleanupRoute =
@@ -571,6 +610,114 @@ export async function generateStructuredWithFallback(
       ),
     }));
   }
+}
+
+function routeProviderOptions(
+  resolved: Pick<ResolvedModelRoute, "route">,
+  providerOptions: ProviderOptions | undefined,
+) {
+  return mergeProviderOptions(
+    getProviderOptionsForRoute(resolved.route),
+    providerOptions,
+  );
+}
+
+async function generateTextForResolvedRoute(
+  resolved: ResolvedModelRoute,
+  task: ModelTask,
+  options: RoutedGenerateTextOptions,
+  fallbackContext: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute"> = {},
+): Promise<RoutedGenerateTextResult> {
+  const result = await generateTextWithFallback({
+    ...options,
+    model: resolved.model,
+    providerOptions: routeProviderOptions(resolved, options.providerOptions),
+  } as AiGenerateTextOptions, {
+    ...fallbackContext,
+    task,
+    primaryRoute: resolved.route,
+    fallbackRoute: resolved.fallbackRoute,
+  });
+  return {
+    ...result,
+    route: resolved.route,
+    routeSource: resolved.routeSource,
+    transport: resolved.transport,
+  };
+}
+
+async function generateObjectForResolvedRoute<T>(
+  resolved: ResolvedModelRoute,
+  task: ModelTask,
+  options: RoutedGenerateObjectOptions<T>,
+  fallbackContext: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute"> = {},
+): Promise<RoutedGenerateObjectResult<T>> {
+  const { schema, providerOptions, ...textOptions } = options;
+  const result = await generateStructuredWithFallback({
+    ...textOptions,
+    model: resolved.model,
+    output: Output.object({
+      schema: structuredOutputSchemaForRoute(schema, resolved.route),
+    }),
+    providerOptions: routeProviderOptions(resolved, providerOptions),
+  } as AiGenerateTextOptions, {
+    ...fallbackContext,
+    task,
+    primaryRoute: resolved.route,
+    fallbackRoute: resolved.fallbackRoute,
+  });
+
+  const output = result.output as T;
+  return {
+    ...result,
+    output,
+    object: output,
+    route: resolved.route,
+    routeSource: resolved.routeSource,
+    transport: resolved.transport,
+  };
+}
+
+export async function generateTextForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  task: ModelTask,
+  options: RoutedGenerateTextOptions,
+  fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
+): Promise<RoutedGenerateTextResult> {
+  const resolved = await getModelAndRouteForOrg(ctx, orgId, task);
+  return generateTextForResolvedRoute(resolved, task, options, fallbackContext);
+}
+
+export async function generateObjectForOrg<T>(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  task: ModelTask,
+  options: RoutedGenerateObjectOptions<T>,
+  fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
+): Promise<RoutedGenerateObjectResult<T>> {
+  const resolved = await getModelAndRouteForOrg(ctx, orgId, task);
+  return generateObjectForResolvedRoute(resolved, task, options, fallbackContext);
+}
+
+export async function generateTextForPublicTask(
+  ctx: ActionCtx,
+  task: ModelTask,
+  options: RoutedGenerateTextOptions,
+  fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
+): Promise<RoutedGenerateTextResult> {
+  const resolved = await getModelAndRouteForPublicTask(ctx, task);
+  return generateTextForResolvedRoute(resolved, task, options, fallbackContext);
+}
+
+export async function generateObjectForPublicTask<T>(
+  ctx: ActionCtx,
+  task: ModelTask,
+  options: RoutedGenerateObjectOptions<T>,
+  fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
+): Promise<RoutedGenerateObjectResult<T>> {
+  const resolved = await getModelAndRouteForPublicTask(ctx, task);
+  return generateObjectForResolvedRoute(resolved, task, options, fallbackContext);
 }
 
 export function availableProviders(): string[] {

@@ -2,12 +2,10 @@
 
 import { v } from "convex/values";
 import { z } from "zod";
-import { generateText, Output } from "ai";
 import { action, internalAction, type ActionCtx } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { getModelAndRouteForOrg } from "../lib/models";
-import { structuredOutputSchemaForRoute } from "../lib/fireworksStructuredOutput";
+import { generateObjectForOrg } from "../lib/models";
 import { INDUSTRIES } from "../lib/industries";
 import { runWebRetrieval } from "../lib/webRetrieval";
 
@@ -141,12 +139,8 @@ async function extractAndApplyCompanyInfo(
     return { error: "Could not retrieve website content" };
   }
 
-  const modelRoute = await getModelAndRouteForOrg(ctx, targetOrgId, "triage");
-  const { output: object } = (await generateText({
-    model: modelRoute.model,
-    output: Output.object({
-      schema: structuredOutputSchemaForRoute(CompanyInfoSchema, modelRoute.route),
-    }),
+  const { output: object } = await generateObjectForOrg<CompanyInfo>(ctx, targetOrgId, "triage", {
+    schema: CompanyInfoSchema,
     maxOutputTokens: 2048,
     prompt: `Extract company information from the website content below.
 
@@ -160,7 +154,7 @@ For atomicFacts, decompose what's on the site into the smallest possible standal
 
 Website content:
 ${content}`,
-  })) as { output: CompanyInfo };
+  });
 
   const matchedIndustry = INDUSTRIES.find((i) => i.value === object.industry);
   const industry = matchedIndustry?.value;
