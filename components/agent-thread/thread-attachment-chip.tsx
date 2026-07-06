@@ -14,10 +14,12 @@ export function ThreadAttachmentChip({
   attachment,
   threadId,
   className,
+  size = "default",
 }: {
   attachment: ThreadAttachment;
   threadId: Id<"threads">;
   className?: string;
+  size?: "default" | "compact";
 }) {
   const { openWithUrl } = usePdf();
   const url = useCachedQuery(
@@ -26,6 +28,7 @@ export function ThreadAttachmentChip({
     attachment.fileId ? { threadId, fileId: attachment.fileId } : "skip",
   );
   const isPdf = attachment.contentType === "application/pdf";
+  const isCompact = size === "compact";
 
   const handleClick = (e: MouseEvent) => {
     if (isPdf && url) {
@@ -46,16 +49,24 @@ export function ThreadAttachmentChip({
           : `${attachment.filename} is not available yet`
       }
       aria-label={url ? `Open ${attachment.filename}` : attachment.filename}
-      style={{ maxWidth: "13rem" }}
+      style={{ maxWidth: isCompact ? "11rem" : "13rem" }}
       className={cn(
-        "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-full px-2 text-label font-medium transition-colors",
+        "inline-flex min-w-0 items-center rounded-full font-medium transition-colors",
+        isCompact
+          ? "h-5 gap-1 px-1.5 text-[0.6875rem] leading-4"
+          : "h-6 gap-1.5 px-2 text-label",
         url
-          ? "bg-foreground/5 text-foreground/75 hover:bg-foreground/8"
+          ? "bg-foreground/5 text-foreground/65 hover:bg-foreground/8 hover:text-foreground/80"
           : "pointer-events-none bg-foreground/3 text-muted-foreground/40",
         className,
       )}
     >
-      <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <Paperclip
+        className={cn(
+          "shrink-0 text-muted-foreground",
+          isCompact ? "h-2.5 w-2.5" : "h-3 w-3",
+        )}
+      />
       <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
     </a>
   );

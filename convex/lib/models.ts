@@ -8,7 +8,7 @@ import { createXai } from "@ai-sdk/xai";
 import { createMistral } from "@ai-sdk/mistral";
 import { createCohere } from "@ai-sdk/cohere";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { gateway, type LanguageModel } from "ai";
+import type { LanguageModel } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -23,6 +23,7 @@ import {
   MODEL_ROUTING,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
+  directProviderModelForRoute,
   type ModelProvider,
   type ModelRoute,
   type ModelTask,
@@ -37,7 +38,9 @@ import {
  * Env vars needed:
  *   FIREWORKS_API_KEY — direct Fireworks access for default Glass language routes
  *   OPENAI_API_KEY — direct OpenAI access for embedding routes during the migration
- *   AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN — Vercel AI Gateway access for routes whose provider is not directly configured
+ *
+ * Main Glass model routing is direct-provider only. Vercel AI Gateway remains
+ * isolated to web retrieval in convex/lib/webRetrieval.ts.
  */
 
 // Lazy provider factories
@@ -156,7 +159,11 @@ function withModelTimeout<T extends { abortSignal?: AbortSignal }>(options: T): 
 }
 
 const GPT_55 = "gpt-5.5";
-const CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
+
+function cleanEnv(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
 
 export function getProviderOptionsForRoute(route: ModelRoute): ProviderOptions | undefined {
   if (route.provider === "openai" && route.model === GPT_55) {
@@ -289,48 +296,29 @@ function providerModel(provider: ModelProvider, model: string, apiKey?: string):
 function directProviderApiKey(provider: ModelProvider): string | undefined {
   switch (provider) {
     case "openai":
-      return process.env.OPENAI_API_KEY;
+      return cleanEnv(process.env.OPENAI_API_KEY);
     case "anthropic":
-      return process.env.ANTHROPIC_API_KEY;
+      return cleanEnv(process.env.ANTHROPIC_API_KEY);
     case "google":
-      return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY;
+      return cleanEnv(process.env.GOOGLE_GENERATIVE_AI_API_KEY)
+        ?? cleanEnv(process.env.GOOGLE_API_KEY);
     case "xai":
-      return process.env.XAI_API_KEY;
+      return cleanEnv(process.env.XAI_API_KEY);
     case "mistral":
-      return process.env.MISTRAL_API_KEY;
+      return cleanEnv(process.env.MISTRAL_API_KEY);
     case "cohere":
-      return process.env.COHERE_API_KEY;
+      return cleanEnv(process.env.COHERE_API_KEY);
     case "fireworks":
-      return process.env.FIREWORKS_API_KEY;
+      return cleanEnv(process.env.FIREWORKS_API_KEY);
     case "deepseek":
-      return process.env.DEEPSEEK_API_KEY;
+      return cleanEnv(process.env.DEEPSEEK_API_KEY);
     case "moonshot":
       return undefined;
   }
 }
 
-function gatewayModelId(route: ModelRoute): string {
-  if (route.provider === "fireworks") return `fireworks/${route.model}`;
-  return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
-}
-
-function nativeProviderModel(route: ModelRoute): string | null {
-  switch (route.provider) {
-    case "anthropic":
-      if (route.model === "claude-haiku-4.5") return CLAUDE_HAIKU;
-      if (route.model === "claude-3-haiku") return "claude-3-haiku-20240307";
-      return route.model.replace(/\.(\d+)/g, "-$1");
-    case "deepseek":
-      return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
-        ? route.model
-        : null;
-    case "fireworks":
-      return route.model;
-    case "moonshot":
-      return null;
-    default:
-      return route.model;
-  }
+function routeDirectApiKey(route: ModelRoute, apiKey?: string): string | undefined {
+  return cleanEnv(apiKey) ?? directProviderApiKey(route.provider);
 }
 
 function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
@@ -371,14 +359,19 @@ function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
 }
 
 function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
-  const nativeModel = nativeProviderModel(route);
-  if (apiKey && nativeModel) {
-    return providerModel(route.provider, nativeModel, apiKey);
+  const directModel = directProviderModelForRoute(route);
+  if (!directModel) {
+    throw new Error(
+      `Model route ${route.provider}/${route.model} is not supported by the direct ${route.provider} provider. Configure a directly supported provider/model route instead.`,
+    );
   }
-  if (nativeModel && directProviderApiKey(route.provider)) {
-    return providerModel(route.provider, nativeModel);
+  const directApiKey = routeDirectApiKey(route, apiKey);
+  if (!directApiKey) {
+    throw new Error(
+      `Direct ${route.provider} API key is missing for model route ${route.provider}/${route.model}. AI Gateway is not a fallback for Glass model routing.`,
+    );
   }
-  return gateway(gatewayModelId(route));
+  return providerModel(route.provider, directModel, directApiKey);
 }
 
 export function getModelForRoute(route: ModelRoute): LanguageModel {
@@ -390,12 +383,7 @@ export function getModel(task: ModelTask): LanguageModel {
     console.warn('Embeddings requested through getModel(), falling back to chat');
     return modelFromRoute(MODEL_ROUTING.chat);
   }
-  try {
-    return modelFromRoute(MODEL_ROUTING[task] ?? MODEL_ROUTING.chat);
-  } catch {
-    console.warn(`Provider for task "${task}" not available, falling back to Claude Haiku`);
-    return anthropic()(CLAUDE_HAIKU);
-  }
+  return modelFromRoute(MODEL_ROUTING[task] ?? MODEL_ROUTING.chat);
 }
 
 export async function getModelForOrg(
@@ -437,18 +425,15 @@ export async function getModelAndRouteForOrg(
     const canUseConfiguredRoute =
       configuredRoute &&
       configuredRoute.provider !== "moonshot" &&
-      (routeSource !== "broker" || configuredApiKey);
+      !!directProviderModelForRoute(configuredRoute) &&
+      !!routeDirectApiKey(configuredRoute, configuredApiKey);
     const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
     const apiKey = canUseConfiguredRoute ? configuredApiKey : undefined;
-    const nativeModel = nativeProviderModel(route);
-    const transport = (apiKey || (nativeModel && directProviderApiKey(route.provider)))
-      ? "direct"
-      : "gateway";
     return {
       model: modelFromRoute(route, apiKey),
       route,
       routeSource: canUseConfiguredRoute ? (routeSource ?? "global") : "default",
-      transport,
+      transport: "direct",
       qualityRoute,
       qualityRouteSource,
       coverageCleanupRoute,
@@ -462,13 +447,11 @@ export async function getModelAndRouteForOrg(
       }. Falling back to static routing.`,
     );
     const route = MODEL_ROUTING[task];
-    const nativeModel = nativeProviderModel(route);
-    const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
     return {
       model: getModel(task),
       route,
       routeSource: "default",
-      transport,
+      transport: "direct",
       qualityRoute: EXTRACTION_QUALITY_MODEL,
       qualityRouteSource: "static",
       coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
@@ -502,13 +485,11 @@ export async function getModelAndRouteForPublicTask(
       settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
     const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
     const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
-    const nativeModel = nativeProviderModel(route);
-    const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
     return {
       model: modelFromRoute(route),
       route,
       routeSource,
-      transport,
+      transport: "direct",
       qualityRoute,
       qualityRouteSource,
       coverageCleanupRoute,
@@ -522,13 +503,11 @@ export async function getModelAndRouteForPublicTask(
       }. Falling back to static routing.`,
     );
     const route = MODEL_ROUTING[task];
-    const nativeModel = nativeProviderModel(route);
-    const transport = nativeModel && directProviderApiKey(route.provider) ? "direct" : "gateway";
     return {
       model: getModel(task),
       route,
       routeSource: "default",
-      transport,
+      transport: "direct",
       qualityRoute: EXTRACTION_QUALITY_MODEL,
       qualityRouteSource: "static",
       coverageCleanupRoute: COVERAGE_CLEANUP_MODEL,
@@ -596,14 +575,13 @@ export async function generateStructuredWithFallback(
 
 export function availableProviders(): string[] {
   const providers: string[] = [];
-  if (process.env.OPENAI_API_KEY) providers.push("openai");
-  if (process.env.ANTHROPIC_API_KEY) providers.push("anthropic");
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY) providers.push("google");
-  if (process.env.XAI_API_KEY) providers.push("xai");
-  if (process.env.MISTRAL_API_KEY) providers.push("mistral");
-  if (process.env.COHERE_API_KEY) providers.push("cohere");
-  if (process.env.FIREWORKS_API_KEY) providers.push("fireworks");
-  if (process.env.DEEPSEEK_API_KEY) providers.push("deepseek");
-  if (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN) providers.push("gateway");
+  if (directProviderApiKey("openai")) providers.push("openai");
+  if (directProviderApiKey("anthropic")) providers.push("anthropic");
+  if (directProviderApiKey("google")) providers.push("google");
+  if (directProviderApiKey("xai")) providers.push("xai");
+  if (directProviderApiKey("mistral")) providers.push("mistral");
+  if (directProviderApiKey("cohere")) providers.push("cohere");
+  if (directProviderApiKey("fireworks")) providers.push("fireworks");
+  if (directProviderApiKey("deepseek")) providers.push("deepseek");
   return providers;
 }
