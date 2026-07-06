@@ -85,7 +85,11 @@ const LEGACY_COVERAGE_METADATA_FIELDS = [
   "preserveCoverageExtensions",
   "storedCoverageExtensions",
 ] as const;
-const LEGACY_POLICY_METADATA_FIELDS = ["partnerMatchSource"] as const;
+const LEGACY_POLICY_METADATA_FIELDS = [
+  "partnerMatchSource",
+  "partnerOrgId",
+  "partnerProgramId",
+] as const;
 const LEGACY_POLICY_COVERAGE_CLEANUP_BATCH_SIZE = 100;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
