@@ -329,7 +329,9 @@ export default defineSchema({
     // Branding
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
-    type: v.optional(v.union(v.literal("broker"), v.literal("client"))),
+    type: v.optional(
+      v.union(v.literal("broker"), v.literal("client"), v.literal("partner")),
+    ),
     // Temporary widen-migrate-narrow fields from removed program-admin model.
     partnerKind: v.optional(v.literal("program_admin")),
     partnerType: v.optional(

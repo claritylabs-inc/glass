@@ -1111,7 +1111,10 @@ export const setClientFeatureFlag = mutation({
     const operator = await requireOperator(ctx);
     const client = await ctx.db.get(args.clientOrgId);
     if (!client || client.type !== "client") throw new Error("Client not found");
-    assertFeatureFlagAllowedForOrg(args.flagId, client);
+    assertFeatureFlagAllowedForOrg(args.flagId, {
+      type: "client",
+      featureFlags: client.featureFlags,
+    });
     await ctx.db.patch(args.clientOrgId, {
       featureFlags: setFeatureFlagPatch(client.featureFlags, args.flagId, args.enabled),
     });
