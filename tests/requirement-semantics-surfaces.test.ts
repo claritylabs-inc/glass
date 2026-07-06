@@ -35,6 +35,7 @@ describe("requirement semantics surfaces", () => {
     expect(sidebar).toContain("isBroker || !showConnectFeatures");
     expect(settingsPage).toContain("BetaFeaturesSection");
     expect(betaFeatures).toContain("FeatureFlagToggleRow");
+    expect(betaFeatures).not.toContain("OperationalPanelHeader");
     expect(betaFeatures).toContain("betaFeatureFlagsForOrgType");
     expect(featureFlags).toContain("connect_features");
     expect(featureFlags).toContain('label: "Connect features"');

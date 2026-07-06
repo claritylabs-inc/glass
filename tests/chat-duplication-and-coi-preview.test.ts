@@ -211,6 +211,7 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(emailArtifact).toContain("function EmailHeaderAttachments");
     expect(emailArtifact).toContain("col-span-1 pt-0.5");
     expect(emailArtifact).toContain("col-span-1 min-w-0");
+    expect(emailArtifact).toContain('size="compact"');
     expect(emailArtifact).toContain("visibleAttachments");
     expect(emailArtifact).toContain("Attachments");
   });
