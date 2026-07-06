@@ -1712,10 +1712,7 @@ export const run = internalAction({
           toolArtifacts.length > 0 ||
           responseAttachments.length > 0 ||
           !!policyChangeCaseId;
-        if (
-          !isTransientChatStreamError(streamError) ||
-          hasStartedSideEffectfulWork
-        ) {
+        if (!isTransientChatStreamError(streamError) || hasStartedSideEffectfulWork) {
           throw streamError;
         }
 
@@ -1726,9 +1723,7 @@ export const run = internalAction({
           fallbackRoute: chatModel.fallbackRoute,
         });
         const retryRoute = fallbackRoute ?? chatModel.route;
-        const retryModel = fallbackRoute
-          ? getModelForRoute(fallbackRoute)
-          : chatModel.model;
+        const retryModel = fallbackRoute ? getModelForRoute(fallbackRoute) : chatModel.model;
         console.warn(
           `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
         );

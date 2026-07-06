@@ -220,7 +220,9 @@ describe("thread chat streaming reliability", () => {
     expect(source).toContain("hasStartedSideEffectfulWork");
     expect(source).toContain("resetStreamStateForRetry");
     expect(source).toContain("fallbackRouteForCall({");
+    expect(source).toContain("fallbackRoute: chatModel.fallbackRoute");
     expect(source).toContain("Retrying chat stream after transient provider error");
+    expect(source).not.toContain("via Vercel AI Gateway");
   });
 
   test("keeps heavy mailbox tools behind the coordinator in web chat", () => {
@@ -405,6 +407,18 @@ describe("model fallback policy", () => {
     expect(settingsSource).not.toContain("if (!brokerOrgId) return null");
     expect(settingsSource).toContain("const settings = brokerOrgId");
     expect(settingsSource).toContain('routeSources[routeId] = "global"');
+  });
+
+  test("uses the resolved fallback route for iMessage chat fallback", () => {
+    const source = readFileSync(
+      join(__dirname, "../convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("getModelAndRouteForOrg(ctx, orgId, \"chat\")");
+    expect(source).toContain("generateTextWithFallback(");
+    expect(source).toContain("getProviderOptionsForRoute(chatModel.route)");
+    expect(source).toContain("fallbackRoute: chatModel.fallbackRoute");
   });
 });
 

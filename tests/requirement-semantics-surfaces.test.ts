@@ -21,7 +21,9 @@ describe("requirement semantics surfaces", () => {
   it("keeps my requirements first and gates Connect-only surfaces", () => {
     const page = read("components/compliance-page.tsx");
     const sidebar = read("components/app-sidebar.tsx");
-    const settings = read("components/settings/organization-section.tsx");
+    const settingsPage = read("app/settings/page.tsx");
+    const betaFeatures = read("components/settings/beta-features-section.tsx");
+    const featureFlags = read("convex/lib/featureFlags.ts");
     const schema = read("convex/schema.ts");
 
     expect(page).toContain('useState<RequirementScope>("own_org")');
@@ -31,8 +33,12 @@ describe("requirement semantics surfaces", () => {
     expect(page).toContain("showConnectFeatures && !isPureVendorAccount");
     expect(sidebar).toContain("showConnectFeatures");
     expect(sidebar).toContain("isBroker || !showConnectFeatures");
-    expect(settings).toContain("Show Connect features");
-    expect(schema).toContain("connectFeaturesEnabled: v.optional(v.boolean())");
+    expect(settingsPage).toContain("BetaFeaturesSection");
+    expect(betaFeatures).toContain("Beta Features");
+    expect(betaFeatures).toContain("betaFeatureFlagsForOrgType");
+    expect(featureFlags).toContain("connect_features");
+    expect(featureFlags).toContain('label: "Connect features"');
+    expect(schema).toContain("featureFlags: v.optional(v.record(v.string(), v.boolean()))");
   });
 
   it("exposes evaluation target in agent requirement context and lookup tools", () => {

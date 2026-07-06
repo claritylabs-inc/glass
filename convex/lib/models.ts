@@ -143,6 +143,9 @@ type ModelFallbackContext = {
   allowFallback?: boolean;
 };
 
+export type ModelTransport = "direct" | "gateway";
+export type ModelRouteSource = "broker" | "global" | "static" | "default";
+
 const MODEL_CALL_TIMEOUT_MS = Math.max(
   30_000,
   Number.parseInt(process.env.MODEL_CALL_TIMEOUT_MS ?? "180000", 10) || 180_000,
@@ -163,7 +166,7 @@ export function getProviderOptionsForRoute(route: ModelRoute): ProviderOptions |
 }
 
 function isMissingApiKeyError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorTextForMatching(err);
   return /api key is missing/i.test(message);
 }
 
@@ -330,6 +333,43 @@ function nativeProviderModel(route: ModelRoute): string | null {
   }
 }
 
+function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
+  if (!err || seen.has(err)) return "";
+  seen.add(err);
+
+  if (typeof err === "string") return err;
+  if (err instanceof Error) {
+    const record = err as Error & Record<string, unknown> & { cause?: unknown };
+    return [
+      err.name,
+      err.message,
+      record.code,
+      record.status,
+      record.statusCode,
+      record.error,
+      errorTextForMatching(record.cause, seen),
+    ]
+      .filter(Boolean)
+      .map((field) => String(field))
+      .join(" ");
+  }
+  if (typeof err !== "object") return String(err);
+
+  const record = err as Record<string, unknown>;
+  const fields = [
+    record.code,
+    record.status,
+    record.statusCode,
+    record.message,
+    record.error,
+    record.cause,
+  ];
+  return fields
+    .map((field) => errorTextForMatching(field, seen))
+    .filter(Boolean)
+    .join(" ");
+}
+
 function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
   const nativeModel = nativeProviderModel(route);
   if (apiKey && nativeModel) {
@@ -373,8 +413,8 @@ export async function getModelAndRouteForOrg(
 ): Promise<{
   model: LanguageModel;
   route: ModelRoute;
-  routeSource: "broker" | "global" | "static" | "default";
-  transport: "direct" | "gateway";
+  routeSource: ModelRouteSource;
+  transport: ModelTransport;
   qualityRoute: ModelRoute;
   qualityRouteSource: "broker" | "global" | "static";
   coverageCleanupRoute: ModelRoute;
@@ -445,7 +485,7 @@ export async function getModelAndRouteForPublicTask(
   model: LanguageModel;
   route: ModelRoute;
   routeSource: "global" | "static" | "default";
-  transport: "direct" | "gateway";
+  transport: ModelTransport;
   qualityRoute: ModelRoute;
   qualityRouteSource: "global" | "static";
   coverageCleanupRoute: ModelRoute;
@@ -511,7 +551,9 @@ export async function generateTextWithFallback(
     const fallbackRoute = fallbackRouteForCall(fallbackContext);
     if (!fallbackRoute) throw err;
     console.warn(
-      `Primary model (${modelId}) failed: ${err instanceof Error ? err.message : String(err)}. Retrying with ${fallbackRoute.model}.`,
+      `Primary model (${modelId}) failed: ${
+        err instanceof Error ? err.message : String(err)
+      }. Retrying with ${fallbackRoute.model}.`,
     );
     return await generateText(withModelTimeout({
       ...options,
@@ -537,7 +579,9 @@ export async function generateStructuredWithFallback(
     const fallbackRoute = fallbackRouteForCall(fallbackContext);
     if (!fallbackRoute) throw err;
     console.warn(
-      `Primary model (${modelId}) failed for structured output: ${err instanceof Error ? err.message : String(err)}. Retrying with ${fallbackRoute.model}.`,
+      `Primary model (${modelId}) failed for structured output: ${
+        err instanceof Error ? err.message : String(err)
+      }. Retrying with ${fallbackRoute.model}.`,
     );
     return await generateText(withModelTimeout({
       ...options,

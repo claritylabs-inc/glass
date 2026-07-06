@@ -1554,15 +1554,17 @@ function startHttpServer(): { close: () => void } | null {
     if (req.method === "GET" && url.pathname === "/health") {
       jsonResponse(res, 200, {
         ok: true,
+        glassEnv: GLASS_ENV,
         workerId: WORKER_ID,
         workerVersion: WORKER_VERSION,
         workerProtocolVersion: WORKER_PROTOCOL_VERSION,
         clSdkVersion: WORKER_CL_SDK_VERSION,
-        glassEnv: GLASS_ENV,
         convexUrl: CONVEX_URL,
         railwayEnvironment: process.env.RAILWAY_ENVIRONMENT_NAME,
         gitSha: process.env.RAILWAY_GIT_COMMIT_SHA,
         gitBranch: process.env.RAILWAY_GIT_BRANCH,
+        extractionJobConcurrency: EXTRACTION_JOB_CONCURRENCY,
+        previewJobConcurrency: PREVIEW_JOB_CONCURRENCY,
       });
       return;
     }
@@ -2479,7 +2481,7 @@ async function runPreviewLoop(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log(
-    `Glass extraction worker ${WORKER_ID} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} connected to ${CONVEX_URL}`,
+    `Glass extraction worker ${WORKER_ID} env=${GLASS_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} connected to ${CONVEX_URL}`,
   );
   const httpServer = startHttpServer();
   const previewLoop = runPreviewLoop().catch((error) => {
