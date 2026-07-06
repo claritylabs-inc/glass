@@ -6,7 +6,7 @@ import dayjs from "dayjs";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { generateTextWithFallback, getModelForOrg } from "../lib/models";
+import { generateTextForOrg } from "../lib/models";
 import {
   buildEmailPayload,
   buildEmailSignature,
@@ -112,11 +112,10 @@ ${JSON.stringify({
 Respond only with JSON matching:
 {"matches": true, "reason": "short reason"}`;
 
-  const result = await generateTextWithFallback({
-    model: await getModelForOrg(ctx, params.orgId, "classification"),
+  const result = await generateTextForOrg(ctx, params.orgId, "classification", {
     maxOutputTokens: 220,
     messages: [{ role: "user", content: prompt }],
-  }, { task: "classification" });
+  });
   const json = result.text.match(/\{[\s\S]*\}/)?.[0] ?? result.text;
   return llmDecisionSchema.parse(JSON.parse(json));
 }
@@ -256,11 +255,10 @@ Requirements:
 - Do not include a sign-off.
 
 Respond only with JSON: {"subject":"...","body":"..."}`;
-    const result = await generateTextWithFallback({
-      model: await getModelForOrg(ctx, client._id, "email_draft"),
+    const result = await generateTextForOrg(ctx, client._id, "email_draft", {
       maxOutputTokens: 700,
       messages: [{ role: "user", content: prompt }],
-    }, { task: "email_draft" });
+    });
     const parsed = JSON.parse(result.text.match(/\{[\s\S]*\}/)?.[0] ?? result.text);
     return {
       subject: clean(parsed.subject) ?? fallbackSubject,

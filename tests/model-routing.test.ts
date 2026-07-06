@@ -21,6 +21,7 @@ import {
   MODEL_TASK_GROUPS,
   OPERATOR_MODEL_ROUTE_GROUPS,
   defaultModelRouteForId,
+  directProviderModelForRoute,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
 } from "../convex/lib/modelCatalog";
@@ -49,6 +50,8 @@ describe("model task routing", () => {
 
     for (const task of [
       "classification",
+      "requirement_extraction",
+      "org_memory_extraction",
       "extraction",
       "extraction_preview",
       "triage",
@@ -65,6 +68,16 @@ describe("model task routing", () => {
       provider: "fireworks",
       model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
     });
+  });
+
+  test("keeps provisional policy extraction on direct Fireworks DeepSeek Flash", () => {
+    expect(MODEL_ROUTING.extraction_preview).toEqual({
+      provider: "fireworks",
+      model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    });
+    expect(directProviderModelForRoute(MODEL_ROUTING.extraction_preview)).toBe(
+      FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    );
   });
 
   test("removes Kimi from active routing and catalog selection", () => {
@@ -246,6 +259,55 @@ describe("model fallback policy", () => {
     });
   });
 
+  test("keeps main model routing direct-provider-only", () => {
+    const modelsSource = readFileSync(
+      join(__dirname, "../convex/lib/models.ts"),
+      "utf-8",
+    );
+    const sdkCallbackSource = readFileSync(
+      join(__dirname, "../convex/lib/sdkCallbacks.ts"),
+      "utf-8",
+    );
+    const workerSource = readFileSync(
+      join(__dirname, "../extraction-worker/src/index.ts"),
+      "utf-8",
+    );
+
+    expect(modelsSource).not.toContain("gateway(");
+    expect(sdkCallbackSource).not.toContain("gateway(");
+    expect(workerSource).not.toContain("gateway(");
+    expect(modelsSource).toContain(
+      "AI Gateway is not a fallback for Glass model routing",
+    );
+    expect(workerSource).toContain(
+      "AI Gateway is not a fallback for extraction worker model routing",
+    );
+    expect(sdkCallbackSource).toContain(
+      "AI Gateway is not a fallback for Glass embeddings",
+    );
+  });
+
+  test("treats direct provider support as route-specific", () => {
+    expect(
+      directProviderModelForRoute({
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+      }),
+    ).toBeNull();
+    expect(
+      directProviderModelForRoute({
+        provider: "fireworks",
+        model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+      }),
+    ).toBe(FIREWORKS_MODEL_IDS.deepseekV4Flash);
+    expect(
+      directProviderModelForRoute({
+        provider: "anthropic",
+        model: "claude-haiku-4.5",
+      }),
+    ).toBe("claude-haiku-4-5-20251001");
+  });
+
   test("does not generically escalate cheap extraction or classification calls", () => {
     expect(fallbackRouteForCall({ task: "extraction" })).toBeNull();
     expect(fallbackRouteForCall({ task: "extraction", taskKind: "extraction_focused" })).toBeNull();
@@ -409,16 +471,15 @@ describe("model fallback policy", () => {
     expect(settingsSource).toContain('routeSources[routeId] = "global"');
   });
 
-  test("uses the resolved fallback route for iMessage chat fallback", () => {
+  test("uses the routed generation primitive for iMessage chat fallback", () => {
     const source = readFileSync(
       join(__dirname, "../convex/actions/handleInboundImessage.ts"),
       "utf-8",
     );
 
-    expect(source).toContain("getModelAndRouteForOrg(ctx, orgId, \"chat\")");
-    expect(source).toContain("generateTextWithFallback(");
-    expect(source).toContain("getProviderOptionsForRoute(chatModel.route)");
-    expect(source).toContain("fallbackRoute: chatModel.fallbackRoute");
+    expect(source).toContain("generateTextForOrg(ctx, orgId, \"chat\"");
+    expect(source).toContain('taskKind: "query_reason"');
+    expect(source).not.toContain("AI Gateway");
   });
 });
 
@@ -478,7 +539,8 @@ describe("web retrieval routing", () => {
 
     expect(retrievalSource).toContain("AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN");
     expect(retrievalSource).toContain("gateway(gatewayModelId(route))");
-    expect(settingsSource).toContain("AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN");
+    expect(settingsSource).toContain("function gatewayConfigured()");
+    expect(settingsSource).toContain("configuredEnv(process.env.AI_GATEWAY_API_KEY)");
     expect(settingsSource).toContain("|| hasGatewayAccess");
   });
 });

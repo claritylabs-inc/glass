@@ -8,7 +8,7 @@
  */
 
 import dayjs from "dayjs";
-import { Output, embed, embedMany, gateway } from "ai";
+import { Output, embed, embedMany } from "ai";
 import type { EmbeddingModel, LanguageModel, LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -790,21 +790,26 @@ function fireworks() {
 }
 
 function directEmbeddingApiKey(provider: ModelProvider): string | undefined {
+  const clean = (value: string | undefined) => {
+    const trimmed = value?.trim();
+    return trimmed || undefined;
+  };
   switch (provider) {
     case "openai":
-      return process.env.OPENAI_API_KEY;
+      return clean(process.env.OPENAI_API_KEY);
     case "google":
-      return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY;
+      return clean(process.env.GOOGLE_GENERATIVE_AI_API_KEY) ?? clean(process.env.GOOGLE_API_KEY);
     case "fireworks":
-      return process.env.FIREWORKS_API_KEY;
+      return clean(process.env.FIREWORKS_API_KEY);
     default:
       return undefined;
   }
 }
 
-function embeddingGatewayModelId(route: ModelRoute) {
-  if (route.provider === "fireworks") return `fireworks/${route.model}`;
-  return route.model.includes("/") ? route.model : `${route.provider}/${route.model}`;
+function isDirectEmbeddingRoute(route: ModelRoute): boolean {
+  return route.provider === "openai" ||
+    route.provider === "google" ||
+    route.provider === "fireworks";
 }
 
 function embeddingProviderModel(route: ModelRoute, apiKey?: string): EmbeddingModel {
@@ -816,7 +821,9 @@ function embeddingProviderModel(route: ModelRoute, apiKey?: string): EmbeddingMo
     case "fireworks":
       return (apiKey ? createFireworks({ apiKey }) : fireworks()).embeddingModel(route.model);
     default:
-      return gateway.embeddingModel(embeddingGatewayModelId(route));
+      throw new Error(
+        `Embedding route ${route.provider}/${route.model} is not supported by direct embedding providers. Configure OpenAI, Google, or Fireworks embeddings instead.`,
+      );
   }
 }
 
@@ -837,24 +844,31 @@ function embeddingProviderOptions(route: ModelRoute): ProviderOptions | undefine
 }
 
 async function resolveEmbeddingConfig(ctx?: ActionCtx, orgId?: Id<"organizations">) {
-  let route: ModelRoute = { provider: "openai", model: "text-embedding-3-small" };
+  let route: ModelRoute = MODEL_ROUTING.embeddings;
   let apiKey: string | undefined;
   if (ctx && orgId) {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.embeddings;
-    if (configuredRoute) {
+    const configuredApiKey = configuredRoute && settings?.routeSources?.embeddings === "broker"
+      ? settings?.providerKeys?.[configuredRoute.provider]?.trim()
+      : undefined;
+    if (
+      configuredRoute &&
+      isDirectEmbeddingRoute(configuredRoute) &&
+      (configuredApiKey || directEmbeddingApiKey(configuredRoute.provider))
+    ) {
       route = configuredRoute;
-      apiKey = settings?.routeSources?.embeddings === "broker"
-        ? settings?.providerKeys?.[configuredRoute.provider]
-        : undefined;
+      apiKey = configuredApiKey;
     }
   }
-  const envApiKey = directEmbeddingApiKey(route.provider);
-  const embeddingModel = apiKey || envApiKey
-    ? embeddingProviderModel(route, apiKey)
-    : gateway.embeddingModel(embeddingGatewayModelId(route));
+  const directApiKey = apiKey ?? directEmbeddingApiKey(route.provider);
+  if (!directApiKey) {
+    throw new Error(
+      `Direct ${route.provider} API key is missing for embedding route ${route.provider}/${route.model}. AI Gateway is not a fallback for Glass embeddings.`,
+    );
+  }
   return {
-    embeddingModel,
+    embeddingModel: embeddingProviderModel(route, directApiKey),
     providerOptions: embeddingProviderOptions(route),
   };
 }

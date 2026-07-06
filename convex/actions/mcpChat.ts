@@ -3,8 +3,8 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateText, stepCountIs } from "ai";
-import { getModelForOrg, getProviderOptionsForTask } from "../lib/models";
+import { stepCountIs } from "ai";
+import { generateTextForOrg } from "../lib/models";
 import {
   buildScopedDocumentContext,
   buildScopedOrgMemoryContext,
@@ -67,7 +67,7 @@ export const run = internalAction({
 
     // ── Prompt injection guard ──
     const sanitizedMessage = enforceInputLimits(args.message);
-    const injectionCheck = await classifyPromptInjection(sanitizedMessage);
+    const injectionCheck = await classifyPromptInjection(ctx, sanitizedMessage, args.orgId);
     if (!injectionCheck.safe) {
       console.warn("[security] Prompt injection blocked in MCP chat", {
         orgId: args.orgId,
@@ -373,9 +373,7 @@ MCP MODE:
     const messageHistory = buildMessageHistory(allMessages);
 
     // Generate response (non-streaming)
-    const { text: content } = await generateText({
-      model: await getModelForOrg(ctx, args.orgId, "chat"),
-      providerOptions: getProviderOptionsForTask("chat"),
+    const { text: content } = await generateTextForOrg(ctx, args.orgId, "chat", {
       maxOutputTokens: 2048,
       system: fullSystemPrompt,
       messages: messageHistory,
@@ -412,9 +410,7 @@ MCP MODE:
     );
     if (userMessages.length <= 1) {
       try {
-        const { text: titleText } = await generateText({
-          model: await getModelForOrg(ctx, args.orgId, "summary"),
-          providerOptions: getProviderOptionsForTask("summary"),
+        const { text: titleText } = await generateTextForOrg(ctx, args.orgId, "summary", {
           maxOutputTokens: 16,
           system: TITLE_SYSTEM_PROMPT,
           messages: [

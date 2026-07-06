@@ -1,12 +1,12 @@
 "use node";
 
-import { generateText, stepCountIs, tool } from "ai";
+import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import dayjs from "dayjs";
-import { getModelForOrg, getProviderOptionsForTask } from "./models";
+import { generateTextForOrg } from "./models";
 import { sendResendEmail, getAgentDomain } from "./resend";
 import { markdownToHtml, stripMarkdown } from "./aiUtils";
 import { isWhiteLabelingEnabled } from "./branding";
@@ -1039,9 +1039,7 @@ async function runEmailSubagent(
     return sentResult;
   };
 
-  const subagentResult = await generateText({
-    model: await getModelForOrg(ctx, context.orgId, "email_draft"),
-    providerOptions: getProviderOptionsForTask("email_draft"),
+  const subagentResult = await generateTextForOrg(ctx, context.orgId, "email_draft", {
     maxOutputTokens: 1536,
     system: `You are Glass's email expert subagent.
 
