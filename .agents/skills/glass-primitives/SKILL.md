@@ -20,7 +20,7 @@ Prefer extending the existing primitive when the meaning matches. Add a new prim
 ## Catalog
 
 - App shell and navigation: `components/app-shell.tsx`, `components/app-sidebar/*`, `components/app-sidebar/nav-config.tsx`, and `lib/settings-sections.ts`.
-- Operational UI: `components/ui/operational-panel.tsx`, `components/ui/pill-button.tsx`, `components/ui/select.tsx`, `components/ui/dropdown-menu.tsx`, `components/ui/searchable-select.tsx`, `components/settings/settings-switch.tsx`, and `components/settings/feature-flag-toggle-row.tsx`.
+- Operational UI: `components/ui/operational-panel.tsx`, `components/ui/operational-toast.tsx`, `components/ui/pill-button.tsx`, `components/ui/select.tsx`, `components/ui/dropdown-menu.tsx`, `components/ui/searchable-select.tsx`, `components/settings/settings-switch.tsx`, and `components/settings/feature-flag-toggle-row.tsx`.
 - Branding: `components/ui/brand-icon.tsx`, `components/ui/org-brand-icon.tsx`, `components/ui/logo-icon.tsx`, `lib/branding.ts`, `lib/viewer-branding.ts`, `convex/lib/branding.ts`, and `convex/lib/orgBranding.ts`.
 - Feature flags: `convex/lib/featureFlags.ts`, `organizations.featureFlags`, `orgs.setFeatureFlag`, `operator.setClientFeatureFlag`, `isFeatureEnabled`, and `/settings?section=beta`.
 - Local-first sync and current org: `lib/sync/use-cached-query.ts`, `lib/sync/glass-cached-queries.ts`, `lib/sync/operator-cached-queries.ts`, `lib/sync/use-local-first-auto-save.ts`, and the existing `useCurrentOrg` hooks.

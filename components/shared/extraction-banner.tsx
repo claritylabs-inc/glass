@@ -4,36 +4,17 @@
 
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import { useAction } from "convex/react";
-import { CircleAlert, CircleCheck } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  PillButton,
-  type PillButtonVariant,
-} from "@/components/ui/pill-button";
-import { Spinner } from "@/components/ui/spinner";
+  showOperationalStatusToast,
+  type OperationalToastAction,
+  type OperationalToastTone,
+} from "@/components/ui/operational-toast";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { cn } from "@/lib/utils";
 
 type RetryMode = "resume" | "full";
-type ExtractionToastTone = "loading" | "success" | "error";
-const EXTRACTION_TOAST_COLLAPSE_DELAY_MS = 3_500;
-
-type ExtractionToastAction = {
-  label: string;
-  onClick: () => void;
-  variant?: PillButtonVariant;
-  disabled?: boolean;
-  icon?: ReactNode;
-};
 
 type ToastPolicy = {
   _id: string;
@@ -93,124 +74,6 @@ function isNonInsuranceDocument(error?: string | null) {
   return error?.startsWith("This document is not a bound insurance policy");
 }
 
-function ExtractionToastIcon({ tone }: { tone: ExtractionToastTone }) {
-  if (tone === "loading") {
-    return <Spinner className="size-4 text-muted-foreground" />;
-  }
-
-  if (tone === "error") {
-    return <CircleAlert className="size-4 text-destructive" />;
-  }
-
-  return <CircleCheck className="size-4 text-muted-foreground" />;
-}
-
-function ExtractionToastActionButton({
-  action,
-  className,
-}: {
-  action: ExtractionToastAction;
-  className?: string;
-}) {
-  return (
-    <PillButton
-      size="compact"
-      variant={action.variant ?? "secondary"}
-      disabled={action.disabled}
-      onClick={action.onClick}
-      className={className}
-    >
-      {action.icon}
-      {action.label}
-    </PillButton>
-  );
-}
-
-function ExtractionStatusToast({
-  title,
-  description,
-  tone,
-  actions = [],
-  collapsible = false,
-}: {
-  title: string;
-  description?: string;
-  tone: ExtractionToastTone;
-  actions?: ExtractionToastAction[];
-  collapsible?: boolean;
-}) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isInteracting, setIsInteracting] = useState(false);
-  const isCompact = collapsible && isCollapsed && !isInteracting;
-
-  useEffect(() => {
-    if (!collapsible) return;
-
-    const collapseTimer = window.setTimeout(
-      () => setIsCollapsed(true),
-      EXTRACTION_TOAST_COLLAPSE_DELAY_MS,
-    );
-
-    return () => window.clearTimeout(collapseTimer);
-  }, [collapsible, description, title]);
-
-  const statusContent = (
-    <div className="grid min-w-0 grid-cols-[1rem_minmax(0,1fr)] gap-3">
-      <div
-        className={cn(
-          "flex h-5 items-center justify-center",
-          tone === "loading" ? "pt-0.5" : "pt-px",
-        )}
-      >
-        <ExtractionToastIcon tone={tone} />
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-base font-medium leading-5 text-foreground">
-          {title}
-        </p>
-        {description && !isCompact ? (
-          <p className="mt-1 text-label leading-4 text-muted-foreground">
-            {description}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-
-  return (
-    <div
-      className={cn(
-        "flex w-full min-w-0 flex-col overflow-hidden px-4 outline-none transition-[gap,padding] duration-150 ease-out",
-        isCompact ? "gap-0 py-2.5" : "gap-3 py-3.5",
-      )}
-      tabIndex={collapsible ? 0 : undefined}
-      aria-label={isCompact && description ? `${title}. ${description}` : title}
-      onMouseEnter={() => setIsInteracting(true)}
-      onMouseLeave={() => setIsInteracting(false)}
-      onFocus={() => setIsInteracting(true)}
-      onBlur={(event) => {
-        const nextTarget = event.relatedTarget;
-        if (
-          !(nextTarget instanceof Node) ||
-          !event.currentTarget.contains(nextTarget)
-        ) {
-          setIsInteracting(false);
-        }
-      }}
-    >
-      {statusContent}
-
-      {actions.length && !isCompact ? (
-        <div className="flex flex-wrap gap-2 pl-7">
-          {actions.map((action) => (
-            <ExtractionToastActionButton key={action.label} action={action} />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function showExtractionStatusToast({
   id,
   title,
@@ -223,24 +86,20 @@ function showExtractionStatusToast({
   id: string;
   title: string;
   description?: string;
-  tone: ExtractionToastTone;
+  tone: OperationalToastTone;
   duration: number;
-  actions?: ExtractionToastAction[];
+  actions?: OperationalToastAction[];
   collapsible?: boolean;
 }) {
-  toast.custom(
-    () => (
-      <ExtractionStatusToast
-        key={`${collapsible ? "collapsible" : "fixed"}:${title}:${description ?? ""}`}
-        title={title}
-        description={description}
-        tone={tone}
-        actions={actions}
-        collapsible={collapsible}
-      />
-    ),
-    { id, duration },
-  );
+  showOperationalStatusToast({
+    id,
+    title,
+    description,
+    tone,
+    duration,
+    actions,
+    collapsible,
+  });
 }
 
 export function showPolicyExtractionQueuedToast({

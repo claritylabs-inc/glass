@@ -331,6 +331,78 @@
   outline-offset: 2px;
 }
 
+.glass-operational-toast {
+  --glass-operational-toast-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: hidden;
+  padding: 0.875rem 1rem;
+  outline: none;
+  transition:
+    gap 150ms var(--glass-operational-toast-ease-out),
+    padding 150ms var(--glass-operational-toast-ease-out);
+}
+
+.glass-operational-toast:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.glass-operational-toast__reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  visibility: visible;
+  transition:
+    grid-template-rows 180ms var(--glass-operational-toast-ease-out),
+    opacity 120ms ease,
+    transform 180ms var(--glass-operational-toast-ease-out),
+    visibility 0ms linear 0ms;
+}
+
+.glass-operational-toast__reveal-inner {
+  min-height: 0;
+  overflow: hidden;
+  padding-left: 1.75rem;
+}
+
+.glass-operational-toast[data-collapsed="true"] {
+  gap: 0;
+  padding-block: 0.625rem;
+}
+
+.glass-operational-toast[data-collapsed="true"]
+  .glass-operational-toast__reveal {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  visibility: hidden;
+  transition-delay: 0ms, 0ms, 0ms, 150ms;
+}
+
+[data-sonner-toast]:is(:hover, :focus-within, [data-expanded="true"])
+  .glass-operational-toast[data-collapsed="true"] {
+  gap: 0.75rem;
+  padding-block: 0.875rem;
+}
+
+[data-sonner-toast]:is(:hover, :focus-within, [data-expanded="true"])
+  .glass-operational-toast[data-collapsed="true"]
+  .glass-operational-toast__reveal {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  visibility: visible;
+  transition-delay: 0ms;
+}
+
 @media (max-width: 600px) {
   [data-sonner-toaster][data-x-position="right"] {
     left: auto;
