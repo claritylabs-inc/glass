@@ -180,7 +180,7 @@ function categoryLabel(category: Category) {
 
 function CategoryBadge({ category }: { category: Category }) {
   return (
-    <Badge variant="outline" className="text-label text-muted-foreground">
+    <Badge variant="outline" className="text-muted-foreground">
       {categoryLabel(category)}
     </Badge>
   );
@@ -189,7 +189,7 @@ function CategoryBadge({ category }: { category: Category }) {
 function EvaluationTargetBadge({ requirement }: { requirement: Requirement }) {
   const target = requirementSemantics(requirement).evaluationTarget;
   return (
-    <Badge variant="outline" className="text-label text-muted-foreground">
+    <Badge variant="outline" className="text-muted-foreground">
       {requirementEvaluationTargetLabel(target)}
     </Badge>
   );

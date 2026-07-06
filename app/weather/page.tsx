@@ -96,7 +96,7 @@ export default function WeatherPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-block rounded-full px-2.5 py-0.5 text-label font-medium ${
+                          className={`inline-block rounded-full px-2.5 py-0.5 text-tag font-medium ${
                             PROVIDER_COLORS[route.provider] ??
                             "bg-foreground/10 text-foreground/60"
                           }`}

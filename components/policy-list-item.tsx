@@ -27,14 +27,14 @@ interface PolicyListItemProps {
 function ProvenanceBadge({ side }: { side: UploadedBySide }) {
   if (side === "broker") {
     return (
-      <Badge variant="secondary" className="text-label">
+      <Badge variant="secondary">
         Broker provided
       </Badge>
     );
   }
   if (side === "email_scan") {
     return (
-      <Badge variant="outline" className="text-label">
+      <Badge variant="outline">
         Email scan
       </Badge>
     );

@@ -154,7 +154,7 @@ export function PolicyCitation({
           citedSourceSpanIds,
         })
       }
-      className="mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 rounded-full border border-foreground/8 bg-foreground/3 px-1.5 align-middle text-label font-medium leading-none text-muted-foreground/65 no-underline transition-colors hover:border-foreground/12 hover:bg-foreground/5 hover:text-foreground/80"
+      className="mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 rounded-full border border-foreground/8 bg-foreground/3 px-1.5 align-middle text-tag font-medium leading-none text-muted-foreground/65 no-underline transition-colors hover:border-foreground/12 hover:bg-foreground/5 hover:text-foreground/80"
       title={label}
     >
       <FileText className="h-2.5 w-2.5 shrink-0" />
@@ -200,7 +200,7 @@ export function PolicySourcePill({
           citedSourceSpanIds,
         })
       }
-      className="inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+      className="inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
       title={label}
     >
       <span className="text-muted-foreground/35">{index}</span>
@@ -284,7 +284,7 @@ export function ReferenceCardStrip({
         type="button"
         onClick={() => setIsExpanded((value) => !value)}
         aria-expanded={isExpanded}
-        className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-label font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+        className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
       >
         {refs.length} sources
       </button>

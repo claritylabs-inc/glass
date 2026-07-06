@@ -101,7 +101,7 @@ export function PromptReferenceTag({
   return (
     <span
       className={cn(
-        "inline-flex h-6 max-w-[min(16rem,100%)] shrink-0 items-center gap-1.5 align-middle rounded-full bg-foreground/5 px-2.5 text-label font-medium text-foreground/75",
+        "inline-flex h-6 max-w-[min(16rem,100%)] shrink-0 items-center gap-1.5 align-middle rounded-full bg-foreground/5 px-2.5 text-tag font-medium text-foreground/75",
         className,
       )}
     >

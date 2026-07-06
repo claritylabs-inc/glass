@@ -623,7 +623,7 @@ export function EmailThreadSidebar({
           </h2>
           <Badge
             variant="outline"
-            className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55"
+            className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55"
           >
             {isDraft
               ? "Draft"

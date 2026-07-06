@@ -53,8 +53,8 @@ export function ThreadAttachmentChip({
       className={cn(
         "inline-flex min-w-0 items-center rounded-full font-medium transition-colors",
         isCompact
-          ? "h-5 gap-1 px-1.5 text-[0.6875rem] leading-4"
-          : "h-6 gap-1.5 px-2 text-label",
+          ? "h-5 gap-1 px-1.5 text-tag"
+          : "h-6 gap-1.5 px-2 text-tag",
         url
           ? "bg-foreground/5 text-foreground/65 hover:bg-foreground/8 hover:text-foreground/80"
           : "pointer-events-none bg-foreground/3 text-muted-foreground/40",

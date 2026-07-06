@@ -345,7 +345,7 @@ export function PolicyExtractionReview({
                   </p>
                 </div>
                 {brokerRequested ? (
-                  <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-label font-medium text-muted-foreground">
+                  <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-tag font-medium text-muted-foreground">
                     Broker requested
                   </span>
                 ) : null}
@@ -402,7 +402,7 @@ export function PolicyExtractionReview({
                           </p>
                         ) : null}
                       </div>
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-label font-medium text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-tag font-medium text-muted-foreground">
                         {selected ? (
                           <CheckCircle2 className="size-3.5" />
                         ) : null}
@@ -458,4 +458,3 @@ export function PolicyExtractionReview({
     </section>
   );
 }
-

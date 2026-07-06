@@ -74,7 +74,7 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
             <p className="min-w-0 max-w-full truncate text-base font-medium text-foreground">
               {job.holder?.displayName ?? job.recipientName ?? "Certificate holder"}
             </p>
-            <Badge variant={jobBadge(job.status)} className="text-label capitalize">
+            <Badge variant={jobBadge(job.status)} className="capitalize">
               {job.status.replace(/_/g, " ")}
             </Badge>
           </div>

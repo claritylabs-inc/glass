@@ -562,7 +562,7 @@ function PreparedInputActions({
               event.preventDefault();
               action.onSelect();
             }}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-label font-medium text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-tag font-medium text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
           >
             {action.icon}
             <span className="hidden sm:inline">{action.label}</span>

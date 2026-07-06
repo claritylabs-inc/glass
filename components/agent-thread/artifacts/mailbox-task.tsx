@@ -202,7 +202,7 @@ function MailboxSearchAudit({ searches }: { searches: ReturnType<typeof normaliz
           return (
             <div key={`${search.accountEmail ?? "account"}-${search.mailbox}-${search.query ?? "all"}-${index}`} className="rounded-md border border-foreground/8 bg-foreground/[0.035] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div className="flex flex-wrap items-center gap-1.5 text-label text-muted-foreground/55">
-                <Badge variant="outline" className="h-5 border-foreground/8 px-1.5 text-label font-medium text-muted-foreground/55">
+                <Badge variant="outline" className="h-5 border-foreground/8 px-1.5 font-medium text-muted-foreground/55">
                   {search.accountEmail ?? "Mailbox"}
                 </Badge>
                 <span>{search.mailbox}</span>
@@ -372,7 +372,7 @@ function MailboxTaskSummaryCard({
       <button
         type="button"
         onClick={onOpen}
-        className={`inline-flex max-w-full items-center gap-1.5 rounded-full border bg-foreground/[0.025] px-2.5 py-1.5 text-label font-medium text-muted-foreground/55 transition-colors ${
+        className={`inline-flex max-w-full items-center gap-1.5 rounded-full border bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/55 transition-colors ${
           isSelected ? "border-foreground/18 bg-foreground/[0.04]" : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.04]"
         }`}
       >
@@ -401,7 +401,7 @@ function MailboxTaskSummaryCard({
           </span>
         </div>
         <span className="flex shrink-0 items-center gap-2">
-          <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55">
+          <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
             {isRunning ? "Running" : "Background agent"}
           </Badge>
         </span>
@@ -432,7 +432,7 @@ function MailboxTaskSummaryCard({
         {task.toolCalls.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {task.toolCalls.map((toolCall, index) => (
-              <Badge key={`${toolCall}-${index}`} variant="outline" className="h-5 border-foreground/8 px-1.5 text-label font-medium text-muted-foreground/55">
+              <Badge key={`${toolCall}-${index}`} variant="outline" className="h-5 border-foreground/8 px-1.5 font-medium text-muted-foreground/55">
                 {scientistSurnameFor(`mailbox-tool:${toolCall}`, index)}
               </Badge>
             ))}
@@ -452,7 +452,7 @@ function MailboxTaskSummaryCard({
                       {email.subject}
                     </span>
                     {email.accountEmail ? (
-                      <Badge variant="outline" className="h-5 border-foreground/8 px-1.5 text-label font-medium text-muted-foreground/50">
+                      <Badge variant="outline" className="h-5 border-foreground/8 px-1.5 font-medium text-muted-foreground/50">
                         {email.accountEmail}
                       </Badge>
                     ) : null}
@@ -472,7 +472,7 @@ function MailboxTaskSummaryCard({
                         return (
                           <span
                             key={`${attachment.filename}-${attachmentIndex}`}
-                            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.02] px-2 py-1 text-label text-muted-foreground/65"
+                            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.02] px-2 py-1 text-tag text-muted-foreground/65"
                           >
                             <Paperclip className="h-3 w-3 shrink-0" />
                             <span className="truncate">{attachment.filename}</span>
@@ -572,7 +572,7 @@ export function MailboxTaskSidebar({
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="truncate text-base font-semibold text-foreground">{displayName}</h2>
-          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 text-label font-medium text-muted-foreground/55">
+          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
             {isRunning ? "Running" : "Background agent"}
           </Badge>
         </div>

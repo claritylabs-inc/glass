@@ -61,20 +61,20 @@ function StatusBadge({
 
   if (isExpired) {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label font-medium bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-tag font-medium bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400">
         Expired
       </span>
     );
   }
   if (isExpiringSoon) {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label font-medium bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-tag font-medium bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
         Expiring Soon
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-tag font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
       Active
     </span>
   );
@@ -200,7 +200,7 @@ export function PolicySummary({
         </h2>
         <div className="flex items-center gap-1.5 flex-wrap">
           {isRenewal && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
               Renewal
             </span>
           )}
@@ -233,13 +233,13 @@ export function PolicySummary({
                   {realPolicyTypes.slice(0, 4).map((t) => (
                     <span
                       key={t}
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium bg-foreground/5 text-foreground/70"
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-foreground/5 text-foreground/70"
                     >
                       {POLICY_TYPE_LABELS[t] ?? t}
                     </span>
                   ))}
                   {realPolicyTypes.length > 4 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label font-medium bg-foreground/5 text-muted-foreground">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-foreground/5 text-muted-foreground">
                       +{realPolicyTypes.length - 4} more
                     </span>
                   )}

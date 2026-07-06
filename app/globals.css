@@ -178,6 +178,8 @@
   --font-serif: var(--font-instrument-serif);
 
   /* Typography scale */
+  --text-tag: 0.625rem;
+  --text-tag--line-height: 0.875rem;
   --text-label: 0.7rem;
   --text-base: 0.85rem;
 
@@ -401,6 +403,11 @@
   transform: translateY(0);
   visibility: visible;
   transition-delay: 0ms;
+}
+
+.text-tag {
+  font-size: var(--text-tag);
+  line-height: var(--text-tag--line-height);
 }
 
 @media (max-width: 600px) {

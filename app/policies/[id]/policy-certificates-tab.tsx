@@ -543,7 +543,7 @@ function CertificateHoldActivityRow({ row }: { row: CertificateHoldRow }) {
             <p className="min-w-0 max-w-full truncate text-base font-medium text-foreground">
               {holderName}
             </p>
-            <Badge variant="outline" className="text-label">
+            <Badge variant="outline">
               Held
             </Badge>
           </div>
