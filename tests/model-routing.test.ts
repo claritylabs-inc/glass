@@ -272,10 +272,15 @@ describe("model fallback policy", () => {
       join(__dirname, "../extraction-worker/src/index.ts"),
       "utf-8",
     );
+    const retrievalSource = readFileSync(
+      join(__dirname, "../convex/lib/webRetrieval.ts"),
+      "utf-8",
+    );
 
     expect(modelsSource).not.toContain("gateway(");
     expect(sdkCallbackSource).not.toContain("gateway(");
     expect(workerSource).not.toContain("gateway(");
+    expect(retrievalSource).not.toContain("gateway(");
     expect(modelsSource).toContain(
       "AI Gateway is not a fallback for Glass model routing",
     );
@@ -530,17 +535,18 @@ describe("web retrieval routing", () => {
     expect(source).not.toContain('livecrawl: "always"');
   });
 
-  test("allows Gemini and Grok web retrieval through Vercel AI Gateway", () => {
+  test("keeps web retrieval direct-provider-only", () => {
     const retrievalSource = readFileSync(
       join(__dirname, "../convex/lib/webRetrieval.ts"),
       "utf-8",
     );
     const settingsSource = readFileSync(join(__dirname, "../convex/modelSettings.ts"), "utf-8");
 
-    expect(retrievalSource).toContain("AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN");
-    expect(retrievalSource).toContain("gateway(gatewayModelId(route))");
-    expect(settingsSource).toContain("function gatewayConfigured()");
-    expect(settingsSource).toContain("configuredEnv(process.env.AI_GATEWAY_API_KEY)");
-    expect(settingsSource).toContain("|| hasGatewayAccess");
+    expect(retrievalSource).not.toContain("AI_GATEWAY_API_KEY");
+    expect(retrievalSource).not.toContain("VERCEL_OIDC_TOKEN");
+    expect(retrievalSource).not.toContain("gateway(");
+    expect(settingsSource).not.toContain("function gatewayConfigured()");
+    expect(settingsSource).not.toContain("AI_GATEWAY_API_KEY");
+    expect(settingsSource).not.toContain("hasGatewayAccess");
   });
 });

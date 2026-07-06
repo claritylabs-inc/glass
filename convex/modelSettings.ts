@@ -173,13 +173,6 @@ function maskProviderKeys(keys: ProviderKeys | undefined) {
   ) as Record<ModelProvider, { configured: boolean; suffix: string | null }>;
 }
 
-function gatewayConfigured() {
-  return !!(
-    configuredEnv(process.env.AI_GATEWAY_API_KEY) ||
-    configuredEnv(process.env.VERCEL_OIDC_TOKEN)
-  );
-}
-
 function configuredEnv(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed || undefined;
@@ -287,7 +280,6 @@ function configurableProviderKeys(keys: ProviderKeys | undefined) {
 }
 
 function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
-  const hasGatewayAccess = gatewayConfigured();
   switch (provider) {
     case "exa":
       return !!configuredEnv(process.env.EXA_API_KEY);
@@ -297,11 +289,11 @@ function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
       return !!(
         configuredEnv(process.env.GOOGLE_GENERATIVE_AI_API_KEY) ??
         configuredEnv(process.env.GOOGLE_API_KEY)
-      ) || hasGatewayAccess;
+      );
     case "anthropic":
       return !!configuredEnv(process.env.ANTHROPIC_API_KEY);
     case "xai":
-      return !!configuredEnv(process.env.XAI_API_KEY) || hasGatewayAccess;
+      return !!configuredEnv(process.env.XAI_API_KEY);
   }
 }
 
@@ -466,7 +458,6 @@ export const getGlobal = query({
       .first();
 
     return {
-      gatewayConfigured: gatewayConfigured(),
       providers: CONFIGURABLE_MODEL_PROVIDERS.map((id) => ({
         id,
         label: PROVIDER_LABELS[id],

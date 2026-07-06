@@ -1,18 +1,10 @@
 "use node";
 
-import { generateObject } from "ai";
 import { z } from "zod";
 import { sanitizeNulls } from "@claritylabs/cl-sdk";
 import type { ActionCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
-import {
-  fallbackRouteForCall,
-  getModelAndRouteForOrg,
-  getModelForRoute,
-  getProviderOptionsForRoute,
-} from "./models";
-import type { ModelRoute } from "./modelCatalog";
-import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
+import { generateObjectForOrg } from "./models";
 import { normalizeExtractedString } from "./valueNormalization";
 
 type SourceLike = {
@@ -385,19 +377,6 @@ function shouldReviewGroup(document: Record<string, unknown>, group: FieldReview
   return group.fields.some((field) => isMissingValue(document[field]));
 }
 
-function sameModelRoute(left: ModelRoute, right: ModelRoute) {
-  return left.provider === right.provider && left.model === right.model;
-}
-
-export function fieldReviewRouteForPrimary(primaryRoute: ModelRoute, fallbackRoute?: ModelRoute): ModelRoute {
-  return fallbackRouteForCall({
-    task: "extraction",
-    taskKind: "extraction_review",
-    primaryRoute,
-    fallbackRoute,
-  }) ?? primaryRoute;
-}
-
 async function generateReviewObject<T>(
   options: FieldReviewOptions,
   params: {
@@ -407,16 +386,14 @@ async function generateReviewObject<T>(
     label: string;
   },
 ): Promise<T> {
-  const primary = await getModelAndRouteForOrg(options.ctx, options.orgId, "extraction");
-  const reviewRoute = fieldReviewRouteForPrimary(primary.route, primary.fallbackRoute);
-  const result = await generateObject({
-    model: sameModelRoute(reviewRoute, primary.route) ? primary.model : getModelForRoute(reviewRoute),
-    schema: structuredOutputSchemaForRoute(params.schema, reviewRoute),
+  const result = await generateObjectForOrg(options.ctx, options.orgId, "extraction", {
+    schema: params.schema,
     maxOutputTokens: params.maxOutputTokens,
-    providerOptions: getProviderOptionsForRoute(reviewRoute),
     prompt: params.prompt,
+  }, {
+    taskKind: "extraction_review",
   });
-  return result.object;
+  return result.output;
 }
 
 function financialEvidence(document: Record<string, unknown>, sourceSpans: SourceLike[]) {
