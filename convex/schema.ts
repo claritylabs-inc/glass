@@ -330,6 +330,17 @@ export default defineSchema({
     iconStorageId: v.optional(v.id("_storage")),
     // Dual-org: org type discriminator
     type: v.optional(v.union(v.literal("broker"), v.literal("client"))),
+    // Temporary widen-migrate-narrow fields from removed program-admin model.
+    partnerKind: v.optional(v.literal("program_admin")),
+    partnerType: v.optional(
+      v.union(
+        v.literal("broker"),
+        v.literal("program_admin"),
+        v.literal("mga"),
+        v.literal("carrier"),
+        v.literal("other"),
+      ),
+    ),
     // Set on client orgs only — ID of the managing broker org
     brokerOrgId: v.optional(v.id("organizations")),
     // Client-org lifecycle: "draft" = broker is preparing, "invited" = invite sent and pending,

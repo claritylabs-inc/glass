@@ -74,6 +74,7 @@ const REMOVED_MGA_AUDIT_EVENT_TYPES = new Set([
   "mga_launch_email_sent",
 ]);
 const REMOVED_MGA_AUDIT_EVENT_CLEANUP_BATCH_SIZE = 500;
+const LEGACY_ORGANIZATION_FIELD_CLEANUP_BATCH_SIZE = 100;
 
 type OperatorSourceNode = Doc<"sourceNodes">;
 
@@ -1635,6 +1636,47 @@ export const cleanupRemovedMgaAuditEventsInternal = internalMutation({
     return {
       scanned: page.page.length,
       deleted,
+      isDone: page.isDone,
+      continueCursor: page.isDone ? undefined : page.continueCursor,
+    };
+  },
+});
+
+export const cleanupLegacyOrganizationFieldsInternal = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("organizations").paginate({
+      cursor: args.cursor ?? null,
+      numItems: LEGACY_ORGANIZATION_FIELD_CLEANUP_BATCH_SIZE,
+    });
+    let deleted = 0;
+    let patched = 0;
+    for (const org of page.page) {
+      const record = org as Record<string, unknown>;
+      if (isRemovedProgramAdminOrg(org)) {
+        await deleteRemovedProgramAdminOrgData(ctx, org._id);
+        deleted += 1;
+        continue;
+      }
+      const patch: Record<string, unknown> = {};
+      if (record.partnerKind !== undefined) patch.partnerKind = undefined;
+      if (record.partnerType !== undefined) patch.partnerType = undefined;
+      if (record.type === "partner") patch.type = "broker";
+      if (Object.keys(patch).length === 0) continue;
+      await ctx.db.patch(org._id, patch);
+      patched += 1;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupLegacyOrganizationFieldsInternal,
+        { cursor: page.continueCursor },
+      );
+    }
+    return {
+      scanned: page.page.length,
+      deleted,
+      patched,
       isDone: page.isDone,
       continueCursor: page.isDone ? undefined : page.continueCursor,
     };
