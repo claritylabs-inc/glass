@@ -1,10 +1,6 @@
 "use client";
 
-import { CLIENT_SETTINGS_SECTIONS } from "@/lib/settings-sections";
-import {
-  BROKER_SETTINGS_WITH_AGENT,
-  CLIENT_SETTINGS_WITH_AGENT,
-} from "./nav-config";
+import { getSettingsSections } from "@/lib/settings-sections";
 import { NavItem } from "./nav-item";
 import { SidebarBrokerContact } from "./broker-contact-card";
 import { SidebarHeader } from "./sidebar-header";
@@ -29,6 +25,8 @@ export function SettingsSidebarContent({
   showBrokerContact: boolean;
   onToggleCollapse: () => void;
 }) {
+  const sections = getSettingsSections({ isBroker, isStandaloneClient });
+
   return (
     <div className="flex flex-col h-full">
       <SidebarHeader
@@ -46,12 +44,7 @@ export function SettingsSidebarContent({
           </p>
         )}
         {collapsed && <div className="pt-4 pb-1" />}
-        {(isBroker
-          ? BROKER_SETTINGS_WITH_AGENT
-          : isStandaloneClient
-            ? CLIENT_SETTINGS_WITH_AGENT
-            : CLIENT_SETTINGS_SECTIONS
-        ).map((item) => {
+        {sections.map((item) => {
           const isItemActive = item.id === activeSettingsSection;
           return (
             <NavItem

@@ -26,7 +26,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { Textarea } from "@/components/ui/textarea";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
-import { useCurrentOrg } from "@/lib/hooks/use-current-org";
+import { useActiveOrgContext } from "@/lib/hooks/use-active-org-context";
 import {
   useCachedQuery,
   useUpdateCachedQuery,
@@ -469,7 +469,7 @@ export function ConnectedOrgsSection({
   page?: ConnectedOrgsPageKind;
 }) {
   const router = useRouter();
-  const currentOrg = useCurrentOrg();
+  const currentOrg = useActiveOrgContext();
   const vendorRows = useCachedQuery(
     "connectedOrgs.listVendors",
     connectedOrgsApi.connectedOrgs.listVendors,

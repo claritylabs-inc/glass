@@ -3,6 +3,8 @@ import { fetchQuery } from "convex/nextjs";
 import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { api } from "@/convex/_generated/api";
 
+// Next.js server-only bridge for app-shell metadata and Open Graph rendering.
+// Do not import this from Convex functions or client components.
 export type ViewerBranding = {
   name: string;
   iconUrl: string | null;

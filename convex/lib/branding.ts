@@ -1,11 +1,11 @@
 "use node";
 
 /**
- * Server-side branding context for Glass (formerly Glass).
+ * Convex-side branding context and white-label gates.
  *
- * Provides a `BrandingContext` type and a lightweight `getDefaultBranding()`
- * helper that returns Glass defaults. Future: accept an org record and read
- * `agentDisplayName`, `brandingColor`, `iconStorageId` for white-label brokers.
+ * Owns server-safe brand names, colors, logo URLs, and email-compatible branding
+ * contexts. Browser theme token generation belongs in `lib/branding.ts`; storage
+ * URL attachment for org query rows belongs in `convex/lib/orgBranding.ts`.
  */
 
 export type BrandingContext = {
