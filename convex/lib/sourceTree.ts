@@ -3,9 +3,9 @@
 import {
   buildDocumentSourceTree as buildSdkDocumentSourceTree,
   normalizeDocumentSourceTreePaths,
-  normalizeOperationalPolicyTypes,
+  normalizeOperationalLinesOfBusiness,
   PolicyOperationalProfileSchema,
-  resolveOperationalProfilePolicyTypes,
+  resolveOperationalProfileLinesOfBusiness,
   stableHash,
   type DocumentSourceNode,
   type OperationalCoverageLine,
@@ -18,7 +18,7 @@ import {
 } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
 import { normalizeCoverageName, normalizeText } from "./coverageNames";
-import { lobLabel, toLobCodes } from "./linesOfBusiness";
+import { lobLabel } from "./linesOfBusiness";
 
 export type {
   DocumentSourceNode,
@@ -1085,13 +1085,13 @@ function finalizeSourceBackedPremium(value: SourceBackedValue | undefined): Sour
 
 function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOperationalProfile {
   const coverages = cleanOperationalCoverages(profile.coverages);
-  const resolvedTypes = resolveOperationalProfilePolicyTypes({
-    profileTypes: profile.policyTypes,
+  const resolvedLines = resolveOperationalProfileLinesOfBusiness({
+    profileLinesOfBusiness: profile.linesOfBusiness,
     coverages,
   });
   const finalized: PolicyOperationalProfile = {
     ...profile,
-    policyTypes: resolvedTypes.policyTypes,
+    linesOfBusiness: resolvedLines.linesOfBusiness,
     coverages,
     warnings: profile.warnings,
     policyNumber: finalizeSourceBackedPolicyNumber(profile.policyNumber),
@@ -1113,14 +1113,14 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
   return finalized;
 }
 
-function sameStringArray(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function sameStringArray(left: readonly unknown[], right: readonly unknown[]): boolean {
+  return left.length === right.length && left.every((value, index) => String(value) === String(right[index]));
 }
 
 function emptyOperationalProfile(): PolicyOperationalProfile {
   return PolicyOperationalProfileSchema.parse({
     documentType: "policy",
-    policyTypes: ["other"],
+    linesOfBusiness: ["UN"],
     coverages: [],
     parties: [],
     endorsementSupport: [],
@@ -1274,7 +1274,9 @@ function normalizeRawOperationalProfile(
   ])];
   return PolicyOperationalProfileSchema.parse({
     documentType: candidate.documentType === "quote" ? "quote" : "policy",
-    policyTypes: normalizeOperationalPolicyTypes(candidate.policyTypes),
+    linesOfBusiness: normalizeOperationalLinesOfBusiness(
+      candidate.linesOfBusiness ?? (candidate as { policyTypes?: unknown }).policyTypes,
+    ),
     policyNumber: values[0],
     namedInsured: values[1],
     insurer: values[2],
@@ -1562,19 +1564,20 @@ export function sourceTreePolicyFields(params: {
   existingPolicyTypes?: unknown;
 }): Record<string, unknown> {
   const { sourceTree } = params;
-  const resolvedTypes = resolveOperationalProfilePolicyTypes({
-    profileTypes: params.operationalProfile.policyTypes,
-    existingTypes: params.existingPolicyTypes,
+  const resolvedLines = resolveOperationalProfileLinesOfBusiness({
+    profileLinesOfBusiness: params.operationalProfile.linesOfBusiness,
+    existingLinesOfBusiness: params.existingPolicyTypes,
     coverages: params.operationalProfile.coverages,
   });
-  const policyTypesChanged = !sameStringArray(
-    resolvedTypes.policyTypes,
-    params.operationalProfile.policyTypes,
+  const currentLinesOfBusiness = normalizeOperationalLinesOfBusiness(params.operationalProfile.linesOfBusiness);
+  const linesOfBusinessChanged = !sameStringArray(
+    resolvedLines.linesOfBusiness,
+    currentLinesOfBusiness,
   );
-  const operationalProfile: PolicyOperationalProfile = policyTypesChanged
+  const operationalProfile: PolicyOperationalProfile = linesOfBusinessChanged
     ? {
         ...params.operationalProfile,
-        policyTypes: resolvedTypes.policyTypes,
+        linesOfBusiness: resolvedLines.linesOfBusiness,
       }
     : params.operationalProfile;
   const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);
@@ -1653,16 +1656,16 @@ export function operationalProfilePolicyFields(
   fields.premium = premium ?? undefined;
   if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
-  if (operationalProfile.policyTypes.length > 0) {
-    fields.linesOfBusiness = toLobCodes(operationalProfile.policyTypes);
-    fields.policyTypes = operationalProfile.policyTypes;
+  if (operationalProfile.linesOfBusiness.length > 0) {
+    fields.linesOfBusiness = operationalProfile.linesOfBusiness;
+    fields.policyTypes = operationalProfile.linesOfBusiness;
   }
   const summary = [
     insurer && insurer !== "Unknown" ? insurer : undefined,
     policyNumber && policyNumber !== "Unknown" ? `policy #${policyNumber}` : "policy",
     namedInsured && namedInsured !== "Unknown" ? `for ${namedInsured}` : undefined,
-    operationalProfile.policyTypes.length > 0
-      ? `covering ${toLobCodes(operationalProfile.policyTypes).slice(0, 5).map(lobLabel).join(", ")}`
+    operationalProfile.linesOfBusiness.length > 0
+      ? `covering ${operationalProfile.linesOfBusiness.slice(0, 5).map(lobLabel).join(", ")}`
       : undefined,
   ].filter(Boolean).join(" ");
   if (summary) fields.summary = summary;

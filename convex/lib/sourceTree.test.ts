@@ -182,7 +182,7 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.premium).toBeUndefined();
     expect(profile.broker).toBeUndefined();
     expect(profile.insurer).toBeUndefined();
-    expect(profile.policyTypes).toEqual(["professional_liability"]);
+    expect(profile.linesOfBusiness).toEqual(["EO"]);
     expect(profile.parties).toEqual([]);
   });
 
@@ -455,7 +455,7 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.expirationDate?.value).toBe("03/01/2027");
     expect(profile.premium?.value).toBe("$12,500");
     expect(profile.broker?.value).toBe("Northshore Risk Advisors Inc.");
-    expect(profile.policyTypes).toEqual(["general_liability"]);
+    expect(profile.linesOfBusiness).toEqual(["CGL"]);
   });
 
   it("keeps model-backed life policy fields without document fallback candidates", () => {
@@ -535,7 +535,7 @@ describe("normalizeOperationalProfile", () => {
       lifeSpans,
     );
 
-    expect(profile.policyTypes).toEqual(["life"]);
+    expect(profile.linesOfBusiness).toEqual(["UN"]);
     expect(profile.policyNumber?.value).toBe("LI-1234,567-8");
     expect(profile.namedInsured?.value).toBe("Jim Doe");
     expect(profile.insurer?.value).toBe("Sun Life Assurance Company of Canada");
@@ -632,7 +632,7 @@ describe("normalizeOperationalProfile", () => {
       benefitSpans,
     );
 
-    expect(profile.policyTypes).toEqual(["life", "disability"]);
+    expect(profile.linesOfBusiness).toEqual(["UN", "DISAB"]);
     expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name)).toEqual([
       "Manulife Par with VitalityPlusTM",
       "Death benefit",
@@ -675,7 +675,7 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.policyTypes).toEqual(["other"]);
+    expect(profile.linesOfBusiness).toEqual(["UN"]);
     expect(profile.policyNumber?.value).toBe("LI-1234");
   });
 
@@ -814,7 +814,7 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.policyTypes).toEqual(["critical_illness"]);
+    expect(profile.linesOfBusiness).toEqual(["DISAB"]);
     expect(profile.warnings).toEqual([]);
   });
 
@@ -871,10 +871,10 @@ describe("normalizeOperationalProfile", () => {
       sourceSpans,
     );
 
-    expect(profile.policyTypes).toEqual([
-      "general_liability",
-      "professional_liability",
-      "commercial_auto",
+    expect(profile.linesOfBusiness).toEqual([
+      "CGL",
+      "EO",
+      "AUTOB",
     ]);
   });
 
@@ -917,7 +917,7 @@ describe("normalizeOperationalProfile", () => {
       sourceSpans,
     );
 
-    expect(profile.policyTypes).toEqual(["inland_marine", "commercial_auto"]);
+    expect(profile.linesOfBusiness).toEqual(["INMRC", "AUTOB"]);
   });
 
   it("does not keep a conflicting model policy type when coverage evidence is specific", () => {
@@ -945,7 +945,7 @@ describe("normalizeOperationalProfile", () => {
       sourceSpans,
     );
 
-    expect(profile.policyTypes).toEqual(["commercial_auto"]);
+    expect(profile.linesOfBusiness).toEqual(["AUTOB"]);
   });
 
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
@@ -1213,9 +1213,9 @@ describe("sourceTreePolicyFields", () => {
       existingPolicyTypes: ["professional_liability"],
     });
 
-    expect(fields.policyTypes).toEqual(["professional_liability"]);
+    expect(fields.policyTypes).toEqual(["EO"]);
     expect(fields.linesOfBusiness).toEqual(["EO"]);
-    expect((fields.operationalProfile as PolicyOperationalProfile).policyTypes).toEqual(["professional_liability"]);
+    expect((fields.operationalProfile as PolicyOperationalProfile).linesOfBusiness).toEqual(["EO"]);
     expect((fields.operationalProfile as PolicyOperationalProfile).warnings).toEqual([]);
   });
 
@@ -1247,15 +1247,15 @@ describe("sourceTreePolicyFields", () => {
       operationalProfile,
     });
 
-    expect(operationalProfile.policyTypes).toEqual([
-      "professional_liability",
-      "cyber",
+    expect(operationalProfile.linesOfBusiness).toEqual([
+      "EO",
+      "OLIB",
     ]);
-    expect(fields.policyTypes).toEqual(["professional_liability", "cyber"]);
+    expect(fields.policyTypes).toEqual(["EO", "OLIB"]);
     expect(fields.linesOfBusiness).toEqual(["EO", "OLIB"]);
     expect(
-      (fields.operationalProfile as PolicyOperationalProfile).policyTypes,
-    ).toEqual(["professional_liability", "cyber"]);
+      (fields.operationalProfile as PolicyOperationalProfile).linesOfBusiness,
+    ).toEqual(["EO", "OLIB"]);
   });
 
   it("materializes coverage term appliesTo context for policy storage", () => {
@@ -1383,7 +1383,7 @@ describe("sourceTreePolicyFields", () => {
       operationalProfile,
     });
 
-    expect(fields.policyTypes).toEqual(["other"]);
+    expect(fields.policyTypes).toEqual(["UN"]);
     expect(fields.linesOfBusiness).toEqual(["UN"]);
     expect(fields.policyNumber).toBe("Unknown");
     expect(fields.insuredName).toBe("Unknown");

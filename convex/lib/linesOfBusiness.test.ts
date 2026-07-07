@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  LEGACY_POLICY_TYPE_TO_LOB as SDK_LEGACY_POLICY_TYPE_TO_LOB,
+  normalizeOperationalLinesOfBusiness,
+} from "@claritylabs/cl-sdk";
 import { POLICY_TYPE_LABELS } from "./policyTypes";
 import {
   ACORD_LOB_LABELS,
@@ -18,6 +22,13 @@ describe("linesOfBusiness", () => {
     );
     for (const key of Object.keys(POLICY_TYPE_LABELS)) {
       expect(LEGACY_POLICY_TYPE_TO_LOB[key], key).toBeDefined();
+    }
+  });
+
+  it("stays in sync with cl-sdk legacy normalization", () => {
+    for (const key of Object.keys(POLICY_TYPE_LABELS)) {
+      expect(normalizeOperationalLinesOfBusiness([key]), key).toEqual(toLobCodes([key]));
+      expect(SDK_LEGACY_POLICY_TYPE_TO_LOB[key], key).toEqual(LEGACY_POLICY_TYPE_TO_LOB[key]);
     }
   });
 
