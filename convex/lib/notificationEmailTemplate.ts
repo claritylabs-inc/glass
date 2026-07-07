@@ -1,4 +1,5 @@
 // convex/lib/notificationEmailTemplate.ts
+// Notification-email composition built on the shared shell in emailTemplate.
 import { getBrandingContext, getDefaultBranding } from "./branding";
 import { DEFAULT_CLIENT_PORTAL_URL } from "./domains";
 import { buildEmailShell, escapeHtml } from "./emailTemplate";

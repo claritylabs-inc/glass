@@ -19,6 +19,7 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
@@ -770,21 +771,12 @@ function BrandingCard({ website }: { website: string }) {
                 emails to client-facing surfaces.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setWhiteLabelingEnabled((v) => !v)}
-              role="switch"
-              aria-checked={whiteLabelingEnabled}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 shrink-0 ml-4 ${
-                whiteLabelingEnabled ? "bg-foreground" : "bg-foreground/15"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  whiteLabelingEnabled ? "translate-x-4.5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
+            <SettingsSwitch
+              checked={whiteLabelingEnabled}
+              onCheckedChange={() => setWhiteLabelingEnabled((v) => !v)}
+              label="Enable white labeling"
+              className="ml-4"
+            />
           </div>
         )}
 

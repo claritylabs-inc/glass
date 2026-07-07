@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { useCurrentOrg } from "@/lib/hooks/use-current-org";
+import { useActiveOrgContext } from "@/lib/hooks/use-active-org-context";
 import { useCachedConnectedVendors } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
 import { isFeatureEnabled } from "@/convex/lib/featureFlags";
@@ -308,7 +308,7 @@ function ComplianceEmptyState({
 
 export function CompliancePage() {
   const router = useRouter();
-  const currentOrg = useCurrentOrg();
+  const currentOrg = useActiveOrgContext();
   useEffect(() => {
     if (currentOrg?.orgType === "broker") router.replace("/clients");
   }, [currentOrg?.orgType, router]);

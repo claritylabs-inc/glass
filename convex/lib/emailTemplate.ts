@@ -1,5 +1,7 @@
 // Note: Gmail's image proxy strips data: URIs, so email logos must be absolute
 // URLs pointing to a publicly-reachable host serving the asset (e.g. SITE_URL).
+// This module owns the shared email HTML shell and generic auth/invite email
+// bodies. Notification-specific composition belongs in notificationEmailTemplate.
 import type { BrandingContext } from "./branding";
 import { getDefaultBranding } from "./branding";
 import { getClientPortalUrl, getEmailAssetBaseUrl } from "./domains";

@@ -1,7 +1,5 @@
-// lib/hooks/use-current-org.ts
-//
-// Returns the currently-active org context for the authenticated user.
-// Handles multi-org users (broker OR client) and broker-of-client access.
+// URL-aware active org context for surfaces that can operate on a selected
+// client org instead of only the viewer's own membership org.
 
 "use client";
 
@@ -12,7 +10,7 @@ import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { useIsStoppingOperatorImpersonation } from "@/lib/operator-impersonation-stop-state";
 import type { FeatureFlagMap } from "@/convex/lib/featureFlags";
 
-export type CurrentOrgContext = {
+export type ActiveOrgContext = {
   orgId: Id<"organizations">;
   orgType: "broker" | "client";
   accessType: "member" | "broker_of_client" | "connected_client";
@@ -29,12 +27,14 @@ export type CurrentOrgContext = {
 /**
  * Returns the active org context.
  *
- * If the URL contains ?org=<orgId>, that org is used (for broker-of-client navigation).
- * Otherwise, falls back to the first org membership.
+ * If the URL contains ?org=<orgId>, that org is used for broker/client
+ * navigation. Otherwise this falls back to the viewer's first org membership.
  *
- * Returns `null` while loading, `undefined` if the user has no org.
+ * Returns `null` while loading, `undefined` if the user has no active org.
+ * Use `@/hooks/use-current-org` for ordinary app-shell and settings surfaces
+ * that only need the viewer's current membership org summary.
  */
-export function useCurrentOrg(): CurrentOrgContext | null | undefined {
+export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
   const searchParams = useSearchParams();
   const isStoppingOperatorImpersonation = useIsStoppingOperatorImpersonation();
   const orgIdFromUrl = searchParams.get("org") as Id<"organizations"> | null;
@@ -59,9 +59,8 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
     if (!operatorContext?.activeImpersonation) return undefined;
   }
 
-  if (orgData === undefined) return null; // loading
-
-  if (!orgData) return undefined; // no org
+  if (orgData === undefined) return null;
+  if (!orgData) return undefined;
 
   const org = orgData.org as {
     _id: Id<"organizations">;
@@ -79,13 +78,13 @@ export function useCurrentOrg(): CurrentOrgContext | null | undefined {
     role: "admin" | "member";
   };
 
-  // Determine orgType
-  const orgType: "broker" | "client" = (org.type as "broker" | "client") ?? "client";
+  const orgType: "broker" | "client" =
+    (org.type as "broker" | "client") ?? "client";
 
-  // accessType: if orgIdFromUrl is provided and the user is NOT a direct member,
-  // this would have returned null from viewerOrg — so if we have data, accessType = "member"
-  // for this hook. Cross-org broker-of-client access requires a separate utility if needed.
-  const accessType: "member" | "broker_of_client" | "connected_client" = "member";
+  // viewerOrg only returns an org when the viewer can access it. Cross-org
+  // access type can be widened here when the server starts returning it.
+  const accessType: "member" | "broker_of_client" | "connected_client" =
+    "member";
 
   return {
     orgId: org._id,
