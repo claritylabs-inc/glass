@@ -70,7 +70,16 @@ export function policyLineBackfillDecision(policy: {
   policyTypes?: string[];
   linesOfBusiness?: string[];
 }) {
-  const before = policy.policyTypes ?? [];
+  const existingLines = policy.linesOfBusiness?.filter((value) => typeof value === "string" && value.trim()) ?? [];
+  const before = policy.policyTypes?.filter((value) => typeof value === "string" && value.trim()) ?? [];
+  if (existingLines.length > 0) {
+    return {
+      before,
+      after: toLobCodes(existingLines),
+      unmappedValues: [],
+      changed: false,
+    };
+  }
   const after = toLobCodes(before);
   return {
     before,
