@@ -13,14 +13,13 @@ import {
 import {
   buildCertificateGateEvidencePacket,
   inferCertificateEndorsements,
+  isEvidenceGatedOnly,
   type CertificateEndorsementKind,
   type CertificateGateEvidence,
   type CertificateGateVerdict,
 } from "./lib/certificateRequestGate";
-import {
-  buildBrokerSubmissionFromIdentity,
-  missingBrokerRecipientInfo,
-} from "./lib/policyChangeBrokerRouting";
+import { buildEndorsementRequestEmail } from "./lib/certificateBrokerEmail";
+import { summarizeEndorsementEvidence } from "./lib/certificateEndorsements";
 import { makeGenerateObject } from "./lib/sdkCallbacks";
 import { z } from "zod";
 
@@ -41,6 +40,21 @@ const certificateRequestKindValidator = v.union(
   v.literal("holder"),
   v.literal("additional_insured"),
 );
+const certificateFormValidator = v.union(
+  v.literal("acord25"),
+  v.literal("acord24"),
+  v.literal("acord27"),
+  v.literal("acord28"),
+  v.literal("acord29"),
+  v.literal("acord30"),
+  v.literal("acord31"),
+);
+const certificateEmailDraftValidator = v.object({
+  subject: v.string(),
+  body: v.string(),
+  recipientEmail: v.optional(v.string()),
+  recipientName: v.optional(v.string()),
+});
 
 function cleanOptionalText(value?: string) {
   const trimmed = value?.trim();
@@ -64,24 +78,11 @@ function structuredCertificateHolderAddress(args: {
   return Object.values(address).some(Boolean) ? address : undefined;
 }
 
-function sourceKindForPolicyChange(source: string | undefined):
-  | "manual"
-  | "chat"
-  | "email"
-  | "imessage"
-  | "mcp" {
-  if (source === "email") return "email";
-  if (source === "imessage" || source === "sms") return "imessage";
-  if (source === "mcp") return "mcp";
-  if (source === "chat") return "chat";
-  return "manual";
-}
-
 function formatGateMessage(args: {
   holderName: string;
   reasonMessage: string;
 }) {
-  return `${args.reasonMessage} I put the certificate for ${args.holderName} on hold and prepared a broker follow-up so the endorsement can be handled before this certificate is issued.`;
+  return `${args.reasonMessage} I did not issue this certificate for ${args.holderName}. Ask your broker to add the endorsement. I drafted an email you can send.`;
 }
 
 const certificateGateReviewSchema = z.object({
@@ -324,6 +325,23 @@ export const getGenerationContextForOrg = internalQuery({
   },
 });
 
+export const getHolderPolicyRelationshipInternal = internalQuery({
+  args: {
+    holderId: v.id("certificateHolders"),
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    const links = await ctx.db
+      .query("certificateHolderPolicyLinks")
+      .withIndex("by_holderId", (q) => q.eq("holderId", args.holderId))
+      .collect();
+    const current = links.find((link) =>
+      link.policyId === args.policyId && link.status === "current",
+    ) ?? links.find((link) => link.policyId === args.policyId);
+    return current?.relationshipKind ?? null;
+  },
+});
+
 function effectivePolicyDataStage(policy: Record<string, unknown> | null | undefined) {
   const stage = policy?.extractionDataStage;
   if (stage === "placeholder" || stage === "preview" || stage === "final") {
@@ -344,11 +362,18 @@ function certificateRequestSignature(args: {
   requestKind: "holder" | "additional_insured";
   holderName: string;
   additionalInsuredName?: string;
+  requiredChanges?: CertificateEndorsementKind[];
 }) {
+  const nonAdditionalInsuredKinds = (args.requiredChanges ?? [])
+    .filter((kind) => kind !== "additional_insured")
+    .sort();
+  const suffix = nonAdditionalInsuredKinds.length
+    ? `|${nonAdditionalInsuredKinds.join("|")}`
+    : "";
   if (args.requestKind === "additional_insured") {
-    return `additional_insured:${normalizeSignatureText(args.additionalInsuredName ?? args.holderName)}`;
+    return `additional_insured:${normalizeSignatureText(args.additionalInsuredName ?? args.holderName)}${suffix}`;
   }
-  return `holder:${normalizeSignatureText(args.holderName)}`;
+  return `holder:${normalizeSignatureText(args.holderName)}${suffix}`;
 }
 
 export function resolveCertificateRequestMetadata(args: {
@@ -370,7 +395,8 @@ export function resolveCertificateRequestMetadata(args: {
   const additionalInsuredOnly =
     hasEndorsementRequest &&
     requiredChanges.every((kind) => kind === "additional_insured");
-  const requestKind: "holder" | "additional_insured" = additionalInsuredOnly
+  const evidenceGatedOnly = isEvidenceGatedOnly(requiredChanges);
+  const requestKind: "holder" | "additional_insured" = requiredChanges.includes("additional_insured")
     ? "additional_insured"
     : "holder";
   const additionalInsuredName =
@@ -380,6 +406,7 @@ export function resolveCertificateRequestMetadata(args: {
     requestKind,
     holderName: args.holderName,
     additionalInsuredName,
+    requiredChanges,
   });
 
   return {
@@ -387,6 +414,7 @@ export function resolveCertificateRequestMetadata(args: {
     requiredChanges,
     hasEndorsementRequest,
     additionalInsuredOnly,
+    evidenceGatedOnly,
     requestKind,
     additionalInsuredName,
     requestSignature,
@@ -398,9 +426,35 @@ function unsupportedEndorsementGate(requiredChanges: CertificateEndorsementKind[
     status: "held",
     reasonCode: "policy_change_required",
     reasonMessage:
-      "This request asks for a policy endorsement or certificate wording change that should be handled by the broker before a certificate is issued.",
+      `This request asks for ${requiredChanges.map((kind) => kind.replace(/_/g, " ")).join(", ")}, which requires broker action before a certificate is issued.`,
     requiredChanges,
     evidence: [],
+  };
+}
+
+function relationshipFromRequest(kinds: CertificateEndorsementKind[]) {
+  if (kinds.includes("mortgagee")) return "mortgagee";
+  if (kinds.includes("loss_payee")) return "loss_payee";
+  if (kinds.includes("additional_insured")) return "additional_insured";
+  return undefined;
+}
+
+function policyEmailFields(policy: Record<string, any> | null | undefined) {
+  const profile = policy?.operationalProfile && typeof policy.operationalProfile === "object"
+    ? policy.operationalProfile as Record<string, any>
+    : undefined;
+  const sourceBacked = (value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value) && typeof (value as { value?: unknown }).value === "string"
+      ? (value as { value: string }).value
+      : undefined;
+  return {
+    insuredName: sourceBacked(profile?.namedInsured) ?? policy?.insuredName,
+    policyNumber: sourceBacked(profile?.policyNumber) ?? policy?.policyNumber,
+    carrierName:
+      sourceBacked(profile?.insurer) ??
+      policy?.carrierLegalName ??
+      policy?.security ??
+      policy?.carrier,
   };
 }
 
@@ -420,6 +474,7 @@ export const generateForPolicy = action({
     additionalInsuredName: v.optional(v.string()),
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
+    formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
@@ -449,6 +504,7 @@ export const generateForPolicy = action({
       additionalInsuredName: args.additionalInsuredName,
       requestText: args.requestText,
       requestedEndorsements: args.requestedEndorsements,
+      formCode: args.formCode,
       forceReissue: args.forceReissue,
       source: "policy_page",
       createdByUserId: context.userId,
@@ -476,6 +532,7 @@ export const generateForOrg = internalAction({
     additionalInsuredName: v.optional(v.string()),
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
+    formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
@@ -529,15 +586,15 @@ export const generateForOrg = internalAction({
     const {
       requiredChanges,
       hasEndorsementRequest,
-      additionalInsuredOnly,
+      evidenceGatedOnly,
       requestKind,
       additionalInsuredName,
       requestSignature,
     } = requestMetadata;
     let gate: CertificateGateVerdict = { status: "allowed", requiredChanges, evidence: [] };
-    if (hasEndorsementRequest && !additionalInsuredOnly) {
+    if (hasEndorsementRequest && !evidenceGatedOnly) {
       gate = unsupportedEndorsementGate(requiredChanges);
-    } else if (additionalInsuredOnly) {
+    } else if (evidenceGatedOnly) {
       const hasSourceNodes = await ctx.runQuery(
         (internal as any).sourceNodes.hasNodesForPolicy,
         { policyId: args.policyId },
@@ -561,8 +618,8 @@ export const generateForOrg = internalAction({
           rebuildStatus: rebuild.status,
           message:
             rebuild.status === "failed"
-              ? `Additional-insured certificate generation needs source-tree evidence, but rebuilding failed: ${rebuild.error ?? "unknown error"}`
-              : "Additional-insured certificate generation is queued until Glass rebuilds source-tree evidence for this policy.",
+              ? `Endorsement-aware certificate generation needs source-tree evidence, but rebuilding failed: ${rebuild.error ?? "unknown error"}`
+              : "Endorsement-aware certificate generation is queued until Glass rebuilds source-tree evidence for this policy.",
         };
       }
       gate = await evaluateCertificateRequestGateWithLlm({
@@ -582,25 +639,20 @@ export const generateForOrg = internalAction({
             clientOrgId: args.orgId,
           })
         : null;
-      const brokerSubmission = buildBrokerSubmissionFromIdentity(brokerIdentity);
-      const policyChangeCaseId = await ctx.runMutation(
-        internal.policyChanges.createFromChatInternal,
-        {
-          orgId: args.orgId,
-          userId: args.createdByUserId,
-          policyId: args.policyId,
-          requestText:
-            args.requestText ??
-            `Certificate request for ${holderName} requires ${gate.requiredChanges.join(", ")} before the COI can be issued.`,
-          sourceKind: sourceKindForPolicyChange(args.source),
-          evidenceSourceIds: gate.evidence.flatMap((item) => item.sourceSpanIds ?? []),
-          missingInfoQuestions: missingBrokerRecipientInfo(
-            brokerSubmission,
-            "certificate",
-          ),
-          brokerSubmission,
-        },
-      );
+      const brokerRecord = brokerIdentity as {
+        contactEmail?: string;
+        contactName?: string;
+        brokerCompanyName?: string;
+      } | null;
+      const emailDraft = buildEndorsementRequestEmail({
+        holderLegalName: holderName,
+        additionalInsuredName,
+        ...policyEmailFields(policy as Record<string, any> | null),
+        requiredChanges: gate.requiredChanges,
+        reasonMessage: gate.reasonMessage,
+        recipientEmail: brokerRecord?.contactEmail,
+        recipientName: brokerRecord?.contactName ?? brokerRecord?.brokerCompanyName,
+      });
 
       const holdId = await ctx.runMutation(internal.certificates.recordHoldInternal, {
         orgId: args.orgId,
@@ -610,27 +662,27 @@ export const generateForOrg = internalAction({
         requestText: args.requestText,
         requestedEndorsements: args.requestedEndorsements,
         source: args.source,
-        status: "policy_change_opened",
+        status: "held",
         reasonCode: gate.reasonCode,
         reasonMessage: gate.reasonMessage,
         requiredChanges: gate.requiredChanges,
         evidence: gate.evidence,
-        policyChangeCaseId,
+        emailDraft,
         createdByUserId: args.createdByUserId,
       });
 
       return {
         status: "held_policy_change_required",
         holdId,
-        policyChangeCaseId,
         holderName,
         certificateHolder,
         requiredChanges: gate.requiredChanges,
         reasonCode: gate.reasonCode,
         reasonMessage: gate.reasonMessage,
         evidence: gate.evidence,
-        policyChangeRequestsEnabled: true,
-        brokerHandoffOffered: false,
+        emailDraft,
+        policyChangeRequestsEnabled: false,
+        brokerHandoffOffered: true,
         message: formatGateMessage({
           holderName,
           reasonMessage: gate.reasonMessage,
@@ -693,8 +745,17 @@ export const generateForOrg = internalAction({
         versionNumber: reusableVersion.versionNumber,
         requestKind: reusableVersion.requestKind ?? requestKind,
         additionalInsuredName: reusableVersion.additionalInsuredName ?? additionalInsuredName,
+        formCode: reusableVersion.formCode,
       };
     }
+
+    const holderRelationship = await ctx.runQuery(
+      internal.certificates.getHolderPolicyRelationshipInternal,
+      { holderId, policyId: args.policyId },
+    ).catch(() => null) ?? relationshipFromRequest(requiredChanges);
+    const endorsementCitations = gate.status === "allowed"
+      ? summarizeEndorsementEvidence(gate.requiredChanges, gate.evidence)
+      : [];
 
     const generated = await ctx.runAction(internal.actions.generateCoi.run, {
       policyId: args.policyId,
@@ -712,6 +773,9 @@ export const generateForOrg = internalAction({
       holderAddress,
       requestKind,
       additionalInsuredName,
+      formCode: args.formCode,
+      holderRelationship,
+      endorsements: endorsementCitations,
       requestSignature,
     });
     if (!generated) throw new Error("COI generation failed.");
@@ -731,6 +795,8 @@ export const generateForOrg = internalAction({
       versionNumber: generated.versionNumber,
       requestKind,
       additionalInsuredName,
+      formCode: generated.formCode,
+      endorsements: endorsementCitations,
     };
   },
 });
@@ -747,6 +813,7 @@ export const recordGenerated = internalMutation({
     createdByUserId: v.optional(v.id("users")),
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
+    formCode: v.optional(certificateFormValidator),
     requestSignature: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -766,6 +833,7 @@ export const recordGenerated = internalMutation({
       createdByUserId: args.createdByUserId,
       requestKind: args.requestKind ?? "holder",
       additionalInsuredName: args.additionalInsuredName,
+      formCode: args.formCode,
       requestSignature: args.requestSignature,
       createdAt: dayjs().valueOf(),
     });
@@ -783,7 +851,6 @@ export const recordHoldInternal = internalMutation({
     source: v.optional(certificateSourceValidator),
     status: v.union(
       v.literal("held"),
-      v.literal("policy_change_opened"),
       v.literal("broker_handoff_offered"),
       v.literal("resolved"),
       v.literal("cancelled"),
@@ -797,7 +864,7 @@ export const recordHoldInternal = internalMutation({
     reasonMessage: v.string(),
     requiredChanges: v.array(v.string()),
     evidence: v.optional(v.any()),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
+    emailDraft: v.optional(certificateEmailDraftValidator),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     createdByUserId: v.optional(v.id("users")),
   },
@@ -808,23 +875,5 @@ export const recordHoldInternal = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
-  },
-});
-
-export const markHoldResolvedInternal = internalMutation({
-  args: {
-    policyChangeCaseId: v.id("policyChangeCases"),
-  },
-  handler: async (ctx, args) => {
-    const holds = await ctx.db
-      .query("certificateRequestHolds")
-      .withIndex("by_policyChangeCaseId", (q) =>
-        q.eq("policyChangeCaseId", args.policyChangeCaseId),
-      )
-      .collect();
-    const now = dayjs().valueOf();
-    for (const hold of holds) {
-      await ctx.db.patch(hold._id, { status: "resolved", updatedAt: now });
-    }
   },
 });

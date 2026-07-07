@@ -2,9 +2,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  brokerFollowUpOutcome,
-} from "../convex/lib/workflows/brokerFollowUp";
-import {
   certificateGeneratedOutcome,
 } from "../convex/lib/workflows/certificateRequest";
 import { mailboxTaskOutcome } from "../convex/lib/workflows/mailboxTasks";
@@ -41,23 +38,6 @@ describe("workflow orchestration contract", () => {
     ]);
   });
 
-  it("captures broker follow-ups before blocking on missing recipient", () => {
-    const result = brokerFollowUpOutcome({
-      action: "email_drafted",
-      caseId: "case-1",
-      status: "needs_recipient",
-      needsRecipient: true,
-    });
-
-    expect(result.workflowOutcome.status).toBe("needs_input");
-    expect(result.workflowOutcome.requiredSlots).toEqual([
-      expect.objectContaining({ key: "brokerRecipientEmail" }),
-    ]);
-    expect(result.workflowOutcome.sideEffects).toEqual([
-      expect.objectContaining({ targetType: "policyChangeCase" }),
-    ]);
-  });
-
   it("normalizes no-mailbox coordinator results into connection-needed workflow state", () => {
     const outcome = mailboxTaskOutcome({
       mailboxErrors: [{ message: "No connected email account is available" }],
@@ -91,7 +71,7 @@ describe("workflow orchestration wiring", () => {
     const chatTools = read("convex/lib/chatTools.ts");
     const generateCoiBlock = chatTools.slice(
       chatTools.indexOf("export const generateCoi"),
-      chatTools.indexOf("export const createPolicyChangeRequest"),
+      chatTools.indexOf("export const createImessageGroupChat"),
     );
 
     expect(generateCoiBlock).not.toMatch(/renewal delivery/i);

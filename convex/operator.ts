@@ -48,6 +48,20 @@ const REMOVED_PROGRAM_ADMIN_TABLES = [
   "certificateApprovals",
 ] as const;
 const REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE = 500;
+const REMOVED_POLICY_CHANGE_TABLES = [
+  "policyChangeCases",
+  "pcePackets",
+  "caseMessages",
+  "caseEvidenceLinks",
+  "caseValidationReports",
+] as const;
+const REMOVED_POLICY_CHANGE_LINK_TABLES = [
+  "certificateRequestHolds",
+  "threadMessages",
+  "pendingEmails",
+  "appCardAccessLinks",
+  "policyUpdateRuns",
+] as const;
 const CLEAR_AGENT_MEMORY_CONFIRMATION = "CLEAR_AGENT_MEMORY";
 
 type OperatorSourceNode = Doc<"sourceNodes">;
@@ -127,6 +141,31 @@ async function deleteUnsafeTableBatch(
   } catch (error) {
     return {
       deleted: 0,
+      skipped: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function unsetPolicyChangeLinkBatch(
+  ctx: MutationCtx,
+  table: string,
+): Promise<{ updated: number; skipped?: boolean; error?: string }> {
+  try {
+    const rows = await ctx.db.query(table as TableNames).take(500);
+    let updated = 0;
+    for (const row of rows) {
+      const patch: Record<string, unknown> = {
+        policyChangeCaseId: undefined,
+        caseId: undefined,
+      };
+      await ctx.db.patch(row._id, patch as any);
+      updated += 1;
+    }
+    return { updated };
+  } catch (error) {
+    return {
+      updated: 0,
       skipped: true,
       error: error instanceof Error ? error.message : String(error),
     };
@@ -1508,6 +1547,71 @@ export const cleanupRemovedProgramAdminDataInternal = internalMutation({
         0,
         internal.operator.cleanupRemovedProgramAdminDataInternal,
         { table: args.table },
+      );
+    }
+    return result;
+  },
+});
+
+export const cleanupRemovedPolicyChangeData = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireOperator(ctx);
+
+    const tableResults: Record<
+      string,
+      { deleted?: number; updated?: number; skipped?: boolean; error?: string }
+    > = {};
+    for (const table of REMOVED_POLICY_CHANGE_LINK_TABLES) {
+      tableResults[table] = await unsetPolicyChangeLinkBatch(ctx, table);
+      if (tableResults[table].updated === 500) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.operator.cleanupRemovedPolicyChangeDataInternal,
+          { table, mode: "links" },
+        );
+      }
+    }
+    for (const table of REMOVED_POLICY_CHANGE_TABLES) {
+      tableResults[table] = await deleteUnsafeTableBatch(ctx, table);
+      if (tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.operator.cleanupRemovedPolicyChangeDataInternal,
+          { table, mode: "tables" },
+        );
+      }
+    }
+    return tableResults;
+  },
+});
+
+export const cleanupRemovedPolicyChangeDataInternal = internalMutation({
+  args: {
+    mode: v.union(v.literal("links"), v.literal("tables")),
+    table: v.union(
+      v.literal("certificateRequestHolds"),
+      v.literal("threadMessages"),
+      v.literal("pendingEmails"),
+      v.literal("appCardAccessLinks"),
+      v.literal("policyUpdateRuns"),
+      v.literal("policyChangeCases"),
+      v.literal("pcePackets"),
+      v.literal("caseMessages"),
+      v.literal("caseEvidenceLinks"),
+      v.literal("caseValidationReports"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const result = args.mode === "links"
+      ? await unsetPolicyChangeLinkBatch(ctx, args.table)
+      : await deleteUnsafeTableBatch(ctx, args.table);
+    const count = "updated" in result ? result.updated : result.deleted;
+    if (count === 500) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.operator.cleanupRemovedPolicyChangeDataInternal,
+        args,
       );
     }
     return result;

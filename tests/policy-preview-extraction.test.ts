@@ -70,14 +70,13 @@ describe("policy preview extraction", () => {
   it("keeps high-impact policy actions final-only", () => {
     const agentTools = read("convex/lib/agentToolExecutors.ts");
     const certificates = read("convex/certificates.ts");
-    const policyChanges = read("convex/policyChanges.ts");
     const emailDrafts = read("convex/actions/emailDrafts.ts");
     const policies = read("convex/policies.ts");
 
     expect(agentTools).toContain("resolveFinalReadablePolicy");
     expect(agentTools).toContain("resolveFinalWritablePolicy");
     expect(certificates).toContain('status: "extraction_in_progress"');
-    expect(policyChanges).toContain("assertPolicyReadyForChange");
+    expect(() => read("convex/policyChanges.ts")).toThrow();
     expect(emailDrafts).toContain("assertPolicyReadyForDelivery");
     expect(policies).toContain("Policy facts can be confirmed after full source-backed extraction finishes.");
   });

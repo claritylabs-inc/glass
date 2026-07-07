@@ -151,7 +151,6 @@ async function sendPendingEmailById(
           resendEmailId: sentMessageId,
           attachments: pending.attachments,
           referencedPolicyIds: pending.referencedPolicyIds,
-          policyChangeCaseId: pending.policyChangeCaseId,
           clearStatus: true,
         });
       } else {
@@ -170,18 +169,7 @@ async function sendPendingEmailById(
           attachments: pending.attachments,
           referencedPolicyIds: pending.referencedPolicyIds,
           pendingEmailId: id,
-          policyChangeCaseId: pending.policyChangeCaseId,
         });
-      }
-      if (pending.policyChangeCaseId) {
-        await ctx.runMutation(
-          internal.policyChanges.markBrokerEmailSentInternal,
-          {
-            caseId: pending.policyChangeCaseId,
-            recipientEmail: pending.recipientEmail,
-            content: pending.emailBody,
-          },
-        );
       }
 
       if (options.notifyImessage && thread?.threadPhone) {

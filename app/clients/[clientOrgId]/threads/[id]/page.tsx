@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
-  PolicyChangeThreadSidebar,
   UnifiedMessageBubble,
   ThreadContextLink,
-  type PolicyChangeAccess,
   type ThreadMessage,
 } from "@/app/agent/thread/[id]/page";
 import { useClientDetailActions } from "../../layout";
@@ -16,18 +14,9 @@ import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export default function ClientThreadReadOnlyPage() {
   const { clientOrgId, id } = useParams<{ clientOrgId: string; id: string }>();
-  const { setBreadcrumbExtra, setRightPanel } = useClientDetailActions();
-  const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] =
-    useState<Id<"policyChangeCases"> | null>(null);
+  const { setBreadcrumbExtra } = useClientDetailActions();
 
   const viewer = useCachedQuery("clients.thread.viewer", api.users.viewer, {});
-  const policyChangeAccess = useMemo<PolicyChangeAccess>(
-    () => ({
-      canManage: true,
-      actorLabel: "broker",
-    }),
-    [],
-  );
 
   const thread = useCachedQuery(
     "threads.getForClient",
@@ -74,19 +63,6 @@ export default function ClientThreadReadOnlyPage() {
     return () => setBreadcrumbExtra(null);
   }, [thread?.title, setBreadcrumbExtra]);
 
-  useEffect(() => {
-    setRightPanel(
-      openPolicyChangeCaseId ? (
-        <PolicyChangeThreadSidebar
-          caseId={openPolicyChangeCaseId}
-          access={policyChangeAccess}
-          onClose={() => setOpenPolicyChangeCaseId(null)}
-        />
-      ) : null,
-    );
-    return () => setRightPanel(null);
-  }, [openPolicyChangeCaseId, policyChangeAccess, setRightPanel]);
-
   if (thread === undefined || messages === undefined) {
     return <div className="min-h-40" />;
   }
@@ -127,8 +103,6 @@ export default function ClientThreadReadOnlyPage() {
               isFirstUserMessage={false}
               threadContext={undefined}
               brokerPerspective
-              onOpenPolicyChange={(caseId) => setOpenPolicyChangeCaseId(caseId)}
-              openPolicyChangeCaseId={openPolicyChangeCaseId}
             />
             {isFirstUser && thread.initialContext && (
               <div

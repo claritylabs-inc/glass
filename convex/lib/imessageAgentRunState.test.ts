@@ -15,16 +15,22 @@ describe("createImessageAgentRunState", () => {
     expect(relevantPolicyIds).toEqual([policyA, policyB]);
   });
 
-  test("collects response attachments, artifacts, workflow outcomes, and cases", () => {
+  test("collects response attachments, artifacts, workflow outcomes, and email result", () => {
     const state = createImessageAgentRunState({ relevantPolicyIds: [] });
     const fileId = "file-1" as Id<"_storage">;
-    const caseId = "case-1" as Id<"policyChangeCases">;
+    const emailResult = {
+      status: "draft" as const,
+      responseBody: "Draft ready.",
+      responseTo: "broker@example.com",
+      subject: "Endorsement request",
+      emailBody: "Please add the endorsement.",
+    };
 
     state.onResponseAttachment({ filename: "coi.pdf" });
     state.onResponseAttachment({ filename: "coi.pdf", fileId });
     state.onToolArtifact({ type: "certificate_result", data: { fileId } });
     state.appendWorkflowOutcomes([{ kind: "certificate_generated" }]);
-    state.setPolicyChangeCase(caseId);
+    state.setEmailResult(emailResult);
 
     expect(state.responseFileAttachments).toEqual([
       { filename: "coi.pdf", storageId: fileId },
@@ -33,6 +39,6 @@ describe("createImessageAgentRunState", () => {
       { type: "certificate_result", data: { fileId } },
       { type: "workflow_outcome", data: { kind: "certificate_generated" } },
     ]);
-    expect(state.getPolicyChangeCaseId()).toBe(caseId);
+    expect(state.getEmailResult()).toBe(emailResult);
   });
 });

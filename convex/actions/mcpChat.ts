@@ -187,8 +187,6 @@ MCP MODE:
       fileId?: Id<"_storage">;
     }> = [];
     const mcpToolArtifacts: Array<{ type: string; data: unknown }> = [];
-    let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
-
     const tools = {
       ...buildAgentToolExecutors(ctx, {
         surface: "mcp",
@@ -201,7 +199,6 @@ MCP MODE:
           args.canWrite === false
             ? "This MCP token has read-only scope. Reconnect or authorize with write scope to perform that action."
             : undefined,
-        getCurrentPolicyChangeCaseId: () => policyChangeCaseId,
         onPolicyReferenced: (policyId) => {
           referencedPolicySourceIds.add(String(policyId));
         },
@@ -210,9 +207,6 @@ MCP MODE:
         },
         onToolArtifact: (artifact) => {
           mcpToolArtifacts.push(artifact);
-        },
-        onPolicyChangeCase: (caseId) => {
-          policyChangeCaseId = caseId;
         },
       }),
       create_imessage_group_chat: {
@@ -400,7 +394,6 @@ MCP MODE:
         responseAttachments.length > 0 ? responseAttachments : undefined,
       toolArtifacts:
         mcpToolArtifacts.length > 0 ? mcpToolArtifacts : undefined,
-      policyChangeCaseId,
     });
     await ctx.runMutation(internal.threads.touchThread, { threadId });
 

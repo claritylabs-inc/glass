@@ -12,12 +12,11 @@ export type ImessageAppCard = {
 };
 
 export type ImessageAppCardCreateArgs = {
-  kind: "policy" | "certificate" | "policy_change";
+  kind: "policy" | "certificate";
   policyId?: Id<"policies">;
   certificateId?: Id<"certificates">;
   policyCertificateId?: Id<"policyCertificates">;
   certificateVersionId?: Id<"certificateVersions">;
-  policyChangeCaseId?: Id<"policyChangeCases">;
   label?: string;
 };
 
@@ -28,13 +27,6 @@ export type ImessageAppCardRequest = {
 };
 
 type ToolArtifact = { type: string; data: unknown };
-
-const POLICY_CHANGE_TOOL_NAMES = new Set([
-  "create_policy_change_request",
-  "add_policy_change_info",
-  "check_policy_change_status",
-  "complete_policy_change_from_endorsement",
-]);
 
 const POLICY_DETAIL_TOOL_NAMES = new Set([
   "lookup_policy",
@@ -210,23 +202,6 @@ If unsure, set confidence below 0.55. Return only the structured object.`,
   }
 }
 
-function policyChangeCardRequest(
-  policyChangeCaseId: Id<"policyChangeCases">,
-): ImessageAppCardRequest {
-  return {
-    key: `policy_change:${policyChangeCaseId}`,
-    createArgs: {
-      kind: "policy_change",
-      policyChangeCaseId,
-      label: "Broker follow-up",
-    },
-    card: {
-      title: "Broker follow-up",
-      subtitle: "Open the follow-up in Glass",
-    },
-  };
-}
-
 function certificateCardRequest(
   data: Record<string, unknown>,
 ): ImessageAppCardRequest | null {
@@ -261,7 +236,6 @@ function certificateCardRequest(
 export function buildImessageAppCardRequests(args: {
   policyIds: Id<"policies">[];
   artifacts: ToolArtifact[];
-  policyChangeCaseId?: Id<"policyChangeCases">;
   usedTools: string[];
 }): ImessageAppCardRequest[] {
   const requests: ImessageAppCardRequest[] = args.policyIds
@@ -277,22 +251,6 @@ export function buildImessageAppCardRequests(args: {
       if (request) requests.push(request);
     }
 
-    if (
-      artifact.type === "certificate_hold" ||
-      artifact.type === "policy_change_result"
-    ) {
-      const caseId = artifactId<"policyChangeCases">(
-        data.policyChangeCaseId ?? data.caseId,
-      );
-      if (caseId) requests.push(policyChangeCardRequest(caseId));
-    }
-  }
-
-  if (
-    args.policyChangeCaseId &&
-    args.usedTools.some((tool) => POLICY_CHANGE_TOOL_NAMES.has(tool))
-  ) {
-    requests.push(policyChangeCardRequest(args.policyChangeCaseId));
   }
 
   return requests;
@@ -322,7 +280,6 @@ export async function mintImessageAppCards(
     responseText: string;
     relevantPolicyIds: Id<"policies">[];
     artifacts: ToolArtifact[];
-    policyChangeCaseId?: Id<"policyChangeCases">;
     usedTools: string[];
   },
 ): Promise<ImessageAppCard[]> {
@@ -342,7 +299,6 @@ export async function mintImessageAppCards(
         ? args.relevantPolicyIds.slice(0, 3)
         : [],
       artifacts: args.artifacts,
-      policyChangeCaseId: args.policyChangeCaseId,
       usedTools: args.usedTools,
     }),
   );

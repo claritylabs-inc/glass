@@ -21,7 +21,6 @@ export function createImessageAgentRunState(args: {
 }) {
   const responseFileAttachments: ImessageResponseFileAttachment[] = [];
   const toolArtifacts: ToolArtifact[] = [];
-  let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
   let emailResult: EmailSubagentResult | null = null;
 
   return {
@@ -49,12 +48,6 @@ export function createImessageAgentRunState(args: {
           data: workflowOutcome,
         });
       }
-    },
-    setPolicyChangeCase(caseId: Id<"policyChangeCases">) {
-      policyChangeCaseId = caseId;
-    },
-    getPolicyChangeCaseId() {
-      return policyChangeCaseId;
     },
     setEmailResult(result: EmailSubagentResult) {
       emailResult = result;

@@ -2,14 +2,11 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import { getOrgAccess } from "./lib/access";
 import {
   certificateHolderDisplayBlock,
   holderSnapshot,
-  normalizeCertificateHolderAddress,
-  normalizeCertificateHolderName,
-  policyCertificateDedupeKey,
   type CertificateHolderAddressInput,
 } from "./lib/certificateIdentity";
 
@@ -24,7 +21,6 @@ const jobStatusValidator = v.union(
 
 const jobKindValidator = v.union(
   v.literal("renewal_reissue"),
-  v.literal("post_endorsement_reissue"),
   v.literal("manual_review"),
 );
 
@@ -35,64 +31,6 @@ function cleanOptional(value?: string) {
 
 function normalizeEmail(value?: string) {
   return cleanOptional(value)?.toLowerCase();
-}
-
-async function ensureHolder(ctx: MutationCtx, args: {
-  orgId: Id<"organizations">;
-  displayName: string;
-  address?: CertificateHolderAddressInput;
-  now: number;
-}) {
-  const normalizedName = normalizeCertificateHolderName(args.displayName);
-  const normalizedAddressKey = normalizeCertificateHolderAddress(args.address);
-  const candidates = await ctx.db
-    .query("certificateHolders")
-    .withIndex("by_orgId_normalizedName", (q) =>
-      q.eq("orgId", args.orgId).eq("normalizedName", normalizedName),
-    )
-    .collect();
-  const existing = candidates.find((holder: Doc<"certificateHolders">) =>
-    (holder.normalizedAddressKey ?? "") === (normalizedAddressKey ?? ""),
-  ) ?? (candidates.length === 1 ? candidates[0] : null);
-  if (existing) return existing._id as Id<"certificateHolders">;
-  return await ctx.db.insert("certificateHolders", {
-    orgId: args.orgId,
-    displayName: args.displayName,
-    normalizedName,
-    address: args.address,
-    normalizedAddressKey,
-    source: "certificate_generation",
-    createdAt: args.now,
-    updatedAt: args.now,
-  }) as Id<"certificateHolders">;
-}
-
-async function ensureParent(ctx: MutationCtx, args: {
-  orgId: Id<"organizations">;
-  policyId: Id<"policies">;
-  holderId: Id<"certificateHolders">;
-  now: number;
-}) {
-  const dedupeKey = policyCertificateDedupeKey({
-    orgId: String(args.orgId),
-    policyId: String(args.policyId),
-    holderId: String(args.holderId),
-  });
-  const existing = await ctx.db
-    .query("policyCertificates")
-    .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", dedupeKey))
-    .first();
-  if (existing) return existing._id as Id<"policyCertificates">;
-  return await ctx.db.insert("policyCertificates", {
-    orgId: args.orgId,
-    policyId: args.policyId,
-    holderId: args.holderId,
-    status: "active",
-    dedupeKey,
-    source: "unknown",
-    createdAt: args.now,
-    updatedAt: args.now,
-  }) as Id<"policyCertificates">;
 }
 
 async function nextVersionNumber(ctx: MutationCtx, certificateId: Id<"policyCertificates">) {
@@ -111,7 +49,7 @@ async function createWorkflowJob(ctx: MutationCtx, args: {
   holderId: Id<"certificateHolders">;
   policyId: Id<"policies">;
   policyVersionId?: Id<"policyVersions">;
-  kind: "renewal_reissue" | "post_endorsement_reissue" | "manual_review";
+  kind: "renewal_reissue" | "manual_review";
   idempotencyKey: string;
   reason?: string;
   recipientName?: string;
@@ -234,56 +172,6 @@ export const createRenewalJobsForPolicyInternal = internalMutation({
         recipientName: holder.displayName,
         recipientEmail: holder.email,
         recipientPhone: holder.phone,
-        createdByUserId: args.createdByUserId,
-      });
-      if (job.created) jobs.push(job);
-    }
-    return { created: jobs.length, jobs };
-  },
-});
-
-export const createPostEndorsementJobsInternal = internalMutation({
-  args: {
-    policyChangeCaseId: v.id("policyChangeCases"),
-    policyUpdateRunId: v.optional(v.id("policyUpdateRuns")),
-    policyVersionId: v.optional(v.id("policyVersions")),
-    createdByUserId: v.optional(v.id("users")),
-  },
-  handler: async (ctx, args) => {
-    const changeCase = await ctx.db.get(args.policyChangeCaseId);
-    if (!changeCase?.orgId || !changeCase.policyId) return { created: 0, jobs: [] };
-    const holds = await ctx.db
-      .query("certificateRequestHolds")
-      .withIndex("by_policyChangeCaseId", (q) => q.eq("policyChangeCaseId", args.policyChangeCaseId))
-      .collect();
-    const jobs = [];
-    for (const hold of holds) {
-      if (hold.status !== "resolved") continue;
-      const holderId = await ensureHolder(ctx, {
-        orgId: hold.orgId,
-        displayName: hold.holderName,
-        now: dayjs().valueOf(),
-      });
-      const certificateId = await ensureParent(ctx, {
-        orgId: hold.orgId,
-        policyId: hold.policyId,
-        holderId,
-        now: dayjs().valueOf(),
-      });
-      const holder = await ctx.db.get(holderId);
-      const job = await createWorkflowJob(ctx, {
-        orgId: hold.orgId,
-        brokerOrgId: (changeCase.brokerSubmission as { brokerOrgId?: Id<"organizations"> } | undefined)?.brokerOrgId,
-        certificateId,
-        holderId,
-        policyId: hold.policyId,
-        policyVersionId: args.policyVersionId,
-        kind: "post_endorsement_reissue",
-        idempotencyKey: `post_endorsement_reissue:${String(hold._id)}`,
-        reason: "Policy change endorsement resolved a held certificate request.",
-        recipientName: hold.holderName,
-        recipientEmail: holder?.email,
-        recipientPhone: holder?.phone,
         createdByUserId: args.createdByUserId,
       });
       if (job.created) jobs.push(job);

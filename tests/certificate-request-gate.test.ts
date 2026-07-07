@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateCertificateRequestGate,
   inferCertificateEndorsements,
+  isEvidenceGatedOnly,
 } from "../convex/lib/certificateRequestGate";
 
 describe("certificate request gate", () => {
@@ -28,6 +29,19 @@ describe("certificate request gate", () => {
       "additional_insured",
       "waiver_of_subrogation",
     ]);
+  });
+
+  it("distinguishes evidence-gated endorsements from true policy changes", () => {
+    expect(
+      isEvidenceGatedOnly([
+        "additional_insured",
+        "waiver_of_subrogation",
+        "primary_non_contributory",
+        "loss_payee",
+        "mortgagee",
+      ]),
+    ).toBe(true);
+    expect(isEvidenceGatedOnly(["named_insured"])).toBe(false);
   });
 
   it("holds endorsement requests when no source-backed policy evidence is available", () => {

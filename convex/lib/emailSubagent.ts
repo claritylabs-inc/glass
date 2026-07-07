@@ -83,7 +83,6 @@ type EmailExpertContext = {
   unknownRecipientMessage?: string;
   availableAttachments?: EmailAttachmentMeta[];
   referencedPolicyIds?: Id<"policies">[];
-  policyChangeCaseId?: Id<"policyChangeCases">;
   autoSendEmails?: boolean;
   emailSendDelay?: number;
   conversationContext?: string;
