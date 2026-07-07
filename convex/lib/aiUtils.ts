@@ -310,7 +310,7 @@ UNSUPPORTED OUTPUT SUPPRESSION:
 export function policySearchScore(
   policy: Record<string, unknown>,
   query: string,
-  policyType?: string,
+  lineOfBusiness?: string,
   carrier?: string,
 ): number {
   const q = query.toLowerCase().trim();
@@ -334,14 +334,13 @@ export function policySearchScore(
     policy.policyNumber,
     policy.summary,
     ...lineTerms,
-    ...((policy.policyTypes as string[] | undefined) ?? []),
     ...coverages.flatMap((c) => [c.name, c.limit]),
     outlineText,
   ].filter(Boolean).join(" ").toLowerCase();
 
-  if (policyType) {
-    const requested = toLobCodes([policyType]);
-    const normalizedFilter = policyType.toLowerCase();
+  if (lineOfBusiness) {
+    const requested = toLobCodes([lineOfBusiness]);
+    const normalizedFilter = lineOfBusiness.toLowerCase();
     const canMatchByCode = !(requested.length === 1 && requested[0] === "OLIB" && normalizedFilter !== "olib" && !normalizedFilter.includes("other liability"));
     const matchesLine = (canMatchByCode && requested.some((code) => linesOfBusiness.includes(code))) ||
       lineTerms.some((term) => term.toLowerCase().includes(normalizedFilter)) ||

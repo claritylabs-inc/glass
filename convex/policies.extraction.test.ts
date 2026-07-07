@@ -22,6 +22,7 @@ describe("policies.updateExtractionInternal", () => {
         policyNumber: "POL-123",
         insuredName: "Known Insured",
         broker: "Known Broker",
+        linesOfBusiness: ["CGL"],
         effectiveDate: "01/01/2026",
         expirationDate: "01/01/2027",
         fileName: "known-policy.pdf",

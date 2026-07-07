@@ -34,6 +34,7 @@ import {
   type BrokerRecipientReconciliationPatch,
   type BrokerSubmissionSnapshot,
 } from "./lib/policyChangeBrokerRouting";
+import { lobLabel } from "./lib/linesOfBusiness";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 
@@ -687,7 +688,7 @@ function formatPolicyChangeCaseForAgent(args: {
           policyNumber: args.policy.policyNumber,
           carrier: args.policy.security ?? args.policy.carrier,
           insured: args.policy.insuredName,
-          type: args.policy.policyTypes.join(", "),
+          type: args.policy.linesOfBusiness.filter((code) => code !== "UN").map(lobLabel).join(", "),
         }
       : args.changeCase.policyId
         ? { policyId: args.changeCase.policyId }

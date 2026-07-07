@@ -19,7 +19,6 @@ function policyText(policy: Doc<"policies">) {
     policy.insuredName,
     ...policyLobCodes(policy),
     ...policyLobCodes(policy).map(lobLabel),
-    ...(policy.policyTypes ?? []),
   ]
     .filter(Boolean)
     .join(" ");

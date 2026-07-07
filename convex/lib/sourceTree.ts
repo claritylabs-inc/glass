@@ -1561,12 +1561,12 @@ export function sourceTreePolicyFields(params: {
   operationalProfile: PolicyOperationalProfile;
   existingDocumentMetadata?: unknown;
   existingDeclarations?: unknown;
-  existingPolicyTypes?: unknown;
+  existingLinesOfBusiness?: unknown;
 }): Record<string, unknown> {
   const { sourceTree } = params;
   const resolvedLines = resolveOperationalProfileLinesOfBusiness({
     profileLinesOfBusiness: params.operationalProfile.linesOfBusiness,
-    existingLinesOfBusiness: params.existingPolicyTypes,
+    existingLinesOfBusiness: params.existingLinesOfBusiness,
     coverages: params.operationalProfile.coverages,
   });
   const currentLinesOfBusiness = normalizeOperationalLinesOfBusiness(params.operationalProfile.linesOfBusiness);
@@ -1658,7 +1658,6 @@ export function operationalProfilePolicyFields(
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.linesOfBusiness.length > 0) {
     fields.linesOfBusiness = operationalProfile.linesOfBusiness;
-    fields.policyTypes = operationalProfile.linesOfBusiness;
   }
   const summary = [
     insurer && insurer !== "Unknown" ? insurer : undefined,

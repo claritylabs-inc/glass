@@ -75,7 +75,7 @@ describe("MCP policy DTO helpers", () => {
       security: "Zurich NA",
       broker: "Marsh",
       policyNumber: "ZR-001",
-      policyTypes: ["general_liability"],
+      policyTypes: ["CGL"],
       policyYear: 2024,
       effectiveDate: "2024-01-01",
       expirationDate: "2025-01-01",

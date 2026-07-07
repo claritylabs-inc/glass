@@ -54,7 +54,7 @@ function mapPolicy(policy: Record<string, unknown>) {
     policyNumber: policy.policyNumber,
     insuredName: policy.insuredName,
     linesOfBusiness: policyLobCodes(policy),
-    policyTypes: policy.policyTypes,
+    policyTypes: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
     extractionStatus: policy.pipelineStatus,
