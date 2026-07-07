@@ -73,7 +73,7 @@ describe("policyToCoiData", () => {
       ],
     });
 
-    expect(data.title).toBe("CERTIFICATE OF INSURANCE");
+    expect(data.title).toBe("CERTIFICATE OF LIABILITY INSURANCE");
     expect(data.insurers[0]?.name).toBe("MARKEL AMERICAN INSURANCE COMPANY");
     expect(data.insuranceCompanyAddress).toContain("4521 Highwoods Parkway");
     expect(data.insuranceCompanyPhone).toBe("(800) 431-1270");
@@ -116,17 +116,21 @@ describe("policyToCoiData", () => {
   });
 });
 
-describe("COI PDF footer copy", () => {
-  it("uses Glass attribution without ACORD marks or the old website", () => {
+describe("COI PDF template copy", () => {
+  it("uses the required notice and omits generated-by attribution", () => {
     const source = readFileSync(join(ROOT, "convex/lib/coiGenerator.ts"), "utf-8");
+    const labels = readFileSync(join(ROOT, "convex/lib/acordForms/types.ts"), "utf-8");
 
     expect(source).toContain(
       "THIS CERTIFICATE IS ISSUED AS A MATTER OF INFORMATION ONLY AND CONFERS NO RIGHTS UPON THE CERTIFICATE HOLDER.",
     );
-    expect(source).toContain("Generated using");
-    expect(source).toContain("Glass");
-    expect(source).toContain("from Clarity Labs");
-    expect(source).toContain("GLASS_GLOBE_PATH");
+    expect(source).toContain("CERTIFICATE OF LIABILITY INSURANCE");
+    expect(labels).toContain('acord25: "Certificate of Liability Insurance"');
+    expect(labels).toContain('acord25: "certificate-of-liability"');
+    expect(source).not.toContain("Generated using");
+    expect(source).not.toContain("from Clarity Labs");
+    expect(source).not.toContain("GLASS_GLOBE_PATH");
+    expect(labels).not.toContain("ACORD 25 Certificate");
     expect(source).not.toContain("C_GLASS_BLUE");
     expect(source).not.toContain("ACORD 25 (2016/03)  |  Generated");
     expect(source).not.toContain("claritylabs.dev");
@@ -144,6 +148,9 @@ describe("COI PDF generation", () => {
     expect(certificates).toContain("holderPhone");
     expect(generateCoi).toContain("holderContactName");
     expect(generateCoi).toContain("recordIssuedVersionInternal");
+    expect(generateCoi).toContain("generateObjectForOrg");
+    expect(generateCoi).toContain("buildCertificateDescriptionContext");
+    expect(generateCoi).toContain('"summary"');
   });
 
   it("renders the generated PDF successfully", async () => {
