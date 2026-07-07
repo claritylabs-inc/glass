@@ -31,6 +31,7 @@ describe("insurance document mapping", () => {
     } as never);
 
     expect(fields.policyNumber).toBe("SPS-TPC-2026-00481-04");
+    expect(fields.linesOfBusiness).toEqual(["EO"]);
     expect(fields.effectiveDate).toBe("05/01/2026");
     expect(fields.expirationDate).toBe("05/01/2027");
     expect(fields.policyYear).toBe(2026);
@@ -61,6 +62,7 @@ describe("insurance document mapping", () => {
     } as never);
 
     expect(fields.effectiveDate).toBe("09/09/2026");
+    expect(fields.linesOfBusiness).toEqual(["CGL"]);
     expect(fields.expirationDate).toBe("09/10/2026");
     expect(fields.policyYear).toBe(2026);
   });

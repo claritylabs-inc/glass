@@ -26,6 +26,7 @@ export type {
 export { policyToInsuranceDoc } from "./documentMapping";
 
 import type { Doc, Id } from "../_generated/dataModel";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { makeEmbedText } from "./sdkCallbacks";
@@ -348,11 +349,11 @@ async function buildVectorContext(
   // Build index of all policies.
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
-      const types = p.policyTypes?.join(", ") ?? "unknown";
+      const types = policyLobCodes(p).map((code) => `${code} (${lobLabel(code)})`).join(", ") || "unknown";
       const carrier = p.mga || p.carrier || p.security;
       const covSummary = formatCoverageBreakdownForPrompt(p, 8).replace(/\n/g, " | ");
       const covLine = covSummary ? ` | Coverages: ${covSummary}` : "";
-      return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName}${covLine}`;
+      return `[${i + 1}] ${carrier} | #${p.policyNumber} | LOB: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName}${covLine}`;
     });
     parts.push(
       `POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`,
@@ -580,6 +581,8 @@ function buildFallbackContext(
       p.security,
       p.policyNumber,
       p.insuredName,
+      ...policyLobCodes(p),
+      ...policyLobCodes(p).map(lobLabel),
       ...(p.policyTypes ?? []),
       ...(p.coverages?.map((c: { name?: string }) => c.name) ?? []),
       p.summary,
@@ -612,10 +615,10 @@ function buildFallbackContext(
 
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
-      const types = p.policyTypes?.join(", ") ?? "unknown";
+      const types = policyLobCodes(p).map((code) => `${code} (${lobLabel(code)})`).join(", ") || "unknown";
       const carrier = p.mga || p.carrier || p.security;
       const coverages = formatCoverageBreakdownForPrompt(p, 8).replace(/\n/g, " | ");
-      return `[${i + 1}] ${carrier} | #${p.policyNumber} | Types: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
+      return `[${i + 1}] ${carrier} | #${p.policyNumber} | LOB: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
     });
     parts.push(
       `POLICY INDEX (${policies.length} bound policies):\n${indexLines.join("\n")}`,

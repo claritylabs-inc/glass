@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import dayjs from "dayjs";
 import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
-import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { PillButton } from "@/components/ui/pill-button";
 import { useCachedPolicyDetail } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -171,7 +171,7 @@ export function PolicyPreview({
     return <div className="min-h-24" />;
   }
 
-  const types = policy.policyTypes ?? [];
+  const types = policyLobCodes(policy).filter((code) => code !== "UN");
   const fileCount = (policy as { files?: unknown[] }).files?.length ?? 0;
   const hasLegacyCitations = Boolean(citedSections?.length || citedCoverageNames?.length);
 
@@ -225,7 +225,7 @@ export function PolicyPreview({
         {types.length > 0 && (
           <div className="min-w-0">
             <p className="text-label text-muted-foreground/50 mb-1.5">
-              Policy types
+              Lines of business
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {visibleTypes.map((t) => (
@@ -233,7 +233,7 @@ export function PolicyPreview({
                   key={t}
                   className="text-base px-2.5 py-1 rounded-full bg-secondary text-muted-foreground"
                 >
-                  {POLICY_TYPE_LABELS[t] ?? t}
+                  {lobLabel(t)}
                 </span>
               ))}
               {hasMoreTypes && !showAllTypes && (

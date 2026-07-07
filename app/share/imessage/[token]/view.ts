@@ -2,6 +2,7 @@ import dayjs from "dayjs";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
+import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 
 export type Policy = {
   id: string;
@@ -9,6 +10,7 @@ export type Policy = {
   insuredName: string;
   carrier?: string;
   policyNumber: string;
+  linesOfBusiness?: string[];
   policyTypes: string[];
   effectiveDate: string;
   expirationDate: string;
@@ -70,6 +72,12 @@ export function compactList(parts: Array<string | undefined | null>) {
   return parts.filter((part): part is string => Boolean(part?.trim())).join(" | ");
 }
 
+export function policyLineBusinessLabels(policy: Pick<Policy, "linesOfBusiness" | "policyTypes">) {
+  return policyLobCodes(policy)
+    .filter((code) => code !== "UN")
+    .map(lobLabel);
+}
+
 export function truncate(value: string | undefined, maxLength: number) {
   if (!value) return undefined;
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -81,7 +89,7 @@ export function metadataDescription(view: AppCardView) {
   if (view.policy) {
     return compactList([
       view.policy.carrier,
-      view.policy.policyTypes.join(", "),
+      policyLineBusinessLabels(view.policy).join(", "),
       `${formatDate(view.policy.effectiveDate)} to ${formatDate(view.policy.expirationDate)}`,
       view.orgName,
     ]) || view.subtitle || view.orgName;

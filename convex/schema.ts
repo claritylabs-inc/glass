@@ -193,6 +193,7 @@ const policyDeliveryRuleFiltersValidator = v.object({
   carriers: v.optional(v.array(v.string())),
   securities: v.optional(v.array(v.string())),
   underwriters: v.optional(v.array(v.string())),
+  linesOfBusiness: v.optional(v.array(v.string())),
   productLines: v.optional(v.array(v.string())),
   policyTypes: v.optional(v.array(v.string())),
 });
@@ -1223,6 +1224,7 @@ export default defineSchema({
     ),
     // Policy metadata
     policyNumber: v.string(),
+    linesOfBusiness: v.optional(v.array(v.string())),
     policyTypes: v.array(v.string()),
     documentType: v.optional(v.literal("policy")),
     policyYear: v.number(),

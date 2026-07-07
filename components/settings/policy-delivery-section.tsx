@@ -193,6 +193,7 @@ function RuleDrawer({
   );
   const [lines, setLines] = useState(
     uniqueList([
+      rule?.filters?.linesOfBusiness?.join(", "),
       rule?.filters?.productLines?.join(", "),
       rule?.filters?.policyTypes?.join(", "),
     ]).join(", "),
@@ -214,7 +215,7 @@ function RuleDrawer({
         channels: channels.length > 0 ? channels : undefined,
         filters: {
           carriers: parseList(insurers),
-          productLines: parseList(lines),
+          linesOfBusiness: parseList(lines),
         },
         llmRuleText: llmRuleText || undefined,
         copyInstructions: copyInstructions || undefined,
@@ -275,8 +276,8 @@ function RuleDrawer({
           <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={insurers} onChange={(event) => setInsurers(event.target.value)} placeholder="Coalition, CNA, Lloyd's" />
         </label>
         <label className="space-y-1.5">
-          <span className="text-label text-muted-foreground">Policy types</span>
-          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={lines} onChange={(event) => setLines(event.target.value)} placeholder="Cyber, Technology E&O, General liability" />
+          <span className="text-label text-muted-foreground">Lines of business</span>
+          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={lines} onChange={(event) => setLines(event.target.value)} placeholder="General liability, Workers comp, Flood" />
         </label>
         <label className="space-y-1.5">
           <span className="text-label text-muted-foreground">LLM rule</span>

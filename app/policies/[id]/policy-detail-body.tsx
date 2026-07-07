@@ -24,6 +24,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dayjs from "dayjs";
 import type { Id } from "@/convex/_generated/dataModel";
+import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -408,11 +409,11 @@ export function PolicyDetailBody({
 
   useEffect(() => {
     if (policy) {
-      const types = policy.policyTypes ?? [];
+      const lines = policyLobCodes(policy).map(lobLabel);
       setPageContext({
         pageType: "policy",
         entityId: policy._id,
-        summary: `${policy.mga ?? policy.carrier ?? "Unknown"} ${policy.policyNumber ?? ""} — ${types.join(", ")}`,
+        summary: `${policy.mga ?? policy.carrier ?? "Unknown"} ${policy.policyNumber ?? ""} — ${lines.join(", ")}`,
       });
     }
     return () => setPageContext(null);

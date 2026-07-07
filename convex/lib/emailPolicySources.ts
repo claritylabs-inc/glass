@@ -4,6 +4,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getClientPortalUrl } from "./domains";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 type PolicyLike = {
   _id: Id<"policies">;
@@ -11,6 +12,7 @@ type PolicyLike = {
   security?: string;
   mga?: string;
   policyNumber?: string;
+  linesOfBusiness?: string[];
   policyTypes?: string[];
 };
 
@@ -34,7 +36,7 @@ function sourceFromPolicy(policy: PolicyLike, siteUrl: string): EmailPolicySourc
   const href = `${siteUrl.replace(/\/$/, "")}/policies/${policy._id}`;
   const label = "Policy";
   const administrator = policy.mga || policy.security || policy.carrier || "Unknown";
-  const type = policy.policyTypes?.[0];
+  const type = policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel)[0];
   const detail = [administrator, policy.policyNumber, type].filter(Boolean).join(" - ");
 
   return {

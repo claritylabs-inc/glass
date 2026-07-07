@@ -1,6 +1,7 @@
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 function normalizeReference(value: unknown) {
   return typeof value === "string"
@@ -16,6 +17,8 @@ function policyText(policy: Doc<"policies">) {
     policy.security,
     policy.carrier,
     policy.insuredName,
+    ...policyLobCodes(policy),
+    ...policyLobCodes(policy).map(lobLabel),
     ...(policy.policyTypes ?? []),
   ]
     .filter(Boolean)
@@ -38,7 +41,9 @@ function policyLabel(policy: Doc<"policies">) {
   return [
     policy.security ?? policy.carrier ?? "Policy",
     policy.policyNumber ? `#${policy.policyNumber}` : undefined,
-    policy.policyTypes?.length ? `(${policy.policyTypes.join(", ")})` : undefined,
+    policyLobCodes(policy).filter((code) => code !== "UN").length
+      ? `(${policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", ")})`
+      : undefined,
   ]
     .filter(Boolean)
     .join(" ");

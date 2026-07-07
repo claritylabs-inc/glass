@@ -28,6 +28,7 @@ const filtersValidator = v.object({
   carriers: v.optional(v.array(v.string())),
   securities: v.optional(v.array(v.string())),
   underwriters: v.optional(v.array(v.string())),
+  linesOfBusiness: v.optional(v.array(v.string())),
   productLines: v.optional(v.array(v.string())),
   policyTypes: v.optional(v.array(v.string())),
 });

@@ -16,24 +16,25 @@ const REQUIREMENT_EVALUATION_TARGET_FILTER_VALUES = [
 
 export const lookupPolicy = tool({
   description:
-    "Search for insurance policies by carrier name, policy number, policy type, or keywords. Returns matching policy summaries.",
+    "Search for insurance policies by carrier name, policy number, ACORD line of business, or keywords. Returns matching policy summaries.",
   inputSchema: z.object({
     query: z
       .string()
       .describe("Search query — carrier name, policy number, or keywords"),
-    policyType: z
+    lineOfBusiness: z
       .string()
       .optional()
       .describe(
-        "Filter by policy type (e.g., general_liability, commercial_auto)",
+        "Filter by ACORD LOB code or label (e.g., CGL, AUTOB, WORK, Commercial General Liability)",
       ),
+    policyType: z.string().optional().describe("Deprecated alias for lineOfBusiness."),
     carrier: z.string().optional().describe("Filter by carrier/insurer name"),
   }),
 });
 
 export const compareCoverages = tool({
   description:
-    "Compare two policies side by side — policy types, limits, deductibles, and premium.",
+    "Compare two policies side by side — lines of business, limits, deductibles, and premium.",
   inputSchema: z.object({
     policyId1: z.string().describe("Policy reference for the first policy to compare"),
     policyId2: z.string().describe("Policy reference for the second policy to compare"),
@@ -89,7 +90,7 @@ export const lookupVendorPolicies = tool({
     query: z
       .string()
       .optional()
-      .describe("Optional carrier, policy number, coverage, or policy type filter."),
+      .describe("Optional carrier, policy number, coverage, or line-of-business filter."),
   }),
 });
 

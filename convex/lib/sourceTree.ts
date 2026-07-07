@@ -18,6 +18,7 @@ import {
 } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
 import { normalizeCoverageName, normalizeText } from "./coverageNames";
+import { lobLabel, toLobCodes } from "./linesOfBusiness";
 
 export type {
   DocumentSourceNode,
@@ -1652,12 +1653,17 @@ export function operationalProfilePolicyFields(
   fields.premium = premium ?? undefined;
   if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
-  if (operationalProfile.policyTypes.length > 0) fields.policyTypes = operationalProfile.policyTypes;
+  if (operationalProfile.policyTypes.length > 0) {
+    fields.linesOfBusiness = toLobCodes(operationalProfile.policyTypes);
+    fields.policyTypes = operationalProfile.policyTypes;
+  }
   const summary = [
     insurer && insurer !== "Unknown" ? insurer : undefined,
     policyNumber && policyNumber !== "Unknown" ? `policy #${policyNumber}` : "policy",
     namedInsured && namedInsured !== "Unknown" ? `for ${namedInsured}` : undefined,
-    operationalProfile.policyTypes.length > 0 ? `covering ${operationalProfile.policyTypes.slice(0, 5).join(", ")}` : undefined,
+    operationalProfile.policyTypes.length > 0
+      ? `covering ${toLobCodes(operationalProfile.policyTypes).slice(0, 5).map(lobLabel).join(", ")}`
+      : undefined,
   ].filter(Boolean).join(" ");
   if (summary) fields.summary = summary;
   if (operationalProfile.coverages.length > 0) {

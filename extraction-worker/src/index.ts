@@ -1746,6 +1746,7 @@ const PREVIEW_TOP_LEVEL_FIELDS = [
   "mga",
   "broker",
   "policyNumber",
+  "linesOfBusiness",
   "policyTypes",
   "effectiveDate",
   "expirationDate",
@@ -1798,6 +1799,11 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
     mga: { type: ["string", "null"] },
     broker: { type: ["string", "null"] },
     policyNumber: { type: ["string", "null"] },
+    linesOfBusiness: {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 12,
+    },
     policyTypes: {
       type: "array",
       items: { type: "string" },
@@ -1885,6 +1891,147 @@ function cleanPreviewParagraph(value: unknown): string | undefined {
   return trimmed ? trimmed.slice(0, 1000) : undefined;
 }
 
+const PREVIEW_LOB_CODES = new Set([
+  "AUTOB",
+  "AUTOP",
+  "BOP",
+  "BOAT",
+  "CFRM",
+  "CGL",
+  "COMAR",
+  "CRIME",
+  "DFIRE",
+  "DISAB",
+  "DO",
+  "EO",
+  "EPLI",
+  "EQ",
+  "EXLIA",
+  "FIDUC",
+  "FLOOD",
+  "GARAG",
+  "GL",
+  "HOME",
+  "INMAR",
+  "INMRC",
+  "INMRP",
+  "MHOME",
+  "Motorcycle",
+  "OLIB",
+  "PROP",
+  "PROPC",
+  "RECV",
+  "SURE",
+  "TRUCK",
+  "UMBRC",
+  "UMBRL",
+  "UMBRP",
+  "UN",
+  "WORK",
+]);
+
+const PREVIEW_LEGACY_LOB: Record<string, string[]> = {
+  general_liability: ["CGL"],
+  commercial_property: ["PROPC"],
+  property: ["PROP"],
+  commercial_auto: ["AUTOB"],
+  non_owned_auto: ["AUTOB"],
+  auto: ["AUTOB"],
+  personal_auto: ["AUTOP"],
+  workers_comp: ["WORK"],
+  umbrella: ["UMBRC"],
+  personal_umbrella: ["UMBRP"],
+  excess_liability: ["EXLIA"],
+  professional_liability: ["EO"],
+  cyber: ["OLIB"],
+  environmental: ["OLIB"],
+  product_liability: ["OLIB"],
+  epli: ["EPLI"],
+  directors_officers: ["DO"],
+  d_and_o: ["DO"],
+  d_o: ["DO"],
+  fiduciary_liability: ["FIDUC"],
+  fiduciary: ["FIDUC"],
+  crime_fidelity: ["CRIME"],
+  crime: ["CRIME"],
+  inland_marine: ["INMRC"],
+  builders_risk: ["INMRC"],
+  ocean_marine: ["COMAR"],
+  surety: ["SURE"],
+  bop: ["BOP"],
+  management_liability_package: ["DO", "EPLI", "FIDUC"],
+  homeowners_ho3: ["HOME"],
+  homeowners_ho5: ["HOME"],
+  homeowners: ["HOME"],
+  renters_ho4: ["HOME"],
+  renters: ["HOME"],
+  condo_ho6: ["HOME"],
+  dwelling_fire: ["DFIRE"],
+  mobile_home: ["MHOME"],
+  flood_nfip: ["FLOOD"],
+  flood_private: ["FLOOD"],
+  flood: ["FLOOD"],
+  earthquake: ["EQ"],
+  personal_inland_marine: ["INMRP"],
+  watercraft: ["BOAT"],
+  boat: ["BOAT"],
+  recreational_vehicle: ["RECV"],
+  farm_ranch: ["CFRM"],
+  disability: ["DISAB"],
+  critical_illness: ["DISAB"],
+  life: ["UN"],
+  long_term_care: ["UN"],
+  pet: ["UN"],
+  travel: ["UN"],
+  identity_theft: ["UN"],
+  title: ["UN"],
+  other: ["UN"],
+  unknown: ["UN"],
+};
+
+function normalizePreviewLobKey(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
+function previewLobCodes(values: unknown): string[] {
+  if (!Array.isArray(values) || values.length === 0) return [];
+  const codes: string[] = [];
+  for (const value of values) {
+    const cleaned = cleanPreviewString(value);
+    if (!cleaned) continue;
+    if (PREVIEW_LOB_CODES.has(cleaned)) {
+      codes.push(cleaned);
+      continue;
+    }
+    if (cleaned.toLowerCase() === "motorcycle") {
+      codes.push("Motorcycle");
+      continue;
+    }
+    const upper = cleaned.toUpperCase();
+    if (upper === "CRIM") {
+      codes.push("CRIME");
+      continue;
+    }
+    const mapped = PREVIEW_LEGACY_LOB[normalizePreviewLobKey(cleaned)];
+    if (mapped) {
+      codes.push(...mapped);
+      continue;
+    }
+    if (PREVIEW_LOB_CODES.has(upper)) {
+      codes.push(upper);
+      continue;
+    }
+    codes.push("UN");
+  }
+  return Array.from(new Set(codes)).slice(0, 12);
+}
+
 function compactRecord(value: unknown, allowedKeys: readonly string[]): Record<string, string> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const output: Record<string, string> = {};
@@ -1919,17 +2066,8 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
   }
   const summary = cleanPreviewParagraph(input.summary);
   if (summary) fields.summary = summary;
-  if (Array.isArray(input.policyTypes)) {
-    const policyTypes = Array.from(
-      new Set(
-        input.policyTypes
-          .map(cleanPreviewString)
-          .filter((item): item is string => Boolean(item))
-          .map((item) => item.toLowerCase().replace(/\s+/g, "_")),
-      ),
-    ).slice(0, 12);
-    if (policyTypes.length > 0) fields.policyTypes = policyTypes;
-  }
+  const linesOfBusiness = previewLobCodes(input.linesOfBusiness ?? input.policyTypes);
+  if (linesOfBusiness.length > 0) fields.linesOfBusiness = linesOfBusiness;
   if (Array.isArray(input.coverages)) {
     const coverages = input.coverages
       .map((coverage) => {
@@ -2002,7 +2140,7 @@ This output is provisional and will be overwritten by a later source-backed extr
   const prompt = `Extract a provisional policy summary from this LiteParse/PDF text.
 
 Use concise display strings for dates, money, limits, deductibles, and coverage names.
-For policyTypes, use compact lowercase insurance line names such as general_liability, cyber, professional_liability, workers_comp, auto, umbrella, property, crime, fiduciary, d_and_o, epli, other.
+For linesOfBusiness, use ACORD Line of Business codes such as CGL, AUTOB, AUTOP, WORK, UMBRC, EXLIA, EO, OLIB, EPLI, DO, FIDUC, CRIME, INMRC, COMAR, PROPC, PROP, BOP, HOME, DFIRE, FLOOD, GARAG, or UN. Use UN only when no more specific ACORD code fits.
 
 Document text:
 ${sourceText}`;

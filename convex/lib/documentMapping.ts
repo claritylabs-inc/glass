@@ -24,6 +24,7 @@ import {
   normalizeExtractedDate,
   normalizeExtractedString,
 } from "./valueNormalization";
+import { policyLobCodes, toLobCodes } from "./linesOfBusiness";
 
 dayjs.extend(customParseFormat);
 
@@ -109,6 +110,10 @@ export function insuranceDocToPolicy(
     Array.isArray(d.policyTypes) && d.policyTypes.length > 0
       ? d.policyTypes
       : ["other"];
+  const linesOfBusiness =
+    Array.isArray(d.linesOfBusiness) && d.linesOfBusiness.length > 0
+      ? toLobCodes(d.linesOfBusiness)
+      : toLobCodes(policyTypes);
   const declarationPolicyNumber = declarationFieldValue(d.declarations, [
     "policyNumber",
   ]);
@@ -132,6 +137,7 @@ export function insuranceDocToPolicy(
     mga: normalizeOrgName(d.mga) ?? undefined,
     broker: normalizeOrgName(d.brokerAgency) ?? undefined,
     policyNumber: normalizeCriticalString(d.policyNumber) || declarationPolicyNumber || "Unknown",
+    linesOfBusiness,
     policyTypes,
     documentType: "policy",
     policyYear: policyYearFromDate(effectiveDate),
@@ -260,6 +266,7 @@ export function policyToInsuranceDoc(p: any): InsuranceDocument {
     premium: p.premium,
     totalCost: p.totalCost,
     summary: p.summary,
+    linesOfBusiness: policyLobCodes(p),
     policyTypes: p.policyTypes,
     coverages: (p.coverages as unknown[]) || [],
     effectiveDate: p.effectiveDate,
