@@ -32,6 +32,14 @@ describe("backfillLinesOfBusinessBatches", () => {
       changed: false,
     });
     expect(policyLineBackfillDecision({
+      linesOfBusiness: ["EO", "OLIB"],
+    })).toEqual({
+      before: [],
+      after: ["EO", "OLIB"],
+      unmappedValues: [],
+      changed: false,
+    });
+    expect(policyLineBackfillDecision({
       policyTypes: ["bespoke_line"],
     })).toEqual({
       before: ["bespoke_line"],
