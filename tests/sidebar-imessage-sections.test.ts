@@ -62,16 +62,23 @@ describe("sidebar iMessage sections", () => {
     expect(imessageConversations[0]?.label).toBe("Contact 0");
   });
 
-  it("renders iMessage as its own sidebar section in main and client sidebars", () => {
+  it("renders iMessage threads as pinned rows above agent threads in main and client sidebars", () => {
     const mainSidebar = read("components/app-sidebar/main-sidebar-content.tsx");
     const clientSidebar = read("components/app-sidebar/client-detail-sidebar-content.tsx");
     const threadContent = read("components/agent-thread/thread-content.tsx");
 
     expect(mainSidebar).toContain("agentConversations");
     expect(mainSidebar).toContain("imessageConversations");
-    expect(mainSidebar).toContain("iMessage");
+    expect(mainSidebar).toContain('shortcutLabel="pinned thread"');
+    expect(mainSidebar).toContain("<Pin");
+    expect(mainSidebar.indexOf("imessageConversations.map")).toBeLessThan(
+      mainSidebar.indexOf("agentConversations.map"),
+    );
     expect(clientSidebar).toContain("imessageConversations");
-    expect(clientSidebar).toContain("iMessage");
+    expect(clientSidebar).toContain("<Pin");
+    expect(clientSidebar.indexOf("imessageConversations.map")).toBeLessThan(
+      clientSidebar.indexOf("agentConversations.map"),
+    );
     expect(threadContent).toContain("getThreadDisplayLabel(thread)");
   });
 });
