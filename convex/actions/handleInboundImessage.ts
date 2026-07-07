@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
-import { generateTextForOrg } from "../lib/models";
+import { generateTextForOrg, generatedTextFromResult } from "../lib/models";
 import {
   createImessageGroupChat,
   coordinateMailboxTask,
@@ -695,7 +695,7 @@ export const processInbound = internalAction({
       const responseFileAttachments = runState.responseFileAttachments;
       const imessageToolArtifacts = runState.toolArtifacts;
       const policyChangeCaseId = runState.getPolicyChangeCaseId();
-      let responseText = result.text;
+      let responseText = generatedTextFromResult(result);
       let responseAlreadySent = false;
       let pendingEmailIdForResponse: Id<"pendingEmails"> | undefined;
       const emailResult = runState.getEmailResult();
@@ -754,6 +754,17 @@ export const processInbound = internalAction({
         responseFileAttachments,
         shouldStripGenericCta: !emailResult && !responseAlreadySent,
       });
+      if (!responseText.trim() && !responseAlreadySent) {
+        console.warn("[imessage] Model completed without response text", {
+          fromPhone,
+          orgId,
+          threadId,
+          usedTools,
+          toolCallCount: toolCalls.length,
+        });
+        responseText =
+          "I couldn't format that response. Please try again in a moment.";
+      }
 
       const responseAttachments: Array<{
         url: string;
