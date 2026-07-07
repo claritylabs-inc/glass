@@ -407,6 +407,21 @@ function mergeTextAroundReference(
   };
 }
 
+function resizePromptTextarea(textarea: HTMLTextAreaElement) {
+  textarea.style.height = "auto";
+
+  const { maxHeight } = window.getComputedStyle(textarea);
+  const parsedMaxHeight = Number.parseFloat(maxHeight);
+  const hasMaxHeight = Number.isFinite(parsedMaxHeight);
+  const nextHeight = hasMaxHeight
+    ? Math.min(textarea.scrollHeight, parsedMaxHeight)
+    : textarea.scrollHeight;
+
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY =
+    hasMaxHeight && textarea.scrollHeight > parsedMaxHeight ? "auto" : "hidden";
+}
+
 function PromptTextSegment({
   token,
   placeholder,
@@ -428,6 +443,7 @@ function PromptTextSegment({
 }) {
   const isPlaceholderSegment = Boolean(placeholder);
   const measureRef = useRef<HTMLSpanElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [measuredWidth, setMeasuredWidth] = useState(0);
 
   useBrowserLayoutEffect(() => {
@@ -436,6 +452,24 @@ function PromptTextSegment({
     if (!measure) return;
     setMeasuredWidth(Math.ceil(measure.getBoundingClientRect().width) + 1);
   }, [isPlaceholderSegment, token.text]);
+
+  const syncTextareaHeight = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    resizePromptTextarea(textarea);
+  }, []);
+
+  useBrowserLayoutEffect(() => {
+    syncTextareaHeight();
+  }, [measuredWidth, syncTextareaHeight, token.text]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.addEventListener("resize", syncTextareaHeight);
+    return () => {
+      window.removeEventListener("resize", syncTextareaHeight);
+    };
+  }, [syncTextareaHeight]);
 
   return (
     <>
@@ -454,9 +488,13 @@ function PromptTextSegment({
         </span>
       ) : null}
       <PromptInputTextarea
-        ref={(node) => registerRef(token.id, node)}
+        ref={(node) => {
+          textareaRef.current = node;
+          registerRef(token.id, node);
+        }}
         name={`prompt-segment-${token.id}`}
         placeholder={placeholder ?? ""}
+        rows={1}
         value={token.text}
         onChange={onChange}
         onFocus={onFocus}
@@ -474,7 +512,7 @@ function PromptTextSegment({
               : roomyOnMobile
                 ? "min-h-14 min-w-36 flex-[1_1_12rem] leading-6 sm:min-h-5.5 sm:leading-5"
                 : "min-h-5.5 min-w-36 flex-[1_1_12rem] leading-5"
-            : "h-6 min-h-6 min-w-px !flex-none self-center overflow-hidden leading-6",
+            : "min-h-6 min-w-px !flex-none self-start leading-6",
         )}
       />
     </>

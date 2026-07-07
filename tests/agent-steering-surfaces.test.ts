@@ -48,6 +48,17 @@ describe("agent steering surfaces", () => {
     expect(promptInput).not.toContain("pointer-events-none absolute z-20");
   });
 
+  it("lets prompt text segments grow for multiline input", () => {
+    const promptInput = read("components/glass-prompt-input.tsx");
+
+    expect(promptInput).toContain("resizePromptTextarea");
+    expect(promptInput).toContain("textarea.scrollHeight");
+    expect(promptInput).toContain("rows={1}");
+    expect(promptInput).toContain("self-start leading-6");
+    expect(promptInput).not.toContain("h-6 min-h-6");
+    expect(promptInput).not.toContain("self-center overflow-hidden leading-6");
+  });
+
   it("persists selected targets and routes them into agent context", () => {
     const schema = read("convex/schema.ts");
     const threads = read("convex/threads.ts");
