@@ -11,6 +11,7 @@ import JSZip from "jszip";
 import {
   fallbackRouteForCall,
   generateTextForOrg,
+  generatedTextFromResult,
   getModelAndRouteForOrg,
   getModelForRoute,
   getProviderOptionsForRoute,
@@ -132,7 +133,8 @@ The rewritten answer is invalid unless it contains at least one confidence marke
     taskKind: "query_reason",
   });
 
-  return normalizeConfidenceRepair(result.text, content);
+  const repairedText = generatedTextFromResult(result);
+  return repairedText ? normalizeConfidenceRepair(repairedText, content) : content;
 }
 
 type DraftEmailForBatchRevision = {
