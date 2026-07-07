@@ -1210,10 +1210,10 @@ describe("sourceTreePolicyFields", () => {
     const fields = sourceTreePolicyFields({
       sourceTree,
       operationalProfile,
-      existingPolicyTypes: ["professional_liability"],
+      existingLinesOfBusiness: ["professional_liability"],
     });
 
-    expect(fields.policyTypes).toEqual(["EO"]);
+    expect(fields.linesOfBusiness).toEqual(["EO"]);
     expect(fields.linesOfBusiness).toEqual(["EO"]);
     expect((fields.operationalProfile as PolicyOperationalProfile).linesOfBusiness).toEqual(["EO"]);
     expect((fields.operationalProfile as PolicyOperationalProfile).warnings).toEqual([]);
@@ -1251,7 +1251,7 @@ describe("sourceTreePolicyFields", () => {
       "EO",
       "OLIB",
     ]);
-    expect(fields.policyTypes).toEqual(["EO", "OLIB"]);
+    expect(fields.linesOfBusiness).toEqual(["EO", "OLIB"]);
     expect(fields.linesOfBusiness).toEqual(["EO", "OLIB"]);
     expect(
       (fields.operationalProfile as PolicyOperationalProfile).linesOfBusiness,
@@ -1383,7 +1383,7 @@ describe("sourceTreePolicyFields", () => {
       operationalProfile,
     });
 
-    expect(fields.policyTypes).toEqual(["UN"]);
+    expect(fields.linesOfBusiness).toEqual(["UN"]);
     expect(fields.linesOfBusiness).toEqual(["UN"]);
     expect(fields.policyNumber).toBe("Unknown");
     expect(fields.insuredName).toBe("Unknown");

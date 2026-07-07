@@ -1,42 +1,47 @@
-import { PERSONAL_LINE_KEYS } from "../policyTypes";
+import { isPersonalLob, toLobCodes } from "../linesOfBusiness";
 import {
   CERTIFICATE_FORM_CODES,
   type CertificateFormCode,
   type CertificateHolderRelationship,
 } from "./types";
 
-const propertyTypes = new Set([
-  "commercial_property",
-  "property",
-  "builders_risk",
-  "homeowners_ho3",
-  "homeowners_ho5",
-  "renters_ho4",
-  "condo_ho6",
-  "dwelling_fire",
-  "mobile_home",
+const propertyLobs = new Set([
+  "PROPC",
+  "PROP",
+  "BOPPR",
+  "CFIRE",
+  "AGPR",
+  "HOME",
+  "DFIRE",
+  "MHOME",
 ]);
 
-const liabilityTypes = new Set([
-  "general_liability",
-  "commercial_auto",
-  "non_owned_auto",
-  "workers_comp",
-  "umbrella",
-  "excess_liability",
-  "professional_liability",
-  "cyber",
-  "epli",
-  "directors_officers",
-  "fiduciary_liability",
-  "product_liability",
-  "bop",
-  "management_liability_package",
+const liabilityLobs = new Set([
+  "CGL",
+  "GL",
+  "BOP",
+  "BOPGL",
+  "AUTOB",
+  "AUTOP",
+  "GARAG",
+  "TRUCK",
+  "WORK",
+  "WCMA",
+  "WORKP",
+  "WORKV",
+  "UMBRC",
+  "UMBRL",
+  "UMBRP",
+  "EXLIA",
+  "EO",
+  "PL",
+  "OLIB",
+  "EPLI",
+  "DO",
+  "FIDUC",
 ]);
 
-function normalizePolicyTypes(policyTypes?: string[]) {
-  return (policyTypes ?? []).map((type) => type.toLowerCase().trim()).filter(Boolean);
-}
+const marineLobs = new Set(["COMAR", "INMAR", "INMRC", "INMRP"]);
 
 function normalizeRelationship(value?: CertificateHolderRelationship) {
   return value?.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -63,6 +68,7 @@ function operationalProfileSuggestsGarage(value: unknown) {
 }
 
 export function selectCertificateForm(args: {
+  linesOfBusiness?: string[];
   policyTypes?: string[];
   holderRelationship?: CertificateHolderRelationship;
   formHint?: string;
@@ -71,35 +77,35 @@ export function selectCertificateForm(args: {
   const hint = normalizeFormHint(args.formHint);
   if (hint) return hint;
 
-  const types = normalizePolicyTypes(args.policyTypes);
+  const linesOfBusiness = toLobCodes(args.linesOfBusiness ?? args.policyTypes);
   const holderRelationship = normalizeRelationship(args.holderRelationship);
   const holderIsInterest =
     holderRelationship === "mortgagee" ||
     holderRelationship === "loss_payee" ||
     holderRelationship === "lender";
 
-  if (types.some((type) => type === "flood_nfip" || type === "flood_private")) {
+  if (linesOfBusiness.includes("FLOOD")) {
     return "acord29";
   }
 
-  if (operationalProfileSuggestsGarage(args.operationalProfile)) {
+  if (linesOfBusiness.includes("GARAG") || operationalProfileSuggestsGarage(args.operationalProfile)) {
     return "acord30";
   }
 
-  if (types.some((type) => type === "ocean_marine" || type === "watercraft" || /energy/.test(type))) {
+  if (linesOfBusiness.some((code) => marineLobs.has(code))) {
     return "acord31";
   }
 
-  const hasProperty = types.some((type) => propertyTypes.has(type));
+  const hasProperty = linesOfBusiness.some((code) => propertyLobs.has(code));
   if (hasProperty) {
     if (holderIsInterest) {
-      const personal = types.some((type) => PERSONAL_LINE_KEYS.has(type));
+      const personal = linesOfBusiness.some(isPersonalLob);
       return personal ? "acord27" : "acord28";
     }
     return "acord24";
   }
 
-  if (types.some((type) => liabilityTypes.has(type))) return "acord25";
+  if (linesOfBusiness.some((code) => liabilityLobs.has(code))) return "acord25";
 
   return "acord25";
 }

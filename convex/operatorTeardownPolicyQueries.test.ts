@@ -54,6 +54,7 @@ async function seedOperatorPolicyFixture() {
       orgId: clientOrgId,
       carrier: "Carrier",
       policyNumber: "POL-1",
+      linesOfBusiness: ["CGL"],
       policyTypes: ["general_liability"],
       documentType: "policy",
       policyYear: 2026,

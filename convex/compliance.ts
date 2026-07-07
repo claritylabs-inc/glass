@@ -225,7 +225,6 @@ function policySearchText(policy: Doc<"policies">) {
     [
       ...linesOfBusiness,
       ...linesOfBusiness.map(lobLabel),
-      ...policy.policyTypes,
       policy.summary,
       policy.carrier,
       policy.security,
@@ -1237,7 +1236,7 @@ export const getManualComplianceReviewContextInternal = internalQuery({
         effectiveDate: policy.effectiveDate,
         expirationDate: policy.expirationDate,
         linesOfBusiness: policyLobCodes(policy),
-        policyTypes: policy.policyTypes,
+        policyTypes: policyLobCodes(policy),
         summary: policy.summary,
         coverages: (policy.coverages ?? []).map((coverage) => ({
           name: coverage.name,

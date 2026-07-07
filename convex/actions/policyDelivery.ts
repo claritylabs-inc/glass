@@ -21,9 +21,9 @@ import {
 } from "../lib/imessageOutbound";
 import {
   ACORD_LOB_LABELS,
-  LEGACY_POLICY_TYPE_TO_LOB,
   policyLobCodes,
 } from "../lib/linesOfBusiness";
+import { deterministicRuleMatch } from "../lib/policyDeliveryMatching";
 
 type Channel = "email" | "imessage";
 type DeliveryAction = "auto_send" | "broker_review" | "do_not_send";
@@ -40,57 +40,6 @@ function clean(value: unknown) {
 
 function lower(value: unknown) {
   return clean(value)?.toLowerCase() ?? "";
-}
-
-function includesAny(haystacks: string[], needles: string[] | undefined) {
-  const normalizedNeedles = (needles ?? [])
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-  if (normalizedNeedles.length === 0) return true;
-  return normalizedNeedles.some((needle) =>
-    haystacks.some((haystack) => haystack.includes(needle)),
-  );
-}
-
-function lineOfBusinessNeedles(rule: DeliveryRule) {
-  const filters = rule.filters ?? {};
-  return filters.linesOfBusiness ?? [
-    ...(filters.productLines ?? []),
-    ...(filters.policyTypes ?? []),
-  ];
-}
-
-function legacyNeedlesForPolicyLobs(codes: string[]) {
-  return Object.entries(LEGACY_POLICY_TYPE_TO_LOB)
-    .filter(([, mappedCodes]) =>
-      mappedCodes.some((code) => codes.includes(code)) &&
-      !mappedCodes.includes("OLIB") &&
-      !mappedCodes.includes("UN"),
-    )
-    .map(([legacyKey]) => legacyKey);
-}
-
-function policyLineHaystacks(policy: Doc<"policies">) {
-  const codes = policyLobCodes(policy);
-  const labels = codes.map((code) => ACORD_LOB_LABELS[code]);
-  const legacyKeys = legacyNeedlesForPolicyLobs(codes);
-  return [
-    ...codes,
-    ...labels,
-    ...legacyKeys,
-    ...(policy.coverages ?? []).map((coverage) => lower(coverage.name)),
-    lower(policy.programName),
-    lower(policy.summary),
-  ].map((value) => value.toLowerCase());
-}
-
-function deterministicRuleMatch(rule: DeliveryRule, policy: Doc<"policies">) {
-  return (
-    includesAny([lower(policy.carrier), lower(policy.carrierLegalName)], rule.filters.carriers) &&
-    includesAny([lower(policy.security), lower(policy.insurer?.legalName)], rule.filters.securities) &&
-    includesAny([lower(policy.underwriter)], rule.filters.underwriters) &&
-    includesAny(policyLineHaystacks(policy), lineOfBusinessNeedles(rule))
-  );
 }
 
 function hasOpenExtractionReview(policy: Doc<"policies">) {

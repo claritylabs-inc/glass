@@ -36,9 +36,9 @@ describe("selectCertificateForm", () => {
     ).toBe("acord27");
   });
 
-  it("uses ACORD 24 for plain property certificates", () => {
+  it("routes commercial inland marine property forms to ACORD 31", () => {
     expect(selectCertificateForm({ policyTypes: ["builders_risk"] })).toBe(
-      "acord24",
+      "acord31",
     );
   });
 

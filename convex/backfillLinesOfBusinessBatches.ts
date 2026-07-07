@@ -66,6 +66,20 @@ function unmappedLegacyValues(values: readonly string[]) {
   });
 }
 
+export function policyLineBackfillDecision(policy: {
+  policyTypes?: string[];
+  linesOfBusiness?: string[];
+}) {
+  const before = policy.policyTypes ?? [];
+  const after = toLobCodes(before);
+  return {
+    before,
+    after,
+    unmappedValues: unmappedLegacyValues(before),
+    changed: !sameStringArray(policy.linesOfBusiness, after),
+  };
+}
+
 function unique(values: readonly string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
@@ -91,18 +105,21 @@ export const backfillPoliciesBatchInternal = internalMutation({
 
     report.policies.scannedCount = page.page.length;
     for (const policy of page.page) {
-      const before = policy.policyTypes ?? [];
-      const after = toLobCodes(before);
-      for (const value of unmappedLegacyValues(before)) {
+      const decision = policyLineBackfillDecision(policy);
+      for (const value of decision.unmappedValues) {
         report.policies.unmappedValues[value] = (report.policies.unmappedValues[value] ?? 0) + 1;
       }
-      if (sameStringArray(policy.linesOfBusiness, after)) continue;
+      if (!decision.changed) continue;
       report.policies.changedCount += 1;
       if (report.policies.samples.length < 25) {
-        report.policies.samples.push({ policyId: policy._id, before, after });
+        report.policies.samples.push({
+          policyId: policy._id,
+          before: decision.before,
+          after: decision.after,
+        });
       }
       if (!dryRun) {
-        await ctx.db.patch(policy._id, { linesOfBusiness: after });
+        await ctx.db.patch(policy._id, { linesOfBusiness: decision.after });
       }
     }
 

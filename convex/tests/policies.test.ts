@@ -73,6 +73,7 @@ test("provenance fields are accepted in schema (structural test)", () => {
     fileId: "file1" as any,
     carrier: "Extracting...",
     policyNumber: "Extracting...",
+    linesOfBusiness: ["UN"] as ["UN"],
     policyTypes: ["other"] as ["other"],
     documentType: "policy" as const,
     policyYear: 2026,

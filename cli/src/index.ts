@@ -95,7 +95,7 @@ program.command("policies:create")
       insuredName: opts.insuredName,
       effectiveDate: opts.effectiveDate,
       expirationDate: opts.expirationDate,
-      policyTypes: linesOfBusiness,
+      linesOfBusiness,
     });
     print(res, getFormat(program.opts()));
   });
