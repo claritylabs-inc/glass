@@ -35,7 +35,6 @@ import {
   type PolicyOperationalProfile,
   type SourceSpanLike,
 } from "../lib/sourceTree";
-import { toLobCodes } from "../lib/linesOfBusiness";
 import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
@@ -2643,8 +2642,8 @@ export const rematerializeSourceTreeProfile = internalAction({
       effectiveDate: operationalProfile.effectiveDate?.value,
       expirationDate: operationalProfile.expirationDate?.value,
       premium: operationalProfile.premium?.value,
-      linesOfBusiness: toLobCodes(operationalProfile.policyTypes),
-      policyTypes: operationalProfile.policyTypes,
+      linesOfBusiness: operationalProfile.linesOfBusiness,
+      policyTypes: operationalProfile.linesOfBusiness,
     };
   },
 });

@@ -97,9 +97,12 @@ export interface CoverageLine {
 export function policyToCoiData(policy: any): CoiData {
   const profile = operationalProfile(policy);
   const limits: any = policy.limits ?? {};
+  const profileLinesOfBusiness = Array.isArray(profile?.linesOfBusiness) && profile.linesOfBusiness.length > 0
+    ? profile.linesOfBusiness
+    : profile?.policyTypes;
   const policyTypes = policyLobCodes({
     linesOfBusiness: policy.linesOfBusiness,
-    policyTypes: profile?.policyTypes?.length ? profile.policyTypes : policy.policyTypes ?? [],
+    policyTypes: profileLinesOfBusiness?.length ? profileLinesOfBusiness : policy.policyTypes ?? [],
   });
   const declarations = declarationFieldMap(policy);
   const policyNumber = profileValue(profile?.policyNumber) ?? pickField(declarations, "policyNumber") ?? policy.policyNumber ?? "";
