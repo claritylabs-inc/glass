@@ -4,8 +4,10 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
 import { generateCoiPdf, policyToCoiData } from "../lib/coiGenerator";
 import { logAiError } from "../lib/aiUtils";
+import { generateObjectForOrg } from "../lib/models";
 import {
   CERTIFICATE_FORM_FILE_SLUGS,
   CERTIFICATE_FORM_LABELS,
@@ -16,6 +18,15 @@ import {
   applyEndorsementsToCertificateData,
   type EndorsementCitation,
 } from "../lib/certificateEndorsements";
+import {
+  CertificateDescriptionSchema,
+  buildCertificateDescriptionContext,
+  buildCertificateDescriptionFallback,
+  buildCertificateDescriptionPrompt,
+  certificateDescriptionSystemPrompt,
+  hasCertificateDescriptionContext,
+  normalizeCertificateDescription,
+} from "../lib/certificateDescription";
 
 const holderAddressValidator = v.object({
   line1: v.optional(v.string()),
@@ -228,6 +239,70 @@ function certificatePropertyExtras(policy: Record<string, any>) {
   };
 }
 
+type GenerateCoiDescriptionArgs = {
+  orgId: Id<"organizations">;
+  policyId: Id<"policies">;
+  certificateHolder?: string;
+  certificateHolderName?: string;
+  requestKind?: "holder" | "additional_insured";
+  additionalInsuredName?: string;
+  holderRelationship?: string;
+  endorsements?: EndorsementCitation[];
+};
+
+async function fillCertificateDescription(
+  ctx: ActionCtx,
+  args: GenerateCoiDescriptionArgs,
+  policy: Record<string, any>,
+  coiData: ReturnType<typeof policyToCoiData>,
+) {
+  const context = buildCertificateDescriptionContext(policy, coiData, {
+    certificateHolder: args.certificateHolder,
+    certificateHolderName: args.certificateHolderName,
+    requestKind: args.requestKind,
+    additionalInsuredName: args.additionalInsuredName,
+    holderRelationship: args.holderRelationship,
+    endorsements: args.endorsements,
+  });
+  const fallback = buildCertificateDescriptionFallback(context, coiData.description);
+  if (!hasCertificateDescriptionContext(context)) {
+    return {
+      ...coiData,
+      description: fallback || coiData.description,
+    };
+  }
+
+  try {
+    const result = await generateObjectForOrg(
+      ctx,
+      args.orgId,
+      "summary",
+      {
+        schema: CertificateDescriptionSchema,
+        system: certificateDescriptionSystemPrompt(),
+        prompt: buildCertificateDescriptionPrompt({
+          context,
+          existingDescription: coiData.description,
+        }),
+      },
+    );
+    const description = normalizeCertificateDescription(result.object.description);
+    return {
+      ...coiData,
+      description: description || fallback || coiData.description,
+    };
+  } catch (err) {
+    logAiError("generateCoi.description", err, {
+      policyId: args.policyId,
+      orgId: args.orgId,
+    });
+    return {
+      ...coiData,
+      description: fallback || coiData.description,
+    };
+  }
+}
+
 /**
  * Generate a COI PDF for a policy and store it in file storage.
  * Returns the storage ID and byte size for download/attachment metadata.
@@ -308,9 +383,20 @@ export const run = internalAction({
           `Additional Insured: ${args.additionalInsuredName}`,
         ].filter(Boolean).join("\n\n");
       }
+      const endorsements = args.endorsements as EndorsementCitation[] | undefined;
       coiData = applyEndorsementsToCertificateData(coiData, {
-        endorsements: args.endorsements as EndorsementCitation[] | undefined,
+        endorsements,
       });
+      coiData = await fillCertificateDescription(ctx, {
+        orgId: args.orgId,
+        policyId: args.policyId,
+        certificateHolder: args.certificateHolder,
+        certificateHolderName: args.certificateHolderName,
+        requestKind: args.requestKind,
+        additionalInsuredName: args.additionalInsuredName,
+        holderRelationship: args.holderRelationship,
+        endorsements,
+      }, policy as Record<string, any>, coiData);
       const pdfBuffer = await generateCoiPdf(coiData);
 
       // Store in Convex file storage
