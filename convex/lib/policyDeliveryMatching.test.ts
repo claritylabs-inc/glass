@@ -39,12 +39,12 @@ describe("policyDeliveryMatching", () => {
     ).toBe(true);
   });
 
-  it("matches legacy policy-type needles during the delivery-rule migration", () => {
+  it("matches legacy line-of-business text saved in the canonical filter", () => {
     expect(
       deterministicRuleMatch(
         {
           filters: {
-            policyTypes: ["general_liability"],
+            linesOfBusiness: ["general_liability"],
           },
         },
         {

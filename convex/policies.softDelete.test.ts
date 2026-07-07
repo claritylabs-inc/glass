@@ -35,7 +35,6 @@ async function seedBrokerClientPolicy(options: {
       carrier: "Carrier",
       policyNumber: "POL-1",
       linesOfBusiness: ["CGL"],
-      policyTypes: ["general_liability"],
       documentType: "policy",
       policyYear: 2026,
       effectiveDate: "01/01/2026",

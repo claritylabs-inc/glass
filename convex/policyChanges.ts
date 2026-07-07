@@ -1488,7 +1488,7 @@ function snapshotPolicy(policy: Record<string, unknown>) {
     "mga",
     "broker",
     "policyNumber",
-    "policyTypes",
+    "linesOfBusiness",
     "effectiveDate",
     "expirationDate",
     "insuredName",

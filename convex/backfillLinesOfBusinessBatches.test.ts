@@ -71,7 +71,6 @@ describe("backfillLinesOfBusinessBatches", () => {
         ...basePolicy,
         policyNumber: "POL-MIGRATED",
         linesOfBusiness: ["CGL"],
-        policyTypes: ["general_liability"],
       });
       return { migratedPolicyId };
     });
@@ -101,27 +100,14 @@ describe("backfillLinesOfBusinessBatches", () => {
     });
   });
 
-  test("backfills delivery-rule filters while preserving free-text product lines", async () => {
+  test("leaves delivery-rule filters with canonical lines untouched", async () => {
     const t = convexTest(schema, modules);
-    const { legacyRuleId, migratedRuleId } = await t.run(async (ctx) => {
+    const { migratedRuleId } = await t.run(async (ctx) => {
       const brokerOrgId = await ctx.db.insert("organizations", {
         name: "Broker",
         type: "broker",
       });
       const now = 1;
-      const legacyRuleId = await ctx.db.insert("policyDeliveryRules", {
-        brokerOrgId,
-        name: "Legacy",
-        enabled: true,
-        priority: 1,
-        filters: {
-          productLines: ["Technology E&O"],
-          policyTypes: ["general_liability"],
-        },
-        action: "broker_review",
-        createdAt: now,
-        updatedAt: now,
-      });
       const migratedRuleId = await ctx.db.insert("policyDeliveryRules", {
         brokerOrgId,
         name: "Migrated",
@@ -129,14 +115,13 @@ describe("backfillLinesOfBusinessBatches", () => {
         priority: 2,
         filters: {
           linesOfBusiness: ["CGL"],
-          productLines: ["General liability"],
         },
         action: "auto_send",
         channels: ["email"],
         createdAt: now,
         updatedAt: now,
       });
-      return { legacyRuleId, migratedRuleId };
+      return { migratedRuleId };
     });
 
     const live = await t.mutation(backfillDeliveryRulesBatchInternalFn, {
@@ -144,18 +129,10 @@ describe("backfillLinesOfBusinessBatches", () => {
       limit: 200,
     });
 
-    expect(live.deliveryRules.changedCount).toBe(1);
-    await expect(t.run(async (ctx) => ctx.db.get(legacyRuleId))).resolves.toMatchObject({
-      filters: {
-        linesOfBusiness: ["Technology E&O", "general_liability"],
-        productLines: ["Technology E&O"],
-        policyTypes: ["general_liability"],
-      },
-    });
+    expect(live.deliveryRules.changedCount).toBe(0);
     await expect(t.run(async (ctx) => ctx.db.get(migratedRuleId))).resolves.toMatchObject({
       filters: {
         linesOfBusiness: ["CGL"],
-        productLines: ["General liability"],
       },
     });
   });

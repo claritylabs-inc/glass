@@ -194,8 +194,6 @@ function RuleDrawer({
   const [lines, setLines] = useState(
     uniqueList([
       rule?.filters?.linesOfBusiness?.join(", "),
-      rule?.filters?.productLines?.join(", "),
-      rule?.filters?.policyTypes?.join(", "),
     ]).join(", "),
   );
   const [llmRuleText, setLlmRuleText] = useState(rule?.llmRuleText ?? "");

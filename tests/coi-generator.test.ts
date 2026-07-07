@@ -8,7 +8,7 @@ const ROOT = join(__dirname, "..");
 describe("policyToCoiData", () => {
   it("collapses unsupported personal policy types to the generic certificate fallback", () => {
     const data = policyToCoiData({
-      policyTypes: ["travel"],
+      linesOfBusiness: ["UN"],
       policyNumber: "WES0000518111",
       effectiveDate: "05/05/2026",
       expirationDate: "05/16/2026",
@@ -25,7 +25,7 @@ describe("policyToCoiData", () => {
 
   it("keeps broker user information out of the producer box", () => {
     const data = policyToCoiData({
-      policyTypes: ["travel"],
+      linesOfBusiness: ["UN"],
       brokerAgency: "Allianz Global Assistance",
       brokerContactName: "Terrence Wang",
       underwriter: "Allianz Travel Underwriting",
@@ -42,7 +42,7 @@ describe("policyToCoiData", () => {
 
   it("uses declaration fields and extracted coverage details when available", () => {
     const data = policyToCoiData({
-      policyTypes: ["professional_liability", "cyber", "epli"],
+      linesOfBusiness: ["EO", "OLIB", "EPLI"],
       policyNumber: "MJIL 1000 06 10",
       carrier: "Markel American",
       insuredName: "National Life Holding Company",
@@ -90,7 +90,7 @@ describe("policyToCoiData", () => {
 
   it("keeps extracted deductible-only coverage rows for COI coverage tables", () => {
     const data = policyToCoiData({
-      policyTypes: ["lease_guarantee"],
+      linesOfBusiness: ["UN"],
       policyNumber: "REL-123",
       effectiveDate: "07/01/2025",
       expirationDate: "06/30/2026",
@@ -148,7 +148,7 @@ describe("COI PDF generation", () => {
 
   it("renders the generated PDF successfully", async () => {
     const data = policyToCoiData({
-      policyTypes: ["general_liability"],
+      linesOfBusiness: ["CGL"],
       policyNumber: "TEST-1",
       effectiveDate: "01/01/2026",
       expirationDate: "01/01/2027",

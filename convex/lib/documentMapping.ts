@@ -106,14 +106,10 @@ export function insuranceDocToPolicy(
   doc: InsuranceDocument,
 ): Record<string, unknown> {
   const d = doc as any;
-  const legacyPolicyTypes =
-    Array.isArray(d.policyTypes) && d.policyTypes.length > 0
-      ? d.policyTypes
-      : ["other"];
   const linesOfBusiness =
     Array.isArray(d.linesOfBusiness) && d.linesOfBusiness.length > 0
       ? toLobCodes(d.linesOfBusiness)
-      : toLobCodes(legacyPolicyTypes);
+      : toLobCodes();
   const declarationPolicyNumber = declarationFieldValue(d.declarations, [
     "policyNumber",
   ]);

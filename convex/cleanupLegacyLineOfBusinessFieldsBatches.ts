@@ -27,6 +27,15 @@ type CleanupReport = {
   continuationScheduled: boolean;
 };
 
+type LegacyPolicyDocument = {
+  policyTypes?: string[];
+};
+
+type LegacyPolicyDeliveryFilters = {
+  productLines?: string[];
+  policyTypes?: string[];
+};
+
 function emptyReport(dryRun: boolean): CleanupReport {
   return {
     dryRun,
@@ -64,7 +73,7 @@ export const cleanupPoliciesBatchInternal = internalMutation({
 
     report.policies.scannedCount = page.page.length;
     for (const policy of page.page) {
-      const policyTypes = policy.policyTypes ?? [];
+      const policyTypes = (policy as LegacyPolicyDocument).policyTypes ?? [];
       if (policyTypes.length === 0) continue;
       report.policies.changedCount += 1;
       if (report.policies.samples.length < 25) {
@@ -74,7 +83,7 @@ export const cleanupPoliciesBatchInternal = internalMutation({
         });
       }
       if (!args.dryRun) {
-        await ctx.db.patch(policy._id, { policyTypes: undefined });
+        await ctx.db.patch(policy._id, { policyTypes: undefined } as any);
       }
     }
 
@@ -122,9 +131,10 @@ export const cleanupDeliveryRulesBatchInternal = internalMutation({
         continue;
       }
       report.deliveryRules.scannedCount += 1;
+      const filters = rule.filters as typeof rule.filters & LegacyPolicyDeliveryFilters;
       const removed = {
-        productLines: rule.filters.productLines,
-        policyTypes: rule.filters.policyTypes,
+        productLines: filters.productLines,
+        policyTypes: filters.policyTypes,
       };
       if (!removed.productLines?.length && !removed.policyTypes?.length) continue;
       report.deliveryRules.changedCount += 1;
@@ -132,10 +142,10 @@ export const cleanupDeliveryRulesBatchInternal = internalMutation({
         report.deliveryRules.samples.push({ ruleId: rule._id, removed });
       }
       if (!args.dryRun) {
-        const filters = { ...rule.filters };
-        delete filters.productLines;
-        delete filters.policyTypes;
-        await ctx.db.patch(rule._id, { filters });
+        const nextFilters = { ...filters };
+        delete nextFilters.productLines;
+        delete nextFilters.policyTypes;
+        await ctx.db.patch(rule._id, { filters: nextFilters });
       }
     }
 
