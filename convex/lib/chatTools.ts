@@ -1,6 +1,5 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { PCE_REQUEST_KINDS } from "./pceIntake";
 import { REQUIREMENT_EVALUATION_TARGETS } from "./requirementSemantics";
 
 const REQUIREMENT_EVALUATION_TARGET_FILTER_VALUES = [
@@ -188,7 +187,7 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate or retrieve a Certificate of Insurance (COI) PDF for a specific policy. Holder-only requests generate immediately. Additional-insured requests generate only when policy evidence supports them; unsupported endorsement requests become broker follow-ups.",
+    "Generate or retrieve the right ACORD-style insurance certificate PDF for a specific policy. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     certificateHolder: z
@@ -230,92 +229,14 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("Name of the requested additional insured when the user asks to add or show one on the certificate."),
+    certificateForm: z
+      .enum(["acord25", "acord24", "acord27", "acord28", "acord29", "acord30", "acord31"])
+      .optional()
+      .describe("Optional explicit form hint. Use acord28 for evidence of commercial property insurance for a lender, acord27 for personal property evidence, acord29 for flood evidence, acord24 for plain property certificates, acord30 for garage, acord31 for marine or energy, and acord25 for liability."),
     explicitReissue: z
       .boolean()
       .optional()
       .describe("Set true only when the user explicitly asks to reissue/regenerate a new certificate version even if one already exists for this holder and current policy version"),
-  }),
-});
-
-export const createPolicyChangeRequest = tool({
-  description:
-    "Capture a simple broker follow-up for a requested policy update. Use this when the user asks to change the policy record or asks for an endorsement, such as named insured, additional insured, waiver of subrogation, primary and non-contributory wording, limits, deductibles, locations, vehicles, cancellation, nonrenewal, or renewal updates. A policy number plus the requested new value is enough. Do not use this for ordinary COI generation or certificate-holder-only instructions.",
-  inputSchema: z.object({
-    requestKind: z
-      .enum(PCE_REQUEST_KINDS)
-      .describe(
-        "Classify the user intent. Use certificate_holder_only for ordinary COI holder changes with no requested endorsement. Use unclear when the user has not actually asked to change the policy record.",
-      ),
-    requestText: z
-      .string()
-      .describe(
-        "The user's requested policy update in their own words, including requested values and effective date if provided",
-      ),
-    policyId: z.string().optional().describe("Related policy reference, if known. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
-    evidenceSourceIds: z
-      .array(z.string())
-      .optional()
-      .describe(
-        "Stable source span IDs that support quoted existing policy values",
-      ),
-  }),
-});
-
-export const addPolicyChangeInfo = tool({
-  description:
-    "Add missing or corrected information to an existing broker follow-up. Use this when the user answers a question or clarifies what should change.",
-  inputSchema: z.object({
-    caseId: z.string().describe("Existing follow-up ID"),
-    infoText: z.string().describe("The additional details or clarification to add"),
-    sourceSpanIds: z.array(z.string()).optional().describe("Optional source span IDs supporting the clarification"),
-  }),
-});
-
-export const checkPolicyChangeStatus = tool({
-  description:
-    "Check status for broker follow-ups about policy updates or endorsements. Use this when the user asks whether a requested policy update was sent, is waiting on the broker, or is done.",
-  inputSchema: z.object({
-    caseId: z
-      .string()
-      .optional()
-      .describe("Specific follow-up ID, if the user supplied one."),
-    policyId: z
-      .string()
-      .optional()
-      .describe("Policy reference to filter by, such as a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
-    includeClosed: z
-      .boolean()
-      .optional()
-      .describe("Set true only when the user asks for completed, cancelled, declined, closed, or historical follow-ups."),
-  }),
-});
-
-export const draftPolicyChangeSubmission = tool({
-  description:
-    "Draft the broker email for an existing policy update follow-up. Use the current conversation's follow-up when an ID is not explicitly known. If the recipient is unknown, draft the email and ask for the recipient instead of inventing an email address.",
-  inputSchema: z.object({
-    caseId: z.string().optional().describe("Existing follow-up ID, if known"),
-    recipientEmail: z.string().optional().describe("Known recipient email, if explicitly provided or already known"),
-    recipientName: z.string().optional().describe("Known recipient name, if available"),
-    instructions: z.string().optional().describe("Extra instructions to include in the draft"),
-  }),
-});
-
-export const completePolicyChangeFromEndorsement = tool({
-  description:
-    "Attach the received endorsement to the existing policy and mark the broker follow-up done. Use only with actual endorsement files already stored in the current thread or inbound message.",
-  inputSchema: z.object({
-    caseId: z.string().optional().describe("Follow-up ID, if known"),
-    policyId: z.string().describe("Existing policy reference to append the endorsement to. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
-    files: z
-      .array(z.object({
-        fileId: z.string().describe("Stored Convex file ID for the endorsement attachment"),
-        fileName: z.string().describe("Attachment filename"),
-      }))
-      .min(1)
-      .describe("Stored endorsement files to append"),
-    summary: z.string().optional().describe("Short completion summary"),
-    fieldUpdates: z.record(z.string(), z.any()).optional().describe("Only fields explicitly changed by the endorsement"),
   }),
 });
 

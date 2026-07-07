@@ -144,16 +144,6 @@ export function certificateHeldOutcome(args: {
         targetId: String(args.generated.holdId ?? ""),
         description: "Put the certificate request on hold.",
       },
-      ...(args.generated.policyChangeCaseId
-        ? [
-            {
-              kind: "record_created" as const,
-              targetType: "policyChangeCase",
-              targetId: String(args.generated.policyChangeCaseId),
-              description: "Opened a broker follow-up for required certificate changes.",
-            },
-          ]
-        : []),
     ],
     artifacts: [
       { type: "certificate_hold", data: args.artifactData },

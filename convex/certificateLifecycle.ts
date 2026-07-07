@@ -27,6 +27,16 @@ const certificateRequestKindValidator = v.union(
   v.literal("additional_insured"),
 );
 
+const certificateFormCodeValidator = v.union(
+  v.literal("acord25"),
+  v.literal("acord24"),
+  v.literal("acord27"),
+  v.literal("acord28"),
+  v.literal("acord29"),
+  v.literal("acord30"),
+  v.literal("acord31"),
+);
+
 type ReadCtx = QueryCtx | MutationCtx;
 
 async function nextCertificateVersionNumber(ctx: ReadCtx, certificateId: Id<"policyCertificates">) {
@@ -332,6 +342,7 @@ export const recordIssuedVersionInternal = internalMutation({
     source: v.optional(certificateSourceValidator),
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
+    formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
     createdByUserId: v.optional(v.id("users")),
   },
@@ -376,6 +387,7 @@ export const recordIssuedVersionInternal = internalMutation({
       source: args.source,
       requestKind: args.requestKind ?? "holder",
       additionalInsuredName: args.additionalInsuredName,
+      formCode: args.formCode,
       requestSignature: args.requestSignature,
       issuedAt: now,
       createdByUserId: args.createdByUserId,
@@ -385,6 +397,7 @@ export const recordIssuedVersionInternal = internalMutation({
     await ctx.db.patch(args.certificateId, {
       currentVersionId: versionId,
       latestIssuedVersionId: versionId,
+      formCode: args.formCode,
       lastIssuedAt: now,
       updatedByUserId: args.createdByUserId,
       updatedAt: now,

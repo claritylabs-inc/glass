@@ -5,10 +5,6 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { list as listAgentTargets } from "./agentTargets";
 import { listActivityByPolicy } from "./certificates";
-import {
-  getCaseDetail,
-  listByPolicy as listPolicyChangesByPolicy,
-} from "./policyChanges";
 import { getPolicyFileUrl } from "./policies";
 import { listSpansByPolicyAndSpanIds } from "./sourceSpans";
 
@@ -16,8 +12,6 @@ const modules = import.meta.glob("./**/*.ts");
 const listSpansByPolicyAndSpanIdsFn = listSpansByPolicyAndSpanIds as any;
 const listAgentTargetsFn = listAgentTargets as any;
 const listActivityByPolicyFn = listActivityByPolicy as any;
-const listPolicyChangesByPolicyFn = listPolicyChangesByPolicy as any;
-const getCaseDetailFn = getCaseDetail as any;
 const getPolicyFileUrlFn = getPolicyFileUrl as any;
 
 async function seedOperatorPolicyFixture() {
@@ -90,23 +84,12 @@ async function seedOperatorPolicyFixture() {
       createdAt: now,
       updatedAt: now,
     });
-    const caseId = await ctx.db.insert("policyChangeCases", {
-      orgId: clientOrgId,
-      policyId,
-      requestText: "Add endorsement",
-      sourceKind: "manual",
-      status: "intake",
-      createdAt: now,
-      updatedAt: now,
-    });
-
     return {
       operatorUserId,
       impersonationSessionId,
       brokerOrgId,
       clientOrgId,
       policyId,
-      caseId,
     };
   });
 
@@ -122,7 +105,6 @@ describe("operator teardown policy-detail queries", () => {
       brokerOrgId,
       clientOrgId,
       policyId,
-      caseId,
     } = await seedOperatorPolicyFixture();
     const operatorSession = t.withIdentity({
       subject: `${operatorUserId}|session`,
@@ -138,14 +120,6 @@ describe("operator teardown policy-detail queries", () => {
       operatorSession.query(listActivityByPolicyFn, { policyId }),
     ).resolves.toMatchObject({
       holds: [expect.objectContaining({ holderName: "Holder" })],
-    });
-    await expect(
-      operatorSession.query(listPolicyChangesByPolicyFn, { policyId }),
-    ).resolves.toHaveLength(1);
-    await expect(
-      operatorSession.query(getCaseDetailFn, { caseId }),
-    ).resolves.toMatchObject({
-      case: expect.objectContaining({ requestText: "Add endorsement" }),
     });
 
     await t.run(async (ctx) => {
@@ -164,12 +138,6 @@ describe("operator teardown policy-detail queries", () => {
     await expect(
       operatorSession.query(listActivityByPolicyFn, { policyId }),
     ).resolves.toEqual({ certificates: [], holds: [] });
-    await expect(
-      operatorSession.query(listPolicyChangesByPolicyFn, { policyId }),
-    ).resolves.toEqual([]);
-    await expect(
-      operatorSession.query(getCaseDetailFn, { caseId }),
-    ).resolves.toBeNull();
     await expect(
       operatorSession.query(getPolicyFileUrlFn, { policyId }),
     ).resolves.toBeNull();

@@ -3,7 +3,6 @@ import { GLOBE_PATH, ogFonts } from "../../../opengraph-image";
 import {
   compactList,
   formatDate,
-  labelForStatus,
   loadAppCardView,
   policyLineBusinessLabels,
   truncate,
@@ -19,7 +18,6 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 function kindLabel(kind: AppCardView["kind"]) {
-  if (kind === "policy_change") return "Broker follow-up";
   return kind[0].toUpperCase() + kind.slice(1);
 }
 
@@ -40,13 +38,11 @@ function heroSubtitle(view: AppCardView) {
       view.certificate.holderName,
     ]);
   }
-  if (view.policyChange?.summary) return truncate(view.policyChange.summary, 140) ?? "";
   return view.subtitle ?? "";
 }
 
 function detailStatus(view: AppCardView) {
   if (view.certificate) return "Certificate";
-  if (view.policyChange) return labelForStatus(view.policyChange.status);
   return view.subtitle ?? "Shared record";
 }
 

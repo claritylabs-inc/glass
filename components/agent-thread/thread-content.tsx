@@ -75,7 +75,6 @@ import {
 import { getThreadDisplayLabel } from "@/lib/thread-display";
 import type {
   MailboxArtifactRef,
-  PolicyChangeAccess,
   ThreadAttachment,
   ThreadMessage,
   ToolArtifactData,
@@ -87,8 +86,6 @@ import {
   EmailSummaryCard,
   EmailThreadSidebar,
   MailboxTaskSidebar,
-  PolicyChangeSummaryCard,
-  PolicyChangeThreadSidebar,
   VendorComplianceArtifacts,
   VendorComplianceSidebar,
   mailboxTaskDisplayName,
@@ -109,8 +106,6 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   send_email: "Drafted email",
   email_expert: "Prepared email",
   render_email_preview: "Rendered email preview",
-  create_policy_change_request: "Captured broker follow-up",
-  check_policy_change_status: "Checked broker follow-up",
   lookup_connected_vendors: "Checked vendors",
   lookup_vendor_policies: "Read vendor policies",
   lookup_vendor_compliance: "Checked vendor compliance",
@@ -1340,8 +1335,6 @@ export function UnifiedMessageBubble({
   collapseEmailMessages,
   onOpenEmail,
   openEmailMessageId,
-  onOpenPolicyChange,
-  openPolicyChangeCaseId,
   onOpenVendorCompliance,
   openVendorComplianceArtifactRef,
   onOpenMailboxArtifact,
@@ -1361,8 +1354,6 @@ export function UnifiedMessageBubble({
   collapseEmailMessages?: boolean;
   onOpenEmail?: (message: ThreadMessage) => void;
   openEmailMessageId?: Id<"threadMessages"> | null;
-  onOpenPolicyChange?: (caseId: Id<"policyChangeCases">) => void;
-  openPolicyChangeCaseId?: Id<"policyChangeCases"> | null;
   onOpenVendorCompliance?: (ref: VendorComplianceArtifactRef) => void;
   openVendorComplianceArtifactRef?: VendorComplianceArtifactRef | null;
   onOpenMailboxArtifact?: (ref: MailboxArtifactRef) => void;
@@ -1648,12 +1639,6 @@ export function UnifiedMessageBubble({
                 />
                 <CertificateHoldArtifacts
                   artifacts={msg.toolArtifacts}
-                  onOpenPolicyChange={
-                    onOpenPolicyChange
-                      ? (caseId) =>
-                          onOpenPolicyChange(caseId as Id<"policyChangeCases">)
-                      : undefined
-                  }
                 />
                 {relatedEmailMessages.length > 0 ? (
                   <div className="mt-4">
@@ -1661,15 +1646,6 @@ export function UnifiedMessageBubble({
                       messages={relatedEmailMessages}
                       onOpen={onOpenEmail}
                       isOpenMessageId={openEmailMessageId}
-                    />
-                  </div>
-                ) : null}
-                {msg.policyChangeCaseId ? (
-                  <div className="mt-4">
-                    <PolicyChangeSummaryCard
-                      caseId={msg.policyChangeCaseId}
-                      onOpen={onOpenPolicyChange}
-                      isOpen={openPolicyChangeCaseId === msg.policyChangeCaseId}
                     />
                   </div>
                 ) : null}
@@ -1999,7 +1975,6 @@ export function UnifiedThreadContent({
   viewerId,
   viewerEmail,
   agentBranding,
-  policyChangeAccess,
 }: {
   threadId: Id<"threads">;
   onMeta?: (meta: {
@@ -2011,7 +1986,6 @@ export function UnifiedThreadContent({
   viewerEmail?: string;
   agentHandle?: string;
   agentBranding?: { name: string; iconUrl?: string | null };
-  policyChangeAccess: PolicyChangeAccess;
 }) {
   const thread = useCachedQuery("threads.get.current", api.threads.get, {
     id: threadId,
@@ -2030,7 +2004,6 @@ export function UnifiedThreadContent({
   const chatInputRef = useRef<GlassPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
   const lastAutoOpenedEmailId = useRef<string | null>(null);
-  const lastAutoOpenedPolicyChangeCaseId = useRef<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [queuedMessage, setQueuedMessage] = useState<PromptInputMessage | null>(
     null,
@@ -2038,8 +2011,6 @@ export function UnifiedThreadContent({
   const [sendingQueuedNow, setSendingQueuedNow] = useState(false);
   const [openEmailMessageId, setOpenEmailMessageId] =
     useState<Id<"threadMessages"> | null>(null);
-  const [openPolicyChangeCaseId, setOpenPolicyChangeCaseId] =
-    useState<Id<"policyChangeCases"> | null>(null);
   const [openVendorComplianceArtifactRef, setOpenVendorComplianceArtifactRef] =
     useState<VendorComplianceArtifactRef | null>(null);
   const [openMailboxArtifactRef, setOpenMailboxArtifactRef] =
@@ -2123,12 +2094,6 @@ export function UnifiedThreadContent({
           message={openEmailMessage}
           onClose={() => setOpenEmailMessageId(null)}
         />
-      ) : openPolicyChangeCaseId ? (
-        <PolicyChangeThreadSidebar
-          caseId={openPolicyChangeCaseId}
-          access={policyChangeAccess}
-          onClose={() => setOpenPolicyChangeCaseId(null)}
-        />
       ) : openVendorComplianceArtifact ? (
         <VendorComplianceSidebar
           artifact={openVendorComplianceArtifact}
@@ -2149,10 +2114,8 @@ export function UnifiedThreadContent({
   }, [
     onRightPanel,
     openEmailMessage,
-    openPolicyChangeCaseId,
     openVendorComplianceArtifact,
     openMailboxArtifact,
-    policyChangeAccess,
   ]);
 
   // Scroll to bottom when messages change or thread switches
@@ -2163,11 +2126,9 @@ export function UnifiedThreadContent({
     prevThreadId.current = threadId;
     if (isNew) {
       setOpenEmailMessageId(null);
-      setOpenPolicyChangeCaseId(null);
       setOpenVendorComplianceArtifactRef(null);
       setOpenMailboxArtifactRef(null);
       lastAutoOpenedEmailId.current = null;
-      lastAutoOpenedPolicyChangeCaseId.current = null;
     }
     el.scrollTo({
       top: el.scrollHeight,
@@ -2187,30 +2148,9 @@ export function UnifiedThreadContent({
     if (!latestDraftEmail) return;
     if (lastAutoOpenedEmailId.current === latestDraftEmail._id) return;
     lastAutoOpenedEmailId.current = latestDraftEmail._id;
-    setOpenPolicyChangeCaseId(null);
     setOpenVendorComplianceArtifactRef(null);
     setOpenMailboxArtifactRef(null);
     setOpenEmailMessageId(latestDraftEmail._id);
-  }, [messages]);
-
-  useEffect(() => {
-    const latestPolicyChange = messages
-      ?.filter(
-        (message) => message.role === "agent" && message.policyChangeCaseId,
-      )
-      .at(-1);
-    if (!latestPolicyChange?.policyChangeCaseId) return;
-    if (
-      lastAutoOpenedPolicyChangeCaseId.current ===
-      latestPolicyChange.policyChangeCaseId
-    )
-      return;
-    lastAutoOpenedPolicyChangeCaseId.current =
-      latestPolicyChange.policyChangeCaseId;
-    setOpenEmailMessageId(null);
-    setOpenVendorComplianceArtifactRef(null);
-    setOpenMailboxArtifactRef(null);
-    setOpenPolicyChangeCaseId(latestPolicyChange.policyChangeCaseId);
   }, [messages]);
 
   // Auto-scroll when new messages arrive (agent streaming via Convex subscription)
@@ -2450,22 +2390,13 @@ export function UnifiedThreadContent({
                     agentBranding={agentBranding}
                     collapseEmailMessages={collapseEmailMessages}
                     onOpenEmail={(message) => {
-                      setOpenPolicyChangeCaseId(null);
                       setOpenVendorComplianceArtifactRef(null);
                       setOpenMailboxArtifactRef(null);
                       setOpenEmailMessageId(message._id);
                     }}
                     openEmailMessageId={openEmailMessageId}
-                    onOpenPolicyChange={(caseId) => {
-                      setOpenEmailMessageId(null);
-                      setOpenVendorComplianceArtifactRef(null);
-                      setOpenMailboxArtifactRef(null);
-                      setOpenPolicyChangeCaseId(caseId);
-                    }}
-                    openPolicyChangeCaseId={openPolicyChangeCaseId}
                     onOpenVendorCompliance={(ref) => {
                       setOpenEmailMessageId(null);
-                      setOpenPolicyChangeCaseId(null);
                       setOpenMailboxArtifactRef(null);
                       setOpenVendorComplianceArtifactRef(ref);
                     }}
@@ -2474,7 +2405,6 @@ export function UnifiedThreadContent({
                     }
                     onOpenMailboxArtifact={(ref) => {
                       setOpenEmailMessageId(null);
-                      setOpenPolicyChangeCaseId(null);
                       setOpenVendorComplianceArtifactRef(null);
                       setOpenMailboxArtifactRef(ref);
                     }}

@@ -16,13 +16,11 @@ describe("policy delivery automation surfaces", () => {
     expect(schema).toContain("deliveryContactKey: v.optional(v.string())");
   });
 
-  it("runs delivery after policy extraction and endorsement append", () => {
+  it("runs delivery after policy extraction without the removed policy-change module", () => {
     const extraction = read("convex/actions/policyExtraction.ts");
-    const changes = read("convex/policyChanges.ts");
     expect(extraction).toContain("policyDelivery.enqueueInternal");
     expect(extraction).toContain('sourceKind: "policy"');
-    expect(changes).toContain("policyDelivery.enqueueInternal");
-    expect(changes).toContain('sourceKind: "endorsement"');
+    expect(() => read("convex/policyChanges.ts")).toThrow();
   });
 
   it("does not send the old broker-upload notification before extraction", () => {

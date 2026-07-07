@@ -40,7 +40,6 @@ export async function upsertEmailDraftArtifact(
     attachments: EmailAttachmentMeta[];
     allowMultipleCoiAttachments?: boolean;
     referencedPolicyIds?: Id<"policies">[];
-    policyChangeCaseId?: Id<"policyChangeCases">;
     sendBlockedReason?: string;
   },
 ): Promise<Id<"pendingEmails"> | undefined> {
@@ -95,7 +94,6 @@ export async function upsertEmailDraftArtifact(
         params.attachments.length > 0 ? params.attachments : undefined,
       allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
       referencedPolicyIds: params.referencedPolicyIds,
-      policyChangeCaseId: params.policyChangeCaseId,
       sendBlockedReason: params.sendBlockedReason,
       chatMessageId: context.chatMessageId,
     });
@@ -110,7 +108,6 @@ export async function upsertEmailDraftArtifact(
         attachments:
           params.attachments.length > 0 ? params.attachments : undefined,
         referencedPolicyIds: params.referencedPolicyIds,
-        policyChangeCaseId: params.policyChangeCaseId,
         pendingEmailId: existing._id,
         status: "draft_email",
       });
@@ -144,7 +141,6 @@ export async function upsertEmailDraftArtifact(
     attachments: params.attachments.length > 0 ? params.attachments : undefined,
     allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
     referencedPolicyIds: params.referencedPolicyIds,
-    policyChangeCaseId: params.policyChangeCaseId,
     sendBlockedReason: params.sendBlockedReason,
     status: "draft",
   });
@@ -164,7 +160,6 @@ export async function upsertEmailDraftArtifact(
       attachments:
         params.attachments.length > 0 ? params.attachments : undefined,
       referencedPolicyIds: params.referencedPolicyIds,
-      policyChangeCaseId: params.policyChangeCaseId,
       status: "draft_email",
       pendingEmailId,
     },

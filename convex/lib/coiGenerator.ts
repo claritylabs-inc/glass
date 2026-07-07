@@ -1,7 +1,13 @@
 "use node";
 
+import dayjs from "dayjs";
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
+import {
+  CERTIFICATE_FORM_LABELS,
+  type CertificateFormCode,
+  type CertificateHolderRelationship,
+} from "./acordForms/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -10,6 +16,7 @@ import { lobLabel, policyLobCodes } from "./linesOfBusiness";
  * All monetary values should be pre-formatted strings (e.g. "$1,000,000").
  */
 export interface CoiData {
+  formCode?: CertificateFormCode;
   title: string;
   issuedDateLabel: string;
 
@@ -46,7 +53,14 @@ export interface CoiData {
   certificateNumber?: string;
   revisionNumber?: string;
   certificateHolder?: string;
+  certificateHolderRelationship?: CertificateHolderRelationship;
   description?: string; // "Description of Operations / Locations / Vehicles"
+  propertyDescription?: string;
+  propertyLocation?: string;
+  interestHolder?: string;
+  interestHolderRelationship?: string;
+  floodZone?: string;
+  floodProgram?: string;
 }
 
 /** One coverage section in the ACORD 25 grid. */
@@ -560,7 +574,13 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     doc.on("error", reject);
 
     let y = 24;
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "/");
+    if (data.formCode && data.formCode !== "acord25") {
+      drawAcordPropertyEvidenceForm(doc, data);
+      doc.end();
+      return;
+    }
+
+    const dateStr = dayjs().format("YYYY/MM/DD");
 
     doc.font("Helvetica-Bold").fontSize(12).fillColor(C_BLACK);
     doc.text(data.title, M, y, { width: W * 0.58 });
@@ -608,8 +628,19 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     doc.rect(M, coveragesTop, W, y - coveragesTop).strokeColor(C_BLACK).stroke();
 
     const descText = data.description ?? "";
-    const descH = Math.max(44, textBlockHeight(doc, descText, W - 10, FS_LABEL, false) + 18);
-    drawInfoBox(doc, M, y, W, descH, "DESCRIPTION OF OPERATIONS / LOCATIONS / SPECIAL ITEMS / ADDITIONAL INSURED", descText);
+    const descMaxH = 58;
+    const descOverflows =
+      textBlockHeight(doc, descText, W - 10, FS_LABEL, false) + 18 > descMaxH;
+    const descH = descMaxH;
+    drawInfoBox(
+      doc,
+      M,
+      y,
+      W,
+      descH,
+      "DESCRIPTION OF OPERATIONS / LOCATIONS / SPECIAL ITEMS / ADDITIONAL INSURED",
+      descOverflows ? "See ACORD 101 attached" : descText,
+    );
     y += descH;
 
     const bottomW = W * 0.46;
@@ -621,6 +652,10 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     y += bottomH + 6;
 
     drawGeneratedUsingLockup(doc, M, y, W);
+
+    if (descOverflows) {
+      drawAcord101(doc, data);
+    }
 
     doc.end();
   });
@@ -678,12 +713,14 @@ function drawNoticeAndCompanies(
 
 function drawCoverageTable(doc: PDFKit.PDFDocument, coverages: CoverageLine[], y: number): number {
   const columns = [
-    { key: "type", label: "TYPE OF INSURANCE", w: 156 },
+    { key: "type", label: "TYPE OF INSURANCE", w: 132 },
     { key: "letter", label: "CO\nLTR", w: 28 },
-    { key: "policy", label: "POLICY NUMBER", w: 95 },
+    { key: "addlInsr", label: "ADDL\nINSR", w: 24 },
+    { key: "subrWvd", label: "SUBR\nWVD", w: 24 },
+    { key: "policy", label: "POLICY NUMBER", w: 71 },
     { key: "effective", label: "POLICY EFFECTIVE\nDATE", w: 66 },
     { key: "expiration", label: "POLICY EXPIRATION\nDATE", w: 66 },
-    { key: "limits", label: "LIMITS OF LIABILITY", w: W - 156 - 28 - 95 - 66 - 66 },
+    { key: "limits", label: "LIMITS OF LIABILITY", w: W - 132 - 28 - 24 - 24 - 71 - 66 - 66 },
   ];
   const headerH = 24;
   let x = M;
@@ -706,7 +743,7 @@ function drawCoverageTable(doc: PDFKit.PDFDocument, coverages: CoverageLine[], y
     const rowH = Math.max(
       34,
       textBlockHeight(doc, typeText, columns[0].w - 6, FS_LABEL, true) + 8,
-      textBlockHeight(doc, limitsText, columns[5].w - 6, FS_SMALL, false) + 8,
+      textBlockHeight(doc, limitsText, columns[7].w - 6, FS_SMALL, false) + 8,
     );
     x = M;
     for (const col of columns) {
@@ -721,18 +758,139 @@ function drawCoverageTable(doc: PDFKit.PDFDocument, coverages: CoverageLine[], y
     doc.font("Helvetica").fontSize(FS_LABEL).fillColor(C_BLACK);
     doc.text(coverage.insurerLetter ?? "A", x + 3, y + 4, { width: columns[1].w - 6, align: "center" });
     x += columns[1].w;
-    doc.text(coverage.policyNumber ?? "", x + 3, y + 4, { width: columns[2].w - 6, height: rowH - 8 });
+    doc.font("Helvetica-Bold").fontSize(FS_LABEL);
+    doc.text(coverage.addlInsr ? "Y" : "", x + 3, y + 4, { width: columns[2].w - 6, align: "center" });
     x += columns[2].w;
-    doc.text(coverage.effectiveDate ?? "", x + 3, y + 4, { width: columns[3].w - 6, align: "center" });
+    doc.text(coverage.subrWvd ? "Y" : "", x + 3, y + 4, { width: columns[3].w - 6, align: "center" });
     x += columns[3].w;
-    doc.text(coverage.expirationDate ?? "", x + 3, y + 4, { width: columns[4].w - 6, align: "center" });
+    doc.font("Helvetica").fontSize(FS_LABEL);
+    doc.text(coverage.policyNumber ?? "", x + 3, y + 4, { width: columns[4].w - 6, height: rowH - 8 });
     x += columns[4].w;
+    doc.text(coverage.effectiveDate ?? "", x + 3, y + 4, { width: columns[5].w - 6, align: "center" });
+    x += columns[5].w;
+    doc.text(coverage.expirationDate ?? "", x + 3, y + 4, { width: columns[6].w - 6, align: "center" });
+    x += columns[6].w;
     doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_BLACK);
-    doc.text(limitsText, x + 3, y + 4, { width: columns[5].w - 6, height: rowH - 8 });
+    doc.text(limitsText, x + 3, y + 4, { width: columns[7].w - 6, height: rowH - 8 });
     y += rowH;
   }
 
   return y;
+}
+
+function drawAcordPropertyEvidenceForm(doc: PDFKit.PDFDocument, data: CoiData) {
+  const formCode = data.formCode ?? "acord24";
+  const title = CERTIFICATE_FORM_LABELS[formCode] ?? data.title;
+  let y = 24;
+  const dateStr = dayjs().format("YYYY/MM/DD");
+
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(C_BLACK);
+  doc.text(title.toUpperCase(), M, y, { width: W * 0.68 });
+  doc.font("Helvetica-Bold").fontSize(FS_LABEL);
+  doc.text(data.issuedDateLabel, M + W * 0.72, y, { width: W * 0.28, align: "right" });
+  doc.font("Helvetica").fontSize(FS_VALUE);
+  doc.text(dateStr, M + W * 0.72, y + 10, { width: W * 0.28, align: "right" });
+  y += 30;
+
+  const topW = W * 0.5;
+  const insurerAddress = joinLines(
+    data.insurers[0]?.name,
+    data.insuranceCompanyAddress,
+    data.insuranceCompanyPhone && `Phone: ${data.insuranceCompanyPhone}`,
+  );
+  const producerText = joinLines(
+    data.producerAgency,
+    formatAddress(data.producerAddress),
+    data.producerContact && `Contact: ${data.producerContact}`,
+    data.producerPhone && `Phone: ${data.producerPhone}`,
+    data.producerEmail && `Email: ${data.producerEmail}`,
+  );
+  drawInfoBox(doc, M, y, topW, 78, "PRODUCER", producerText);
+  drawInfoBox(doc, M + topW, y, W - topW, 78, "INSURER", insurerAddress);
+  y += 78;
+
+  const insuredText = joinLines(
+    data.insuredName,
+    data.insuredDba && `DBA: ${data.insuredDba}`,
+    formatAddress(data.insuredAddress),
+    data.insuredFein && `FEIN: ${data.insuredFein}`,
+  );
+  drawInfoBox(doc, M, y, W, 62, "NAMED INSURED", insuredText);
+  y += 68;
+
+  const policySummary = data.coverages
+    .slice(0, 5)
+    .map((coverage) =>
+      [
+        coverage.type,
+        coverage.policyNumber && `Policy ${coverage.policyNumber}`,
+        coverage.effectiveDate && coverage.expirationDate
+          ? `${coverage.effectiveDate} to ${coverage.expirationDate}`
+          : undefined,
+        coverage.limits.map((limit) => `${limit.label}: ${limit.value}`).join("; "),
+      ].filter(Boolean).join(" | "),
+    )
+    .join("\n");
+  drawInfoBox(doc, M, y, W, 86, "POLICY INFORMATION", policySummary);
+  y += 92;
+
+  const propertyText = joinLines(
+    data.propertyDescription,
+    data.propertyLocation && `Location: ${data.propertyLocation}`,
+    formCode === "acord29" && data.floodZone ? `Flood zone: ${data.floodZone}` : undefined,
+    formCode === "acord29" && data.floodProgram ? `Flood program: ${data.floodProgram}` : undefined,
+  ) ?? "See policy declarations.";
+  drawInfoBox(doc, M, y, W, 86, formCode === "acord29" ? "FLOOD / PROPERTY INFORMATION" : "PROPERTY INFORMATION", propertyText);
+  y += 92;
+
+  const interestText = joinLines(
+    data.interestHolder ?? data.certificateHolder,
+    data.interestHolderRelationship && `Interest: ${data.interestHolderRelationship}`,
+  );
+  drawInfoBox(
+    doc,
+    M,
+    y,
+    W,
+    62,
+    formCode === "acord24" || formCode === "acord30" || formCode === "acord31"
+      ? "CERTIFICATE HOLDER"
+      : "ADDITIONAL INTEREST",
+    interestText,
+  );
+  y += 68;
+
+  const remarksText = data.description ?? "";
+  const remarksMaxH = 74;
+  const remarksOverflow =
+    textBlockHeight(doc, remarksText, W - 10, FS_LABEL, false) + 18 > remarksMaxH;
+  drawInfoBox(
+    doc,
+    M,
+    y,
+    W,
+    remarksMaxH,
+    "REMARKS",
+    remarksOverflow ? "See ACORD 101 attached" : remarksText,
+  );
+  y += remarksMaxH + 6;
+  drawGeneratedUsingLockup(doc, M, y, W);
+
+  if (remarksOverflow) drawAcord101(doc, data);
+}
+
+function drawAcord101(doc: PDFKit.PDFDocument, data: CoiData) {
+  doc.addPage({ size: "LETTER", margin: 0 });
+  let y = 30;
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(C_BLACK);
+  doc.text("ACORD 101 ADDITIONAL REMARKS SCHEDULE", M, y, { width: W });
+  y += 24;
+  const holder = data.certificateHolder ?? "";
+  const insuredText = joinLines(data.insuredName, holder && `Certificate holder: ${holder}`);
+  drawInfoBox(doc, M, y, W, 62, "NAMED INSURED / CERTIFICATE HOLDER", insuredText);
+  y += 70;
+  drawInfoBox(doc, M, y, W, 560, "ADDITIONAL REMARKS", data.description ?? "");
+  drawGeneratedUsingLockup(doc, M, 760, W);
 }
 
 function textBlockHeight(
