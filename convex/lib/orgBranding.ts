@@ -1,6 +1,8 @@
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 
+// Convex query helper for attaching storage-backed org logo URLs to records
+// returned to the app. Server branding context lives in `convex/lib/branding.ts`.
 type OrgBrandSource = Pick<Doc<"organizations">, "website" | "iconStorageId">;
 
 export async function orgBrandFields(ctx: QueryCtx, org?: OrgBrandSource | null) {

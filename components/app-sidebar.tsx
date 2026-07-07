@@ -24,10 +24,8 @@ import {
   SHORTCUT_SEQUENCE_TIMEOUT_MS,
 } from "@/components/app-sidebar/nav-config";
 import { SettingsSidebarContent } from "@/components/app-sidebar/settings-sidebar-content";
-import type {
-  ClientThreadItem,
-  ConversationItem,
-} from "@/components/app-sidebar/types";
+import type { ClientThreadItem } from "@/components/app-sidebar/types";
+import { splitThreadConversations } from "@/lib/thread-display";
 import {
   getInitials,
   isEditableTarget,
@@ -174,23 +172,14 @@ export function AppSidebar({
     api.notifications.unreadCount,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as number | undefined;
-  const conversations = useMemo(() => {
-    return (unifiedThreads ?? []).slice(0, 8).map(
-      (t): ConversationItem => ({
-        kind:
-          t.originChannel === "imessage" ||
-          Boolean(t.threadPhone) ||
-          t.title.startsWith("iMessage")
-            ? "imessage"
-            : t.originChannel === "email"
-              ? "email"
-              : "chat",
-        id: t._id,
-        label: t.title,
-        time: t.lastMessageAt ?? t._creationTime,
-      }),
-    );
-  }, [unifiedThreads]);
+  const { agentConversations, imessageConversations } = useMemo(
+    () => splitThreadConversations(unifiedThreads),
+    [unifiedThreads],
+  );
+  const shortcutConversations = useMemo(
+    () => [...imessageConversations, ...agentConversations],
+    [agentConversations, imessageConversations],
+  );
 
   function toggleCollapse() {
     const next = !collapsed;
@@ -222,7 +211,7 @@ export function AppSidebar({
     await archiveThread({ id: threadId as Id<"threads"> });
     if (!active) return;
 
-    const next = conversations.find((c) => c.id !== threadId);
+    const next = shortcutConversations.find((c) => c.id !== threadId);
     if (next) {
       router.push(`/agent/thread/${next.id}`);
       return;
@@ -281,9 +270,9 @@ export function AppSidebar({
       }
 
       const num = parseInt(key, 10);
-      if (num >= 1 && num <= 9 && num <= conversations.length) {
+      if (num >= 1 && num <= 9 && num <= shortcutConversations.length) {
         e.preventDefault();
-        router.push(`/agent/thread/${conversations[num - 1].id}`);
+        router.push(`/agent/thread/${shortcutConversations[num - 1].id}`);
       }
     }
 
@@ -298,7 +287,7 @@ export function AppSidebar({
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [router, conversations, pageShortcutMap]);
+  }, [router, shortcutConversations, pageShortcutMap]);
 
   const headerBranding = sidebarHeaderBranding({
     viewerOrg,
@@ -346,7 +335,8 @@ export function AppSidebar({
         unreadCount={unreadCount}
         isDesktop={isDesktop}
         orgId={currentOrg?.orgId}
-        conversations={conversations}
+        agentConversations={agentConversations}
+        imessageConversations={imessageConversations}
         archivedThreadCount={archivedThreads?.length ?? 0}
         broker={brokerContact}
         fallbackAgentHandle={fallbackAgentHandle}

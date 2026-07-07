@@ -10,13 +10,6 @@ import {
   User,
   Users,
 } from "lucide-react";
-import {
-  BROKER_SETTINGS_SECTIONS,
-  CLIENT_SETTINGS_SECTIONS,
-  insertSettingsSectionAfterTeam,
-  type SettingsSection,
-} from "@/lib/settings-sections";
-import { LogoIcon } from "@/components/ui/logo-icon";
 import { getPublicAgentDomain } from "@/lib/domains";
 import type { NavItemConfig, NavShortcut } from "./types";
 
@@ -42,25 +35,6 @@ export const SHORTCUT_TOOLTIP_CLASS =
 export function navShortcut(key: string): NavShortcut {
   return { key };
 }
-
-function GlassStarIcon({ className }: { className?: string }) {
-  return <LogoIcon size={16} static className={className} />;
-}
-
-const AGENT_SETTINGS_SECTION: SettingsSection = {
-  id: "agent",
-  label: "Agent",
-  icon: GlassStarIcon,
-};
-
-export const CLIENT_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
-  CLIENT_SETTINGS_SECTIONS,
-  AGENT_SETTINGS_SECTION,
-);
-export const BROKER_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
-  BROKER_SETTINGS_SECTIONS,
-  AGENT_SETTINGS_SECTION,
-);
 
 export const INSURANCE_ITEMS: NavItemConfig[] = [
   {

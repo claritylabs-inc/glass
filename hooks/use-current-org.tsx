@@ -5,6 +5,10 @@ import { api } from "@/convex/_generated/api";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 /**
+ * Canonical lightweight viewer-org hook for app-shell and settings surfaces.
+ * Use `useActiveOrgContext` from `@/lib/hooks/use-active-org-context` when
+ * a surface must respect a URL-selected org or operator impersonation state.
+ *
  * Returns the viewer's current org with org type and access type from Subsystem 1.
  * Falls back to "client" org type for orgs that predate the dual-org migration.
  */

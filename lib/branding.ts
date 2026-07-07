@@ -1,7 +1,9 @@
 /**
- * Curated brand themes. Each theme defines the CSS variable overrides that
- * get injected on `<html>` when rendering a client-facing workspace. Tokens
- * not listed here fall through to the default `globals.css` values.
+ * Browser-side brand themes and color utilities.
+ *
+ * Owns CSS variable token generation, accent swatches, readability helpers,
+ * and client-side logo color sampling. Convex/server email branding belongs in
+ * `convex/lib/branding.ts` and email shells belong in `convex/lib/emailTemplate.ts`.
  */
 export type BrandTokens = {
   "--brand": string;

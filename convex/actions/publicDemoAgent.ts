@@ -9,6 +9,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
   generateTextForPublicTask,
+  generatedTextFromResult,
   type ModelTask,
 } from "../lib/models";
 import { markdownToHtml, stripMarkdown } from "../lib/aiUtils";
@@ -616,7 +617,7 @@ export const respond = internalAction({
       stopWhen: stepCountIs(5),
     });
 
-    let responseText = result.text.trim();
+    let responseText = generatedTextFromResult(result).trim();
     const lead = mergeLead(conversation, leadPatch);
     const needsTextEmail = publicDemoNeedsTextEmail({
       channel,

@@ -9,6 +9,7 @@ import {
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   fallbackRouteForCall,
+  generatedTextFromResult,
   modelTaskForCall,
   primaryRouteForCall,
 } from "../convex/lib/models";
@@ -222,6 +223,22 @@ describe("model task routing", () => {
 });
 
 describe("thread chat streaming reliability", () => {
+  test("normalizes generated text from root and step-level results", () => {
+    expect(generatedTextFromResult({ text: "direct answer" })).toBe(
+      "direct answer",
+    );
+    expect(
+      generatedTextFromResult({
+        steps: [
+          { text: "first step" },
+          { text: "final step" },
+        ],
+      }),
+    ).toBe("final step");
+    expect(generatedTextFromResult({ steps: [{ toolCalls: [] }] })).toBe("");
+    expect(generatedTextFromResult(undefined)).toBe("");
+  });
+
   test("retries transient provider stream errors before tool side effects", () => {
     const source = readFileSync(
       join(__dirname, "../convex/actions/processThreadChat.ts"),

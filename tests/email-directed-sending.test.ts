@@ -159,14 +159,21 @@ describe("directed email sending", () => {
       join(__dirname, "..", "components/app-sidebar.tsx"),
       "utf-8",
     );
+    const settingsSectionsSource = readFileSync(
+      join(__dirname, "..", "lib/settings-sections.ts"),
+      "utf-8",
+    );
     const agentTabSource = readFileSync(
       join(__dirname, "..", "components/settings/broker-agent-tab.tsx"),
       "utf-8",
     );
 
     expect(settingsPageSource).toContain("isStandaloneClient");
-    expect(settingsPageSource).toContain('section.id !== "agent"');
+    expect(settingsPageSource).toContain("getSettingsSections");
     expect(settingsPageSource).toContain("section === \"agent\" && isStandaloneClient");
+    expect(settingsSectionsSource).toContain("isStandaloneClient");
+    expect(settingsSectionsSource).toContain("CLIENT_SETTINGS_WITH_AGENT");
+    expect(settingsSectionsSource).toContain("CLIENT_SETTINGS_SECTIONS");
     expect(sidebarSource).toContain("isStandaloneClient");
     expect(sidebarSource).toContain("isStandaloneClient={isStandaloneClient}");
     expect(agentTabSource).toContain('org?.type === "broker"');

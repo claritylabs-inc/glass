@@ -1,5 +1,17 @@
-import { Bell, Brain, Briefcase, Building2, FileBadge2, FlaskConical, Mail, Network, Send, Users } from "lucide-react";
-import type { ComponentType } from "react";
+import {
+  Bell,
+  Brain,
+  Briefcase,
+  Building2,
+  FileBadge2,
+  FlaskConical,
+  Mail,
+  Network,
+  Send,
+  Users,
+} from "lucide-react";
+import { createElement, type ComponentType } from "react";
+import { LogoIcon } from "@/components/ui/logo-icon";
 
 export type SettingsSectionId =
   | "organization"
@@ -46,6 +58,16 @@ export const BROKER_SETTINGS_SECTIONS: SettingsSection[] = [
 
 export const SETTINGS_SECTIONS = CLIENT_SETTINGS_SECTIONS;
 
+function GlassStarIcon({ className }: { className?: string }) {
+  return createElement(LogoIcon, { size: 16, static: true, className });
+}
+
+export const AGENT_SETTINGS_SECTION: SettingsSection = {
+  id: "agent",
+  label: "Agent",
+  icon: GlassStarIcon,
+};
+
 export function insertSettingsSectionAfterTeam(
   sections: SettingsSection[],
   sectionToInsert: SettingsSection,
@@ -57,4 +79,26 @@ export function insertSettingsSectionAfterTeam(
     sectionToInsert,
     ...sections.slice(teamIndex + 1),
   ];
+}
+
+export const CLIENT_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
+  CLIENT_SETTINGS_SECTIONS,
+  AGENT_SETTINGS_SECTION,
+);
+
+export const BROKER_SETTINGS_WITH_AGENT = insertSettingsSectionAfterTeam(
+  BROKER_SETTINGS_SECTIONS,
+  AGENT_SETTINGS_SECTION,
+);
+
+export function getSettingsSections({
+  isBroker,
+  isStandaloneClient,
+}: {
+  isBroker: boolean;
+  isStandaloneClient: boolean;
+}): SettingsSection[] {
+  if (isBroker) return BROKER_SETTINGS_WITH_AGENT;
+  if (isStandaloneClient) return CLIENT_SETTINGS_WITH_AGENT;
+  return CLIENT_SETTINGS_SECTIONS;
 }

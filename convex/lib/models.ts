@@ -179,6 +179,29 @@ type RoutedGenerateObjectResult<T> = Omit<AiGenerateTextResult, "output" | "obje
 export type ModelTransport = "direct";
 export type ModelRouteSource = "broker" | "global" | "static" | "default";
 
+export function generatedTextFromResult(result: unknown): string {
+  if (!result || typeof result !== "object") return "";
+  const record = result as Record<string, unknown>;
+  if (typeof record.text === "string") return record.text;
+
+  const steps = Array.isArray(record.steps) ? record.steps : [];
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index];
+    if (!step || typeof step !== "object") continue;
+    const text = (step as Record<string, unknown>).text;
+    if (typeof text === "string") return text;
+  }
+
+  return "";
+}
+
+function withGeneratedText<T extends AiGenerateTextResult>(result: T): T {
+  return {
+    ...result,
+    text: generatedTextFromResult(result),
+  } as T;
+}
+
 const MODEL_CALL_TIMEOUT_MS = Math.max(
   30_000,
   Number.parseInt(process.env.MODEL_CALL_TIMEOUT_MS ?? "180000", 10) || 180_000,
@@ -638,8 +661,9 @@ async function generateTextForResolvedRoute(
     primaryRoute: resolved.route,
     fallbackRoute: resolved.fallbackRoute,
   });
+  const resultWithText = withGeneratedText(result);
   return {
-    ...result,
+    ...resultWithText,
     route: resolved.route,
     routeSource: resolved.routeSource,
     transport: resolved.transport,
