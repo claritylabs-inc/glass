@@ -11,23 +11,23 @@ export const CERTIFICATE_FORM_CODES = [
 export type CertificateFormCode = (typeof CERTIFICATE_FORM_CODES)[number];
 
 export const CERTIFICATE_FORM_LABELS: Record<CertificateFormCode, string> = {
-  acord25: "ACORD 25 Certificate of Liability Insurance",
-  acord24: "ACORD 24 Certificate of Property Insurance",
-  acord27: "ACORD 27 Evidence of Property Insurance",
-  acord28: "ACORD 28 Evidence of Commercial Property Insurance",
-  acord29: "ACORD 29 Evidence of Flood Insurance",
-  acord30: "ACORD 30 Certificate of Garage Insurance",
-  acord31: "ACORD 31 Certificate of Marine / Energy Insurance",
+  acord25: "Certificate of Liability Insurance",
+  acord24: "Certificate of Property Insurance",
+  acord27: "Evidence of Property Insurance",
+  acord28: "Evidence of Commercial Property Insurance",
+  acord29: "Evidence of Flood Insurance",
+  acord30: "Certificate of Garage Insurance",
+  acord31: "Certificate of Marine / Energy Insurance",
 };
 
 export const CERTIFICATE_FORM_FILE_SLUGS: Record<CertificateFormCode, string> = {
-  acord25: "acord-25-certificate-of-liability",
-  acord24: "acord-24-certificate-of-property",
-  acord27: "acord-27-evidence-of-property",
-  acord28: "acord-28-evidence-of-commercial-property",
-  acord29: "acord-29-evidence-of-flood",
-  acord30: "acord-30-certificate-of-garage",
-  acord31: "acord-31-certificate-of-marine-energy",
+  acord25: "certificate-of-liability",
+  acord24: "certificate-of-property",
+  acord27: "evidence-of-property",
+  acord28: "evidence-of-commercial-property",
+  acord29: "evidence-of-flood",
+  acord30: "certificate-of-garage",
+  acord31: "certificate-of-marine-energy",
 };
 
 export type CertificateHolderRelationship =
