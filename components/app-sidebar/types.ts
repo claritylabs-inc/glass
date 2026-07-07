@@ -1,4 +1,5 @@
 import type React from "react";
+import type { ThreadConversationItem } from "@/lib/thread-display";
 
 export type NavShortcut = {
   key: string;
@@ -11,12 +12,7 @@ export type NavItemConfig = {
   shortcut?: NavShortcut;
 };
 
-export type ConversationItem = {
-  kind: "email" | "chat" | "imessage";
-  id: string;
-  label: string;
-  time: number;
-};
+export type ConversationItem = ThreadConversationItem;
 
 export type ClientThreadItem = {
   _id: string;

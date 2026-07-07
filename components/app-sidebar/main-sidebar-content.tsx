@@ -47,7 +47,7 @@ import type {
 } from "./types";
 
 function isImessageConversation(item: ConversationItem) {
-  return item.kind === "imessage" || item.label.startsWith("iMessage");
+  return item.kind === "imessage";
 }
 
 export function MainSidebarContent({
@@ -65,7 +65,8 @@ export function MainSidebarContent({
   unreadCount,
   isDesktop,
   orgId,
-  conversations,
+  agentConversations,
+  imessageConversations,
   archivedThreadCount,
   broker,
   fallbackAgentHandle,
@@ -91,7 +92,8 @@ export function MainSidebarContent({
   unreadCount?: number;
   isDesktop: boolean;
   orgId?: Id<"organizations">;
-  conversations: ConversationItem[];
+  agentConversations: ConversationItem[];
+  imessageConversations: ConversationItem[];
   archivedThreadCount: number;
   broker: BrokerContact;
   fallbackAgentHandle?: string;
@@ -204,7 +206,8 @@ export function MainSidebarContent({
 
         {!collapsed ? (
           <ExpandedThreadList
-            conversations={conversations}
+            agentConversations={agentConversations}
+            imessageConversations={imessageConversations}
             archivedThreadCount={archivedThreadCount}
             pathname={pathname}
             onNewChat={onNewChat}
@@ -212,7 +215,8 @@ export function MainSidebarContent({
           />
         ) : (
           <CollapsedThreadList
-            conversations={conversations}
+            agentConversations={agentConversations}
+            imessageConversations={imessageConversations}
             pathname={pathname}
             onNewChat={onNewChat}
           />
@@ -261,13 +265,15 @@ export function MainSidebarContent({
 }
 
 function ExpandedThreadList({
-  conversations,
+  agentConversations,
+  imessageConversations,
   archivedThreadCount,
   pathname,
   onNewChat,
   onArchiveThread,
 }: {
-  conversations: ConversationItem[];
+  agentConversations: ConversationItem[];
+  imessageConversations: ConversationItem[];
   archivedThreadCount: number;
   pathname: string;
   onNewChat: () => void | Promise<void>;
@@ -279,7 +285,7 @@ function ExpandedThreadList({
         <span className="text-label font-medium text-muted-foreground/50 ">
           Threads
         </span>
-        {conversations.length > 0 && (
+        {agentConversations.length > 0 && (
           <PillButton
             type="button"
             size="compact"
@@ -292,7 +298,7 @@ function ExpandedThreadList({
           </PillButton>
         )}
       </div>
-      {conversations.length === 0 && (
+      {agentConversations.length === 0 && (
         <button
           type="button"
           onClick={onNewChat}
@@ -302,62 +308,38 @@ function ExpandedThreadList({
           <span>New chat</span>
         </button>
       )}
-      {conversations.map((item, idx) => {
-        const isConvActive = pathname === `/agent/thread/${item.id}`;
-        const shortcut = idx < 9 ? navShortcut(String(idx + 1)) : undefined;
-        const threadLink = (
-          <Link
-            href={`/agent/thread/${item.id}`}
-            id={shortcut ? stableSidebarTooltipId(`${item.kind}-${item.id}`) : undefined}
-            className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
-              isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
-            }`}
-          >
-            {isImessageConversation(item) ? (
-              <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-            ) : item.kind === "email" ? (
-              <Mail className="w-3.5 h-3.5 shrink-0" />
-            ) : (
-              <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-            )}
-            <span className="truncate flex-1">{item.label}</span>
-            <span className="relative h-5 w-5 shrink-0">
-              <button
-                type="button"
-                onClick={async (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  await onArchiveThread(item.id, isConvActive);
-                }}
-                className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground/30 opacity-0 transition-[background-color,color,opacity] duration-100 hover:bg-foreground/6 hover:text-foreground group-hover:opacity-100"
-                title="Archive"
-              >
-                <Archive className="w-3 h-3" />
-              </button>
+      {agentConversations.map((item, idx) => (
+        <SidebarThreadRow
+          key={`${item.kind}-${item.id}`}
+          item={item}
+          pathname={pathname}
+          shortcut={idx < 9 ? navShortcut(String(idx + 1)) : undefined}
+          shortcutLabel="thread"
+          onArchiveThread={onArchiveThread}
+        />
+      ))}
+      {imessageConversations.length > 0 && (
+        <>
+          <div className="flex items-center justify-between px-3 pt-4 pb-1.5">
+            <span className="text-label font-medium text-muted-foreground/50">
+              iMessage
             </span>
-          </Link>
-        );
-
-        if (!shortcut)
-          return <div key={`${item.kind}-${item.id}`}>{threadLink}</div>;
-
-        return (
-          <Tooltip key={`${item.kind}-${item.id}`}>
-            <TooltipTrigger
-              render={threadLink}
-              delay={SHORTCUT_TOOLTIP_DELAY_MS}
+          </div>
+          {imessageConversations.map((item, idx) => (
+            <SidebarThreadRow
+              key={`${item.kind}-${item.id}`}
+              item={item}
+              pathname={pathname}
+              shortcut={
+                agentConversations.length + idx < 9
+                  ? navShortcut(String(agentConversations.length + idx + 1))
+                  : undefined
+              }
+              shortcutLabel="iMessage"
             />
-            <TooltipContent
-              side="right"
-              align="center"
-              sideOffset={SHORTCUT_TOOLTIP_SIDE_OFFSET}
-              className={SHORTCUT_TOOLTIP_CLASS}
-            >
-              <ShortcutTooltipContent label="thread" shortcut={shortcut} />
-            </TooltipContent>
-          </Tooltip>
-        );
-      })}
+          ))}
+        </>
+      )}
       {archivedThreadCount > 0 && (
         <Link
           href="/agent/archive"
@@ -371,19 +353,87 @@ function ExpandedThreadList({
   );
 }
 
+function SidebarThreadRow({
+  item,
+  pathname,
+  shortcut,
+  shortcutLabel,
+  onArchiveThread,
+}: {
+  item: ConversationItem;
+  pathname: string;
+  shortcut?: ReturnType<typeof navShortcut>;
+  shortcutLabel: string;
+  onArchiveThread?: (threadId: string, active: boolean) => Promise<void>;
+}) {
+  const isConvActive = pathname === `/agent/thread/${item.id}`;
+  const threadLink = (
+    <Link
+      href={`/agent/thread/${item.id}`}
+      id={shortcut ? stableSidebarTooltipId(`${item.kind}-${item.id}`) : undefined}
+      className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
+        isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
+      }`}
+    >
+      {isImessageConversation(item) ? (
+        <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+      ) : item.kind === "email" ? (
+        <Mail className="w-3.5 h-3.5 shrink-0" />
+      ) : (
+        <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+      )}
+      <span className="truncate flex-1">{item.label}</span>
+      {onArchiveThread ? (
+        <span className="relative h-5 w-5 shrink-0">
+          <button
+            type="button"
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              await onArchiveThread(item.id, isConvActive);
+            }}
+            className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground/30 opacity-0 transition-[background-color,color,opacity] duration-100 hover:bg-foreground/6 hover:text-foreground group-hover:opacity-100"
+            title="Archive"
+          >
+            <Archive className="w-3 h-3" />
+          </button>
+        </span>
+      ) : null}
+    </Link>
+  );
+
+  if (!shortcut) return <div>{threadLink}</div>;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={threadLink} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
+      <TooltipContent
+        side="right"
+        align="center"
+        sideOffset={SHORTCUT_TOOLTIP_SIDE_OFFSET}
+        className={SHORTCUT_TOOLTIP_CLASS}
+      >
+        <ShortcutTooltipContent label={shortcutLabel} shortcut={shortcut} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function CollapsedThreadList({
-  conversations,
+  agentConversations,
+  imessageConversations,
   pathname,
   onNewChat,
 }: {
-  conversations: ConversationItem[];
+  agentConversations: ConversationItem[];
+  imessageConversations: ConversationItem[];
   pathname: string;
   onNewChat: () => void | Promise<void>;
 }) {
   return (
     <>
       <div className="pt-4 pb-1" />
-      {conversations.slice(0, 5).map((item) => {
+      {agentConversations.map((item) => {
         const isConvActive = pathname === `/agent/thread/${item.id}`;
         return (
           <Link
@@ -401,6 +451,24 @@ function CollapsedThreadList({
             ) : (
               <MessageSquare className="w-3.5 h-3.5" />
             )}
+          </Link>
+        );
+      })}
+      {agentConversations.length > 0 && imessageConversations.length > 0 ? (
+        <div className="mx-4 my-1 h-px bg-foreground/6" aria-hidden="true" />
+      ) : null}
+      {imessageConversations.map((item) => {
+        const isConvActive = pathname === `/agent/thread/${item.id}`;
+        return (
+          <Link
+            key={`${item.kind}-${item.id}`}
+            href={`/agent/thread/${item.id}`}
+            title={item.label}
+            className={`flex items-center justify-center py-1.5 ${MENU_ITEM_BASE} ${
+              isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
+            }`}
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
           </Link>
         );
       })}
