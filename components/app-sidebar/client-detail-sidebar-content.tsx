@@ -13,14 +13,7 @@ import {
 import { NavItem } from "./nav-item";
 import { SidebarHeader } from "./sidebar-header";
 import type { ClientThreadItem } from "./types";
-
-function isImessageThread(item: ClientThreadItem) {
-  return (
-    item.originChannel === "imessage" ||
-    Boolean(item.threadPhone) ||
-    item.title.startsWith("iMessage")
-  );
-}
+import { splitThreadConversations } from "@/lib/thread-display";
 
 export function ClientDetailSidebarContent({
   collapsed,
@@ -45,6 +38,9 @@ export function ClientDetailSidebarContent({
   clientThreads?: ClientThreadItem[];
   onToggleCollapse: () => void;
 }) {
+  const { agentConversations, imessageConversations } =
+    splitThreadConversations(clientThreads);
+
   function isClientNavActive(href: string) {
     const full = `${clientDetailBase}${href}`;
     if (href === "")
@@ -104,28 +100,51 @@ export function ClientDetailSidebarContent({
                 No threads
               </p>
             )}
-            {clientThreads?.slice(0, 8).map((item) => {
-              const href = `/clients/${clientDetailId}/threads/${item._id}`;
+            {agentConversations.map((item) => {
+              const href = `/clients/${clientDetailId}/threads/${item.id}`;
               const isConvActive = pathname === href;
               return (
                 <Link
-                  key={item._id}
+                  key={`${item.kind}-${item.id}`}
                   href={href}
                   className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
                     isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
                   }`}
                 >
-                  {isImessageThread(item) ? (
-                    <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-                  ) : item.originChannel === "email" ? (
+                  {item.kind === "email" ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                   ) : (
                     <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                   )}
-                  <span className="truncate flex-1">{item.title}</span>
+                  <span className="truncate flex-1">{item.label}</span>
                 </Link>
               );
             })}
+            {imessageConversations.length > 0 && (
+              <>
+                <div className="flex items-center justify-between px-3 pt-4 pb-1.5">
+                  <span className="text-label font-medium text-muted-foreground/50">
+                    iMessage
+                  </span>
+                </div>
+                {imessageConversations.map((item) => {
+                  const href = `/clients/${clientDetailId}/threads/${item.id}`;
+                  const isConvActive = pathname === href;
+                  return (
+                    <Link
+                      key={`${item.kind}-${item.id}`}
+                      href={href}
+                      className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
+                        isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
+                      }`}
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate flex-1">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </>
+            )}
             <Link
               href={`/clients/${clientDetailId}/threads`}
               className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label ${MENU_ITEM_INACTIVE_SUBTLE}`}

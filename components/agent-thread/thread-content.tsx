@@ -72,6 +72,7 @@ import {
   promptReferenceIds,
   uploadPromptFiles,
 } from "@/lib/thread-prompt";
+import { getThreadDisplayLabel } from "@/lib/thread-display";
 import type {
   MailboxArtifactRef,
   PolicyChangeAccess,
@@ -2083,7 +2084,7 @@ export function UnifiedThreadContent({
     onMeta({
       detail: (
         <EditableBreadcrumbTitle
-          title={thread.title}
+          title={getThreadDisplayLabel(thread)}
           onSave={async (next) => {
             try {
               await updateTitle({ id: threadId, title: next });
