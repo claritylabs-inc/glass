@@ -583,7 +583,6 @@ function buildFallbackContext(
       p.insuredName,
       ...policyLobCodes(p),
       ...policyLobCodes(p).map(lobLabel),
-      ...(p.policyTypes ?? []),
       ...(p.coverages?.map((c: { name?: string }) => c.name) ?? []),
       p.summary,
       formatDocumentStructureForPrompt(p as Record<string, unknown>, {

@@ -106,14 +106,14 @@ export function insuranceDocToPolicy(
   doc: InsuranceDocument,
 ): Record<string, unknown> {
   const d = doc as any;
-  const policyTypes =
+  const legacyPolicyTypes =
     Array.isArray(d.policyTypes) && d.policyTypes.length > 0
       ? d.policyTypes
       : ["other"];
   const linesOfBusiness =
     Array.isArray(d.linesOfBusiness) && d.linesOfBusiness.length > 0
       ? toLobCodes(d.linesOfBusiness)
-      : toLobCodes(policyTypes);
+      : toLobCodes(legacyPolicyTypes);
   const declarationPolicyNumber = declarationFieldValue(d.declarations, [
     "policyNumber",
   ]);
@@ -138,7 +138,6 @@ export function insuranceDocToPolicy(
     broker: normalizeOrgName(d.brokerAgency) ?? undefined,
     policyNumber: normalizeCriticalString(d.policyNumber) || declarationPolicyNumber || "Unknown",
     linesOfBusiness,
-    policyTypes,
     documentType: "policy",
     policyYear: policyYearFromDate(effectiveDate),
     effectiveDate: effectiveDate || "Unknown",
@@ -267,7 +266,6 @@ export function policyToInsuranceDoc(p: any): InsuranceDocument {
     totalCost: p.totalCost,
     summary: p.summary,
     linesOfBusiness: policyLobCodes(p),
-    policyTypes: p.policyTypes,
     coverages: (p.coverages as unknown[]) || [],
     effectiveDate: p.effectiveDate,
     expirationDate: p.expirationDate,

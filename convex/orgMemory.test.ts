@@ -81,6 +81,7 @@ describe("orgMemory", () => {
         orgId,
         carrier: "Carrier",
         policyNumber: "POL-1",
+        linesOfBusiness: ["OLIB"],
         policyTypes: ["cyber"],
         documentType: "policy",
         policyYear: 2026,

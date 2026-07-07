@@ -65,7 +65,7 @@ function publicPolicy(policy: Doc<"policies">) {
     carrier: policy.security ?? policy.carrier,
     policyNumber: policy.policyNumber,
     linesOfBusiness: policyLobCodes(policy),
-    policyTypes: policy.policyTypes,
+    policyTypes: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
     dataStage: policy.extractionDataStage ?? (

@@ -3,7 +3,6 @@ import {
   LEGACY_POLICY_TYPE_TO_LOB as SDK_LEGACY_POLICY_TYPE_TO_LOB,
   normalizeOperationalLinesOfBusiness,
 } from "@claritylabs/cl-sdk";
-import { POLICY_TYPE_LABELS } from "./policyTypes";
 import {
   ACORD_LOB_LABELS,
   EXCLUDED_ACORD_LOB_CODES,
@@ -15,18 +14,64 @@ import {
   toLobCodes,
 } from "./linesOfBusiness";
 
+const LEGACY_POLICY_TYPE_KEYS = [
+  "general_liability",
+  "commercial_property",
+  "commercial_auto",
+  "non_owned_auto",
+  "workers_comp",
+  "umbrella",
+  "excess_liability",
+  "professional_liability",
+  "cyber",
+  "epli",
+  "directors_officers",
+  "fiduciary_liability",
+  "crime_fidelity",
+  "inland_marine",
+  "builders_risk",
+  "environmental",
+  "ocean_marine",
+  "surety",
+  "product_liability",
+  "bop",
+  "management_liability_package",
+  "property",
+  "homeowners_ho3",
+  "homeowners_ho5",
+  "renters_ho4",
+  "condo_ho6",
+  "dwelling_fire",
+  "mobile_home",
+  "personal_auto",
+  "personal_umbrella",
+  "flood_nfip",
+  "flood_private",
+  "earthquake",
+  "personal_inland_marine",
+  "watercraft",
+  "recreational_vehicle",
+  "farm_ranch",
+  "life",
+  "critical_illness",
+  "disability",
+  "long_term_care",
+  "pet",
+  "travel",
+  "identity_theft",
+  "title",
+  "other",
+] as const;
+
 describe("linesOfBusiness", () => {
   it("maps every legacy policy type", () => {
-    expect(Object.keys(POLICY_TYPE_LABELS).sort()).toEqual(
-      expect.arrayContaining(Object.keys(LEGACY_POLICY_TYPE_TO_LOB).filter((key) => key in POLICY_TYPE_LABELS).sort()),
-    );
-    for (const key of Object.keys(POLICY_TYPE_LABELS)) {
+    for (const key of LEGACY_POLICY_TYPE_KEYS) {
       expect(LEGACY_POLICY_TYPE_TO_LOB[key], key).toBeDefined();
     }
   });
 
   it("stays in sync with cl-sdk legacy normalization", () => {
-    for (const key of Object.keys(POLICY_TYPE_LABELS)) {
+    for (const key of LEGACY_POLICY_TYPE_KEYS) {
       expect(normalizeOperationalLinesOfBusiness([key]), key).toEqual(toLobCodes([key]));
       expect(SDK_LEGACY_POLICY_TYPE_TO_LOB[key], key).toEqual(LEGACY_POLICY_TYPE_TO_LOB[key]);
     }

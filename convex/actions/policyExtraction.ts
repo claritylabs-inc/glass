@@ -1310,7 +1310,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
                 carrier: "Non-insurance document",
                 policyNumber: "Not applicable",
                 linesOfBusiness: ["UN"],
-                policyTypes: ["other"],
                 insuredName: "Not applicable",
                 effectiveDate: "Not applicable",
                 expirationDate: "Not applicable",
@@ -1454,7 +1453,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               operationalProfile,
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
-              existingPolicyTypes: existingPolicy?.policyTypes ?? existingPolicy?.linesOfBusiness,
+              existingLinesOfBusiness: existingPolicy?.linesOfBusiness ?? existingPolicy?.policyTypes,
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -2303,7 +2302,7 @@ async function completeExternalExtractFromPayload(
         operationalProfile: normalizedOperationalProfile,
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
-        existingPolicyTypes: existingPolicy?.policyTypes ?? existingPolicy?.linesOfBusiness,
+        existingLinesOfBusiness: existingPolicy?.linesOfBusiness ?? existingPolicy?.policyTypes,
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),
@@ -2643,7 +2642,6 @@ export const rematerializeSourceTreeProfile = internalAction({
       expirationDate: operationalProfile.expirationDate?.value,
       premium: operationalProfile.premium?.value,
       linesOfBusiness: operationalProfile.linesOfBusiness,
-      policyTypes: operationalProfile.linesOfBusiness,
     };
   },
 });
@@ -2721,6 +2719,7 @@ export const rebuildStoredSourceNodes = internalAction({
       declarations?: unknown;
       documentMetadata?: unknown;
       operationalProfile?: unknown;
+      linesOfBusiness?: string[];
       policyTypes?: string[];
     } | null;
     if (!policy) throw new Error("Policy not found");
@@ -2761,7 +2760,7 @@ export const rebuildStoredSourceNodes = internalAction({
         operationalProfile,
         existingDocumentMetadata: policy.documentMetadata,
         existingDeclarations: policy.declarations,
-        existingPolicyTypes: policy.policyTypes,
+        existingLinesOfBusiness: policy.linesOfBusiness,
       }),
     });
 

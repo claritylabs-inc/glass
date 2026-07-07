@@ -32,7 +32,7 @@ export interface PolicyDtoSource {
   carrier: string;
   policyNumber: string;
   linesOfBusiness?: string[];
-  policyTypes: string[];
+  policyTypes?: string[];
   effectiveDate: string;
   expirationDate: string;
   premium?: string | number;
@@ -71,7 +71,8 @@ export interface McpPolicySummarySource {
   security?: string;
   broker?: string;
   policyNumber: string;
-  policyTypes: string[];
+  linesOfBusiness?: string[];
+  policyTypes?: string[];
   policyYear: number;
   effectiveDate: string;
   expirationDate: string;
@@ -105,13 +106,14 @@ export interface McpPolicySummaryDto {
 }
 
 export function toMcpPolicySummaryDto(policy: McpPolicySummarySource): McpPolicySummaryDto {
+  const linesOfBusiness = policyLobCodes(policy);
   return {
     _id: policy._id,
     carrier: policy.carrier,
     security: policy.security,
     broker: policy.broker,
     policyNumber: policy.policyNumber,
-    policyTypes: policy.policyTypes,
+    policyTypes: linesOfBusiness,
     policyYear: policy.policyYear,
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
@@ -145,11 +147,12 @@ export interface McpPolicySearchResultDto {
 export function toMcpPolicySearchResultDto(
   policy: McpPolicySummarySource,
 ): McpPolicySearchResultDto {
+  const linesOfBusiness = policyLobCodes(policy);
   return {
     _id: policy._id,
     carrier: policy.carrier,
     policyNumber: policy.policyNumber,
-    policyTypes: policy.policyTypes,
+    policyTypes: linesOfBusiness,
     policyYear: policy.policyYear,
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
@@ -179,11 +182,12 @@ export interface McpConnectedVendorPolicyDto {
 export function toMcpConnectedVendorPolicyDto(
   policy: McpPolicySummarySource,
 ): McpConnectedVendorPolicyDto {
+  const linesOfBusiness = policyLobCodes(policy);
   return {
     _id: policy._id,
     carrier: policy.carrier,
     policyNumber: policy.policyNumber,
-    policyTypes: policy.policyTypes,
+    policyTypes: linesOfBusiness,
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
     premium: policy.premium,
@@ -208,11 +212,12 @@ export interface McpMyPolicyDto {
 }
 
 export function toMcpMyPolicyDto(policy: McpPolicySummarySource): McpMyPolicyDto {
+  const linesOfBusiness = policyLobCodes(policy);
   return {
     _id: policy._id,
     carrier: policy.carrier,
     policyNumber: policy.policyNumber,
-    policyTypes: policy.policyTypes,
+    policyTypes: linesOfBusiness,
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
     premium: policy.premium,
