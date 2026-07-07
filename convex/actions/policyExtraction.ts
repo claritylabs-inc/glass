@@ -35,6 +35,7 @@ import {
   type PolicyOperationalProfile,
   type SourceSpanLike,
 } from "../lib/sourceTree";
+import { toLobCodes } from "../lib/linesOfBusiness";
 import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
@@ -1309,6 +1310,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               fields: {
                 carrier: "Non-insurance document",
                 policyNumber: "Not applicable",
+                linesOfBusiness: ["UN"],
                 policyTypes: ["other"],
                 insuredName: "Not applicable",
                 effectiveDate: "Not applicable",
@@ -1439,7 +1441,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
       const existingPolicy = await convexCtx.runQuery(internal.policies.getInternal, {
         id: policyId as Id<"policies">,
-      }) as { policyTypes?: string[] } | null;
+      }) as { linesOfBusiness?: string[]; policyTypes?: string[] } | null;
 
       await convexCtx.runMutation(
         (internal as any).policies.updateExtractionInternal,
@@ -1453,7 +1455,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               operationalProfile,
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
-              existingPolicyTypes: existingPolicy?.policyTypes,
+              existingPolicyTypes: existingPolicy?.policyTypes ?? existingPolicy?.linesOfBusiness,
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -2290,7 +2292,7 @@ async function completeExternalExtractFromPayload(
   const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
   const existingPolicy = await ctx.runQuery(internal.policies.getInternal, {
     id: policyId as Id<"policies">,
-  }) as { policyTypes?: string[] } | null;
+  }) as { linesOfBusiness?: string[]; policyTypes?: string[] } | null;
 
   await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
     id: policyId,
@@ -2302,7 +2304,7 @@ async function completeExternalExtractFromPayload(
         operationalProfile: normalizedOperationalProfile,
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
-        existingPolicyTypes: existingPolicy?.policyTypes,
+        existingPolicyTypes: existingPolicy?.policyTypes ?? existingPolicy?.linesOfBusiness,
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),
@@ -2641,6 +2643,7 @@ export const rematerializeSourceTreeProfile = internalAction({
       effectiveDate: operationalProfile.effectiveDate?.value,
       expirationDate: operationalProfile.expirationDate?.value,
       premium: operationalProfile.premium?.value,
+      linesOfBusiness: toLobCodes(operationalProfile.policyTypes),
       policyTypes: operationalProfile.policyTypes,
     };
   },

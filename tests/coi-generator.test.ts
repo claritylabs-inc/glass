@@ -6,7 +6,7 @@ import { generateCoiPdf, policyToCoiData } from "../convex/lib/coiGenerator";
 const ROOT = join(__dirname, "..");
 
 describe("policyToCoiData", () => {
-  it("uses explicit policy type for the certificate title and coverage row", () => {
+  it("collapses unsupported personal policy types to the generic certificate fallback", () => {
     const data = policyToCoiData({
       policyTypes: ["travel"],
       policyNumber: "WES0000518111",
@@ -14,13 +14,13 @@ describe("policyToCoiData", () => {
       expirationDate: "05/16/2026",
       carrier: "CUMIS General Insurance Company",
       producer: { agencyName: "Allianz Global Assistance" },
-      limits: { combinedSingleLimit: "$1,000,000" },
+      limits: {},
       insuredName: "Terrence Wang",
     });
 
-    expect(data.title).toBe("CERTIFICATE OF TRAVEL INSURANCE");
+    expect(data.title).toBe("CERTIFICATE OF INSURANCE");
     expect(data.coverages).toHaveLength(1);
-    expect(data.coverages[0]?.type).toBe("Travel");
+    expect(data.coverages[0]?.type).toBe("SEE POLICY");
   });
 
   it("keeps broker user information out of the producer box", () => {

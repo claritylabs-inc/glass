@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/operational-panel";
 import { Badge } from "@/components/ui/badge";
 import { buildCoverageBreakdown } from "@/convex/lib/coverageBreakdown";
+import { policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import type { Id } from "@/convex/_generated/dataModel";
 
 import { CoverageBreakdownCards } from "./policy-coverage-breakdown";
@@ -29,7 +30,7 @@ export function PolicyDetailsTab({
   };
   fileUrl?: string | null;
   }) {
-  const policyTypes = (policy.policyTypes as string[] | undefined) ?? ["other"];
+  const linesOfBusiness = policyLobCodes(policy as { linesOfBusiness?: string[]; policyTypes?: string[] });
   const coverageBreakdown = buildCoverageBreakdown(policy);
   const isProvisional =
     policy.extractionDataStage === "preview" &&
@@ -67,7 +68,7 @@ export function PolicyDetailsTab({
         effectiveDate={policy.effectiveDate}
         expirationDate={policy.expirationDate}
         premium={policy.premium}
-        policyTypes={policyTypes}
+        policyTypes={linesOfBusiness}
         policyTermType={policy.policyTermType as string | undefined}
         isRenewal={policy.isRenewal}
         pdfUrl={fileUrl ?? undefined}

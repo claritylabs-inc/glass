@@ -18,7 +18,7 @@ import {
   OperationalPanel,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
-import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
@@ -2612,13 +2612,11 @@ export function ExtractionCards({
       label: "Policy period",
       value: `${policyDocument.effectiveDate ?? "—"} – ${policyDocument.expirationDate ?? "—"}`,
     },
-    policyDocument?.policyTypes?.length && {
-      label: "Policy types",
-      value: policyDocument.policyTypes
-        .map(
-          (type) =>
-            POLICY_TYPE_LABELS[type] ?? formatStructuredLabel(type) ?? type,
-        )
+    policyLobCodes(policyDocument ?? {}).filter((code) => code !== "UN").length && {
+      label: "Lines of business",
+      value: policyLobCodes(policyDocument ?? {})
+        .filter((code) => code !== "UN")
+        .map((code) => lobLabel(code) ?? formatStructuredLabel(code) ?? code)
         .join(", "),
     },
     policyDocument?.premium && {

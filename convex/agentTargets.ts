@@ -5,6 +5,7 @@ import {
   requirementEvaluationTargetLabel,
   requirementSemantics,
 } from "./lib/requirementSemantics";
+import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 
 function policyLabel(policy: {
   carrier?: string;
@@ -80,7 +81,10 @@ export const list = query({
           kind: "policy" as const,
           id: policy._id,
           label: policyLabel(policy),
-          sublabel: [policy.insuredName, policy.policyTypes?.join(", ")]
+          sublabel: [
+            policy.insuredName,
+            policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", "),
+          ]
             .filter(Boolean)
             .join(" · "),
         })),

@@ -1145,7 +1145,7 @@ const MCP_TOOLS = [
   {
     name: "list_policies",
     description:
-      "List insurance policies. Optionally filter by carrier, year, or policy type.",
+      "List insurance policies. Optionally filter by carrier, year, or line of business.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1157,7 +1157,7 @@ const MCP_TOOLS = [
         type: {
           type: "string",
           description:
-            "Filter by policy type (e.g. 'general_liability', 'cyber')",
+            "Filter by ACORD line of business code or label (e.g. 'CGL', 'Commercial General Liability')",
         },
       },
     },
@@ -1185,7 +1185,7 @@ const MCP_TOOLS = [
   {
     name: "search_policies",
     description:
-      "Search across policies by text query. Searches carrier, policy number, insured name, summary, and policy types.",
+      "Search across policies by text query. Searches carrier, policy number, insured name, summary, and lines of business.",
     inputSchema: {
       type: "object" as const,
       properties: { q: { type: "string", description: "Search query text" } },

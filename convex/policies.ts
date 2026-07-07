@@ -27,6 +27,7 @@ import {
   normalizeMoneyString,
   parseExtractedNumber,
 } from "./lib/valueNormalization";
+import { toLobCodes } from "./lib/linesOfBusiness";
 
 dayjs.extend(customParseFormat);
 
@@ -266,6 +267,11 @@ export function normalizeEditableFields(
   }
   for (const key of ["effectiveDate", "expirationDate", "retroactiveDate", "nextReviewDate"]) {
     if (typeof next[key] === "string") next[key] = normalizeExtractedDate(next[key]) ?? next[key];
+  }
+  if (Array.isArray(next.linesOfBusiness)) {
+    next.linesOfBusiness = toLobCodes(next.linesOfBusiness.filter((value): value is string => typeof value === "string"));
+  } else if (Array.isArray(next.policyTypes)) {
+    next.linesOfBusiness = toLobCodes(next.policyTypes.filter((value): value is string => typeof value === "string"));
   }
 
   for (const [textKey, amountKey] of [
@@ -675,6 +681,7 @@ export const getSummary = query({
       fileName: enrichedPolicy.fileName,
       documentType: enrichedPolicy.documentType,
       policyNumber: enrichedPolicy.policyNumber,
+      linesOfBusiness: enrichedPolicy.linesOfBusiness,
       policyTypes: enrichedPolicy.policyTypes,
       policyTermType: enrichedPolicy.policyTermType,
       carrier: enrichedPolicy.carrier,
@@ -987,6 +994,7 @@ export const insert = mutation({
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
     policyNumber: v.string(),
+    linesOfBusiness: v.optional(v.array(v.string())),
     policyTypes: v.array(v.string()),
     documentType: v.literal("policy"),
     policyYear: v.number(),
@@ -1008,7 +1016,11 @@ export const insert = mutation({
     const uploadFileSha256s = normalizeFileSha256s(
       args.uploadFileSha256s ?? (fileSha256 ? [fileSha256] : undefined),
     );
-    const { fileSha256: _fileSha256, uploadFileSha256s: _uploadFileSha256s, ...fields } = args;
+    const { fileSha256: _fileSha256, uploadFileSha256s: _uploadFileSha256s, ...rawFields } = args;
+    const fields = {
+      ...rawFields,
+      linesOfBusiness: toLobCodes(rawFields.linesOfBusiness ?? rawFields.policyTypes),
+    };
     return await ctx.db.insert("policies", {
       ...fields,
       uploadFileSha256s,
@@ -1103,6 +1115,7 @@ export const updateExtraction = mutation({
     premiumBreakdown: v.optional(v.array(premiumLineValidator)),
     // Standard fields
     policyNumber: v.optional(v.string()),
+    linesOfBusiness: v.optional(v.array(v.string())),
     policyTypes: v.optional(v.array(v.string())),
     documentType: v.optional(v.literal("policy")),
     policyYear: v.optional(v.number()),
@@ -1182,6 +1195,7 @@ export const updateExtractedFields = mutation({
       mga: v.optional(v.string()),
       broker: v.optional(v.string()),
       policyNumber: v.optional(v.string()),
+      linesOfBusiness: v.optional(v.array(v.string())),
       policyTypes: v.optional(v.array(v.string())),
       policyYear: v.optional(v.number()),
       effectiveDate: v.optional(v.string()),
@@ -1560,6 +1574,7 @@ export const createBrokerUpload = mutation({
       documentType: args.documentType,
       carrier: "Extracting...",
       policyNumber: "Extracting...",
+      linesOfBusiness: ["UN"],
       policyTypes: ["other"],
       policyYear: dayjs().year(),
       effectiveDate: "Extracting...",
@@ -1775,6 +1790,7 @@ const PREVIEW_EXTRACTION_FIELD_ALLOWLIST = new Set([
   "mga",
   "broker",
   "policyNumber",
+  "linesOfBusiness",
   "policyTypes",
   "documentType",
   "policyYear",

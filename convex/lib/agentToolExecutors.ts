@@ -39,6 +39,7 @@ import { searchPolicyDocumentWithSourceSpans } from "./policyLookup";
 import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
 import { buildVendorComplianceTools } from "./vendorComplianceTools";
 import type { RequirementEvaluationTarget } from "./requirementSemantics";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 type AgentToolSurface = "web" | "email" | "imessage" | "mcp";
 
@@ -154,7 +155,8 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
     orgId: policy.orgId,
     insured: policy.insuredName,
     carrier: policy.security,
-    type: policy.policyTypes?.join(", "),
+    linesOfBusiness: policyLobCodes(policy),
+    type: policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", "),
     number: policy.policyNumber,
     effective: policy.effectiveDate,
     expiration: policy.expirationDate,
@@ -465,6 +467,7 @@ export function buildAgentToolExecutors(
       ...lookupPolicy,
       execute: async (params: {
         query: string;
+        lineOfBusiness?: string;
         policyType?: string;
         carrier?: string;
       }) => {
@@ -476,7 +479,7 @@ export function buildAgentToolExecutors(
             score: policySearchScore(
               policy,
               params.query,
-              params.policyType,
+              params.lineOfBusiness ?? params.policyType,
               params.carrier,
             ),
           }))

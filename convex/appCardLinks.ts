@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { buildCoverageBreakdown } from "./lib/coverageBreakdown";
 import { getClientPortalUrl } from "./lib/domains";
+import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 
 const appCardKindValidator = v.union(
   v.literal("policy"),
@@ -35,9 +36,10 @@ function truncate(value: string | undefined, maxLength: number): string | undefi
   return `${normalized.slice(0, maxLength - 1).trimEnd()}...`;
 }
 
-function policyTitle(policy: Pick<Doc<"policies">, "policyNumber" | "policyTypes" | "fileName">) {
+function policyTitle(policy: Pick<Doc<"policies">, "policyNumber" | "linesOfBusiness" | "policyTypes" | "fileName">) {
   if (policy.policyNumber) return `Policy ${policy.policyNumber}`;
-  if (policy.policyTypes.length > 0) return policy.policyTypes.join(", ");
+  const lines = policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel);
+  if (lines.length > 0) return lines.join(", ");
   return policy.fileName ?? "Policy details";
 }
 
@@ -62,6 +64,7 @@ function publicPolicy(policy: Doc<"policies">) {
     insuredName: policy.insuredName,
     carrier: policy.security ?? policy.carrier,
     policyNumber: policy.policyNumber,
+    linesOfBusiness: policyLobCodes(policy),
     policyTypes: policy.policyTypes,
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,

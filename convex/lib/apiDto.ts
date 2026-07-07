@@ -1,3 +1,5 @@
+import { lobLabel, policyLobCodes, toLobCodes } from "./linesOfBusiness";
+
 type DtoId = string;
 type Jsonish = unknown;
 
@@ -29,6 +31,7 @@ export interface PolicyDtoSource {
   _creationTime: number;
   carrier: string;
   policyNumber: string;
+  linesOfBusiness?: string[];
   policyTypes: string[];
   effectiveDate: string;
   expirationDate: string;
@@ -39,6 +42,7 @@ export interface PolicyDto {
   id: string;
   carrier: string;
   policy_number: string;
+  lines_of_business: string[];
   policy_types: string[];
   effective_date: string;
   expiration_date: string;
@@ -47,11 +51,13 @@ export interface PolicyDto {
 }
 
 export function toPolicyDto(policy: PolicyDtoSource): PolicyDto {
+  const linesOfBusiness = policyLobCodes(policy);
   return {
     id: policy._id,
     carrier: policy.carrier,
     policy_number: policy.policyNumber,
-    policy_types: policy.policyTypes,
+    lines_of_business: linesOfBusiness,
+    policy_types: linesOfBusiness,
     effective_date: policy.effectiveDate,
     expiration_date: policy.expirationDate,
     premium: policy.premium,
@@ -608,6 +614,7 @@ export function toPaginationDto<T>(
 
 export interface PolicyFilterSource {
   carrier: string;
+  linesOfBusiness?: string[];
   policyTypes?: string[];
   policyYear: number;
 }
@@ -624,7 +631,22 @@ export function policyMatchesMcpFilters(
 ): boolean {
   if (filters.carrier && policy.carrier !== filters.carrier) return false;
   if (filters.year && policy.policyYear !== Number.parseInt(filters.year, 10)) return false;
-  if (filters.type && !(policy.policyTypes ?? []).includes(filters.type)) return false;
+  if (filters.type) {
+    const query = filters.type.toLowerCase();
+    const policyCodes = policyLobCodes(policy);
+    const lineTerms = policyCodes.flatMap((code) => [code, lobLabel(code)]);
+    const requestedCodes = toLobCodes([filters.type]);
+    const canMatchByCode = !(
+      requestedCodes.length === 1 &&
+      requestedCodes[0] === "OLIB" &&
+      query !== "olib" &&
+      !query.includes("other liability")
+    );
+    if (
+      !(canMatchByCode && requestedCodes.some((code) => policyCodes.includes(code))) &&
+      !lineTerms.some((term) => term.toLowerCase().includes(query))
+    ) return false;
+  }
   return true;
 }
 
@@ -635,6 +657,7 @@ export interface PolicySearchSource {
   summary?: string;
   security?: string;
   broker?: string;
+  linesOfBusiness?: string[];
   policyTypes?: string[];
 }
 
@@ -646,7 +669,8 @@ export function policyMatchesSearch(policy: PolicySearchSource, query: string): 
     policy.summary,
     policy.security,
     policy.broker,
-    ...(policy.policyTypes ?? []),
+    ...policyLobCodes(policy),
+    ...policyLobCodes(policy).map(lobLabel),
   ]
     .filter(Boolean)
     .join(" ")
@@ -656,6 +680,7 @@ export function policyMatchesSearch(policy: PolicySearchSource, query: string): 
 
 export interface PolicyStatsSource {
   carrier: string;
+  linesOfBusiness?: string[];
   policyTypes?: string[];
   policyYear: number;
 }
@@ -673,7 +698,7 @@ export function toPolicyStatsDto(policies: PolicyStatsSource[]): PolicyStatsDto 
   const byYear: Record<string, number> = {};
 
   for (const policy of policies) {
-    const types = policy.policyTypes ?? ["other"];
+    const types = policyLobCodes(policy);
     for (const type of types) {
       byType[type] = (byType[type] || 0) + 1;
     }

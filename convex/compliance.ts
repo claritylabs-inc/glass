@@ -19,6 +19,7 @@ import {
   shouldEvaluateConnectedVendorRequirement,
   shouldEvaluateOwnOrgRequirement,
 } from "./lib/requirementSemantics";
+import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 
 const requirementCategoryValidator = v.union(
   v.literal("general_liability"),
@@ -219,8 +220,11 @@ function categoryTerms(
 }
 
 function policySearchText(policy: Doc<"policies">) {
+  const linesOfBusiness = policyLobCodes(policy);
   return normalizeText(
     [
+      ...linesOfBusiness,
+      ...linesOfBusiness.map(lobLabel),
       ...policy.policyTypes,
       policy.summary,
       policy.carrier,
@@ -480,8 +484,8 @@ function assessRequirement(
       }
       return (
         terms.some((term) => text.includes(normalizeText(term))) ||
-        policy.policyTypes.some((policyType) =>
-          normalizeText(policyType).includes(
+        policyLobCodes(policy).some((code) =>
+          normalizeText(lobLabel(code)).includes(
             requirement.category.replace("_", " "),
           ),
         )
@@ -1232,6 +1236,7 @@ export const getManualComplianceReviewContextInternal = internalQuery({
         insuredName: policy.insuredName,
         effectiveDate: policy.effectiveDate,
         expirationDate: policy.expirationDate,
+        linesOfBusiness: policyLobCodes(policy),
         policyTypes: policy.policyTypes,
         summary: policy.summary,
         coverages: (policy.coverages ?? []).map((coverage) => ({

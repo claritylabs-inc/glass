@@ -8,7 +8,7 @@ import {
   ActionSurfaceButton,
 } from "@/components/ui/action-surface";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
-import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { useCachedPolicySummary } from "@/lib/sync/glass-cached-queries";
 
 function isConvexId(id: string): boolean {
@@ -79,14 +79,14 @@ export function PolicyReferenceCard({
     policy.security ||
     "Unknown";
   const policyNum = policy.policyNumber;
-  const types = policy.policyTypes ?? [];
-  const primaryType = types[0]
-    ? (POLICY_TYPE_LABELS[types[0]] ?? types[0])
+  const linesOfBusiness = policyLobCodes(policy);
+  const primaryLine = linesOfBusiness[0] && linesOfBusiness[0] !== "UN"
+    ? lobLabel(linesOfBusiness[0])
     : null;
 
   const summaryParts = [administrator, policyNum].filter(Boolean).join(" ");
-  const summary = primaryType
-    ? `${summaryParts} — ${primaryType}`
+  const summary = primaryLine
+    ? `${summaryParts} — ${primaryLine}`
     : summaryParts;
 
   return (

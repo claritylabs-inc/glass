@@ -11,6 +11,7 @@ import {
   getPolicyDocumentOutline,
   sourceSpanIdsFromValue,
 } from "./policyDocumentStructure";
+import { lobLabel, policyLobCodes, toLobCodes } from "./linesOfBusiness";
 
 export { buildConversationMemoryContext, buildConversationMemoryFromList, buildDocumentContext } from "./agentPrompts";
 
@@ -197,7 +198,7 @@ RESPONSE STYLE:
 - Be concise and direct. Lead with the answer or action.
 - Use plain business language. Avoid filler and generic disclaimers.
 - In email, answer the latest request without turning a simple question into a long memo.
-- For broad policy-detail or summary requests, default to a basic policy card: carrier, policy type, policy period, named insured, and the main limit/deductible when readily available. Save endorsements, sublimits, definitions, conditions, and full coverage inventories for specific or comprehensive follow-ups.
+- For broad policy-detail or summary requests, default to a basic policy card: carrier, line of business, policy period, named insured, and the main limit/deductible when readily available. Save endorsements, sublimits, definitions, conditions, and full coverage inventories for specific or comprehensive follow-ups.
 - Infer answer depth from the whole request and conversation. Phrases like "full details", "all details", "complete breakdown", or a named section signal expansion, but do not treat them as a deterministic keyword list.
 - If you cannot complete an action, explain the specific missing requirement or validation issue.`;
 }
@@ -314,7 +315,8 @@ export function policySearchScore(
 ): number {
   const q = query.toLowerCase().trim();
   const words = q.split(/\s+/).filter((w) => w.length > 2);
-  const policyTypes = (policy.policyTypes as string[] | undefined) ?? [];
+  const linesOfBusiness = policyLobCodes(policy as { linesOfBusiness?: string[]; policyTypes?: string[] });
+  const lineTerms = linesOfBusiness.flatMap((code) => [code, lobLabel(code)]);
   const coverages = (policy.coverages as Array<{ name?: string; limit?: string }> | undefined) ?? [];
   const outlineText = flattenDocumentOutline(getPolicyDocumentOutline(policy))
     .slice(0, 20)
@@ -331,12 +333,21 @@ export function policySearchScore(
     policy.mga,
     policy.policyNumber,
     policy.summary,
-    ...policyTypes,
+    ...lineTerms,
+    ...((policy.policyTypes as string[] | undefined) ?? []),
     ...coverages.flatMap((c) => [c.name, c.limit]),
     outlineText,
   ].filter(Boolean).join(" ").toLowerCase();
 
-  if (policyType && !policyTypes.includes(policyType)) return 0;
+  if (policyType) {
+    const requested = toLobCodes([policyType]);
+    const normalizedFilter = policyType.toLowerCase();
+    const canMatchByCode = !(requested.length === 1 && requested[0] === "OLIB" && normalizedFilter !== "olib" && !normalizedFilter.includes("other liability"));
+    const matchesLine = (canMatchByCode && requested.some((code) => linesOfBusiness.includes(code))) ||
+      lineTerms.some((term) => term.toLowerCase().includes(normalizedFilter)) ||
+      searchText.includes(normalizedFilter);
+    if (!matchesLine) return 0;
+  }
   if (carrier && !String(policy.security ?? policy.carrier ?? "").toLowerCase().includes(carrier.toLowerCase())) {
     return 0;
   }

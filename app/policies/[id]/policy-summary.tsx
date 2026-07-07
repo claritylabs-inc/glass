@@ -1,6 +1,6 @@
 "use client";
 
-import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { lobBadgeClass, lobLabel, toLobCodes } from "@/convex/lib/linesOfBusiness";
 import dayjs from "dayjs";
 import dynamic from "next/dynamic";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -99,9 +99,9 @@ function realText(value: string | undefined) {
   return trimmed && !isPendingValue(trimmed) ? trimmed : undefined;
 }
 
-function isRealPolicyType(value: string) {
+function isRealLineOfBusiness(value: string) {
   const normalized = value.trim().toLowerCase();
-  return normalized && normalized !== "other" && !isPendingValue(normalized);
+  return normalized && normalized !== "un" && normalized !== "other" && !isPendingValue(normalized);
 }
 
 function ExtractionPendingDetails() {
@@ -115,7 +115,7 @@ function ExtractionPendingDetails() {
       </div>
       <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
         {[
-          "Policy types",
+          "Lines of business",
           "Carrier",
           "Named insured",
           "Policy period",
@@ -175,7 +175,7 @@ export function PolicySummary({
   const realEffectiveDate = realText(effectiveDate);
   const realExpirationDate = realText(expirationDate);
   const realPremium = realText(premium);
-  const realPolicyTypes = policyTypes.filter(isRealPolicyType);
+  const realLinesOfBusiness = toLobCodes(policyTypes).filter(isRealLineOfBusiness);
   const periodValue =
     policyTermType === "continuous" && realEffectiveDate
         ? `${realEffectiveDate} — Until Cancelled`
@@ -184,7 +184,7 @@ export function PolicySummary({
           : undefined;
 
   const hasExtractedDetails =
-    realPolicyTypes.length > 0 ||
+    realLinesOfBusiness.length > 0 ||
     !!realAdministrator ||
     !!realCarrier ||
     !!realInsuredName ||
@@ -225,22 +225,22 @@ export function PolicySummary({
             <SummaryRow label="Policy number" value={realPolicyNumber} />
           )}
 
-          {realPolicyTypes.length > 0 && (
+          {realLinesOfBusiness.length > 0 && (
             <SummaryRow
-              label="Policy types"
+              label="Lines of business"
               value={
                 <span className="flex flex-wrap justify-end gap-1">
-                  {realPolicyTypes.slice(0, 4).map((t) => (
+                  {realLinesOfBusiness.slice(0, 4).map((t) => (
                     <span
                       key={t}
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-foreground/5 text-foreground/70"
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium ${lobBadgeClass(t)}`}
                     >
-                      {POLICY_TYPE_LABELS[t] ?? t}
+                      {lobLabel(t)}
                     </span>
                   ))}
-                  {realPolicyTypes.length > 4 && (
+                  {realLinesOfBusiness.length > 4 && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-foreground/5 text-muted-foreground">
-                      +{realPolicyTypes.length - 4} more
+                      +{realLinesOfBusiness.length - 4} more
                     </span>
                   )}
                 </span>
