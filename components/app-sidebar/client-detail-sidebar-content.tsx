@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Mail, MessageCircle, MessageSquare } from "lucide-react";
+import { Mail, MessageCircle, MessageSquare, Pin } from "lucide-react";
 import {
   CLIENT_DETAIL_NAV,
   CLIENT_LIST_NAV_ITEM,
@@ -100,6 +100,23 @@ export function ClientDetailSidebarContent({
                 No threads
               </p>
             )}
+            {imessageConversations.map((item) => {
+              const href = `/clients/${clientDetailId}/threads/${item.id}`;
+              const isConvActive = pathname === href;
+              return (
+                <Link
+                  key={`${item.kind}-${item.id}`}
+                  href={href}
+                  className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
+                    isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
+                  }`}
+                >
+                  <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate flex-1">{item.label}</span>
+                  <Pin className="w-3 h-3 shrink-0 rotate-45 text-muted-foreground/35" />
+                </Link>
+              );
+            })}
             {agentConversations.map((item) => {
               const href = `/clients/${clientDetailId}/threads/${item.id}`;
               const isConvActive = pathname === href;
@@ -120,31 +137,6 @@ export function ClientDetailSidebarContent({
                 </Link>
               );
             })}
-            {imessageConversations.length > 0 && (
-              <>
-                <div className="flex items-center justify-between px-3 pt-4 pb-1.5">
-                  <span className="text-label font-medium text-muted-foreground/50">
-                    iMessage
-                  </span>
-                </div>
-                {imessageConversations.map((item) => {
-                  const href = `/clients/${clientDetailId}/threads/${item.id}`;
-                  const isConvActive = pathname === href;
-                  return (
-                    <Link
-                      key={`${item.kind}-${item.id}`}
-                      href={href}
-                      className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
-                        isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
-                      }`}
-                    >
-                      <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate flex-1">{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </>
-            )}
             <Link
               href={`/clients/${clientDetailId}/threads`}
               className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label ${MENU_ITEM_INACTIVE_SUBTLE}`}

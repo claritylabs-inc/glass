@@ -9,6 +9,7 @@ import {
   MessageCircle,
   MessageSquare,
   MousePointer2,
+  Pin,
   Plus,
   Settings,
   User,
@@ -285,7 +286,8 @@ function ExpandedThreadList({
         <span className="text-label font-medium text-muted-foreground/50 ">
           Threads
         </span>
-        {agentConversations.length > 0 && (
+        {(agentConversations.length > 0 ||
+          imessageConversations.length > 0) && (
           <PillButton
             type="button"
             size="compact"
@@ -298,48 +300,41 @@ function ExpandedThreadList({
           </PillButton>
         )}
       </div>
-      {agentConversations.length === 0 && (
-        <button
-          type="button"
-          onClick={onNewChat}
-          className={`w-full flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label text-muted-foreground/60 ${MENU_ITEM_HOVER}`}
-        >
-          <Plus className="w-3 h-3 shrink-0" />
-          <span>New chat</span>
-        </button>
-      )}
+      {imessageConversations.map((item, idx) => (
+        <SidebarThreadRow
+          key={`${item.kind}-${item.id}`}
+          item={item}
+          pathname={pathname}
+          pinned
+          shortcut={idx < 9 ? navShortcut(String(idx + 1)) : undefined}
+          shortcutLabel="pinned thread"
+        />
+      ))}
+      {agentConversations.length === 0 &&
+        imessageConversations.length === 0 && (
+          <button
+            type="button"
+            onClick={onNewChat}
+            className={`w-full flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label text-muted-foreground/60 ${MENU_ITEM_HOVER}`}
+          >
+            <Plus className="w-3 h-3 shrink-0" />
+            <span>New chat</span>
+          </button>
+        )}
       {agentConversations.map((item, idx) => (
         <SidebarThreadRow
           key={`${item.kind}-${item.id}`}
           item={item}
           pathname={pathname}
-          shortcut={idx < 9 ? navShortcut(String(idx + 1)) : undefined}
+          shortcut={
+            imessageConversations.length + idx < 9
+              ? navShortcut(String(imessageConversations.length + idx + 1))
+              : undefined
+          }
           shortcutLabel="thread"
           onArchiveThread={onArchiveThread}
         />
       ))}
-      {imessageConversations.length > 0 && (
-        <>
-          <div className="flex items-center justify-between px-3 pt-4 pb-1.5">
-            <span className="text-label font-medium text-muted-foreground/50">
-              iMessage
-            </span>
-          </div>
-          {imessageConversations.map((item, idx) => (
-            <SidebarThreadRow
-              key={`${item.kind}-${item.id}`}
-              item={item}
-              pathname={pathname}
-              shortcut={
-                agentConversations.length + idx < 9
-                  ? navShortcut(String(agentConversations.length + idx + 1))
-                  : undefined
-              }
-              shortcutLabel="iMessage"
-            />
-          ))}
-        </>
-      )}
       {archivedThreadCount > 0 && (
         <Link
           href="/agent/archive"
@@ -358,12 +353,14 @@ function SidebarThreadRow({
   pathname,
   shortcut,
   shortcutLabel,
+  pinned,
   onArchiveThread,
 }: {
   item: ConversationItem;
   pathname: string;
   shortcut?: ReturnType<typeof navShortcut>;
   shortcutLabel: string;
+  pinned?: boolean;
   onArchiveThread?: (threadId: string, active: boolean) => Promise<void>;
 }) {
   const isConvActive = pathname === `/agent/thread/${item.id}`;
@@ -383,6 +380,9 @@ function SidebarThreadRow({
         <MessageSquare className="w-3.5 h-3.5 shrink-0" />
       )}
       <span className="truncate flex-1">{item.label}</span>
+      {pinned ? (
+        <Pin className="w-3 h-3 shrink-0 rotate-45 text-muted-foreground/35" />
+      ) : null}
       {onArchiveThread ? (
         <span className="relative h-5 w-5 shrink-0">
           <button
@@ -433,6 +433,24 @@ function CollapsedThreadList({
   return (
     <>
       <div className="pt-4 pb-1" />
+      {imessageConversations.map((item) => {
+        const isConvActive = pathname === `/agent/thread/${item.id}`;
+        return (
+          <Link
+            key={`${item.kind}-${item.id}`}
+            href={`/agent/thread/${item.id}`}
+            title={item.label}
+            className={`flex items-center justify-center py-1.5 ${MENU_ITEM_BASE} ${
+              isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
+            }`}
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+          </Link>
+        );
+      })}
+      {agentConversations.length > 0 && imessageConversations.length > 0 ? (
+        <div className="mx-4 my-1 h-px bg-foreground/6" aria-hidden="true" />
+      ) : null}
       {agentConversations.map((item) => {
         const isConvActive = pathname === `/agent/thread/${item.id}`;
         return (
@@ -451,24 +469,6 @@ function CollapsedThreadList({
             ) : (
               <MessageSquare className="w-3.5 h-3.5" />
             )}
-          </Link>
-        );
-      })}
-      {agentConversations.length > 0 && imessageConversations.length > 0 ? (
-        <div className="mx-4 my-1 h-px bg-foreground/6" aria-hidden="true" />
-      ) : null}
-      {imessageConversations.map((item) => {
-        const isConvActive = pathname === `/agent/thread/${item.id}`;
-        return (
-          <Link
-            key={`${item.kind}-${item.id}`}
-            href={`/agent/thread/${item.id}`}
-            title={item.label}
-            className={`flex items-center justify-center py-1.5 ${MENU_ITEM_BASE} ${
-              isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
-            }`}
-          >
-            <MessageCircle className="w-3.5 h-3.5" />
           </Link>
         );
       })}
