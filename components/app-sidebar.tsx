@@ -177,7 +177,7 @@ export function AppSidebar({
     [unifiedThreads],
   );
   const shortcutConversations = useMemo(
-    () => [...agentConversations, ...imessageConversations],
+    () => [...imessageConversations, ...agentConversations],
     [agentConversations, imessageConversations],
   );
 
