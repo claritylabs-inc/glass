@@ -82,15 +82,20 @@ program.command("policies:create")
   .requiredOption("--insured-name <insuredName>")
   .requiredOption("--effective-date <effectiveDate>")
   .requiredOption("--expiration-date <expirationDate>")
-  .option("--policy-type <policyType>", "repeatable", (v, prev: string[] = []) => [...prev, v], [])
+  .option("--line-of-business <lineOfBusiness>", "repeatable ACORD LOB code or label", (v, prev: string[] = []) => [...prev, v], [])
+  .option("--policy-type <policyType>", "deprecated alias for --line-of-business", (v, prev: string[] = []) => [...prev, v], [])
   .action(async (opts) => {
+    const linesOfBusiness = [
+      ...(opts.lineOfBusiness ?? []),
+      ...(opts.policyType ?? []),
+    ];
     const res = await new GlassApi(await loadConfig()).createPolicyDraft({
       carrier: opts.carrier,
       policyNumber: opts.policyNumber,
       insuredName: opts.insuredName,
       effectiveDate: opts.effectiveDate,
       expirationDate: opts.expirationDate,
-      policyTypes: opts.policyType,
+      policyTypes: linesOfBusiness,
     });
     print(res, getFormat(program.opts()));
   });

@@ -18,12 +18,13 @@ describe("toPolicyDto", () => {
   it("maps policy fields to snake_case", () => {
     const raw = {
       _id: "p1", _creationTime: 1000, carrier: "Zurich", policyNumber: "ZR-001",
-      policyTypes: ["gl"], effectiveDate: "2024-01-01", expirationDate: "2025-01-01",
+      policyTypes: ["general_liability"], effectiveDate: "2024-01-01", expirationDate: "2025-01-01",
       premium: 5000, documentType: "policy",
     };
     const dto = toPolicyDto(raw);
     expect(dto.policy_number).toBe("ZR-001");
-    expect(dto.policy_types).toEqual(["gl"]);
+    expect(dto.lines_of_business).toEqual(["CGL"]);
+    expect(dto.policy_types).toEqual(["CGL"]);
     expect(dto.created_at).toBe(1000);
   });
 });
@@ -90,8 +91,10 @@ describe("MCP policy DTO helpers", () => {
   });
 
   it("preserves existing MCP filter and search behavior", () => {
+    expect(policyMatchesMcpFilters(policy, { carrier: "Zurich", year: "2024", type: "CGL" })).toBe(true);
+    expect(policyMatchesMcpFilters(policy, { carrier: "Zurich", year: "2024", type: "Commercial General Liability" })).toBe(true);
     expect(policyMatchesMcpFilters(policy, { carrier: "Zurich", year: "2024", type: "general_liability" })).toBe(true);
-    expect(policyMatchesMcpFilters(policy, { carrier: "Chubb", year: "2024", type: "general_liability" })).toBe(false);
+    expect(policyMatchesMcpFilters(policy, { carrier: "Chubb", year: "2024", type: "CGL" })).toBe(false);
     expect(policyMatchesSearch(policy, "marsh")).toBe(true);
   });
 });
@@ -256,11 +259,11 @@ describe("certificate lifecycle DTOs", () => {
 describe("toPolicyStatsDto", () => {
   it("computes policy counts by type, carrier, and year", () => {
     expect(toPolicyStatsDto([
-      { carrier: "Zurich", policyTypes: ["gl", "auto"], policyYear: 2024 },
-      { carrier: "Zurich", policyTypes: ["gl"], policyYear: 2025 },
+      { carrier: "Zurich", policyTypes: ["general_liability", "auto"], policyYear: 2024 },
+      { carrier: "Zurich", policyTypes: ["general_liability"], policyYear: 2025 },
     ])).toEqual({
       totalPolicies: 2,
-      byType: { gl: 2, auto: 1 },
+      byType: { CGL: 2, AUTOB: 1 },
       byCarrier: { Zurich: 2 },
       byYear: { "2024": 1, "2025": 1 },
     });

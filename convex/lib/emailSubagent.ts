@@ -28,6 +28,7 @@ import {
   shouldSuppressOriginalPolicyForCoiRequest,
   type RequestedEmailAttachment,
 } from "./coiAttachmentGuards";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 export {
   buildAgentEmailHtmlBody,
@@ -466,7 +467,7 @@ async function runEmailSubagent(
       id: policy._id,
       insured: policy.insuredName,
       carrier: policy.security ?? policy.carrier,
-      type: policy.policyTypes?.join(", "),
+      type: policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", "),
       number: policy.policyNumber,
       fileName: policy.fileName,
       hasOriginalFile: !!policy.fileId,

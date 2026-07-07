@@ -12,6 +12,7 @@ import {
   formatDate,
   loadAppCardView,
   metadataDescription,
+  policyLineBusinessLabels,
   type Policy,
 } from "./view";
 
@@ -82,8 +83,8 @@ function PolicyPanel({ policy }: { policy: Policy }) {
         <OperationalLabelValueRow label="Carrier" value={policy.carrier ?? "Not listed"} />
         <OperationalLabelValueRow label="Policy number" value={policy.policyNumber} />
         <OperationalLabelValueRow
-          label="Type"
-          value={policy.policyTypes.join(", ") || "Not listed"}
+          label="Lines of business"
+          value={policyLineBusinessLabels(policy).join(", ") || "Not listed"}
         />
         <OperationalLabelValueRow label="Policy period" value={policyPeriod(policy)} />
       </OperationalLabelValueList>

@@ -4,6 +4,7 @@ import {
   compactList,
   formatDate,
   loadAppCardView,
+  policyLineBusinessLabels,
   truncate,
   type AppCardView,
   type Policy,
@@ -28,7 +29,7 @@ function heroSubtitle(view: AppCardView) {
   if (view.policy) {
     return compactList([
       view.policy.carrier,
-      view.policy.policyTypes.join(", "),
+      policyLineBusinessLabels(view.policy).join(", "),
       `${formatDate(view.policy.effectiveDate)} to ${formatDate(view.policy.expirationDate)}`,
     ]);
   }

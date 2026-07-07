@@ -7,6 +7,7 @@ import {
   type CertificateFormCode,
   type CertificateHolderRelationship,
 } from "./acordForms/types";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,7 +97,10 @@ export interface CoverageLine {
 export function policyToCoiData(policy: any): CoiData {
   const profile = operationalProfile(policy);
   const limits: any = policy.limits ?? {};
-  const policyTypes: string[] = profile?.policyTypes?.length ? profile.policyTypes : policy.policyTypes ?? [];
+  const policyTypes = policyLobCodes({
+    linesOfBusiness: policy.linesOfBusiness,
+    policyTypes: profile?.policyTypes?.length ? profile.policyTypes : policy.policyTypes ?? [],
+  });
   const declarations = declarationFieldMap(policy);
   const policyNumber = profileValue(profile?.policyNumber) ?? pickField(declarations, "policyNumber") ?? policy.policyNumber ?? "";
   const effDate = profileValue(profile?.effectiveDate) ?? pickField(declarations, "policyPeriodStart") ?? policy.effectiveDate ?? "";
@@ -138,7 +142,7 @@ export function policyToCoiData(policy: any): CoiData {
   });
 
   return {
-    title: deriveCertificateTitle(policyTypes),
+    title: deriveCertificateTitle(),
     issuedDateLabel: "ISSUE DATE (YYYY/MM/DD)",
     producerAgency: producerName,
     producerContact: producer.contactName ?? policy.underwriter ?? policy.mga,
@@ -216,12 +220,12 @@ function buildFallbackCoverageLines(
     coverageForm: string;
   },
 ): CoverageLine[] {
-  const hasNamedPolicyType = policyTypes.some((t) => !["other", "unknown"].includes(t));
+  const hasNamedPolicyType = policyTypes.some((t) => t !== "UN");
   const coverageLines: CoverageLine[] = [];
 
   // ── Commercial General Liability ──────────────────────────────────────────
   const hasGL = policyTypes.some((t) =>
-    ["general_liability", "bop", "product_liability"].includes(t)
+    ["CGL", "GL", "BOP", "BOPGL"].includes(t)
   );
   if (hasGL || (!hasNamedPolicyType && (limits.perOccurrence || limits.generalAggregate))) {
     const glLimits: Array<{ label: string; value: string }> = [];
@@ -246,7 +250,7 @@ function buildFallbackCoverageLines(
 
   // ── Automobile Liability ──────────────────────────────────────────────────
   const hasAuto = policyTypes.some((t) =>
-    ["commercial_auto", "non_owned_auto", "personal_auto"].includes(t)
+    ["AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK"].includes(t)
   );
   if (hasAuto || (!hasNamedPolicyType && (limits.combinedSingleLimit || limits.bodilyInjuryPerPerson))) {
     const autoLimits: Array<{ label: string; value: string }> = [];
@@ -255,9 +259,7 @@ function buildFallbackCoverageLines(
     if (limits.bodilyInjuryPerAccident) autoLimits.push({ label: "BODILY INJURY (Per accident)", value: limits.bodilyInjuryPerAccident });
     if (limits.propertyDamage) autoLimits.push({ label: "PROPERTY DAMAGE\n(Per accident)", value: limits.propertyDamage });
 
-    const autoTypeNote = policyTypes.includes("non_owned_auto")
-      ? "NON-OWNED AUTOS ONLY"
-      : "ANY AUTO";
+    const autoTypeNote = "ANY AUTO";
 
     coverageLines.push({
       type: "AUTOMOBILE LIABILITY",
@@ -271,7 +273,7 @@ function buildFallbackCoverageLines(
   }
 
   // ── Umbrella / Excess Liability ───────────────────────────────────────────
-  const hasUmbrella = policyTypes.some((t) => ["umbrella", "excess_liability"].includes(t));
+  const hasUmbrella = policyTypes.some((t) => ["UMBRC", "UMBRL", "UMBRP", "EXLIA"].includes(t));
   if (hasUmbrella || (!hasNamedPolicyType && (limits.eachOccurrenceUmbrella || limits.umbrellaAggregate))) {
     const umbLimits: Array<{ label: string; value: string }> = [];
     if (limits.eachOccurrenceUmbrella) umbLimits.push({ label: "EACH OCCURRENCE", value: limits.eachOccurrenceUmbrella });
@@ -279,7 +281,7 @@ function buildFallbackCoverageLines(
     if (limits.umbrellaRetention) umbLimits.push({ label: "DED  RETENTION", value: limits.umbrellaRetention });
 
     coverageLines.push({
-      type: policyTypes.includes("excess_liability") ? "EXCESS LIAB" : "UMBRELLA LIAB",
+      type: policyTypes.includes("EXLIA") ? "EXCESS LIAB" : "UMBRELLA LIAB",
       insurerLetter: "A",
       coverageForm: defaults.coverageForm === "claims_made" ? "claims_made" : "occurrence",
       policyNumber: defaults.policyNumber,
@@ -290,7 +292,7 @@ function buildFallbackCoverageLines(
   }
 
   // ── Workers Compensation ──────────────────────────────────────────────────
-  const hasWC = policyTypes.includes("workers_comp");
+  const hasWC = policyTypes.some((t) => ["WORK", "WCMA", "WORKP", "WORKV"].includes(t));
   if (hasWC || (!hasNamedPolicyType && (limits.statutory || limits.employersLiability))) {
     const el: any = limits.employersLiability ?? {};
     const wcLimits: Array<{ label: string; value: string }> = [];
@@ -309,15 +311,14 @@ function buildFallbackCoverageLines(
     });
   }
 
-  // Other policy types (professional liability, cyber, etc.).
+  // Other lines of business (professional liability, other liability, etc.).
   const otherTypes = policyTypes.filter((t) =>
-    !["general_liability", "bop", "product_liability", "commercial_auto",
-      "non_owned_auto", "personal_auto", "umbrella", "excess_liability",
-      "workers_comp"].includes(t)
+    !["CGL", "GL", "BOP", "BOPGL", "AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK",
+      "UMBRC", "UMBRL", "UMBRP", "EXLIA", "WORK", "WCMA", "WORKP", "WORKV", "UN"].includes(t)
   );
   if (otherTypes.length > 0) {
     const typeLabel = otherTypes
-      .map((t) => t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()))
+      .map(lobLabel)
       .join(", ");
     coverageLines.push({
       type: typeLabel,
@@ -333,7 +334,7 @@ function buildFallbackCoverageLines(
   // If no specific coverage lines were identified, add a generic one
   if (coverageLines.length === 0) {
     coverageLines.push({
-      type: policyTypes.map((t) => t.replace(/_/g, " ").toUpperCase()).join(" / ") || "SEE POLICY",
+      type: policyTypes.filter((t) => t !== "UN").map(lobLabel).join(" / ").toUpperCase() || "SEE POLICY",
       insurerLetter: "A",
       policyNumber: defaults.policyNumber,
       effectiveDate: defaults.effectiveDate,
@@ -345,9 +346,7 @@ function buildFallbackCoverageLines(
   return coverageLines;
 }
 
-function deriveCertificateTitle(policyTypes: string[]): string {
-  const normalized = policyTypes.map((t) => t.toLowerCase());
-  if (normalized.some((t) => t.includes("travel"))) return "CERTIFICATE OF TRAVEL INSURANCE";
+function deriveCertificateTitle(): string {
   return "CERTIFICATE OF INSURANCE";
 }
 

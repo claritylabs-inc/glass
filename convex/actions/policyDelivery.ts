@@ -19,6 +19,11 @@ import {
   sendIdempotentOutboundImessage,
   type ImessageOutboundAttachment,
 } from "../lib/imessageOutbound";
+import {
+  ACORD_LOB_LABELS,
+  LEGACY_POLICY_TYPE_TO_LOB,
+  policyLobCodes,
+} from "../lib/linesOfBusiness";
 
 type Channel = "email" | "imessage";
 type DeliveryAction = "auto_send" | "broker_review" | "do_not_send";
@@ -47,15 +52,44 @@ function includesAny(haystacks: string[], needles: string[] | undefined) {
   );
 }
 
+function lineOfBusinessNeedles(rule: DeliveryRule) {
+  const filters = rule.filters ?? {};
+  return filters.linesOfBusiness ?? [
+    ...(filters.productLines ?? []),
+    ...(filters.policyTypes ?? []),
+  ];
+}
+
+function legacyNeedlesForPolicyLobs(codes: string[]) {
+  return Object.entries(LEGACY_POLICY_TYPE_TO_LOB)
+    .filter(([, mappedCodes]) =>
+      mappedCodes.some((code) => codes.includes(code)) &&
+      !mappedCodes.includes("OLIB") &&
+      !mappedCodes.includes("UN"),
+    )
+    .map(([legacyKey]) => legacyKey);
+}
+
+function policyLineHaystacks(policy: Doc<"policies">) {
+  const codes = policyLobCodes(policy);
+  const labels = codes.map((code) => ACORD_LOB_LABELS[code]);
+  const legacyKeys = legacyNeedlesForPolicyLobs(codes);
+  return [
+    ...codes,
+    ...labels,
+    ...legacyKeys,
+    ...(policy.coverages ?? []).map((coverage) => lower(coverage.name)),
+    lower(policy.programName),
+    lower(policy.summary),
+  ].map((value) => value.toLowerCase());
+}
+
 function deterministicRuleMatch(rule: DeliveryRule, policy: Doc<"policies">) {
-  const policyTypes = (policy.policyTypes ?? []).map((value) => value.toLowerCase());
-  const coverageNames = (policy.coverages ?? []).map((coverage) => lower(coverage.name));
   return (
     includesAny([lower(policy.carrier), lower(policy.carrierLegalName)], rule.filters.carriers) &&
     includesAny([lower(policy.security), lower(policy.insurer?.legalName)], rule.filters.securities) &&
     includesAny([lower(policy.underwriter)], rule.filters.underwriters) &&
-    includesAny([...policyTypes, ...coverageNames, lower(policy.programName)], rule.filters.productLines) &&
-    includesAny(policyTypes, rule.filters.policyTypes)
+    includesAny(policyLineHaystacks(policy), lineOfBusinessNeedles(rule))
   );
 }
 
@@ -100,7 +134,10 @@ ${JSON.stringify({
     underwriter: params.policy.underwriter,
     mga: params.policy.mga,
     programName: params.policy.programName,
-    policyTypes: params.policy.policyTypes,
+    linesOfBusiness: policyLobCodes(params.policy).map((code) => ({
+      code,
+      label: ACORD_LOB_LABELS[code],
+    })),
     coverages: params.policy.coverages?.map((coverage) => ({
       name: coverage.name,
       coverageCode: coverage.coverageCode,

@@ -5,6 +5,7 @@ import {
   lookupVendorCompliance,
   lookupVendorPolicies,
 } from "./chatTools";
+import { policyLobCodes } from "./linesOfBusiness";
 
 type RunQueryCtx = {
   // Convex action contexts expose a generic runQuery signature. Keep this loose
@@ -52,6 +53,7 @@ function mapPolicy(policy: Record<string, unknown>) {
     carrier: policy.carrier,
     policyNumber: policy.policyNumber,
     insuredName: policy.insuredName,
+    linesOfBusiness: policyLobCodes(policy),
     policyTypes: policy.policyTypes,
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,

@@ -38,7 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronDown, ChevronRight, Copy, Loader2, RefreshCw, XCircle } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { normalizeCoverageName } from "@/convex/lib/coverageNames";
-import { POLICY_TYPE_LABELS } from "@/convex/lib/policyTypes";
+import { lobLabel, toLobCodes } from "@/convex/lib/linesOfBusiness";
 import {
   SourceEvidenceButton,
   collectSourceSpanIds,
@@ -238,9 +238,11 @@ function profileScalarRows(
     });
   };
 
-  const policyTypes = stringArray(profile.policyTypes);
-  const policyTypeLabels = policyTypes.map((type) => POLICY_TYPE_LABELS[type] ?? type);
-  if (policyTypeLabels.length) rows.push({ label: "Policy types", value: policyTypeLabels.join(", ") });
+  const extractedLines = stringArray(profile.linesOfBusiness);
+  const lineLabels = toLobCodes(extractedLines.length ? extractedLines : stringArray(profile.policyTypes))
+    .filter((code) => code !== "UN")
+    .map(lobLabel);
+  if (lineLabels.length) rows.push({ label: "Lines of business", value: lineLabels.join(", ") });
   pushValue("Policy number", "policyNumber");
   pushValue("Named insured", "namedInsured");
   pushValue("Insurer", "insurer");

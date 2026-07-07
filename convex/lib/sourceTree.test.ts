@@ -1214,6 +1214,7 @@ describe("sourceTreePolicyFields", () => {
     });
 
     expect(fields.policyTypes).toEqual(["professional_liability"]);
+    expect(fields.linesOfBusiness).toEqual(["EO"]);
     expect((fields.operationalProfile as PolicyOperationalProfile).policyTypes).toEqual(["professional_liability"]);
     expect((fields.operationalProfile as PolicyOperationalProfile).warnings).toEqual([]);
   });
@@ -1251,6 +1252,7 @@ describe("sourceTreePolicyFields", () => {
       "cyber",
     ]);
     expect(fields.policyTypes).toEqual(["professional_liability", "cyber"]);
+    expect(fields.linesOfBusiness).toEqual(["EO", "OLIB"]);
     expect(
       (fields.operationalProfile as PolicyOperationalProfile).policyTypes,
     ).toEqual(["professional_liability", "cyber"]);
@@ -1382,6 +1384,7 @@ describe("sourceTreePolicyFields", () => {
     });
 
     expect(fields.policyTypes).toEqual(["other"]);
+    expect(fields.linesOfBusiness).toEqual(["UN"]);
     expect(fields.policyNumber).toBe("Unknown");
     expect(fields.insuredName).toBe("Unknown");
     expect(fields.carrier).toBe("Unknown");
