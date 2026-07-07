@@ -57,7 +57,6 @@ import {
   buildEmailSignature,
   buildEmailExpertTool,
   resolveEmailAgentIdentity,
-  upsertEmailDraftArtifact,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
 import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
@@ -1227,7 +1226,6 @@ export const run = internalAction({
         size: number;
         fileId?: Id<"_storage">;
       }> = [];
-      let policyChangeCaseId: Id<"policyChangeCases"> | undefined;
       let lastToolName = "";
 
       // streamText with tools — supports both streaming Q&A and tool calls
@@ -1238,7 +1236,6 @@ export const run = internalAction({
           userId: args.userId,
           scope,
           threadId: args.threadId,
-          getCurrentPolicyChangeCaseId: () => policyChangeCaseId,
           operatorInitiatedUserMessageId: scope.operatorInitiated
             ? args.userMessageId
             : undefined,
@@ -1250,56 +1247,6 @@ export const run = internalAction({
           },
           onToolArtifact: (artifact) => {
             toolArtifacts.push(artifact);
-          },
-          onPolicyChangeCase: (caseId) => {
-            policyChangeCaseId = caseId;
-          },
-          onPolicyChangeEmailDraft: async ({ caseId, draft }) => {
-            if (
-              !draft.needsRecipient &&
-              draft.recipientEmail &&
-              draft.subject &&
-              draft.body
-            ) {
-              const emailIdentityForDraft =
-                emailIdentity.canSend &&
-                emailIdentity.agentAddress &&
-                emailIdentity.fromHeader
-                  ? emailIdentity
-                  : await resolveEmailAgentIdentity(ctx, org);
-              if (
-                emailIdentityForDraft.canSend &&
-                emailIdentityForDraft.agentAddress &&
-                emailIdentityForDraft.fromHeader
-              ) {
-                const pendingEmailId = await upsertEmailDraftArtifact(
-                  ctx,
-                  {
-                    orgId: args.orgId,
-                    threadId: args.threadId,
-                    chatMessageId: agentMsgId,
-                    channel: "web",
-                    fromHeader: emailIdentityForDraft.fromHeader,
-                    agentAddress: emailIdentityForDraft.agentAddress,
-                    brokerBranding: emailIdentityForDraft.brokerBranding,
-                  },
-                  {
-                    to: draft.recipientEmail,
-                    cc: [],
-                    bcc:
-                      org.bccRequesterOnAgentEmails !== false &&
-                      requesterCopyEmail
-                        ? [requesterCopyEmail]
-                        : [],
-                    subject: draft.subject,
-                    body: draft.body,
-                    attachments: [],
-                    policyChangeCaseId: caseId,
-                  },
-                );
-                return { pendingEmailId };
-              }
-            }
           },
         }),
         create_imessage_group_chat: {
@@ -1465,12 +1412,6 @@ export const run = internalAction({
         save_note: "Saving note...",
         confirm_policy_fact: "Confirming policy facts...",
         generate_coi: "Generating COI...",
-        create_policy_change_request: "Capturing broker follow-up...",
-        add_policy_change_info: "Updating broker follow-up...",
-        check_policy_change_status: "Checking broker follow-up...",
-        draft_policy_change_email: "Drafting broker email...",
-        complete_policy_change_from_endorsement:
-          "Attaching endorsement...",
         create_imessage_group_chat: "Starting iMessage group...",
         coordinate_mailbox_task: "Coordinating mailbox task...",
         web_research: "Searching the web...",
@@ -1609,18 +1550,6 @@ export const run = internalAction({
               }
             }
             if (
-              lastToolName === "create_policy_change_request" &&
-              (part as Record<string, unknown>).output
-            ) {
-              const output = (part as Record<string, unknown>).output;
-              if (output && typeof output === "object" && "caseId" in output) {
-                const caseId = (output as Record<string, unknown>).caseId;
-                if (typeof caseId === "string" && caseId) {
-                  policyChangeCaseId = caseId as Id<"policyChangeCases">;
-                }
-              }
-            }
-            if (
               lastToolName === "lookup_vendor_compliance" &&
               (part as Record<string, unknown>).output
             ) {
@@ -1699,8 +1628,7 @@ export const run = internalAction({
           usedTools.length > 0 ||
           toolCalls.length > 0 ||
           toolArtifacts.length > 0 ||
-          responseAttachments.length > 0 ||
-          !!policyChangeCaseId;
+          responseAttachments.length > 0;
         if (!isTransientChatStreamError(streamError) || hasStartedSideEffectfulWork) {
           throw streamError;
         }
@@ -1778,7 +1706,6 @@ export const run = internalAction({
         toolArtifacts: toolArtifacts.length > 0 ? toolArtifacts : undefined,
         attachments:
           responseAttachments.length > 0 ? responseAttachments : undefined,
-        policyChangeCaseId,
       });
       if (emailResult) {
         if (

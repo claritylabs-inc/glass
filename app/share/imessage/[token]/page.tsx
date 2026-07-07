@@ -10,7 +10,6 @@ import { buildCoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 import { CoverageBreakdownCards } from "@/app/policies/[id]/policy-coverage-breakdown";
 import {
   formatDate,
-  labelForStatus,
   loadAppCardView,
   metadataDescription,
   type Policy,
@@ -195,49 +194,6 @@ export default async function ImessageSharePage({
                       <FileText className="h-3.5 w-3.5" />
                       Open PDF
                     </PillButton>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {view.policyChange ? (
-          <section className="border-b border-border py-7">
-            <div className="grid gap-5 md:grid-cols-[240px_1fr]">
-              <div>
-                <h2 className="text-base font-medium tracking-normal text-foreground">
-                  Policy change
-                </h2>
-                <p className="mt-1 text-base text-muted-foreground">
-                  {labelForStatus(view.policyChange.status)}
-                </p>
-              </div>
-              <div className="grid gap-5">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Info label="Created" value={formatDate(view.policyChange.createdAt)} />
-                  <Info label="Updated" value={formatDate(view.policyChange.updatedAt)} />
-                </div>
-                {view.policyChange.summary ? (
-                  <p className="text-base leading-6 text-muted-foreground">
-                    {view.policyChange.summary}
-                  </p>
-                ) : null}
-                {view.policyChange.requestText ? (
-                  <div className="rounded-md border border-border p-4 text-base leading-6 text-muted-foreground">
-                    {view.policyChange.requestText}
-                  </div>
-                ) : null}
-                {view.policyChange.pendingQuestions.length > 0 ? (
-                  <div className="grid gap-2">
-                    {view.policyChange.pendingQuestions.map((question) => (
-                      <div
-                        key={question}
-                        className="rounded-md border border-border px-3 py-2 text-base text-muted-foreground"
-                      >
-                        {question}
-                      </div>
-                    ))}
                   </div>
                 ) : null}
               </div>

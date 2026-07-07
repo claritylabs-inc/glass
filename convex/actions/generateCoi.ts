@@ -6,6 +6,16 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { generateCoiPdf, policyToCoiData } from "../lib/coiGenerator";
 import { logAiError } from "../lib/aiUtils";
+import {
+  CERTIFICATE_FORM_FILE_SLUGS,
+  CERTIFICATE_FORM_LABELS,
+  type CertificateFormCode,
+} from "../lib/acordForms/types";
+import { selectCertificateForm } from "../lib/acordForms/select";
+import {
+  applyEndorsementsToCertificateData,
+  type EndorsementCitation,
+} from "../lib/certificateEndorsements";
 
 const holderAddressValidator = v.object({
   line1: v.optional(v.string()),
@@ -15,6 +25,31 @@ const holderAddressValidator = v.object({
   postalCode: v.optional(v.string()),
   country: v.optional(v.string()),
   formatted: v.optional(v.string()),
+});
+
+const certificateFormValidator = v.union(
+  v.literal("acord25"),
+  v.literal("acord24"),
+  v.literal("acord27"),
+  v.literal("acord28"),
+  v.literal("acord29"),
+  v.literal("acord30"),
+  v.literal("acord31"),
+);
+
+const endorsementCitationValidator = v.object({
+  kind: v.union(
+    v.literal("additional_insured"),
+    v.literal("named_insured"),
+    v.literal("waiver_of_subrogation"),
+    v.literal("primary_non_contributory"),
+    v.literal("loss_payee"),
+    v.literal("mortgagee"),
+    v.literal("special_wording"),
+    v.literal("policy_change"),
+  ),
+  formNumbers: v.array(v.string()),
+  requiresWrittenContract: v.optional(v.boolean()),
 });
 
 function firstCertificateHolderLine(certificateHolder?: string, fallback = "Certificate holder") {
@@ -109,6 +144,7 @@ function buildCoiFileName(
   policy: Record<string, unknown>,
   certificateHolder?: string,
   certificateHolderName?: string,
+  formCode: CertificateFormCode = "acord25",
 ) {
   const holder = cleanFilenamePart(
     certificateHolderName ?? certificateHolder?.split(/\r?\n/)[0],
@@ -118,7 +154,77 @@ function buildCoiFileName(
     policy.policyNumber ?? policy.security ?? policy.carrier,
     "policy",
   );
-  return `COI - ${holder} - ${policyRef}.pdf`;
+  const form = CERTIFICATE_FORM_FILE_SLUGS[formCode] ?? "certificate";
+  return `${form} - ${holder} - ${policyRef}.pdf`;
+}
+
+function policyTypesForCertificate(policy: Record<string, any>) {
+  const profileTypes = Array.isArray(policy.operationalProfile?.policyTypes)
+    ? policy.operationalProfile.policyTypes
+    : [];
+  const policyTypes = Array.isArray(policy.policyTypes) ? policy.policyTypes : [];
+  return [...profileTypes, ...policyTypes].filter(
+    (type): type is string => typeof type === "string" && type.trim().length > 0,
+  );
+}
+
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      typeof (value as { value?: unknown }).value === "string" &&
+      (value as { value: string }).value.trim()
+    ) {
+      return (value as { value: string }).value.trim();
+    }
+  }
+  return undefined;
+}
+
+function certificatePropertyExtras(policy: Record<string, any>) {
+  const profile = policy.operationalProfile ?? {};
+  const locations = Array.isArray(profile.locations) ? profile.locations : [];
+  const firstLocation = locations.find((location: unknown) =>
+    location && typeof location === "object" && !Array.isArray(location),
+  ) as Record<string, unknown> | undefined;
+  const declarationFields = Array.isArray(policy.declarations?.fields)
+    ? policy.declarations.fields
+    : [];
+  const declarationMap = new Map<string, string>();
+  for (const field of declarationFields) {
+    if (typeof field?.field === "string" && typeof field?.value === "string") {
+      declarationMap.set(field.field, field.value);
+    }
+  }
+  return {
+    propertyDescription: firstText(
+      profile.propertyDescription,
+      profile.describedProperty,
+      declarationMap.get("describedProperty"),
+      declarationMap.get("propertyDescription"),
+      policy.summary,
+    ),
+    propertyLocation: firstText(
+      firstLocation?.address,
+      firstLocation?.location,
+      declarationMap.get("premisesAddress"),
+      declarationMap.get("propertyLocation"),
+      declarationMap.get("insuredLocation"),
+    ),
+    floodZone: firstText(
+      profile.floodZone,
+      declarationMap.get("floodZone"),
+      declarationMap.get("floodZoneDetermination"),
+    ),
+    floodProgram: firstText(
+      profile.floodProgram,
+      declarationMap.get("floodProgram"),
+      declarationMap.get("nfipProgram"),
+    ),
+  };
 }
 
 /**
@@ -148,6 +254,9 @@ export const run = internalAction({
       v.literal("additional_insured"),
     )),
     additionalInsuredName: v.optional(v.string()),
+    formCode: v.optional(certificateFormValidator),
+    holderRelationship: v.optional(v.string()),
+    endorsements: v.optional(v.array(endorsementCitationValidator)),
     requestSignature: v.optional(v.string()),
     certificateHolderId: v.optional(v.id("certificateHolders")),
     policyCertificateId: v.optional(v.id("policyCertificates")),
@@ -166,6 +275,7 @@ export const run = internalAction({
     policyCertificateId?: string;
     certificateVersionId?: string;
     versionNumber?: number;
+    formCode: CertificateFormCode;
   }> => {
     try {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
@@ -173,7 +283,21 @@ export const run = internalAction({
       if (!policy) throw new Error("Policy not found");
       if (policy.orgId !== args.orgId) throw new Error("Policy not found for organization");
 
-      const coiData = policyToCoiData(policy);
+      const formCode = args.formCode ?? selectCertificateForm({
+        policyTypes: policyTypesForCertificate(policy as Record<string, any>),
+        holderRelationship: args.holderRelationship,
+        operationalProfile: (policy as Record<string, unknown>).operationalProfile,
+      });
+      let coiData = policyToCoiData(policy);
+      coiData = {
+        ...coiData,
+        ...certificatePropertyExtras(policy as Record<string, any>),
+        formCode,
+        title: CERTIFICATE_FORM_LABELS[formCode] ?? coiData.title,
+        certificateHolderRelationship: args.holderRelationship,
+        interestHolder: args.certificateHolder,
+        interestHolderRelationship: args.holderRelationship,
+      };
       if (args.certificateHolder) {
         coiData.certificateHolder = args.certificateHolder;
       }
@@ -183,6 +307,9 @@ export const run = internalAction({
           `Additional Insured: ${args.additionalInsuredName}`,
         ].filter(Boolean).join("\n\n");
       }
+      coiData = applyEndorsementsToCertificateData(coiData, {
+        endorsements: args.endorsements as EndorsementCitation[] | undefined,
+      });
       const pdfBuffer = await generateCoiPdf(coiData);
 
       // Store in Convex file storage
@@ -198,6 +325,7 @@ export const run = internalAction({
         policy,
         args.certificateHolder,
         args.certificateHolderName,
+        formCode,
       );
 
       const certificateId = await ctx.runMutation(internal.certificates.recordGenerated, {
@@ -211,6 +339,7 @@ export const run = internalAction({
         createdByUserId: args.createdByUserId,
         requestKind: args.requestKind,
         additionalInsuredName: args.additionalInsuredName,
+        formCode,
         requestSignature: args.requestSignature,
       });
       const lifecycle = await ensureCertificateLifecycleContext(ctx, args);
@@ -235,6 +364,7 @@ export const run = internalAction({
           source: args.source,
           requestKind: args.requestKind,
           additionalInsuredName: args.additionalInsuredName,
+          formCode,
           requestSignature: args.requestSignature,
           createdByUserId: args.createdByUserId,
         },
@@ -249,6 +379,7 @@ export const run = internalAction({
         policyCertificateId: String(lifecycle.policyCertificateId),
         certificateVersionId: String(issuedVersion.versionId),
         versionNumber: issuedVersion.versionNumber,
+        formCode,
       };
     } catch (err) {
       logAiError("generateCoi", err, { policyId: args.policyId });

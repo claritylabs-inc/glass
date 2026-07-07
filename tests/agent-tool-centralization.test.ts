@@ -22,8 +22,9 @@ describe("centralized agent tool execution", () => {
     expect(chatTools).not.toContain("generateForOrg");
   });
 
-  it("owns shared policy, COI, compliance, and policy-update execution in one module", () => {
+  it("owns shared policy, COI, and compliance execution in one module", () => {
     const executors = read("convex/lib/agentToolExecutors.ts");
+    const chatTools = read("convex/lib/chatTools.ts");
 
     expect(executors).toContain("export function buildAgentToolExecutors");
     expect(executors).toContain("resolvePolicyReferenceForOrg");
@@ -37,12 +38,18 @@ describe("centralized agent tool execution", () => {
       "attach_policy_document",
       "confirm_policy_fact",
       "generate_coi",
+    ]) {
+      expect(executors).toContain(toolName);
+    }
+    for (const removedToolName of [
       "create_policy_change_request",
       "add_policy_change_info",
+      "check_policy_change_status",
       "draft_policy_change_email",
       "complete_policy_change_from_endorsement",
     ]) {
-      expect(executors).toContain(toolName);
+      expect(executors).not.toContain(removedToolName);
+      expect(chatTools).not.toContain(removedToolName);
     }
   });
 

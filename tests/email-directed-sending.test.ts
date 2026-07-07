@@ -170,6 +170,8 @@ describe("directed email sending", () => {
 
     expect(settingsPageSource).toContain("isStandaloneClient");
     expect(settingsPageSource).toContain("getSettingsSections");
+    expect(settingsSectionsSource).toContain("CLIENT_SETTINGS_WITH_AGENT");
+    expect(settingsSectionsSource).toContain("if (isStandaloneClient) return CLIENT_SETTINGS_WITH_AGENT");
     expect(settingsPageSource).toContain("section === \"agent\" && isStandaloneClient");
     expect(settingsSectionsSource).toContain("isStandaloneClient");
     expect(settingsSectionsSource).toContain("CLIENT_SETTINGS_WITH_AGENT");

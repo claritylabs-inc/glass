@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useAction } from "convex/react";
 import type { AddressAutofillRetrieveResponse } from "@mapbox/search-js-core";
 import type { Theme as MapboxSearchTheme } from "@mapbox/search-js-web";
-import { BadgeCheck, Eye, Loader2 } from "lucide-react";
+import { BadgeCheck, Copy, Eye, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -170,7 +170,152 @@ type CertificateHoldRow = Record<string, unknown> & {
   certificateHolder?: string;
   reasonMessage?: string;
   source?: string;
+  emailDraft?: BrokerEmailDraft;
 };
+
+type BrokerEmailDraft = {
+  subject: string;
+  body: string;
+  recipientEmail?: string;
+  recipientName?: string;
+};
+
+type HeldCertificateResult = {
+  status: "held_policy_change_required";
+  message?: string;
+  requiredChanges?: string[];
+  reasonMessage?: string;
+  evidence?: Array<{ label?: string; excerpt?: string }>;
+  emailDraft?: BrokerEmailDraft;
+};
+
+function labelForChange(value: string) {
+  const labels: Record<string, string> = {
+    additional_insured: "Additional insured",
+    waiver_of_subrogation: "Waiver of subrogation",
+    primary_non_contributory: "Primary & non-contributory",
+    loss_payee: "Loss payee",
+    mortgagee: "Mortgagee",
+    named_insured: "Named insured",
+    special_wording: "Special wording",
+    policy_change: "Policy change",
+  };
+  return labels[value] ?? value.replace(/_/g, " ");
+}
+
+function brokerEmailDraft(value: unknown): BrokerEmailDraft | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.subject !== "string" || typeof record.body !== "string") {
+    return undefined;
+  }
+  return {
+    subject: record.subject,
+    body: record.body,
+    recipientEmail:
+      typeof record.recipientEmail === "string" ? record.recipientEmail : undefined,
+    recipientName:
+      typeof record.recipientName === "string" ? record.recipientName : undefined,
+  };
+}
+
+function mailtoHref(draft: BrokerEmailDraft) {
+  return `mailto:${encodeURIComponent(draft.recipientEmail ?? "")}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
+}
+
+function copyDraft(draft: BrokerEmailDraft) {
+  void navigator.clipboard?.writeText(`Subject: ${draft.subject}\n\n${draft.body}`);
+  toast.success("Broker email copied");
+}
+
+function CertificateHoldState({
+  hold,
+}: {
+  hold: HeldCertificateResult;
+}) {
+  const draft = brokerEmailDraft(hold.emailDraft);
+  const evidence = (hold.evidence ?? []).slice(0, 3);
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-base font-medium text-foreground">
+            Certificate not issued
+          </p>
+          <Badge variant="outline">Broker action</Badge>
+        </div>
+        <p className="mt-2 text-base leading-5 text-muted-foreground">
+          {hold.reasonMessage ??
+            hold.message ??
+            "This certificate needs a policy endorsement before it can be issued."}
+        </p>
+      </div>
+
+      {(hold.requiredChanges ?? []).length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {(hold.requiredChanges ?? []).map((change) => (
+            <span
+              key={change}
+              className="rounded-full border border-foreground/10 px-2 py-0.5 text-tag text-muted-foreground"
+            >
+              {labelForChange(change)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {evidence.length > 0 ? (
+        <div className="space-y-2 rounded-md border border-foreground/8 p-3">
+          <p className="text-label font-medium text-muted-foreground">
+            Evidence checked
+          </p>
+          {evidence.map((item, index) => (
+            <p
+              key={`${item.label ?? "evidence"}-${index}`}
+              className="text-base leading-5 text-muted-foreground"
+            >
+              {item.label ? `${item.label}: ` : ""}
+              {item.excerpt}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {draft ? (
+        <div className="rounded-md border border-foreground/8 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-label font-medium text-muted-foreground">
+                Broker email draft
+              </p>
+              <p className="mt-1 break-words text-base font-medium leading-5 text-foreground">
+                {draft.subject}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-1.5">
+              <PillButton
+                type="button"
+                size="compact"
+                variant="secondary"
+                onClick={() => copyDraft(draft)}
+              >
+                <Copy className="size-3.5" />
+                Copy
+              </PillButton>
+              <PillButton href={mailtoHref(draft)} size="compact" variant="ghost">
+                <Mail className="size-3.5" />
+                Email
+              </PillButton>
+            </div>
+          </div>
+          <p className="mt-3 whitespace-pre-wrap text-base leading-5 text-muted-foreground">
+            {draft.body}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function CertificateCreatePanel({
   open,
@@ -192,8 +337,14 @@ export function CertificateCreatePanel({
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [postalCode, setPostalCode] = useState("");
-  const [includeAdditionalInsured, setIncludeAdditionalInsured] = useState(false);
   const [additionalInsuredName, setAdditionalInsuredName] = useState("");
+  const [includeWaiverOfSubrogation, setIncludeWaiverOfSubrogation] =
+    useState(false);
+  const [includePrimaryNonContributory, setIncludePrimaryNonContributory] =
+    useState(false);
+  const [holdResult, setHoldResult] = useState<HeldCertificateResult | null>(
+    null,
+  );
   const [generating, setGenerating] = useState(false);
 
   const reset = () => {
@@ -206,8 +357,10 @@ export function CertificateCreatePanel({
     setCity("");
     setState("");
     setPostalCode("");
-    setIncludeAdditionalInsured(false);
     setAdditionalInsuredName("");
+    setIncludeWaiverOfSubrogation(false);
+    setIncludePrimaryNonContributory(false);
+    setHoldResult(null);
   };
 
   const handleAddressRetrieve = useCallback(
@@ -237,16 +390,23 @@ export function CertificateCreatePanel({
       toast.error("Certificate holder is required");
       return;
     }
-    if (includeAdditionalInsured && !additionalInsuredName.trim()) {
-      toast.error("Additional insured name is required");
-      return;
-    }
-
     setGenerating(true);
     try {
-      const additionalInsured = includeAdditionalInsured
-        ? additionalInsuredName.trim()
-        : undefined;
+      const additionalInsured = additionalInsuredName.trim() || undefined;
+      const requestedEndorsements = [
+        additionalInsured ? "additional_insured" : undefined,
+        includeWaiverOfSubrogation ? "waiver_of_subrogation" : undefined,
+        includePrimaryNonContributory ? "primary_non_contributory" : undefined,
+      ].filter((value): value is string => Boolean(value));
+      const requestDetails = [
+        additionalInsured
+          ? `showing ${additionalInsured} as an additional insured`
+          : undefined,
+        includeWaiverOfSubrogation ? "with waiver of subrogation" : undefined,
+        includePrimaryNonContributory
+          ? "with primary and non-contributory wording"
+          : undefined,
+      ].filter(Boolean);
       const result = await generateCertificate({
         policyId,
         holderName: holderName.trim(),
@@ -258,23 +418,18 @@ export function CertificateCreatePanel({
         city: city.trim() || undefined,
         state: state.trim() || undefined,
         postalCode: postalCode.trim() || undefined,
-        requestedEndorsements:
-          additionalInsured ? ["additional_insured"] : undefined,
+        requestedEndorsements: requestedEndorsements.length
+          ? requestedEndorsements
+          : undefined,
         additionalInsuredName: additionalInsured,
-        requestText:
-          additionalInsured
-            ? `Generate certificate for ${holderName.trim()} showing ${additionalInsured} as an additional insured.`
-            : undefined,
+        requestText: requestDetails.length
+          ? `Generate certificate for ${holderName.trim()} ${requestDetails.join(", ")}.`
+          : undefined,
       });
       if (
         (result as { status?: string }).status === "held_policy_change_required"
       ) {
-        toast.message(
-          (result as { message?: string }).message ??
-            "Certificate request is on hold for broker review",
-        );
-        onOpenChange(false);
-        reset();
+        setHoldResult(result as HeldCertificateResult);
         return;
       }
       if (
@@ -318,7 +473,26 @@ export function CertificateCreatePanel({
         if (!value) reset();
       }}
       title="Generate COI"
-      footer={
+      footer={holdResult ? (
+        <>
+          <PillButton
+            variant="secondary"
+            size="compact"
+            onClick={() => setHoldResult(null)}
+          >
+            Back to form
+          </PillButton>
+          <PillButton
+            size="compact"
+            onClick={() => {
+              onOpenChange(false);
+              reset();
+            }}
+          >
+            Done
+          </PillButton>
+        </>
+      ) : (
         <>
           <PillButton
             variant="secondary"
@@ -342,9 +516,13 @@ export function CertificateCreatePanel({
             Generate
           </PillButton>
         </>
-      }
+      )}
     >
       <div className="space-y-4">
+        {holdResult ? (
+          <CertificateHoldState hold={holdResult} />
+        ) : (
+          <>
         <p className="text-base text-muted-foreground">
           Create a certificate from this policy and list the certificate holder
           on the PDF.
@@ -487,38 +665,52 @@ export function CertificateCreatePanel({
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="certificate-additional-insured">
+              Additional insured
+            </Label>
+            <Input
+              id="certificate-additional-insured"
+              value={additionalInsuredName}
+              onChange={(event) =>
+                setAdditionalInsuredName(event.target.value)
+              }
+              placeholder="Optional additional insured name"
+              disabled={generating}
+            />
+          </div>
+
+          <div className="space-y-2">
             <label className="flex items-center gap-2 text-base text-foreground">
               <input
+                id="certificate-waiver-of-subrogation"
                 type="checkbox"
-                checked={includeAdditionalInsured}
+                checked={includeWaiverOfSubrogation}
                 disabled={generating}
-                onChange={(event) => {
-                  setIncludeAdditionalInsured(event.target.checked);
-                  if (!event.target.checked) setAdditionalInsuredName("");
-                }}
+                onChange={(event) =>
+                  setIncludeWaiverOfSubrogation(event.target.checked)
+                }
                 className="size-4 accent-foreground"
               />
-              Include additional insured
+              Waiver of subrogation
             </label>
-            {includeAdditionalInsured ? (
-              <div className="space-y-2">
-                <Label htmlFor="certificate-additional-insured">
-                  Additional insured
-                </Label>
-                <Input
-                  id="certificate-additional-insured"
-                  value={additionalInsuredName}
-                  onChange={(event) =>
-                    setAdditionalInsuredName(event.target.value)
-                  }
-                  placeholder="Additional insured name"
-                  disabled={generating}
-                />
-              </div>
-            ) : null}
+            <label className="flex items-center gap-2 text-base text-foreground">
+              <input
+                id="certificate-primary-non-contributory"
+                type="checkbox"
+                checked={includePrimaryNonContributory}
+                disabled={generating}
+                onChange={(event) =>
+                  setIncludePrimaryNonContributory(event.target.checked)
+                }
+                className="size-4 accent-foreground"
+              />
+              Primary & non-contributory
+            </label>
           </div>
         </form>
+          </>
+        )}
       </div>
     </SettingsDrawer>
   );
@@ -535,6 +727,7 @@ function CertificateHoldActivityRow({ row }: { row: CertificateHoldRow }) {
       row.certificateHolder ??
       "Certificate request is on hold",
   );
+  const draft = brokerEmailDraft(row.emailDraft);
   return (
     <OperationalItem>
       <div className="flex min-w-0 flex-col gap-2 @xl/certificates-panel:flex-row @xl/certificates-panel:items-start @xl/certificates-panel:justify-between">
@@ -550,6 +743,23 @@ function CertificateHoldActivityRow({ row }: { row: CertificateHoldRow }) {
           <p className="mt-1 text-base leading-5 text-muted-foreground">
             {reason}
           </p>
+          {draft ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <PillButton
+                type="button"
+                size="compact"
+                variant="secondary"
+                onClick={() => copyDraft(draft)}
+              >
+                <Copy className="size-3.5" />
+                Copy broker email
+              </PillButton>
+              <PillButton href={mailtoHref(draft)} size="compact" variant="ghost">
+                <Mail className="size-3.5" />
+                Email
+              </PillButton>
+            </div>
+          ) : null}
         </div>
         <p className="shrink-0 text-label text-muted-foreground/70 @xl/certificates-panel:pt-0.5">
           {formatCertificateTime(row.createdAt)}

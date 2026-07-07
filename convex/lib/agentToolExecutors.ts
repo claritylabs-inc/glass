@@ -4,14 +4,9 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
-  addPolicyChangeInfo,
   attachPolicyDocument,
-  checkPolicyChangeStatus,
   compareCoverages,
-  completePolicyChangeFromEndorsement,
   confirmPolicyFact,
-  createPolicyChangeRequest,
-  draftPolicyChangeSubmission,
   generateCoi,
   lookupComplianceRequirements,
   lookupPolicy,
@@ -19,9 +14,6 @@ import {
   saveNote,
 } from "./chatTools";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
-import {
-  brokerFollowUpOutcome,
-} from "./workflows/brokerFollowUp";
 import {
   certificateGeneratedOutcome,
   certificateHeldOutcome,
@@ -34,7 +26,6 @@ import {
 } from "./complianceAgent";
 import { coverageBreakdownForTool } from "./coverageBreakdown";
 import { orgLabelForScope, type AgentScope } from "./agentScope";
-import { evaluatePceIntake, type PceRequestKind } from "./pceIntake";
 import { searchPolicyDocumentWithSourceSpans } from "./policyLookup";
 import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
 import { buildVendorComplianceTools } from "./vendorComplianceTools";
@@ -54,16 +45,6 @@ type ToolArtifact = {
   data: unknown;
 };
 
-type PolicyChangeDraftResult = {
-  needsRecipient?: boolean;
-  recipientEmail?: string;
-  recipientName?: string;
-  subject?: string;
-  body?: string;
-  ccAddresses?: string[];
-  bccAddresses?: string[];
-};
-
 type ToolPolicy = Record<string, any> & {
   _id: Id<"policies">;
   orgId: Id<"organizations">;
@@ -79,21 +60,6 @@ type ListedPolicyForTool = Record<string, any> & {
   _scopeOrgName?: string;
 };
 
-type PolicyChangeCaseForTool = {
-  _id: Id<"policyChangeCases">;
-  orgId: Id<"organizations">;
-  policyId?: Id<"policies">;
-  affectedPolicyIds?: Id<"policies">[];
-  status?: string;
-  summary?: string;
-  requestText?: string;
-  updatedAt?: number;
-};
-
-type PolicyChangeStatusForTool = {
-  caseId: Id<"policyChangeCases">;
-} & Record<string, unknown>;
-
 export type BuildAgentToolExecutorsOptions = {
   surface: AgentToolSurface;
   orgId: Id<"organizations">;
@@ -103,24 +69,12 @@ export type BuildAgentToolExecutorsOptions = {
   readOrgIds?: Id<"organizations">[];
   writableOrgIds?: Id<"organizations">[];
   threadId?: Id<"threads">;
-  defaultPolicyChangeCaseId?: Id<"policyChangeCases">;
-  getCurrentPolicyChangeCaseId?: () => Id<"policyChangeCases"> | undefined;
   canWrite?: boolean;
   writeUnavailableMessage?: string;
   availableFileIds?: Set<string>;
   onPolicyReferenced?: (policyId: Id<"policies">) => void | Promise<void>;
   onResponseAttachment?: (attachment: ToolAttachment) => void | Promise<void>;
   onToolArtifact?: (artifact: ToolArtifact) => void | Promise<void>;
-  onPolicyChangeCase?: (
-    caseId: Id<"policyChangeCases">,
-  ) => void | Promise<void>;
-  onPolicyChangeEmailDraft?: (args: {
-    caseId: Id<"policyChangeCases">;
-    draft: PolicyChangeDraftResult;
-  }) =>
-    | void
-    | { pendingEmailId?: Id<"pendingEmails"> }
-    | Promise<void | { pendingEmailId?: Id<"pendingEmails"> }>;
 };
 
 function certificateSourceForSurface(surface: AgentToolSurface) {
@@ -284,142 +238,6 @@ async function resolveWritablePolicy(
     return { ok: false as const, message: writeUnavailable(options, action) };
   }
   return resolved;
-}
-
-function policyChangeCaseMatchesPolicy(
-  changeCase: PolicyChangeCaseForTool,
-  policyId?: Id<"policies">,
-) {
-  if (!policyId) return true;
-  if (changeCase.policyId) return String(changeCase.policyId) === String(policyId);
-  return Array.isArray(changeCase.affectedPolicyIds)
-    ? changeCase.affectedPolicyIds.some((id: unknown) => String(id) === String(policyId))
-    : false;
-}
-
-function activePolicyChangeCase(changeCase: PolicyChangeCaseForTool) {
-  return !["completed", "declined", "cancelled"].includes(String(changeCase.status));
-}
-
-function caseSelectionResponse(
-  message: string,
-  candidates: PolicyChangeCaseForTool[] = [],
-) {
-  return {
-    status: "needs_case_selection",
-    message,
-    cases: candidates.slice(0, 8).map((changeCase) => ({
-      caseId: changeCase._id,
-      policyId: changeCase.policyId,
-      status: changeCase.status,
-      summary: changeCase.summary,
-      requestText: typeof changeCase.requestText === "string"
-        ? changeCase.requestText.slice(0, 500)
-        : undefined,
-      updatedAt: changeCase.updatedAt,
-    })),
-  };
-}
-
-async function resolvePolicyChangeCaseForTool(
-  ctx: ActionCtx,
-  options: BuildAgentToolExecutorsOptions,
-  args: {
-    caseId?: string;
-    policyId?: Id<"policies">;
-    orgId: Id<"organizations">;
-    activeOnly?: boolean;
-    actionLabel: string;
-  },
-) {
-  const explicitCaseId = args.caseId?.trim();
-  if (explicitCaseId) {
-    const explicitMatches = await ctx.runQuery(
-      internal.policyChanges.resolveCaseCandidatesInternal,
-      {
-        orgId: args.orgId,
-        candidateCaseIds: [explicitCaseId],
-        activeOnly: false,
-      },
-    ) as PolicyChangeCaseForTool[];
-    const explicit = explicitMatches.find((changeCase) =>
-      String(changeCase._id) === explicitCaseId,
-    );
-    if (explicit) {
-      if (!canWriteOrg(options, explicit.orgId)) {
-        return {
-          ok: false as const,
-          response: writeUnavailable(options, args.actionLabel),
-        };
-      }
-      if (!policyChangeCaseMatchesPolicy(explicit, args.policyId)) {
-        return {
-          ok: false as const,
-          response: caseSelectionResponse(
-            "That policy change case belongs to a different policy. Choose the correct case for this policy before continuing.",
-            [explicit],
-          ),
-        };
-      }
-      if (args.activeOnly !== false && !activePolicyChangeCase(explicit)) {
-        return {
-          ok: false as const,
-          response: caseSelectionResponse(
-            "That policy change case is already closed and cannot be used for this action.",
-            [explicit],
-          ),
-        };
-      }
-      return {
-        ok: true as const,
-        caseId: explicit._id,
-      };
-    }
-  }
-
-  const candidateCaseIds = [
-    explicitCaseId,
-    options.getCurrentPolicyChangeCaseId?.(),
-    options.defaultPolicyChangeCaseId,
-  ]
-    .filter((caseId): caseId is string | Id<"policyChangeCases"> => Boolean(caseId))
-    .map(String);
-  const candidates = await ctx.runQuery(
-    internal.policyChanges.resolveCaseCandidatesInternal,
-    {
-      orgId: args.orgId,
-      policyId: args.policyId,
-      threadId: options.threadId,
-      candidateCaseIds,
-      activeOnly: args.activeOnly !== false,
-    },
-  ) as PolicyChangeCaseForTool[];
-  const writableCandidates = candidates.filter((changeCase) =>
-    canWriteOrg(options, changeCase.orgId),
-  );
-
-  if (writableCandidates.length === 1) {
-    const changeCase = writableCandidates[0];
-    return {
-      ok: true as const,
-      caseId: changeCase._id,
-    };
-  }
-  if (writableCandidates.length > 1) {
-    return {
-      ok: false as const,
-      response: caseSelectionResponse(
-        "I found multiple active policy change cases that could match this request. Ask which case to use before continuing.",
-        writableCandidates,
-      ),
-    };
-  }
-  return {
-    ok: false as const,
-    response: caseSelectionResponse(
-      `I could not resolve the policy change case for this ${args.actionLabel}. Ask for the case to use before continuing.`,
-    ),
-  };
 }
 
 async function resolveFinalReadablePolicy(
@@ -698,6 +516,7 @@ export function buildAgentToolExecutors(
         requestText?: string;
         requestedEndorsements?: string[];
         additionalInsuredName?: string;
+        certificateForm?: "acord25" | "acord24" | "acord27" | "acord28" | "acord29" | "acord30" | "acord31";
         explicitReissue?: boolean;
       }) => {
         const resolved = await resolveFinalWritablePolicy(
@@ -722,11 +541,11 @@ export function buildAgentToolExecutors(
             requestText: params.requestText,
             requestedEndorsements: params.requestedEndorsements,
           };
-          const hasPolicyChangeRequest =
+          const hasMarkedEndorsementRequest =
             Boolean(params.additionalInsuredName?.trim()) ||
             Boolean(params.requestText?.trim()) ||
             (params.requestedEndorsements?.length ?? 0) > 0;
-          if (!params.explicitReissue && !hasPolicyChangeRequest) {
+          if (!params.explicitReissue && !hasMarkedEndorsementRequest) {
             const reusable = await ctx.runQuery(
               (internal as any).certificateLifecycle
                 .findReusableIssuedVersionByHolderNameInternal,
@@ -799,6 +618,7 @@ export function buildAgentToolExecutors(
               requestText: params.requestText,
               requestedEndorsements: params.requestedEndorsements,
               additionalInsuredName: params.additionalInsuredName,
+              formCode: params.certificateForm,
               forceReissue: params.explicitReissue,
               source: certificateSourceForSurface(options.surface),
               createdByUserId: options.userId,
@@ -809,10 +629,10 @@ export function buildAgentToolExecutors(
             const output = {
               message: generated.message,
               holdId: generated.holdId,
-              policyChangeCaseId: generated.policyChangeCaseId,
               requiredChanges: generated.requiredChanges,
               reasonCode: generated.reasonCode,
               evidence: generated.evidence,
+              emailDraft: generated.emailDraft,
               brokerHandoffOffered: generated.brokerHandoffOffered,
               workflowOutcome: certificateHeldOutcome({
                 params: workflowParams,
@@ -820,10 +640,10 @@ export function buildAgentToolExecutors(
                 artifactData: {
                   status: generated.status,
                   holdId: generated.holdId,
-                  policyChangeCaseId: generated.policyChangeCaseId,
                   requiredChanges: generated.requiredChanges,
                   reasonCode: generated.reasonCode,
                   evidence: generated.evidence,
+                  emailDraft: generated.emailDraft,
                   brokerHandoffOffered: generated.brokerHandoffOffered,
                 },
               }),
@@ -832,11 +652,6 @@ export function buildAgentToolExecutors(
               type: "certificate_hold",
               data: output,
             });
-            if (generated.policyChangeCaseId) {
-              await options.onPolicyChangeCase?.(
-                generated.policyChangeCaseId as Id<"policyChangeCases">,
-              );
-            }
             return output;
           }
           if (generated.status === "extraction_in_progress") {
@@ -894,6 +709,7 @@ export function buildAgentToolExecutors(
               versionNumber: generated.versionNumber,
               requestKind: generated.requestKind ?? "holder",
               additionalInsuredName: generated.additionalInsuredName,
+              formCode: generated.formCode,
             };
             const output = {
               message:
@@ -927,6 +743,7 @@ export function buildAgentToolExecutors(
             versionNumber: generated.versionNumber,
             requestKind: generated.requestKind ?? "holder",
             additionalInsuredName: generated.additionalInsuredName,
+            formCode: generated.formCode,
           };
           const output = {
             message: "COI generated and attached to this response.",
@@ -953,273 +770,6 @@ export function buildAgentToolExecutors(
           console.error("[agentToolExecutors] COI generation failed:", err);
           return COI_GENERATION_FAILED_MESSAGE;
         }
-      },
-    },
-    create_policy_change_request: {
-      ...createPolicyChangeRequest,
-      execute: async (params: {
-        requestKind?: PceRequestKind;
-        requestText: string;
-        policyId?: string;
-        evidenceSourceIds?: string[];
-      }) => {
-        if (options.canWrite === false)
-          return writeUnavailable(options, "capture a broker follow-up");
-        const intake = evaluatePceIntake({
-          requestKind: params.requestKind,
-          requestText: params.requestText,
-        });
-        if (!intake.allowed) return intake.message;
-        let targetOrgId = options.orgId;
-        let policyId: Id<"policies"> | undefined;
-        if (params.policyId) {
-          const resolved = await resolveFinalWritablePolicy(
-            ctx,
-            options,
-            params.policyId,
-            "broker follow-ups",
-          );
-          if (!resolved.ok) return resolved.message;
-          targetOrgId = resolved.policy.orgId;
-          policyId = resolved.policy._id;
-        }
-        const createArgsBase: {
-          orgId: Id<"organizations">;
-          userId: Id<"users">;
-          policyId?: Id<"policies">;
-          requestText: string;
-          evidenceSourceIds?: string[];
-        } = {
-          orgId: targetOrgId,
-          userId: options.userId,
-          policyId,
-          requestText: params.requestText,
-          evidenceSourceIds: params.evidenceSourceIds,
-        };
-        const result =
-          options.surface === "email"
-            ? await ctx.runAction(
-                internal.actions.policyChangeRequests.createFromEmailForThread,
-                createArgsBase,
-              )
-            : await ctx.runAction(
-                internal.actions.policyChangeRequests.createFromChatForThread,
-                {
-                  ...createArgsBase,
-                  operatorInitiatedUserMessageId:
-                    options.surface === "web"
-                      ? options.operatorInitiatedUserMessageId
-                      : undefined,
-                },
-              );
-        if (result?.error) return result.error;
-        const caseId = result?.caseId as Id<"policyChangeCases"> | undefined;
-        if (caseId) await options.onPolicyChangeCase?.(caseId);
-        return brokerFollowUpOutcome({
-          action: "created",
-          status: "created",
-          caseId,
-          requestKind: intake.kind,
-          data: {
-            status: "created",
-            caseId,
-            requestKind: intake.kind,
-            usedSdkPce: Boolean(result?.usedSdkPce),
-          },
-        });
-      },
-    },
-    add_policy_change_info: {
-      ...addPolicyChangeInfo,
-      execute: async (params: {
-        caseId: string;
-        infoText: string;
-        sourceSpanIds?: string[];
-      }) => {
-        if (options.canWrite === false)
-          return writeUnavailable(options, "update a broker follow-up");
-        await ctx.runMutation(internal.policyChanges.addInfo, {
-          caseId: params.caseId as Id<"policyChangeCases">,
-          userId: options.userId,
-          infoText: params.infoText,
-          sourceSpanIds: params.sourceSpanIds,
-        });
-        return brokerFollowUpOutcome({
-          action: "updated",
-          status: "updated",
-          caseId: params.caseId,
-          data: { status: "updated", caseId: params.caseId },
-        });
-      },
-    },
-    check_policy_change_status: {
-      ...checkPolicyChangeStatus,
-      execute: async (params: {
-        caseId?: string;
-        policyId?: string;
-        includeClosed?: boolean;
-      }) => {
-        let policyId: Id<"policies"> | undefined;
-        if (params.policyId) {
-          const resolved = await resolveReadablePolicy(
-            ctx,
-            options,
-            params.policyId,
-          );
-          if (!resolved.ok) return resolved.message;
-          policyId = resolved.policy._id;
-        }
-        const rows = await ctx.runQuery(
-          internal.policyChanges.listForAgentInternal,
-          {
-            orgIds: options.readOrgIds ?? options.scope.readOrgIds,
-            caseId: params.caseId,
-            policyId,
-            threadId: options.threadId,
-            includeClosed: params.includeClosed,
-            limit: 10,
-          },
-        ) as PolicyChangeStatusForTool[];
-
-        if (rows.length === 0) {
-          if (params.caseId) {
-            return "Policy change case not found in this scope.";
-          }
-          if (policyId) {
-            return "No active broker follow-ups found for that policy.";
-          }
-          return params.includeClosed
-            ? "No broker follow-ups found in this scope."
-            : "No active broker follow-ups found in this scope.";
-        }
-
-        if (rows.length === 1) await options.onPolicyChangeCase?.(rows[0].caseId);
-
-        return {
-          brokerFollowUps: rows,
-          count: rows.length,
-          includeClosed: params.includeClosed === true,
-        };
-      },
-    },
-    draft_policy_change_email: {
-      ...draftPolicyChangeSubmission,
-      execute: async (params: {
-        caseId?: string;
-        recipientEmail?: string;
-        recipientName?: string;
-        instructions?: string;
-      }) => {
-        if (options.canWrite === false)
-          return writeUnavailable(options, "draft a broker email");
-        const resolvedCase = await resolvePolicyChangeCaseForTool(ctx, options, {
-          caseId: params.caseId,
-          orgId: options.orgId,
-          activeOnly: true,
-          actionLabel: "draft a broker email",
-        });
-        if (!resolvedCase.ok) return resolvedCase.response;
-        const draft = await ctx.runMutation(internal.policyChanges.draftSubmission, {
-          caseId: resolvedCase.caseId,
-          userId: options.userId,
-          recipientEmail: params.recipientEmail,
-          recipientName: params.recipientName,
-          instructions: params.instructions,
-        });
-        const callbackResult = await options.onPolicyChangeEmailDraft?.({
-          caseId: resolvedCase.caseId,
-          draft,
-        });
-        const pendingEmailId =
-          callbackResult && typeof callbackResult === "object"
-            ? callbackResult.pendingEmailId
-            : undefined;
-        const draftWithOptionalAddresses = draft as PolicyChangeDraftResult;
-        return brokerFollowUpOutcome({
-          action: "email_drafted",
-          status: draft.needsRecipient ? "needs_recipient" : "drafted",
-          caseId: resolvedCase.caseId,
-          needsRecipient: draft.needsRecipient,
-          pendingEmailId,
-          recipientEmail: draft.recipientEmail,
-          data: {
-            status: draft.needsRecipient ? "needs_recipient" : "drafted",
-            caseId: resolvedCase.caseId,
-            readyToSend: !draft.needsRecipient,
-            nextAction: draft.needsRecipient
-              ? "Ask for the broker email address."
-              : "Show the email details and ask for approval before sending.",
-            pendingEmailId,
-            emailDraft: {
-              recipientEmail: draft.recipientEmail,
-              recipientName: draft.recipientName,
-              ccAddresses: draftWithOptionalAddresses.ccAddresses,
-              bccAddresses: draftWithOptionalAddresses.bccAddresses,
-              subject: draft.subject,
-              body: draft.body,
-            },
-          },
-        });
-      },
-    },
-    complete_policy_change_from_endorsement: {
-      ...completePolicyChangeFromEndorsement,
-      execute: async (params: {
-        caseId?: string;
-        policyId: string;
-        files: Array<{ fileId: string; fileName: string }>;
-        summary?: string;
-        fieldUpdates?: Record<string, unknown>;
-      }) => {
-        const resolved = await resolveFinalWritablePolicy(
-          ctx,
-          options,
-          params.policyId,
-          "endorsement completion",
-        );
-        if (!resolved.ok) return resolved.message;
-        const resolvedCase = await resolvePolicyChangeCaseForTool(ctx, options, {
-          caseId: params.caseId,
-          orgId: resolved.policy.orgId,
-          policyId: resolved.policy._id,
-          activeOnly: true,
-          actionLabel: "attach an endorsement",
-        });
-        if (!resolvedCase.ok) return resolvedCase.response;
-        if (options.availableFileIds) {
-          for (const file of params.files) {
-            if (!options.availableFileIds.has(file.fileId)) {
-              return `Storage ID ${file.fileId} does not match any attachment on this message.`;
-            }
-          }
-        }
-        const result = await ctx.runMutation(internal.policyChanges.completeFromEndorsement, {
-          caseId: resolvedCase.caseId,
-          userId: options.userId,
-          policyId: resolved.policy._id,
-          files: params.files.map((file) => ({
-            fileId: file.fileId as Id<"_storage">,
-            fileName: file.fileName,
-          })),
-          summary: params.summary,
-          fieldUpdates: params.fieldUpdates,
-        });
-        await options.onPolicyChangeCase?.(resolvedCase.caseId);
-        await options.onToolArtifact?.({
-          type: "policy_change_result",
-          data: {
-            status: "completed",
-            caseId: resolvedCase.caseId,
-            policyId: resolved.policy._id,
-          },
-        });
-        return brokerFollowUpOutcome({
-          action: "completed_from_endorsement",
-          status: "completed",
-          caseId: resolvedCase.caseId,
-          policyId: resolved.policy._id,
-          data: { status: "completed", caseId: resolvedCase.caseId, ...result },
-        });
       },
     },
   };

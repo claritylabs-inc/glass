@@ -561,7 +561,6 @@ export const processInbound = internalAction({
           readOrgIds,
           writableOrgIds: imessageWritableOrgIds,
           threadId,
-          getCurrentPolicyChangeCaseId: runState.getPolicyChangeCaseId,
           canWrite: currentSenderIsLinked,
           writeUnavailableMessage:
             "Only a linked Glass user in this chat can do that.",
@@ -569,7 +568,6 @@ export const processInbound = internalAction({
           onPolicyReferenced: runState.onPolicyReferenced,
           onResponseAttachment: runState.onResponseAttachment,
           onToolArtifact: runState.onToolArtifact,
-          onPolicyChangeCase: runState.setPolicyChangeCase,
         }),
         create_imessage_group_chat: {
           ...createImessageGroupChat,
@@ -694,7 +692,6 @@ export const processInbound = internalAction({
       runState.appendWorkflowOutcomes(workflowOutcomes);
       const responseFileAttachments = runState.responseFileAttachments;
       const imessageToolArtifacts = runState.toolArtifacts;
-      const policyChangeCaseId = runState.getPolicyChangeCaseId();
       let responseText = generatedTextFromResult(result);
       let responseAlreadySent = false;
       let pendingEmailIdForResponse: Id<"pendingEmails"> | undefined;
@@ -740,7 +737,6 @@ export const processInbound = internalAction({
                   : undefined,
               usedTools: usedTools.length > 0 ? usedTools : undefined,
               toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-              policyChangeCaseId,
             });
           }
         }
@@ -811,7 +807,6 @@ export const processInbound = internalAction({
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
           toolArtifacts:
             imessageToolArtifacts.length > 0 ? imessageToolArtifacts : undefined,
-          policyChangeCaseId,
         });
       }
 
@@ -824,7 +819,6 @@ export const processInbound = internalAction({
         responseText,
         relevantPolicyIds,
         artifacts: imessageToolArtifacts,
-        policyChangeCaseId,
         usedTools,
       });
 

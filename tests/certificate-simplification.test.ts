@@ -31,23 +31,40 @@ describe("simplified certificate request routing", () => {
       requiredChanges: ["additional_insured"],
       hasEndorsementRequest: true,
       additionalInsuredOnly: true,
+      evidenceGatedOnly: true,
       requestKind: "additional_insured",
       additionalInsuredName: "Acme Owner LLC",
       requestSignature: "additional_insured:acme owner llc",
     });
   });
 
-  it("routes non-additional-insured endorsement requests to broker follow-up", () => {
+  it("routes evidence-gated endorsements through evidence review and holds true policy changes", () => {
+    const waiverMetadata = resolveCertificateRequestMetadata({
+      holderName: "Acme Property Management",
+      requestedEndorsements: ["waiver_of_subrogation"],
+    });
+    const namedInsuredMetadata = resolveCertificateRequestMetadata({
+      holderName: "Acme Property Management",
+      requestedEndorsements: ["named_insured"],
+    });
     const certificates = readFileSync(join(ROOT, "convex/certificates.ts"), "utf-8");
 
-    expect(certificates).toContain("else if (additionalInsuredOnly)");
+    expect(waiverMetadata).toMatchObject({
+      evidenceGatedOnly: true,
+      requestSignature: "holder:acme property management|waiver_of_subrogation",
+    });
+    expect(namedInsuredMetadata).toMatchObject({
+      evidenceGatedOnly: false,
+    });
+    expect(certificates).toContain("else if (evidenceGatedOnly)");
     expect(certificates).toContain("evaluateCertificateRequestGateWithLlm");
     expect(certificates).toContain("unsupportedEndorsementGate(requiredChanges)");
-    expect(certificates).toContain("createFromChatInternal");
+    expect(certificates).not.toContain("createFromChatInternal");
+    expect(certificates).toContain("buildEndorsementRequestEmail");
     expect(certificates).toContain("findReusableIssuedVersionInternal");
     expect(certificates).toContain("args.forceReissue");
     expect(readFileSync(join(ROOT, "convex/actions/generateCoi.ts"), "utf-8")).toContain(
-      "Additional Insured:",
+      "applyEndorsementsToCertificateData",
     );
   });
 });
