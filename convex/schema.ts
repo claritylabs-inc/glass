@@ -210,8 +210,6 @@ const policyDeliveryRuleFiltersValidator = v.object({
   securities: v.optional(v.array(v.string())),
   underwriters: v.optional(v.array(v.string())),
   linesOfBusiness: v.optional(v.array(v.string())),
-  productLines: v.optional(v.array(v.string())),
-  policyTypes: v.optional(v.array(v.string())),
 });
 
 const policyChangeStatusValidator = v.union(
@@ -1241,7 +1239,6 @@ export default defineSchema({
     // Policy metadata
     policyNumber: v.string(),
     linesOfBusiness: v.array(v.string()),
-    policyTypes: v.optional(v.array(v.string())),
     documentType: v.optional(v.literal("policy")),
     policyYear: v.number(),
     effectiveDate: v.string(),

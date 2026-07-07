@@ -11,7 +11,6 @@ export type Policy = {
   carrier?: string;
   policyNumber: string;
   linesOfBusiness?: string[];
-  policyTypes: string[];
   effectiveDate: string;
   expirationDate: string;
   dataStage?: string;
@@ -64,7 +63,7 @@ export function compactList(parts: Array<string | undefined | null>) {
   return parts.filter((part): part is string => Boolean(part?.trim())).join(" | ");
 }
 
-export function policyLineBusinessLabels(policy: Pick<Policy, "linesOfBusiness" | "policyTypes">) {
+export function policyLineBusinessLabels(policy: Pick<Policy, "linesOfBusiness">) {
   return policyLobCodes(policy)
     .filter((code) => code !== "UN")
     .map(lobLabel);

@@ -10,7 +10,7 @@ describe("insurance document mapping", () => {
       policyNumber: "Unknown",
       effectiveDate: "Unknown",
       expirationDate: "Unknown",
-      policyTypes: ["professional_liability"],
+      linesOfBusiness: ["EO"],
       coverages: [],
       declarations: {
         fields: [
@@ -45,7 +45,7 @@ describe("insurance document mapping", () => {
       policyNumber: "SS-MEC-2026-09921",
       effectiveDate: "Unknown",
       expirationDate: "Unknown",
-      policyTypes: ["general_liability"],
+      linesOfBusiness: ["CGL"],
       coverages: [],
       declarations: {
         fields: [
@@ -79,7 +79,7 @@ describe("insurance document mapping", () => {
       premiumAmount: 325,
       totalCost: "325",
       totalCostAmount: 325,
-      policyTypes: ["general_liability"],
+      linesOfBusiness: ["CGL"],
       coverages: [
         {
           name: "General Liability",
@@ -145,7 +145,7 @@ describe("insurance document mapping", () => {
       policyNumber: "SLS-EO-26-110482",
       effectiveDate: "2026-01-01",
       expirationDate: "2027-01-01",
-      policyTypes: ["professional_liability"],
+      linesOfBusiness: ["EO"],
       coverages: [],
     } as never);
 

@@ -314,7 +314,7 @@ export function policySearchScore(
 ): number {
   const q = query.toLowerCase().trim();
   const words = q.split(/\s+/).filter((w) => w.length > 2);
-  const linesOfBusiness = policyLobCodes(policy as { linesOfBusiness?: string[]; policyTypes?: string[] });
+  const linesOfBusiness = policyLobCodes(policy as { linesOfBusiness?: string[] });
   const lineTerms = linesOfBusiness.flatMap((code) => [code, lobLabel(code)]);
   const coverages = (policy.coverages as Array<{ name?: string; limit?: string }> | undefined) ?? [];
   const outlineText = flattenDocumentOutline(getPolicyDocumentOutline(policy))

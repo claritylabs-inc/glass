@@ -264,7 +264,7 @@ type PolicyDocument = {
   insuredName?: string;
   effectiveDate?: string;
   expirationDate?: string;
-  policyTypes?: string[];
+  linesOfBusiness?: string[];
   coverages?: CoverageEntry[];
   premium?: string;
   taxesAndFees?: FeeEntry[];

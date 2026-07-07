@@ -31,6 +31,11 @@ type BackfillReport = {
   continuationScheduled: boolean;
 };
 
+type LegacyPolicyDeliveryFilters = {
+  productLines?: string[];
+  policyTypes?: string[];
+};
+
 function emptyReport(dryRun: boolean): BackfillReport {
   return {
     dryRun,
@@ -114,7 +119,9 @@ export const backfillPoliciesBatchInternal = internalMutation({
 
     report.policies.scannedCount = page.page.length;
     for (const policy of page.page) {
-      const decision = policyLineBackfillDecision(policy);
+      const decision = policyLineBackfillDecision(
+        policy as { linesOfBusiness?: string[]; policyTypes?: string[] },
+      );
       for (const value of decision.unmappedValues) {
         report.policies.unmappedValues[value] = (report.policies.unmappedValues[value] ?? 0) + 1;
       }
@@ -177,10 +184,11 @@ export const backfillDeliveryRulesBatchInternal = internalMutation({
         continue;
       }
       report.deliveryRules.scannedCount += 1;
-      if (rule.filters.linesOfBusiness?.length) continue;
+      const filters = rule.filters as typeof rule.filters & LegacyPolicyDeliveryFilters;
+      if (filters.linesOfBusiness?.length) continue;
       const after = unique([
-        ...(rule.filters.productLines ?? []),
-        ...(rule.filters.policyTypes ?? []),
+        ...(filters.productLines ?? []),
+        ...(filters.policyTypes ?? []),
       ]);
       if (after.length === 0) continue;
       report.deliveryRules.changedCount += 1;
@@ -188,8 +196,8 @@ export const backfillDeliveryRulesBatchInternal = internalMutation({
         report.deliveryRules.samples.push({
           ruleId: rule._id,
           before: {
-            productLines: rule.filters.productLines,
-            policyTypes: rule.filters.policyTypes,
+            productLines: filters.productLines,
+            policyTypes: filters.policyTypes,
           },
           after,
         });
@@ -197,7 +205,7 @@ export const backfillDeliveryRulesBatchInternal = internalMutation({
       if (!dryRun) {
         await ctx.db.patch(rule._id, {
           filters: {
-            ...rule.filters,
+            ...filters,
             linesOfBusiness: after,
           },
         });

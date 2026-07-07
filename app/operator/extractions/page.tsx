@@ -239,7 +239,7 @@ function profileScalarRows(
   };
 
   const extractedLines = stringArray(profile.linesOfBusiness);
-  const lineLabels = toLobCodes(extractedLines.length ? extractedLines : stringArray(profile.policyTypes))
+  const lineLabels = toLobCodes(extractedLines)
     .filter((code) => code !== "UN")
     .map(lobLabel);
   if (lineLabels.length) rows.push({ label: "Lines of business", value: lineLabels.join(", ") });

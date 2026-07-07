@@ -29,8 +29,6 @@ const filtersValidator = v.object({
   securities: v.optional(v.array(v.string())),
   underwriters: v.optional(v.array(v.string())),
   linesOfBusiness: v.optional(v.array(v.string())),
-  productLines: v.optional(v.array(v.string())),
-  policyTypes: v.optional(v.array(v.string())),
 });
 
 function normalizeText(value: string | undefined) {

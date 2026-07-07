@@ -5,7 +5,7 @@ const POLICY_VERSION_SNAPSHOT_KEYS = [
   "mga",
   "broker",
   "policyNumber",
-  "policyTypes",
+  "linesOfBusiness",
   "policyTermType",
   "effectiveDate",
   "expirationDate",

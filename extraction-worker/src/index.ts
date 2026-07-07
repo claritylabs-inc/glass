@@ -1747,7 +1747,6 @@ const PREVIEW_TOP_LEVEL_FIELDS = [
   "broker",
   "policyNumber",
   "linesOfBusiness",
-  "policyTypes",
   "effectiveDate",
   "expirationDate",
   "insuredName",
@@ -1800,11 +1799,6 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
     broker: { type: ["string", "null"] },
     policyNumber: { type: ["string", "null"] },
     linesOfBusiness: {
-      type: "array",
-      items: { type: "string" },
-      maxItems: 12,
-    },
-    policyTypes: {
       type: "array",
       items: { type: "string" },
       maxItems: 12,
@@ -2066,7 +2060,7 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
   }
   const summary = cleanPreviewParagraph(input.summary);
   if (summary) fields.summary = summary;
-  const linesOfBusiness = previewLobCodes(input.linesOfBusiness ?? input.policyTypes);
+  const linesOfBusiness = previewLobCodes(input.linesOfBusiness);
   if (linesOfBusiness.length > 0) fields.linesOfBusiness = linesOfBusiness;
   if (Array.isArray(input.coverages)) {
     const coverages = input.coverages

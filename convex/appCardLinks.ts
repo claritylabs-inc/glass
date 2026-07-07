@@ -28,7 +28,7 @@ function randomToken(): string {
     .join("");
 }
 
-function policyTitle(policy: Pick<Doc<"policies">, "policyNumber" | "linesOfBusiness" | "policyTypes" | "fileName">) {
+function policyTitle(policy: Pick<Doc<"policies">, "policyNumber" | "linesOfBusiness" | "fileName">) {
   if (policy.policyNumber) return `Policy ${policy.policyNumber}`;
   const lines = policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel);
   if (lines.length > 0) return lines.join(", ");
@@ -57,7 +57,6 @@ function publicPolicy(policy: Doc<"policies">) {
     carrier: policy.security ?? policy.carrier,
     policyNumber: policy.policyNumber,
     linesOfBusiness: policyLobCodes(policy),
-    policyTypes: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
     dataStage: policy.extractionDataStage ?? (
