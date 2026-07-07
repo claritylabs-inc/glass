@@ -306,9 +306,8 @@ export function lobBadgeClass(code: string): string {
 
 export function policyLobCodes(policy: {
   linesOfBusiness?: readonly string[];
-  policyTypes?: readonly string[];
 }): AcordLobCode[] {
-  return toLobCodes(policy.linesOfBusiness ?? policy.policyTypes);
+  return toLobCodes(policy.linesOfBusiness);
 }
 
 export function lobSearchTerms(values?: readonly string[]): string[] {

@@ -169,7 +169,7 @@ describe("normalizeOperationalProfile", () => {
           sourceNodeIds: ["jacket"],
           sourceSpanIds: ["span-jacket"],
         },
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
       },
       sourceTree,
       sourceSpans,
@@ -196,7 +196,7 @@ describe("normalizeOperationalProfile", () => {
           sourceNodeIds: ["named-insured-row"],
           sourceSpanIds: ["span-named-insured"],
         },
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
       },
       sourceTree,
       sourceSpans,
@@ -217,7 +217,7 @@ describe("normalizeOperationalProfile", () => {
           sourceNodeIds: ["missing-node"],
           sourceSpanIds: ["missing-span"],
         },
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
       },
       sourceTree,
       sourceSpans,
@@ -232,7 +232,7 @@ describe("normalizeOperationalProfile", () => {
   it("keeps inferred coverage rows and terms when provenance is unavailable", () => {
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
         coverages: [
           {
             name: "Technology Professional Liability",
@@ -271,7 +271,7 @@ describe("normalizeOperationalProfile", () => {
   it("drops torn declaration table coverage fragments and repairs self-referential limits", () => {
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
         coverages: [
           {
             name: "C. Regulatory Proceedings Sub-Limit",
@@ -348,7 +348,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
         endorsementSupport: [
           {
             kind: "loss_payee",
@@ -407,7 +407,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["general_liability"],
+        linesOfBusiness: ["general_liability"],
         namedInsured: {
           value: "Example Holdings Ltd.",
           confidence: "high",
@@ -497,7 +497,7 @@ describe("normalizeOperationalProfile", () => {
     const profile = normalizeOperationalProfile(
       {
         documentType: "policy",
-        policyTypes: ["life"],
+        linesOfBusiness: ["life"],
         policyNumber: {
           value: "LI-1234,567-8",
           confidence: "high",
@@ -583,7 +583,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["life", "disability"],
+        linesOfBusiness: ["life", "disability"],
         coverages: [
           {
             name: "Manulife Par with VitalityPlusTM",
@@ -655,7 +655,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["other"],
+        linesOfBusiness: ["other"],
         policyNumber: {
           value: "LI-1234",
           confidence: "high",
@@ -688,7 +688,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["critical_illness"],
+        linesOfBusiness: ["critical_illness"],
         policyNumber: {
           value: "LI-1234,567-8",
           confidence: "high",
@@ -713,7 +713,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["critical_illness"],
+        linesOfBusiness: ["critical_illness"],
       },
       tree,
       spans,
@@ -732,7 +732,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["life"],
+        linesOfBusiness: ["life"],
         policyNumber: {
           value: "Policy number:",
           confidence: "medium",
@@ -757,7 +757,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["life"],
+        linesOfBusiness: ["life"],
         coverages: [
           {
             name: "Joint last-to-die basic insurance coverage",
@@ -792,7 +792,7 @@ describe("normalizeOperationalProfile", () => {
 
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["other"],
+        linesOfBusiness: ["other"],
         coverages: [
           {
             name: "Critical illness insurance benefit",
@@ -821,7 +821,7 @@ describe("normalizeOperationalProfile", () => {
   it("infers multiple commercial policy types from coverage lines", () => {
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["other"],
+        linesOfBusiness: ["other"],
         coverages: [
           {
             name: "Commercial General Liability",
@@ -881,7 +881,7 @@ describe("normalizeOperationalProfile", () => {
   it("uses coverage-backed policy types before specific model hints", () => {
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["inland_marine"],
+        linesOfBusiness: ["inland_marine"],
         coverages: [
           {
             name: "Motor Truck Cargo Legal Liability",
@@ -923,7 +923,7 @@ describe("normalizeOperationalProfile", () => {
   it("does not keep a conflicting model policy type when coverage evidence is specific", () => {
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["cyber"],
+        linesOfBusiness: ["cyber"],
         coverages: [
           {
             name: "Commercial Auto Physical Damage",
@@ -951,7 +951,7 @@ describe("normalizeOperationalProfile", () => {
   it("drops generic coverage artifacts but keeps source-backed coverage rows", () => {
     const profile = normalizeOperationalProfile(
       {
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
         coverages: [
           {
             name: "Part: A. Technology Errors & Omissions",
@@ -1196,7 +1196,7 @@ describe("sourceTreePolicyFields", () => {
   it("uses preliminary policy types as hints when coverage evidence is not classifiable", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
-        policyTypes: ["other"],
+        linesOfBusiness: ["other"],
         namedInsured: {
           value: "Cios Technologies Inc.",
           sourceNodeIds: ["named-insured-row"],
@@ -1222,7 +1222,7 @@ describe("sourceTreePolicyFields", () => {
   it("preserves SDK multi-policy types when materializing stored policy fields", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
-        policyTypes: ["professional_liability", "cyber"],
+        linesOfBusiness: ["professional_liability", "cyber"],
         coverages: [
           {
             name: "A. Technology Errors & Omissions Liability",
@@ -1261,7 +1261,7 @@ describe("sourceTreePolicyFields", () => {
   it("materializes coverage term appliesTo context for policy storage", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
-        policyTypes: ["life"],
+        linesOfBusiness: ["life"],
         coverages: [
           {
             name: "Death benefit",
@@ -1305,7 +1305,7 @@ describe("sourceTreePolicyFields", () => {
 
     const operationalProfile = normalizeOperationalProfile(
       {
-        policyTypes: ["life"],
+        linesOfBusiness: ["life"],
         namedInsured: {
           value: "Jim Doe",
           confidence: "high",
@@ -1354,7 +1354,7 @@ describe("sourceTreePolicyFields", () => {
     const tree = normalizeSourceTree([], spans, "manulife-policy");
     const operationalProfile = normalizeOperationalProfile(
       {
-        policyTypes: ["other"],
+        linesOfBusiness: ["other"],
         namedInsured: {
           value: "person dies during the grace period, we reduce the death benefit by the amount of the missed",
           confidence: "high",
@@ -1397,7 +1397,7 @@ describe("sourceTreePolicyFields", () => {
   it("normalizes mixed annual premium and total due strings to the annual premium scalar", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
         premium: {
           value: "Total Due: $15,203.99 | Annual Premium | $14475",
           confidence: "high",
@@ -1453,7 +1453,7 @@ describe("sourceTreePolicyFields", () => {
           sourceNodeIds: ["premium-row"],
           sourceSpanIds: ["span-premium"],
         },
-        policyTypes: ["professional_liability"],
+        linesOfBusiness: ["professional_liability"],
       },
       sourceTree,
       sourceSpans,

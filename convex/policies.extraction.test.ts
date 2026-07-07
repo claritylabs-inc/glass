@@ -26,7 +26,6 @@ describe("policies.updateExtractionInternal", () => {
         effectiveDate: "01/01/2026",
         expirationDate: "01/01/2027",
         fileName: "known-policy.pdf",
-        policyTypes: ["general_liability"],
         documentType: "policy",
         policyYear: 2026,
         isRenewal: false,

@@ -13,7 +13,6 @@ type PolicyLike = {
   mga?: string;
   policyNumber?: string;
   linesOfBusiness?: string[];
-  policyTypes?: string[];
 };
 
 export type EmailPolicySource = {

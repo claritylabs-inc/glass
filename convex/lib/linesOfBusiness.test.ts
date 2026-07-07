@@ -107,8 +107,8 @@ describe("linesOfBusiness", () => {
     expect(lobBadgeClass("general_liability")).toBe(lobBadgeClass("CGL"));
   });
 
-  it("reads linesOfBusiness before legacy policyTypes during migration", () => {
-    expect(policyLobCodes({ linesOfBusiness: ["CGL"], policyTypes: ["cyber"] })).toEqual(["CGL"]);
-    expect(policyLobCodes({ policyTypes: ["cyber"] })).toEqual(["OLIB"]);
+  it("normalizes the canonical policy linesOfBusiness field", () => {
+    expect(policyLobCodes({ linesOfBusiness: ["CGL", "cyber"] })).toEqual(["CGL", "OLIB"]);
+    expect(policyLobCodes({})).toEqual(["UN"]);
   });
 });

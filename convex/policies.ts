@@ -27,7 +27,7 @@ import {
   normalizeMoneyString,
   parseExtractedNumber,
 } from "./lib/valueNormalization";
-import { policyLobCodes, toLobCodes } from "./lib/linesOfBusiness";
+import { toLobCodes } from "./lib/linesOfBusiness";
 
 dayjs.extend(customParseFormat);
 
@@ -270,8 +270,6 @@ export function normalizeEditableFields(
   }
   if (Array.isArray(next.linesOfBusiness)) {
     next.linesOfBusiness = toLobCodes(next.linesOfBusiness.filter((value): value is string => typeof value === "string"));
-  } else if (Array.isArray(next.policyTypes)) {
-    next.linesOfBusiness = toLobCodes(next.policyTypes.filter((value): value is string => typeof value === "string"));
   }
   delete next.policyTypes;
 
@@ -683,7 +681,6 @@ export const getSummary = query({
       documentType: enrichedPolicy.documentType,
       policyNumber: enrichedPolicy.policyNumber,
       linesOfBusiness: enrichedPolicy.linesOfBusiness,
-      policyTypes: policyLobCodes(enrichedPolicy),
       policyTermType: enrichedPolicy.policyTermType,
       carrier: enrichedPolicy.carrier,
       carrierLegalName: enrichedPolicy.carrierLegalName,
@@ -996,7 +993,6 @@ export const insert = mutation({
     broker: v.optional(v.string()),
     policyNumber: v.string(),
     linesOfBusiness: v.optional(v.array(v.string())),
-    policyTypes: v.optional(v.array(v.string())),
     documentType: v.literal("policy"),
     policyYear: v.number(),
     effectiveDate: v.string(),
@@ -1020,12 +1016,11 @@ export const insert = mutation({
     const {
       fileSha256: _fileSha256,
       uploadFileSha256s: _uploadFileSha256s,
-      policyTypes,
       ...rawFields
     } = args;
     const fields = {
       ...rawFields,
-      linesOfBusiness: toLobCodes(rawFields.linesOfBusiness ?? policyTypes),
+      linesOfBusiness: toLobCodes(rawFields.linesOfBusiness),
     };
     return await ctx.db.insert("policies", {
       ...fields,
@@ -1122,7 +1117,6 @@ export const updateExtraction = mutation({
     // Standard fields
     policyNumber: v.optional(v.string()),
     linesOfBusiness: v.optional(v.array(v.string())),
-    policyTypes: v.optional(v.array(v.string())),
     documentType: v.optional(v.literal("policy")),
     policyYear: v.optional(v.number()),
     effectiveDate: v.optional(v.string()),
@@ -1202,7 +1196,6 @@ export const updateExtractedFields = mutation({
       broker: v.optional(v.string()),
       policyNumber: v.optional(v.string()),
       linesOfBusiness: v.optional(v.array(v.string())),
-      policyTypes: v.optional(v.array(v.string())),
       policyYear: v.optional(v.number()),
       effectiveDate: v.optional(v.string()),
       expirationDate: v.optional(v.string()),
@@ -1796,7 +1789,6 @@ const PREVIEW_EXTRACTION_FIELD_ALLOWLIST = new Set([
   "broker",
   "policyNumber",
   "linesOfBusiness",
-  "policyTypes",
   "documentType",
   "policyYear",
   "effectiveDate",

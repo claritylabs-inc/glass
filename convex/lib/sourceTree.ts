@@ -1275,7 +1275,7 @@ function normalizeRawOperationalProfile(
   return PolicyOperationalProfileSchema.parse({
     documentType: candidate.documentType === "quote" ? "quote" : "policy",
     linesOfBusiness: normalizeOperationalLinesOfBusiness(
-      candidate.linesOfBusiness ?? (candidate as { policyTypes?: unknown }).policyTypes,
+      candidate.linesOfBusiness,
     ),
     policyNumber: values[0],
     namedInsured: values[1],

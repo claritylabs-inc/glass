@@ -9,8 +9,6 @@ type PolicyDeliveryFilters = {
   securities?: string[];
   underwriters?: string[];
   linesOfBusiness?: string[];
-  productLines?: string[];
-  policyTypes?: string[];
 };
 
 type PolicyDeliveryRuleLike = {
@@ -24,7 +22,6 @@ type PolicyLike = {
   insurer?: { legalName?: string };
   underwriter?: string;
   linesOfBusiness?: string[];
-  policyTypes?: string[];
   coverages?: Array<{ name?: string }>;
   programName?: string;
   summary?: string;
@@ -50,10 +47,7 @@ function includesAny(haystacks: string[], needles: string[] | undefined) {
 
 export function lineOfBusinessNeedles(rule: PolicyDeliveryRuleLike) {
   const filters = rule.filters ?? {};
-  return filters.linesOfBusiness ?? [
-    ...(filters.productLines ?? []),
-    ...(filters.policyTypes ?? []),
-  ];
+  return filters.linesOfBusiness;
 }
 
 function legacyNeedlesForPolicyLobs(codes: string[]) {

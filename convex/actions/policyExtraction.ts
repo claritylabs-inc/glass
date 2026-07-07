@@ -1439,7 +1439,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
       const existingPolicy = await convexCtx.runQuery(internal.policies.getInternal, {
         id: policyId as Id<"policies">,
-      }) as { linesOfBusiness?: string[]; policyTypes?: string[] } | null;
+      }) as { linesOfBusiness?: string[] } | null;
 
       await convexCtx.runMutation(
         (internal as any).policies.updateExtractionInternal,
@@ -1453,7 +1453,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               operationalProfile,
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
-              existingLinesOfBusiness: existingPolicy?.linesOfBusiness ?? existingPolicy?.policyTypes,
+              existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -2290,7 +2290,7 @@ async function completeExternalExtractFromPayload(
   const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
   const existingPolicy = await ctx.runQuery(internal.policies.getInternal, {
     id: policyId as Id<"policies">,
-  }) as { linesOfBusiness?: string[]; policyTypes?: string[] } | null;
+  }) as { linesOfBusiness?: string[] } | null;
 
   await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
     id: policyId,
@@ -2302,7 +2302,7 @@ async function completeExternalExtractFromPayload(
         operationalProfile: normalizedOperationalProfile,
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
-        existingLinesOfBusiness: existingPolicy?.linesOfBusiness ?? existingPolicy?.policyTypes,
+        existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),
@@ -2720,7 +2720,6 @@ export const rebuildStoredSourceNodes = internalAction({
       documentMetadata?: unknown;
       operationalProfile?: unknown;
       linesOfBusiness?: string[];
-      policyTypes?: string[];
     } | null;
     if (!policy) throw new Error("Policy not found");
     if (!policy.orgId) throw new Error("Policy is missing orgId");

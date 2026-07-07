@@ -85,10 +85,9 @@ export function policyToCoiData(policy: any): CoiData {
   const limits: any = policy.limits ?? {};
   const profileLinesOfBusiness = Array.isArray(profile?.linesOfBusiness) && profile.linesOfBusiness.length > 0
     ? profile.linesOfBusiness
-    : profile?.policyTypes;
-  const policyTypes = policyLobCodes({
-    linesOfBusiness: policy.linesOfBusiness,
-    policyTypes: profileLinesOfBusiness?.length ? profileLinesOfBusiness : policy.policyTypes ?? [],
+    : undefined;
+  const linesOfBusiness = policyLobCodes({
+    linesOfBusiness: profileLinesOfBusiness?.length ? profileLinesOfBusiness : policy.linesOfBusiness,
   });
   const declarations = declarationFieldMap(policy);
   const policyNumber = profileValue(profile?.policyNumber) ?? pickField(declarations, "policyNumber") ?? policy.policyNumber ?? "";
@@ -146,7 +145,7 @@ export function policyToCoiData(policy: any): CoiData {
     insuredAddress,
     insuredFein: policy.insuredFein,
     insurers,
-    coverages: coverageLines.length ? coverageLines : buildFallbackCoverageLines(policyTypes, limits, {
+    coverages: coverageLines.length ? coverageLines : buildFallbackCoverageLines(linesOfBusiness, limits, {
       policyNumber,
       effectiveDate: effDate,
       expirationDate: expDate,

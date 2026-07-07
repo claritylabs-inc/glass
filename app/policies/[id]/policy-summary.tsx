@@ -145,7 +145,7 @@ export interface PolicySummaryProps {
   effectiveDate?: string;
   expirationDate?: string;
   premium?: string;
-  policyTypes: string[];
+  linesOfBusiness: string[];
   policyTermType?: string;
   summary?: string;
   isRenewal?: boolean;
@@ -161,7 +161,7 @@ export function PolicySummary({
   effectiveDate,
   expirationDate,
   premium,
-  policyTypes,
+  linesOfBusiness,
   policyTermType,
   summary: _summary,
   isRenewal,
@@ -175,7 +175,7 @@ export function PolicySummary({
   const realEffectiveDate = realText(effectiveDate);
   const realExpirationDate = realText(expirationDate);
   const realPremium = realText(premium);
-  const realLinesOfBusiness = toLobCodes(policyTypes).filter(isRealLineOfBusiness);
+  const realLinesOfBusiness = toLobCodes(linesOfBusiness).filter(isRealLineOfBusiness);
   const periodValue =
     policyTermType === "continuous" && realEffectiveDate
         ? `${realEffectiveDate} — Until Cancelled`

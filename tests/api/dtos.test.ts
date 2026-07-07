@@ -18,7 +18,7 @@ describe("toPolicyDto", () => {
   it("maps policy fields to snake_case", () => {
     const raw = {
       _id: "p1", _creationTime: 1000, carrier: "Zurich", policyNumber: "ZR-001",
-      policyTypes: ["general_liability"], effectiveDate: "2024-01-01", expirationDate: "2025-01-01",
+      linesOfBusiness: ["CGL"], effectiveDate: "2024-01-01", expirationDate: "2025-01-01",
       premium: 5000, documentType: "policy",
     };
     const dto = toPolicyDto(raw);
@@ -57,7 +57,7 @@ describe("MCP policy DTO helpers", () => {
     security: "Zurich NA",
     broker: "Marsh",
     policyNumber: "ZR-001",
-    policyTypes: ["general_liability"],
+    linesOfBusiness: ["CGL"],
     policyYear: 2024,
     effectiveDate: "2024-01-01",
     expirationDate: "2025-01-01",
@@ -259,8 +259,8 @@ describe("certificate lifecycle DTOs", () => {
 describe("toPolicyStatsDto", () => {
   it("computes policy counts by type, carrier, and year", () => {
     expect(toPolicyStatsDto([
-      { carrier: "Zurich", policyTypes: ["general_liability", "auto"], policyYear: 2024 },
-      { carrier: "Zurich", policyTypes: ["general_liability"], policyYear: 2025 },
+      { carrier: "Zurich", linesOfBusiness: ["CGL", "AUTOB"], policyYear: 2024 },
+      { carrier: "Zurich", linesOfBusiness: ["CGL"], policyYear: 2025 },
     ])).toEqual({
       totalPolicies: 2,
       byType: { CGL: 2, AUTOB: 1 },
