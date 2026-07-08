@@ -48,15 +48,19 @@ describe("agent steering surfaces", () => {
     expect(promptInput).not.toContain("pointer-events-none absolute z-20");
   });
 
-  it("lets prompt text segments grow for multiline input", () => {
+  it("sizes prompt text segments with field-sizing: content, not JS measurement", () => {
     const promptInput = read("components/glass-prompt-input.tsx");
+    const promptTextarea = read("components/ai-elements/prompt-input/body.tsx");
 
-    expect(promptInput).toContain("resizePromptTextarea");
-    expect(promptInput).toContain("textarea.scrollHeight");
+    expect(promptTextarea).toContain("field-sizing-content");
     expect(promptInput).toContain("rows={1}");
-    expect(promptInput).toContain("self-start leading-6");
-    expect(promptInput).not.toContain("h-6 min-h-6");
-    expect(promptInput).not.toContain("self-center overflow-hidden leading-6");
+    expect(promptInput).toContain("flex-none self-start");
+    // Segment width/height must stay CSS-driven — no mirror spans or scrollHeight math.
+    expect(promptInput).not.toContain("resizePromptTextarea");
+    expect(promptInput).not.toContain("scrollHeight");
+    expect(promptInput).not.toContain("measuredWidth");
+    // A single line-height everywhere prevents jumps when the placeholder clears.
+    expect(promptInput).not.toContain("leading-5");
   });
 
   it("persists selected targets and routes them into agent context", () => {
