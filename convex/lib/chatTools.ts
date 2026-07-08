@@ -184,7 +184,7 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate or retrieve the right ACORD-style insurance certificate PDF for a specific policy. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
+    "Generate or retrieve the right ACORD-style insurance certificate PDF for a specific policy and attach it to the current chat/iMessage/SMS response. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     certificateHolder: z

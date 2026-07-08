@@ -19,6 +19,10 @@ const EMAIL_MODE_VALIDATOR = v.union(
 );
 const IMESSAGE_GROUP_TITLE_PREFIX = "iMessage group - ";
 const IMESSAGE_DIRECT_TITLE_PREFIX = "iMessage - ";
+type ImessageAttachmentDeliveryFailure = {
+  filename: string;
+  error?: string;
+};
 
 type OperatorInitiatedMessage = {
   operatorUserId: Id<"users">;
@@ -1210,6 +1214,119 @@ export const insertImessageMessage = internalMutation({
     });
     await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
     return messageId;
+  },
+});
+
+function compactAttachmentFailureNotice(
+  failures: Array<{ filename: string }>,
+): string {
+  const names = failures
+    .map((failure) => failure.filename.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const subject =
+    names.length > 0
+      ? names.map((name) => `"${name.replace(/"/g, "'")}"`).join(", ")
+      : "the attachment";
+  return `Attachment delivery update: ${subject} did not attach in iMessage. Say "resend" and I'll attach it again.`;
+}
+
+function failureKey(args: { stage: string; filename: string }): string {
+  return `${args.stage}:${args.filename.trim().toLowerCase()}`;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function collectAttachmentFailureKeys(toolArtifacts: unknown): Set<string> {
+  const keys = new Set<string>();
+  if (!Array.isArray(toolArtifacts)) return keys;
+
+  for (const artifact of toolArtifacts) {
+    const artifactRecord = objectRecord(artifact);
+    if (artifactRecord?.type !== "imessage_attachment_delivery") continue;
+
+    const data = objectRecord(artifactRecord.data);
+    const stage = typeof data?.stage === "string" ? data.stage : "";
+    const failures = Array.isArray(data?.failures) ? data.failures : [];
+    for (const failure of failures) {
+      const filename = objectRecord(failure)?.filename;
+      if (typeof filename === "string") {
+        keys.add(failureKey({ stage, filename }));
+      }
+    }
+  }
+
+  return keys;
+}
+
+function normalizeAttachmentFailure(
+  failure: ImessageAttachmentDeliveryFailure,
+): ImessageAttachmentDeliveryFailure | null {
+  const filename = failure.filename.trim();
+  if (!filename) return null;
+  const error = failure.error?.trim();
+  return error ? { filename, error } : { filename };
+}
+
+export const recordImessageAttachmentDeliveryFailure = internalMutation({
+  args: {
+    threadMessageId: v.id("threadMessages"),
+    stage: v.union(
+      v.literal("url_resolution"),
+      v.literal("worker_delivery"),
+    ),
+    failures: v.array(
+      v.object({
+        filename: v.string(),
+        error: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.threadMessageId);
+    if (!message || message.channel !== "imessage" || message.role !== "agent") {
+      return;
+    }
+
+    const existingArtifacts = Array.isArray(message.toolArtifacts)
+      ? message.toolArtifacts
+      : [];
+    const existingFailures = collectAttachmentFailureKeys(existingArtifacts);
+    const stage = args.stage;
+
+    const newFailures = args.failures.flatMap((failure) => {
+      const normalized = normalizeAttachmentFailure(failure);
+      if (!normalized) return [];
+      return !existingFailures.has(
+        failureKey({ stage, filename: normalized.filename }),
+      )
+        ? [normalized]
+        : [];
+    });
+    if (newFailures.length === 0) return;
+
+    const notice = compactAttachmentFailureNotice(newFailures);
+    const content = message.content.includes(notice)
+      ? message.content
+      : `${message.content.trim()}\n\n${notice}`.trim();
+
+    await ctx.db.patch(args.threadMessageId, {
+      content,
+      toolArtifacts: [
+        ...existingArtifacts,
+        {
+          type: "imessage_attachment_delivery",
+          data: {
+            status: "failed",
+            stage: args.stage,
+            failures: newFailures,
+          },
+        },
+      ],
+    });
   },
 });
 
