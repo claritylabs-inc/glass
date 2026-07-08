@@ -81,6 +81,7 @@ export type ResendPayload = {
   cc?: string | string[];
   bcc?: string | string[];
   headers?: Record<string, string>;
+  attachments?: unknown;
   [key: string]: unknown;
 };
 
@@ -107,6 +108,110 @@ function normalizeRecipients(value: string | string[] | undefined): string[] {
   if (!value) return [];
   const values = Array.isArray(value) ? value : [value];
   return values.map(normalizeEmail).filter(Boolean);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function extractSixDigitCodeCandidates(...values: Array<string | undefined>): string[] {
+  const candidates = values.flatMap((value) => value?.match(/\b\d{6}\b/g) ?? []);
+  return uniqueStrings(candidates);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function compactMetadata(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined && value !== ""),
+  );
+}
+
+function summarizeAttachment(attachment: unknown): Record<string, unknown> {
+  if (!attachment || typeof attachment !== "object") {
+    return { type: typeof attachment };
+  }
+
+  const record = attachment as Record<string, unknown>;
+  return compactMetadata({
+    filename: stringValue(record.filename),
+    name: stringValue(record.name),
+    contentType:
+      stringValue(record.contentType) ??
+      stringValue(record.content_type) ??
+      stringValue(record.mimeType) ??
+      stringValue(record.mime_type),
+    size: numberValue(record.size),
+  });
+}
+
+function summarizeAttachments(attachments: unknown): {
+  count: number;
+  items: Array<Record<string, unknown>>;
+} {
+  const list = Array.isArray(attachments) ? attachments : attachments ? [attachments] : [];
+  return {
+    count: list.length,
+    items: list.map(summarizeAttachment),
+  };
+}
+
+export type LocalEmailCaptureLog = {
+  kind?: string;
+  from?: string;
+  to?: string | string[];
+  cc?: string | string[];
+  bcc?: string | string[];
+  subject?: string;
+  text?: string;
+  html?: string;
+  attachments?: unknown;
+  codeCandidates?: string[];
+};
+
+function formatRecipientList(value: string | string[] | undefined): string {
+  return normalizeRecipients(value).join(", ") || "(none)";
+}
+
+export function isLocalEmailCaptureEnabled(): boolean {
+  return process.env.GLASS_ENV?.trim().toLowerCase() === "local" && getEmailDeliveryMode() === "capture";
+}
+
+export function logLocalEmailCapture(details: LocalEmailCaptureLog): boolean {
+  if (!isLocalEmailCaptureEnabled()) return false;
+
+  const attachments = summarizeAttachments(details.attachments);
+  const codeCandidates = uniqueStrings([
+    ...(details.codeCandidates ?? []),
+    ...extractSixDigitCodeCandidates(details.subject, details.text, details.html),
+  ]);
+
+  console.log(
+    [
+      "[glass:local-email-capture]",
+      `kind: ${details.kind ?? "email"}`,
+      `from: ${details.from ?? "(none)"}`,
+      `to: ${formatRecipientList(details.to)}`,
+      `cc: ${formatRecipientList(details.cc)}`,
+      `bcc: ${formatRecipientList(details.bcc)}`,
+      `subject: ${details.subject ?? ""}`,
+      `codeCandidates: ${codeCandidates.length ? codeCandidates.join(", ") : "(none)"}`,
+      `attachmentCount: ${attachments.count}`,
+      `attachments: ${JSON.stringify(attachments.items)}`,
+      "text:",
+      details.text ?? "",
+      "html:",
+      details.html ?? "",
+    ].join("\n"),
+  );
+
+  return true;
 }
 
 function getSubjectPrefix(): string {
@@ -175,12 +280,14 @@ function preparePayloadForDelivery(
   const allRecipients = [...recipients.to, ...recipients.cc, ...recipients.bcc];
 
   if (mode === "capture") {
-    console.log("[resend] Captured email without sending", {
-      subject: payload.subject,
-      toCount: recipients.to.length,
-      ccCount: recipients.cc.length,
-      bccCount: recipients.bcc.length,
-    });
+    if (!logLocalEmailCapture({ ...payload, kind: "email" })) {
+      console.log("[resend] Captured email without sending", {
+        subject: payload.subject,
+        toCount: recipients.to.length,
+        ccCount: recipients.cc.length,
+        bccCount: recipients.bcc.length,
+      });
+    }
     return { captured: true };
   }
 

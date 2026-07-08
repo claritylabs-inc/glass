@@ -93,12 +93,12 @@ Common variables used across major workflows:
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `DEEPSEEK_API_KEY`
-- `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email)
+- `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email; not required for local capture with `GLASS_ENV=local` and `EMAIL_DELIVERY_MODE=capture`)
 - `RESEND_WEBHOOK_SECRET`
 - `GLASS_ENV` — runtime lane: `production`, `staging`, or `local`
-- `EMAIL_DELIVERY_MODE` — outbound email policy: `live`, `restricted`, or `capture`
+- `EMAIL_DELIVERY_MODE` — outbound email policy: `live`, `restricted`, or `capture`. Use `capture` with `GLASS_ENV=local` to print full local email text/HTML and six-digit code candidates in the Convex terminal while skipping Resend. Non-local `capture` logs metadata only.
 - `EMAIL_ALLOWED_RECIPIENT_DOMAINS` / `EMAIL_ALLOWED_RECIPIENTS` — allowlist for restricted staging delivery
-- `EMAIL_REDIRECT_TO` — internal capture address for restricted staging delivery
+- `EMAIL_REDIRECT_TO` — internal capture address for restricted staging delivery; local capture does not use a redirect address
 - `EMAIL_SUBJECT_PREFIX` — optional prefix for restricted delivery subjects; staging defaults to `[STAGING]`
 - `AGENT_DOMAIN` — verified Resend sending domain for agent mail. Defaults to `glass.insure`. Legacy inbound addresses at `glass.claritylabs.inc` and `dev.claritylabs.inc` remain recognized.
 - `NOTIFICATION_EMAIL_DOMAIN` — verified Resend sending domain for system notifications. Defaults to `notifications.glass.insure`.

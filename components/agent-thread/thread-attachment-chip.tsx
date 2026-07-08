@@ -56,7 +56,7 @@ export function ThreadAttachmentChip({
           ? "h-5 gap-1 px-1.5 text-[0.6875rem] leading-4"
           : "h-6 gap-1.5 px-2 text-label",
         url
-          ? "bg-foreground/5 text-foreground/65 hover:bg-foreground/8 hover:text-foreground/80"
+          ? "cursor-pointer bg-foreground/5 text-foreground/65 hover:bg-foreground/8 hover:text-foreground/80"
           : "pointer-events-none bg-foreground/3 text-muted-foreground/40",
         className,
       )}

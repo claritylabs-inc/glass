@@ -8,7 +8,6 @@ import {
   useState,
   useMemo,
   useEffect,
-  useLayoutEffect,
 } from "react";
 import { createPortal } from "react-dom";
 import type { DragEvent as ReactDragEvent } from "react";
@@ -54,18 +53,15 @@ const INPUT_INTENT_RADIUS = 180;
 const INPUT_INTENT_EPSILON = 0.01;
 const PREPARED_ACTION_INTENT_THRESHOLD = 0.34;
 
-const useBrowserLayoutEffect =
-  typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 function InputOverlayFade() {
   return (
     <>
       <div
-        className="h-16 dark:hidden"
+        className="absolute inset-0 dark:hidden"
         style={lightInputOverlayFadeStyle}
       />
       <div
-        className="hidden h-16 dark:block"
+        className="absolute inset-0 hidden dark:block"
         style={darkInputOverlayFadeStyle}
       />
     </>
@@ -246,7 +242,10 @@ function initialPromptTokens(defaultReferences?: PromptReference[]) {
 
   const tokens: PromptToken[] = [createTextToken("", "initial-text-0")];
   defaultReferences.forEach((reference, index) => {
-    tokens.push(createReferenceToken(reference, `initial-reference-${index}`));
+    tokens.push(
+      createReferenceToken(reference, `initial-reference-${index}`),
+      createTextToken("", `initial-text-${index + 1}`),
+    );
   });
   return tokens;
 }
@@ -338,9 +337,10 @@ function mergeDefaultReferencesIntoTokens(
   if (missingReferences.length === 0) return changed ? nextTokens : tokens;
 
   const firstTextIndex = nextTokens.findIndex((token) => token.type === "text");
-  const insertTokens = missingReferences.map((reference) =>
+  const insertTokens = missingReferences.flatMap((reference) => [
     createReferenceToken(reference),
-  );
+    createTextToken(),
+  ]);
 
   if (firstTextIndex === -1) {
     return [createTextToken(), ...insertTokens];
@@ -404,21 +404,8 @@ function mergeTextAroundReference(
   };
 }
 
-function resizePromptTextarea(textarea: HTMLTextAreaElement) {
-  textarea.style.height = "auto";
-
-  const { maxHeight } = window.getComputedStyle(textarea);
-  const parsedMaxHeight = Number.parseFloat(maxHeight);
-  const hasMaxHeight = Number.isFinite(parsedMaxHeight);
-  const nextHeight = hasMaxHeight
-    ? Math.min(textarea.scrollHeight, parsedMaxHeight)
-    : textarea.scrollHeight;
-
-  textarea.style.height = `${nextHeight}px`;
-  textarea.style.overflowY =
-    hasMaxHeight && textarea.scrollHeight > parsedMaxHeight ? "auto" : "hidden";
-}
-
+// CSS `field-sizing: content` keeps segment width and height in one sizing path;
+// JS measurement caused caret and wrapping jitter here.
 function PromptTextSegment({
   token,
   placeholder,
@@ -439,80 +426,28 @@ function PromptTextSegment({
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const isPlaceholderSegment = Boolean(placeholder);
-  const measureRef = useRef<HTMLSpanElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [measuredWidth, setMeasuredWidth] = useState(0);
-
-  useBrowserLayoutEffect(() => {
-    if (isPlaceholderSegment) return;
-    const measure = measureRef.current;
-    if (!measure) return;
-    setMeasuredWidth(Math.ceil(measure.getBoundingClientRect().width) + 1);
-  }, [isPlaceholderSegment, token.text]);
-
-  const syncTextareaHeight = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    resizePromptTextarea(textarea);
-  }, []);
-
-  useBrowserLayoutEffect(() => {
-    syncTextareaHeight();
-  }, [measuredWidth, syncTextareaHeight, token.text]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.addEventListener("resize", syncTextareaHeight);
-    return () => {
-      window.removeEventListener("resize", syncTextareaHeight);
-    };
-  }, [syncTextareaHeight]);
 
   return (
-    <>
-      {!isPlaceholderSegment ? (
-        <span
-          ref={measureRef}
-          aria-hidden="true"
-          className="pointer-events-none fixed -left-[9999px] top-0 whitespace-pre p-0 text-base leading-6"
-          style={{
-            fontFamily: "inherit",
-            fontWeight: "inherit",
-            letterSpacing: "inherit",
-          }}
-        >
-          {token.text || " "}
-        </span>
-      ) : null}
-      <PromptInputTextarea
-        ref={(node) => {
-          textareaRef.current = node;
-          registerRef(token.id, node);
-        }}
-        name={`prompt-segment-${token.id}`}
-        placeholder={placeholder ?? ""}
-        rows={1}
-        value={token.text}
-        onChange={onChange}
-        onFocus={onFocus}
-        onKeyDown={onKeyDown}
-        style={
-          isPlaceholderSegment
-            ? undefined
-            : { width: `${Math.max(measuredWidth, 1)}px` }
-        }
-        className={cn(
-          "max-w-full p-0 text-base placeholder:text-muted-foreground/40",
-          isPlaceholderSegment
-            ? isCommandVariant
-              ? "min-h-24 min-w-56 flex-[1_1_14rem] leading-5"
-              : roomyOnMobile
-                ? "min-h-14 min-w-36 flex-[1_1_12rem] leading-6 sm:min-h-5.5 sm:leading-5"
-                : "min-h-5.5 min-w-36 flex-[1_1_12rem] leading-5"
-            : "min-h-6 min-w-px !flex-none self-start leading-6",
-        )}
-      />
-    </>
+    <PromptInputTextarea
+      ref={(node) => registerRef(token.id, node)}
+      name={`prompt-segment-${token.id}`}
+      placeholder={placeholder ?? ""}
+      rows={1}
+      value={token.text}
+      onChange={onChange}
+      onFocus={onFocus}
+      onKeyDown={onKeyDown}
+      className={cn(
+        "max-w-full p-0 text-base leading-6 placeholder:text-muted-foreground/40",
+        isPlaceholderSegment
+          ? isCommandVariant
+            ? "min-h-24 min-w-56 flex-[1_1_14rem]"
+            : roomyOnMobile
+              ? "min-h-14 min-w-36 flex-[1_1_12rem] sm:min-h-6"
+              : "min-h-6 min-w-36 flex-[1_1_12rem]"
+          : "min-h-6 w-auto min-w-px flex-none self-start",
+      )}
+    />
   );
 }
 
@@ -713,14 +648,8 @@ export const GlassPromptInput = forwardRef<
   const targets = useCachedAgentTargets(orgId);
   const references = useMemo(() => promptTokensToReferences(tokens), [tokens]);
   const messageText = useMemo(() => promptTokensToText(tokens), [tokens]);
-  const isPromptTextEmpty = promptTokensAreTextEmpty(tokens);
-  const isPromptEmpty = references.length === 0 && isPromptTextEmpty;
-  const primaryTextToken = tokens.find(
-    (token): token is PromptTextToken => token.type === "text",
-  );
-  const referenceTokens = tokens.filter(
-    (token): token is PromptReferenceToken => token.type === "reference",
-  );
+  const isPromptEmpty =
+    references.length === 0 && promptTokensAreTextEmpty(tokens);
   const defaultReferencesSignature = useMemo(
     () =>
       (defaultReferences ?? [])
@@ -935,14 +864,16 @@ export const GlassPromptInput = forwardRef<
           );
         }
 
+        const beforeToken = createTextToken(before);
         const referenceToken = createReferenceToken(reference);
-        const nextText = `${before}${after}`;
-        queueTextFocus(textToken.id, before.length);
+        const afterToken = createTextToken(after);
+        queueTextFocus(afterToken.id, 0);
         return [
           ...current.slice(0, textIndex),
-          { ...textToken, text: nextText },
-          ...current.slice(textIndex + 1),
+          beforeToken,
           referenceToken,
+          afterToken,
+          ...current.slice(textIndex + 1),
         ];
       });
       setActiveTrigger(null);
@@ -1366,26 +1297,19 @@ export const GlassPromptInput = forwardRef<
         />
         <div
           className={cn(
-            "flex w-full min-w-0 flex-col items-stretch",
-            referenceTokens.length > 0 && !isSearchDropdownOpen
-              ? "gap-2"
-              : "gap-0",
+            "flex w-full flex-wrap content-start items-center gap-x-1 gap-y-1",
             isCommandVariant
               ? "min-h-28 px-4 pb-2 pt-4"
               : roomyOnMobile
-                ? "min-h-22 px-4 pb-2 pt-3 sm:min-h-5.5 sm:px-3 sm:pb-1 sm:pt-2.5"
-                : "min-h-5.5 px-3 pb-1 pt-2.5",
+                ? "min-h-22 px-4 pb-2 pt-3 sm:min-h-6 sm:px-3 sm:pb-1 sm:pt-2.5"
+                : "min-h-6 px-3 pb-1 pt-2.5",
           )}
           onClick={(event) => {
             if ((event.target as HTMLElement).closest("textarea,button")) {
               return;
             }
-            const textArea =
-              textAreaRefs.current.get(activeTextTokenId) ??
-              (primaryTextToken
-                ? textAreaRefs.current.get(primaryTextToken.id)
-                : undefined);
-            textArea?.focus();
+            const textTokenId = activeTextTokenId || firstTextTokenId(tokens);
+            textAreaRefs.current.get(textTokenId)?.focus();
           }}
         >
           <input
@@ -1394,42 +1318,40 @@ export const GlassPromptInput = forwardRef<
             name="message"
             value={messageText}
           />
-          {!isSearchDropdownOpen && referenceTokens.length > 0 ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              {referenceTokens.map((token) => (
+          {tokens.map((token) =>
+            token.type === "reference" ? (
+              isSearchDropdownOpen ? null : (
                 <PromptReferenceTag
                   key={token.id}
                   kind={token.reference.kind}
                   label={token.reference.label}
                   onRemove={() => removeReferenceToken(token.id)}
-                  className="max-w-full"
                 />
-              ))}
-            </div>
-          ) : null}
-          {primaryTextToken ? (
-            <PromptTextSegment
-              key={primaryTextToken.id}
-              token={primaryTextToken}
-              placeholder={isPromptTextEmpty ? placeholder : undefined}
-              isCommandVariant={isCommandVariant}
-              roomyOnMobile={roomyOnMobile}
-              registerRef={registerTextAreaRef}
-              onFocus={() => {
-                setActiveTextTokenId(primaryTextToken.id);
-                const textArea = textAreaRefs.current.get(primaryTextToken.id);
-                if (textArea) {
-                  updateTriggerFromTextarea(textArea, primaryTextToken.id);
+              )
+            ) : (
+              <PromptTextSegment
+                key={token.id}
+                token={token}
+                placeholder={
+                  isPromptEmpty && token.id === firstTextTokenId(tokens)
+                    ? placeholder
+                    : undefined
                 }
-              }}
-              onChange={(event) =>
-                handleTextChange(event, primaryTextToken.id)
-              }
-              onKeyDown={(event) =>
-                handleTextKeyDown(event, primaryTextToken.id)
-              }
-            />
-          ) : null}
+                isCommandVariant={isCommandVariant}
+                roomyOnMobile={roomyOnMobile}
+                registerRef={registerTextAreaRef}
+                onFocus={() => {
+                  setActiveTextTokenId(token.id);
+                  const textArea = textAreaRefs.current.get(token.id);
+                  if (textArea) {
+                    updateTriggerFromTextarea(textArea, token.id);
+                  }
+                }}
+                onChange={(event) => handleTextChange(event, token.id)}
+                onKeyDown={(event) => handleTextKeyDown(event, token.id)}
+              />
+            ),
+          )}
         </div>
 
         <PromptInputFooter
@@ -1541,8 +1463,9 @@ export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
       <InputOverlayFade />
+      <div className="relative h-16" aria-hidden="true" />
       <div
-        className="pointer-events-auto px-4 pt-2 md:px-6 lg:px-8"
+        className="relative pointer-events-auto px-4 pt-2 md:px-6 lg:px-8"
         style={{
           paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
         }}

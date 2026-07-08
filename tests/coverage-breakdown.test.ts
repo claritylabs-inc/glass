@@ -54,4 +54,71 @@ describe("coverage breakdown formatting", () => {
     const text = formatCoverageBreakdownForPrompt(policy);
     expect(text).toContain("Coverage schedules:");
   });
+
+  it("groups coverage schedules by ACORD line of business while preserving flat order", () => {
+    const policy = {
+      operationalProfile: {
+        linesOfBusiness: ["CGL"],
+        coverages: [
+          {
+            name: "Commercial General Liability",
+            limits: [
+              { label: "Each Occurrence", value: "$1,000,000" },
+              { label: "General Aggregate", value: "$2,000,000" },
+              { label: "Products-Completed Operations Aggregate", value: "$2,000,000" },
+            ],
+            deductible: "$10,000",
+          },
+        ],
+      },
+    };
+
+    const breakdown = buildCoverageBreakdown(policy);
+    expect(breakdown.all.map((row) => row.name)).toEqual(["Commercial General Liability"]);
+    expect(breakdown.groups).toEqual([
+      expect.objectContaining({
+        lineOfBusiness: "CGL",
+        label: "Commercial General Liability",
+        items: [
+          expect.objectContaining({
+            name: "Commercial General Liability",
+            lineOfBusiness: "CGL",
+            deductible: "$10,000",
+          }),
+        ],
+      }),
+    ]);
+    expect(breakdown.unassigned).toEqual([]);
+
+    const text = formatCoverageBreakdownForPrompt(policy);
+    expect(text).toContain("Commercial General Liability coverage schedules:");
+    expect(text).toContain("- Commercial General Liability: Each Occurrence $1,000,000");
+    expect(text).not.toContain("Products-Completed Operations Aggregate coverage schedules:");
+  });
+
+  it("leaves ambiguous multi-line rows unassigned", () => {
+    const policy = {
+      operationalProfile: {
+        linesOfBusiness: ["CGL", "PROPC"],
+        coverages: [
+          {
+            name: "Package Coverage",
+            limits: [
+              { label: "Products-Completed Operations Aggregate", value: "$2,000,000" },
+            ],
+          },
+        ],
+      },
+    };
+
+    const breakdown = buildCoverageBreakdown(policy);
+    expect(breakdown.groups).toEqual([]);
+    expect(breakdown.unassigned).toEqual([
+      expect.objectContaining({
+        name: "Package Coverage",
+        lineOfBusiness: undefined,
+      }),
+    ]);
+    expect(formatCoverageBreakdownForPrompt(policy)).toContain("Coverage schedules:");
+  });
 });

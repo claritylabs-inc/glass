@@ -156,10 +156,7 @@ export function PromptReferenceText({
             key={`${part.reference.kind}:${part.reference.id}:${index}`}
             kind={part.reference.kind}
             label={part.reference.label}
-            className={cn(
-              "max-w-[min(16rem,100%)] whitespace-nowrap bg-background/60 [overflow-wrap:normal]",
-              tagClassName,
-            )}
+            className={cn("bg-background/60", tagClassName)}
           />
         ),
       )}

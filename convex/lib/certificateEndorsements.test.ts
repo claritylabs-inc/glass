@@ -77,4 +77,39 @@ describe("certificate endorsements", () => {
     expect(data.description).toContain("Existing remarks");
     expect(data.description).toContain("CG 20 10");
   });
+
+  it("uses line-of-business metadata when the display label does not say liability", () => {
+    const data = applyEndorsementsToCertificateData(
+      {
+        title: "Certificate",
+        issuedDateLabel: "Date",
+        insuredName: "Test Insured",
+        insurers: [{ letter: "A", name: "Carrier" }],
+        coverages: [
+          {
+            type: "Errors & Omissions",
+            lineOfBusiness: "EO",
+            limits: [],
+          },
+        ],
+      },
+      {
+        endorsements: [
+          {
+            kind: "additional_insured",
+            formNumbers: ["CG 20 10"],
+          },
+          {
+            kind: "waiver_of_subrogation",
+            formNumbers: ["CG 24 04"],
+          },
+        ],
+      },
+    );
+
+    expect(data.coverages[0]).toMatchObject({
+      addlInsr: true,
+      subrWvd: true,
+    });
+  });
 });

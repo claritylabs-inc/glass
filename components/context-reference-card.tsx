@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Id } from "@/convex/_generated/dataModel";
 import { FileText } from "lucide-react";
 import {
@@ -200,7 +199,7 @@ export function PolicySourcePill({
           citedSourceSpanIds,
         })
       }
-      className="inline-flex h-6 max-w-48 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+      className="inline-flex h-6 max-w-48 items-center justify-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium leading-none text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
       title={label}
     >
       <span className="text-muted-foreground/35">{index}</span>
@@ -233,83 +232,4 @@ export function ContextReferenceCard({
   }
 
   return <PolicyCitation id={match.id} page={match.page} />;
-}
-
-/** Standalone reference card strip — renders below agent messages */
-export function ReferenceCardStrip({
-  refs,
-  citedSections,
-  citedCoverageNames,
-  citedSourceSpanIds,
-  rightAligned,
-}: {
-  refs: { type: "policy"; id: string; page?: number }[];
-  citedSections?: string[];
-  citedCoverageNames?: string[];
-  citedSourceSpanIds?: string[];
-  rightAligned?: boolean;
-}) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  if (refs.length === 0) return null;
-
-  if (refs.length === 1) {
-    const ref = refs[0];
-    return (
-      <div
-        className={`flex flex-wrap items-start gap-1.5 ${
-          rightAligned ? "justify-end" : ""
-        }`}
-      >
-        <PolicySourcePill
-          key={`${ref.type}:${ref.id}`}
-          id={ref.id}
-          page={ref.page}
-          citedSections={citedSections}
-          citedCoverageNames={citedCoverageNames}
-          citedSourceSpanIds={citedSourceSpanIds}
-          index={1}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`flex flex-wrap items-start gap-1.5 ${
-        rightAligned ? "justify-end" : ""
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => setIsExpanded((value) => !value)}
-        aria-expanded={isExpanded}
-        className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
-      >
-        {refs.length} sources
-      </button>
-      {isExpanded ? (
-        <div className="flex flex-wrap items-start gap-1.5">
-          {refs.map((ref, index) => (
-            <span
-              key={`${ref.type}:${ref.id}`}
-              className="transition-[opacity,transform] duration-200 ease-out"
-              style={{
-                transitionDelay: `${Math.min(index * 25, 100)}ms`,
-              }}
-            >
-              <PolicySourcePill
-                id={ref.id}
-                page={ref.page}
-                citedSections={citedSections}
-                citedCoverageNames={citedCoverageNames}
-                citedSourceSpanIds={citedSourceSpanIds}
-                index={index + 1}
-              />
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
 }

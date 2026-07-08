@@ -1779,6 +1779,7 @@ const PREVIEW_DEDUCTIBLE_FIELDS = [
 
 const PREVIEW_COVERAGE_FIELDS = [
   "name",
+  "lineOfBusiness",
   "coverageCode",
   "limit",
   "limitType",
@@ -1844,6 +1845,7 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
         additionalProperties: false,
         properties: {
           name: { type: "string" },
+          lineOfBusiness: { type: ["string", "null"] },
           coverageCode: { type: ["string", "null"] },
           limit: { type: ["string", "null"] },
           limitType: { type: ["string", "null"] },
@@ -2071,6 +2073,7 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
         if (!name) return null;
         return stripUndefined({
           name,
+          lineOfBusiness: cleanPreviewString(row.lineOfBusiness),
           coverageCode: cleanPreviewString(row.coverageCode),
           limit: cleanPreviewString(row.limit),
           limitType: cleanPreviewString(row.limitType),
@@ -2134,7 +2137,7 @@ This output is provisional and will be overwritten by a later source-backed extr
   const prompt = `Extract a provisional policy summary from this LiteParse/PDF text.
 
 Use concise display strings for dates, money, limits, deductibles, and coverage names.
-For linesOfBusiness, use ACORD Line of Business codes such as CGL, AUTOB, AUTOP, WORK, UMBRC, EXLIA, EO, OLIB, EPLI, DO, FIDUC, CRIME, INMRC, COMAR, PROPC, PROP, BOP, HOME, DFIRE, FLOOD, GARAG, or UN. Use UN only when no more specific ACORD code fits.
+For linesOfBusiness and coverages[].lineOfBusiness, use ACORD Line of Business codes such as CGL, AUTOB, AUTOP, WORK, UMBRC, EXLIA, EO, OLIB, EPLI, DO, FIDUC, CRIME, INMRC, COMAR, PROPC, PROP, BOP, HOME, DFIRE, FLOOD, GARAG, or UN. Use UN only when no more specific policy-level ACORD code fits. Omit coverages[].lineOfBusiness when a coverage row cannot be assigned to exactly one line.
 
 Document text:
 ${sourceText}`;

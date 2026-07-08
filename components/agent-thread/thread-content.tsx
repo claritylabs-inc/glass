@@ -10,9 +10,8 @@ import {
   Archive,
   ArchiveRestore,
   Check,
-  ChevronDown,
   ClipboardList,
-  Brain,
+  FileText,
   Mail as MailIcon,
   MessageCircle,
   Copy,
@@ -38,6 +37,7 @@ import {
 } from "@/lib/sync/glass-cached-queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MessageMetaTag } from "@/components/ui/message-meta-tag";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   splitQuotedReply,
@@ -47,7 +47,7 @@ import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title"
 import {
   ContextReferenceCard,
   PolicyReferenceCard,
-  ReferenceCardStrip,
+  PolicySourcePill,
 } from "@/components/context-reference-card";
 import {
   ChatInputOverlay,
@@ -59,6 +59,7 @@ import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { BrandIcon } from "@/components/ui/brand-icon";
+import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import {
   PromptReferenceText,
   type PromptReference,
@@ -290,15 +291,13 @@ function ThreadAttachmentList({
 
   return (
     <>
-      <button
-        type="button"
+      <MessageMetaTag
+        icon={<Paperclip />}
+        label="Files"
+        count={attachments.length}
+        isActive={isExpanded}
         onClick={() => setIsExpanded((value) => !value)}
-        aria-expanded={isExpanded}
-        className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
-      >
-        <Paperclip className="h-3 w-3" />
-        {attachments.length} files
-      </button>
+      />
       {isExpanded ? (
         <div
           className={`flex min-w-0 basis-full flex-wrap items-start gap-1.5 ${
@@ -614,88 +613,6 @@ function ToolCallPanel({
   );
 }
 
-function reasoningLines(reasoning?: string | null) {
-  return (reasoning ?? "")
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
-function ReasoningPanel({ reasoning }: { reasoning: string }) {
-  const lines = reasoningLines(reasoning);
-  if (lines.length === 0) return null;
-
-  return (
-    <div className="mt-1.5 rounded-lg border border-foreground/8 bg-foreground/2.5 px-3 py-2 shadow-sm shadow-black/2">
-      <div className="max-h-64 space-y-1.5 overflow-y-auto text-[length:var(--text-label)] leading-5 text-muted-foreground/70">
-        {lines.map((line, index) => (
-          <p
-            key={`${index}-${line.slice(0, 16)}`}
-            className="whitespace-pre-wrap wrap-break-word wrap-anywhere"
-          >
-            {line}
-          </p>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReasoningFooterButton({
-  reasoning,
-  isOpen,
-  onToggle,
-}: {
-  reasoning: string;
-  isOpen: boolean;
-  onToggle: () => void;
-}) {
-  const stepCount = reasoningLines(reasoning).length;
-  if (stepCount === 0) return null;
-
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={isOpen}
-      className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
-    >
-      <Brain className="h-3 w-3" />
-      Reasoning
-      <span className="text-muted-foreground/35">{stepCount}</span>
-      <ChevronDown
-        className={`h-3 w-3 transition-transform duration-150 ${
-          isOpen ? "rotate-180" : ""
-        }`}
-      />
-    </button>
-  );
-}
-
-function ConfidenceFooterButton({
-  isActive,
-  onToggle,
-}: {
-  isActive: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={isActive}
-      className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-tag font-medium transition-colors ${
-        isActive
-          ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
-          : "border-foreground/8 bg-transparent text-muted-foreground/55 hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
-      }`}
-    >
-      <BadgeCheck className="h-3 w-3" />
-      Confidence level
-    </button>
-  );
-}
-
 function EmailRecipientMeta({
   toAddresses,
   ccAddresses,
@@ -722,7 +639,6 @@ function MessageFooterActions({
   citedSections,
   citedCoverageNames,
   citedSourceSpanIds,
-  reasoning,
   attachments,
   threadId,
   toolCalls,
@@ -733,8 +649,6 @@ function MessageFooterActions({
   openMailboxArtifactRef,
   copyContent,
   retryMessageId,
-  showReasoning,
-  onToggleReasoning,
   showToolCalls,
   onToggleToolCalls,
   showSubagentActivity,
@@ -748,7 +662,6 @@ function MessageFooterActions({
   citedSections?: string[];
   citedCoverageNames?: string[];
   citedSourceSpanIds?: string[];
-  reasoning?: string;
   attachments?: ThreadAttachment[];
   threadId: Id<"threads">;
   toolCalls: { name: string; input?: string; output?: string }[];
@@ -759,8 +672,6 @@ function MessageFooterActions({
   openMailboxArtifactRef?: MailboxArtifactRef | null;
   copyContent?: string;
   retryMessageId?: Id<"threadMessages">;
-  showReasoning: boolean;
-  onToggleReasoning: () => void;
   showToolCalls: boolean;
   onToggleToolCalls: () => void;
   showSubagentActivity?: boolean;
@@ -771,11 +682,11 @@ function MessageFooterActions({
   rightAligned?: boolean;
 }) {
   const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
+  const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
   const [isAttachmentExpanded, setIsAttachmentExpanded] = useState(false);
   const [isDownloadingAttachments, setIsDownloadingAttachments] =
     useState(false);
   const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
-  const hasReasoning = reasoningLines(reasoning).length > 0;
   const attachmentList = useMemo(() => attachments ?? [], [attachments]);
   const hasAttachments = attachmentList.length > 0;
   const attachmentFileIds = useMemo(
@@ -812,7 +723,6 @@ function MessageFooterActions({
       : null;
   if (
     refs.length === 0 &&
-    !hasReasoning &&
     toolCalls.length === 0 &&
     !hasSubagentActivity &&
     !hasAttachments &&
@@ -873,7 +783,7 @@ function MessageFooterActions({
           if (!messageId) return;
           onOpenMailboxArtifact?.({ messageId, index });
         }}
-        className={`inline-flex h-6 max-w-52 items-center gap-1.5 rounded-full border bg-transparent px-2 text-tag font-medium transition-colors ${
+        className={`inline-flex h-6 max-w-52 items-center justify-center gap-1.5 rounded-full border bg-transparent px-2 text-tag font-medium leading-none transition-colors ${
           isSelected
             ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
             : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
@@ -889,40 +799,56 @@ function MessageFooterActions({
     <div className="mt-1.5 min-w-0">
       <div className="flex items-start gap-2">
         <div
-          className={`flex min-w-0 flex-1 flex-wrap items-start gap-1.5 ${rightAligned ? "justify-end" : ""}`}
+          className={`flex min-w-0 flex-1 flex-wrap items-center gap-1.5 ${rightAligned ? "justify-end" : ""}`}
         >
           {refs.length > 0 && (
-            <ReferenceCardStrip
-              refs={refs}
-              citedSections={citedSections}
-              citedCoverageNames={citedCoverageNames}
-              citedSourceSpanIds={citedSourceSpanIds}
-              rightAligned={rightAligned}
-            />
+            <>
+              <MessageMetaTag
+                icon={<FileText />}
+                label={refs.length === 1 ? "Source" : "Sources"}
+                count={refs.length}
+                showSingleCount
+                isActive={isSourcesExpanded}
+                onClick={() => setIsSourcesExpanded((value) => !value)}
+              />
+              {isSourcesExpanded
+                ? refs.map((ref, index) => (
+                    <span
+                      key={`${ref.type}:${ref.id}`}
+                      className="transition-[opacity,transform] duration-200 ease-out"
+                      style={{
+                        transitionDelay: `${Math.min(index * 25, 100)}ms`,
+                      }}
+                    >
+                      <PolicySourcePill
+                        id={ref.id}
+                        page={ref.page}
+                        citedSections={citedSections}
+                        citedCoverageNames={citedCoverageNames}
+                        citedSourceSpanIds={citedSourceSpanIds}
+                        index={index + 1}
+                      />
+                    </span>
+                  ))
+                : null}
+            </>
           )}
-          {hasReasoning && reasoning ? (
-            <ReasoningFooterButton
-              reasoning={reasoning}
-              isOpen={showReasoning}
-              onToggle={onToggleReasoning}
-            />
-          ) : null}
           {hasConfidence && confidenceContent && onToggleConfidence ? (
-            <ConfidenceFooterButton
+            <MessageMetaTag
+              icon={<BadgeCheck />}
+              label="Confidence"
               isActive={showConfidence ?? false}
-              onToggle={onToggleConfidence}
+              onClick={onToggleConfidence}
             />
           ) : null}
           {toolCalls.length > 0 && (
-            <button
-              type="button"
+            <MessageMetaTag
+              icon={<ClipboardList />}
+              label={toolCalls.length === 1 ? "Tool" : "Tools"}
+              count={toolCalls.length}
+              isActive={showToolCalls}
               onClick={onToggleToolCalls}
-              aria-expanded={showToolCalls}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
-            >
-              <ClipboardList className="h-3 w-3" />
-              {toolCalls.length} tool{toolCalls.length === 1 ? "" : "s"}
-            </button>
+            />
           )}
           {attachmentList.length === 1 ? (
             <ThreadAttachmentChip
@@ -931,40 +857,34 @@ function MessageFooterActions({
               className="w-fit"
             />
           ) : attachmentList.length > 1 ? (
-            <button
-              type="button"
+            <MessageMetaTag
+              icon={<Paperclip />}
+              label="Files"
+              count={attachmentList.length}
+              isActive={isAttachmentExpanded}
               onClick={() => setIsAttachmentExpanded((value) => !value)}
-              aria-expanded={isAttachmentExpanded}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
-            >
-              <Paperclip className="h-3 w-3" />
-              {attachmentList.length} files
-            </button>
+            />
           ) : null}
           {hasSubagentActivity && (
-            <button
-              type="button"
+            <MessageMetaTag
+              icon={<LogoIcon size={12} static className="h-3 w-3" />}
+              label={subagentActivityCount === 1 ? "Subagent" : "Subagents"}
+              count={subagentActivityCount}
+              isActive={showSubagentActivity ?? false}
               onClick={onToggleSubagentActivity}
-              aria-expanded={showSubagentActivity}
-              className="inline-flex h-6 items-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75"
-            >
-              <LogoIcon size={12} static className="h-3 w-3" />
-              {subagentActivityCount} subagent
-              {subagentActivityCount === 1 ? "" : "s"}
-            </button>
+            />
           )}
           {mailboxTasks.length === 1 ? (
             renderMailboxAgentPill(0)
           ) : mailboxTasks.length > 1 ? (
             <>
-              <button
-                type="button"
+              <MessageMetaTag
+                icon={<LogoIcon size={12} static className="h-3 w-3" />}
+                label="Background agents"
+                count={mailboxTasks.length}
+                isActive={isMailboxExpanded}
                 onClick={() => setIsMailboxExpanded((value) => !value)}
-                aria-expanded={isMailboxExpanded}
-                className="inline-flex h-6 items-center rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
-              >
-                {mailboxTasks.length} background agents
-              </button>
+              />
               {isMailboxExpanded ? (
                 <div className="flex flex-wrap items-start gap-1.5">
                   {mailboxTasks.map((_, index) => {
@@ -994,9 +914,6 @@ function MessageFooterActions({
           ) : null}
         </div>
       </div>
-      {hasReasoning && reasoning && showReasoning ? (
-        <ReasoningPanel reasoning={reasoning} />
-      ) : null}
       {attachmentList.length > 1 && isAttachmentExpanded ? (
         <div
           className={`mt-1.5 flex w-full min-w-0 flex-wrap items-start gap-1.5 ${
@@ -1149,7 +1066,7 @@ function markdownStylesForChannel(channel?: ThreadMessage["channel"]) {
   return channel === "imessage" ? IMESSAGE_MARKDOWN_STYLES : MARKDOWN_STYLES;
 }
 
-type FooterPanel = "reasoning" | "tools" | "subagents" | "confidence";
+type FooterPanel = "tools" | "subagents" | "confidence";
 
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -1276,16 +1193,20 @@ function PendingSendCountdown({
 function AgentProcessingActivity({
   label,
   isStale,
+  showStatus = true,
   backgroundProcessCount,
   onOpenBackgroundProcess,
 }: {
   label?: string | null;
   isStale?: boolean;
+  /** When false, only background-agent activity renders — the caller has its own working cue. */
+  showStatus?: boolean;
   backgroundProcessCount: number;
   onOpenBackgroundProcess?: () => void;
 }) {
   const status =
     label ?? (isStale ? "Taking longer than expected" : "Thinking");
+  if (!showStatus && backgroundProcessCount === 0) return null;
   const backgroundProcessContent = (
     <>
       <Loader2 className="h-3 w-3 animate-spin text-primary-light/70" />
@@ -1296,14 +1217,16 @@ function AgentProcessingActivity({
 
   return (
     <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
-      <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/60">
-        <LogoIcon
-          size={12}
-          static
-          className="h-3 w-3 shrink-0 animate-spin text-primary-light/70 [animation-duration:1.8s]"
-        />
-        <span className="truncate">{status}</span>
-      </span>
+      {showStatus ? (
+        <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/60">
+          <LogoIcon
+            size={12}
+            static
+            className="h-3 w-3 shrink-0 animate-spin text-primary-light/70 [animation-duration:1.8s]"
+          />
+          <span className="truncate">{status}</span>
+        </span>
+      ) : null}
       {backgroundProcessCount > 0 && onOpenBackgroundProcess ? (
         <button
           type="button"
@@ -1362,7 +1285,6 @@ export function UnifiedMessageBubble({
   const [showQuoted, setShowQuoted] = useState(false);
   const [activeFooterPanel, setActiveFooterPanel] =
     useState<FooterPanel | null>(null);
-  const showReasoning = activeFooterPanel === "reasoning";
   const showToolCalls = activeFooterPanel === "tools";
   const showSubagentActivity = activeFooterPanel === "subagents";
   const showConfidence = activeFooterPanel === "confidence";
@@ -1405,9 +1327,13 @@ export function UnifiedMessageBubble({
     );
     const backgroundProcessCount =
       runningMailboxArtifacts.length || mailboxArtifacts.length;
+    // One working cue at a time: before real text exists, show the status pill;
+    // once text streams, the bubble itself is the progress signal unless the
+    // message has stalled.
+    const showStatusPill = !displayContent || isStale;
 
     return (
-      <div className="flex items-start gap-2.5 max-w-lg">
+      <div className="flex w-full items-start gap-2.5">
         <div
           className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${
             agentBranding?.iconUrl ? "bg-transparent" : "bg-primary-light/15"
@@ -1421,7 +1347,15 @@ export function UnifiedMessageBubble({
               className="rounded-full"
             />
           ) : (
-            <LogoIcon size={14} static className="text-primary-light" />
+            <LogoIcon
+              size={14}
+              static
+              className={`text-primary-light ${
+                showStatusPill
+                  ? ""
+                  : "animate-spin [animation-duration:1.8s] motion-reduce:animate-none"
+              }`}
+            />
           )}
         </div>
         <div className="flex-1 min-w-0">
@@ -1434,7 +1368,7 @@ export function UnifiedMessageBubble({
           </div>
 
           {displayContent ? (
-            <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 mt-1">
+            <div className="mt-1 text-foreground">
               <ProseMarkdown
                 gfm
                 breaks
@@ -1450,6 +1384,7 @@ export function UnifiedMessageBubble({
           <AgentProcessingActivity
             label={toolLabel}
             isStale={isStale}
+            showStatus={showStatusPill}
             backgroundProcessCount={backgroundProcessCount}
             onOpenBackgroundProcess={
               mailboxArtifacts.length > 0
@@ -1534,7 +1469,7 @@ export function UnifiedMessageBubble({
     return (
       <div>
         <div
-          className={`flex items-start gap-2.5 max-w-lg w-fit ${brokerPerspective ? "ml-auto flex-row-reverse" : ""}`}
+          className={`flex w-full items-start gap-2.5 ${brokerPerspective ? "ml-auto flex-row-reverse" : ""}`}
         >
           <div
             className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${
@@ -1581,6 +1516,10 @@ export function UnifiedMessageBubble({
               />
             ) : (
               <>
+                <CollapsibleReasoning
+                  reasoning={msg.reasoning ?? ""}
+                  className="mb-2"
+                />
                 <ThreadMessageBubble
                   role="agent"
                   channel={msg.channel}
@@ -1603,7 +1542,6 @@ export function UnifiedMessageBubble({
                   citedSections={citedSections}
                   citedCoverageNames={citedCoverageNames}
                   citedSourceSpanIds={citedSourceSpanIds}
-                  reasoning={msg.reasoning}
                   attachments={msg.attachments}
                   threadId={msg.threadId}
                   toolCalls={regularToolCalls}
@@ -1618,8 +1556,6 @@ export function UnifiedMessageBubble({
                       ? msg._id
                       : undefined
                   }
-                  showReasoning={showReasoning}
-                  onToggleReasoning={() => toggleFooterPanel("reasoning")}
                   showToolCalls={showToolCalls}
                   onToggleToolCalls={() => toggleFooterPanel("tools")}
                   showSubagentActivity={showSubagentActivity}
