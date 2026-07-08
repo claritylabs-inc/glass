@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -35,7 +35,7 @@ import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { usePageContext } from "@/hooks/use-page-context";
 import { usePdf } from "@/components/pdf-context";
 
-type CertificateWorkspaceTab = "active" | "review";
+type CertificateWorkspaceTab = "active" | "review" | "archived";
 
 type CertificateWorkflowJob = {
   _id: Id<"certificateWorkflowJobs">;
@@ -60,6 +60,7 @@ type CertificateWorkflowJob = {
 const TABS: Array<{ value: CertificateWorkspaceTab; label: string }> = [
   { value: "active", label: "Active" },
   { value: "review", label: "Review" },
+  { value: "archived", label: "Archived" },
 ];
 
 function jobBadge(status: string) {
@@ -139,10 +140,14 @@ function CertificatesPageContext({
 
 export default function CertificatesPage() {
   const generateCertificate = useAction(api.certificates.generateForPolicy);
+  const archiveCertificateMutation = useMutation(api.certificateLifecycle.archive);
+  const unarchiveCertificateMutation = useMutation(api.certificateLifecycle.unarchive);
   const { openWithUrl } = usePdf();
   const [tab, setTab] = useState<CertificateWorkspaceTab>("active");
   const [selectedCertificateId, setSelectedCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [reissuingCertificateId, setReissuingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
+  const [archivingCertificateId, setArchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
+  const [unarchivingCertificateId, setUnarchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const viewerOrg = useCachedViewerOrg();
   const orgId = viewerOrg?.org?._id as Id<"organizations"> | undefined;
   const certificates = useCachedQuery(
@@ -170,6 +175,20 @@ export default function CertificatesPage() {
     () => groupCertificatesByPolicy(activeCertificates),
     [activeCertificates],
   );
+  const archivedCertificates = useMemo(
+    () =>
+      (certificates ?? [])
+        .filter((row) => row.status === "archived")
+        .sort((left, right) =>
+          Number(right.archivedAt ?? right.updatedAt ?? 0) -
+          Number(left.archivedAt ?? left.updatedAt ?? 0),
+        ),
+    [certificates],
+  );
+  const archivedCertificateGroups = useMemo(
+    () => groupCertificatesByPolicy(archivedCertificates),
+    [archivedCertificates],
+  );
   const reviewJobs = useMemo(
     () =>
       (jobs ?? [])
@@ -186,6 +205,37 @@ export default function CertificatesPage() {
 
   const isLoading =
     viewerOrg === undefined || certificates === undefined || jobs === undefined;
+
+  const archiveCertificate = async (row: PolicyCertificateRecord) => {
+    setArchivingCertificateId(row._id);
+    try {
+      await archiveCertificateMutation({ certificateId: row._id });
+      setTab("archived");
+      toast.success("Certificate archived");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not archive certificate",
+      );
+    } finally {
+      setArchivingCertificateId(null);
+    }
+  };
+
+  const unarchiveCertificate = async (row: PolicyCertificateRecord) => {
+    setUnarchivingCertificateId(row._id);
+    try {
+      await unarchiveCertificateMutation({ certificateId: row._id });
+      setTab("active");
+      toast.success("Certificate restored");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not restore certificate",
+      );
+    } finally {
+      setUnarchivingCertificateId(null);
+    }
+  };
+
   const reissueCertificate = async (row: PolicyCertificateRecord) => {
     const holder = row.holder;
     if (!holder?.displayName) {
@@ -236,7 +286,11 @@ export default function CertificatesPage() {
           row={selectedCertificate}
           onClose={() => setSelectedCertificateId(null)}
           onReissue={reissueCertificate}
+          onArchive={archiveCertificate}
+          onUnarchive={unarchiveCertificate}
           reissuing={reissuingCertificateId === selectedCertificate._id}
+          archiving={archivingCertificateId === selectedCertificate._id}
+          unarchiving={unarchivingCertificateId === selectedCertificate._id}
         />
       ) : null}
     >
@@ -275,6 +329,27 @@ export default function CertificatesPage() {
               </OperationalPanelBody>
             )}
           </OperationalPanel>
+        ) : tab === "archived" ? (
+          archivedCertificateGroups.length > 0 ? (
+            <div className="space-y-3">
+              {archivedCertificateGroups.map((group) => (
+                <CertificatePolicyGroupCard
+                  key={group.key}
+                  group={group}
+                  selectedCertificateId={selectedCertificateId}
+                  onSelectCertificate={(row) => setSelectedCertificateId(row._id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <OperationalPanel as="div">
+              <OperationalPanelBody className="px-4 py-10 text-center">
+                <p className="text-base font-medium text-muted-foreground">
+                  No archived certificates
+                </p>
+              </OperationalPanelBody>
+            </OperationalPanel>
+          )
         ) : activeCertificateGroups.length > 0 ? (
           <div className="space-y-3">
             {activeCertificateGroups.map((group) => (

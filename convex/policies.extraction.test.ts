@@ -8,6 +8,59 @@ const modules = import.meta.glob("./**/*.ts");
 const updateExtractionInternalFn = updateExtractionInternal as any;
 
 describe("policies.updateExtractionInternal", () => {
+  test("stores source provenance on extracted insured addresses", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Carrier",
+        policyNumber: "POL-123",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        insuredAddress: {
+          street1: "175 Pearl Street",
+          street2: "Suite 410",
+          city: "Brooklyn",
+          state: "NY",
+          zip: "11201",
+          country: "US",
+          documentNodeId: "policy:source_node:declarations",
+          sourceSpanIds: ["policy:span:6:104"],
+          sourceTextHash: "address-hash",
+        },
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.insuredAddress).toEqual({
+      street1: "175 Pearl Street",
+      street2: "Suite 410",
+      city: "Brooklyn",
+      state: "NY",
+      zip: "11201",
+      country: "US",
+      documentNodeId: "policy:source_node:declarations",
+      sourceSpanIds: ["policy:span:6:104"],
+      sourceTextHash: "address-hash",
+    });
+  });
+
   test("does not let final extraction erase known identity fields with unknown values", async () => {
     const t = convexTest(schema, modules);
     const policyId = await t.run(async (ctx) => {
