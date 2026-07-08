@@ -24,6 +24,34 @@ const KIND_LABELS: Partial<Record<CertificateEndorsementKind, string>> = {
   mortgagee: "mortgagee",
 };
 
+const LIABILITY_LOB_CODES = new Set([
+  "AGLIA",
+  "AUTO",
+  "AUTOB",
+  "BOPGL",
+  "CGL",
+  "DO",
+  "EL",
+  "EO",
+  "EPLI",
+  "EXLIA",
+  "FIDUC",
+  "GARAG",
+  "GL",
+  "LL",
+  "MMAL",
+  "OLIB",
+  "PL",
+  "PUBOF",
+  "TRUCK",
+  "UMBRC",
+  "UMBRL",
+  "WCMA",
+  "WORK",
+  "WORKP",
+  "WORKV",
+]);
+
 function normalizeFormNumber(value: string) {
   return value.toUpperCase().replace(/\s+/g, " ").trim();
 }
@@ -93,7 +121,7 @@ function applyCoverageFlags(
   );
   const liabilityLike = /liability|umbrella|excess|auto|workers|garage/i.test(
     coverage.type,
-  );
+  ) || Boolean(coverage.lineOfBusiness && LIABILITY_LOB_CODES.has(coverage.lineOfBusiness));
   return {
     ...coverage,
     addlInsr: coverage.addlInsr || (hasAdditionalInsured && liabilityLike),
