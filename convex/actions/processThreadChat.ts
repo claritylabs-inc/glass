@@ -94,10 +94,17 @@ function normalizeConfidenceRepair(text: string, fallback: string): string {
 
 function restoreSentenceBoundarySpacing(text: string): string {
   return text
-    .replace(/([a-z0-9)\]][.!?])(?=[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)\]][.!?])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)\]][.!?]\]\])(?=[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)\]][.!?]\]\])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ");
+    .replace(/([a-z0-9)"')\]][.!?])(?=[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)"')\]][.!?])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)"')\]][.!?]\]\])(?=[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)"')\]][.!?]\]\])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ");
+}
+
+function normalizeReasoningText(text: string): string {
+  return restoreSentenceBoundarySpacing(text).replace(
+    /([a-z0-9)"')\]][.!?])(?=["'([]?[A-Z])/g,
+    "$1 ",
+  );
 }
 
 async function repairMissingConfidenceMarkers({
@@ -1482,7 +1489,7 @@ export const run = internalAction({
               lastReasoningFlush = now;
               await ctx.runMutation(internal.threads.streamReasoning, {
                 id: agentMsgId,
-                reasoning,
+                reasoning: normalizeReasoningText(reasoning),
               });
             }
           } else if (part.type === "text-delta") {
@@ -1836,7 +1843,7 @@ export const run = internalAction({
       if (reasoning) {
         await ctx.runMutation(internal.threads.streamReasoning, {
           id: agentMsgId,
-          reasoning,
+          reasoning: normalizeReasoningText(reasoning),
         });
       }
 
