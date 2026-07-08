@@ -1,40 +1,25 @@
 "use client";
 
-import {
-  useState,
-  useEffect,
-  useMemo,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
+import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import dayjs from "dayjs";
-import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  buildCoverageBreakdown,
+  type CoverageBreakdown,
+} from "@/convex/lib/coverageBreakdown";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { PillButton } from "@/components/ui/pill-button";
 import { useCachedPolicyDetail } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
-  collectSourceSpanIds,
   evidenceSpansForIds,
   highlightBoxesForSpans,
-  SourceEvidenceButton,
   type SourceSpanDoc,
 } from "@/app/policies/[id]/source-provenance";
+import { CoverageRow } from "./coverage-row";
 
-interface DocumentOutlineNode {
-  id?: string;
-  title?: string;
-  originalTitle?: string;
-  pageStart?: number;
-  pageEnd?: number;
-  formNumber?: string;
-  formTitle?: string;
-  excerpt?: string;
-  content?: string;
-  summary?: string;
-  sourceSpanIds?: string[];
-  children?: DocumentOutlineNode[];
-}
+type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
 interface PolicyPreviewProps {
   id: string;
@@ -42,8 +27,12 @@ interface PolicyPreviewProps {
   citedSections?: string[];
   citedCoverageNames?: string[];
   citedSourceSpanIds?: string[];
-  onHeaderInfo?: (info: { carrier: string; policyNum?: string }) => void;
-  onHeaderActions?: (actions: {
+  onHeaderInfo?: (info: {
+    policyId: string;
+    carrier: string;
+    policyNum?: string;
+  }) => void;
+  onFooterActions?: (actions: {
     fileUrl?: string;
     policyId: string;
     page?: number;
@@ -59,67 +48,120 @@ interface PolicyPreviewProps {
   }) => void;
 }
 
-function asOutlineNodeArray(value: unknown): DocumentOutlineNode[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (item): item is DocumentOutlineNode =>
-      Boolean(item) && typeof item === "object" && !Array.isArray(item),
+type MetadataRow = {
+  label: string;
+  value: string;
+};
+
+function realText(value: unknown): string | undefined {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || text === "-" || text === "\u2014") return undefined;
+  return text;
+}
+
+function titleLabel(value: string | undefined) {
+  return value
+    ?.replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function formatDate(value: unknown) {
+  const text = realText(value);
+  if (!text) return undefined;
+  const parsed = dayjs(text);
+  return parsed.isValid() ? parsed.format("MMM D, YYYY") : text;
+}
+
+function formatPolicyPeriod(record: Record<string, unknown>) {
+  const effectiveDate = formatDate(record.effectiveDate);
+  const expirationDate = formatDate(record.expirationDate);
+  if (record.policyTermType === "continuous" && effectiveDate) {
+    return `${effectiveDate} - Until Cancelled`;
+  }
+  if (!effectiveDate && !expirationDate) return undefined;
+  return `${effectiveDate ?? "-"} - ${expirationDate ?? "-"}`;
+}
+
+function carrierName(record: Record<string, unknown>) {
+  return (
+    realText(record.carrierLegalName) ??
+    realText(record.security) ??
+    realText(record.carrier)
   );
 }
 
-function documentOutlineFromPolicy(policy: unknown): DocumentOutlineNode[] {
-  if (!policy || typeof policy !== "object") return [];
-  const record = policy as Record<string, unknown>;
-  const document =
-    record.document && typeof record.document === "object" && !Array.isArray(record.document)
-      ? (record.document as Record<string, unknown>)
-      : undefined;
-
-  const topLevelOutline = asOutlineNodeArray(record.documentOutline);
-  if (topLevelOutline.length > 0) return topLevelOutline;
-  const nestedOutline = asOutlineNodeArray(document?.outline);
-  if (nestedOutline.length > 0) return nestedOutline;
-  return asOutlineNodeArray(document?.documentOutline);
+function policyKind(record: Record<string, unknown>) {
+  const parts = [
+    titleLabel(realText(record.policyTermType)),
+    record.isRenewal === true ? "Renewal" : undefined,
+  ].filter((item): item is string => Boolean(item));
+  return parts.length ? parts.join(" / ") : undefined;
 }
 
-function nodeTitle(node: DocumentOutlineNode) {
-  return node.title || node.originalTitle || "Untitled section";
+function metadataRows(
+  record: Record<string, unknown>,
+  fileCount: number,
+): MetadataRow[] {
+  return [
+    { label: "Named insured", value: realText(record.insuredName) },
+    { label: "Carrier", value: carrierName(record) },
+    { label: "Administrator", value: realText(record.mga) },
+    { label: "Broker", value: realText(record.broker) },
+    { label: "Policy number", value: realText(record.policyNumber) },
+    { label: "Policy period", value: formatPolicyPeriod(record) },
+    { label: "Premium", value: realText(record.premium) },
+    { label: "Policy type", value: policyKind(record) },
+    {
+      label: "Files",
+      value: fileCount > 1 ? `${fileCount} files combined` : undefined,
+    },
+  ].filter((row): row is MetadataRow => Boolean(row.value));
 }
 
-function pageRange(node: DocumentOutlineNode) {
-  if (node.pageStart == null) return undefined;
-  return node.pageEnd && node.pageEnd !== node.pageStart
-    ? `p.${node.pageStart}-${node.pageEnd}`
-    : `p.${node.pageStart}`;
+function coverageTerms(row: CoverageBreakdownRow) {
+  const terms = row.limits
+    ?.map((term) => {
+      const label = realText(term.label);
+      const value = realText(term.value);
+      if (!label || !value) return undefined;
+      return `${label} ${value}`;
+    })
+    .filter((term): term is string => Boolean(term));
+
+  if (terms?.length) return terms;
+  return row.limit ? [`Limit ${row.limit}`] : [];
 }
 
-function nodeExcerpt(node: DocumentOutlineNode) {
-  return node.excerpt || node.summary || node.content;
+function coveragePrimaryLimit(row: CoverageBreakdownRow) {
+  const terms = coverageTerms(row);
+  return terms.length ? terms.slice(0, 2).join(" / ") : undefined;
+}
+
+function coverageDetailItems(row: CoverageBreakdownRow) {
+  return [
+    ...coverageTerms(row).slice(2),
+    row.deductible ? `Deductible ${row.deductible}` : undefined,
+    row.premium ? `Premium ${row.premium}` : undefined,
+    row.retroactiveDate ? `Retroactive ${row.retroactiveDate}` : undefined,
+    [row.formNumber, row.sectionRef].filter(Boolean).join(" | ") || undefined,
+  ].filter((item): item is string => Boolean(item));
 }
 
 export function PolicyPreview({
   id,
   page,
-  citedSections,
-  citedCoverageNames,
   citedSourceSpanIds,
   onHeaderInfo,
-  onHeaderActions,
+  onFooterActions,
 }: PolicyPreviewProps) {
   const policy = useCachedPolicyDetail(id as Id<"policies">);
-  const documentOutline = useMemo(
-    () => documentOutlineFromPolicy(policy),
-    [policy],
-  );
   const previewSourceSpanIds = useMemo(
-    () =>
-      [
-        ...new Set([
-          ...(citedSourceSpanIds ?? []),
-          ...collectSourceSpanIds(documentOutline),
-        ]),
-      ].slice(0, 256),
-    [citedSourceSpanIds, documentOutline],
+    () => [...new Set(citedSourceSpanIds ?? [])].slice(0, 64),
+    [citedSourceSpanIds],
   );
   const fileUrl = useCachedQuery(
     "policies.getPolicyFileUrl.preview",
@@ -145,15 +187,15 @@ export function PolicyPreview({
     [citedSourceSpanIds, sourceSpans],
   );
 
-  // Notify parent of header info
-  const carrier = policy?.carrier || "Unknown carrier";
-  const policyNum = policy?.policyNumber;
+  const record = policy as Record<string, unknown> | undefined;
+  const carrier = record ? carrierName(record) ?? "Unknown carrier" : "Unknown carrier";
+  const policyNum = record ? realText(record.policyNumber) : undefined;
 
   useEffect(() => {
     if (policy && onHeaderInfo) {
-      onHeaderInfo({ carrier, policyNum });
+      onHeaderInfo({ policyId: id, carrier, policyNum });
     }
-  }, [carrier, policyNum, policy, onHeaderInfo]);
+  }, [carrier, id, policyNum, policy, onHeaderInfo]);
 
   const highlightBoxes = useMemo(
     () => highlightBoxesForSpans(citedSourceSpans),
@@ -162,265 +204,204 @@ export function PolicyPreview({
   const citedPage = page ?? highlightBoxes[0]?.page;
 
   useEffect(() => {
-    if (fileUrl && onHeaderActions) {
-      onHeaderActions({ fileUrl, policyId: id, page: citedPage, highlightBoxes });
+    if (policy && onFooterActions) {
+      onFooterActions({
+        fileUrl: fileUrl ?? undefined,
+        policyId: id,
+        page: citedPage,
+        highlightBoxes,
+      });
     }
-  }, [fileUrl, id, citedPage, onHeaderActions, highlightBoxes]);
+  }, [fileUrl, id, citedPage, onFooterActions, highlightBoxes, policy]);
 
-  if (!policy) {
+  if (!policy || !record) {
     return <div className="min-h-24" />;
   }
 
   const types = policyLobCodes(policy).filter((code) => code !== "UN");
-  const fileCount = (policy as { files?: unknown[] }).files?.length ?? 0;
-  const hasLegacyCitations = Boolean(citedSections?.length || citedCoverageNames?.length);
-
-  const visibleTypes = showAllTypes ? types : types.slice(0, 2);
-  const hasMoreTypes = types.length > 2;
+  const fileCount = Array.isArray(record.files) ? record.files.length : 0;
+  const coverageBreakdown = buildCoverageBreakdown(policy);
+  const rows = metadataRows(record, fileCount);
 
   return (
     <div className="min-w-0 space-y-5 overflow-x-hidden">
-      {policy.summary && (
-        <div className="min-w-0">
-          <p className="wrap-break-word text-base leading-relaxed text-foreground/90">
-            {policy.summary}
-          </p>
-        </div>
-      )}
-
-      {fileCount > 1 && (
-        <p className="text-label text-muted-foreground/50">
-          Combined from {fileCount} files
-        </p>
-      )}
+      <PolicyMetadataPreview
+        rows={rows}
+        types={types}
+        showAllTypes={showAllTypes}
+        onShowAllTypes={() => setShowAllTypes(true)}
+      />
 
       {citedSourceSpans.length > 0 && (
-        <div className="min-w-0 rounded-md border border-foreground/8 bg-foreground/[0.02]">
-          <div className="border-b border-foreground/6 px-3 py-2">
-            <p className="text-label font-medium text-foreground">
-              Exact source locations
-            </p>
-          </div>
-          <div className="divide-y divide-foreground/6">
-            {citedSourceSpans.slice(0, 5).map((span) => (
-              <div key={span.spanId} className="px-3 py-2">
-                <div className="mb-1 flex min-w-0 items-center gap-2">
-                  <span className="text-label font-medium text-muted-foreground">
-                    p.{span.pageStart ?? span.bbox?.[0]?.page ?? "?"}
-                  </span>
-                  <span className="truncate text-label text-muted-foreground/50">
-                    {span.sectionId ?? span.formNumber ?? (span.metadata?.elementType as string | undefined) ?? "Source span"}
-                  </span>
-                </div>
-                <p className="line-clamp-3 text-base leading-relaxed text-foreground/80">
-                  {span.text}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ExactSourceLocations sourceSpans={citedSourceSpans} />
       )}
 
-      <div className="min-w-0 space-y-3">
+      <CoverageListPreview rows={coverageBreakdown.all} />
+    </div>
+  );
+}
+
+function PolicyMetadataPreview({
+  rows,
+  types,
+  showAllTypes,
+  onShowAllTypes,
+}: {
+  rows: MetadataRow[];
+  types: string[];
+  showAllTypes: boolean;
+  onShowAllTypes: () => void;
+}) {
+  if (!rows.length && !types.length) return null;
+  const visibleTypes = showAllTypes ? types : types.slice(0, 3);
+  const hiddenTypeCount = Math.max(0, types.length - visibleTypes.length);
+
+  return (
+    <section className="min-w-0">
+      <p className="mb-2 text-base font-medium text-muted-foreground/60">
+        Key details
+      </p>
+      <dl className="min-w-0 divide-y divide-foreground/6 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
         {types.length > 0 && (
-          <div className="min-w-0">
-            <p className="text-label text-muted-foreground/50 mb-1.5">
+          <div className="grid min-w-0 grid-cols-[8rem_minmax(0,1fr)] gap-3 px-3 py-2.5">
+            <dt className="text-label text-muted-foreground/50">
               Lines of business
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              {visibleTypes.map((t) => (
-                <span
-                  key={t}
-                  className="text-base px-2.5 py-1 rounded-full bg-secondary text-muted-foreground"
-                >
-                  {lobLabel(t)}
-                </span>
-              ))}
-              {hasMoreTypes && !showAllTypes && (
-                <PillButton
-                  size="compact"
-                  variant="secondary"
-                  onClick={() => setShowAllTypes(true)}
-                >
-                  +{types.length - 2} more
-                </PillButton>
-              )}
-            </div>
+            </dt>
+            <dd className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                {visibleTypes.map((type) => (
+                  <span
+                    key={type}
+                    className="rounded-full bg-secondary px-2 py-0.5 text-label font-medium text-muted-foreground"
+                  >
+                    {lobLabel(type)}
+                  </span>
+                ))}
+                {hiddenTypeCount > 0 && (
+                  <PillButton
+                    size="compact"
+                    variant="secondary"
+                    onClick={onShowAllTypes}
+                  >
+                    +{hiddenTypeCount} more
+                  </PillButton>
+                )}
+              </div>
+            </dd>
           </div>
         )}
-
-        {(policy.effectiveDate || policy.expirationDate) && (
-          <div className="min-w-0">
-            <p className="text-label text-muted-foreground/50 mb-1">
-              Policy period
-            </p>
-            <p className="text-base text-muted-foreground">
-              {policy.effectiveDate
-                ? dayjs(policy.effectiveDate).format("MMM D, YYYY")
-                : "—"}
-              {" — "}
-              {policy.expirationDate
-                ? dayjs(policy.expirationDate).format("MMM D, YYYY")
-                : "—"}
-            </p>
+        {rows.map((row) => (
+          <div
+            key={`${row.label}:${row.value}`}
+            className="grid min-w-0 grid-cols-[8rem_minmax(0,1fr)] gap-3 px-3 py-2.5"
+          >
+            <dt className="text-label text-muted-foreground/50">
+              {row.label}
+            </dt>
+            <dd className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+              {row.value}
+            </dd>
           </div>
-        )}
-
-        {policy.insuredName && (
-          <div className="min-w-0">
-            <p className="text-label text-muted-foreground/50 mb-1">Insured</p>
-            <p className="wrap-break-word text-base text-muted-foreground">
-              {policy.insuredName}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {documentOutline.length > 0 ? (
-        <DocumentOutlinePreview
-          nodes={documentOutline}
-          sourceSpans={sourceSpans}
-          fileUrl={fileUrl ?? undefined}
-        />
-      ) : (
-        <ReextractNotice hasLegacyCitations={hasLegacyCitations} />
-      )}
-    </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
-function ReextractNotice({
-  hasLegacyCitations,
-}: {
-  hasLegacyCitations: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-amber-500/20 bg-amber-50/60 p-3 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
-      <div className="flex gap-2">
-        <AlertCircle className="mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0">
-          <p className="text-base font-medium">Re-extraction required</p>
-          <p className="mt-1 text-label leading-5 opacity-80">
-            This policy was extracted before source-native document outlines were
-            available. Re-extract it to preview the source-order structure and
-            exact source locations.
-          </p>
-          {hasLegacyCitations && (
-            <p className="mt-2 text-label leading-5 opacity-80">
-              Legacy section citations are not shown in this preview.
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DocumentOutlinePreview({
-  nodes,
+function ExactSourceLocations({
   sourceSpans,
-  fileUrl,
 }: {
-  nodes: DocumentOutlineNode[];
-  sourceSpans?: SourceSpanDoc[];
-  fileUrl?: string;
+  sourceSpans: SourceSpanDoc[];
 }) {
   return (
-    <div className="min-w-0">
-      <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 text-base font-medium text-muted-foreground/60">
-          Source document outline
+    <section className="min-w-0 rounded-md border border-foreground/8 bg-foreground/[0.02]">
+      <div className="border-b border-foreground/6 px-3 py-2">
+        <p className="text-label font-medium text-foreground">
+          Exact source locations
         </p>
       </div>
-      <div className="min-w-0 divide-y divide-foreground/6 overflow-hidden rounded-lg border border-foreground/8 bg-card text-card-foreground">
-        {nodes.map((node, index) => (
-          <OutlineNodePreview
-            key={node.id ?? `${nodeTitle(node)}-${index}`}
-            node={node}
-            sourceSpans={sourceSpans}
-            fileUrl={fileUrl}
-            depth={0}
-          />
+      <div className="divide-y divide-foreground/6">
+        {sourceSpans.slice(0, 5).map((span) => (
+          <div key={span.spanId} className="px-3 py-2">
+            <div className="mb-1 flex min-w-0 items-center gap-2">
+              <span className="text-label font-medium text-muted-foreground">
+                p.{span.pageStart ?? span.bbox?.[0]?.page ?? "?"}
+              </span>
+              <span className="truncate text-label text-muted-foreground/50">
+                {span.sectionId ??
+                  span.formNumber ??
+                  (span.metadata?.elementType as string | undefined) ??
+                  "Source span"}
+              </span>
+            </div>
+            <p className="line-clamp-3 text-base leading-relaxed text-foreground/80">
+              {span.text}
+            </p>
+          </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
-function OutlineNodePreview({
-  node,
-  sourceSpans,
-  fileUrl,
-  depth,
-}: {
-  node: DocumentOutlineNode;
-  sourceSpans?: SourceSpanDoc[];
-  fileUrl?: string;
-  depth: number;
-}) {
-  const children = asOutlineNodeArray(node.children);
-  const [open, setOpen] = useState(depth === 0);
-  const pages = pageRange(node);
-  const excerpt = nodeExcerpt(node);
-  const hasChildren = children.length > 0;
+function CoverageListPreview({ rows }: { rows: CoverageBreakdownRow[] }) {
+  const [showAllCoverages, setShowAllCoverages] = useState(false);
+  const visibleRows = showAllCoverages ? rows : rows.slice(0, 8);
+  const hiddenCount = Math.max(0, rows.length - visibleRows.length);
+
+  return (
+    <section className="min-w-0">
+      <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 text-base font-medium text-muted-foreground/60">
+          Coverage schedules
+        </p>
+        {rows.length > 0 && (
+          <span className="shrink-0 text-label text-muted-foreground/45">
+            {rows.length}
+          </span>
+        )}
+      </div>
+      {rows.length > 0 ? (
+        <>
+          <div className="min-w-0 divide-y divide-foreground/6 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
+            {visibleRows.map((row, index) => (
+              <CoverageScheduleRow
+                key={`${row.name}:${row.limit ?? ""}:${index}`}
+                row={row}
+              />
+            ))}
+          </div>
+          {hiddenCount > 0 && (
+            <div className="mt-2 flex justify-end">
+              <PillButton
+                size="compact"
+                variant="secondary"
+                onClick={() => setShowAllCoverages(true)}
+              >
+                Show {hiddenCount} more
+              </PillButton>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="rounded-md border border-foreground/8 bg-card px-3 py-3 text-base text-muted-foreground">
+          No coverage schedule extracted yet.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CoverageScheduleRow({ row }: { row: CoverageBreakdownRow }) {
+  const details = coverageDetailItems(row);
 
   return (
     <div className="min-w-0">
-      <div
-        className="flex min-w-0 items-start gap-2 px-3 py-2.5"
-        style={{ paddingLeft: `${12 + depth * 14}px` }}
-      >
-        <button
-          type="button"
-          disabled={!hasChildren}
-          onClick={() => setOpen((value) => !value)}
-          className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:bg-foreground/4 hover:text-muted-foreground disabled:cursor-default disabled:opacity-0"
-          aria-label={open ? "Collapse section" : "Expand section"}
-        >
-          {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-        </button>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="min-w-0 wrap-break-word text-base font-medium text-foreground">
-              {nodeTitle(node)}
-            </p>
-            {pages && (
-              <span className="shrink-0 text-label text-muted-foreground/50">
-                {pages}
-              </span>
-            )}
-            {node.formNumber && (
-              <span className="shrink-0 text-label text-muted-foreground/50">
-                {node.formNumber}
-              </span>
-            )}
-            <SourceEvidenceButton
-              sourceSpanIds={node.sourceSpanIds}
-              sourceSpans={sourceSpans}
-              fallbackPage={node.pageStart}
-              fileUrl={fileUrl}
-              className="shrink-0"
-            />
-          </div>
-          {excerpt && (
-            <p className="mt-1 line-clamp-3 text-base leading-relaxed text-muted-foreground">
-              {excerpt}
-            </p>
-          )}
-        </div>
-      </div>
-      {open && hasChildren && (
-        <div className="border-t border-foreground/4">
-          {children.map((child, index) => (
-            <OutlineNodePreview
-              key={child.id ?? `${nodeTitle(child)}-${depth}-${index}`}
-              node={child}
-              sourceSpans={sourceSpans}
-              fileUrl={fileUrl}
-              depth={depth + 1}
-            />
-          ))}
-        </div>
+      <CoverageRow name={row.name} limit={coveragePrimaryLimit(row)} />
+      {details.length > 0 && (
+        <p className="-mt-1 px-3 pb-2 text-label leading-5 text-muted-foreground/55 [overflow-wrap:anywhere]">
+          {details.join(" | ")}
+        </p>
       )}
     </div>
   );

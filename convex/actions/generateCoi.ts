@@ -25,6 +25,7 @@ import {
   buildCertificateDescriptionPrompt,
   certificateDescriptionSystemPrompt,
   hasCertificateDescriptionContext,
+  isUsableCertificateDescription,
   normalizeCertificateDescription,
 } from "../lib/certificateDescription";
 
@@ -270,7 +271,11 @@ async function fillCertificateDescription(
   if (!hasCertificateDescriptionContext(context)) {
     return {
       ...coiData,
-      description: fallback || coiData.description,
+      description: fallback || (
+        coiData.description && isUsableCertificateDescription(coiData.description)
+          ? coiData.description
+          : undefined
+      ),
     };
   }
 
@@ -291,7 +296,9 @@ async function fillCertificateDescription(
     const description = normalizeCertificateDescription(result.object.description);
     return {
       ...coiData,
-      description: description || fallback || coiData.description,
+      description: description && isUsableCertificateDescription(description)
+        ? description
+        : fallback || undefined,
     };
   } catch (err) {
     logAiError("generateCoi.description", err, {
@@ -300,7 +307,7 @@ async function fillCertificateDescription(
     });
     return {
       ...coiData,
-      description: fallback || coiData.description,
+      description: fallback || undefined,
     };
   }
 }

@@ -6,6 +6,8 @@ import {
   buildCertificateDescriptionPrompt,
   certificateDescriptionSystemPrompt,
   hasCertificateDescriptionContext,
+  isPolicyOverviewDescription,
+  isUsableCertificateDescription,
   normalizeCertificateDescription,
 } from "../convex/lib/certificateDescription";
 
@@ -105,6 +107,9 @@ describe("certificate description generation context", () => {
     const prompt = buildCertificateDescriptionPrompt({ context });
     expect(prompt).toContain("Project Phoenix");
     expect(prompt).toContain("CG 20 10");
+    expect(prompt).not.toContain("GL-100");
+    expect(prompt).not.toContain("Example Mutual");
+    expect(prompt).not.toContain("2026-01-01");
 
     const fallback = buildCertificateDescriptionFallback(context);
     expect(fallback).toContain("Locations:");
@@ -163,5 +168,36 @@ describe("certificate description generation context", () => {
     expect(normalizeCertificateDescription("ACORD 25 Generated using Glass\nCovered location: 123 Market St")).toBe(
       "Covered location: 123 Market St",
     );
+  });
+
+  it("rejects policy-overview filler instead of treating it as operations wording", () => {
+    const policyOverview =
+      "Technology Professional Liability and Cyber coverage for Clarity Labs Inc. under Sentinel Pacific Specialty Insurance Company policy SPS-TPC-2026-00481-04, term 05/01/2026 to 05/01/2027. No additional insured status granted. Certificate holder: Polychain Capital Fund IV, 548 Market Street, Suite 64375, San Francisco, CA 94104";
+
+    expect(isPolicyOverviewDescription(policyOverview)).toBe(true);
+    expect(isUsableCertificateDescription(policyOverview)).toBe(false);
+
+    const context = buildCertificateDescriptionContext(
+      {
+        policyNumber: "SPS-TPC-2026-00481-04",
+        carrier: "Sentinel Pacific Specialty Insurance Company",
+        effectiveDate: "05/01/2026",
+        expirationDate: "05/01/2027",
+        insuredName: "Clarity Labs Inc.",
+      },
+      {
+        ...baseCoiData,
+        insuredName: "Clarity Labs Inc.",
+        description: policyOverview,
+      },
+      {
+        certificateHolder: "Polychain Capital Fund IV, 548 Market Street, Suite 64375, San Francisco, CA 94104",
+      },
+    );
+
+    expect(buildCertificateDescriptionFallback(context, policyOverview)).toBe("");
+    expect(buildCertificateDescriptionPrompt({ context })).not.toContain("SPS-TPC-2026-00481-04");
+    expect(buildCertificateDescriptionPrompt({ context })).not.toContain("Sentinel Pacific Specialty Insurance Company");
+    expect(buildCertificateDescriptionPrompt({ context })).not.toContain("Polychain Capital Fund IV");
   });
 });

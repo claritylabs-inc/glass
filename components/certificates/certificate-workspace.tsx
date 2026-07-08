@@ -2,6 +2,7 @@
 
 import dayjs from "dayjs";
 import { type KeyboardEvent, type ReactNode } from "react";
+import { RefreshCw } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf } from "@/components/pdf-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
@@ -95,6 +96,21 @@ export function certificateHolderAddress(holder?: CertificateHolderRecord | null
   return address.formatted ||
     [address.line1, address.line2, cityLine].filter(Boolean).join("\n") ||
     null;
+}
+
+export function certificateHolderActionAddress(holder?: CertificateHolderRecord | null) {
+  const address = holder?.address;
+  const formattedLines = address?.formatted
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean) ?? [];
+  return {
+    addressLine1: address?.line1 ?? formattedLines[0],
+    addressLine2: address?.line2 ?? formattedLines[1],
+    city: address?.city,
+    state: address?.state,
+    postalCode: address?.postalCode,
+  };
 }
 
 export function formatCertificateTime(value?: number) {
@@ -345,9 +361,13 @@ function CertificateVersionRow({
 export function CertificateDetailPanel({
   row,
   onClose,
+  onReissue,
+  reissuing,
 }: {
   row: PolicyCertificateRecord | null;
   onClose: () => void;
+  onReissue?: (row: PolicyCertificateRecord) => void;
+  reissuing?: boolean;
 }) {
   const { openWithUrl } = usePdf();
   const versions = row ? sortedVersions(row) : [];
@@ -381,14 +401,29 @@ export function CertificateDetailPanel({
         ) : null
       }
       footer={
-        currentUrl ? (
-          <PillButton
-            type="button"
-            variant="primary"
-            onClick={() => openWithUrl(currentUrl)}
-          >
-            View PDF
-          </PillButton>
+        row ? (
+          <div className="flex items-center gap-2">
+            {onReissue ? (
+              <PillButton
+                type="button"
+                variant="secondary"
+                onClick={() => onReissue(row)}
+                disabled={reissuing}
+              >
+                <RefreshCw className={`size-3.5 ${reissuing ? "animate-spin" : ""}`} />
+                Reissue
+              </PillButton>
+            ) : null}
+            {currentUrl ? (
+              <PillButton
+                type="button"
+                variant="primary"
+                onClick={() => openWithUrl(currentUrl)}
+              >
+                View PDF
+              </PillButton>
+            ) : null}
+          </div>
         ) : null
       }
     >

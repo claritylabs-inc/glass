@@ -31,6 +31,12 @@ export type CertificateDescriptionContext = {
 
 const RELEVANT_DECLARATION_FIELD_RE =
   /operation|business|location|premises|vehicle|auto|garage|additional|insured|certificate|holder|classification|schedule|description|project|job/i;
+const DESCRIPTION_FACT_RE =
+  /\b(operation|operations|service|services|work performed|location|locations|premises|project|job|vehicle|vehicles|auto|autos|additional insured|waiver|loss payee|mortgagee|special item)\b/i;
+const POLICY_OVERVIEW_RE =
+  /\bcoverage\s+for\b[\s\S]{0,180}\b(?:under|policy|term|carrier|insurer|insurance company)\b|\bunder\b[\s\S]{0,80}\bpolicy\b|\bpolicy\s+[A-Z0-9][A-Z0-9-]{5,}\b|\bterm\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+to\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/i;
+const UNSUPPORTED_NEGATIVE_STATUS_RE =
+  /\bno\s+(?:additional insured|waiver of subrogation|loss payee|mortgagee)\b|\b(?:additional insured|waiver of subrogation|loss payee|mortgagee)\s+(?:status\s+)?(?:is\s+)?(?:not\s+)?(?:not\s+granted|not\s+included|excluded|unavailable)\b/i;
 
 function compact(value: unknown, maxLength = 220): string | undefined {
   if (value === null || value === undefined) return undefined;
@@ -139,6 +145,26 @@ function isOperationsDeclarationField(field: string) {
   return /operation|business|classification|description/i.test(field);
 }
 
+function includeHolderInDescription(request: CertificateDescriptionRequest) {
+  return Boolean(
+    request.requestKind === "additional_insured" ||
+      request.additionalInsuredName ||
+      request.endorsements?.length ||
+      /additional|insured|loss|payee|mortgagee|waiver|subrogation|primary|contributory/i.test(request.holderRelationship ?? ""),
+  );
+}
+
+function certificateDescriptionPromptFacts(context: CertificateDescriptionContext) {
+  return {
+    operations: context.operations,
+    locations: context.locations,
+    vehicles: context.vehicles,
+    additionalInsureds: context.additionalInsureds,
+    endorsements: context.endorsements,
+    declarationFacts: context.declarationFacts,
+  };
+}
+
 export function buildCertificateDescriptionContext(
   policy: Record<string, any>,
   data: CoiData,
@@ -177,7 +203,6 @@ export function buildCertificateDescriptionContext(
   pushUnique(context.policy, Array.isArray(policy.policyTypes) ? `Policy types ${policy.policyTypes.join(", ")}` : undefined, 8);
 
   pushUnique(context.operations, request.operationsDescription, 8);
-  pushUnique(context.operations, policy.summary, 8);
   pushUnique(context.operations, profile.businessDescription, 8);
   pushUnique(context.operations, profile.operationsDescription, 8);
   for (const classification of arrayRecords(policy.classifications ?? declarations.classifications ?? profile.classifications)) {
@@ -235,11 +260,13 @@ export function buildCertificateDescriptionContext(
   }
   pushUnique(context.additionalInsureds, request.additionalInsuredName, 10);
 
-  pushUnique(context.certificateHolder, request.certificateHolderName, 4);
-  pushUnique(context.certificateHolder, request.certificateHolder, 4);
-  pushUnique(context.certificateHolder, data.certificateHolder, 4);
-  pushUnique(context.certificateHolder, request.holderRelationship && `Relationship: ${request.holderRelationship}`, 4);
-  pushUnique(context.certificateHolder, request.requestKind === "additional_insured" ? "Request asks for additional insured status" : undefined, 4);
+  if (includeHolderInDescription(request)) {
+    pushUnique(context.certificateHolder, request.certificateHolderName, 4);
+    pushUnique(context.certificateHolder, request.certificateHolder, 4);
+    pushUnique(context.certificateHolder, data.certificateHolder, 4);
+    pushUnique(context.certificateHolder, request.holderRelationship && `Relationship: ${request.holderRelationship}`, 4);
+    pushUnique(context.certificateHolder, request.requestKind === "additional_insured" ? "Request asks for additional insured status" : undefined, 4);
+  }
 
   for (const endorsement of request.endorsements ?? []) {
     pushUnique(context.endorsements, [
@@ -284,7 +311,10 @@ export function buildCertificateDescriptionFallback(
   existingDescription?: string,
 ) {
   const lines: string[] = [];
-  pushUnique(lines, existingDescription, 4, 220);
+  const existing = normalizeCertificateDescription(existingDescription);
+  if (existing && isUsableCertificateDescription(existing)) {
+    pushUnique(lines, existing, 4, 220);
+  }
   pushUnique(lines, context.operations[0] && `Operations: ${context.operations[0]}`, 4, 220);
   pushUnique(lines, context.locations[0] && `Locations: ${context.locations.slice(0, 2).join("; ")}`, 4, 260);
   pushUnique(lines, context.vehicles[0] && `Covered autos/vehicles: ${context.vehicles.slice(0, 2).join("; ")}`, 4, 260);
@@ -303,12 +333,36 @@ export function normalizeCertificateDescription(value: unknown) {
     .trim();
 }
 
+export function isPolicyOverviewDescription(value: unknown) {
+  const text = compact(value, 900);
+  if (!text) return false;
+  return POLICY_OVERVIEW_RE.test(text);
+}
+
+export function hasUnsupportedNegativeStatus(value: unknown) {
+  const text = compact(value, 900);
+  if (!text) return false;
+  return UNSUPPORTED_NEGATIVE_STATUS_RE.test(text);
+}
+
+export function isUsableCertificateDescription(value: unknown) {
+  const text = compact(value, 900);
+  if (!text) return false;
+  if (isPolicyOverviewDescription(text)) return false;
+  if (hasUnsupportedNegativeStatus(text)) return false;
+  return DESCRIPTION_FACT_RE.test(text);
+}
+
 export function certificateDescriptionSystemPrompt() {
   return [
     "You draft the Description of Operations / Locations / Vehicles / Special Items / Additional Insured box for a Certificate of Liability Insurance.",
     "Use only the supplied structured policy and declaration facts.",
+    "Write actual operations, locations, autos/vehicles, special items, or supported endorsement wording only.",
+    "Do not summarize the policy. Do not repeat the insured name, carrier, insurer, policy number, policy term, limits, or generic coverage line names.",
     "Combine deterministic facts into concise certificate wording; do not invent coverage, endorsements, blanket status, locations, autos, projects, or rights.",
     "Mention certificate-holder or additional-insured status only when the request or supplied endorsement/declaration facts support it.",
+    "Do not say that additional insured, waiver, loss payee, or mortgagee status is absent unless an explicit supplied fact says so.",
+    "Do not repeat the certificate holder name or address unless it is part of a supported additional-insured, loss-payee, mortgagee, waiver, or special-wording item.",
     "Mention covered locations, autos/vehicles, operations, and special items when they are supplied and relevant.",
     "Do not mention internal extraction, model use, Glass, Clarity Labs, or form numbers.",
     "Return plain certificate wording only: no markdown, bullets, headings, caveats, signatures, or citations.",
@@ -325,9 +379,11 @@ export function buildCertificateDescriptionPrompt(params: {
       ? `Existing deterministic description:\n${params.existingDescription}`
       : "Existing deterministic description: none",
     "",
-    "Structured source facts:",
-    JSON.stringify(params.context, null, 2),
+    "Allowed source facts for this box:",
+    JSON.stringify(certificateDescriptionPromptFacts(params.context), null, 2),
     "",
-    "Write the final box text. If the supplied facts are too sparse, return the most specific supported wording rather than generic filler.",
+    "Policy identity, carrier, insurer, policy numbers, policy term, limits, and generic coverage names are intentionally excluded because they already appear elsewhere on the certificate.",
+    "",
+    "Write the final box text. If the allowed facts are too sparse for operations/location/special-item wording, return an empty description rather than generic policy overview filler.",
   ].join("\n");
 }
