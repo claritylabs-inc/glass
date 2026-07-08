@@ -11,7 +11,6 @@ import {
   ArchiveRestore,
   Check,
   ClipboardList,
-  Brain,
   FileText,
   Mail as MailIcon,
   MessageCircle,
@@ -60,6 +59,7 @@ import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { BrandIcon } from "@/components/ui/brand-icon";
+import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
 import {
   PromptReferenceText,
   type PromptReference,
@@ -613,33 +613,6 @@ function ToolCallPanel({
   );
 }
 
-function reasoningLines(reasoning?: string | null) {
-  return (reasoning ?? "")
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
-function ReasoningPanel({ reasoning }: { reasoning: string }) {
-  const lines = reasoningLines(reasoning);
-  if (lines.length === 0) return null;
-
-  return (
-    <div className="mt-1.5 rounded-lg border border-foreground/8 bg-foreground/2.5 px-3 py-2 shadow-sm shadow-black/2">
-      <div className="max-h-64 space-y-1.5 overflow-y-auto text-[length:var(--text-label)] leading-5 text-muted-foreground/70">
-        {lines.map((line, index) => (
-          <p
-            key={`${index}-${line.slice(0, 16)}`}
-            className="whitespace-pre-wrap wrap-break-word wrap-anywhere"
-          >
-            {line}
-          </p>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function EmailRecipientMeta({
   toAddresses,
   ccAddresses,
@@ -666,7 +639,6 @@ function MessageFooterActions({
   citedSections,
   citedCoverageNames,
   citedSourceSpanIds,
-  reasoning,
   attachments,
   threadId,
   toolCalls,
@@ -677,8 +649,6 @@ function MessageFooterActions({
   openMailboxArtifactRef,
   copyContent,
   retryMessageId,
-  showReasoning,
-  onToggleReasoning,
   showToolCalls,
   onToggleToolCalls,
   showSubagentActivity,
@@ -692,7 +662,6 @@ function MessageFooterActions({
   citedSections?: string[];
   citedCoverageNames?: string[];
   citedSourceSpanIds?: string[];
-  reasoning?: string;
   attachments?: ThreadAttachment[];
   threadId: Id<"threads">;
   toolCalls: { name: string; input?: string; output?: string }[];
@@ -703,8 +672,6 @@ function MessageFooterActions({
   openMailboxArtifactRef?: MailboxArtifactRef | null;
   copyContent?: string;
   retryMessageId?: Id<"threadMessages">;
-  showReasoning: boolean;
-  onToggleReasoning: () => void;
   showToolCalls: boolean;
   onToggleToolCalls: () => void;
   showSubagentActivity?: boolean;
@@ -720,7 +687,6 @@ function MessageFooterActions({
   const [isDownloadingAttachments, setIsDownloadingAttachments] =
     useState(false);
   const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
-  const hasReasoning = reasoningLines(reasoning).length > 0;
   const attachmentList = useMemo(() => attachments ?? [], [attachments]);
   const hasAttachments = attachmentList.length > 0;
   const attachmentFileIds = useMemo(
@@ -757,7 +723,6 @@ function MessageFooterActions({
       : null;
   if (
     refs.length === 0 &&
-    !hasReasoning &&
     toolCalls.length === 0 &&
     !hasSubagentActivity &&
     !hasAttachments &&
@@ -818,7 +783,7 @@ function MessageFooterActions({
           if (!messageId) return;
           onOpenMailboxArtifact?.({ messageId, index });
         }}
-        className={`inline-flex h-6 max-w-52 items-center gap-1.5 rounded-full border bg-transparent px-2 text-tag font-medium transition-colors ${
+        className={`inline-flex h-6 max-w-52 items-center justify-center gap-1.5 rounded-full border bg-transparent px-2 text-tag font-medium leading-none transition-colors ${
           isSelected
             ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
             : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
@@ -834,7 +799,7 @@ function MessageFooterActions({
     <div className="mt-1.5 min-w-0">
       <div className="flex items-start gap-2">
         <div
-          className={`flex min-w-0 flex-1 flex-wrap items-start gap-1.5 ${rightAligned ? "justify-end" : ""}`}
+          className={`flex min-w-0 flex-1 flex-wrap items-center gap-1.5 ${rightAligned ? "justify-end" : ""}`}
         >
           {refs.length > 0 && (
             <>
@@ -842,6 +807,7 @@ function MessageFooterActions({
                 icon={<FileText />}
                 label={refs.length === 1 ? "Source" : "Sources"}
                 count={refs.length}
+                showSingleCount
                 isActive={isSourcesExpanded}
                 onClick={() => setIsSourcesExpanded((value) => !value)}
               />
@@ -867,14 +833,6 @@ function MessageFooterActions({
                 : null}
             </>
           )}
-          {hasReasoning && reasoning ? (
-            <MessageMetaTag
-              icon={<Brain />}
-              label="Reasoning"
-              isActive={showReasoning}
-              onClick={onToggleReasoning}
-            />
-          ) : null}
           {hasConfidence && confidenceContent && onToggleConfidence ? (
             <MessageMetaTag
               icon={<BadgeCheck />}
@@ -956,9 +914,6 @@ function MessageFooterActions({
           ) : null}
         </div>
       </div>
-      {hasReasoning && reasoning && showReasoning ? (
-        <ReasoningPanel reasoning={reasoning} />
-      ) : null}
       {attachmentList.length > 1 && isAttachmentExpanded ? (
         <div
           className={`mt-1.5 flex w-full min-w-0 flex-wrap items-start gap-1.5 ${
@@ -1111,7 +1066,7 @@ function markdownStylesForChannel(channel?: ThreadMessage["channel"]) {
   return channel === "imessage" ? IMESSAGE_MARKDOWN_STYLES : MARKDOWN_STYLES;
 }
 
-type FooterPanel = "reasoning" | "tools" | "subagents" | "confidence";
+type FooterPanel = "tools" | "subagents" | "confidence";
 
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -1330,7 +1285,6 @@ export function UnifiedMessageBubble({
   const [showQuoted, setShowQuoted] = useState(false);
   const [activeFooterPanel, setActiveFooterPanel] =
     useState<FooterPanel | null>(null);
-  const showReasoning = activeFooterPanel === "reasoning";
   const showToolCalls = activeFooterPanel === "tools";
   const showSubagentActivity = activeFooterPanel === "subagents";
   const showConfidence = activeFooterPanel === "confidence";
@@ -1379,7 +1333,7 @@ export function UnifiedMessageBubble({
     const showStatusPill = !displayContent || isStale;
 
     return (
-      <div className="flex items-start gap-2.5 max-w-lg">
+      <div className="flex w-full items-start gap-2.5">
         <div
           className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${
             agentBranding?.iconUrl ? "bg-transparent" : "bg-primary-light/15"
@@ -1414,7 +1368,7 @@ export function UnifiedMessageBubble({
           </div>
 
           {displayContent ? (
-            <div className="rounded-lg bg-popover border border-foreground/6 px-3.5 py-2.5 mt-1">
+            <div className="mt-1 text-foreground">
               <ProseMarkdown
                 gfm
                 breaks
@@ -1515,7 +1469,7 @@ export function UnifiedMessageBubble({
     return (
       <div>
         <div
-          className={`flex items-start gap-2.5 max-w-lg w-fit ${brokerPerspective ? "ml-auto flex-row-reverse" : ""}`}
+          className={`flex w-full items-start gap-2.5 ${brokerPerspective ? "ml-auto flex-row-reverse" : ""}`}
         >
           <div
             className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${
@@ -1562,6 +1516,10 @@ export function UnifiedMessageBubble({
               />
             ) : (
               <>
+                <CollapsibleReasoning
+                  reasoning={msg.reasoning ?? ""}
+                  className="mb-2"
+                />
                 <ThreadMessageBubble
                   role="agent"
                   channel={msg.channel}
@@ -1584,7 +1542,6 @@ export function UnifiedMessageBubble({
                   citedSections={citedSections}
                   citedCoverageNames={citedCoverageNames}
                   citedSourceSpanIds={citedSourceSpanIds}
-                  reasoning={msg.reasoning}
                   attachments={msg.attachments}
                   threadId={msg.threadId}
                   toolCalls={regularToolCalls}
@@ -1599,8 +1556,6 @@ export function UnifiedMessageBubble({
                       ? msg._id
                       : undefined
                   }
-                  showReasoning={showReasoning}
-                  onToggleReasoning={() => toggleFooterPanel("reasoning")}
                   showToolCalls={showToolCalls}
                   onToggleToolCalls={() => toggleFooterPanel("tools")}
                   showSubagentActivity={showSubagentActivity}

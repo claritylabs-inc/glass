@@ -7,6 +7,7 @@ export function MessageMetaTag({
   icon,
   label,
   count,
+  showSingleCount = false,
   isActive = false,
   onClick,
   className,
@@ -14,14 +15,16 @@ export function MessageMetaTag({
   icon: ReactNode;
   label: string;
   count?: number;
+  showSingleCount?: boolean;
   isActive?: boolean;
   onClick?: () => void;
   className?: string;
 }) {
-  const showCount = typeof count === "number" && count > 1;
+  const showCount =
+    typeof count === "number" && (count > 1 || (showSingleCount && count > 0));
   const title = isActive ? undefined : label;
   const classNames = cn(
-    "inline-flex h-6 items-center rounded-full border px-[7px] text-tag font-medium transition-[border-color,background-color,color,transform] duration-150 ease-out",
+    "inline-flex h-6 items-center justify-center rounded-full border px-[7px] text-tag font-medium leading-none transition-[border-color,background-color,color,transform] duration-150 ease-out",
     onClick ? "cursor-pointer active:scale-[0.97]" : "",
     isActive
       ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
@@ -30,7 +33,7 @@ export function MessageMetaTag({
   );
   const content = (
     <>
-      <span className="flex shrink-0 items-center justify-center [&>svg]:h-3 [&>svg]:w-3">
+      <span className="flex shrink-0 items-center justify-center leading-none [&>svg]:h-3 [&>svg]:w-3">
         {icon}
       </span>
       {showCount ? (
