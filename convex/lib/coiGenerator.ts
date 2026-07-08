@@ -6,7 +6,6 @@ import {
   CERTIFICATE_FORM_LABELS,
   type CertificateCoverageLine,
   type CertificateData,
-  type CertificateFormCode,
 } from "./acordForms/types";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
