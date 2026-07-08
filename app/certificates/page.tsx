@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useAction } from "convex/react";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -9,6 +11,7 @@ import {
   CertificateDetailPanel,
   CertificatePolicyGroupCard,
   CERTIFICATE_PANEL_CONTAINER_CLASS,
+  certificateHolderActionAddress,
   certificatePolicyLabel,
   formatCertificateTime,
   groupCertificatesByPolicy,
@@ -30,6 +33,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { usePageContext } from "@/hooks/use-page-context";
+import { usePdf } from "@/components/pdf-context";
 
 type CertificateWorkspaceTab = "active" | "review";
 
@@ -134,8 +138,11 @@ function CertificatesPageContext({
 }
 
 export default function CertificatesPage() {
+  const generateCertificate = useAction(api.certificates.generateForPolicy);
+  const { openWithUrl } = usePdf();
   const [tab, setTab] = useState<CertificateWorkspaceTab>("active");
   const [selectedCertificateId, setSelectedCertificateId] = useState<Id<"policyCertificates"> | null>(null);
+  const [reissuingCertificateId, setReissuingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const viewerOrg = useCachedViewerOrg();
   const orgId = viewerOrg?.org?._id as Id<"organizations"> | undefined;
   const certificates = useCachedQuery(
@@ -179,12 +186,57 @@ export default function CertificatesPage() {
 
   const isLoading =
     viewerOrg === undefined || certificates === undefined || jobs === undefined;
+  const reissueCertificate = async (row: PolicyCertificateRecord) => {
+    const holder = row.holder;
+    if (!holder?.displayName) {
+      toast.error("Certificate holder is missing");
+      return;
+    }
+    setReissuingCertificateId(row._id);
+    try {
+      const currentVersion = row.currentVersion ?? row.latestIssuedVersion;
+      const result = await generateCertificate({
+        policyId: row.policyId,
+        holderName: holder.displayName,
+        holderContactName: holder.contactName,
+        holderEmail: holder.email,
+        holderPhone: holder.phone,
+        ...certificateHolderActionAddress(holder),
+        additionalInsuredName: currentVersion?.requestKind === "additional_insured"
+          ? currentVersion.additionalInsuredName
+          : undefined,
+        requestedEndorsements: currentVersion?.requestKind === "additional_insured"
+          ? ["additional_insured"]
+          : undefined,
+        forceReissue: true,
+      });
+      if ((result as { status?: string }).status === "ambiguous_certificate_holder") {
+        toast.message((result as { message?: string }).message ?? "Choose the existing certificate to reissue.");
+        return;
+      }
+      if ((result as { status?: string }).status === "held_policy_change_required") {
+        toast.message((result as { message?: string }).message ?? "Broker review is needed before reissue.");
+        return;
+      }
+      toast.success("Certificate reissued");
+      if ((result as { url?: string }).url) {
+        openWithUrl((result as { url: string }).url);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not reissue certificate");
+    } finally {
+      setReissuingCertificateId(null);
+    }
+  };
+
   return (
     <AppShell
       rightPanel={selectedCertificate ? (
         <CertificateDetailPanel
           row={selectedCertificate}
           onClose={() => setSelectedCertificateId(null)}
+          onReissue={reissueCertificate}
+          reissuing={reissuingCertificateId === selectedCertificate._id}
         />
       ) : null}
     >

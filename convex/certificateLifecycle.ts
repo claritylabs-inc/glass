@@ -1,14 +1,19 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
 import {
   holderSnapshot,
-  normalizeCertificateHolderName,
   policyCertificateDedupeKey,
 } from "./lib/certificateIdentity";
+import {
+  certificateHolderIdentity,
+  compareCertificateHolderAddresses,
+  type CertificateHolderResolutionCandidate,
+} from "./lib/certificateHolderResolution";
+import { requireOperator } from "./lib/operatorIdentity";
 
 const certificateSourceValidator = v.union(
   v.literal("policy_page"),
@@ -38,6 +43,16 @@ const certificateFormCodeValidator = v.union(
 );
 
 type ReadCtx = QueryCtx | MutationCtx;
+type IssuedCertificateCandidate = {
+  candidateId: string;
+  policyCertificateId: Id<"policyCertificates">;
+  holderId: Id<"certificateHolders">;
+  holder: Doc<"certificateHolders">;
+  version: Doc<"certificateVersions">;
+  url: string | null;
+  issuedAt?: number;
+  createdAt: number;
+};
 
 async function nextCertificateVersionNumber(ctx: ReadCtx, certificateId: Id<"policyCertificates">) {
   const latest = await ctx.db
@@ -46,6 +61,90 @@ async function nextCertificateVersionNumber(ctx: ReadCtx, certificateId: Id<"pol
     .order("desc")
     .first();
   return (latest?.versionNumber ?? 0) + 1;
+}
+
+async function currentPolicyVersionId(ctx: ReadCtx, policyId: Id<"policies">) {
+  const policy = await ctx.db.get(policyId);
+  if (!policy) return undefined;
+  if (policy.currentPolicyVersionId) return policy.currentPolicyVersionId;
+  const latest = await ctx.db
+    .query("policyVersions")
+    .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", policyId))
+    .order("desc")
+    .first();
+  return latest?._id;
+}
+
+function candidateIdentity(holder: Doc<"certificateHolders">, version?: Doc<"certificateVersions"> | null) {
+  const holderSnapshot = version?.holderSnapshot as {
+    displayName?: string;
+    address?: {
+      line1?: string;
+      line2?: string;
+      city?: string;
+      state?: string;
+      postalCode?: string;
+      country?: string;
+      formatted?: string;
+    };
+  } | undefined;
+  return certificateHolderIdentity({
+    displayName: holder.displayName,
+    address: holder.address ?? holderSnapshot?.address,
+  });
+}
+
+async function collectIssuedCertificateCandidates(ctx: ReadCtx, args: {
+  orgId: Id<"organizations">;
+  policyId: Id<"policies">;
+  policyVersionId?: Id<"policyVersions">;
+  requestKind?: "holder" | "additional_insured";
+  requestSignature?: string;
+}) {
+  const policy = await ctx.db.get(args.policyId);
+  if (!policy || policy.orgId !== args.orgId) return [];
+  const policyVersionId = args.policyVersionId ?? await currentPolicyVersionId(ctx, args.policyId);
+  const parents = await ctx.db
+    .query("policyCertificates")
+    .withIndex("by_policyId_status", (q) =>
+      q.eq("policyId", args.policyId).eq("status", "active"),
+    )
+    .collect();
+  const candidates: CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[] = [];
+  for (const parent of parents.slice(0, 50)) {
+    if (parent.orgId !== args.orgId || !parent.latestIssuedVersionId) continue;
+    const [holder, version] = await Promise.all([
+      ctx.db.get(parent.holderId),
+      ctx.db.get(parent.latestIssuedVersionId),
+    ]);
+    if (!holder || !version || version.status !== "issued" || !version.fileId) continue;
+    if (version.policyId !== args.policyId) continue;
+    if (policyVersionId && version.policyVersionId !== policyVersionId) continue;
+    if (args.requestKind && (version.requestKind ?? "holder") !== args.requestKind) continue;
+    if (args.requestSignature && version.requestSignature !== args.requestSignature) continue;
+    const url = await ctx.storage.getUrl(version.fileId);
+    const data = {
+      candidateId: String(parent._id),
+      policyCertificateId: parent._id,
+      holderId: holder._id,
+      holder,
+      version,
+      url,
+      issuedAt: version.issuedAt,
+      createdAt: version.createdAt,
+    };
+    candidates.push({
+      candidateId: data.candidateId,
+      identity: candidateIdentity(holder, version),
+      issuedAt: version.issuedAt,
+      createdAt: version.createdAt,
+      data,
+    });
+  }
+  return candidates.sort((left, right) =>
+    Number(right.issuedAt ?? right.createdAt ?? 0) -
+    Number(left.issuedAt ?? left.createdAt ?? 0),
+  );
 }
 
 export const listByPolicy = query({
@@ -211,113 +310,186 @@ export const getOrCreateParentInternal = internalMutation({
   },
 });
 
-export const findReusableIssuedVersionInternal = internalQuery({
+export const findIssuedCertificateHolderCandidatesInternal = internalQuery({
   args: {
-    certificateId: v.id("policyCertificates"),
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
     policyVersionId: v.optional(v.id("policyVersions")),
     requestKind: v.optional(certificateRequestKindValidator),
     requestSignature: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const parent = await ctx.db.get(args.certificateId);
-    if (!parent?.latestIssuedVersionId) return null;
-    const version = await ctx.db.get(parent.latestIssuedVersionId);
-    if (!version || version.status !== "issued" || !version.fileId) return null;
-    if (args.policyVersionId && version.policyVersionId !== args.policyVersionId) return null;
-    if (args.requestKind && (version.requestKind ?? "holder") !== args.requestKind) return null;
-    if (args.requestSignature && version.requestSignature !== args.requestSignature) return null;
-    return {
-      ...version,
-      url: await ctx.storage.getUrl(version.fileId),
-    };
+    return await collectIssuedCertificateCandidates(ctx, args);
   },
 });
 
-export const findReusableIssuedVersionByHolderNameInternal = internalQuery({
+export const nextVersionNumberInternal = internalQuery({
   args: {
     orgId: v.id("organizations"),
-    policyId: v.id("policies"),
-    holderName: v.string(),
-    requestKind: v.optional(certificateRequestKindValidator),
-    requestSignature: v.optional(v.string()),
+    certificateId: v.id("policyCertificates"),
   },
   handler: async (ctx, args) => {
-    const normalizedName = normalizeCertificateHolderName(args.holderName);
-    if (!normalizedName) return null;
-
-    const policy = await ctx.db.get(args.policyId);
-    if (!policy || policy.orgId !== args.orgId) return null;
-    let currentPolicyVersionId = policy.currentPolicyVersionId;
-    if (!currentPolicyVersionId) {
-      const latest = await ctx.db
-        .query("policyVersions")
-        .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", args.policyId))
-        .order("desc")
-        .first();
-      currentPolicyVersionId = latest?._id;
+    const certificate = await ctx.db.get(args.certificateId);
+    if (!certificate || certificate.orgId !== args.orgId) {
+      throw new Error("Certificate not found.");
     }
+    return await nextCertificateVersionNumber(ctx, args.certificateId);
+  },
+});
 
-    const holders = await ctx.db
-      .query("certificateHolders")
-      .withIndex("by_orgId_normalizedName", (q) =>
-        q.eq("orgId", args.orgId).eq("normalizedName", normalizedName),
-      )
-      .collect();
-    const reusable = [];
-    for (const holder of holders) {
-      const parents = await ctx.db
-        .query("policyCertificates")
-        .withIndex("by_holderId", (q) => q.eq("holderId", holder._id))
-        .collect();
-      for (const parent of parents) {
-        if (
-          parent.orgId !== args.orgId ||
-          parent.policyId !== args.policyId ||
-          parent.status !== "active" ||
-          !parent.latestIssuedVersionId
-        ) {
-          continue;
-        }
-        const version = await ctx.db.get(parent.latestIssuedVersionId);
-        if (
-          !version ||
-          version.status !== "issued" ||
-          !version.fileId ||
-          version.policyId !== args.policyId
-        ) {
-          continue;
-        }
-        if (currentPolicyVersionId && version.policyVersionId !== currentPolicyVersionId) {
-          continue;
-        }
-        if ((version.requestKind ?? "holder") !== (args.requestKind ?? "holder")) {
-          continue;
-        }
-        if (args.requestSignature && version.requestSignature !== args.requestSignature) {
-          continue;
-        }
-        reusable.push({
-          parent,
-          holder,
-          version,
-        });
+function cleanupGroupHasAddressConflict(rows: Array<{
+  identity: ReturnType<typeof candidateIdentity>;
+}>) {
+  const addressed = rows.filter((row) => row.identity.normalizedAddress);
+  for (let index = 0; index < addressed.length; index += 1) {
+    for (let otherIndex = index + 1; otherIndex < addressed.length; otherIndex += 1) {
+      const comparison = compareCertificateHolderAddresses(
+        addressed[index]?.identity.normalizedAddress,
+        addressed[otherIndex]?.identity.normalizedAddress,
+      );
+      if (comparison !== "same" && comparison !== "both_missing" && comparison !== "one_missing") {
+        return true;
       }
     }
+  }
+  return false;
+}
 
-    reusable.sort((left, right) =>
-      (right.version.issuedAt ?? right.version.createdAt) -
-      (left.version.issuedAt ?? left.version.createdAt),
+async function versionsForCertificate(ctx: ReadCtx, certificateId: Id<"policyCertificates">) {
+  return await ctx.db
+    .query("certificateVersions")
+    .withIndex("by_certificateId_versionNumber", (q) => q.eq("certificateId", certificateId))
+    .order("asc")
+    .collect();
+}
+
+async function cleanupDuplicatePolicyCertificates(ctx: MutationCtx, args: {
+  policyId: Id<"policies">;
+  dryRun?: boolean;
+}) {
+  const dryRun = args.dryRun ?? true;
+  const now = dayjs().valueOf();
+  const parents = await ctx.db
+    .query("policyCertificates")
+    .withIndex("by_policyId_status", (q) =>
+      q.eq("policyId", args.policyId).eq("status", "active"),
+    )
+    .collect();
+  const enriched = [];
+  for (const parent of parents) {
+    const [holder, versions] = await Promise.all([
+      ctx.db.get(parent.holderId),
+      versionsForCertificate(ctx, parent._id),
+    ]);
+    if (!holder) continue;
+    enriched.push({
+      parent,
+      holder,
+      versions,
+      identity: candidateIdentity(holder, versions.find((version) => version._id === parent.latestIssuedVersionId)),
+    });
+  }
+
+  const byName = new Map<string, typeof enriched>();
+  for (const row of enriched) {
+    const key = row.identity.normalizedName;
+    if (!key) continue;
+    byName.set(key, [...(byName.get(key) ?? []), row]);
+  }
+
+  const mergedGroups = [];
+  const ambiguousGroups = [];
+  let archivedParents = 0;
+  let movedVersions = 0;
+  for (const rows of byName.values()) {
+    if (rows.length < 2) continue;
+    if (cleanupGroupHasAddressConflict(rows)) {
+      ambiguousGroups.push({
+        normalizedName: rows[0]?.identity.normalizedName,
+        policyCertificateIds: rows.map((row) => row.parent._id),
+        reason: "Same holder name has conflicting addresses.",
+      });
+      continue;
+    }
+
+    const sortedParents = [...rows].sort((left, right) =>
+      Number(left.parent.createdAt ?? 0) - Number(right.parent.createdAt ?? 0),
     );
-    const match = reusable[0];
-    if (!match) return null;
-    const fileId = match.version.fileId;
-    if (!fileId) return null;
-    return {
-      ...match.version,
-      holder: match.holder,
-      policyCertificateId: match.parent._id,
-      url: await ctx.storage.getUrl(fileId),
-    };
+    const canonical = sortedParents[0];
+    if (!canonical) continue;
+    const duplicates = sortedParents.slice(1);
+    const versions = sortedParents
+      .flatMap((row) => row.versions)
+      .sort((left, right) =>
+        Number(left.issuedAt ?? left.createdAt) - Number(right.issuedAt ?? right.createdAt),
+      );
+    const latest = versions[versions.length - 1];
+    mergedGroups.push({
+      normalizedName: canonical.identity.normalizedName,
+      canonicalPolicyCertificateId: canonical.parent._id,
+      archivedPolicyCertificateIds: duplicates.map((row) => row.parent._id),
+      versionIds: versions.map((version) => version._id),
+      latestVersionId: latest?._id,
+    });
+    if (dryRun || !latest) continue;
+
+    for (const [index, version] of versions.entries()) {
+      const isLatest = version._id === latest._id;
+      await ctx.db.patch(version._id, {
+        certificateId: canonical.parent._id,
+        holderId: canonical.parent.holderId,
+        versionNumber: index + 1,
+        status: isLatest ? "issued" : "superseded",
+        supersededAt: isLatest ? undefined : version.supersededAt ?? now,
+        updatedAt: now,
+      });
+      if (version.certificateId !== canonical.parent._id) movedVersions += 1;
+    }
+    for (const duplicate of duplicates) {
+      await ctx.db.patch(duplicate.parent._id, {
+        status: "archived",
+        currentVersionId: undefined,
+        latestIssuedVersionId: undefined,
+        updatedAt: now,
+      });
+      archivedParents += 1;
+    }
+    await ctx.db.patch(canonical.parent._id, {
+      currentVersionId: latest._id,
+      latestIssuedVersionId: latest._id,
+      lastIssuedAt: latest.issuedAt ?? latest.createdAt,
+      updatedAt: now,
+    });
+  }
+
+  return {
+    dryRun,
+    policyId: args.policyId,
+    mergeGroups: mergedGroups,
+    ambiguousGroups,
+    archivedParents,
+    movedVersions,
+  };
+}
+
+export const cleanupDuplicatePolicyCertificatesForOperator = mutation({
+  args: {
+    policyId: v.id("policies"),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    return await cleanupDuplicatePolicyCertificates(ctx, args);
+  },
+});
+
+export const cleanupDuplicatePolicyCertificatesInternal = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    return await cleanupDuplicatePolicyCertificates(ctx, args);
   },
 });
 

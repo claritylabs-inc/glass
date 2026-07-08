@@ -2,90 +2,24 @@
 
 import dayjs from "dayjs";
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
-import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 import {
   CERTIFICATE_FORM_LABELS,
-  type CertificateFormCode,
-  type CertificateHolderRelationship,
+  type CertificateCoverageLine,
+  type CertificateData,
 } from "./acordForms/types";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * COI data interface mapping Glass's rich policy fields to ACORD 25 fields.
+ * COI data mapping Glass's rich policy fields to ACORD certificate fields.
  * All monetary values should be pre-formatted strings (e.g. "$1,000,000").
+ * Canonical shape lives in ./acordForms/types.
  */
-export interface CoiData {
-  formCode?: CertificateFormCode;
-  title: string;
-  issuedDateLabel: string;
-
-  // Producer / intermediary
-  producerAgency?: string;
-  producerContact?: string;
-  producerLicense?: string;
-  producerAddress?: string | { street1?: string; street2?: string; city?: string; state?: string; zip?: string; country?: string };
-  producerPhone?: string;
-  producerEmail?: string;
-
-  // Insurance company
-  insuranceCompanyAddress?: string;
-  insuranceCompanyPhone?: string;
-
-  // Insured
-  insuredName: string;
-  insuredDba?: string;
-  insuredAddress?: string | { street1?: string; city?: string; state?: string; zip?: string };
-  insuredFein?: string;
-
-  // Insurer (ACORD 25 supports Insurers A–F; we map the primary policy insurer to A)
-  insurers: Array<{
-    letter: string; // "A" | "B" | ... | "F"
-    name: string;
-    naic?: string;
-    amBest?: string;
-    admitted?: string;
-  }>;
-  // Coverage rows — each maps to an ACORD 25 coverage section
-  coverages: CoverageLine[];
-
-  // Optional
-  certificateNumber?: string;
-  revisionNumber?: string;
-  certificateHolder?: string;
-  certificateHolderRelationship?: CertificateHolderRelationship;
-  description?: string; // "Description of Operations / Locations / Vehicles"
-  propertyDescription?: string;
-  propertyLocation?: string;
-  interestHolder?: string;
-  interestHolderRelationship?: string;
-  floodZone?: string;
-  floodProgram?: string;
-}
+export type CoiData = CertificateData;
 
 /** One coverage section in the ACORD 25 grid. */
-export interface CoverageLine {
-  /** ACORD section label: "COMMERCIAL GENERAL LIABILITY", "AUTOMOBILE LIABILITY", etc. */
-  type: string;
-  /** Insurer letter reference (A–F) */
-  insurerLetter?: string;
-  /** "occurrence" | "claims_made" — for the CGL form type checkbox */
-  coverageForm?: "occurrence" | "claims_made";
-  /** Additional type notes (e.g. "CLAIMS MADE □  OCCUR □") */
-  typeNotes?: string;
-  /** Addl Insr endorsement on file */
-  addlInsr?: boolean;
-  /** Subrogation waiver */
-  subrWvd?: boolean;
-  policyNumber?: string;
-  effectiveDate?: string;
-  expirationDate?: string;
-  /** Key/value limit pairs in ACORD 25 display order */
-  limits: Array<{ label: string; value: string }>;
-  deductible?: string;
-  sectionRef?: string;
-  description?: string;
-}
+export type CoverageLine = CertificateCoverageLine;
 
 // ─── Mapping helpers ──────────────────────────────────────────────────────────
 
@@ -558,6 +492,8 @@ const C_HEADER_BG = "#d0d0d0";
 const C_LABEL_BG = "#e8e8e8";
 const ACORD_25_INFORMATION_NOTICE =
   "THIS CERTIFICATE IS ISSUED AS A MATTER OF INFORMATION ONLY AND CONFERS NO RIGHTS UPON THE CERTIFICATE HOLDER. THIS CERTIFICATE DOES NOT AFFIRMATIVELY OR NEGATIVELY AMEND, EXTEND OR ALTER THE COVERAGE AFFORDED BY THE POLICIES BELOW. THIS CERTIFICATE OF INSURANCE DOES NOT CONSTITUTE A CONTRACT BETWEEN THE ISSUING INSURER(S), AUTHORIZED REPRESENTATIVE OR PRODUCER, AND THE CERTIFICATE HOLDER.";
+const ACORD_25_COVERAGE_NOTICE =
+  "THIS IS TO CERTIFY THAT THE POLICIES OF INSURANCE LISTED BELOW HAVE BEEN ISSUED TO THE INSURED NAMED ABOVE FOR THE POLICY PERIOD INDICATED. NOTWITHSTANDING ANY REQUIREMENT, TERM OR CONDITION OF ANY CONTRACT OR OTHER DOCUMENT WITH RESPECT TO WHICH THIS CERTIFICATE MAY BE ISSUED OR MAY PERTAIN, THE INSURANCE AFFORDED BY THE POLICIES DESCRIBED HEREIN IS SUBJECT TO ALL THE TERMS, EXCLUSIONS AND CONDITIONS OF SUCH POLICIES. LIMITS SHOWN MAY HAVE BEEN REDUCED BY PAID CLAIMS.";
 
 /**
  * Generate an ACORD 25-style Certificate of Liability Insurance PDF.
@@ -611,17 +547,15 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     y += insuredH + 10;
 
     const coveragesTop = y;
-    doc.rect(M, y, W, 16).fillAndStroke(C_HEADER_BG, C_BLACK);
-    doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
-    doc.text("COVERAGES", M + 4, y + 4, { width: W - 8, align: "center" });
-    y += 16;
+    y = drawCoverageSectionHeader(doc, data, y);
 
-    doc.font("Helvetica").fontSize(FS_DISCLAIMER).fillColor(C_BLACK);
-    const coverageNotice =
-      "This is to certify that the policies of insurance listed below have been issued to the insured named above for the policy period indicated. The insurance afforded by the policies described herein is subject to all the terms, exclusions and conditions of such policies. Limits shown may have been reduced by paid claims.";
-    const noticeH = doc.heightOfString(coverageNotice, { width: W - 8 }) + 8;
+    doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
+    const noticeH = doc.heightOfString(ACORD_25_COVERAGE_NOTICE, { width: W - 8 }) + 8;
     doc.rect(M, y, W, noticeH).stroke();
-    doc.text(coverageNotice, M + 4, y + 4, { width: W - 8 });
+    doc.text(ACORD_25_COVERAGE_NOTICE, M + 4, y + 4, {
+      width: W - 8,
+      height: noticeH - 8,
+    });
     y += noticeH;
 
     y = drawCoverageTable(doc, data.coverages, y);
@@ -645,10 +579,9 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
 
     const bottomW = W * 0.46;
     const cancelText = "Should any of the above described policies be cancelled before the expiration date thereof, notice will be delivered in accordance with the policy provisions.";
-    const bottomH = Math.max(70, textBlockHeight(doc, data.certificateHolder ?? "", bottomW - 10, FS_VALUE, false) + 18, textBlockHeight(doc, cancelText, W - bottomW - 10, FS_DISCLAIMER, false) + 34);
+    const bottomH = Math.max(54, textBlockHeight(doc, data.certificateHolder ?? "", bottomW - 10, FS_VALUE, false) + 18, textBlockHeight(doc, cancelText, W - bottomW - 10, FS_DISCLAIMER, false) + 18);
     drawInfoBox(doc, M, y, bottomW, bottomH, "CERTIFICATE HOLDER", data.certificateHolder ?? "");
     drawInfoBox(doc, M + bottomW, y, W - bottomW, bottomH, "CANCELLATION", cancelText);
-    sectionLabel(doc, "AUTHORIZED REPRESENTATIVE", M + bottomW + 5, y + bottomH - 16);
     y += bottomH + 6;
 
     if (descOverflows) {
@@ -675,6 +608,79 @@ function drawInfoBox(
   if (!value) return;
   doc.font("Helvetica").fontSize(FS_VALUE).fillColor(C_BLACK);
   doc.text(value, x + 5, y + 16, { width: w - 10, height: h - 20 });
+}
+
+function drawCoverageSectionHeader(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  y: number,
+): number {
+  const headerH = 16;
+  const coverageW = 138;
+  const revisionW = 160;
+  const certificateW = W - coverageW - revisionW;
+  const certificateNumber = data.certificateNumber?.trim();
+  const revisionNumber = data.revisionNumber?.trim();
+
+  doc.rect(M, y, W, headerH).fillAndStroke(C_HEADER_BG, C_BLACK);
+  doc
+    .moveTo(M + coverageW, y)
+    .lineTo(M + coverageW, y + headerH)
+    .stroke();
+  doc
+    .moveTo(M + coverageW + certificateW, y)
+    .lineTo(M + coverageW + certificateW, y + headerH)
+    .stroke();
+
+  doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
+  doc.text("COVERAGES", M + 4, y + 4, {
+    width: coverageW - 8,
+    height: headerH - 6,
+    align: "left",
+  });
+  doc.text(`CERTIFICATE NUMBER:${certificateNumber ? ` ${certificateNumber}` : ""}`, M + coverageW + 4, y + 4, {
+    width: certificateW - 8,
+    height: headerH - 6,
+    align: "center",
+  });
+  doc.text(`REVISION NUMBER:${revisionNumber ? ` ${revisionNumber}` : ""}`, M + coverageW + certificateW + 4, y + 4, {
+    width: revisionW - 8,
+    height: headerH - 6,
+    align: "center",
+  });
+
+  return y + headerH;
+}
+
+function drawCertificateNumberBand(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  y: number,
+): number {
+  const headerH = 16;
+  const certificateW = W / 2;
+  const certificateNumber = data.certificateNumber?.trim();
+  const revisionNumber = data.revisionNumber?.trim();
+
+  doc.rect(M, y, W, headerH).fillAndStroke(C_HEADER_BG, C_BLACK);
+  doc
+    .moveTo(M + certificateW, y)
+    .lineTo(M + certificateW, y + headerH)
+    .stroke();
+
+  doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
+  doc.text(`CERTIFICATE NUMBER:${certificateNumber ? ` ${certificateNumber}` : ""}`, M + 4, y + 4, {
+    width: certificateW - 8,
+    height: headerH - 6,
+    align: "left",
+  });
+  doc.text(`REVISION NUMBER:${revisionNumber ? ` ${revisionNumber}` : ""}`, M + certificateW + 4, y + 4, {
+    width: W - certificateW - 8,
+    height: headerH - 6,
+    align: "left",
+  });
+
+  return y + headerH;
 }
 
 function drawAcord25InformationNotice(
@@ -825,6 +831,8 @@ function drawAcordPropertyEvidenceForm(doc: PDFKit.PDFDocument, data: CoiData) {
   doc.font("Helvetica").fontSize(FS_VALUE);
   doc.text(dateStr, M + W * 0.72, y + 10, { width: W * 0.28, align: "right" });
   y += 30;
+
+  y = drawCertificateNumberBand(doc, data, y) + 4;
 
   const topW = W * 0.5;
   const insurerAddress = joinLines(

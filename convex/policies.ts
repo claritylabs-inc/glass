@@ -28,6 +28,7 @@ import {
   parseExtractedNumber,
 } from "./lib/valueNormalization";
 import { toLobCodes } from "./lib/linesOfBusiness";
+import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
 
 dayjs.extend(customParseFormat);
 
@@ -47,7 +48,7 @@ type PolicyPipelineLogEntry = {
 async function deactivatePolicyDeclarationFacts(
   ctx: MutationCtx,
   policyId: DataModelId<"policies">,
-  _orgId?: DataModelId<"organizations">,
+  orgId?: DataModelId<"organizations">,
 ) {
   const facts = await ctx.db
     .query("policyDeclarationFacts")
@@ -57,6 +58,9 @@ async function deactivatePolicyDeclarationFacts(
     .collect();
   for (const fact of facts) {
     await ctx.db.patch(fact._id, { active: false });
+  }
+  if (orgId) {
+    await syncOrgProfileFromDeclarationFacts(ctx, orgId);
   }
 }
 

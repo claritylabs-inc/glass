@@ -23,6 +23,7 @@ export type CertificateRequestWorkflowParams = {
   holderEmail?: string;
   holderPhone?: string;
   requestText?: string;
+  descriptionOfOperations?: string;
   requestedEndorsements?: string[];
 };
 

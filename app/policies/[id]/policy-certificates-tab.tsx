@@ -432,6 +432,13 @@ export function CertificateCreatePanel({
         setHoldResult(result as HeldCertificateResult);
         return;
       }
+      if ((result as { status?: string }).status === "ambiguous_certificate_holder") {
+        toast.message(
+          (result as { message?: string }).message ??
+            "Choose the existing certificate to reissue or provide the exact holder address.",
+        );
+        return;
+      }
       if (
         (result as { status?: string }).status === "source_tree_rebuild_required" ||
         (result as { status?: string }).status === "extraction_in_progress"

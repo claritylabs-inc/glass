@@ -148,6 +148,9 @@ describe("COI PDF generation", () => {
     expect(certificates).toContain("holderPhone");
     expect(generateCoi).toContain("holderContactName");
     expect(generateCoi).toContain("recordIssuedVersionInternal");
+    expect(generateCoi).toContain("nextVersionNumberInternal");
+    expect(generateCoi).toContain("certificateNumber: String(lifecycle.policyCertificateId)");
+    expect(generateCoi).toContain("revisionNumber: String(nextVersionNumber)");
     expect(generateCoi).toContain("generateObjectForOrg");
     expect(generateCoi).toContain("buildCertificateDescriptionContext");
     expect(generateCoi).toContain('"summary"');

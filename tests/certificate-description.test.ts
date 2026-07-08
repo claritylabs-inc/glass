@@ -120,6 +120,52 @@ describe("certificate description generation context", () => {
     expect(fallback).toContain("Additional insured:");
   });
 
+  it("does not treat the named insured as an additional insured in fallback wording", () => {
+    const context = buildCertificateDescriptionContext(
+      {
+        declarations: {
+          fields: [
+            { field: "namedInsured", value: "Clarity Labs Inc." },
+            { field: "mailingAddress", value: "1070 Bridgeview Way, San Francisco, CA 94121" },
+          ],
+        },
+      },
+      {
+        ...baseCoiData,
+        insuredName: "Clarity Labs Inc.",
+        description: undefined,
+      },
+      {},
+    );
+
+    expect(context.additionalInsureds.join(" ")).not.toContain("namedInsured");
+    expect(buildCertificateDescriptionFallback(context)).not.toContain("Additional insured: namedInsured");
+  });
+
+  it("carries source-backed operations wording into prompt and fallback text", () => {
+    const descriptionOfOperations =
+      "Clarity Labs Inc. (Delaware C-Corporation), providing technology services including software development, AI/ML, and SaaS/PaaS offerings.";
+    const context = buildCertificateDescriptionContext(
+      {
+        summary: "Generic professional liability policy summary.",
+        declarations: {
+          fields: [
+            { field: "namedInsured", value: "Clarity Labs Inc." },
+          ],
+        },
+      },
+      {
+        ...baseCoiData,
+        insuredName: "Clarity Labs Inc.",
+      },
+      { descriptionOfOperations },
+    );
+
+    expect(context.operations[0]).toBe(descriptionOfOperations);
+    expect(buildCertificateDescriptionPrompt({ context })).toContain("SaaS/PaaS offerings");
+    expect(buildCertificateDescriptionFallback(context)).toContain("Operations: Clarity Labs Inc.");
+  });
+
   it("guards the model output against branding and form-name leakage", () => {
     expect(certificateDescriptionSystemPrompt()).toContain("Do not mention");
     expect(normalizeCertificateDescription("ACORD 25 Generated using Glass\nCovered location: 123 Market St")).toBe(

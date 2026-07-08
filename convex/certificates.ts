@@ -20,6 +20,13 @@ import {
 } from "./lib/certificateRequestGate";
 import { buildEndorsementRequestEmail } from "./lib/certificateBrokerEmail";
 import { summarizeEndorsementEvidence } from "./lib/certificateEndorsements";
+import {
+  buildHolderIdentityReviewPrompt,
+  certificateHolderIdentity,
+  HolderIdentityReviewSchema,
+  resolveDeterministicCertificateHolder,
+  type CertificateHolderResolutionCandidate,
+} from "./lib/certificateHolderResolution";
 import { makeGenerateObject } from "./lib/sdkCallbacks";
 import { z } from "zod";
 
@@ -363,17 +370,29 @@ function certificateRequestSignature(args: {
   holderName: string;
   additionalInsuredName?: string;
   requiredChanges?: CertificateEndorsementKind[];
+  descriptionOfOperations?: string;
 }) {
   const nonAdditionalInsuredKinds = (args.requiredChanges ?? [])
     .filter((kind) => kind !== "additional_insured")
     .sort();
-  const suffix = nonAdditionalInsuredKinds.length
+  const endorsementSuffix = nonAdditionalInsuredKinds.length
     ? `|${nonAdditionalInsuredKinds.join("|")}`
     : "";
+  const descriptionOfOperations = args.descriptionOfOperations
+    ? normalizeSignatureText(args.descriptionOfOperations).slice(0, 160)
+    : "";
+  const operationsSuffix = descriptionOfOperations
+    ? `|operations:${descriptionOfOperations}`
+    : "";
+  const signedName = normalizeSignatureText(
+    args.requestKind === "additional_insured"
+      ? args.additionalInsuredName ?? args.holderName
+      : args.holderName,
+  );
   if (args.requestKind === "additional_insured") {
-    return `additional_insured:${normalizeSignatureText(args.additionalInsuredName ?? args.holderName)}${suffix}`;
+    return `additional_insured:${signedName}${endorsementSuffix}${operationsSuffix}`;
   }
-  return `holder:${normalizeSignatureText(args.holderName)}${suffix}`;
+  return `holder:${signedName}${endorsementSuffix}${operationsSuffix}`;
 }
 
 export function resolveCertificateRequestMetadata(args: {
@@ -382,6 +401,7 @@ export function resolveCertificateRequestMetadata(args: {
   requestText?: string;
   requestedEndorsements?: string[];
   additionalInsuredName?: string;
+  descriptionOfOperations?: string;
 }) {
   const inferredChanges = inferCertificateEndorsements({
     certificateHolder: args.certificateHolder,
@@ -407,6 +427,7 @@ export function resolveCertificateRequestMetadata(args: {
     holderName: args.holderName,
     additionalInsuredName,
     requiredChanges,
+    descriptionOfOperations: cleanOptionalText(args.descriptionOfOperations),
   });
 
   return {
@@ -456,6 +477,147 @@ function policyEmailFields(policy: Record<string, any> | null | undefined) {
       policy?.security ??
       policy?.carrier,
   };
+}
+
+type IssuedCertificateCandidate = {
+  policyCertificateId: Id<"policyCertificates">;
+  holderId: Id<"certificateHolders">;
+  holder: {
+    _id: Id<"certificateHolders">;
+    displayName: string;
+    address?: CertificateHolderAddressInput;
+  };
+  version: {
+    _id: Id<"certificateVersions">;
+    policyVersionId?: Id<"policyVersions">;
+    fileId?: Id<"_storage">;
+    fileName?: string;
+    fileSize?: number;
+    versionNumber: number;
+    requestKind?: "holder" | "additional_insured";
+    additionalInsuredName?: string;
+    formCode?: "acord25" | "acord24" | "acord27" | "acord28" | "acord29" | "acord30" | "acord31";
+    issuedAt?: number;
+    createdAt: number;
+  };
+  url: string | null;
+};
+
+function holderResolutionCandidatesForResponse(
+  candidates: CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[],
+) {
+  return candidates.map((candidate) => ({
+    policyCertificateId: String(candidate.data.policyCertificateId),
+    holderId: String(candidate.data.holderId),
+    holderName: candidate.identity.displayName,
+    holderAddress: candidate.identity.address,
+    certificateVersionId: String(candidate.data.version._id),
+    versionNumber: candidate.data.version.versionNumber,
+    issuedAt: candidate.data.version.issuedAt ?? candidate.data.version.createdAt,
+  }));
+}
+
+function existingCertificateResult(args: {
+  candidate: CertificateHolderResolutionCandidate<IssuedCertificateCandidate>;
+  policyVersionId: Id<"policyVersions">;
+  requestKind: "holder" | "additional_insured";
+  additionalInsuredName?: string;
+}) {
+  const version = args.candidate.data.version;
+  return {
+    status: "existing",
+    reused: true,
+    fileId: version.fileId,
+    url: args.candidate.data.url,
+    fileName: version.fileName ?? "certificate-of-insurance.pdf",
+    size: version.fileSize ?? 0,
+    holderId: String(args.candidate.data.holderId),
+    policyCertificateId: String(args.candidate.data.policyCertificateId),
+    certificateVersionId: String(version._id),
+    policyVersionId: String(version.policyVersionId ?? args.policyVersionId),
+    versionNumber: version.versionNumber,
+    requestKind: version.requestKind ?? args.requestKind,
+    additionalInsuredName: version.additionalInsuredName ?? args.additionalInsuredName,
+    formCode: version.formCode,
+  };
+}
+
+function ambiguousHolderResult(args: {
+  holderName: string;
+  reason: string;
+  candidates: CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[];
+}) {
+  return {
+    status: "ambiguous_certificate_holder",
+    holderName: args.holderName,
+    reason: args.reason,
+    candidates: holderResolutionCandidatesForResponse(args.candidates),
+    message:
+      `I found more than one possible existing certificate holder for ${args.holderName}. I did not issue a duplicate certificate. Reissue from the existing certificate, or provide the exact holder address.`,
+  };
+}
+
+async function reviewHolderIdentityWithModel(args: {
+  ctx: any;
+  orgId: Id<"organizations">;
+  policyId: Id<"policies">;
+  holderName: string;
+  requested: ReturnType<typeof certificateHolderIdentity>;
+  candidates: CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[];
+}) {
+  const generateIdentityObject = makeGenerateObject("classification", {
+    ctx: args.ctx,
+    orgId: args.orgId,
+    tracePolicyId: args.policyId,
+  });
+  try {
+    const result = await generateIdentityObject({
+      schema: HolderIdentityReviewSchema,
+      maxTokens: 700,
+      system: `You classify certificate holder identity for certificate reuse.
+
+Return same_holder only when the requested holder is the same legal/display holder and address as one of the provided current-policy candidates. Return ambiguous rather than guessing.`,
+      prompt: buildHolderIdentityReviewPrompt({
+        requested: args.requested,
+        candidates: args.candidates,
+      }),
+    });
+    const review = result.object as z.infer<typeof HolderIdentityReviewSchema>;
+    if (review.verdict === "same_holder") {
+      const candidate = args.candidates.find((item) =>
+        item.candidateId === review.matchedCandidateId,
+      );
+      if (candidate) {
+        return {
+          verdict: "same_holder" as const,
+          candidate,
+          reason: review.reason,
+        };
+      }
+      return {
+        verdict: "ambiguous" as const,
+        reason: "The model selected a candidate that was not in the bounded candidate set.",
+        candidates: args.candidates,
+      };
+    }
+    if (review.verdict === "ambiguous") {
+      return {
+        verdict: "ambiguous" as const,
+        reason: review.reason,
+        candidates: args.candidates,
+      };
+    }
+    return {
+      verdict: "no_match" as const,
+      reason: review.reason,
+    };
+  } catch (error) {
+    return {
+      verdict: "ambiguous" as const,
+      reason: `Holder identity review could not complete: ${error instanceof Error ? error.message : String(error)}`,
+      candidates: args.candidates,
+    };
+  }
 }
 
 export const generateForPolicy = action({
@@ -594,6 +756,74 @@ export const generateForOrg = internalAction({
       additionalInsuredName,
       requestSignature,
     } = requestMetadata;
+    const reusableRequestSignature =
+      requestKind === "holder" && requiredChanges.length === 0
+        ? undefined
+        : requestSignature;
+    const policyVersionId = args.policyVersionId ?? await ctx.runMutation(
+      (internal as any).policyVersions.ensureInitialInternal,
+      {
+        policyId: args.policyId,
+        createdByUserId: args.createdByUserId,
+      },
+    ) as Id<"policyVersions">;
+    const requestedHolderIdentity = certificateHolderIdentity({
+      displayName: holderName,
+      address: holderAddress as CertificateHolderAddressInput | undefined,
+    });
+    const issuedCandidates = await ctx.runQuery(
+      (internal as any).certificateLifecycle.findIssuedCertificateHolderCandidatesInternal,
+      {
+        orgId: args.orgId,
+        policyId: args.policyId,
+        policyVersionId,
+        requestKind,
+        requestSignature: reusableRequestSignature,
+      },
+    ) as CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[];
+    const deterministicResolution = resolveDeterministicCertificateHolder(
+      requestedHolderIdentity,
+      issuedCandidates,
+    );
+    let matchedIssuedCandidate: CertificateHolderResolutionCandidate<IssuedCertificateCandidate> | null =
+      deterministicResolution.verdict === "same_holder"
+        ? deterministicResolution.candidate
+        : null;
+    if (!matchedIssuedCandidate && deterministicResolution.verdict === "ambiguous") {
+      return ambiguousHolderResult({
+        holderName,
+        reason: deterministicResolution.reason,
+        candidates: deterministicResolution.candidates,
+      });
+    }
+    if (!matchedIssuedCandidate && deterministicResolution.verdict === "needs_model") {
+      const modelResolution = await reviewHolderIdentityWithModel({
+        ctx,
+        orgId: args.orgId,
+        policyId: args.policyId,
+        holderName,
+        requested: requestedHolderIdentity,
+        candidates: deterministicResolution.candidates,
+      });
+      if (modelResolution.verdict === "same_holder") {
+        matchedIssuedCandidate = modelResolution.candidate;
+      } else if (modelResolution.verdict === "ambiguous") {
+        return ambiguousHolderResult({
+          holderName,
+          reason: modelResolution.reason,
+          candidates: modelResolution.candidates,
+        });
+      }
+    }
+    if (matchedIssuedCandidate && !args.forceReissue) {
+      return existingCertificateResult({
+        candidate: matchedIssuedCandidate,
+        policyVersionId,
+        requestKind,
+        additionalInsuredName,
+      });
+    }
+
     let gate: CertificateGateVerdict = { status: "allowed", requiredChanges, evidence: [] };
     if (hasEndorsementRequest && !evidenceGatedOnly) {
       gate = unsupportedEndorsementGate(requiredChanges);
@@ -693,63 +923,31 @@ export const generateForOrg = internalAction({
       };
     }
 
-    const holderId = await ctx.runMutation((internal as any).certificateHolders.upsertInternal, {
-      orgId: args.orgId,
-      displayName: holderName,
-      contactName: holderContactName,
-      email: holderEmail,
-      phone: holderPhone,
-      address: holderAddress,
-      source: "certificate_generation",
-      sourceRef: String(args.policyId),
-      createdByUserId: args.createdByUserId,
-      updatedByUserId: args.createdByUserId,
-    }) as Id<"certificateHolders">;
-    const policyVersionId = args.policyVersionId ?? await ctx.runMutation(
-      (internal as any).policyVersions.ensureInitialInternal,
-      {
-        policyId: args.policyId,
-        createdByUserId: args.createdByUserId,
-      },
-    ) as Id<"policyVersions">;
-    const policyCertificateId = await ctx.runMutation(
-      (internal as any).certificateLifecycle.getOrCreateParentInternal,
-      {
+    let holderId = matchedIssuedCandidate?.data.holderId;
+    let policyCertificateId = matchedIssuedCandidate?.data.policyCertificateId;
+    if (!holderId || !policyCertificateId) {
+      holderId = await ctx.runMutation((internal as any).certificateHolders.upsertInternal, {
         orgId: args.orgId,
-        policyId: args.policyId,
-        holderId,
-        source: args.source ?? "unknown",
+        displayName: holderName,
+        contactName: holderContactName,
+        email: holderEmail,
+        phone: holderPhone,
+        address: holderAddress,
+        source: "certificate_generation",
+        sourceRef: String(args.policyId),
         createdByUserId: args.createdByUserId,
-      },
-    ) as Id<"policyCertificates">;
-
-    const reusableVersion = args.forceReissue
-      ? null
-      : await ctx.runQuery((internal as any).certificateLifecycle.findReusableIssuedVersionInternal, {
-          certificateId: policyCertificateId,
-          policyVersionId,
-          requestKind,
-          requestSignature,
-        });
-    const reusableHolderMatches =
-      reusableVersion?.certificateHolder?.trim() === certificateHolder.trim();
-    if (reusableVersion?.fileId && reusableHolderMatches) {
-      return {
-        status: "existing",
-        reused: true,
-        fileId: reusableVersion.fileId,
-        url: reusableVersion.url,
-        fileName: reusableVersion.fileName ?? "certificate-of-insurance.pdf",
-        size: reusableVersion.fileSize ?? 0,
-        holderId: String(holderId),
-        policyCertificateId: String(policyCertificateId),
-        certificateVersionId: String(reusableVersion._id),
-        policyVersionId: String(policyVersionId),
-        versionNumber: reusableVersion.versionNumber,
-        requestKind: reusableVersion.requestKind ?? requestKind,
-        additionalInsuredName: reusableVersion.additionalInsuredName ?? additionalInsuredName,
-        formCode: reusableVersion.formCode,
-      };
+        updatedByUserId: args.createdByUserId,
+      }) as Id<"certificateHolders">;
+      policyCertificateId = await ctx.runMutation(
+        (internal as any).certificateLifecycle.getOrCreateParentInternal,
+        {
+          orgId: args.orgId,
+          policyId: args.policyId,
+          holderId,
+          source: args.source ?? "unknown",
+          createdByUserId: args.createdByUserId,
+        },
+      ) as Id<"policyCertificates">;
     }
 
     const holderRelationship = await ctx.runQuery(

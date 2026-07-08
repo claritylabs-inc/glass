@@ -224,7 +224,7 @@ export const generateCoi = tool({
     descriptionOfOperations: z
       .string()
       .optional()
-      .describe("Plain description-of-operations wording to place in the certificate description box when the user explicitly provides wording or the policy source facts clearly support operations, locations, covered autos, or special items. Do not use this for generic policy summaries, carrier names, policy numbers, limits, terms, or unsupported endorsement status."),
+      .describe("Source-backed description-of-operations wording to place in the certificate description box when the user explicitly provides wording or the policy source facts clearly support operations, locations, covered autos, or special items. Do not invent this wording. Do not use this for generic policy summaries, carrier names, policy numbers, limits, terms, or unsupported endorsement status."),
     requestedEndorsements: z
       .array(z.string())
       .optional()
