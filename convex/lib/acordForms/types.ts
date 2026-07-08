@@ -39,6 +39,7 @@ export type CertificateHolderRelationship =
 
 export type CertificateCoverageLine = {
   type: string;
+  lineOfBusiness?: string;
   insurerLetter?: string;
   coverageForm?: "occurrence" | "claims_made";
   typeNotes?: string;

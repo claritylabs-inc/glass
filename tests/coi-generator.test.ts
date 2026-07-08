@@ -88,6 +88,64 @@ describe("policyToCoiData", () => {
     expect(data.coverages[0]?.effectiveDate).toBe("5/1/2024");
   });
 
+  it("uses ACORD line-of-business labels for source-backed coverage rows", () => {
+    const data = policyToCoiData({
+      linesOfBusiness: ["EO", "OLIB"],
+      policyNumber: "SPS-TPC-2026-00481-04",
+      effectiveDate: "05/01/2026",
+      expirationDate: "05/01/2027",
+      carrier: "Sentinel Pacific Specialty Insurance Company",
+      insuredName: "Clarity Labs Inc.",
+      coverageForm: "claims_made",
+      operationalProfile: {
+        linesOfBusiness: ["EO", "OLIB"],
+        coverages: [
+          {
+            name: "Technology Professional Liability",
+            lineOfBusiness: "EO",
+            limits: [
+              { label: "Each Claim", value: "$2,000,000" },
+              { label: "Policy Aggregate", value: "$2,000,000" },
+            ],
+          },
+          {
+            name: "Network Security and Privacy Liability",
+            lineOfBusiness: "OLIB",
+            limits: [
+              { label: "Each Claim", value: "$1,000,000" },
+              { label: "Policy Aggregate", value: "$1,000,000" },
+            ],
+          },
+          {
+            name: "Regulatory Proceedings",
+            lineOfBusiness: "OLIB",
+            limits: [{ label: "Aggregate Sub-Limit", value: "$250,000" }],
+          },
+        ],
+      },
+    });
+
+    expect(data.coverages.map((coverage) => coverage.type)).toEqual([
+      "Errors & Omissions",
+      "Other Liability",
+    ]);
+    expect(data.coverages.map((coverage) => coverage.lineOfBusiness)).toEqual([
+      "EO",
+      "OLIB",
+    ]);
+    expect(data.coverages.map((coverage) => coverage.type).join(" ")).not.toMatch(
+      /Technology Professional Liability|Network Security|Regulatory Proceedings/,
+    );
+    expect(data.coverages.flatMap((coverage) => coverage.limits.map((limit) => limit.label))).toEqual(
+      expect.arrayContaining([
+        "Technology Professional Liability - Each Claim",
+        "Technology Professional Liability - Policy Aggregate",
+        "Network Security And Privacy Liability - Each Claim",
+        "Regulatory Proceedings - Aggregate Sub Limit",
+      ]),
+    );
+  });
+
   it("keeps extracted deductible-only coverage rows for COI coverage tables", () => {
     const data = policyToCoiData({
       linesOfBusiness: ["UN"],
@@ -113,6 +171,29 @@ describe("policyToCoiData", () => {
     expect(data.coverages[0]?.sectionRef).toBe("3. PRODUCTS AND COVERAGES");
     expect(data.coverages[0]?.description).toContain("Notice Period: 20 days");
     expect(data.coverages[0]?.limits).toContainEqual({ label: "Deductible", value: "$1,500" });
+  });
+
+  it("keeps legacy coverage grouping when rows do not carry line-of-business metadata", () => {
+    const data = policyToCoiData({
+      linesOfBusiness: ["EO", "OLIB", "EPLI"],
+      policyNumber: "LEGACY-1",
+      effectiveDate: "01/01/2026",
+      expirationDate: "01/01/2027",
+      carrier: "Legacy Carrier",
+      insuredName: "Legacy Insured",
+      coverages: [
+        { name: "Technology Professional Liability", limit: "$2,000,000" },
+        { name: "Network Security and Privacy Liability", limit: "$1,000,000" },
+        { name: "Employment Practices Liability", limit: "$500,000" },
+      ],
+    });
+
+    expect(data.coverages.map((coverage) => coverage.type)).toEqual([
+      "Professional Liability",
+      "Cyber Liability",
+      "Employment Practices Liability",
+    ]);
+    expect(data.coverages.some((coverage) => coverage.lineOfBusiness)).toBe(false);
   });
 });
 
@@ -168,6 +249,28 @@ describe("COI PDF generation", () => {
     });
 
     const pdf = await generateCoiPdf(data);
+
+    expect(pdf.toString("utf-8", 0, 4)).toBe("%PDF");
+    expect(pdf.length).toBeGreaterThan(1000);
+  });
+
+  it("renders non-ACORD-25 property evidence forms successfully", async () => {
+    const data = policyToCoiData({
+      linesOfBusiness: ["PROPC"],
+      policyNumber: "PROP-1",
+      effectiveDate: "01/01/2026",
+      expirationDate: "01/01/2027",
+      carrier: "Property Carrier",
+      insuredName: "Property Insured",
+      limits: { combinedSingleLimit: "$5,000,000" },
+    });
+
+    const pdf = await generateCoiPdf({
+      ...data,
+      formCode: "acord27",
+      propertyDescription: "Tenant improvements and business personal property",
+      propertyLocation: "100 Market Street, San Francisco, CA",
+    });
 
     expect(pdf.toString("utf-8", 0, 4)).toBe("%PDF");
     expect(pdf.length).toBeGreaterThan(1000);

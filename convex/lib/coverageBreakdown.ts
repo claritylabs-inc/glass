@@ -9,12 +9,14 @@ export type CoverageBreakdownRow = {
   name: string;
   lineOfBusiness?: AcordLobCode;
   limit?: string;
+  limitType?: string;
   limits?: Array<{ label: string; value: string }>;
   deductible?: string;
   premium?: string;
   retroactiveDate?: string;
   formNumber?: string;
   sectionRef?: string;
+  description?: string;
 };
 
 export type CoverageBreakdownGroup = {
@@ -104,12 +106,17 @@ function coverageRowsFrom(
         name,
         lineOfBusiness: coverageLineOfBusiness(row) ?? fallbackLob,
         limit: realText(row.limit),
+        limitType: realText(row.limitType),
         limits: coverageTerms(row.limits),
         deductible: realText(row.deductible),
         premium: realText(row.premium),
         retroactiveDate: realText(row.retroactiveDate),
         formNumber: realText(row.formNumber),
         sectionRef: realText(row.sectionRef),
+        description:
+          realText(row.originalContent) ??
+          realText(row.description) ??
+          realText(row.content),
       };
     })
     .filter((row) =>
@@ -121,7 +128,8 @@ function coverageRowsFrom(
           row.premium ||
           row.retroactiveDate ||
           row.formNumber ||
-          row.sectionRef,
+          row.sectionRef ||
+          row.description,
       ),
     );
 }

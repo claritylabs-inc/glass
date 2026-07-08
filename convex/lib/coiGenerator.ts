@@ -7,6 +7,11 @@ import {
   type CertificateCoverageLine,
   type CertificateData,
 } from "./acordForms/types";
+import {
+  buildCoverageBreakdown,
+  type CoverageBreakdownGroup,
+  type CoverageBreakdownRow,
+} from "./coverageBreakdown";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -326,9 +331,51 @@ function buildCoverageLines(
     coverageForm: string;
   },
 ): CoverageLine[] {
-  const rawCoverages = Array.isArray(policy.coverages) ? policy.coverages : [];
-  if (!rawCoverages.length) return [];
+  const breakdown = buildCoverageBreakdown(policy);
+  if (!breakdown.all.length) return [];
 
+  const coverageLines: CoverageLine[] = [
+    ...breakdown.groups.map((group) => buildLobCoverageLine(group, defaults)),
+    ...buildUnassignedCoverageLines(breakdown.unassigned, defaults),
+  ];
+  return coverageLines
+    .filter((line) => line.limits.length > 0 || line.deductible || line.description || line.sectionRef)
+    .slice(0, 5);
+}
+
+function buildLobCoverageLine(
+  group: CoverageBreakdownGroup,
+  defaults: {
+    policyNumber: string;
+    effectiveDate: string;
+    expirationDate: string;
+    coverageForm: string;
+  },
+): CoverageLine {
+  return {
+    type: group.label,
+    lineOfBusiness: group.lineOfBusiness,
+    insurerLetter: "A",
+    coverageForm: defaults.coverageForm === "claims_made" ? "claims_made" : "occurrence",
+    policyNumber: defaults.policyNumber,
+    effectiveDate: defaults.effectiveDate,
+    expirationDate: defaults.expirationDate,
+    limits: coverageTermsForRows(group.items, group.label).slice(0, 8),
+    deductible: firstFormattedValue(group.items.map((row) => row.deductible)),
+    sectionRef: firstText(group.items.map((row) => row.sectionRef)),
+    description: coverageRowsDescription(group.items, group.label),
+  };
+}
+
+function buildUnassignedCoverageLines(
+  rows: CoverageBreakdownRow[],
+  defaults: {
+    policyNumber: string;
+    effectiveDate: string;
+    expirationDate: string;
+    coverageForm: string;
+  },
+): CoverageLine[] {
   const grouped = new Map<
     string,
     {
@@ -338,32 +385,22 @@ function buildCoverageLines(
       description?: string;
     }
   >();
-  for (const coverage of rawCoverages) {
-    const group = coverage.isOperationalProfileCoverage
-      ? titleCase(String(coverage.name ?? coverage.type ?? "Coverage"))
-      : coverageGroupName(coverage.name ?? coverage.type ?? "");
+  for (const coverage of rows) {
+    const group = coverageGroupName(coverage.name);
     const row = grouped.get(group) ?? { limits: [] };
-    const value = formatMoneyLike(coverage.limit);
-    const label = coverageLimitLabel(coverage);
-    if (value) {
-      const key = `${label}:${value}`;
+    for (const term of coverageTermsForRows([coverage], group)) {
+      const key = `${term.label}:${term.value}`;
       if (!row.limits.some((item) => `${item.label}:${item.value}` === key)) {
-        row.limits.push({ label, value });
+        row.limits.push(term);
       }
     }
     const deductible = formatMoneyLike(coverage.deductible);
     if (deductible && !row.deductible) {
       row.deductible = deductible;
-      const key = `Deductible:${deductible}`;
-      if (!row.limits.some((item) => `${item.label}:${item.value}` === key)) {
-        row.limits.push({ label: "Deductible", value: deductible });
-      }
     }
     if (!row.sectionRef && coverage.sectionRef) row.sectionRef = String(coverage.sectionRef);
     if (!row.description) {
-      row.description = String(
-        coverage.originalContent ?? coverage.description ?? coverage.content ?? "",
-      ).trim();
+      row.description = coverage.description ?? coverageRowsDescription([coverage], group);
     }
     if (row.limits.length > 0 || row.deductible || row.description || row.sectionRef) {
       grouped.set(group, row);
@@ -384,6 +421,98 @@ function buildCoverageLines(
       description: row.description,
     }))
     .slice(0, 5);
+}
+
+function coverageTermsForRows(
+  rows: CoverageBreakdownRow[],
+  groupLabel: string,
+): Array<{ label: string; value: string }> {
+  const terms: Array<{ label: string; value: string }> = [];
+  const seen = new Set<string>();
+  const pushTerm = (row: CoverageBreakdownRow, label: string, value: unknown) => {
+    const formatted = formatMoneyLike(value);
+    if (!formatted) return;
+    const term = {
+      label: coverageTermLabel(row, label, groupLabel),
+      value: formatted,
+    };
+    const key = `${term.label.toLowerCase()}|${term.value.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    terms.push(term);
+  };
+
+  for (const row of rows) {
+    if (row.limits?.length) {
+      for (const limit of row.limits) {
+        pushTerm(row, limit.label, limit.value);
+      }
+    } else {
+      pushTerm(row, coverageLimitLabel(row), row.limit);
+    }
+    pushTerm(row, "Deductible", row.deductible);
+  }
+  return terms;
+}
+
+function coverageTermLabel(
+  row: CoverageBreakdownRow,
+  label: string,
+  groupLabel: string,
+): string {
+  const cleanLabel = titleCase(label).replace(/\s+/g, " ").trim() || "Limit";
+  const coverageName = titleCase(row.name).replace(/\s+/g, " ").trim();
+  if (!coverageName || equivalentLabel(coverageName, groupLabel)) return cleanLabel;
+  if (cleanLabel.toLowerCase().startsWith(coverageName.toLowerCase())) return cleanLabel;
+  return `${coverageName} - ${cleanLabel}`;
+}
+
+function equivalentLabel(left: string, right: string): boolean {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return normalize(left) === normalize(right);
+}
+
+function firstText(values: Array<string | undefined>): string | undefined {
+  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
+}
+
+function firstFormattedValue(values: Array<string | undefined>): string | undefined {
+  const value = values.find((item) => formatMoneyLike(item));
+  return formatMoneyLike(value);
+}
+
+function coverageRowsDescription(
+  rows: CoverageBreakdownRow[],
+  groupLabel: string,
+): string | undefined {
+  const names = uniqueTexts(
+    rows
+      .map((row) => row.name)
+      .filter((name) => !equivalentLabel(name, groupLabel)),
+  );
+  const descriptions = uniqueTexts(
+    rows
+      .map((row) => row.description)
+      .filter((description) => description && !names.some((name) => equivalentLabel(name, description))),
+  );
+  return joinLines(
+    names.length ? `Coverage schedules: ${names.join("; ")}` : undefined,
+    ...descriptions.slice(0, 2),
+  );
+}
+
+function uniqueTexts(values: Array<string | undefined>): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const text = value?.trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(text);
+  }
+  return result;
 }
 
 function coverageGroupName(name: string): string {
