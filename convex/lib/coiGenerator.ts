@@ -213,7 +213,7 @@ function policyWithOperationalCoverages(policy: any, profile: any | undefined): 
 }
 
 function buildFallbackCoverageLines(
-  policyTypes: string[],
+  lobCodes: string[],
   limits: any,
   defaults: {
     policyNumber: string;
@@ -222,14 +222,14 @@ function buildFallbackCoverageLines(
     coverageForm: string;
   },
 ): CoverageLine[] {
-  const hasNamedPolicyType = policyTypes.some((t) => t !== "UN");
+  const hasNamedLobCode = lobCodes.some((code) => code !== "UN");
   const coverageLines: CoverageLine[] = [];
 
   // ── Commercial General Liability ──────────────────────────────────────────
-  const hasGL = policyTypes.some((t) =>
-    ["CGL", "GL", "BOP", "BOPGL"].includes(t)
+  const hasGL = lobCodes.some((code) =>
+    ["CGL", "GL", "BOP", "BOPGL"].includes(code)
   );
-  if (hasGL || (!hasNamedPolicyType && (limits.perOccurrence || limits.generalAggregate))) {
+  if (hasGL || (!hasNamedLobCode && (limits.perOccurrence || limits.generalAggregate))) {
     const glLimits: Array<{ label: string; value: string }> = [];
     if (limits.perOccurrence) glLimits.push({ label: "EACH OCCURRENCE", value: limits.perOccurrence });
     if (limits.fireDamage) glLimits.push({ label: "DAMAGE TO RENTED\nPREMISES (Ea occurrence)", value: limits.fireDamage });
@@ -251,10 +251,10 @@ function buildFallbackCoverageLines(
   }
 
   // ── Automobile Liability ──────────────────────────────────────────────────
-  const hasAuto = policyTypes.some((t) =>
-    ["AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK"].includes(t)
+  const hasAuto = lobCodes.some((code) =>
+    ["AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK"].includes(code)
   );
-  if (hasAuto || (!hasNamedPolicyType && (limits.combinedSingleLimit || limits.bodilyInjuryPerPerson))) {
+  if (hasAuto || (!hasNamedLobCode && (limits.combinedSingleLimit || limits.bodilyInjuryPerPerson))) {
     const autoLimits: Array<{ label: string; value: string }> = [];
     if (limits.combinedSingleLimit) autoLimits.push({ label: "COMBINED SINGLE LIMIT\n(Ea accident)", value: limits.combinedSingleLimit });
     if (limits.bodilyInjuryPerPerson) autoLimits.push({ label: "BODILY INJURY (Per person)", value: limits.bodilyInjuryPerPerson });
@@ -275,15 +275,15 @@ function buildFallbackCoverageLines(
   }
 
   // ── Umbrella / Excess Liability ───────────────────────────────────────────
-  const hasUmbrella = policyTypes.some((t) => ["UMBRC", "UMBRL", "UMBRP", "EXLIA"].includes(t));
-  if (hasUmbrella || (!hasNamedPolicyType && (limits.eachOccurrenceUmbrella || limits.umbrellaAggregate))) {
+  const hasUmbrella = lobCodes.some((code) => ["UMBRC", "UMBRL", "UMBRP", "EXLIA"].includes(code));
+  if (hasUmbrella || (!hasNamedLobCode && (limits.eachOccurrenceUmbrella || limits.umbrellaAggregate))) {
     const umbLimits: Array<{ label: string; value: string }> = [];
     if (limits.eachOccurrenceUmbrella) umbLimits.push({ label: "EACH OCCURRENCE", value: limits.eachOccurrenceUmbrella });
     if (limits.umbrellaAggregate) umbLimits.push({ label: "AGGREGATE", value: limits.umbrellaAggregate });
     if (limits.umbrellaRetention) umbLimits.push({ label: "DED  RETENTION", value: limits.umbrellaRetention });
 
     coverageLines.push({
-      type: policyTypes.includes("EXLIA") ? "EXCESS LIAB" : "UMBRELLA LIAB",
+      type: lobCodes.includes("EXLIA") ? "EXCESS LIAB" : "UMBRELLA LIAB",
       insurerLetter: "A",
       coverageForm: defaults.coverageForm === "claims_made" ? "claims_made" : "occurrence",
       policyNumber: defaults.policyNumber,
@@ -294,8 +294,8 @@ function buildFallbackCoverageLines(
   }
 
   // ── Workers Compensation ──────────────────────────────────────────────────
-  const hasWC = policyTypes.some((t) => ["WORK", "WCMA", "WORKP", "WORKV"].includes(t));
-  if (hasWC || (!hasNamedPolicyType && (limits.statutory || limits.employersLiability))) {
+  const hasWC = lobCodes.some((code) => ["WORK", "WCMA", "WORKP", "WORKV"].includes(code));
+  if (hasWC || (!hasNamedLobCode && (limits.statutory || limits.employersLiability))) {
     const el: any = limits.employersLiability ?? {};
     const wcLimits: Array<{ label: string; value: string }> = [];
     wcLimits.push({ label: "WC STAT", value: limits.statutory ? "✓" : "" });
@@ -314,12 +314,12 @@ function buildFallbackCoverageLines(
   }
 
   // Other lines of business (professional liability, other liability, etc.).
-  const otherTypes = policyTypes.filter((t) =>
+  const otherCodes = lobCodes.filter((code) =>
     !["CGL", "GL", "BOP", "BOPGL", "AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK",
-      "UMBRC", "UMBRL", "UMBRP", "EXLIA", "WORK", "WCMA", "WORKP", "WORKV", "UN"].includes(t)
+      "UMBRC", "UMBRL", "UMBRP", "EXLIA", "WORK", "WCMA", "WORKP", "WORKV", "UN"].includes(code)
   );
-  if (otherTypes.length > 0) {
-    const typeLabel = otherTypes
+  if (otherCodes.length > 0) {
+    const typeLabel = otherCodes
       .map(lobLabel)
       .join(", ");
     coverageLines.push({
@@ -336,7 +336,7 @@ function buildFallbackCoverageLines(
   // If no specific coverage lines were identified, add a generic one
   if (coverageLines.length === 0) {
     coverageLines.push({
-      type: policyTypes.filter((t) => t !== "UN").map(lobLabel).join(" / ").toUpperCase() || "SEE POLICY",
+      type: lobCodes.filter((code) => code !== "UN").map(lobLabel).join(" / ").toUpperCase() || "SEE POLICY",
       insurerLetter: "A",
       policyNumber: defaults.policyNumber,
       effectiveDate: defaults.effectiveDate,

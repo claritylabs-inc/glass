@@ -24,7 +24,7 @@ describe("simplified certificate request routing", () => {
   it("keeps source-backed operations wording out of ordinary holder certificate reuse", () => {
     const metadata = resolveCertificateRequestMetadata({
       holderName: "Acme Property Management",
-      operationsDescription:
+      descriptionOfOperations:
         "Acme provides technology services including software development, AI/ML, and SaaS/PaaS offerings.",
     });
 

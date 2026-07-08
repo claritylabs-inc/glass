@@ -686,6 +686,10 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       (typeof body.requestText === "string" && body.requestText.trim()) ||
       (typeof body.request_text === "string" && body.request_text.trim()) ||
       undefined,
+    descriptionOfOperations:
+      (typeof body.descriptionOfOperations === "string" && body.descriptionOfOperations.trim()) ||
+      (typeof body.description_of_operations === "string" && body.description_of_operations.trim()) ||
+      undefined,
     requestedEndorsements,
     additionalInsuredName:
       (typeof body.additionalInsuredName === "string" && body.additionalInsuredName.trim()) ||
@@ -1306,6 +1310,11 @@ const MCP_TOOLS = [
           type: "array",
           items: { type: "string" },
           description: "Requested endorsements or special wording",
+        },
+        descriptionOfOperations: {
+          type: "string",
+          description:
+            "Concise source-backed operations/location/vehicle/special-item wording for the certificate description box. Do not include carrier, policy number, term, limits, or unsupported endorsement status.",
         },
         additionalInsuredName: {
           type: "string",

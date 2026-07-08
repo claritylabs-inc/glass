@@ -5,22 +5,26 @@ import {
   type CertificateHolderRelationship,
 } from "./types";
 
-const propertyLobs = new Set([
+const propertyLobCodes = new Set([
   "PROPC",
   "PROP",
-  "BOPPR",
   "CFIRE",
-  "AGPR",
+  "CFRM",
   "HOME",
   "DFIRE",
   "MHOME",
+  "INMRC",
+  "INMRP",
+  "SCHPR",
+  "FLOOD",
 ]);
 
-const liabilityLobs = new Set([
+const liabilityLobCodes = new Set([
   "CGL",
   "GL",
   "BOP",
   "BOPGL",
+  "AUTO",
   "AUTOB",
   "AUTOP",
   "GARAG",
@@ -39,9 +43,8 @@ const liabilityLobs = new Set([
   "EPLI",
   "DO",
   "FIDUC",
+  "CRIME",
 ]);
-
-const marineLobs = new Set(["COMAR", "INMAR", "INMRC", "INMRP"]);
 
 function normalizeRelationship(value?: CertificateHolderRelationship) {
   return value?.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -69,7 +72,6 @@ function operationalProfileSuggestsGarage(value: unknown) {
 
 export function selectCertificateForm(args: {
   linesOfBusiness?: string[];
-  policyTypes?: string[];
   holderRelationship?: CertificateHolderRelationship;
   formHint?: string;
   operationalProfile?: unknown;
@@ -77,35 +79,39 @@ export function selectCertificateForm(args: {
   const hint = normalizeFormHint(args.formHint);
   if (hint) return hint;
 
-  const linesOfBusiness = toLobCodes(args.linesOfBusiness ?? args.policyTypes);
+  const lobCodes = toLobCodes(args.linesOfBusiness);
   const holderRelationship = normalizeRelationship(args.holderRelationship);
   const holderIsInterest =
     holderRelationship === "mortgagee" ||
     holderRelationship === "loss_payee" ||
     holderRelationship === "lender";
 
-  if (linesOfBusiness.includes("FLOOD")) {
+  if (lobCodes.includes("FLOOD")) {
     return "acord29";
   }
 
-  if (linesOfBusiness.includes("GARAG") || operationalProfileSuggestsGarage(args.operationalProfile)) {
+  if (operationalProfileSuggestsGarage(args.operationalProfile)) {
     return "acord30";
   }
 
-  if (linesOfBusiness.some((code) => marineLobs.has(code))) {
+  if (
+    lobCodes.some((code) => code === "COMAR" || code === "BOAT")
+  ) {
     return "acord31";
   }
 
-  const hasProperty = linesOfBusiness.some((code) => propertyLobs.has(code));
+  const hasProperty = lobCodes.some((code) => propertyLobCodes.has(code));
   if (hasProperty) {
     if (holderIsInterest) {
-      const personal = linesOfBusiness.some(isPersonalLob);
+      const personal = lobCodes.some((code) => isPersonalLob(code));
       return personal ? "acord27" : "acord28";
     }
     return "acord24";
   }
 
-  if (linesOfBusiness.some((code) => liabilityLobs.has(code))) return "acord25";
+  if (lobCodes.some((code) => liabilityLobCodes.has(code))) {
+    return "acord25";
+  }
 
   return "acord25";
 }

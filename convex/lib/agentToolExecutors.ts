@@ -517,7 +517,7 @@ export function buildAgentToolExecutors(
         state?: string;
         postalCode?: string;
         requestText?: string;
-        operationsDescription?: string;
+        descriptionOfOperations?: string;
         requestedEndorsements?: string[];
         additionalInsuredName?: string;
         certificateForm?: "acord25" | "acord24" | "acord27" | "acord28" | "acord29" | "acord30" | "acord31";
@@ -543,7 +543,7 @@ export function buildAgentToolExecutors(
             holderEmail: params.holderEmail,
             holderPhone: params.holderPhone,
             requestText: params.requestText,
-            operationsDescription: params.operationsDescription,
+            descriptionOfOperations: params.descriptionOfOperations,
             requestedEndorsements: params.requestedEndorsements,
           };
           const generated = await ctx.runAction(
@@ -562,7 +562,7 @@ export function buildAgentToolExecutors(
               state: params.state,
               postalCode: params.postalCode,
               requestText: params.requestText,
-              operationsDescription: params.operationsDescription,
+              descriptionOfOperations: params.descriptionOfOperations,
               requestedEndorsements: params.requestedEndorsements,
               additionalInsuredName: params.additionalInsuredName,
               formCode: params.certificateForm,

@@ -171,12 +171,16 @@ function buildCoiFileName(
 }
 
 function linesOfBusinessForCertificate(policy: Record<string, any>) {
-  const profileLines = Array.isArray(policy.operationalProfile?.linesOfBusiness)
+  const profileLinesOfBusiness = Array.isArray(policy.operationalProfile?.linesOfBusiness)
     ? policy.operationalProfile.linesOfBusiness
     : [];
-  const policyLines = Array.isArray(policy.linesOfBusiness) ? policy.linesOfBusiness : [];
-  const legacyPolicyTypes = Array.isArray(policy.policyTypes) ? policy.policyTypes : [];
-  return [...profileLines, ...policyLines, ...legacyPolicyTypes].filter(
+  const linesOfBusiness = Array.isArray(policy.linesOfBusiness)
+    ? policy.linesOfBusiness
+    : [];
+  return [
+    ...profileLinesOfBusiness,
+    ...linesOfBusiness,
+  ].filter(
     (line): line is string => typeof line === "string" && line.trim().length > 0,
   );
 }
@@ -247,8 +251,8 @@ type GenerateCoiDescriptionArgs = {
   certificateHolderName?: string;
   requestKind?: "holder" | "additional_insured";
   additionalInsuredName?: string;
-  operationsDescription?: string;
   holderRelationship?: string;
+  descriptionOfOperations?: string;
   endorsements?: EndorsementCitation[];
 };
 
@@ -263,11 +267,19 @@ async function fillCertificateDescription(
     certificateHolderName: args.certificateHolderName,
     requestKind: args.requestKind,
     additionalInsuredName: args.additionalInsuredName,
-    operationsDescription: args.operationsDescription,
     holderRelationship: args.holderRelationship,
+    descriptionOfOperations: args.descriptionOfOperations,
     endorsements: args.endorsements,
   });
-  const fallback = buildCertificateDescriptionFallback(context, coiData.description);
+  const requestedDescription = normalizeCertificateDescription(args.descriptionOfOperations);
+  const requestedUsableDescription =
+    requestedDescription && isUsableCertificateDescription(requestedDescription)
+      ? requestedDescription
+      : undefined;
+  const fallback = buildCertificateDescriptionFallback(
+    context,
+    requestedUsableDescription ?? coiData.description,
+  );
   if (!hasCertificateDescriptionContext(context)) {
     return {
       ...coiData,
@@ -289,7 +301,7 @@ async function fillCertificateDescription(
         system: certificateDescriptionSystemPrompt(),
         prompt: buildCertificateDescriptionPrompt({
           context,
-          existingDescription: coiData.description,
+          existingDescription: requestedUsableDescription ?? coiData.description,
         }),
       },
     );
@@ -298,7 +310,7 @@ async function fillCertificateDescription(
       ...coiData,
       description: description && isUsableCertificateDescription(description)
         ? description
-        : fallback || undefined,
+        : ((requestedUsableDescription ?? fallback) || undefined),
     };
   } catch (err) {
     logAiError("generateCoi.description", err, {
@@ -307,7 +319,7 @@ async function fillCertificateDescription(
     });
     return {
       ...coiData,
-      description: fallback || undefined,
+      description: (requestedUsableDescription ?? fallback) || undefined,
     };
   }
 }
@@ -339,7 +351,7 @@ export const run = internalAction({
       v.literal("additional_insured"),
     )),
     additionalInsuredName: v.optional(v.string()),
-    operationsDescription: v.optional(v.string()),
+    descriptionOfOperations: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     holderRelationship: v.optional(v.string()),
     endorsements: v.optional(v.array(endorsementCitationValidator)),
@@ -417,8 +429,8 @@ export const run = internalAction({
         certificateHolderName: args.certificateHolderName,
         requestKind: args.requestKind,
         additionalInsuredName: args.additionalInsuredName,
-        operationsDescription: args.operationsDescription,
         holderRelationship: args.holderRelationship,
+        descriptionOfOperations: args.descriptionOfOperations,
         endorsements,
       }, policy as Record<string, any>, coiData);
       const pdfBuffer = await generateCoiPdf(coiData);

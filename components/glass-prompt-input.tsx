@@ -53,6 +53,7 @@ const darkInputOverlayFadeStyle = {
 const INPUT_INTENT_RADIUS = 180;
 const INPUT_INTENT_EPSILON = 0.01;
 const PREPARED_ACTION_INTENT_THRESHOLD = 0.34;
+
 const useBrowserLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -245,10 +246,7 @@ function initialPromptTokens(defaultReferences?: PromptReference[]) {
 
   const tokens: PromptToken[] = [createTextToken("", "initial-text-0")];
   defaultReferences.forEach((reference, index) => {
-    tokens.push(
-      createReferenceToken(reference, `initial-reference-${index}`),
-      createTextToken("", `initial-text-${index + 1}`),
-    );
+    tokens.push(createReferenceToken(reference, `initial-reference-${index}`));
   });
   return tokens;
 }
@@ -340,10 +338,9 @@ function mergeDefaultReferencesIntoTokens(
   if (missingReferences.length === 0) return changed ? nextTokens : tokens;
 
   const firstTextIndex = nextTokens.findIndex((token) => token.type === "text");
-  const insertTokens = missingReferences.flatMap((reference) => [
+  const insertTokens = missingReferences.map((reference) =>
     createReferenceToken(reference),
-    createTextToken(),
-  ]);
+  );
 
   if (firstTextIndex === -1) {
     return [createTextToken(), ...insertTokens];
@@ -716,8 +713,14 @@ export const GlassPromptInput = forwardRef<
   const targets = useCachedAgentTargets(orgId);
   const references = useMemo(() => promptTokensToReferences(tokens), [tokens]);
   const messageText = useMemo(() => promptTokensToText(tokens), [tokens]);
-  const isPromptEmpty =
-    references.length === 0 && promptTokensAreTextEmpty(tokens);
+  const isPromptTextEmpty = promptTokensAreTextEmpty(tokens);
+  const isPromptEmpty = references.length === 0 && isPromptTextEmpty;
+  const primaryTextToken = tokens.find(
+    (token): token is PromptTextToken => token.type === "text",
+  );
+  const referenceTokens = tokens.filter(
+    (token): token is PromptReferenceToken => token.type === "reference",
+  );
   const defaultReferencesSignature = useMemo(
     () =>
       (defaultReferences ?? [])
@@ -932,16 +935,14 @@ export const GlassPromptInput = forwardRef<
           );
         }
 
-        const beforeToken = createTextToken(before);
         const referenceToken = createReferenceToken(reference);
-        const afterToken = createTextToken(after);
-        queueTextFocus(afterToken.id, 0);
+        const nextText = `${before}${after}`;
+        queueTextFocus(textToken.id, before.length);
         return [
           ...current.slice(0, textIndex),
-          beforeToken,
-          referenceToken,
-          afterToken,
+          { ...textToken, text: nextText },
           ...current.slice(textIndex + 1),
+          referenceToken,
         ];
       });
       setActiveTrigger(null);
@@ -1365,7 +1366,10 @@ export const GlassPromptInput = forwardRef<
         />
         <div
           className={cn(
-            "flex w-full flex-wrap content-start items-center gap-0",
+            "flex w-full min-w-0 flex-col items-stretch",
+            referenceTokens.length > 0 && !isSearchDropdownOpen
+              ? "gap-2"
+              : "gap-0",
             isCommandVariant
               ? "min-h-28 px-4 pb-2 pt-4"
               : roomyOnMobile
@@ -1376,8 +1380,12 @@ export const GlassPromptInput = forwardRef<
             if ((event.target as HTMLElement).closest("textarea,button")) {
               return;
             }
-            const textTokenId = activeTextTokenId || firstTextTokenId(tokens);
-            textAreaRefs.current.get(textTokenId)?.focus();
+            const textArea =
+              textAreaRefs.current.get(activeTextTokenId) ??
+              (primaryTextToken
+                ? textAreaRefs.current.get(primaryTextToken.id)
+                : undefined);
+            textArea?.focus();
           }}
         >
           <input
@@ -1386,41 +1394,42 @@ export const GlassPromptInput = forwardRef<
             name="message"
             value={messageText}
           />
-          {tokens.map((token) =>
-            token.type === "reference" ? (
-              isSearchDropdownOpen ? null : (
+          {!isSearchDropdownOpen && referenceTokens.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {referenceTokens.map((token) => (
                 <PromptReferenceTag
                   key={token.id}
                   kind={token.reference.kind}
                   label={token.reference.label}
                   onRemove={() => removeReferenceToken(token.id)}
-                  className="self-center"
+                  className="max-w-full"
                 />
-              )
-            ) : (
-              <PromptTextSegment
-                key={token.id}
-                token={token}
-                placeholder={
-                  isPromptEmpty && token.id === firstTextTokenId(tokens)
-                    ? placeholder
-                    : undefined
+              ))}
+            </div>
+          ) : null}
+          {primaryTextToken ? (
+            <PromptTextSegment
+              key={primaryTextToken.id}
+              token={primaryTextToken}
+              placeholder={isPromptTextEmpty ? placeholder : undefined}
+              isCommandVariant={isCommandVariant}
+              roomyOnMobile={roomyOnMobile}
+              registerRef={registerTextAreaRef}
+              onFocus={() => {
+                setActiveTextTokenId(primaryTextToken.id);
+                const textArea = textAreaRefs.current.get(primaryTextToken.id);
+                if (textArea) {
+                  updateTriggerFromTextarea(textArea, primaryTextToken.id);
                 }
-                isCommandVariant={isCommandVariant}
-                roomyOnMobile={roomyOnMobile}
-                registerRef={registerTextAreaRef}
-                onFocus={() => {
-                  setActiveTextTokenId(token.id);
-                  const textArea = textAreaRefs.current.get(token.id);
-                  if (textArea) {
-                    updateTriggerFromTextarea(textArea, token.id);
-                  }
-                }}
-                onChange={(event) => handleTextChange(event, token.id)}
-                onKeyDown={(event) => handleTextKeyDown(event, token.id)}
-              />
-            ),
-          )}
+              }}
+              onChange={(event) =>
+                handleTextChange(event, primaryTextToken.id)
+              }
+              onKeyDown={(event) =>
+                handleTextKeyDown(event, primaryTextToken.id)
+              }
+            />
+          ) : null}
         </div>
 
         <PromptInputFooter
