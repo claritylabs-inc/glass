@@ -57,11 +57,11 @@ function InputOverlayFade() {
   return (
     <>
       <div
-        className="h-16 dark:hidden"
+        className="absolute inset-0 dark:hidden"
         style={lightInputOverlayFadeStyle}
       />
       <div
-        className="hidden h-16 dark:block"
+        className="absolute inset-0 hidden dark:block"
         style={darkInputOverlayFadeStyle}
       />
     </>
@@ -1463,8 +1463,9 @@ export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
       <InputOverlayFade />
+      <div className="relative h-16" aria-hidden="true" />
       <div
-        className="pointer-events-auto px-4 pt-2 md:px-6 lg:px-8"
+        className="relative pointer-events-auto px-4 pt-2 md:px-6 lg:px-8"
         style={{
           paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
         }}
