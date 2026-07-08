@@ -33,9 +33,8 @@ describe("buildImessageAppCardRequests", () => {
     ]);
   });
 
-  test("builds certificate and policy change app-card requests from artifacts", () => {
+  test("builds certificate app-card requests from artifacts", () => {
     const certificateVersionId = "certificate-version-1" as Id<"certificateVersions">;
-    const policyChangeCaseId = "policy-change-1" as Id<"policyChangeCases">;
 
     expect(
       buildImessageAppCardRequests({
@@ -45,10 +44,6 @@ describe("buildImessageAppCardRequests", () => {
             type: "certificate_result",
             data: { certificateVersionId },
           },
-          {
-            type: "policy_change_result",
-            data: { policyChangeCaseId },
-          },
         ],
         usedTools: [],
       }),
@@ -57,50 +52,36 @@ describe("buildImessageAppCardRequests", () => {
         key: `certificate:${certificateVersionId}`,
         createArgs: { kind: "certificate", certificateVersionId },
       },
-      {
-        key: `policy_change:${policyChangeCaseId}`,
-        createArgs: { kind: "policy_change", policyChangeCaseId },
-      },
-    ]);
-  });
-
-  test("adds policy-change card when policy-change tools ran", () => {
-    const policyChangeCaseId = "policy-change-2" as Id<"policyChangeCases">;
-
-    expect(
-      buildImessageAppCardRequests({
-        policyIds: [],
-        artifacts: [],
-        policyChangeCaseId,
-        usedTools: ["add_policy_change_info"],
-      }),
-    ).toMatchObject([
-      {
-        key: `policy_change:${policyChangeCaseId}`,
-        createArgs: { kind: "policy_change", policyChangeCaseId },
-      },
     ]);
   });
 
   test("dedupes repeated app-card requests by key", () => {
-    const policyChangeCaseId = "policy-change-3" as Id<"policyChangeCases">;
+    const policyId = "policy-3" as Id<"policies">;
+    const certificateVersionId = "certificate-version-3" as Id<"certificateVersions">;
     const requests = buildImessageAppCardRequests({
-      policyIds: [],
+      policyIds: [policyId, policyId],
       artifacts: [
         {
-          type: "policy_change_result",
-          data: { policyChangeCaseId },
+          type: "certificate_result",
+          data: { certificateVersionId },
+        },
+        {
+          type: "certificate_result",
+          data: { certificateVersionId },
         },
       ],
-      policyChangeCaseId,
-      usedTools: ["check_policy_change_status"],
+      usedTools: [],
     });
 
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(4);
     expect(dedupeImessageAppCardRequests(requests)).toMatchObject([
       {
-        key: `policy_change:${policyChangeCaseId}`,
-        createArgs: { kind: "policy_change", policyChangeCaseId },
+        key: `policy:${policyId}`,
+        createArgs: { kind: "policy", policyId },
+      },
+      {
+        key: `certificate:${certificateVersionId}`,
+        createArgs: { kind: "certificate", certificateVersionId },
       },
     ]);
   });

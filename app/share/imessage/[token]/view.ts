@@ -24,7 +24,7 @@ export type Policy = {
 };
 
 export type AppCardView = {
-  kind: "policy" | "certificate" | "policy_change";
+  kind: "policy" | "certificate";
   orgName: string;
   title: string;
   subtitle?: string;
@@ -36,14 +36,6 @@ export type AppCardView = {
     fileUrl?: string | null;
     versionNumber?: number;
     createdAt: number;
-  };
-  policyChange?: {
-    status: string;
-    requestText?: string;
-    summary?: string;
-    pendingQuestions: string[];
-    createdAt: number;
-    updatedAt: number;
   };
 };
 
@@ -99,6 +91,5 @@ export function metadataDescription(view: AppCardView) {
       view.orgName,
     ]);
   }
-  if (view.policyChange?.summary) return view.policyChange.summary;
   return view.subtitle ?? view.orgName;
 }

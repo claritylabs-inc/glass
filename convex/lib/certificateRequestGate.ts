@@ -141,6 +141,26 @@ const SUPPORT_PATTERNS: Record<CertificateEndorsementKind, RegExp> = {
   policy_change: /\b(endorsement|policy change|change request|amend(?:ment)?|modified by endorsement)\b/i,
 };
 
+export const EVIDENCE_GATED_ENDORSEMENTS: CertificateEndorsementKind[] = [
+  "additional_insured",
+  "waiver_of_subrogation",
+  "primary_non_contributory",
+  "loss_payee",
+  "mortgagee",
+];
+
+export const AUTO_HELD_ENDORSEMENTS: CertificateEndorsementKind[] = [
+  "named_insured",
+  "special_wording",
+  "policy_change",
+];
+
+export function isEvidenceGatedOnly(kinds: CertificateEndorsementKind[]) {
+  return kinds.length > 0
+    ? kinds.every((kind) => EVIDENCE_GATED_ENDORSEMENTS.includes(kind))
+    : false;
+}
+
 const NEGATIVE_PATTERN =
   /\b(not automatically|no automatic|must be endorsed|only by endorsement|requires endorsement|not included|excluded|no coverage|does not apply|not shown|not listed)\b/i;
 

@@ -10,7 +10,6 @@ import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 const appCardKindValidator = v.union(
   v.literal("policy"),
   v.literal("certificate"),
-  v.literal("policy_change"),
 );
 
 async function sha256Hex(token: string): Promise<string> {
@@ -27,13 +26,6 @@ function randomToken(): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-}
-
-function truncate(value: string | undefined, maxLength: number): string | undefined {
-  if (!value) return undefined;
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, maxLength - 1).trimEnd()}...`;
 }
 
 function policyTitle(policy: Pick<Doc<"policies">, "policyNumber" | "linesOfBusiness" | "fileName">) {
@@ -72,24 +64,6 @@ function publicPolicy(policy: Doc<"policies">) {
     ),
     coverageBreakdown: buildCoverageBreakdown(policy),
     coverages: policy.coverages.slice(0, 12).map(formatCoverage),
-  };
-}
-
-function publicPolicyChange(changeCase: Doc<"policyChangeCases">) {
-  const pendingQuestions = Array.isArray(changeCase.pendingQuestions)
-    ? changeCase.pendingQuestions.filter((item): item is string => typeof item === "string")
-    : [];
-  const missingInfoQuestions = Array.isArray(changeCase.missingInfoQuestions)
-    ? changeCase.missingInfoQuestions.filter((item): item is string => typeof item === "string")
-    : [];
-  return {
-    id: changeCase._id,
-    status: changeCase.status,
-    requestText: truncate(changeCase.requestText, 1200),
-    summary: truncate(changeCase.summary, 800),
-    pendingQuestions: [...pendingQuestions, ...missingInfoQuestions].slice(0, 8),
-    createdAt: changeCase.createdAt,
-    updatedAt: changeCase.updatedAt,
   };
 }
 
@@ -192,13 +166,12 @@ async function buildCertificateView(
 async function resolveOrgIdForCreate(
   ctx: MutationCtx,
   args: {
-    kind: "policy" | "certificate" | "policy_change";
+    kind: "policy" | "certificate";
     orgId?: Id<"organizations">;
     policyId?: Id<"policies">;
     certificateId?: Id<"certificates">;
     policyCertificateId?: Id<"policyCertificates">;
     certificateVersionId?: Id<"certificateVersions">;
-    policyChangeCaseId?: Id<"policyChangeCases">;
   },
 ) {
   if (args.kind === "policy") {
@@ -225,12 +198,7 @@ async function resolveOrgIdForCreate(
     }
     throw new Error("certificateId, policyCertificateId, or certificateVersionId is required.");
   }
-  if (!args.policyChangeCaseId) {
-    throw new Error("policyChangeCaseId is required for policy change app cards.");
-  }
-  const changeCase = await ctx.db.get(args.policyChangeCaseId);
-  if (!changeCase) throw new Error("Policy change case not found.");
-  return changeCase.orgId;
+  throw new Error("Unsupported app card kind.");
 }
 
 export const createInternal = internalMutation({
@@ -241,7 +209,6 @@ export const createInternal = internalMutation({
     certificateId: v.optional(v.id("certificates")),
     policyCertificateId: v.optional(v.id("policyCertificates")),
     certificateVersionId: v.optional(v.id("certificateVersions")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     label: v.optional(v.string()),
     sourceThreadId: v.optional(v.id("threads")),
     sourceThreadMessageId: v.optional(v.id("threadMessages")),
@@ -263,7 +230,6 @@ export const createInternal = internalMutation({
       certificateId: args.certificateId,
       policyCertificateId: args.policyCertificateId,
       certificateVersionId: args.certificateVersionId,
-      policyChangeCaseId: args.policyChangeCaseId,
       label: args.label,
       sourceThreadId: args.sourceThreadId,
       sourceThreadMessageId: args.sourceThreadMessageId,
@@ -316,23 +282,6 @@ export const getByToken = query({
       };
     }
 
-    if (!link.policyChangeCaseId) return null;
-    const changeCase = await ctx.db.get(link.policyChangeCaseId);
-    if (!changeCase || String(changeCase.orgId) !== String(link.orgId)) {
-      return null;
-    }
-    const policy =
-      changeCase.policyId
-        ? await getPolicyForLink(ctx, changeCase.policyId, link.orgId)
-        : null;
-    return {
-      kind: link.kind,
-      orgName: org.name,
-      title: "Broker follow-up",
-      subtitle: policy ? policyTitle(policy) : undefined,
-      label: link.label,
-      policyChange: publicPolicyChange(changeCase),
-      policy: policy ? publicPolicy(policy) : null,
-    };
+    return null;
   },
 });

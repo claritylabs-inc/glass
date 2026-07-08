@@ -61,11 +61,6 @@ export type ThreadMessage = {
   policyChangeCaseId?: Id<"policyChangeCases">;
 };
 
-export type PolicyChangeAccess = {
-  canManage: boolean;
-  actorLabel: "broker" | "client";
-};
-
 export type ThreadAttachment = NonNullable<
   ThreadMessage["attachments"]
 >[number];

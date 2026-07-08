@@ -166,7 +166,8 @@ describe("chat duplicate prevention and COI preview UI", () => {
     const emailSubagent = read("convex/lib/emailSubagent.ts");
 
     expect(generateCoi).toContain("function buildCoiFileName");
-    expect(generateCoi).toContain("COI - ${holder} - ${policyRef}.pdf");
+    expect(generateCoi).toContain("CERTIFICATE_FORM_FILE_SLUGS");
+    expect(generateCoi).toContain("${form} - ${holder} - ${policyRef}.pdf");
     expect(agentToolExecutors).toContain("filename: generated.fileName");
     expect(emailSubagent).toContain("buildAgentToolExecutors");
     expect(emailSubagent).toContain("Skipped uploaded file because COI delivery requests should attach only the generated COI");

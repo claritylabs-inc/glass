@@ -1,21 +1,18 @@
 "use client";
 
-import { use, useCallback, useMemo, useState } from "react";
+import { use, useCallback, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { usePresence } from "@/hooks/use-presence";
 import { UnifiedThreadContent } from "@/components/agent-thread/thread-content";
-import type { PolicyChangeAccess } from "@/components/agent-thread/types";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 export {
   ThreadContextLink,
   UnifiedMessageBubble,
 } from "@/components/agent-thread/thread-content";
-export { PolicyChangeThreadSidebar } from "@/components/agent-thread/artifacts";
 export type {
-  PolicyChangeAccess,
   ThreadMessage,
 } from "@/components/agent-thread/types";
 
@@ -42,14 +39,6 @@ export default function ThreadPage({
           iconUrl: viewerOrg.brokerOrg.iconUrl,
         }
       : undefined;
-  const policyChangeAccess = useMemo<PolicyChangeAccess>(() => {
-    const isBroker = viewerOrg?.org?.type === "broker";
-    return {
-      canManage: isBroker,
-      actorLabel: isBroker ? "broker" : "client",
-    };
-  }, [viewerOrg?.org?.type]);
-
   // Thread metadata lifted from child components for AppShell header
   const [threadMeta, setThreadMeta] = useState<{
     detail: React.ReactNode;
@@ -90,7 +79,6 @@ export default function ThreadPage({
               viewerEmail={viewer?.email ?? undefined}
               agentHandle={agentHandle ?? undefined}
               agentBranding={agentBranding}
-              policyChangeAccess={policyChangeAccess}
             />
           </div>
         </div>

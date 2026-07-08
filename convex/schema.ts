@@ -167,6 +167,23 @@ const certificateRequestKindValidator = v.union(
   v.literal("additional_insured"),
 );
 
+const certificateFormCodeValidator = v.union(
+  v.literal("acord25"),
+  v.literal("acord24"),
+  v.literal("acord27"),
+  v.literal("acord28"),
+  v.literal("acord29"),
+  v.literal("acord30"),
+  v.literal("acord31"),
+);
+
+const certificateEmailDraftValidator = v.object({
+  subject: v.string(),
+  body: v.string(),
+  recipientEmail: v.optional(v.string()),
+  recipientName: v.optional(v.string()),
+});
+
 const certificateWorkflowJobStatusValidator = v.union(
   v.literal("review_required"),
   v.literal("blocked_missing_contact"),
@@ -178,7 +195,6 @@ const certificateWorkflowJobStatusValidator = v.union(
 
 const certificateWorkflowJobKindValidator = v.union(
   v.literal("renewal_reissue"),
-  v.literal("post_endorsement_reissue"),
   v.literal("manual_review"),
 );
 
@@ -1652,6 +1668,7 @@ export default defineSchema({
     dedupeKey: v.string(),
     currentVersionId: v.optional(v.id("certificateVersions")),
     latestIssuedVersionId: v.optional(v.id("certificateVersions")),
+    formCode: v.optional(certificateFormCodeValidator),
     lastIssuedAt: v.optional(v.number()),
     source: v.optional(certificateSourceValidator),
     createdByUserId: v.optional(v.id("users")),
@@ -1685,6 +1702,7 @@ export default defineSchema({
     source: v.optional(certificateSourceValidator),
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
+    formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
     legacyCertificateId: v.optional(v.id("certificates")),
     issuedAt: v.optional(v.number()),
@@ -1779,6 +1797,7 @@ export default defineSchema({
     createdByUserId: v.optional(v.id("users")),
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
+    formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
     createdAt: v.number(),
   })
@@ -1822,6 +1841,7 @@ export default defineSchema({
     reasonMessage: v.string(),
     requiredChanges: v.array(v.string()),
     evidence: v.optional(v.any()),
+    emailDraft: v.optional(certificateEmailDraftValidator),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     createdByUserId: v.optional(v.id("users")),

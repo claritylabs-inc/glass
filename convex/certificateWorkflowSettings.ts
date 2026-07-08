@@ -42,7 +42,7 @@ function legacyRowDefaults() {
     populateHoldersFromEndorsements: true,
     renewalReissueMode: "review_queue" as const,
     renewalReviewLeadDays: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.renewalReviewLeadDays,
-    policyChangeRequestsForHeldCertificatesEnabled: true,
+    policyChangeRequestsForHeldCertificatesEnabled: false,
     channels: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.channels,
     copyInstructions: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.copyInstructions,
   };
