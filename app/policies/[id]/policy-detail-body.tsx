@@ -46,6 +46,7 @@ import {
 import { usePdf } from "@/components/pdf-context";
 import {
   CertificateDetailPanel,
+  certificateHolderActionAddress,
   type PolicyCertificateRecord,
 } from "@/components/certificates/certificate-workspace";
 import { usePageContext } from "@/hooks/use-page-context";
@@ -369,6 +370,8 @@ export function PolicyDetailBody({
   const [showEditExtractedFields, setShowEditExtractedFields] = useState(false);
   const [selectedCertificate, setSelectedCertificate] =
     useState<PolicyCertificateRecord | null>(null);
+  const [reissuingCertificateId, setReissuingCertificateId] =
+    useState<Id<"policyCertificates"> | null>(null);
   const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
     parsePolicyDetailTab(searchParams.get("tab")),
   );
@@ -392,6 +395,7 @@ export function PolicyDetailBody({
   const retryExtraction = useAction(
     api.actions.retryExtraction.retryExtraction,
   );
+  const generateCertificate = useAction(api.certificates.generateForPolicy);
 
   const [reExtracting, setReExtracting] = useState(false);
   const [cancelingExtraction, setCancelingExtraction] = useState(false);
@@ -468,6 +472,49 @@ export function PolicyDetailBody({
     selectedCertificate?.policyId === policy?._id
       ? selectedCertificate
       : null;
+
+  const reissueCertificate = useCallback(async (row: PolicyCertificateRecord) => {
+    const holder = row.holder;
+    if (!holder?.displayName) {
+      toast.error("Certificate holder is missing");
+      return;
+    }
+    setReissuingCertificateId(row._id);
+    try {
+      const currentVersion = row.currentVersion ?? row.latestIssuedVersion;
+      const result = await generateCertificate({
+        policyId: row.policyId,
+        holderName: holder.displayName,
+        holderContactName: holder.contactName,
+        holderEmail: holder.email,
+        holderPhone: holder.phone,
+        ...certificateHolderActionAddress(holder),
+        additionalInsuredName: currentVersion?.requestKind === "additional_insured"
+          ? currentVersion.additionalInsuredName
+          : undefined,
+        requestedEndorsements: currentVersion?.requestKind === "additional_insured"
+          ? ["additional_insured"]
+          : undefined,
+        forceReissue: true,
+      });
+      if ((result as { status?: string }).status === "ambiguous_certificate_holder") {
+        toast.message((result as { message?: string }).message ?? "Choose the existing certificate to reissue.");
+        return;
+      }
+      if ((result as { status?: string }).status === "held_policy_change_required") {
+        toast.message((result as { message?: string }).message ?? "Broker review is needed before reissue.");
+        return;
+      }
+      toast.success("Certificate reissued");
+      if ((result as { url?: string }).url) {
+        openWithUrl((result as { url: string }).url);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not reissue certificate");
+    } finally {
+      setReissuingCertificateId(null);
+    }
+  }, [generateCertificate, openWithUrl]);
 
   useEffect(() => {
     loggedPipelineEntries.current.clear();
@@ -688,6 +735,8 @@ export function PolicyDetailBody({
         <CertificateDetailPanel
           row={selectedCertificateForPanel}
           onClose={() => setSelectedCertificate(null)}
+          onReissue={reissueCertificate}
+          reissuing={reissuingCertificateId === selectedCertificateForPanel._id}
         />,
       );
       return () => onRightPanel(null);
@@ -703,6 +752,8 @@ export function PolicyDetailBody({
     showCertificateSheet,
     showEditExtractedFields,
     selectedCertificateForPanel,
+    reissueCertificate,
+    reissuingCertificateId,
     canEditExtractedFields,
     isDeleted,
   ]);
