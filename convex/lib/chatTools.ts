@@ -221,6 +221,10 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("The user's full certificate request. Include explicit endorsement-bearing wording only if the user asked for it."),
+    descriptionOfOperations: z
+      .string()
+      .optional()
+      .describe("Plain description-of-operations wording to place in the certificate description box when the user explicitly provides wording or the policy source facts clearly support operations, locations, covered autos, or special items. Do not use this for generic policy summaries, carrier names, policy numbers, limits, terms, or unsupported endorsement status."),
     requestedEndorsements: z
       .array(z.string())
       .optional()

@@ -517,6 +517,7 @@ export function buildAgentToolExecutors(
         state?: string;
         postalCode?: string;
         requestText?: string;
+        descriptionOfOperations?: string;
         requestedEndorsements?: string[];
         additionalInsuredName?: string;
         certificateForm?: "acord25" | "acord24" | "acord27" | "acord28" | "acord29" | "acord30" | "acord31";
@@ -619,6 +620,7 @@ export function buildAgentToolExecutors(
               state: params.state,
               postalCode: params.postalCode,
               requestText: params.requestText,
+              descriptionOfOperations: params.descriptionOfOperations,
               requestedEndorsements: params.requestedEndorsements,
               additionalInsuredName: params.additionalInsuredName,
               formCode: params.certificateForm,

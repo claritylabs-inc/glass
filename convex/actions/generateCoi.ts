@@ -247,6 +247,7 @@ type GenerateCoiDescriptionArgs = {
   requestKind?: "holder" | "additional_insured";
   additionalInsuredName?: string;
   holderRelationship?: string;
+  descriptionOfOperations?: string;
   endorsements?: EndorsementCitation[];
 };
 
@@ -262,9 +263,18 @@ async function fillCertificateDescription(
     requestKind: args.requestKind,
     additionalInsuredName: args.additionalInsuredName,
     holderRelationship: args.holderRelationship,
+    descriptionOfOperations: args.descriptionOfOperations,
     endorsements: args.endorsements,
   });
-  const fallback = buildCertificateDescriptionFallback(context, coiData.description);
+  const requestedDescription = normalizeCertificateDescription(args.descriptionOfOperations);
+  const requestedUsableDescription =
+    requestedDescription && isUsableCertificateDescription(requestedDescription)
+      ? requestedDescription
+      : undefined;
+  const fallback = buildCertificateDescriptionFallback(
+    context,
+    requestedUsableDescription ?? coiData.description,
+  );
   if (!hasCertificateDescriptionContext(context)) {
     return {
       ...coiData,
@@ -286,7 +296,7 @@ async function fillCertificateDescription(
         system: certificateDescriptionSystemPrompt(),
         prompt: buildCertificateDescriptionPrompt({
           context,
-          existingDescription: coiData.description,
+          existingDescription: requestedUsableDescription ?? coiData.description,
         }),
       },
     );
@@ -295,7 +305,7 @@ async function fillCertificateDescription(
       ...coiData,
       description: description && isUsableCertificateDescription(description)
         ? description
-        : fallback || undefined,
+        : ((requestedUsableDescription ?? fallback) || undefined),
     };
   } catch (err) {
     logAiError("generateCoi.description", err, {
@@ -304,7 +314,7 @@ async function fillCertificateDescription(
     });
     return {
       ...coiData,
-      description: fallback || undefined,
+      description: (requestedUsableDescription ?? fallback) || undefined,
     };
   }
 }
@@ -336,6 +346,7 @@ export const run = internalAction({
       v.literal("additional_insured"),
     )),
     additionalInsuredName: v.optional(v.string()),
+    descriptionOfOperations: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     holderRelationship: v.optional(v.string()),
     endorsements: v.optional(v.array(endorsementCitationValidator)),
@@ -401,6 +412,7 @@ export const run = internalAction({
         requestKind: args.requestKind,
         additionalInsuredName: args.additionalInsuredName,
         holderRelationship: args.holderRelationship,
+        descriptionOfOperations: args.descriptionOfOperations,
         endorsements,
       }, policy as Record<string, any>, coiData);
       const pdfBuffer = await generateCoiPdf(coiData);
