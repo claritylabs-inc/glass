@@ -9,6 +9,7 @@
  */
 
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
+import type * as actions_backfillComplianceRequirementShape from "../actions/backfillComplianceRequirementShape.js";
 import type * as actions_backfillLinesOfBusiness from "../actions/backfillLinesOfBusiness.js";
 import type * as actions_cleanupLegacyLineOfBusinessFields from "../actions/cleanupLegacyLineOfBusinessFields.js";
 import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
@@ -106,6 +107,7 @@ import type * as lib_coiAttachmentGuards from "../lib/coiAttachmentGuards.js";
 import type * as lib_coiGenerator from "../lib/coiGenerator.js";
 import type * as lib_complianceAgent from "../lib/complianceAgent.js";
 import type * as lib_complianceCheck from "../lib/complianceCheck.js";
+import type * as lib_complianceRequirementMigration from "../lib/complianceRequirementMigration.js";
 import type * as lib_complianceTypes from "../lib/complianceTypes.js";
 import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
 import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
@@ -232,6 +234,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/backfillChunks": typeof actions_backfillChunks;
+  "actions/backfillComplianceRequirementShape": typeof actions_backfillComplianceRequirementShape;
   "actions/backfillLinesOfBusiness": typeof actions_backfillLinesOfBusiness;
   "actions/cleanupLegacyLineOfBusinessFields": typeof actions_cleanupLegacyLineOfBusinessFields;
   "actions/complianceRequirements": typeof actions_complianceRequirements;
@@ -329,6 +332,7 @@ declare const fullApi: ApiFromModules<{
   "lib/coiGenerator": typeof lib_coiGenerator;
   "lib/complianceAgent": typeof lib_complianceAgent;
   "lib/complianceCheck": typeof lib_complianceCheck;
+  "lib/complianceRequirementMigration": typeof lib_complianceRequirementMigration;
   "lib/complianceTypes": typeof lib_complianceTypes;
   "lib/convexDocumentStore": typeof lib_convexDocumentStore;
   "lib/convexMemoryStore": typeof lib_convexMemoryStore;

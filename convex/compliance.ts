@@ -26,6 +26,10 @@ import {
   requirementScopeValidator,
   requirementSourceTypeValidator,
 } from "./lib/complianceTypes";
+import {
+  migrateLegacyComplianceRequirement,
+  requirementNeedsLegacyShapeBackfill,
+} from "./lib/complianceRequirementMigration";
 import { isLobCode, lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 import { notify } from "./lib/notify";
 
@@ -892,8 +896,8 @@ export const getRequirementImportContextInternal = internalQuery({
     return {
       userId: args.userId ?? access!.userId,
       existingRequirements: existing.map((requirement) => ({
-        kind: requirement.kind,
-        scope: requirement.scope,
+        kind: requirement.kind ?? "coverage",
+        scope: requirement.scope ?? "vendors",
         title: requirement.title,
         requirementText: requirement.requirementText,
         lineOfBusiness: requirement.lineOfBusiness,
@@ -919,8 +923,8 @@ export const getRequirementImportContextForUserInternal = internalQuery({
     return {
       userId: args.userId,
       existingRequirements: existing.map((requirement) => ({
-        kind: requirement.kind,
-        scope: requirement.scope,
+        kind: requirement.kind ?? "coverage",
+        scope: requirement.scope ?? "vendors",
         title: requirement.title,
         requirementText: requirement.requirementText,
         lineOfBusiness: requirement.lineOfBusiness,
@@ -1303,6 +1307,87 @@ export const notifyVendorComplianceEventInternal = internalMutation({
       ],
       nowMs: args.nowMs,
     }),
+});
+
+export const backfillComplianceRequirementShapeInternal = internalMutation({
+  args: {
+    orgId: v.optional(v.id("organizations")),
+    dryRun: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db.query("insuranceRequirements").collect();
+    const dryRun = args.dryRun !== false;
+    const maxRows = args.limit ?? 100;
+    let scannedCount = 0;
+    let changedCount = 0;
+    const samples: Array<{
+      requirementId: Id<"insuranceRequirements">;
+      title: string;
+      previous: {
+        category?: string;
+        appliesTo?: string;
+        evaluationTarget?: string;
+        limit?: string;
+        limitAmount?: number;
+      };
+      next: {
+        kind: string;
+        scope: string;
+        lineOfBusiness?: string;
+        limits?: Array<{ kind: string; amount: number; label?: string }>;
+        conditionType?: string;
+        minAmBestRating?: string;
+      };
+    }> = [];
+
+    for (const row of rows) {
+      if (args.orgId && row.orgId !== args.orgId) continue;
+      scannedCount += 1;
+      if (!requirementNeedsLegacyShapeBackfill(row)) continue;
+      if (changedCount >= maxRows) continue;
+
+      const previous = row as any;
+      const next = migrateLegacyComplianceRequirement(previous);
+      changedCount += 1;
+      if (samples.length < 25) {
+        samples.push({
+          requirementId: row._id,
+          title: next.title,
+          previous: {
+            category: previous.category,
+            appliesTo: previous.appliesTo,
+            evaluationTarget: previous.evaluationTarget,
+            limit: previous.limit,
+            limitAmount: previous.limitAmount,
+          },
+          next: {
+            kind: next.kind,
+            scope: next.scope,
+            lineOfBusiness: next.lineOfBusiness,
+            limits: next.limits,
+            conditionType: next.conditionType,
+            minAmBestRating: next.minAmBestRating,
+          },
+        });
+      }
+      if (!dryRun) {
+        await ctx.db.replace(row._id, next);
+      }
+    }
+
+    return {
+      dryRun,
+      scannedCount,
+      changedCount,
+      remainingCount:
+        rows.filter((row) =>
+          (!args.orgId || row.orgId === args.orgId) &&
+          requirementNeedsLegacyShapeBackfill(row),
+        ).length - (dryRun ? 0 : changedCount),
+      samples,
+    };
+  },
 });
 
 export const wipeComplianceDataInternal = internalMutation({

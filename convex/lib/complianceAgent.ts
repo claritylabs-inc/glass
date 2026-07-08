@@ -83,8 +83,8 @@ function formatRequirementDetails(requirement: Requirement) {
             : requirement.sourcePageStart
         }`
       : undefined,
-    `scope: ${SCOPE_LABELS[requirement.scope]}`,
-    `kind: ${requirement.kind}`,
+    `scope: ${SCOPE_LABELS[requirement.scope ?? "vendors"]}`,
+    `kind: ${requirement.kind ?? "coverage"}`,
     requirement.lineOfBusiness
       ? `lineOfBusiness: ${requirement.lineOfBusiness} (${lobLabel(requirement.lineOfBusiness)})`
       : undefined,

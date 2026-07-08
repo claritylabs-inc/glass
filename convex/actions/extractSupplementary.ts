@@ -26,7 +26,7 @@ import {
 } from "@claritylabs/cl-sdk";
 import { policyToInsuranceDoc } from "../lib/documentMapping";
 import { makeGenerateObject, makeEmbedText } from "../lib/sdkCallbacks";
-import { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 
 /**
@@ -221,7 +221,8 @@ export const extractAll = internalAction({
       orgId: args.orgId,
     });
     const allDocs = policies.filter(
-      (p) => p.fileId && !p.supplementaryFacts?.length && p.pipelineStatus === "complete",
+      (p: Doc<"policies">) =>
+        p.fileId && !p.supplementaryFacts?.length && p.pipelineStatus === "complete",
     );
 
     console.log(`Supplementary backfill: ${allDocs.length} policies to process for org ${args.orgId}`);

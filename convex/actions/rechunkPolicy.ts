@@ -12,7 +12,7 @@ import { v } from "convex/values";
 import { internalAction, action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { chunkDocument } from "@claritylabs/cl-sdk";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { policyToInsuranceDoc } from "../lib/documentMapping";
 import { makeEmbedText } from "../lib/sdkCallbacks";
 
@@ -80,7 +80,7 @@ export const rechunkAll = internalAction({
       orgId: args.orgId,
     });
     const allDocs = policies.filter(
-      (p) => p.pipelineStatus === "complete",
+      (p: Doc<"policies">) => p.pipelineStatus === "complete",
     );
 
     console.log(`Re-chunk: ${allDocs.length} policies to process for org ${args.orgId}`);
