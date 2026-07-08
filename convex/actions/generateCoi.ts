@@ -394,6 +394,19 @@ export const run = internalAction({
       coiData = applyEndorsementsToCertificateData(coiData, {
         endorsements,
       });
+      const lifecycle = await ensureCertificateLifecycleContext(ctx, args);
+      const nextVersionNumber = await ctx.runQuery(
+        (internal as any).certificateLifecycle.nextVersionNumberInternal,
+        {
+          orgId: args.orgId,
+          certificateId: lifecycle.policyCertificateId,
+        },
+      );
+      coiData = {
+        ...coiData,
+        certificateNumber: String(lifecycle.policyCertificateId),
+        revisionNumber: String(nextVersionNumber),
+      };
       coiData = await fillCertificateDescription(ctx, {
         orgId: args.orgId,
         policyId: args.policyId,
@@ -436,7 +449,6 @@ export const run = internalAction({
         formCode,
         requestSignature: args.requestSignature,
       });
-      const lifecycle = await ensureCertificateLifecycleContext(ctx, args);
       const issuedVersion = await ctx.runMutation(
         (internal as any).certificateLifecycle.recordIssuedVersionInternal,
         {
