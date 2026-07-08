@@ -27,7 +27,7 @@ describe("compliance requirement shape migration", () => {
       limitAmount: 1_000_000,
       limitType: "per occurrence",
       requirementText:
-        "CGL must include additional insured, primary and non-contributory, and waiver of subrogation.",
+        "CGL must include products-completed operations, additional insured, primary and non-contributory, and waiver of subrogation.",
     });
 
     expect(migrated.kind).toBe("coverage");

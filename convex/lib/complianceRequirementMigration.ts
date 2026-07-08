@@ -143,11 +143,31 @@ function lineOfBusinessFromLegacy(row: LegacyComplianceRequirement) {
 }
 
 function legacyLimitKind(row: LegacyComplianceRequirement): RequirementLimitKind {
-  const text = normalizeText(
-    [row.limitType, row.limit, row.title, row.requirementText].join(" "),
-  );
   const direct = cleanString(row.limitType);
   if (isRequirementLimitKind(direct)) return direct;
+  const limitTypeText = normalizeText(row.limitType);
+  if (limitTypeText) {
+    if (/\b(combined single|csl)\b/.test(limitTypeText)) {
+      return "combined_single_limit";
+    }
+    if (/\b(per claim|each claim|claim)\b/.test(limitTypeText)) return "per_claim";
+    if (/\b(each accident|per accident)\b/.test(limitTypeText)) {
+      return "el_each_accident";
+    }
+    if (/\b(disease each employee|each employee)\b/.test(limitTypeText)) {
+      return "el_disease_each_employee";
+    }
+    if (/\b(disease policy limit|policy limit)\b/.test(limitTypeText)) {
+      return "el_disease_policy_limit";
+    }
+    if (/\bgeneral aggregate\b/.test(limitTypeText)) return "general_aggregate";
+    if (/\baggregate\b/.test(limitTypeText)) return "aggregate";
+    if (/\b(per occurrence|each occurrence|occurrence)\b/.test(limitTypeText)) {
+      return "per_occurrence";
+    }
+  }
+
+  const text = normalizeText([row.limit, row.title, row.requirementText].join(" "));
   if (/\b(combined single|csl)\b/.test(text)) return "combined_single_limit";
   if (/\b(per claim|each claim|claim)\b/.test(text)) return "per_claim";
   if (/\b(each accident|per accident)\b/.test(text)) return "el_each_accident";
