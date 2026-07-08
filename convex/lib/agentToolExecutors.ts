@@ -517,6 +517,7 @@ export function buildAgentToolExecutors(
         state?: string;
         postalCode?: string;
         requestText?: string;
+        operationsDescription?: string;
         requestedEndorsements?: string[];
         additionalInsuredName?: string;
         certificateForm?: "acord25" | "acord24" | "acord27" | "acord28" | "acord29" | "acord30" | "acord31";
@@ -542,13 +543,15 @@ export function buildAgentToolExecutors(
             holderEmail: params.holderEmail,
             holderPhone: params.holderPhone,
             requestText: params.requestText,
+            operationsDescription: params.operationsDescription,
             requestedEndorsements: params.requestedEndorsements,
           };
-          const hasMarkedEndorsementRequest =
+          const hasContentChangingRequest =
             Boolean(params.additionalInsuredName?.trim()) ||
+            Boolean(params.operationsDescription?.trim()) ||
             Boolean(params.requestText?.trim()) ||
             (params.requestedEndorsements?.length ?? 0) > 0;
-          if (!params.explicitReissue && !hasMarkedEndorsementRequest) {
+          if (!params.explicitReissue && !hasContentChangingRequest) {
             const reusable = await ctx.runQuery(
               (internal as any).certificateLifecycle
                 .findReusableIssuedVersionByHolderNameInternal,
@@ -619,6 +622,7 @@ export function buildAgentToolExecutors(
               state: params.state,
               postalCode: params.postalCode,
               requestText: params.requestText,
+              operationsDescription: params.operationsDescription,
               requestedEndorsements: params.requestedEndorsements,
               additionalInsuredName: params.additionalInsuredName,
               formCode: params.certificateForm,

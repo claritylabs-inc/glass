@@ -11,6 +11,7 @@ type CertificateDescriptionRequest = {
   certificateHolderName?: string;
   requestKind?: "holder" | "additional_insured";
   additionalInsuredName?: string;
+  operationsDescription?: string;
   holderRelationship?: string;
   endorsements?: EndorsementCitation[];
 };
@@ -129,6 +130,15 @@ function declarationFields(policy: Record<string, any>) {
   );
 }
 
+function isAdditionalInsuredDeclarationField(field: string) {
+  return /^(?:additionalNamedInsured|additionalNamedInsureds|additionalInsured|additionalInsureds|scheduledAdditionalInsured|scheduledAdditionalInsureds)$/i.test(field) ||
+    /\badditional\b.*\binsured\b/i.test(field);
+}
+
+function isOperationsDeclarationField(field: string) {
+  return /operation|business|classification|description/i.test(field);
+}
+
 export function buildCertificateDescriptionContext(
   policy: Record<string, any>,
   data: CoiData,
@@ -166,6 +176,7 @@ export function buildCertificateDescriptionContext(
     : undefined, 8);
   pushUnique(context.policy, Array.isArray(policy.policyTypes) ? `Policy types ${policy.policyTypes.join(", ")}` : undefined, 8);
 
+  pushUnique(context.operations, request.operationsDescription, 8);
   pushUnique(context.operations, policy.summary, 8);
   pushUnique(context.operations, profile.businessDescription, 8);
   pushUnique(context.operations, profile.operationsDescription, 8);
@@ -246,10 +257,10 @@ export function buildCertificateDescriptionContext(
     if (/location|premises|project|job/i.test(field.field)) {
       pushUnique(context.locations, `${field.field}: ${field.value}`, 8, 260);
     }
-    if (/additional|certificate|holder|insured/i.test(field.field)) {
+    if (isAdditionalInsuredDeclarationField(field.field)) {
       pushUnique(context.additionalInsureds, `${field.field}: ${field.value}`, 10, 260);
     }
-    if (/operation|business|classification|description/i.test(field.field)) {
+    if (isOperationsDeclarationField(field.field)) {
       pushUnique(context.operations, `${field.field}: ${field.value}`, 8, 260);
     }
   }

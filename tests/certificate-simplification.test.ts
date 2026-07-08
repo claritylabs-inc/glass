@@ -21,6 +21,22 @@ describe("simplified certificate request routing", () => {
     });
   });
 
+  it("keeps source-backed operations wording out of ordinary holder certificate reuse", () => {
+    const metadata = resolveCertificateRequestMetadata({
+      holderName: "Acme Property Management",
+      operationsDescription:
+        "Acme provides technology services including software development, AI/ML, and SaaS/PaaS offerings.",
+    });
+
+    expect(metadata).toMatchObject({
+      requiredChanges: [],
+      hasEndorsementRequest: false,
+      requestKind: "holder",
+    });
+    expect(metadata.requestSignature).toContain("holder:acme property management|operations:");
+    expect(metadata.requestSignature).toContain("saas/paas offerings");
+  });
+
   it("uses additional-insured metadata only for pure additional-insured requests", () => {
     const metadata = resolveCertificateRequestMetadata({
       holderName: "Acme Property Management",
