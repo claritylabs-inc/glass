@@ -168,14 +168,12 @@ export function PolicySourcePill({
   citedSections,
   citedCoverageNames,
   citedSourceSpanIds,
-  index,
 }: {
   id: string;
   page?: number;
   citedSections?: string[];
   citedCoverageNames?: string[];
   citedSourceSpanIds?: string[];
-  index: number;
 }) {
   const policy = useCachedPolicySummary(id as Id<"policies">);
   const { openPreview } = useEntityPreview();
@@ -202,7 +200,6 @@ export function PolicySourcePill({
       className="inline-flex h-6 max-w-48 items-center justify-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium leading-none text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
       title={label}
     >
-      <span className="text-muted-foreground/35">{index}</span>
       <span className="truncate">{label}</span>
     </button>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CheckCircle2, ChevronDown, Clock3, Loader2 } from "lucide-react";
+import { getReasoningDisclosureLines } from "@/lib/reasoning-format";
 import { cn } from "@/lib/utils";
 
 interface CollapsibleReasoningProps {
@@ -21,7 +22,7 @@ export function CollapsibleReasoning({
     return null;
   }
 
-  const lines = reasoning.split(/\n+/).filter((line) => line.trim().length > 0);
+  const lines = getReasoningDisclosureLines(reasoning);
   const summary = lines[0] ?? (isStreaming ? "Thinking" : "Reasoning");
   const detailLines = lines.length > 1 ? lines.slice(1) : lines;
 
