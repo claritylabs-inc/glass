@@ -236,7 +236,7 @@ export function PolicyPreview({
         <ExactSourceLocations sourceSpans={citedSourceSpans} />
       )}
 
-      <CoverageListPreview rows={coverageBreakdown.all} />
+      <CoverageListPreview breakdown={coverageBreakdown} />
     </div>
   );
 }
@@ -344,10 +344,53 @@ function ExactSourceLocations({
   );
 }
 
-function CoverageListPreview({ rows }: { rows: CoverageBreakdownRow[] }) {
+type CoveragePreviewGroup = {
+  key: string;
+  title: string;
+  rows: CoverageBreakdownRow[];
+};
+
+function coveragePreviewGroups(breakdown: CoverageBreakdown): CoveragePreviewGroup[] {
+  return [
+    ...breakdown.groups.map((group) => ({
+      key: group.lineOfBusiness,
+      title: group.label,
+      rows: group.items,
+    })),
+    ...(breakdown.unassigned.length
+      ? [{
+          key: "unassigned",
+          title: breakdown.groups.length ? "Unassigned" : "Coverage schedules",
+          rows: breakdown.unassigned,
+        }]
+      : []),
+  ];
+}
+
+function visibleCoveragePreviewGroups(
+  groups: CoveragePreviewGroup[],
+  maxRows: number,
+): CoveragePreviewGroup[] {
+  let remaining = maxRows;
+  const visible: CoveragePreviewGroup[] = [];
+  for (const group of groups) {
+    if (remaining <= 0) break;
+    const rows = group.rows.slice(0, remaining);
+    if (rows.length > 0) visible.push({ ...group, rows });
+    remaining -= rows.length;
+  }
+  return visible;
+}
+
+function CoverageListPreview({ breakdown }: { breakdown: CoverageBreakdown }) {
   const [showAllCoverages, setShowAllCoverages] = useState(false);
-  const visibleRows = showAllCoverages ? rows : rows.slice(0, 8);
-  const hiddenCount = Math.max(0, rows.length - visibleRows.length);
+  const groups = coveragePreviewGroups(breakdown);
+  const totalRows = breakdown.all.length;
+  const visibleGroups = showAllCoverages
+    ? groups
+    : visibleCoveragePreviewGroups(groups, 8);
+  const visibleCount = visibleGroups.reduce((sum, group) => sum + group.rows.length, 0);
+  const hiddenCount = Math.max(0, totalRows - visibleCount);
 
   return (
     <section className="min-w-0">
@@ -355,19 +398,20 @@ function CoverageListPreview({ rows }: { rows: CoverageBreakdownRow[] }) {
         <p className="min-w-0 text-base font-medium text-muted-foreground/60">
           Coverage schedules
         </p>
-        {rows.length > 0 && (
+        {totalRows > 0 && (
           <span className="shrink-0 text-label text-muted-foreground/45">
-            {rows.length}
+            {totalRows}
           </span>
         )}
       </div>
-      {rows.length > 0 ? (
+      {totalRows > 0 ? (
         <>
-          <div className="min-w-0 divide-y divide-foreground/6 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
-            {visibleRows.map((row, index) => (
-              <CoverageScheduleRow
-                key={`${row.name}:${row.limit ?? ""}:${index}`}
-                row={row}
+          <div className="space-y-2">
+            {visibleGroups.map((group) => (
+              <CoveragePreviewGroupList
+                key={group.key}
+                group={group}
+                showTitle={groups.length > 1 || group.title !== "Coverage schedules"}
               />
             ))}
           </div>
@@ -389,6 +433,32 @@ function CoverageListPreview({ rows }: { rows: CoverageBreakdownRow[] }) {
         </div>
       )}
     </section>
+  );
+}
+
+function CoveragePreviewGroupList({
+  group,
+  showTitle,
+}: {
+  group: CoveragePreviewGroup;
+  showTitle: boolean;
+}) {
+  return (
+    <div className="min-w-0 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
+      {showTitle ? (
+        <div className="border-b border-foreground/6 px-3 py-2 text-label font-medium text-muted-foreground/60">
+          {group.title}
+        </div>
+      ) : null}
+      <div className="divide-y divide-foreground/6">
+        {group.rows.map((row, index) => (
+          <CoverageScheduleRow
+            key={`${row.name}:${row.limit ?? ""}:${index}`}
+            row={row}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

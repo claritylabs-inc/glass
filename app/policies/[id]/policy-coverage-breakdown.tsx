@@ -113,12 +113,29 @@ export function CoverageBreakdownCards({
   breakdown: CoverageBreakdown;
 }) {
   if (!breakdown.all.length) return null;
+  const groups = [
+    ...breakdown.groups.map((group) => ({
+      key: group.lineOfBusiness,
+      title: group.label,
+      rows: group.items,
+    })),
+    ...(breakdown.unassigned.length
+      ? [{
+          key: "unassigned",
+          title: breakdown.groups.length ? "Unassigned coverage schedules" : "Coverage schedules",
+          rows: breakdown.unassigned,
+        }]
+      : []),
+  ];
   return (
     <div className="mb-6 space-y-3">
-      <CoverageScheduleList
-        rows={breakdown.all}
-        title="Coverage schedules"
-      />
+      {groups.map((group) => (
+        <CoverageScheduleList
+          key={group.key}
+          rows={group.rows}
+          title={group.title}
+        />
+      ))}
     </div>
   );
 }

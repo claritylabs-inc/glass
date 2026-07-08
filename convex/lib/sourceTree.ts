@@ -1,6 +1,7 @@
 "use node";
 
 import {
+  annotateOperationalCoverageLinesOfBusiness,
   buildDocumentSourceTree as buildSdkDocumentSourceTree,
   normalizeDocumentSourceTreePaths,
   normalizeOperationalLinesOfBusiness,
@@ -993,6 +994,7 @@ function cleanOperationalCoverages(
       premium ?? "",
       (normalized as OperationalCoverageLine & { retroactiveDate?: string }).retroactiveDate ?? "",
       JSON.stringify((normalized as OperationalCoverageLine & { limits?: unknown[] }).limits ?? []),
+      (normalized as OperationalCoverageLine & { lineOfBusiness?: string }).lineOfBusiness ?? "",
       normalized.formNumber ?? "",
       normalized.sectionRef ?? "",
     ].join("|");
@@ -1178,6 +1180,16 @@ function normalizeRawCoverageTerm(
   };
 }
 
+function cleanCoverageLineOfBusiness(
+  value: unknown,
+): NonNullable<OperationalCoverageLine["lineOfBusiness"]> | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const [code] = normalizeOperationalLinesOfBusiness([value]);
+  return code && code !== "UN"
+    ? code as NonNullable<OperationalCoverageLine["lineOfBusiness"]>
+    : undefined;
+}
+
 function normalizeRawCoverage(
   value: unknown,
   validNodeIds: Set<string>,
@@ -1200,8 +1212,10 @@ function normalizeRawCoverage(
     ...stringValues(record.sourceSpanIds),
     ...limits.flatMap((term) => term.sourceSpanIds),
   ], validSpanIds);
+  const lineOfBusiness = cleanCoverageLineOfBusiness(record.lineOfBusiness);
   return {
     name,
+    ...(lineOfBusiness ? { lineOfBusiness } : {}),
     ...(cleanCoverageScalar(record.coverageCode) ? { coverageCode: cleanCoverageScalar(record.coverageCode) } : {}),
     ...(cleanCoverageScalar(record.limit) ? { limit: cleanCoverageScalar(record.limit) } : {}),
     ...(cleanCoverageScalar(record.deductible) ? { deductible: cleanCoverageScalar(record.deductible) } : {}),
@@ -1574,12 +1588,16 @@ export function sourceTreePolicyFields(params: {
     resolvedLines.linesOfBusiness,
     currentLinesOfBusiness,
   );
-  const operationalProfile: PolicyOperationalProfile = linesOfBusinessChanged
-    ? {
-        ...params.operationalProfile,
-        linesOfBusiness: resolvedLines.linesOfBusiness,
-      }
-    : params.operationalProfile;
+  const operationalProfile: PolicyOperationalProfile = {
+    ...params.operationalProfile,
+    linesOfBusiness: linesOfBusinessChanged
+      ? resolvedLines.linesOfBusiness
+      : currentLinesOfBusiness,
+    coverages: annotateOperationalCoverageLinesOfBusiness(
+      params.operationalProfile.coverages,
+      resolvedLines.linesOfBusiness,
+    ),
+  };
   const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);
   const hasEvidenceNodes = sourceTree.some((node) => node.kind !== "document");
   const existingMetadata = params.existingDocumentMetadata && typeof params.existingDocumentMetadata === "object" && !Array.isArray(params.existingDocumentMetadata)
@@ -1677,6 +1695,7 @@ export function operationalProfilePolicyFields(
       };
       return {
         name: coverage.name,
+        lineOfBusiness: coverage.lineOfBusiness,
         coverageCode: coverage.coverageCode,
         limit: coverage.limit,
         deductible: coverage.deductible,
