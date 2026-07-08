@@ -370,17 +370,29 @@ function certificateRequestSignature(args: {
   holderName: string;
   additionalInsuredName?: string;
   requiredChanges?: CertificateEndorsementKind[];
+  operationsDescription?: string;
 }) {
   const nonAdditionalInsuredKinds = (args.requiredChanges ?? [])
     .filter((kind) => kind !== "additional_insured")
     .sort();
-  const suffix = nonAdditionalInsuredKinds.length
+  const endorsementSuffix = nonAdditionalInsuredKinds.length
     ? `|${nonAdditionalInsuredKinds.join("|")}`
     : "";
+  const operationsDescription = args.operationsDescription
+    ? normalizeSignatureText(args.operationsDescription).slice(0, 160)
+    : "";
+  const operationsSuffix = operationsDescription
+    ? `|operations:${operationsDescription}`
+    : "";
+  const signedName = normalizeSignatureText(
+    args.requestKind === "additional_insured"
+      ? args.additionalInsuredName ?? args.holderName
+      : args.holderName,
+  );
   if (args.requestKind === "additional_insured") {
-    return `additional_insured:${normalizeSignatureText(args.additionalInsuredName ?? args.holderName)}${suffix}`;
+    return `additional_insured:${signedName}${endorsementSuffix}${operationsSuffix}`;
   }
-  return `holder:${normalizeSignatureText(args.holderName)}${suffix}`;
+  return `holder:${signedName}${endorsementSuffix}${operationsSuffix}`;
 }
 
 export function resolveCertificateRequestMetadata(args: {
@@ -389,6 +401,7 @@ export function resolveCertificateRequestMetadata(args: {
   requestText?: string;
   requestedEndorsements?: string[];
   additionalInsuredName?: string;
+  operationsDescription?: string;
 }) {
   const inferredChanges = inferCertificateEndorsements({
     certificateHolder: args.certificateHolder,
@@ -414,6 +427,7 @@ export function resolveCertificateRequestMetadata(args: {
     holderName: args.holderName,
     additionalInsuredName,
     requiredChanges,
+    operationsDescription: cleanOptionalText(args.operationsDescription),
   });
 
   return {
@@ -622,6 +636,7 @@ export const generateForPolicy = action({
     additionalInsuredName: v.optional(v.string()),
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
+    operationsDescription: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
   },
@@ -652,6 +667,7 @@ export const generateForPolicy = action({
       additionalInsuredName: args.additionalInsuredName,
       requestText: args.requestText,
       requestedEndorsements: args.requestedEndorsements,
+      operationsDescription: args.operationsDescription,
       formCode: args.formCode,
       forceReissue: args.forceReissue,
       source: "policy_page",
@@ -680,6 +696,7 @@ export const generateForOrg = internalAction({
     additionalInsuredName: v.optional(v.string()),
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
+    operationsDescription: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
   },
@@ -957,6 +974,7 @@ export const generateForOrg = internalAction({
       holderAddress,
       requestKind,
       additionalInsuredName,
+      operationsDescription: args.operationsDescription,
       formCode: args.formCode,
       holderRelationship,
       endorsements: endorsementCitations,

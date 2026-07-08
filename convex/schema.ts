@@ -142,6 +142,48 @@ const certificateHolderAddressValidator = v.object({
   formatted: v.optional(v.string()),
 });
 
+const orgMailingAddressValidator = v.object({
+  street1: v.optional(v.string()),
+  street2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  zip: v.optional(v.string()),
+  country: v.optional(v.string()),
+  formatted: v.optional(v.string()),
+});
+
+const orgProfileFactSourceValidator = v.object({
+  policyId: v.id("policies"),
+  fieldPath: v.string(),
+  fieldGroup: v.string(),
+  displayValue: v.string(),
+  normalizedValue: v.string(),
+  valueKind: v.union(
+    v.literal("string"),
+    v.literal("number"),
+    v.literal("date"),
+    v.literal("money"),
+    v.literal("address"),
+    v.literal("list"),
+    v.literal("unknown"),
+  ),
+  sourceSpanIds: v.optional(v.array(v.string())),
+  effectiveDate: v.optional(v.string()),
+  expirationDate: v.optional(v.string()),
+  policyYear: v.optional(v.number()),
+  observedAt: v.number(),
+});
+
+const orgProfileScalarFactValidator = v.object({
+  value: v.string(),
+  source: orgProfileFactSourceValidator,
+});
+
+const orgProfileAddressFactValidator = v.object({
+  value: orgMailingAddressValidator,
+  source: orgProfileFactSourceValidator,
+});
+
 const policyVersionKindValidator = v.union(
   v.literal("new_policy"),
   v.literal("policy_change"),
@@ -283,6 +325,18 @@ export default defineSchema({
     context: v.optional(v.string()),
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
+    mailingAddress: v.optional(orgMailingAddressValidator),
+    profileFacts: v.optional(
+      v.object({
+        namedInsured: v.optional(orgProfileScalarFactValidator),
+        mailingAddress: v.optional(orgProfileAddressFactValidator),
+        dba: v.optional(orgProfileScalarFactValidator),
+        entityType: v.optional(orgProfileScalarFactValidator),
+        taxId: v.optional(orgProfileScalarFactValidator),
+        additionalNamedInsureds: v.optional(v.array(orgProfileScalarFactValidator)),
+      }),
+    ),
+    profileFactsUpdatedAt: v.optional(v.number()),
     // Relationship context — helps categorize intelligence entries
     clientsContext: v.optional(v.string()), // who the org's clients/customers are
     vendorsContext: v.optional(v.string()), // key vendors and service providers
@@ -2157,6 +2211,7 @@ export default defineSchema({
     fieldGroup: v.string(),
     displayValue: v.string(),
     normalizedValue: v.string(),
+    structuredValue: v.optional(v.any()),
     valueKind: v.union(
       v.literal("string"),
       v.literal("number"),
@@ -2169,6 +2224,7 @@ export default defineSchema({
     sourceSpanIds: v.optional(v.array(v.string())),
     effectiveDate: v.optional(v.string()),
     expirationDate: v.optional(v.string()),
+    policyYear: v.optional(v.number()),
     observedAt: v.number(),
     active: v.boolean(),
     recordHash: v.string(),

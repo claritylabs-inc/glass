@@ -247,6 +247,7 @@ type GenerateCoiDescriptionArgs = {
   certificateHolderName?: string;
   requestKind?: "holder" | "additional_insured";
   additionalInsuredName?: string;
+  operationsDescription?: string;
   holderRelationship?: string;
   endorsements?: EndorsementCitation[];
 };
@@ -262,6 +263,7 @@ async function fillCertificateDescription(
     certificateHolderName: args.certificateHolderName,
     requestKind: args.requestKind,
     additionalInsuredName: args.additionalInsuredName,
+    operationsDescription: args.operationsDescription,
     holderRelationship: args.holderRelationship,
     endorsements: args.endorsements,
   });
@@ -337,6 +339,7 @@ export const run = internalAction({
       v.literal("additional_insured"),
     )),
     additionalInsuredName: v.optional(v.string()),
+    operationsDescription: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     holderRelationship: v.optional(v.string()),
     endorsements: v.optional(v.array(endorsementCitationValidator)),
@@ -401,6 +404,7 @@ export const run = internalAction({
         certificateHolderName: args.certificateHolderName,
         requestKind: args.requestKind,
         additionalInsuredName: args.additionalInsuredName,
+        operationsDescription: args.operationsDescription,
         holderRelationship: args.holderRelationship,
         endorsements,
       }, policy as Record<string, any>, coiData);

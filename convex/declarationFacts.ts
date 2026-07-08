@@ -5,6 +5,7 @@ import {
   declarationFactHash,
   extractDeclarationFactsFromPolicy,
 } from "./lib/declarationFacts";
+import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
 
 export const syncPolicyInternal = internalMutation({
   args: { policyId: v.id("policies") },
@@ -21,7 +22,10 @@ export const syncPolicyInternal = internalMutation({
       await ctx.db.patch(fact._id, { active: false });
     }
 
-    if (policy.deletedAt) return { inserted: 0 };
+    if (policy.deletedAt) {
+      const profile = await syncOrgProfileFromDeclarationFacts(ctx, policy.orgId);
+      return { inserted: 0, profile };
+    }
 
     const facts = extractDeclarationFactsFromPolicy(policy as unknown as Record<string, unknown>);
     let inserted = 0;
@@ -34,10 +38,12 @@ export const syncPolicyInternal = internalMutation({
         fieldGroup: fact.fieldGroup,
         displayValue: fact.displayValue,
         normalizedValue: fact.normalizedValue,
+        structuredValue: fact.structuredValue,
         valueKind: fact.valueKind,
         sourceSpanIds: fact.sourceSpanIds,
         effectiveDate: fact.effectiveDate,
         expirationDate: fact.expirationDate,
+        policyYear: fact.policyYear,
         observedAt: now,
         active: true,
         recordHash: declarationFactHash({
@@ -49,6 +55,7 @@ export const syncPolicyInternal = internalMutation({
       inserted += 1;
     }
 
-    return { inserted };
+    const profile = await syncOrgProfileFromDeclarationFacts(ctx, policy.orgId);
+    return { inserted, profile };
   },
 });
