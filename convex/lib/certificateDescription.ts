@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 import type { CoiData } from "./coiGenerator";
 import type { EndorsementCitation } from "./certificateEndorsements";
 
@@ -215,7 +216,8 @@ export function buildCertificateDescriptionContext(
   pushUnique(context.policy, policy.effectiveDate && policy.expirationDate
     ? `Policy term ${policy.effectiveDate} to ${policy.expirationDate}`
     : undefined, 8);
-  pushUnique(context.policy, Array.isArray(policy.policyTypes) ? `Policy types ${policy.policyTypes.join(", ")}` : undefined, 8);
+  const lobLabels = policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel);
+  pushUnique(context.policy, lobLabels.length ? `Lines of business ${lobLabels.join(", ")}` : undefined, 8);
 
   pushUnique(context.operations, request.descriptionOfOperations, 8);
   pushUnique(context.operations, profile.businessDescription, 8);

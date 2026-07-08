@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import { assertBrokerOrg, getOrgAccessForQuery } from "./lib/access";
 
 // Internal mutation so that actions can record broker activity via ctx.runMutation
@@ -61,6 +61,35 @@ export const listPortfolio = query({
     );
 
     return filtered.map((e) => ({
+      ...e,
+      clientOrgName: orgMap[e.clientOrgId] ?? "Unknown client",
+    }));
+  },
+});
+
+export const listPortfolioInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.optional(v.id("users")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+    const events = await ctx.db
+      .query("brokerActivity")
+      .withIndex("by_brokerOrgId_createdAt", (q) =>
+        q.eq("brokerOrgId", args.orgId),
+      )
+      .order("desc")
+      .take(limit);
+
+    const clientOrgIds = [...new Set(events.map((e) => e.clientOrgId))];
+    const orgs = await Promise.all(clientOrgIds.map((id) => ctx.db.get(id)));
+    const orgMap = Object.fromEntries(
+      orgs.filter(Boolean).map((o) => [o!._id, o!.name]),
+    );
+
+    return events.map((e) => ({
       ...e,
       clientOrgName: orgMap[e.clientOrgId] ?? "Unknown client",
     }));

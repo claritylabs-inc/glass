@@ -214,6 +214,23 @@ export const getInternal = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.id),
 });
 
+export const listInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.optional(v.id("users")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+    const rows = await ctx.db
+      .query("notifications")
+      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .order("desc")
+      .take(limit * 2); // over-fetch to filter dismissed
+    return filterVisibleNotifications(rows).slice(0, limit);
+  },
+});
+
 export const patchEmailStatus = internalMutation({
   args: {
     id: v.id("notifications"),

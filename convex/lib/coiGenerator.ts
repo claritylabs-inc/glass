@@ -4,88 +4,23 @@ import dayjs from "dayjs";
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import {
   CERTIFICATE_FORM_LABELS,
+  type CertificateCoverageLine,
+  type CertificateData,
   type CertificateFormCode,
-  type CertificateHolderRelationship,
 } from "./acordForms/types";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * COI data interface mapping Glass's rich policy fields to ACORD 25 fields.
+ * COI data mapping Glass's rich policy fields to ACORD certificate fields.
  * All monetary values should be pre-formatted strings (e.g. "$1,000,000").
+ * Canonical shape lives in ./acordForms/types.
  */
-export interface CoiData {
-  formCode?: CertificateFormCode;
-  title: string;
-  issuedDateLabel: string;
-
-  // Producer / intermediary
-  producerAgency?: string;
-  producerContact?: string;
-  producerLicense?: string;
-  producerAddress?: string | { street1?: string; street2?: string; city?: string; state?: string; zip?: string; country?: string };
-  producerPhone?: string;
-  producerEmail?: string;
-
-  // Insurance company
-  insuranceCompanyAddress?: string;
-  insuranceCompanyPhone?: string;
-
-  // Insured
-  insuredName: string;
-  insuredDba?: string;
-  insuredAddress?: string | { street1?: string; city?: string; state?: string; zip?: string };
-  insuredFein?: string;
-
-  // Insurer (ACORD 25 supports Insurers A–F; we map the primary policy insurer to A)
-  insurers: Array<{
-    letter: string; // "A" | "B" | ... | "F"
-    name: string;
-    naic?: string;
-    amBest?: string;
-    admitted?: string;
-  }>;
-  // Coverage rows — each maps to an ACORD 25 coverage section
-  coverages: CoverageLine[];
-
-  // Optional
-  certificateNumber?: string;
-  revisionNumber?: string;
-  certificateHolder?: string;
-  certificateHolderRelationship?: CertificateHolderRelationship;
-  description?: string; // "Description of Operations / Locations / Vehicles"
-  propertyDescription?: string;
-  propertyLocation?: string;
-  interestHolder?: string;
-  interestHolderRelationship?: string;
-  floodZone?: string;
-  floodProgram?: string;
-}
+export type CoiData = CertificateData;
 
 /** One coverage section in the ACORD 25 grid. */
-export interface CoverageLine {
-  /** ACORD section label: "COMMERCIAL GENERAL LIABILITY", "AUTOMOBILE LIABILITY", etc. */
-  type: string;
-  /** Insurer letter reference (A–F) */
-  insurerLetter?: string;
-  /** "occurrence" | "claims_made" — for the CGL form type checkbox */
-  coverageForm?: "occurrence" | "claims_made";
-  /** Additional type notes (e.g. "CLAIMS MADE □  OCCUR □") */
-  typeNotes?: string;
-  /** Addl Insr endorsement on file */
-  addlInsr?: boolean;
-  /** Subrogation waiver */
-  subrWvd?: boolean;
-  policyNumber?: string;
-  effectiveDate?: string;
-  expirationDate?: string;
-  /** Key/value limit pairs in ACORD 25 display order */
-  limits: Array<{ label: string; value: string }>;
-  deductible?: string;
-  sectionRef?: string;
-  description?: string;
-}
+export type CoverageLine = CertificateCoverageLine;
 
 // ─── Mapping helpers ──────────────────────────────────────────────────────────
 
@@ -718,6 +653,37 @@ function drawCoverageSectionHeader(
   return y + headerH;
 }
 
+function drawCertificateNumberBand(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  y: number,
+): number {
+  const headerH = 16;
+  const certificateW = W / 2;
+  const certificateNumber = data.certificateNumber?.trim();
+  const revisionNumber = data.revisionNumber?.trim();
+
+  doc.rect(M, y, W, headerH).fillAndStroke(C_HEADER_BG, C_BLACK);
+  doc
+    .moveTo(M + certificateW, y)
+    .lineTo(M + certificateW, y + headerH)
+    .stroke();
+
+  doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
+  doc.text(`CERTIFICATE NUMBER:${certificateNumber ? ` ${certificateNumber}` : ""}`, M + 4, y + 4, {
+    width: certificateW - 8,
+    height: headerH - 6,
+    align: "left",
+  });
+  doc.text(`REVISION NUMBER:${revisionNumber ? ` ${revisionNumber}` : ""}`, M + certificateW + 4, y + 4, {
+    width: W - certificateW - 8,
+    height: headerH - 6,
+    align: "left",
+  });
+
+  return y + headerH;
+}
+
 function drawAcord25InformationNotice(
   doc: PDFKit.PDFDocument,
   x: number,
@@ -866,6 +832,8 @@ function drawAcordPropertyEvidenceForm(doc: PDFKit.PDFDocument, data: CoiData) {
   doc.font("Helvetica").fontSize(FS_VALUE);
   doc.text(dateStr, M + W * 0.72, y + 10, { width: W * 0.28, align: "right" });
   y += 30;
+
+  y = drawCertificateNumberBand(doc, data, y) + 4;
 
   const topW = W * 0.5;
   const insurerAddress = joinLines(

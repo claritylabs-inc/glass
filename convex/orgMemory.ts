@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { requireAuth } from "./lib/auth";
+import { requireAuth } from "./lib/access";
 import {
   isCompanyContextMemory,
   normalizeMemoryContent,
@@ -36,7 +36,7 @@ async function requireMemoryAdmin(
   ctx: QueryCtx | MutationCtx,
   memoryId: Id<"orgMemory">,
 ) {
-  const userId = await requireAuth(ctx);
+  const { userId } = await requireAuth(ctx);
   const memory = await ctx.db.get(memoryId);
   if (!memory) throw new Error("Memory item not found");
 
@@ -248,7 +248,7 @@ export const deleteExpired = internalMutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireAuth(ctx);
+    const { userId } = await requireAuth(ctx);
     const membership = await ctx.db
       .query("orgMemberships")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
