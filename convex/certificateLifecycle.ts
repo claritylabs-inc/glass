@@ -323,6 +323,20 @@ export const findIssuedCertificateHolderCandidatesInternal = internalQuery({
   },
 });
 
+export const nextVersionNumberInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    certificateId: v.id("policyCertificates"),
+  },
+  handler: async (ctx, args) => {
+    const certificate = await ctx.db.get(args.certificateId);
+    if (!certificate || certificate.orgId !== args.orgId) {
+      throw new Error("Certificate not found.");
+    }
+    return await nextCertificateVersionNumber(ctx, args.certificateId);
+  },
+});
+
 function cleanupGroupHasAddressConflict(rows: Array<{
   identity: ReturnType<typeof candidateIdentity>;
 }>) {
