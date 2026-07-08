@@ -1,11 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { REQUIREMENT_EVALUATION_TARGETS } from "./requirementSemantics";
+import { REQUIREMENT_KINDS } from "./complianceTypes";
 
-const REQUIREMENT_EVALUATION_TARGET_FILTER_VALUES = [
-  ...REQUIREMENT_EVALUATION_TARGETS,
-  "all",
-] as const;
+const REQUIREMENT_KIND_FILTER_VALUES = [...REQUIREMENT_KINDS, "all"] as const;
 
 /**
  * Tool definitions for agentic chat.
@@ -42,7 +39,7 @@ export const compareCoverages = tool({
 
 export const lookupComplianceRequirements = tool({
   description:
-    "Look up the organization's saved insurance compliance requirements. Use this when the user asks what contractors/vendors must carry, asks about my requirements, internal insurance standards, minimum required limits, deductibles, endorsements, certificate instructions, or compliance checklist requirements. Results distinguish obligation owner from evidence target.",
+    "Look up the organization's saved insurance compliance requirements. Use this when the user asks what contractors/vendors must carry, asks about my requirements, internal insurance standards, minimum required limits, deductibles, endorsements, certificate instructions, or compliance checklist requirements. Results distinguish scope and rule kind.",
   inputSchema: z.object({
     query: z
       .string()
@@ -50,17 +47,17 @@ export const lookupComplianceRequirements = tool({
       .describe(
         "Requirement topic to search for, such as contractors, general liability, cyber, auto, workers comp, additional insured, waiver, or a limit amount.",
       ),
-    appliesTo: z
-      .enum(["vendors", "own_org", "both", "all"])
+    scope: z
+      .enum(["vendors", "own_org", "all"])
       .optional()
       .describe(
-        "Filter by obligation owner. Use vendors for contractor/vendor obligations, own_org for my requirements owned by this org, both for shared obligations, or all to search every requirement.",
+        "Filter by scope. Use vendors for contractor/vendor obligations, own_org for requirements owned by this org, or all to search every requirement.",
       ),
-    evaluationTarget: z
-      .enum(REQUIREMENT_EVALUATION_TARGET_FILTER_VALUES)
+    kind: z
+      .enum(REQUIREMENT_KIND_FILTER_VALUES)
       .optional()
       .describe(
-        "Filter by evidence target: own_policy, connected_vendor_policy, subcontractor_policy, manual_control, not_policy_checkable, or all.",
+        "Filter by rule kind: coverage, insurer, condition, or all.",
       ),
   }),
 });
@@ -316,10 +313,10 @@ export const importConnectedEmailRequirementAttachments = tool({
       .enum(["lease_agreement", "client_contract", "vendor_requirements", "other"])
       .optional()
       .describe("Source document type. Infer lease_agreement for leases and client_contract for customer/client contracts."),
-    appliesTo: z
-      .enum(["vendors", "own_org", "both"])
+    scope: z
+      .enum(["vendors", "own_org"])
       .optional()
-      .describe("Requirement ownership. Use own_org for the org's lease/client obligations, vendors for vendor/customer standards, or both if it applies to both."),
+      .describe("Requirement scope. Use own_org for the org's lease/client obligations or vendors for vendor/customer standards."),
   }),
 });
 

@@ -326,13 +326,13 @@ function MailboxTaskSummaryCard({
   async function handleRequirementImport(
     email: MailboxTaskEmail,
     index: number,
-    appliesTo: "vendors" | "own_org",
+    scope: "vendors" | "own_org",
   ) {
     if (!email.emailRef) return;
     const filenames = email.attachments
       .filter(isMailboxRequirementAttachment)
       .map((attachment) => attachment.filename);
-    const key = `${appliesTo}-${index}`;
+    const key = `${scope}-${index}`;
     setBusyKey(key);
     try {
       const result = await importRequirementAttachments({
@@ -340,8 +340,8 @@ function MailboxTaskSummaryCard({
         emailRef: email.emailRef,
         filenames: filenames.length > 0 ? filenames : undefined,
         includeEmailBody: true,
-        sourceType: appliesTo === "vendors" ? "vendor_requirements" : "other",
-        appliesTo,
+        sourceType: scope === "vendors" ? "vendor_requirements" : "other",
+        scope,
       });
       const createdCount = totalCreatedRequirements(result);
       if ((result as { status?: string })?.status === "no_requirement_sources") {

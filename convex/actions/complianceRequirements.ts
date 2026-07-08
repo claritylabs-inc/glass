@@ -3,59 +3,104 @@
 import mammoth from "mammoth";
 import { z } from "zod";
 import { v } from "convex/values";
-import { action, internalAction } from "../_generated/server";
 import dayjs from "dayjs";
+import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { generateObjectForOrg } from "../lib/models";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import {
-  classifyRequirementSemantics,
-  REQUIREMENT_EVALUATION_TARGETS,
-} from "../lib/requirementSemantics";
+  REQUIREMENT_CONDITION_TYPES,
+  REQUIREMENT_LIMIT_KINDS,
+  REQUIREMENT_PROVISIONS,
+  REQUIREMENT_SCOPES,
+  type RequirementScope,
+} from "../lib/complianceTypes";
+import { ACORD_LOB_LABELS, isLobCode } from "../lib/linesOfBusiness";
 
-const CATEGORY_VALUES = [
-  "general_liability",
-  "auto",
-  "workers_comp",
-  "umbrella",
-  "professional",
-  "cyber",
-  "property",
-  "other",
+const COMMON_COMMERCIAL_LOBS = [
+  "CGL",
+  "GL",
+  "AUTOB",
+  "WORK",
+  "WCMA",
+  "UMBRC",
+  "EXLIA",
+  "EO",
+  "PL",
+  "PROPC",
+  "PROP",
+  "BOP",
+  "CRIME",
+  "EPLI",
+  "DO",
+  "FIDUC",
+  "INMRC",
+  "OLIB",
 ] as const;
 
+const LobSchema = z.string().refine((value) => isLobCode(value), {
+  message: "Expected an ACORD line-of-business code",
+});
+
+const sourceDocumentTypeValidator = v.union(
+  v.literal("lease_agreement"),
+  v.literal("client_contract"),
+  v.literal("vendor_requirements"),
+  v.literal("other"),
+);
+
+const ScopeSchema = z.enum(REQUIREMENT_SCOPES);
+
 const RequirementSchema = z.object({
+  kind: z.enum(["coverage", "insurer", "condition"]),
+  scope: ScopeSchema.nullable(),
   title: z.string().min(1).max(120),
-  category: z.enum(CATEGORY_VALUES),
   requirementText: z.string().min(1).max(4000),
-  name: z.string().min(1).max(160).nullable(),
-  coverageCode: z.string().min(1).max(80).nullable(),
-  limit: z.string().min(1).max(160).nullable(),
-  limitAmount: z.number().nonnegative().nullable(),
-  limitType: z.string().min(1).max(80).nullable(),
-  limitValueType: z.string().min(1).max(80).nullable(),
-  deductible: z.string().min(1).max(160).nullable(),
-  deductibleAmount: z.number().nonnegative().nullable(),
-  deductibleType: z.string().min(1).max(80).nullable(),
-  deductibleValueType: z.string().min(1).max(80).nullable(),
-  originalContent: z.string().min(1).max(4000).nullable(),
-  sourceExcerpt: z.string().min(1).max(4000).nullable(),
+  lineOfBusiness: LobSchema.nullable(),
+  limits: z
+    .array(
+      z.object({
+        kind: z.enum(REQUIREMENT_LIMIT_KINDS),
+        amount: z.number().nonnegative(),
+        label: z.string().min(1).max(160).nullable(),
+      }),
+    )
+    .max(12)
+    .nullable(),
+  maxDeductible: z
+    .object({
+      amount: z.number().nonnegative(),
+      label: z.string().min(1).max(160).nullable(),
+    })
+    .nullable(),
+  coverageForm: z.enum(["occurrence", "claims_made"]).nullable(),
+  retroactiveDateOnOrBefore: z.string().min(1).max(60).nullable(),
+  provisions: z.array(z.enum(REQUIREMENT_PROVISIONS)).max(8).nullable(),
+  requiredForms: z.array(z.string().min(1).max(40)).max(12).nullable(),
+  minAmBestRating: z.string().min(1).max(20).nullable(),
+  minAmBestFinancialSize: z.string().min(1).max(20).nullable(),
+  admittedRequired: z.boolean().nullable(),
+  conditionType: z.enum(REQUIREMENT_CONDITION_TYPES).nullable(),
+  noticeDays: z.number().int().nonnegative().nullable(),
+  sourceExcerpt: z.string().min(1).max(4000),
   sourcePageStart: z.number().int().positive().nullable(),
   sourcePageEnd: z.number().int().positive().nullable(),
-  evaluationTarget: z.enum(REQUIREMENT_EVALUATION_TARGETS).nullable(),
-  evaluationReason: z.string().min(1).max(240).nullable(),
 });
 
 const RequirementImportSchema = z.object({
-  requirements: z.array(RequirementSchema).max(24),
+  requirements: z.array(RequirementSchema).max(32),
 });
 
 type ImportedRequirement = z.infer<typeof RequirementSchema>;
 type ExistingRequirement = {
+  kind: string;
+  scope: string;
   title: string;
   requirementText: string;
+  lineOfBusiness?: string;
+  conditionType?: string;
 };
 type RequirementImportContext = {
   userId: Id<"users">;
@@ -64,9 +109,7 @@ type RequirementImportContext = {
 type ExtractedFileText = {
   text: string;
   parserBackend?: "liteparse" | "pdfjs" | "mammoth" | "plain_text";
-  parserVersion?: string;
   parsedAt?: number;
-  parsingMs?: number;
 };
 
 const MAX_SOURCE_CHARS = 40_000;
@@ -82,63 +125,75 @@ function decodeText(buffer: ArrayBuffer) {
   return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
 }
 
-function optionalString(value: string | null) {
+function optionalString(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed || undefined;
 }
 
-function optionalNumber(value: number | null) {
+function optionalNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
 }
 
+function scopeFromArgs(args: {
+  scope?: RequirementScope;
+  appliesTo?: RequirementScope | "both";
+}): RequirementScope {
+  if (args.scope) return args.scope;
+  return args.appliesTo === "own_org" ? "own_org" : "vendors";
+}
+
 function normalizeImportedRequirement(
   requirement: ImportedRequirement,
-  appliesTo: "vendors" | "own_org" | "both",
-  sourceType: "lease_agreement" | "client_contract" | "vendor_requirements" | "other",
+  defaultScope: RequirementScope,
 ) {
-  const sourceExcerpt =
-    optionalString(requirement.sourceExcerpt) ??
-    optionalString(requirement.originalContent);
-  const semantics = classifyRequirementSemantics({
-    appliesTo,
-    title: requirement.title,
-    category: requirement.category,
-    requirementText: requirement.requirementText,
-    name: optionalString(requirement.name),
-    coverageCode: optionalString(requirement.coverageCode),
-    limit: optionalString(requirement.limit),
-    limitAmount: optionalNumber(requirement.limitAmount),
-    deductible: optionalString(requirement.deductible),
-    deductibleAmount: optionalNumber(requirement.deductibleAmount),
-    originalContent: optionalString(requirement.originalContent),
-    sourceExcerpt,
-    sourceType,
-    evaluationTarget: requirement.evaluationTarget ?? undefined,
-    evaluationReason: optionalString(requirement.evaluationReason),
-  });
+  const kind = requirement.kind;
+  const scope = requirement.scope ?? defaultScope;
   return {
-    title: requirement.title,
-    category: requirement.category,
-    requirementText: requirement.requirementText,
-    name: optionalString(requirement.name),
-    coverageCode: optionalString(requirement.coverageCode),
-    limit: optionalString(requirement.limit),
-    limitAmount: optionalNumber(requirement.limitAmount),
-    limitType: optionalString(requirement.limitType),
-    limitValueType: optionalString(requirement.limitValueType),
-    deductible: optionalString(requirement.deductible),
-    deductibleAmount: optionalNumber(requirement.deductibleAmount),
-    deductibleType: optionalString(requirement.deductibleType),
-    deductibleValueType: optionalString(requirement.deductibleValueType),
-    originalContent: optionalString(requirement.originalContent),
-    sourceExcerpt,
+    kind,
+    scope,
+    title: requirement.title.trim(),
+    requirementText: requirement.requirementText.trim(),
+    lineOfBusiness:
+      kind === "coverage" ? optionalString(requirement.lineOfBusiness) : undefined,
+    limits:
+      kind === "coverage"
+        ? (requirement.limits ?? []).map((limit) => ({
+          kind: limit.kind,
+          amount: limit.amount,
+          label: optionalString(limit.label),
+        }))
+        : undefined,
+    maxDeductible:
+      kind === "coverage" && requirement.maxDeductible
+        ? {
+          amount: requirement.maxDeductible.amount,
+          label: optionalString(requirement.maxDeductible.label),
+        }
+        : undefined,
+    coverageForm: kind === "coverage" ? requirement.coverageForm ?? undefined : undefined,
+    retroactiveDateOnOrBefore:
+      kind === "coverage"
+        ? optionalString(requirement.retroactiveDateOnOrBefore)
+        : undefined,
+    provisions: kind === "coverage" ? requirement.provisions ?? undefined : undefined,
+    requiredForms: kind === "coverage" ? requirement.requiredForms ?? undefined : undefined,
+    minAmBestRating:
+      kind === "insurer" ? optionalString(requirement.minAmBestRating) : undefined,
+    minAmBestFinancialSize:
+      kind === "insurer"
+        ? optionalString(requirement.minAmBestFinancialSize)
+        : undefined,
+    admittedRequired:
+      kind === "insurer" ? requirement.admittedRequired ?? undefined : undefined,
+    conditionType:
+      kind === "condition" ? requirement.conditionType ?? "other" : undefined,
+    noticeDays:
+      kind === "condition" ? optionalNumber(requirement.noticeDays) : undefined,
+    sourceExcerpt: requirement.sourceExcerpt.trim(),
     sourcePageStart: optionalNumber(requirement.sourcePageStart),
     sourcePageEnd: optionalNumber(requirement.sourcePageEnd),
-    evaluationTarget: semantics.evaluationTarget,
-    evaluationReason: semantics.evaluationReason,
-    semanticReviewStatus: semantics.semanticReviewStatus,
   };
 }
 
@@ -147,22 +202,21 @@ async function extractPdfRequirementText(
   fileName?: string,
 ): Promise<ExtractedFileText> {
   const pdfBytes = new Uint8Array(buffer);
-  const documentId = fileName || "requirement-document";
   const liteParsedText = await tryBuildParsedPdfText({
     pdfBytes,
-    documentId,
+    documentId: fileName || "requirement-document",
     sourceKind: "attachment",
     maxChars: MAX_SOURCE_CHARS,
     timeoutMs: PDF_REQUIREMENT_WORKER_TIMEOUT_MS,
   });
-  if (liteParsedText) {
-    return {
-      text: liteParsedText,
-      parserBackend: "liteparse",
-      parsedAt: dayjs().valueOf(),
-    };
+  if (!liteParsedText) {
+    throw new Error("Could not extract text from the requirement PDF");
   }
-  throw new Error("Could not extract text from the requirement PDF");
+  return {
+    text: liteParsedText,
+    parserBackend: "liteparse",
+    parsedAt: dayjs().valueOf(),
+  };
 }
 
 async function extractDocxText(buffer: ArrayBuffer) {
@@ -185,10 +239,7 @@ async function extractFileText({
     return await extractPdfRequirementText(buffer, fileName);
   }
   if (type.includes("wordprocessingml") || lowerName.endsWith(".docx")) {
-    return {
-      text: await extractDocxText(buffer),
-      parserBackend: "mammoth",
-    };
+    return { text: await extractDocxText(buffer), parserBackend: "mammoth" };
   }
   if (
     type.startsWith("text/") ||
@@ -200,10 +251,7 @@ async function extractFileText({
     lowerName.endsWith(".csv") ||
     lowerName.endsWith(".json")
   ) {
-    return {
-      text: decodeText(buffer),
-      parserBackend: "plain_text",
-    };
+    return { text: decodeText(buffer), parserBackend: "plain_text" };
   }
   throw new Error(
     "Unsupported requirement document type. Use TXT, Markdown, PDF, DOCX, CSV, or JSON.",
@@ -213,50 +261,57 @@ async function extractFileText({
 function buildPrompt({
   sourceText,
   existingRequirements,
-  appliesTo,
+  scope,
 }: {
   sourceText: string;
   existingRequirements: ExistingRequirement[];
-  appliesTo: "vendors" | "own_org" | "both";
+  scope: RequirementScope;
 }) {
   const existing = existingRequirements.length
     ? existingRequirements
         .map(
           (requirement) =>
-            `- ${requirement.title}: ${requirement.requirementText}`,
+            `- ${requirement.kind}/${requirement.scope}/${requirement.lineOfBusiness ?? requirement.conditionType ?? "n/a"}: ${requirement.title}: ${requirement.requirementText}`,
         )
         .join("\n")
     : "None";
+  const commonLobs = COMMON_COMMERCIAL_LOBS.map(
+    (code) => `${code}: ${ACORD_LOB_LABELS[code]}`,
+  ).join("\n");
 
-  const scope =
-    appliesTo === "own_org"
-      ? "internal organization insurance requirements"
-      : appliesTo === "both"
-        ? "insurance requirements that apply to both vendors and the organization"
-        : "vendor insurance requirements";
+  return `Create a concise, source-backed insurance compliance rule set from the source text.
 
-  return `Create a concise checklist of ${scope} from the source text.
+Default scope: ${scope}. Use "vendors" for requirements vendors/contractors must satisfy. Use "own_org" for requirements this organization must satisfy.
 
-Rules:
-- Extract only actionable insurance compliance requirements.
-- Preserve exact limits, deductibles, endorsements, waiver, additional insured, primary/noncontributory, rating, cancellation notice, and expiration requirements when present.
-- Store each requirement in the same shape as a policy coverage: name, coverageCode, limit, limitType, limitValueType, deductible, deductibleType, deductibleValueType, and originalContent when available.
-- Treat appliesTo as who owns the obligation, not what evidence proves it. The source-level default is ${appliesTo}; preserve that ownership unless the row clearly belongs elsewhere.
-- For each row set evaluationTarget to one of: own_policy, connected_vendor_policy, subcontractor_policy, manual_control, not_policy_checkable.
-- Use own_policy when the current organization's policy evidence can prove the row, including customer-imposed E&O, cyber, GL, auto, workers comp, umbrella, property, limit, deductible, retroactive date, or coverage requirements.
-- Use connected_vendor_policy when connected vendors/contractors must prove their own policy evidence.
-- Use subcontractor_policy when the source requires approved subcontractors, downstream partners, sub-producers, or independent contractors to maintain insurance.
-- Use manual_control for certificate production, proof/evidence delivery, notice/reporting, cancellation/non-renewal notice, insurer rating, admitted/licensed/authorized insurer, or other procedural obligations that cannot be proven by one policy coverage match.
-- Use not_policy_checkable only for useful context that should not be scored as a compliance item.
-- Set evaluationReason to a short explanation of why that evidence target was chosen.
-- Set sourceExcerpt to the shortest exact source language that supports the requirement. For PDFs, set sourcePageStart/sourcePageEnd when the page is obvious from page markers; otherwise leave pages null.
-- When a minimum coverage amount is stated, set limit to the original limit text and limitAmount to the numeric dollar amount. Example: "$1M per occurrence" becomes limitAmount 1000000.
-- When a deductible or retention amount is stated, set deductible to the original deductible text and deductibleAmount to the numeric dollar amount.
-- Merge duplicates and split unrelated insurance lines into separate requirements.
-- Do not invent requirements not supported by the source.
-- Use short titles that make scanning easy.
-- Choose the closest category from: ${CATEGORY_VALUES.join(", ")}.
-- Avoid duplicating existing requirements.
+Each rule must be one of:
+- coverage: policy coverage requirement that can be checked against structured policy coverages.
+- insurer: carrier/insurer standard such as AM Best rating, financial size, admitted/licensed status. These are manually verified in v1.
+- condition: administrative obligation such as cancellation notice, certificate delivery, claims reporting, or subcontractor insurance. These are manually verified in v1.
+
+Coverage rules:
+- Set lineOfBusiness to an ACORD code. Use one of these common commercial codes when possible:
+${commonLobs}
+- Split unrelated insurance lines into separate rules.
+- Extract each required limit into limits[] with kind, amount, and original label.
+- Use limit kinds only from: ${REQUIREMENT_LIMIT_KINDS.join(", ")}.
+- Extract provisions from: ${REQUIREMENT_PROVISIONS.join(", ")}.
+- Extract required endorsement/form numbers such as CG 20 10 or CG 20 37 into requiredForms.
+- Extract max deductible/retention only when the source states a ceiling.
+
+Insurer rules:
+- Store AM Best rating and financial size fields when stated.
+- Keep carrier ratings manual; do not invent rating data.
+
+Condition rules:
+- Use conditionType from: ${REQUIREMENT_CONDITION_TYPES.join(", ")}.
+- Use noticeDays for cancellation/nonrenewal notice periods.
+
+For every rule:
+- sourceExcerpt is required and should be the shortest exact source language supporting the rule.
+- Set source pages when obvious from page markers; otherwise leave null.
+- Do not invent unsupported requirements.
+- Merge duplicates and avoid duplicating existing requirements.
+- Keep titles short and scannable.
 
 Existing active requirements:
 ${existing}
@@ -274,7 +329,8 @@ async function runRequirementImport(
     fileName?: string;
     contentType?: string;
     sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
-    appliesTo?: "vendors" | "own_org" | "both";
+    scope?: RequirementScope;
+    appliesTo?: RequirementScope | "both";
   },
   context: RequirementImportContext,
   titlePrefix: "Pasted requirements" | "Mailbox requirements",
@@ -297,9 +353,9 @@ async function runRequirementImport(
   }
 
   sourceText = truncateSource(sourceText);
-  if (!sourceText)
+  if (!sourceText) {
     throw new Error("Paste text or upload a requirement document first");
-
+  }
   const sourceType =
     args.sourceType ??
     (args.fileName?.toLowerCase().includes("lease")
@@ -307,6 +363,8 @@ async function runRequirementImport(
       : args.fileName?.toLowerCase().includes("contract")
         ? "client_contract"
         : "vendor_requirements");
+  const scope = scopeFromArgs(args);
+
   const sourceDocumentId: Id<"requirementSourceDocuments"> =
     await ctx.runMutation(
       internal.compliance.createRequirementSourceDocumentInternal,
@@ -322,20 +380,18 @@ async function runRequirementImport(
           `${titlePrefix} ${dayjs().format("YYYY-MM-DD HH:mm")}`,
         sourceTextExcerpt: sourceText.slice(0, 4000),
         parserBackend: fileExtraction?.parserBackend,
-        parserVersion: fileExtraction?.parserVersion,
         parsedAt: fileExtraction?.parsedAt,
-        parsingMs: fileExtraction?.parsingMs,
       },
     );
 
   const result = await generateObjectForOrg(ctx, args.orgId, "requirement_extraction", {
     schema: RequirementImportSchema,
     system:
-      "You convert contract and certificate insurance language into coverage-shaped structured compliance requirements for Glass.",
+      "You convert contract, lease, certificate, and vendor insurance language into typed ACORD-25-style compliance rules for Glass.",
     prompt: buildPrompt({
       sourceText,
       existingRequirements: context.existingRequirements,
-      appliesTo: args.appliesTo ?? "vendors",
+      scope,
     }),
   });
 
@@ -344,16 +400,12 @@ async function runRequirementImport(
     {
       orgId: args.orgId,
       userId: context.userId,
-      appliesTo: args.appliesTo,
+      scope,
       sourceDocumentId,
       sourceDocumentName: args.fileName || fallbackSourceDocumentName,
       sourceType,
       requirements: result.object.requirements.map((requirement) =>
-        normalizeImportedRequirement(
-          requirement,
-          args.appliesTo ?? "vendors",
-          sourceType,
-        ),
+        normalizeImportedRequirement(requirement, scope),
       ),
     },
   );
@@ -368,14 +420,8 @@ export const importRequirements = action({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
-    sourceType: v.optional(
-      v.union(
-        v.literal("lease_agreement"),
-        v.literal("client_contract"),
-        v.literal("vendor_requirements"),
-        v.literal("other"),
-      ),
-    ),
+    sourceType: v.optional(sourceDocumentTypeValidator),
+    scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
@@ -389,11 +435,8 @@ export const importRequirements = action({
   }> => {
     const context: RequirementImportContext = await ctx.runQuery(
       internal.compliance.getRequirementImportContextInternal,
-      {
-        orgId: args.orgId,
-      },
+      { orgId: args.orgId },
     );
-
     return await runRequirementImport(
       ctx,
       args,
@@ -412,14 +455,8 @@ export const importRequirementsInternal = internalAction({
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
-    sourceType: v.optional(
-      v.union(
-        v.literal("lease_agreement"),
-        v.literal("client_contract"),
-        v.literal("vendor_requirements"),
-        v.literal("other"),
-      ),
-    ),
+    sourceType: v.optional(sourceDocumentTypeValidator),
+    scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
@@ -433,12 +470,8 @@ export const importRequirementsInternal = internalAction({
   }> => {
     const context: RequirementImportContext = await ctx.runQuery(
       internal.compliance.getRequirementImportContextForUserInternal,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-      },
+      { orgId: args.orgId, userId: args.userId },
     );
-
     return await runRequirementImport(
       ctx,
       args,

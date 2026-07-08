@@ -1,10 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { getOrgAccessForQuery } from "./lib/access";
-import {
-  requirementEvaluationTargetLabel,
-  requirementSemantics,
-} from "./lib/requirementSemantics";
 import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 
 function policyLabel(policy: {
@@ -88,25 +84,22 @@ export const list = query({
             .filter(Boolean)
             .join(" · "),
         })),
-      requirements: requirements.map((requirement) => {
-        const semantics = requirementSemantics(requirement);
-        return {
+      requirements: requirements.map((requirement) => ({
           kind: "requirement" as const,
           id: requirement._id,
           label: requirement.title,
           sublabel: [
-            requirement.appliesTo === "own_org"
+            requirement.scope === "own_org"
               ? "My requirement"
-              : requirement.appliesTo === "both"
-                ? "My + vendor requirement"
-                : "Vendor requirement",
-            requirementEvaluationTargetLabel(semantics.evaluationTarget),
-            requirement.category?.replace(/_/g, " "),
+              : "Vendor requirement",
+            requirement.kind,
+            requirement.lineOfBusiness
+              ? lobLabel(requirement.lineOfBusiness)
+              : undefined,
           ]
             .filter(Boolean)
             .join(" · "),
-        };
-      }),
+        })),
       mailboxes,
     };
   },

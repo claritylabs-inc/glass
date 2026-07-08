@@ -11,7 +11,7 @@ type VendorComplianceCheck = {
   requirementId?: string;
   title?: string;
   status?: string;
-  requiredLimit?: string;
+  requiredLimits?: Array<{ kind?: string; amount?: number; label?: string }>;
   expiresAt?: string;
   daysUntilExpiration?: number;
   notes?: string;
@@ -53,7 +53,9 @@ function normalizeVendorComplianceRows(data: unknown): VendorComplianceRow[] {
               requirementId: typeof check.requirementId === "string" ? check.requirementId : undefined,
               title: typeof check.title === "string" ? check.title : "Requirement",
               status: typeof check.status === "string" ? check.status : undefined,
-              requiredLimit: typeof check.requiredLimit === "string" ? check.requiredLimit : undefined,
+              requiredLimits: Array.isArray(check.requiredLimits)
+                ? (check.requiredLimits as VendorComplianceCheck["requiredLimits"])
+                : undefined,
               expiresAt: typeof check.expiresAt === "string" ? check.expiresAt : undefined,
               daysUntilExpiration:
                 typeof check.daysUntilExpiration === "number" ? check.daysUntilExpiration : undefined,
@@ -100,15 +102,28 @@ function checkStatusMeta(status?: string) {
         icon: AlertTriangle,
         className: "border-red-500/20 bg-red-500/10 text-red-400",
       };
-    case "missing":
-    case "needs_review":
+    case "unverified":
+      return {
+        label: "Unverified",
+        icon: AlertTriangle,
+        className: "border-amber-500/20 bg-amber-500/10 text-amber-400",
+      };
+    case "not_met":
     default:
       return {
-        label: status === "needs_review" ? "Needs review" : "Not met",
+        label: status === "unverified" ? "Unverified" : "Not met",
         icon: X,
         className: "border-red-500/20 bg-red-500/10 text-red-400",
       };
   }
+}
+
+function formatRequiredLimits(limits?: VendorComplianceCheck["requiredLimits"]) {
+  if (!limits?.length) return undefined;
+  return limits
+    .map((limit) => limit.label ?? (typeof limit.amount === "number" ? formatLimitAmount(limit.amount) : undefined))
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function formatLimitAmount(value?: number) {
@@ -168,6 +183,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                   const StatusIcon = meta.icon;
                   const policy = check.matchedPolicy;
                   const detectedLimit = formatLimitAmount(policy?.detectedLimitAmount);
+                  const requiredLimits = formatRequiredLimits(check.requiredLimits);
                   return (
                     <div key={`${check.requirementId ?? check.title ?? "check"}-${checkIndex}`} className="px-3 py-3">
                       <div className="flex flex-wrap items-center gap-2">
@@ -180,7 +196,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                         </Badge>
                       </div>
                       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-label text-muted-foreground/55">
-                        {check.requiredLimit ? <span>Required: {check.requiredLimit}</span> : null}
+                        {requiredLimits ? <span>Required: {requiredLimits}</span> : null}
                         {policy?.coverageLimit ? <span>Coverage: {policy.coverageLimit}</span> : null}
                         {detectedLimit ? <span>Detected: {detectedLimit}</span> : null}
                         {policy?.expirationDate ? <span>Expires: {policy.expirationDate}</span> : null}

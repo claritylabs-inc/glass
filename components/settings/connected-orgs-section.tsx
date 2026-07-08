@@ -89,11 +89,13 @@ type VendorComplianceCheck = {
   requirement: {
     _id: Id<"insuranceRequirements">;
     title: string;
-    category: string;
-    limit?: string;
+    kind: "coverage" | "insurer" | "condition";
+    lineOfBusiness?: string;
+    limits?: Array<{ kind: string; amount: number; label?: string }>;
+    provisions?: string[];
     requirementText: string;
   };
-  status: "met" | "missing" | "expiring_soon" | "expired";
+  status: "met" | "not_met" | "expiring_soon" | "expired" | "unverified";
   expiresAt?: string;
   daysUntilExpiration?: number;
   notes?: string;
@@ -130,6 +132,17 @@ function VendorStatusBadge({
         className="border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
       >
         active / compliant
+      </Badge>
+    );
+  }
+  if (status === "unverified") {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-amber-500/25 bg-amber-500/10 text-amber-500"
+      >
+        <AlertCircle className="h-3 w-3" />
+        Unverified
       </Badge>
     );
   }
@@ -244,11 +257,13 @@ function VendorComplianceChecklist({
               <p className="line-clamp-2 text-label text-muted-foreground">
                 {check.requirement.requirementText}
               </p>
-              {check.requirement.limit ? (
+              {check.requirement.limits?.length ? (
                 <p className="text-label text-muted-foreground/75">
                   Required limit:{" "}
                   <span className="text-foreground">
-                    {check.requirement.limit}
+                    {check.requirement.limits
+                      .map((limit) => limit.label ?? formatMoney(limit.amount) ?? limit.amount)
+                      .join(" · ")}
                   </span>
                 </p>
               ) : null}

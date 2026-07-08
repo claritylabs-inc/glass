@@ -145,7 +145,7 @@ describe("connected email surfaces", () => {
     expect(mailboxTask).toContain("api.actions.connectedEmail.importPolicyAttachments");
     expect(mailboxTask).toContain("api.actions.connectedEmail.importRequirementAttachments");
     expect(mailboxTask).toContain('includeEmailBody: true');
-    expect(mailboxTask).toContain('appliesTo === "vendors" ? "vendor_requirements" : "other"');
+    expect(mailboxTask).toContain('scope === "vendors" ? "vendor_requirements" : "other"');
   });
 
   it("keeps connected mailboxes on a dedicated email settings section with provider presets", () => {

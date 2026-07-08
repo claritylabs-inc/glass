@@ -29,7 +29,7 @@ import { orgLabelForScope, type AgentScope } from "./agentScope";
 import { searchPolicyDocumentWithSourceSpans } from "./policyLookup";
 import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
 import { buildVendorComplianceTools } from "./vendorComplianceTools";
-import type { RequirementEvaluationTarget } from "./requirementSemantics";
+import type { RequirementKind, RequirementScope } from "./complianceTypes";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 type AgentToolSurface = "web" | "email" | "imessage" | "mcp";
@@ -345,8 +345,8 @@ export function buildAgentToolExecutors(
       ...lookupComplianceRequirements,
       execute: async (params: {
         query?: string;
-        appliesTo?: "vendors" | "own_org" | "both" | "all";
-        evaluationTarget?: RequirementEvaluationTarget | "all";
+        scope?: RequirementScope | "all";
+        kind?: RequirementKind | "all";
       }) => {
         const blocks: string[] = [];
         for (const readOrgId of options.readOrgIds ??
