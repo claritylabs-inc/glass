@@ -32,15 +32,20 @@ export function EntityPreviewPanel({
   const dragFrame = useRef<number | null>(null);
   const pendingWidth = useRef<number | null>(null);
   const [headerInfo, setHeaderInfo] = useState<{
+    policyId: string;
     carrier: string;
     policyNum?: string;
   } | null>(null);
-  const [headerActions, setHeaderActions] = useState<{
+  const [footerActions, setFooterActions] = useState<{
     fileUrl?: string;
     policyId: string;
     page?: number;
     highlightBoxes?: HighlightBox[];
   } | null>(null);
+  const currentHeaderInfo =
+    preview && headerInfo?.policyId === preview.id ? headerInfo : null;
+  const currentFooterActions =
+    preview && footerActions?.policyId === preview.id ? footerActions : null;
 
   useEffect(() => {
     widthRef.current = width;
@@ -124,14 +129,14 @@ export function EntityPreviewPanel({
             {/* Toolbar */}
             <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0 gap-3">
               <div className="min-w-0 flex-1">
-                {headerInfo ? (
+                {currentHeaderInfo ? (
                   <div className="flex items-baseline gap-2 min-w-0">
                     <span className="text-base font-medium text-foreground truncate">
-                      {headerInfo.carrier}
+                      {currentHeaderInfo.carrier}
                     </span>
-                    {headerInfo.policyNum && (
+                    {currentHeaderInfo.policyNum && (
                       <span className="min-w-0 max-w-[45%] truncate text-base text-muted-foreground/60">
-                        {headerInfo.policyNum}
+                        {currentHeaderInfo.policyNum}
                       </span>
                     )}
                   </div>
@@ -141,18 +146,6 @@ export function EntityPreviewPanel({
                   </span>
                 )}
               </div>
-
-              {headerActions && (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {headerActions.fileUrl && (
-                    <PolicyPreviewButtons
-                      fileUrl={headerActions.fileUrl}
-                      policyId={headerActions.policyId}
-                      page={headerActions.page}
-                    />
-                  )}
-                </div>
-              )}
 
               <button
                 type="button"
@@ -172,9 +165,22 @@ export function EntityPreviewPanel({
                 citedCoverageNames={preview.citedCoverageNames}
                 citedSourceSpanIds={preview.citedSourceSpanIds}
                 onHeaderInfo={setHeaderInfo}
-                onHeaderActions={setHeaderActions}
+                onFooterActions={setFooterActions}
               />
             </div>
+
+            {currentFooterActions && (
+              <div className="shrink-0 border-t border-foreground/6 px-4 py-3">
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  <PolicyPreviewButtons
+                    fileUrl={currentFooterActions.fileUrl}
+                    policyId={currentFooterActions.policyId}
+                    page={currentFooterActions.page}
+                    highlightBoxes={currentFooterActions.highlightBoxes}
+                  />
+                </div>
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}
@@ -189,7 +195,7 @@ function PolicyPreviewButtons({
   page,
   highlightBoxes,
 }: {
-  fileUrl: string;
+  fileUrl?: string;
   policyId: string;
   page?: number;
   highlightBoxes?: HighlightBox[];
@@ -198,18 +204,18 @@ function PolicyPreviewButtons({
 
   return (
     <>
-      <PillButton
-        size="compact"
-        variant="secondary"
-        onClick={() => openWithUrl(fileUrl, page, highlightBoxes)}
-      >
-        View PDF
-      </PillButton>
-      <a href={`/policies/${policyId}`} className="no-underline">
-        <PillButton size="compact" variant="secondary">
-          Details
+      {fileUrl && (
+        <PillButton
+          size="compact"
+          variant="secondary"
+          onClick={() => openWithUrl(fileUrl, page, highlightBoxes)}
+        >
+          View PDF
         </PillButton>
-      </a>
+      )}
+      <PillButton href={`/policies/${policyId}`} size="compact" variant="secondary">
+        Details
+      </PillButton>
     </>
   );
 }
