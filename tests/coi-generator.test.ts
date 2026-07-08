@@ -18,7 +18,7 @@ describe("policyToCoiData", () => {
       insuredName: "Terrence Wang",
     });
 
-    expect(data.title).toBe("CERTIFICATE OF INSURANCE");
+    expect(data.title).toBe("CERTIFICATE OF LIABILITY INSURANCE");
     expect(data.coverages).toHaveLength(1);
     expect(data.coverages[0]?.type).toBe("SEE POLICY");
   });

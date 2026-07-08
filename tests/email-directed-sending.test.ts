@@ -155,10 +155,6 @@ describe("directed email sending", () => {
       join(__dirname, "..", "app/settings/page.tsx"),
       "utf-8",
     );
-    const settingsSectionsSource = readFileSync(
-      join(__dirname, "..", "lib/settings-sections.ts"),
-      "utf-8",
-    );
     const sidebarSource = readFileSync(
       join(__dirname, "..", "components/app-sidebar.tsx"),
       "utf-8",

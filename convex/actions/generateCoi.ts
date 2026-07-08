@@ -170,13 +170,18 @@ function buildCoiFileName(
   return `${form} - ${holder} - ${policyRef}.pdf`;
 }
 
-function policyTypesForCertificate(policy: Record<string, any>) {
-  const profileTypes = Array.isArray(policy.operationalProfile?.policyTypes)
-    ? policy.operationalProfile.policyTypes
+function linesOfBusinessForCertificate(policy: Record<string, any>) {
+  const profileLinesOfBusiness = Array.isArray(policy.operationalProfile?.linesOfBusiness)
+    ? policy.operationalProfile.linesOfBusiness
     : [];
-  const policyTypes = Array.isArray(policy.policyTypes) ? policy.policyTypes : [];
-  return [...profileTypes, ...policyTypes].filter(
-    (type): type is string => typeof type === "string" && type.trim().length > 0,
+  const linesOfBusiness = Array.isArray(policy.linesOfBusiness)
+    ? policy.linesOfBusiness
+    : [];
+  return [
+    ...profileLinesOfBusiness,
+    ...linesOfBusiness,
+  ].filter(
+    (line): line is string => typeof line === "string" && line.trim().length > 0,
   );
 }
 
@@ -377,7 +382,7 @@ export const run = internalAction({
       if (policy.orgId !== args.orgId) throw new Error("Policy not found for organization");
 
       const formCode = args.formCode ?? selectCertificateForm({
-        policyTypes: policyTypesForCertificate(policy as Record<string, any>),
+        linesOfBusiness: linesOfBusinessForCertificate(policy as Record<string, any>),
         holderRelationship: args.holderRelationship,
         operationalProfile: (policy as Record<string, unknown>).operationalProfile,
       });

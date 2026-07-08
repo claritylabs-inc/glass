@@ -6,17 +6,14 @@ describe("selectCertificateForm", () => {
   it("honors explicit form hints", () => {
     expect(
       selectCertificateForm({
-        policyTypes: ["general_liability"],
+        linesOfBusiness: ["CGL"],
         formHint: "ACORD 28",
       }),
     ).toBe("acord28");
   });
 
   it("routes flood policies to ACORD 29", () => {
-    expect(selectCertificateForm({ policyTypes: ["flood_nfip"] })).toBe(
-      "acord29",
-    );
-    expect(selectCertificateForm({ policyTypes: ["flood_private"] })).toBe(
+    expect(selectCertificateForm({ linesOfBusiness: ["FLOOD"] })).toBe(
       "acord29",
     );
   });
@@ -24,35 +21,35 @@ describe("selectCertificateForm", () => {
   it("uses evidence forms for property interest holders", () => {
     expect(
       selectCertificateForm({
-        policyTypes: ["commercial_property"],
+        linesOfBusiness: ["PROPC"],
         holderRelationship: "mortgagee",
       }),
     ).toBe("acord28");
     expect(
       selectCertificateForm({
-        policyTypes: ["homeowners_ho3"],
+        linesOfBusiness: ["HOME"],
         holderRelationship: "loss_payee",
       }),
     ).toBe("acord27");
   });
 
   it("uses ACORD 24 for plain property certificates", () => {
-    expect(selectCertificateForm({ policyTypes: ["builders_risk"] })).toBe(
+    expect(selectCertificateForm({ linesOfBusiness: ["INMRC"] })).toBe(
       "acord24",
     );
   });
 
   it("routes marine, garage, and default liability forms", () => {
-    expect(selectCertificateForm({ policyTypes: ["ocean_marine"] })).toBe(
+    expect(selectCertificateForm({ linesOfBusiness: ["COMAR"] })).toBe(
       "acord31",
     );
     expect(
       selectCertificateForm({
-        policyTypes: ["commercial_auto"],
+        linesOfBusiness: ["AUTOB"],
         operationalProfile: { operations: "auto repair garage" },
       }),
     ).toBe("acord30");
-    expect(selectCertificateForm({ policyTypes: ["general_liability"] })).toBe(
+    expect(selectCertificateForm({ linesOfBusiness: ["CGL"] })).toBe(
       "acord25",
     );
   });
