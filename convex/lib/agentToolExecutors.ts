@@ -544,65 +544,6 @@ export function buildAgentToolExecutors(
             requestText: params.requestText,
             requestedEndorsements: params.requestedEndorsements,
           };
-          const hasMarkedEndorsementRequest =
-            Boolean(params.additionalInsuredName?.trim()) ||
-            Boolean(params.requestText?.trim()) ||
-            (params.requestedEndorsements?.length ?? 0) > 0;
-          if (!params.explicitReissue && !hasMarkedEndorsementRequest) {
-            const reusable = await ctx.runQuery(
-              (internal as any).certificateLifecycle
-                .findReusableIssuedVersionByHolderNameInternal,
-              {
-                orgId: policy.orgId,
-                policyId: policy._id,
-                holderName,
-                requestKind: "holder",
-              },
-            );
-            if (reusable?.fileId) {
-              const attachment = {
-                filename: reusable.fileName ?? "certificate-of-insurance.pdf",
-                contentType: "application/pdf",
-                size: reusable.fileSize ?? 0,
-                fileId: reusable.fileId as Id<"_storage">,
-              };
-              await options.onResponseAttachment?.(attachment);
-              const artifactData = {
-                status: "existing",
-                policyId: policy._id,
-                policyCertificateId: reusable.policyCertificateId,
-                certificateVersionId: reusable._id,
-                holderId: reusable.holderId,
-                versionNumber: reusable.versionNumber,
-                requestKind: reusable.requestKind ?? "holder",
-                additionalInsuredName: reusable.additionalInsuredName,
-              };
-              const workflowOutcome = certificateGeneratedOutcome({
-                params: workflowParams,
-                generated: {
-                  status: "existing",
-                  certificateVersionId: reusable._id,
-                },
-                attachment,
-                artifactData,
-              });
-              const output = {
-                message: workflowOutcome.comms.headline,
-                attachment,
-                holderId: reusable.holderId,
-                policyCertificateId: reusable.policyCertificateId,
-                certificateVersionId: reusable._id,
-                policyVersionId: reusable.policyVersionId,
-                versionNumber: reusable.versionNumber,
-                workflowOutcome,
-              };
-              await options.onToolArtifact?.({
-                type: "certificate_result",
-                data: artifactData,
-              });
-              return output;
-            }
-          }
           const generated = await ctx.runAction(
             internal.certificates.generateForOrg,
             {
@@ -628,6 +569,27 @@ export function buildAgentToolExecutors(
             },
           );
           if (!generated) return COI_GENERATION_FAILED_MESSAGE;
+          if (generated.status === "ambiguous_certificate_holder") {
+            const workflowOutcome = certificateRecoverableOutcome({
+              params: workflowParams,
+              status: generated.status,
+              message: generated.message,
+              nextAction: "return_existing_certificate",
+              artifactData: {
+                status: generated.status,
+                policyId: policy._id,
+                reason: generated.reason,
+                candidates: generated.candidates,
+              },
+            });
+            return {
+              message: generated.message,
+              status: generated.status,
+              reason: generated.reason,
+              candidates: generated.candidates,
+              workflowOutcome,
+            };
+          }
           if (generated.status === "held_policy_change_required") {
             const output = {
               message: generated.message,

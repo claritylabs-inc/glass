@@ -61,11 +61,33 @@ describe("simplified certificate request routing", () => {
     expect(certificates).toContain("unsupportedEndorsementGate(requiredChanges)");
     expect(certificates).not.toContain("createFromChatInternal");
     expect(certificates).toContain("buildEndorsementRequestEmail");
-    expect(certificates).toContain("findReusableIssuedVersionInternal");
+    expect(certificates).toContain("findIssuedCertificateHolderCandidatesInternal");
     expect(certificates).toContain("args.forceReissue");
     expect(readFileSync(join(ROOT, "convex/actions/generateCoi.ts"), "utf-8")).toContain(
       "applyEndorsementsToCertificateData",
     );
+  });
+
+  it("routes same-holder reuse and explicit reissue through the lifecycle resolver", () => {
+    const certificates = readFileSync(join(ROOT, "convex/certificates.ts"), "utf-8");
+    const lifecycle = readFileSync(join(ROOT, "convex/certificateLifecycle.ts"), "utf-8");
+    const ui = readFileSync(
+      join(ROOT, "components/certificates/certificate-workspace.tsx"),
+      "utf-8",
+    );
+    const policyPage = readFileSync(
+      join(ROOT, "app/policies/[id]/policy-detail-body.tsx"),
+      "utf-8",
+    );
+
+    expect(certificates).toContain("resolveDeterministicCertificateHolder");
+    expect(certificates).toContain("matchedIssuedCandidate && !args.forceReissue");
+    expect(certificates).toContain("matchedIssuedCandidate?.data.policyCertificateId");
+    expect(certificates).toContain("status: \"ambiguous_certificate_holder\"");
+    expect(lifecycle).toContain("cleanupDuplicatePolicyCertificatesForOperator");
+    expect(lifecycle).toContain("dryRun = args.dryRun ?? true");
+    expect(ui).toContain("Reissue");
+    expect(policyPage).toContain("forceReissue: true");
   });
 });
 

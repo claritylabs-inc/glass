@@ -56,14 +56,20 @@ describe("workflow orchestration contract", () => {
 describe("workflow orchestration wiring", () => {
   it("keeps certificate workflow sequencing in code rather than prompt-only behavior", () => {
     const executors = read("convex/lib/agentToolExecutors.ts");
-    const existingLookup = executors.indexOf(
-      "findReusableIssuedVersionByHolderNameInternal",
-    );
     const generator = executors.indexOf("internal.certificates.generateForOrg");
+    const certificates = read("convex/certificates.ts");
+    const lifecycleCandidates = certificates.indexOf(
+      "findIssuedCertificateHolderCandidatesInternal",
+    );
+    const holderUpsert = certificates.indexOf("certificateHolders.upsertInternal");
 
-    expect(existingLookup).toBeGreaterThan(-1);
     expect(generator).toBeGreaterThan(-1);
-    expect(existingLookup).toBeLessThan(generator);
+    expect(executors).not.toContain("findReusableIssuedVersionByHolderNameInternal");
+    expect(executors).toContain("ambiguous_certificate_holder");
+    expect(lifecycleCandidates).toBeGreaterThan(-1);
+    expect(holderUpsert).toBeGreaterThan(-1);
+    expect(lifecycleCandidates).toBeLessThan(holderUpsert);
+    expect(certificates).not.toContain("reusableHolderMatches");
     expect(executors).not.toContain("certificateAddressRequiredOutcome");
   });
 
