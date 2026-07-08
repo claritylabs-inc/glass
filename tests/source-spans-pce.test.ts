@@ -140,13 +140,15 @@ describe("source spans and policy update backend surfaces", () => {
     const referenceCards = read("components/context-reference-card.tsx");
 
     expect(threadContent).toContain("function MessageFooterActions");
-    expect(threadContent).toContain("toolCalls.length} tool");
+    expect(threadContent).toContain("MessageMetaTag");
+    expect(threadContent).toContain('label={toolCalls.length === 1 ? "Tool" : "Tools"}');
+    expect(threadContent).toContain("count={toolCalls.length}");
     expect(threadContent).toContain("msg.usedTools ?? []");
     expect(threadContent).toContain("relatedEmailMessages.flatMap");
     expect(referenceCards).toContain("function PolicyCitation");
     expect(referenceCards).toContain("function PolicySourcePill");
-    expect(referenceCards).toContain("{refs.length} sources");
-    expect(referenceCards).toContain("refs.length === 1");
+    expect(referenceCards).toContain("index: number");
+    expect(referenceCards).toContain('<span className="text-muted-foreground/35">{index}</span>');
     expect(referenceCards).not.toContain(">Sources<");
     expect(threadContent).not.toContain("Hide tool calls");
   });

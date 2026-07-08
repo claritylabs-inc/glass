@@ -130,7 +130,8 @@ describe("connected email surfaces", () => {
     expect(threadContent).toContain("mailboxTaskDisplayName");
     expect(mailboxTask).toContain("Mailbox search - ${uniqueAccounts[0]}");
     expect(threadContent).toContain("setIsMailboxExpanded");
-    expect(threadContent).toContain("{mailboxTasks.length} background agents");
+    expect(threadContent).toContain('label="Background agents"');
+    expect(threadContent).toContain("count={mailboxTasks.length}");
     expect(threadContent).toContain('<span className="text-muted-foreground/35">{index + 1}</span>');
     expect(threadContent).not.toContain("<MailboxTaskArtifacts\n                  artifacts={mailboxArtifacts}");
     expect(threadContent).not.toContain("AgentProcessingActivity\n            label={toolLabel}\n            isStale={isStale}\n            backgroundProcessCount={backgroundProcessCount}\n          />\n          {mailboxArtifacts.length > 0 ? (");
