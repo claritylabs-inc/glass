@@ -1100,6 +1100,9 @@ export default defineSchema({
         state: v.optional(v.string()),
         zip: v.optional(v.string()),
         country: v.optional(v.string()),
+        documentNodeId: v.optional(v.string()),
+        sourceSpanIds: v.optional(v.array(v.string())),
+        sourceTextHash: v.optional(v.string()),
       }),
     ),
     insuredEntityType: v.optional(v.string()), // corporation, llc, partnership, etc.
@@ -1726,6 +1729,8 @@ export default defineSchema({
     formCode: v.optional(certificateFormCodeValidator),
     lastIssuedAt: v.optional(v.number()),
     source: v.optional(certificateSourceValidator),
+    archivedAt: v.optional(v.number()),
+    archivedByUserId: v.optional(v.id("users")),
     createdByUserId: v.optional(v.id("users")),
     updatedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),

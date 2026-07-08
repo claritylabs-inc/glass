@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
+import { getOrgAccess, getPolicyAccessForQuery, type OrgAccess } from "./lib/access";
 import {
   holderSnapshot,
   policyCertificateDedupeKey,
@@ -53,6 +53,18 @@ type IssuedCertificateCandidate = {
   issuedAt?: number;
   createdAt: number;
 };
+
+function assertCanWriteCertificates(access: OrgAccess) {
+  if (access.accessType === "connected_client") {
+    throw new Error("Connected client access is read-only.");
+  }
+}
+
+function isOpenWorkflowJobStatus(status: Doc<"certificateWorkflowJobs">["status"]) {
+  return status === "review_required" ||
+    status === "blocked_missing_contact" ||
+    status === "sending";
+}
 
 async function nextCertificateVersionNumber(ctx: ReadCtx, certificateId: Id<"policyCertificates">) {
   const latest = await ctx.db
@@ -265,13 +277,100 @@ export const listVersionsInternal = internalQuery({
     const scoped = rows
       .filter((row) => row.orgId === args.orgId)
       .sort((left, right) => right.createdAt - left.createdAt);
+    const parentIds = Array.from(new Set(scoped.map((row) => row.certificateId)));
+    const parents = new Map(
+      await Promise.all(
+        parentIds.map(async (certificateId) =>
+          [certificateId, await ctx.db.get(certificateId)] as const,
+        ),
+      ),
+    );
+    const visible = scoped.filter((version) =>
+      parents.get(version.certificateId)?.status !== "archived",
+    );
     return await Promise.all(
-      scoped.map(async (version) => ({
+      visible.map(async (version) => ({
         ...version,
         holder: await ctx.db.get(version.holderId),
         url: version.fileId ? await ctx.storage.getUrl(version.fileId) : null,
       })),
     );
+  },
+});
+
+export const archive = mutation({
+  args: { certificateId: v.id("policyCertificates") },
+  handler: async (ctx, args) => {
+    const certificate = await ctx.db.get(args.certificateId);
+    if (!certificate) throw new Error("Certificate not found.");
+    const access = await getOrgAccess(ctx, certificate.orgId);
+    assertCanWriteCertificates(access);
+    if (certificate.status === "archived") {
+      return { status: "archived", cancelledJobs: 0 };
+    }
+
+    const now = dayjs().valueOf();
+    await ctx.db.patch(args.certificateId, {
+      status: "archived",
+      archivedAt: now,
+      archivedByUserId: access.userId,
+      updatedByUserId: access.userId,
+      updatedAt: now,
+    });
+
+    const jobs = await ctx.db
+      .query("certificateWorkflowJobs")
+      .withIndex("by_certificateId", (q) => q.eq("certificateId", args.certificateId))
+      .collect();
+    let cancelledJobs = 0;
+    for (const job of jobs) {
+      if (!isOpenWorkflowJobStatus(job.status)) continue;
+      await ctx.db.patch(job._id, {
+        status: "cancelled",
+        cancelReason: "Certificate archived",
+        cancelledByUserId: access.userId,
+        cancelledAt: now,
+        updatedAt: now,
+      });
+      cancelledJobs += 1;
+    }
+
+    return { status: "archived", cancelledJobs };
+  },
+});
+
+export const unarchive = mutation({
+  args: { certificateId: v.id("policyCertificates") },
+  handler: async (ctx, args) => {
+    const certificate = await ctx.db.get(args.certificateId);
+    if (!certificate) throw new Error("Certificate not found.");
+    const access = await getOrgAccess(ctx, certificate.orgId);
+    assertCanWriteCertificates(access);
+    if (certificate.status !== "archived") {
+      throw new Error("Certificate is not archived.");
+    }
+
+    const siblings = await ctx.db
+      .query("policyCertificates")
+      .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", certificate.dedupeKey))
+      .collect();
+    const conflict = siblings.find((row) =>
+      row._id !== args.certificateId && row.status !== "archived",
+    );
+    if (conflict) {
+      throw new Error("A newer certificate already exists for this holder");
+    }
+
+    const now = dayjs().valueOf();
+    await ctx.db.patch(args.certificateId, {
+      status: "active",
+      archivedAt: undefined,
+      archivedByUserId: undefined,
+      updatedByUserId: access.userId,
+      updatedAt: now,
+    });
+
+    return { status: "active" };
   },
 });
 
@@ -289,10 +388,11 @@ export const getOrCreateParentInternal = internalMutation({
       policyId: String(args.policyId),
       holderId: String(args.holderId),
     });
-    const existing = await ctx.db
+    const existing = (await ctx.db
       .query("policyCertificates")
       .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", dedupeKey))
-      .first();
+      .collect())
+      .find((row) => row.status !== "archived");
     if (existing) return existing._id;
     const now = dayjs().valueOf();
     return await ctx.db.insert("policyCertificates", {
