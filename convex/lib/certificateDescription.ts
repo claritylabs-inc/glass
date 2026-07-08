@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 import type { CoiData } from "./coiGenerator";
 import type { EndorsementCitation } from "./certificateEndorsements";
 
@@ -11,8 +12,8 @@ type CertificateDescriptionRequest = {
   certificateHolderName?: string;
   requestKind?: "holder" | "additional_insured";
   additionalInsuredName?: string;
-  operationsDescription?: string;
   holderRelationship?: string;
+  descriptionOfOperations?: string;
   endorsements?: EndorsementCitation[];
 };
 
@@ -30,7 +31,7 @@ export type CertificateDescriptionContext = {
 };
 
 const RELEVANT_DECLARATION_FIELD_RE =
-  /operation|business|location|premises|vehicle|auto|garage|additional|insured|certificate|holder|classification|schedule|description|project|job/i;
+  /operation|business|location|premises|vehicle|auto|garage|additional|certificate|holder|classification|schedule|description|project|job|waiver|subrogation|mortgagee|loss\s*payee/i;
 const DESCRIPTION_FACT_RE =
   /\b(operation|operations|service|services|work performed|location|locations|premises|project|job|vehicle|vehicles|auto|autos|additional insured|waiver|loss payee|mortgagee|special item)\b/i;
 const POLICY_OVERVIEW_RE =
@@ -72,6 +73,30 @@ function arrayRecords(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     : [];
+}
+
+function declarationFieldLabel(value: string) {
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function isNamedInsuredIdentityField(field: string) {
+  const label = declarationFieldLabel(field);
+  return /\b(named insured|insured name|master policy holder)\b/.test(label);
+}
+
+function isAdditionalInsuredDeclarationField(field: string) {
+  const label = declarationFieldLabel(field);
+  return /\b(additional insured|additional named insured|scheduled additional insured|certificate holder|waiver of subrogation|loss payee|mortgagee)\b/.test(label);
+}
+
+function isRelevantDeclarationField(field: string, value: string) {
+  if (isNamedInsuredIdentityField(field)) return false;
+  return RELEVANT_DECLARATION_FIELD_RE.test(`${declarationFieldLabel(field)} ${value}`);
 }
 
 function addressLine(value: unknown): string | undefined {
@@ -132,17 +157,8 @@ function declarationFields(policy: Record<string, any>) {
     (field: any) =>
       typeof field?.field === "string" &&
       typeof field?.value === "string" &&
-      RELEVANT_DECLARATION_FIELD_RE.test(field.field),
+      isRelevantDeclarationField(field.field, field.value),
   );
-}
-
-function isAdditionalInsuredDeclarationField(field: string) {
-  return /^(?:additionalNamedInsured|additionalNamedInsureds|additionalInsured|additionalInsureds|scheduledAdditionalInsured|scheduledAdditionalInsureds)$/i.test(field) ||
-    /\badditional\b.*\binsured\b/i.test(field);
-}
-
-function isOperationsDeclarationField(field: string) {
-  return /operation|business|classification|description/i.test(field);
 }
 
 function includeHolderInDescription(request: CertificateDescriptionRequest) {
@@ -200,9 +216,10 @@ export function buildCertificateDescriptionContext(
   pushUnique(context.policy, policy.effectiveDate && policy.expirationDate
     ? `Policy term ${policy.effectiveDate} to ${policy.expirationDate}`
     : undefined, 8);
-  pushUnique(context.policy, Array.isArray(policy.policyTypes) ? `Policy types ${policy.policyTypes.join(", ")}` : undefined, 8);
+  const lobLabels = policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel);
+  pushUnique(context.policy, lobLabels.length ? `Lines of business ${lobLabels.join(", ")}` : undefined, 8);
 
-  pushUnique(context.operations, request.operationsDescription, 8);
+  pushUnique(context.operations, request.descriptionOfOperations, 8);
   pushUnique(context.operations, profile.businessDescription, 8);
   pushUnique(context.operations, profile.operationsDescription, 8);
   for (const classification of arrayRecords(policy.classifications ?? declarations.classifications ?? profile.classifications)) {
@@ -287,7 +304,7 @@ export function buildCertificateDescriptionContext(
     if (isAdditionalInsuredDeclarationField(field.field)) {
       pushUnique(context.additionalInsureds, `${field.field}: ${field.value}`, 10, 260);
     }
-    if (isOperationsDeclarationField(field.field)) {
+    if (/operation|business|classification|description/i.test(field.field)) {
       pushUnique(context.operations, `${field.field}: ${field.value}`, 8, 260);
     }
   }

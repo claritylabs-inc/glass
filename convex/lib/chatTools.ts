@@ -221,10 +221,10 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("The user's full certificate request. Include explicit endorsement-bearing wording only if the user asked for it."),
-    operationsDescription: z
+    descriptionOfOperations: z
       .string()
       .optional()
-      .describe("Source-backed wording to use in the certificate Description of Operations box when the policy evidence establishes the operations or the user explicitly requested exact wording. Do not invent this wording."),
+      .describe("Source-backed description-of-operations wording to place in the certificate description box when the user explicitly provides wording or the policy source facts clearly support operations, locations, covered autos, or special items. Do not invent this wording. Do not use this for generic policy summaries, carrier names, policy numbers, limits, terms, or unsupported endorsement status."),
     requestedEndorsements: z
       .array(z.string())
       .optional()

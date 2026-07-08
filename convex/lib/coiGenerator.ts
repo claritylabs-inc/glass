@@ -4,88 +4,22 @@ import dayjs from "dayjs";
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import {
   CERTIFICATE_FORM_LABELS,
-  type CertificateFormCode,
-  type CertificateHolderRelationship,
+  type CertificateCoverageLine,
+  type CertificateData,
 } from "./acordForms/types";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * COI data interface mapping Glass's rich policy fields to ACORD 25 fields.
+ * COI data mapping Glass's rich policy fields to ACORD certificate fields.
  * All monetary values should be pre-formatted strings (e.g. "$1,000,000").
+ * Canonical shape lives in ./acordForms/types.
  */
-export interface CoiData {
-  formCode?: CertificateFormCode;
-  title: string;
-  issuedDateLabel: string;
-
-  // Producer / intermediary
-  producerAgency?: string;
-  producerContact?: string;
-  producerLicense?: string;
-  producerAddress?: string | { street1?: string; street2?: string; city?: string; state?: string; zip?: string; country?: string };
-  producerPhone?: string;
-  producerEmail?: string;
-
-  // Insurance company
-  insuranceCompanyAddress?: string;
-  insuranceCompanyPhone?: string;
-
-  // Insured
-  insuredName: string;
-  insuredDba?: string;
-  insuredAddress?: string | { street1?: string; city?: string; state?: string; zip?: string };
-  insuredFein?: string;
-
-  // Insurer (ACORD 25 supports Insurers A–F; we map the primary policy insurer to A)
-  insurers: Array<{
-    letter: string; // "A" | "B" | ... | "F"
-    name: string;
-    naic?: string;
-    amBest?: string;
-    admitted?: string;
-  }>;
-  // Coverage rows — each maps to an ACORD 25 coverage section
-  coverages: CoverageLine[];
-
-  // Optional
-  certificateNumber?: string;
-  revisionNumber?: string;
-  certificateHolder?: string;
-  certificateHolderRelationship?: CertificateHolderRelationship;
-  description?: string; // "Description of Operations / Locations / Vehicles"
-  propertyDescription?: string;
-  propertyLocation?: string;
-  interestHolder?: string;
-  interestHolderRelationship?: string;
-  floodZone?: string;
-  floodProgram?: string;
-}
+export type CoiData = CertificateData;
 
 /** One coverage section in the ACORD 25 grid. */
-export interface CoverageLine {
-  /** ACORD section label: "COMMERCIAL GENERAL LIABILITY", "AUTOMOBILE LIABILITY", etc. */
-  type: string;
-  /** Insurer letter reference (A–F) */
-  insurerLetter?: string;
-  /** "occurrence" | "claims_made" — for the CGL form type checkbox */
-  coverageForm?: "occurrence" | "claims_made";
-  /** Additional type notes (e.g. "CLAIMS MADE □  OCCUR □") */
-  typeNotes?: string;
-  /** Addl Insr endorsement on file */
-  addlInsr?: boolean;
-  /** Subrogation waiver */
-  subrWvd?: boolean;
-  policyNumber?: string;
-  effectiveDate?: string;
-  expirationDate?: string;
-  /** Key/value limit pairs in ACORD 25 display order */
-  limits: Array<{ label: string; value: string }>;
-  deductible?: string;
-  sectionRef?: string;
-  description?: string;
-}
+export type CoverageLine = CertificateCoverageLine;
 
 // ─── Mapping helpers ──────────────────────────────────────────────────────────
 
@@ -213,7 +147,7 @@ function policyWithOperationalCoverages(policy: any, profile: any | undefined): 
 }
 
 function buildFallbackCoverageLines(
-  policyTypes: string[],
+  lobCodes: string[],
   limits: any,
   defaults: {
     policyNumber: string;
@@ -222,14 +156,14 @@ function buildFallbackCoverageLines(
     coverageForm: string;
   },
 ): CoverageLine[] {
-  const hasNamedPolicyType = policyTypes.some((t) => t !== "UN");
+  const hasNamedLobCode = lobCodes.some((code) => code !== "UN");
   const coverageLines: CoverageLine[] = [];
 
   // ── Commercial General Liability ──────────────────────────────────────────
-  const hasGL = policyTypes.some((t) =>
-    ["CGL", "GL", "BOP", "BOPGL"].includes(t)
+  const hasGL = lobCodes.some((code) =>
+    ["CGL", "GL", "BOP", "BOPGL"].includes(code)
   );
-  if (hasGL || (!hasNamedPolicyType && (limits.perOccurrence || limits.generalAggregate))) {
+  if (hasGL || (!hasNamedLobCode && (limits.perOccurrence || limits.generalAggregate))) {
     const glLimits: Array<{ label: string; value: string }> = [];
     if (limits.perOccurrence) glLimits.push({ label: "EACH OCCURRENCE", value: limits.perOccurrence });
     if (limits.fireDamage) glLimits.push({ label: "DAMAGE TO RENTED\nPREMISES (Ea occurrence)", value: limits.fireDamage });
@@ -251,10 +185,10 @@ function buildFallbackCoverageLines(
   }
 
   // ── Automobile Liability ──────────────────────────────────────────────────
-  const hasAuto = policyTypes.some((t) =>
-    ["AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK"].includes(t)
+  const hasAuto = lobCodes.some((code) =>
+    ["AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK"].includes(code)
   );
-  if (hasAuto || (!hasNamedPolicyType && (limits.combinedSingleLimit || limits.bodilyInjuryPerPerson))) {
+  if (hasAuto || (!hasNamedLobCode && (limits.combinedSingleLimit || limits.bodilyInjuryPerPerson))) {
     const autoLimits: Array<{ label: string; value: string }> = [];
     if (limits.combinedSingleLimit) autoLimits.push({ label: "COMBINED SINGLE LIMIT\n(Ea accident)", value: limits.combinedSingleLimit });
     if (limits.bodilyInjuryPerPerson) autoLimits.push({ label: "BODILY INJURY (Per person)", value: limits.bodilyInjuryPerPerson });
@@ -275,15 +209,15 @@ function buildFallbackCoverageLines(
   }
 
   // ── Umbrella / Excess Liability ───────────────────────────────────────────
-  const hasUmbrella = policyTypes.some((t) => ["UMBRC", "UMBRL", "UMBRP", "EXLIA"].includes(t));
-  if (hasUmbrella || (!hasNamedPolicyType && (limits.eachOccurrenceUmbrella || limits.umbrellaAggregate))) {
+  const hasUmbrella = lobCodes.some((code) => ["UMBRC", "UMBRL", "UMBRP", "EXLIA"].includes(code));
+  if (hasUmbrella || (!hasNamedLobCode && (limits.eachOccurrenceUmbrella || limits.umbrellaAggregate))) {
     const umbLimits: Array<{ label: string; value: string }> = [];
     if (limits.eachOccurrenceUmbrella) umbLimits.push({ label: "EACH OCCURRENCE", value: limits.eachOccurrenceUmbrella });
     if (limits.umbrellaAggregate) umbLimits.push({ label: "AGGREGATE", value: limits.umbrellaAggregate });
     if (limits.umbrellaRetention) umbLimits.push({ label: "DED  RETENTION", value: limits.umbrellaRetention });
 
     coverageLines.push({
-      type: policyTypes.includes("EXLIA") ? "EXCESS LIAB" : "UMBRELLA LIAB",
+      type: lobCodes.includes("EXLIA") ? "EXCESS LIAB" : "UMBRELLA LIAB",
       insurerLetter: "A",
       coverageForm: defaults.coverageForm === "claims_made" ? "claims_made" : "occurrence",
       policyNumber: defaults.policyNumber,
@@ -294,8 +228,8 @@ function buildFallbackCoverageLines(
   }
 
   // ── Workers Compensation ──────────────────────────────────────────────────
-  const hasWC = policyTypes.some((t) => ["WORK", "WCMA", "WORKP", "WORKV"].includes(t));
-  if (hasWC || (!hasNamedPolicyType && (limits.statutory || limits.employersLiability))) {
+  const hasWC = lobCodes.some((code) => ["WORK", "WCMA", "WORKP", "WORKV"].includes(code));
+  if (hasWC || (!hasNamedLobCode && (limits.statutory || limits.employersLiability))) {
     const el: any = limits.employersLiability ?? {};
     const wcLimits: Array<{ label: string; value: string }> = [];
     wcLimits.push({ label: "WC STAT", value: limits.statutory ? "✓" : "" });
@@ -314,12 +248,12 @@ function buildFallbackCoverageLines(
   }
 
   // Other lines of business (professional liability, other liability, etc.).
-  const otherTypes = policyTypes.filter((t) =>
+  const otherCodes = lobCodes.filter((code) =>
     !["CGL", "GL", "BOP", "BOPGL", "AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK",
-      "UMBRC", "UMBRL", "UMBRP", "EXLIA", "WORK", "WCMA", "WORKP", "WORKV", "UN"].includes(t)
+      "UMBRC", "UMBRL", "UMBRP", "EXLIA", "WORK", "WCMA", "WORKP", "WORKV", "UN"].includes(code)
   );
-  if (otherTypes.length > 0) {
-    const typeLabel = otherTypes
+  if (otherCodes.length > 0) {
+    const typeLabel = otherCodes
       .map(lobLabel)
       .join(", ");
     coverageLines.push({
@@ -336,7 +270,7 @@ function buildFallbackCoverageLines(
   // If no specific coverage lines were identified, add a generic one
   if (coverageLines.length === 0) {
     coverageLines.push({
-      type: policyTypes.filter((t) => t !== "UN").map(lobLabel).join(" / ").toUpperCase() || "SEE POLICY",
+      type: lobCodes.filter((code) => code !== "UN").map(lobLabel).join(" / ").toUpperCase() || "SEE POLICY",
       insurerLetter: "A",
       policyNumber: defaults.policyNumber,
       effectiveDate: defaults.effectiveDate,
@@ -718,6 +652,37 @@ function drawCoverageSectionHeader(
   return y + headerH;
 }
 
+function drawCertificateNumberBand(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  y: number,
+): number {
+  const headerH = 16;
+  const certificateW = W / 2;
+  const certificateNumber = data.certificateNumber?.trim();
+  const revisionNumber = data.revisionNumber?.trim();
+
+  doc.rect(M, y, W, headerH).fillAndStroke(C_HEADER_BG, C_BLACK);
+  doc
+    .moveTo(M + certificateW, y)
+    .lineTo(M + certificateW, y + headerH)
+    .stroke();
+
+  doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
+  doc.text(`CERTIFICATE NUMBER:${certificateNumber ? ` ${certificateNumber}` : ""}`, M + 4, y + 4, {
+    width: certificateW - 8,
+    height: headerH - 6,
+    align: "left",
+  });
+  doc.text(`REVISION NUMBER:${revisionNumber ? ` ${revisionNumber}` : ""}`, M + certificateW + 4, y + 4, {
+    width: W - certificateW - 8,
+    height: headerH - 6,
+    align: "left",
+  });
+
+  return y + headerH;
+}
+
 function drawAcord25InformationNotice(
   doc: PDFKit.PDFDocument,
   x: number,
@@ -866,6 +831,8 @@ function drawAcordPropertyEvidenceForm(doc: PDFKit.PDFDocument, data: CoiData) {
   doc.font("Helvetica").fontSize(FS_VALUE);
   doc.text(dateStr, M + W * 0.72, y + 10, { width: W * 0.28, align: "right" });
   y += 30;
+
+  y = drawCertificateNumberBand(doc, data, y) + 4;
 
   const topW = W * 0.5;
   const insurerAddress = joinLines(

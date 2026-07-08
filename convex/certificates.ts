@@ -370,7 +370,7 @@ function certificateRequestSignature(args: {
   holderName: string;
   additionalInsuredName?: string;
   requiredChanges?: CertificateEndorsementKind[];
-  operationsDescription?: string;
+  descriptionOfOperations?: string;
 }) {
   const nonAdditionalInsuredKinds = (args.requiredChanges ?? [])
     .filter((kind) => kind !== "additional_insured")
@@ -378,11 +378,11 @@ function certificateRequestSignature(args: {
   const endorsementSuffix = nonAdditionalInsuredKinds.length
     ? `|${nonAdditionalInsuredKinds.join("|")}`
     : "";
-  const operationsDescription = args.operationsDescription
-    ? normalizeSignatureText(args.operationsDescription).slice(0, 160)
+  const descriptionOfOperations = args.descriptionOfOperations
+    ? normalizeSignatureText(args.descriptionOfOperations).slice(0, 160)
     : "";
-  const operationsSuffix = operationsDescription
-    ? `|operations:${operationsDescription}`
+  const operationsSuffix = descriptionOfOperations
+    ? `|operations:${descriptionOfOperations}`
     : "";
   const signedName = normalizeSignatureText(
     args.requestKind === "additional_insured"
@@ -401,7 +401,7 @@ export function resolveCertificateRequestMetadata(args: {
   requestText?: string;
   requestedEndorsements?: string[];
   additionalInsuredName?: string;
-  operationsDescription?: string;
+  descriptionOfOperations?: string;
 }) {
   const inferredChanges = inferCertificateEndorsements({
     certificateHolder: args.certificateHolder,
@@ -427,7 +427,7 @@ export function resolveCertificateRequestMetadata(args: {
     holderName: args.holderName,
     additionalInsuredName,
     requiredChanges,
-    operationsDescription: cleanOptionalText(args.operationsDescription),
+    descriptionOfOperations: cleanOptionalText(args.descriptionOfOperations),
   });
 
   return {
@@ -635,8 +635,8 @@ export const generateForPolicy = action({
     postalCode: v.optional(v.string()),
     additionalInsuredName: v.optional(v.string()),
     requestText: v.optional(v.string()),
+    descriptionOfOperations: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
-    operationsDescription: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
   },
@@ -666,8 +666,8 @@ export const generateForPolicy = action({
       postalCode: args.postalCode,
       additionalInsuredName: args.additionalInsuredName,
       requestText: args.requestText,
+      descriptionOfOperations: args.descriptionOfOperations,
       requestedEndorsements: args.requestedEndorsements,
-      operationsDescription: args.operationsDescription,
       formCode: args.formCode,
       forceReissue: args.forceReissue,
       source: "policy_page",
@@ -695,8 +695,8 @@ export const generateForOrg = internalAction({
     policyVersionId: v.optional(v.id("policyVersions")),
     additionalInsuredName: v.optional(v.string()),
     requestText: v.optional(v.string()),
+    descriptionOfOperations: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
-    operationsDescription: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
   },
@@ -974,9 +974,9 @@ export const generateForOrg = internalAction({
       holderAddress,
       requestKind,
       additionalInsuredName,
-      operationsDescription: args.operationsDescription,
       formCode: args.formCode,
       holderRelationship,
+      descriptionOfOperations: args.descriptionOfOperations,
       endorsements: endorsementCitations,
       requestSignature,
     });

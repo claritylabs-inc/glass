@@ -17,6 +17,7 @@ describe("COI PDF template layout", () => {
     );
     expect(source).toContain("CERTIFICATE NUMBER:");
     expect(source).toContain("REVISION NUMBER:");
+    expect(source).toContain("y = drawCertificateNumberBand(doc, data, y) + 4;");
     expect(source).toContain(
       "THIS IS TO CERTIFY THAT THE POLICIES OF INSURANCE LISTED BELOW HAVE BEEN ISSUED TO THE INSURED NAMED ABOVE FOR THE POLICY PERIOD INDICATED.",
     );

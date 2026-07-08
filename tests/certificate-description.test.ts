@@ -68,6 +68,7 @@ describe("certificate description generation context", () => {
         ],
         declarations: {
           fields: [
+            { field: "namedInsured", value: "Acme Services LLC" },
             { field: "operationsDescription", value: "Installation services at Project Phoenix." },
             { field: "coveredAutoSymbols", value: "Symbol 1 - Any Auto" },
           ],
@@ -102,7 +103,9 @@ describe("certificate description generation context", () => {
     expect(context.vehicles.join(" ")).toContain("Ford Transit");
     expect(context.vehicles.join(" ")).toContain("Symbol 1 - Any Auto");
     expect(context.additionalInsureds.join(" ")).toContain("Northwinds Customer LLC");
+    expect(context.additionalInsureds.join(" ")).not.toContain("namedInsured");
     expect(context.declarationFacts.join(" ")).toContain("operationsDescription");
+    expect(context.declarationFacts.join(" ")).not.toContain("namedInsured");
 
     const prompt = buildCertificateDescriptionPrompt({ context });
     expect(prompt).toContain("Project Phoenix");
@@ -140,7 +143,7 @@ describe("certificate description generation context", () => {
   });
 
   it("carries source-backed operations wording into prompt and fallback text", () => {
-    const operationsDescription =
+    const descriptionOfOperations =
       "Clarity Labs Inc. (Delaware C-Corporation), providing technology services including software development, AI/ML, and SaaS/PaaS offerings.";
     const context = buildCertificateDescriptionContext(
       {
@@ -155,10 +158,10 @@ describe("certificate description generation context", () => {
         ...baseCoiData,
         insuredName: "Clarity Labs Inc.",
       },
-      { operationsDescription },
+      { descriptionOfOperations },
     );
 
-    expect(context.operations[0]).toBe(operationsDescription);
+    expect(context.operations[0]).toBe(descriptionOfOperations);
     expect(buildCertificateDescriptionPrompt({ context })).toContain("SaaS/PaaS offerings");
     expect(buildCertificateDescriptionFallback(context)).toContain("Operations: Clarity Labs Inc.");
   });
@@ -199,5 +202,46 @@ describe("certificate description generation context", () => {
     expect(buildCertificateDescriptionPrompt({ context })).not.toContain("SPS-TPC-2026-00481-04");
     expect(buildCertificateDescriptionPrompt({ context })).not.toContain("Sentinel Pacific Specialty Insurance Company");
     expect(buildCertificateDescriptionPrompt({ context })).not.toContain("Polychain Capital Fund IV");
+  });
+
+  it("does not turn named insured identity fields into additional-insured wording", () => {
+    const context = buildCertificateDescriptionContext(
+      {
+        declarations: {
+          fields: [
+            { field: "namedInsured", value: "Clarity Labs Inc." },
+            { field: "masterPolicyHolderAndMailingAddressName", value: "Clarity Labs Inc." },
+          ],
+        },
+      },
+      {
+        ...baseCoiData,
+        insuredName: "Clarity Labs Inc.",
+      },
+      {},
+    );
+
+    expect(context.additionalInsureds).toEqual([]);
+    expect(context.declarationFacts).toEqual([]);
+    expect(buildCertificateDescriptionFallback(context)).toBe("");
+  });
+
+  it("uses explicit operations wording as certificate description fallback", () => {
+    const context = buildCertificateDescriptionContext(
+      {},
+      {
+        ...baseCoiData,
+        insuredName: "Clarity Labs Inc.",
+      },
+      {
+        descriptionOfOperations:
+          "Clarity Labs Inc. provides technology services including software development, AI/ML, SaaS/PaaS offerings.",
+      },
+    );
+
+    const fallback = buildCertificateDescriptionFallback(context);
+    expect(context.operations.join(" ")).toContain("technology services");
+    expect(fallback).toContain("technology services");
+    expect(fallback).not.toContain("policy");
   });
 });
