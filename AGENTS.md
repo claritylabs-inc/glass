@@ -69,7 +69,14 @@ Railway worker env wiring:
 - `EXTRACTION_JOB_CONCURRENCY` controls how many full policy extraction jobs a single worker process leases at once. Keep the default conservative for PDF/model memory pressure, and raise it only after live worker health and extraction latency prove the container size can handle the load.
 - Mailbox scan worker requires `CONVEX_SITE_URL` and `EMAIL_SCAN_CRON_SECRET`.
 - iMessage worker requires `CONVEX_SITE_URL` and `IMESSAGE_WORKER_SECRET`; production also requires Photon credentials, `SPECTRUM_PROVIDER=imessage`, and `IMESSAGE_ENABLED=true`, while staging/local should use `SPECTRUM_PROVIDER=terminal`, `IMESSAGE_ENABLED=false`, and `IMESSAGE_TERMINAL_ENABLED=true`.
-- Email sending defaults to live behavior unless `EMAIL_DELIVERY_MODE` is set. Production uses `EMAIL_DELIVERY_MODE=live`; staging uses `EMAIL_DELIVERY_MODE=restricted` plus `EMAIL_REDIRECT_TO=staging@claritylabs.inc` and allowlisted internal recipient domains; dev/local uses `EMAIL_DELIVERY_MODE=restricted`, `EMAIL_REDIRECT_TO=staging@claritylabs.inc`, and no recipient allowlist so OTP emails are recoverable while customer/vendor mail is not sent.
+- Email sending defaults to live behavior unless `EMAIL_DELIVERY_MODE` is set. Production uses `EMAIL_DELIVERY_MODE=live`; staging uses `EMAIL_DELIVERY_MODE=restricted` plus `EMAIL_REDIRECT_TO=staging@claritylabs.inc` and allowlisted internal recipient domains. Local development uses `GLASS_ENV=local` plus `EMAIL_DELIVERY_MODE=capture`; Convex logs full local email text/HTML, six-digit OTP candidates, and attachment metadata, skips Resend entirely, and does not require `AUTH_RESEND_KEY`. Non-local `capture` remains metadata-only so staging/production logs do not expose message bodies.
+
+Local email capture and OTP testing:
+
+- For local sign-in, invite, and auth testing, get OTP codes from the `npx convex dev` terminal log, not Gmail, Resend, or redirected staging mail. The local capture block starts with `[glass:local-email-capture]` and includes `codeCandidates: ...`.
+- For invite-link flows where the generic OTP email is suppressed because the invite token proves ownership, Glass logs a local capture block with `kind: suppressed-invite-otp`; use its `codeCandidates` value for automated or manual acceptance testing.
+- For local email-content QA, keep the dev Convex deployment and shell env on `GLASS_ENV=local` and `EMAIL_DELIVERY_MODE=capture`, trigger the email path normally, and inspect the same capture block for `from`, `to`, `cc`, `bcc`, `subject`, `text`, `html`, and attachment metadata. Attachment bodies/base64 are intentionally not logged.
+- If local OTP/content logs do not appear, verify `npx convex env get GLASS_ENV --deployment dev` returns `local`, `npx convex env get EMAIL_DELIVERY_MODE --deployment dev` returns `capture`, and restart any already-running `npx convex dev` process.
 
 Audit commands:
 

@@ -4,6 +4,8 @@ import {
   getAgentDomain,
   getAgentDomains,
   getEmailDeliveryMode,
+  isLocalEmailCaptureEnabled,
+  logLocalEmailCapture,
   sendResendEmail,
 } from "./resend";
 
@@ -39,6 +41,7 @@ describe("agent email domains", () => {
 
 describe("email delivery modes", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
@@ -47,20 +50,104 @@ describe("email delivery modes", () => {
     expect(getEmailDeliveryMode()).toBe("live");
   });
 
-  test("captures email without calling Resend", async () => {
+  test("captures local email content without calling Resend or requiring an API key", async () => {
     const mockFetch = vi.fn();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubGlobal("fetch", mockFetch);
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
+    vi.stubEnv("GLASS_ENV", "local");
+
+    const result = await sendResendEmail({
+      from: "Glass <noreply@example.com>",
+      to: ["person@example.com", "Team <team@example.com>"],
+      cc: "cc@example.com",
+      bcc: "secret@example.com",
+      subject: "Sign-in code 123456",
+      text: "Your Glass code is 654321.",
+      html: "<p>Your Glass code is <strong>654321</strong>.</p>",
+      attachments: [
+        {
+          filename: "welcome.pdf",
+          contentType: "application/pdf",
+          size: 2048,
+          content: "raw-base64-secret",
+        },
+      ],
+    });
+
+    expect(result).toEqual({ ok: true, id: "captured" });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(isLocalEmailCaptureEnabled()).toBe(true);
+
+    const block = String(logSpy.mock.calls[0]?.[0] ?? "");
+    expect(block).toContain("[glass:local-email-capture]");
+    expect(block).toContain("from: Glass <noreply@example.com>");
+    expect(block).toContain("to: person@example.com, team@example.com");
+    expect(block).toContain("cc: cc@example.com");
+    expect(block).toContain("bcc: secret@example.com");
+    expect(block).toContain("subject: Sign-in code 123456");
+    expect(block).toContain("codeCandidates: 123456, 654321");
+    expect(block).toContain("attachmentCount: 1");
+    expect(block).toContain('"filename":"welcome.pdf"');
+    expect(block).toContain('"contentType":"application/pdf"');
+    expect(block).not.toContain("raw-base64-secret");
+    expect(block).toContain("text:\nYour Glass code is 654321.");
+    expect(block).toContain("html:\n<p>Your Glass code is <strong>654321</strong>.</p>");
+  });
+
+  test("capture mode outside local logs metadata only", async () => {
+    const mockFetch = vi.fn();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
+    vi.stubEnv("GLASS_ENV", "staging");
 
     const result = await sendResendEmail({
       from: "Glass <noreply@example.com>",
       to: "person@example.com",
       subject: "Test",
-      text: "hello",
+      text: "secret text body",
+      html: "<p>secret html body</p>",
     });
 
     expect(result).toEqual({ ok: true, id: "captured" });
     expect(mockFetch).not.toHaveBeenCalled();
+    expect(isLocalEmailCaptureEnabled()).toBe(false);
+
+    const logged = JSON.stringify(logSpy.mock.calls);
+    expect(logged).toContain("Captured email without sending");
+    expect(logged).toContain("toCount");
+    expect(logged).not.toContain("secret text body");
+    expect(logged).not.toContain("secret html body");
+  });
+
+  test("suppressed invite OTP helper logs only in local capture", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
+    vi.stubEnv("GLASS_ENV", "local");
+
+    const logged = logLocalEmailCapture({
+      kind: "suppressed-invite-otp",
+      to: "invitee@example.com",
+      subject: "Suppressed invite OTP",
+      text: "Suppressed invite OTP for invitee@example.com: 112233",
+      codeCandidates: ["112233"],
+    });
+
+    expect(logged).toBe(true);
+    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("kind: suppressed-invite-otp");
+    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("to: invitee@example.com");
+    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("codeCandidates: 112233");
+
+    vi.stubEnv("GLASS_ENV", "staging");
+    expect(
+      logLocalEmailCapture({
+        kind: "suppressed-invite-otp",
+        to: "invitee@example.com",
+        codeCandidates: ["445566"],
+      }),
+    ).toBe(false);
+    expect(logSpy).toHaveBeenCalledTimes(1);
   });
 
   test("redirects restricted email to the configured capture recipient", async () => {

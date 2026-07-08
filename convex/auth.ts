@@ -2,7 +2,7 @@ import { convexAuth } from "@convex-dev/auth/server";
 import { Email } from "@convex-dev/auth/providers/Email";
 import { buildOtpEmail } from "./lib/emailTemplate";
 import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
-import { sendResendEmail, getAuthFromAddress } from "./lib/resend";
+import { sendResendEmail, getAuthFromAddress, logLocalEmailCapture } from "./lib/resend";
 import { getAuthSiteUrl } from "./lib/domains";
 import { internal } from "./_generated/api";
 
@@ -46,7 +46,16 @@ const sendVerificationRequest = async function (this: unknown, ...args: any[]) {
 
     // When the user is arriving via an invite link, suppress the generic OTP
     // email — the invite email already covers verification.
-    if (hasPendingInvite) return;
+    if (hasPendingInvite) {
+      logLocalEmailCapture({
+        kind: "suppressed-invite-otp",
+        to: email,
+        subject: "Suppressed invite OTP",
+        text: `Suppressed invite OTP for ${email}: ${token}`,
+        codeCandidates: [token],
+      });
+      return;
+    }
 
     const branding = brokerBranding
       ? getBrandingContext({
