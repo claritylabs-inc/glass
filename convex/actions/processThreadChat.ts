@@ -75,10 +75,7 @@ import {
   runWebChatEmailControls,
   runWebChatTaskControl,
 } from "../lib/webChatDeterministicControls";
-import {
-  requirementEvaluationTargetLabel,
-  requirementSemantics,
-} from "../lib/requirementSemantics";
+import { lobLabel } from "../lib/linesOfBusiness";
 import {
   isUnsupportedSpreadsheetAttachment,
   isXlsxSpreadsheetAttachment,
@@ -925,22 +922,9 @@ export const run = internalAction({
                 : "",
               selectedRequirements.length
                 ? `Requirements:\n${selectedRequirements
-                    .map((requirement: any) => {
-                      const semantics = requirementSemantics({
-                        appliesTo: requirement.appliesTo ?? "vendors",
-                        title: requirement.title,
-                        category: requirement.category,
-                        requirementText: requirement.requirementText,
-                        originalContent: requirement.originalContent,
-                        sourceExcerpt: requirement.sourceExcerpt,
-                        sourceType: requirement.sourceType,
-                        evaluationTarget: requirement.evaluationTarget,
-                        evaluationReason: requirement.evaluationReason,
-                        semanticReviewStatus:
-                          requirement.semanticReviewStatus,
-                      });
-                      return `- ${requirement.title} (obligationOwner:${requirement.appliesTo ?? "vendors"}, evaluationTarget:${semantics.evaluationTarget} ${requirementEvaluationTargetLabel(semantics.evaluationTarget)}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`;
-                    })
+                    .map((requirement: any) =>
+                      `- ${requirement.title} (scope:${requirement.scope ?? "vendors"}, kind:${requirement.kind ?? "coverage"}${requirement.lineOfBusiness ? `, line:${requirement.lineOfBusiness} ${lobLabel(requirement.lineOfBusiness)}` : ""}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`,
+                    )
                     .join("\n")}`
                 : "",
               selectedMailboxes.length

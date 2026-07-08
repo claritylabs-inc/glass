@@ -1589,20 +1589,40 @@ const MCP_TOOLS = [
   {
     name: "create_insurance_requirement",
     description:
-      "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role. For extracted lease/contract requirements, include source_document_name/source_excerpt when available.",
+      "Create a typed insurance compliance requirement. Requires write scope and org admin role.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        title: { type: "string", description: "Short requirement title" },
-        category: {
+        kind: {
           type: "string",
-          description:
-            "general_liability, auto, workers_comp, umbrella, professional, cyber, property, or other",
+          description: "coverage, insurer, or condition",
         },
+        scope: {
+          type: "string",
+          description: "vendors or own_org",
+        },
+        title: { type: "string", description: "Short requirement title" },
         requirement_text: {
           type: "string",
+          description: "Plain-language requirement text",
+        },
+        line_of_business: {
+          type: "string",
+          description: "ACORD line of business code for coverage rules, e.g. CGL",
+        },
+        limits: {
+          type: "array",
           description:
-            "Plain-language requirement to check against policy data",
+            "Coverage limits: { kind, amount, label }. Limit kinds include per_occurrence, general_aggregate, combined_single_limit, other.",
+        },
+        min_am_best_rating: {
+          type: "string",
+          description: "Minimum AM Best rating for insurer rules, e.g. A-",
+        },
+        condition_type: {
+          type: "string",
+          description:
+            "Condition type, e.g. cancellation_notice, certificate_delivery, claims_reporting, subcontractor_insurance, other",
         },
         source_document_name: {
           type: "string",
@@ -1613,13 +1633,8 @@ const MCP_TOOLS = [
           description:
             "Optional exact original source language supporting the requirement",
         },
-        evaluation_target: {
-          type: "string",
-          description:
-            "Optional evidence target: own_policy, connected_vendor_policy, subcontractor_policy, manual_control, or not_policy_checkable. Defaults to connected_vendor_policy for this vendor-oriented API.",
-        },
       },
-      required: ["title", "category", "requirement_text"],
+      required: ["kind", "scope", "title", "requirement_text"],
     },
   },
   {
@@ -2246,16 +2261,27 @@ async function handleToolCall(
     }
     case "create_insurance_requirement": {
       requireMcpWriteScope(identity);
-      if (!args.title || !args.category || !args.requirement_text)
-        throw new Error("Missing title, category, or requirement_text");
+      if (!args.kind || !args.scope || !args.title || !args.requirement_text)
+        throw new Error("Missing kind, scope, title, or requirement_text");
       const requirementId = await ctx.runMutation(
         (internal as any).compliance.upsertRequirementInternal,
         {
           orgId,
           userId,
+          kind: String(args.kind),
+          scope: String(args.scope),
           title: String(args.title),
-          category: String(args.category),
           requirementText: String(args.requirement_text),
+          lineOfBusiness: args.line_of_business
+            ? String(args.line_of_business)
+            : undefined,
+          limits: Array.isArray(args.limits) ? args.limits : undefined,
+          minAmBestRating: args.min_am_best_rating
+            ? String(args.min_am_best_rating)
+            : undefined,
+          conditionType: args.condition_type
+            ? String(args.condition_type)
+            : undefined,
           sourceDocumentName: args.source_document_name
             ? String(args.source_document_name)
             : undefined,
@@ -2265,10 +2291,6 @@ async function handleToolCall(
               : "manual",
           sourceExcerpt: args.source_excerpt
             ? String(args.source_excerpt)
-            : undefined,
-          appliesTo: "vendors",
-          evaluationTarget: args.evaluation_target
-            ? String(args.evaluation_target)
             : undefined,
         },
       );
@@ -3407,11 +3429,52 @@ http.route({
         {
           orgId: identity.orgId,
           userId: identity.userId,
+          kind: String(body.kind ?? ""),
+          scope: String(body.scope ?? "vendors"),
           title: String(body.title ?? ""),
-          category: String(body.category ?? "other"),
           requirementText: String(
             body.requirement_text ?? body.requirementText ?? "",
           ),
+          lineOfBusiness: body.line_of_business
+            ? String(body.line_of_business)
+            : body.lineOfBusiness
+              ? String(body.lineOfBusiness)
+              : undefined,
+          limits: Array.isArray(body.limits) ? body.limits : undefined,
+          maxDeductible: body.max_deductible ?? body.maxDeductible,
+          provisions: Array.isArray(body.provisions) ? body.provisions : undefined,
+          requiredForms: Array.isArray(body.required_forms)
+            ? body.required_forms
+            : Array.isArray(body.requiredForms)
+              ? body.requiredForms
+              : undefined,
+          minAmBestRating: body.min_am_best_rating
+            ? String(body.min_am_best_rating)
+            : body.minAmBestRating
+              ? String(body.minAmBestRating)
+              : undefined,
+          minAmBestFinancialSize: body.min_am_best_financial_size
+            ? String(body.min_am_best_financial_size)
+            : body.minAmBestFinancialSize
+              ? String(body.minAmBestFinancialSize)
+              : undefined,
+          admittedRequired:
+            typeof body.admitted_required === "boolean"
+              ? body.admitted_required
+              : typeof body.admittedRequired === "boolean"
+                ? body.admittedRequired
+                : undefined,
+          conditionType: body.condition_type
+            ? String(body.condition_type)
+            : body.conditionType
+              ? String(body.conditionType)
+              : undefined,
+          noticeDays:
+            typeof body.notice_days === "number"
+              ? body.notice_days
+              : typeof body.noticeDays === "number"
+                ? body.noticeDays
+                : undefined,
           sourceDocumentName: body.source_document_name
             ? String(body.source_document_name)
             : body.sourceDocumentName
@@ -3428,12 +3491,6 @@ http.route({
             ? String(body.source_excerpt)
             : body.sourceExcerpt
               ? String(body.sourceExcerpt)
-              : undefined,
-          appliesTo: "vendors",
-          evaluationTarget: body.evaluation_target
-            ? String(body.evaluation_target)
-            : body.evaluationTarget
-              ? String(body.evaluationTarget)
               : undefined,
         },
       );

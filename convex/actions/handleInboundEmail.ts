@@ -1379,7 +1379,7 @@ export const processInbound = internalAction({
                   emailRef: string;
                   filenames?: string[];
                   sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
-                  appliesTo?: "vendors" | "own_org" | "both";
+                  scope?: "vendors" | "own_org";
                 }) =>
                   await ctx.runAction(
                     internal.actions.connectedEmail.importRequirementAttachmentsInternal,
@@ -1389,7 +1389,7 @@ export const processInbound = internalAction({
                       emailRef: params.emailRef,
                       filenames: params.filenames,
                       sourceType: params.sourceType,
-                      appliesTo: params.appliesTo,
+                      scope: params.scope,
                     },
                   ),
               },

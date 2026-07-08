@@ -55,21 +55,35 @@ export function registerClientTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "create_insurance_requirement",
-    "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role. Optionally include evaluationTarget to distinguish vendor policy evidence from subcontractor evidence, manual controls, or context-only rows. Include sourceDocumentName/sourceExcerpt when creating extracted lease or contract requirements.",
+    "Create a typed insurance compliance requirement. Requires write scope and org admin role.",
     {
       title: z.string(),
-      category: z.enum(["general_liability", "auto", "workers_comp", "umbrella", "professional", "cyber", "property", "other"]),
+      kind: z.enum(["coverage", "insurer", "condition"]),
+      scope: z.enum(["vendors", "own_org"]).default("vendors"),
       requirementText: z.string(),
-      evaluationTarget: z.enum(["own_policy", "connected_vendor_policy", "subcontractor_policy", "manual_control", "not_policy_checkable"]).optional(),
+      lineOfBusiness: z.string().optional(),
+      limits: z.array(z.object({
+        kind: z.string(),
+        amount: z.number(),
+        label: z.string().optional(),
+      })).optional(),
+      provisions: z.array(z.string()).optional(),
+      minAmBestRating: z.string().optional(),
+      conditionType: z.string().optional(),
       sourceDocumentName: z.string().optional(),
       sourceExcerpt: z.string().optional(),
     },
-    async ({ title, category, requirementText, evaluationTarget, sourceDocumentName, sourceExcerpt }) => {
+    async ({ title, kind, scope, requirementText, lineOfBusiness, limits, provisions, minAmBestRating, conditionType, sourceDocumentName, sourceExcerpt }) => {
       const data = await client.post("/api/v1/compliance/requirements", {
         title,
-        category,
+        kind,
+        scope,
         requirement_text: requirementText,
-        evaluation_target: evaluationTarget,
+        line_of_business: lineOfBusiness,
+        limits,
+        provisions,
+        min_am_best_rating: minAmBestRating,
+        condition_type: conditionType,
         source_document_name: sourceDocumentName,
         source_excerpt: sourceExcerpt,
       });

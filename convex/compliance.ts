@@ -9,59 +9,25 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getOrgAccess, requireAuth } from "./lib/access";
-import { notify } from "./lib/notify";
 import {
-  canPolicyMatchRequirement,
-  classifyRequirementSemantics,
-  nonPolicyRequirementReviewNote,
-  requirementSemantics,
-  requirementWithSemanticDefaults,
-  shouldEvaluateConnectedVendorRequirement,
-  shouldEvaluateOwnOrgRequirement,
-} from "./lib/requirementSemantics";
-import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
-
-const requirementCategoryValidator = v.union(
-  v.literal("general_liability"),
-  v.literal("auto"),
-  v.literal("workers_comp"),
-  v.literal("umbrella"),
-  v.literal("professional"),
-  v.literal("cyber"),
-  v.literal("property"),
-  v.literal("other"),
-);
-
-const complianceStatusValidator = v.union(
-  v.literal("met"),
-  v.literal("missing"),
-  v.literal("expiring_soon"),
-  v.literal("expired"),
-  v.literal("needs_review"),
-);
-
-const requirementSourceTypeValidator = v.union(
-  v.literal("manual"),
-  v.literal("bulk_import"),
-  v.literal("lease_agreement"),
-  v.literal("client_contract"),
-  v.literal("vendor_requirements"),
-  v.literal("other"),
-);
-
-const requirementEvaluationTargetValidator = v.union(
-  v.literal("own_policy"),
-  v.literal("connected_vendor_policy"),
-  v.literal("subcontractor_policy"),
-  v.literal("manual_control"),
-  v.literal("not_policy_checkable"),
-);
-
-const requirementSemanticReviewStatusValidator = v.union(
-  v.literal("system_classified"),
-  v.literal("needs_review"),
-  v.literal("user_confirmed"),
-);
+  assessRequirementCompliance,
+  formatComplianceReasons,
+  insuredNameMatches,
+  policyReadableForCompliance,
+  type ComplianceCheckResult,
+} from "./lib/complianceCheck";
+import {
+  complianceCheckStatusValidator,
+  isRequirementLimitKind,
+  isRequirementProvision,
+  requirementConditionTypeValidator,
+  requirementKindValidator,
+  requirementProvisionValidator,
+  requirementScopeValidator,
+  requirementSourceTypeValidator,
+} from "./lib/complianceTypes";
+import { isLobCode, lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
+import { notify } from "./lib/notify";
 
 const sourceDocumentTypeValidator = v.union(
   v.literal("lease_agreement"),
@@ -70,11 +36,36 @@ const sourceDocumentTypeValidator = v.union(
   v.literal("other"),
 );
 
+const coverageFormValidator = v.union(
+  v.literal("occurrence"),
+  v.literal("claims_made"),
+);
+
+const limitValidator = v.object({
+  kind: v.string(),
+  amount: v.number(),
+  label: v.optional(v.string()),
+});
+
+const deductibleValidator = v.object({
+  amount: v.number(),
+  label: v.optional(v.string()),
+});
+
+const evidenceValidator = v.object({
+  note: v.optional(v.string()),
+  fileId: v.optional(v.id("_storage")),
+  fileName: v.optional(v.string()),
+  validUntil: v.optional(v.string()),
+});
+
 const vendorComplianceMonitorCheckValidator = v.object({
   requirementId: v.id("insuranceRequirements"),
   requirementTitle: v.string(),
-  status: complianceStatusValidator,
+  status: complianceCheckStatusValidator,
+  reasons: v.optional(v.array(v.string())),
   matchedPolicyIds: v.array(v.id("policies")),
+  matchedSummary: v.optional(v.string()),
   expiresAt: v.optional(v.string()),
   daysUntilExpiration: v.optional(v.number()),
   notes: v.optional(v.string()),
@@ -87,574 +78,21 @@ const vendorComplianceMonitorRowValidator = v.object({
   status: v.string(),
   requirementCount: v.number(),
   policyCount: v.number(),
+  notMetCount: v.number(),
   missingCount: v.number(),
   expiringSoonCount: v.number(),
+  unverifiedCount: v.number(),
   checks: v.array(vendorComplianceMonitorCheckValidator),
 });
-
-type RequirementScope = "vendors" | "own_org" | "both";
-
-function semanticFieldsForRequirement(args: {
-  appliesTo: RequirementScope;
-  title: string;
-  category?: string;
-  requirementText: string;
-  name?: string;
-  coverageCode?: string;
-  limit?: string;
-  limitAmount?: number;
-  deductible?: string;
-  deductibleAmount?: number;
-  originalContent?: string;
-  sourceExcerpt?: string;
-  sourceType?: string;
-  evaluationTarget?: string;
-  evaluationReason?: string;
-  semanticReviewStatus?: string;
-}) {
-  return classifyRequirementSemantics(args);
-}
-
-function normalizeText(value: string | undefined | null) {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function parseMoneyAmount(
-  value: string | undefined | null,
-): number | undefined {
-  const text = value ?? "";
-  const match = text.match(
-    /(?:\$\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)\s*(m|mm|million|k|thousand)?\b|([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)\s*(m|mm|million|k|thousand)\b|([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?)\b)/i,
-  );
-  if (!match) return undefined;
-  const baseText = match[1] ?? match[3] ?? match[5];
-  const base = Number.parseFloat(baseText.replace(/,/g, ""));
-  if (!Number.isFinite(base)) return undefined;
-  const suffix = (match[2] ?? match[4])?.toLowerCase();
-  if (suffix === "m" || suffix === "mm" || suffix === "million") {
-    return Math.round(base * 1_000_000);
-  }
-  if (suffix === "k" || suffix === "thousand") {
-    return Math.round(base * 1_000);
-  }
-  return Math.round(base);
-}
-
-function firstMoneyText(value: string | undefined | null): string | undefined {
-  return value
-    ?.match(
-      /(?:\$\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(?:m|mm|million|k|thousand)?\b|[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(?:m|mm|million|k|thousand)\b|[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?\b)/i,
-    )?.[0]
-    ?.trim();
-}
-
-function normalizeRequirementCoverage(args: {
-  title: string;
-  requirementText: string;
-  name?: string;
-  coverageCode?: string;
-  limit?: string;
-  limitAmount?: number;
-  limitType?: string;
-  limitValueType?: string;
-  deductible?: string;
-  deductibleAmount?: number;
-  deductibleType?: string;
-  deductibleValueType?: string;
-  originalContent?: string;
-}) {
-  const limit =
-    args.limit?.trim() ||
-    firstMoneyText(`${args.title}\n${args.requirementText}`);
-  return {
-    name: args.name?.trim() || args.title,
-    coverageCode: args.coverageCode?.trim() || undefined,
-    limit,
-    limitAmount:
-      parseMoneyAmount(limit) ??
-      args.limitAmount ??
-      parseMoneyAmount(args.requirementText),
-    limitType: args.limitType?.trim() || undefined,
-    limitValueType: args.limitValueType?.trim() || undefined,
-    deductible: args.deductible?.trim() || undefined,
-    deductibleAmount:
-      parseMoneyAmount(args.deductible) ?? args.deductibleAmount,
-    deductibleType: args.deductibleType?.trim() || undefined,
-    deductibleValueType: args.deductibleValueType?.trim() || undefined,
-    originalContent: args.originalContent?.trim() || args.requirementText,
-  };
-}
-
-function categoryTerms(
-  category: Doc<"insuranceRequirements">["category"],
-  title: string,
-  requirementText: string,
-) {
-  const custom = normalizeText(`${title} ${requirementText}`)
-    .split(/\s+/)
-    .filter((term) => term.length >= 4);
-  const builtIn: Record<string, string[]> = {
-    general_liability: [
-      "general liability",
-      "commercial general liability",
-      "cgl",
-      "liability",
-    ],
-    auto: ["auto", "automobile", "business auto", "commercial auto", "vehicle"],
-    workers_comp: [
-      "workers compensation",
-      "workers comp",
-      "employers liability",
-      "wc",
-    ],
-    umbrella: ["umbrella", "excess liability", "excess"],
-    professional: ["professional liability", "errors omissions", "e o", "e&o"],
-    cyber: ["cyber", "privacy", "network security"],
-    property: ["property", "inland marine", "equipment"],
-    other: custom.slice(0, 8),
-  };
-  return [...builtIn[category], ...custom.slice(0, 4)].filter(Boolean);
-}
-
-function policySearchText(policy: Doc<"policies">) {
-  const linesOfBusiness = policyLobCodes(policy);
-  return normalizeText(
-    [
-      ...linesOfBusiness,
-      ...linesOfBusiness.map(lobLabel),
-      policy.summary,
-      policy.carrier,
-      policy.security,
-      policy.broker,
-      policy.insuredName,
-      ...(policy.coverages ?? []).map(
-        (coverage) =>
-          `${coverage.name} ${coverage.limit ?? ""} ${coverage.originalContent ?? ""}`,
-      ),
-    ]
-      .flat()
-      .filter(Boolean)
-      .join(" "),
-  );
-}
-
-function maxMatchingCoverageAmount(
-  policy: Doc<"policies">,
-  terms: string[],
-): number | undefined {
-  let maxAmount: number | undefined;
-  for (const coverage of policy.coverages ?? []) {
-    const coverageText = normalizeText(
-      [
-        coverage.name,
-        coverage.coverageCode,
-        coverage.limit,
-        coverage.limitType,
-        coverage.originalContent,
-      ]
-        .filter(Boolean)
-        .join(" "),
-    );
-    const matches = terms.some((term) =>
-      coverageText.includes(normalizeText(term)),
-    );
-    if (!matches && terms.length > 0) continue;
-    const amount =
-      coverage.limitAmount ??
-      parseMoneyAmount(coverage.limit) ??
-      parseMoneyAmount(coverage.originalContent);
-    if (amount === undefined) continue;
-    maxAmount = maxAmount === undefined ? amount : Math.max(maxAmount, amount);
-  }
-  return maxAmount;
-}
-
-function bestMatchingCoverage(policy: Doc<"policies">, terms: string[]) {
-  let best:
-    | {
-        name?: string;
-        limit?: string;
-        limitAmount?: number;
-      }
-    | undefined;
-  for (const coverage of policy.coverages ?? []) {
-    const coverageText = normalizeText(
-      [
-        coverage.name,
-        coverage.coverageCode,
-        coverage.limit,
-        coverage.limitType,
-        coverage.originalContent,
-      ]
-        .filter(Boolean)
-        .join(" "),
-    );
-    const matches = terms.some((term) =>
-      coverageText.includes(normalizeText(term)),
-    );
-    if (!matches && terms.length > 0) continue;
-    const amount =
-      coverage.limitAmount ??
-      parseMoneyAmount(coverage.limit) ??
-      parseMoneyAmount(coverage.originalContent);
-    if (!best || (amount ?? 0) > (best.limitAmount ?? 0)) {
-      best = {
-        name: coverage.name,
-        limit: coverage.limit,
-        limitAmount: amount,
-      };
-    }
-  }
-  return best;
-}
-
-function parseDate(value: string | undefined) {
-  if (!value) return Number.NaN;
-  const time = dayjs(value).valueOf();
-  return Number.isFinite(time) ? time : Number.NaN;
-}
-
-const INSURED_NAME_STOPWORDS = new Set([
-  "inc",
-  "incorporated",
-  "llc",
-  "ltd",
-  "limited",
-  "corp",
-  "corporation",
-  "company",
-  "co",
-  "the",
-]);
-
-function significantNameTokens(value: string | undefined | null) {
-  return normalizeText(value)
-    .split(/\s+/)
-    .filter((token) => token.length >= 3 && !INSURED_NAME_STOPWORDS.has(token));
-}
-
-function insuredNameMatches(
-  actual: string | undefined | null,
-  expected: string | undefined | null,
-) {
-  const actualText = normalizeText(actual);
-  const expectedText = normalizeText(expected);
-  if (!expectedText) return true;
-  if (!actualText) return false;
-  if (actualText.includes(expectedText) || expectedText.includes(actualText)) {
-    return true;
-  }
-  const expectedTokens = significantNameTokens(expected);
-  if (expectedTokens.length === 0) return true;
-  const actualTokens = new Set(significantNameTokens(actual));
-  const matched = expectedTokens.filter((token) => actualTokens.has(token));
-  return matched.length / expectedTokens.length >= 0.7;
-}
-
-function orgLegalNames(org: Doc<"organizations"> | null | undefined) {
-  return [
-    org?.name,
-    ...(org?.relatedLegalEntities ?? []).map((entity) => entity.legalName),
-  ].filter((name): name is string => Boolean(name?.trim()));
-}
-
-function policyDataStage(policy: Doc<"policies">) {
-  if (
-    policy.extractionDataStage === "placeholder" ||
-    policy.extractionDataStage === "preview" ||
-    policy.extractionDataStage === "final"
-  ) {
-    return policy.extractionDataStage;
-  }
-  return policy.pipelineStatus === "complete" ? "final" : "placeholder";
-}
-
-function policyReadableForCompliance(
-  policy: Doc<"policies">,
-  includePreviewPolicies: boolean,
-) {
-  if (policy.deletedAt || policy.dismissed) {
-    return false;
-  }
-  const dataStage = policyDataStage(policy);
-  if (policy.pipelineStatus === "complete" && dataStage === "final")
-    return true;
-  return (
-    includePreviewPolicies &&
-    dataStage === "preview" &&
-    policy.pipelineStatus !== "complete"
-  );
-}
-
-function compliancePolicyNote(policy: Doc<"policies">) {
-  return policyDataStage(policy) === "preview"
-    ? " This match is based on extraction and will be rechecked after enrichment."
-    : "";
-}
-
-function insuredNameMatchesAny(
-  actual: string | undefined | null,
-  expectedNames: string[],
-) {
-  if (expectedNames.length === 0) return true;
-  return expectedNames.some((expectedName) =>
-    insuredNameMatches(actual, expectedName),
-  );
-}
-
-function matchedPolicySummary(
-  candidate:
-    | {
-        policy: Doc<"policies">;
-        expiration: number;
-        limitAmount?: number;
-        coverage?: {
-          name?: string;
-          limit?: string;
-          limitAmount?: number;
-        };
-      }
-    | undefined,
-  expectedInsuredName?: string,
-) {
-  if (!candidate) return undefined;
-  return {
-    _id: candidate.policy._id,
-    carrier: candidate.policy.carrier,
-    policyNumber: candidate.policy.policyNumber,
-    insuredName: candidate.policy.insuredName,
-    expectedInsuredName,
-    expirationDate: candidate.policy.expirationDate,
-    dataStage: policyDataStage(candidate.policy),
-    provisional: policyDataStage(candidate.policy) === "preview",
-    coverageName: candidate.coverage?.name,
-    coverageLimit: candidate.coverage?.limit,
-    detectedLimitAmount: candidate.limitAmount,
-  };
-}
-
-function assessRequirement(
-  requirement: Doc<"insuranceRequirements">,
-  policies: Doc<"policies">[],
-  now = dayjs().valueOf(),
-  expectedInsuredName?: string,
-  expectedInsuredNames?: string[],
-  options?: { includePreviewPolicies?: boolean },
-) {
-  if (!canPolicyMatchRequirement(requirement)) {
-    return {
-      requirementId: requirement._id,
-      status: "needs_review" as const,
-      matchedPolicyIds: [] as Id<"policies">[],
-      expiresAt: undefined,
-      matchedPolicy: undefined,
-      notes: nonPolicyRequirementReviewNote(requirement),
-    };
-  }
-
-  const includePreviewPolicies = options?.includePreviewPolicies !== false;
-  const insuredNames = expectedInsuredNames?.length
-    ? expectedInsuredNames
-    : expectedInsuredName
-      ? [expectedInsuredName]
-      : [];
-  const terms = categoryTerms(
-    requirement.category,
-    requirement.title,
-    requirement.requirementText,
-  );
-  const candidates = policies
-    .filter((policy) =>
-      policyReadableForCompliance(policy, includePreviewPolicies),
-    )
-    .map((policy) => ({
-      policy,
-      text: policySearchText(policy),
-      expiration: parseDate(policy.expirationDate),
-      coverage: bestMatchingCoverage(policy, terms),
-      limitAmount: maxMatchingCoverageAmount(policy, terms),
-    }))
-    .filter(({ policy, text }) => {
-      if (requirement.category === "other") {
-        return terms.some((term) => text.includes(term));
-      }
-      return (
-        terms.some((term) => text.includes(normalizeText(term))) ||
-        policyLobCodes(policy).some((code) =>
-          normalizeText(lobLabel(code)).includes(
-            requirement.category.replace("_", " "),
-          ),
-        )
-      );
-    })
-    .sort(
-      (a, b) =>
-        (Number.isFinite(b.expiration) ? b.expiration : 0) -
-        (Number.isFinite(a.expiration) ? a.expiration : 0),
-    );
-
-  if (candidates.length === 0) {
-    return {
-      requirementId: requirement._id,
-      status: "missing" as const,
-      matchedPolicyIds: [] as Id<"policies">[],
-      expiresAt: undefined,
-      matchedPolicy: undefined,
-      notes:
-        "No active policy appears to match this requirement. Glass will re-check as vendors upload coverage.",
-    };
-  }
-
-  const active = candidates.find(
-    ({ expiration }) => Number.isFinite(expiration) && expiration >= now,
-  );
-  const best = active ?? candidates[0]!;
-  const requiredLimitAmount = requirement.limitAmount;
-  if (
-    active &&
-    requiredLimitAmount !== undefined &&
-    best.limitAmount === undefined
-  ) {
-    return {
-      requirementId: requirement._id,
-      status: "missing" as const,
-      matchedPolicyIds: [best.policy._id],
-      matchedPolicy: matchedPolicySummary(best, expectedInsuredName),
-      expiresAt: Number.isFinite(best.expiration)
-        ? best.policy.expirationDate
-        : undefined,
-      daysUntilExpiration: Number.isFinite(best.expiration)
-        ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
-        : undefined,
-      notes: `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the required $${requiredLimitAmount.toLocaleString()} limit from structured coverage data.${compliancePolicyNote(best.policy)}`,
-    };
-  }
-  if (
-    active &&
-    requiredLimitAmount !== undefined &&
-    best.limitAmount !== undefined &&
-    best.limitAmount < requiredLimitAmount
-  ) {
-    return {
-      requirementId: requirement._id,
-      status: "missing" as const,
-      matchedPolicyIds: [best.policy._id],
-      matchedPolicy: matchedPolicySummary(best, expectedInsuredName),
-      expiresAt: Number.isFinite(best.expiration)
-        ? best.policy.expirationDate
-        : undefined,
-      daysUntilExpiration: Number.isFinite(best.expiration)
-        ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
-        : undefined,
-      notes: `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the detected limit $${best.limitAmount.toLocaleString()} is below the required $${requiredLimitAmount.toLocaleString()}.${compliancePolicyNote(best.policy)}`,
-    };
-  }
-  if (active && !insuredNameMatchesAny(best.policy.insuredName, insuredNames)) {
-    return {
-      requirementId: requirement._id,
-      status: "missing" as const,
-      matchedPolicyIds: [best.policy._id],
-      matchedPolicy: matchedPolicySummary(best, expectedInsuredName),
-      expiresAt: Number.isFinite(best.expiration)
-        ? best.policy.expirationDate
-        : undefined,
-      daysUntilExpiration: Number.isFinite(best.expiration)
-        ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
-        : undefined,
-      notes: best.policy.insuredName
-        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but the insured name is ${best.policy.insuredName}; expected one of ${insuredNames.join(", ")}.${compliancePolicyNote(best.policy)}`
-        : `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but Glass could not verify the named insured as one of ${insuredNames.join(", ")}.${compliancePolicyNote(best.policy)}`,
-    };
-  }
-  const daysUntilExpiration = Number.isFinite(best.expiration)
-    ? Math.ceil((best.expiration - now) / (24 * 60 * 60 * 1000))
-    : undefined;
-  const status = active
-    ? daysUntilExpiration !== undefined && daysUntilExpiration <= 30
-      ? ("expiring_soon" as const)
-      : ("met" as const)
-    : ("expired" as const);
-
-  return {
-    requirementId: requirement._id,
-    status,
-    matchedPolicyIds: [best.policy._id],
-    matchedPolicy: matchedPolicySummary(best, expectedInsuredName),
-    expiresAt: Number.isFinite(best.expiration)
-      ? best.policy.expirationDate
-      : undefined,
-    daysUntilExpiration,
-    notes:
-      status === "met"
-        ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}.${compliancePolicyNote(best.policy)}`
-        : status === "expiring_soon"
-          ? `Matched ${best.policy.carrier} ${best.policy.policyNumber}, but it expires in ${daysUntilExpiration} days.${compliancePolicyNote(best.policy)}`
-          : `Latest matching policy ${best.policy.carrier} ${best.policy.policyNumber} appears expired.${compliancePolicyNote(best.policy)}`,
-  };
-}
-
-function manualReviewForRequirement(requirement: Doc<"insuranceRequirements">) {
-  const review = requirement.manualComplianceReview;
-  if (!review || review.checkedAt < requirement.updatedAt) return undefined;
-  return {
-    requirementId: requirement._id,
-    status: review.status,
-    matchedPolicyIds: review.matchedPolicyIds,
-    matchedPolicy: undefined,
-    expiresAt: review.expiresAt,
-    daysUntilExpiration: review.daysUntilExpiration,
-    notes: review.notes
-      ? `LLM compliance check: ${review.notes}`
-      : "LLM compliance check completed.",
-    checkedAt: review.checkedAt,
-    checkedBy: "agent" as const,
-  };
-}
-
-function assessRequirementWithManualReview(
-  requirement: Doc<"insuranceRequirements">,
-  policies: Doc<"policies">[],
-  now = dayjs().valueOf(),
-  expectedInsuredName?: string,
-  expectedInsuredNames?: string[],
-  options?: { includePreviewPolicies?: boolean },
-) {
-  if (!canPolicyMatchRequirement(requirement)) {
-    return assessRequirement(
-      requirement,
-      policies,
-      now,
-      expectedInsuredName,
-      expectedInsuredNames,
-      options,
-    );
-  }
-
-  return (
-    manualReviewForRequirement(requirement) ??
-    assessRequirement(
-      requirement,
-      policies,
-      now,
-      expectedInsuredName,
-      expectedInsuredNames,
-      options,
-    )
-  );
-}
 
 async function requireOrgMember(
   ctx: QueryCtx | MutationCtx,
   orgId: Id<"organizations">,
 ) {
   const access = await getOrgAccess(ctx, orgId);
-  if (access.accessType !== "member")
-    throw new Error(
-      "Only organization members can manage compliance requirements",
-    );
+  if (access.accessType !== "member") {
+    throw new Error("Only organization members can manage compliance requirements");
+  }
   return access;
 }
 
@@ -672,14 +110,121 @@ async function requireAdminWriteActor(
     .first();
   if (membership?.role === "admin") return;
 
-  try {
-    const access = await requireOrgMember(ctx, orgId);
-    if (access.userId === userId && access.role === "admin") return;
-  } catch {
-    // Fall through to the consistent caller-facing authorization error.
+  const access = await requireOrgMember(ctx, orgId);
+  if (access.userId === userId && access.role === "admin") return;
+  throw new Error(errorMessage);
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function orgLegalNames(org: Doc<"organizations"> | null | undefined) {
+  return [
+    org?.name,
+    ...(org?.relatedLegalEntities ?? []).map((entity) => entity.legalName),
+  ].filter((name): name is string => Boolean(name?.trim()));
+}
+
+function sanitizeRequirementArgs(args: {
+  kind: Doc<"insuranceRequirements">["kind"];
+  scope: Doc<"insuranceRequirements">["scope"];
+  title: string;
+  requirementText: string;
+  lineOfBusiness?: string;
+  limits?: Array<{ kind: string; amount: number; label?: string }>;
+  maxDeductible?: { amount: number; label?: string };
+  coverageForm?: "occurrence" | "claims_made";
+  retroactiveDateOnOrBefore?: string;
+  provisions?: string[];
+  requiredForms?: string[];
+  minAmBestRating?: string;
+  minAmBestFinancialSize?: string;
+  admittedRequired?: boolean;
+  conditionType?: Doc<"insuranceRequirements">["conditionType"];
+  noticeDays?: number;
+}) {
+  const title = args.title.trim();
+  const requirementText = args.requirementText.trim();
+  if (!title || !requirementText) {
+    throw new Error("Title and requirement text are required");
   }
 
-  throw new Error(errorMessage);
+  const lineOfBusiness = args.lineOfBusiness?.trim() || undefined;
+  if (args.kind === "coverage") {
+    if (!lineOfBusiness || !isLobCode(lineOfBusiness)) {
+      throw new Error("Coverage requirements need a valid ACORD line of business");
+    }
+    const limits = (args.limits ?? [])
+      .filter((limit) => Number.isFinite(limit.amount) && limit.amount >= 0)
+      .map((limit) => ({
+        kind: isRequirementLimitKind(limit.kind) ? limit.kind : "other",
+        amount: limit.amount,
+        label: limit.label?.trim() || undefined,
+      }));
+    if (limits.length === 0 && !args.maxDeductible && !args.provisions?.length) {
+      throw new Error("Coverage requirements need at least one limit, deductible, or provision");
+    }
+  }
+
+  return {
+    kind: args.kind,
+    scope: args.scope,
+    title,
+    requirementText,
+    lineOfBusiness: args.kind === "coverage" ? lineOfBusiness : undefined,
+    limits:
+      args.kind === "coverage"
+        ? (args.limits ?? [])
+            .filter((limit) => Number.isFinite(limit.amount) && limit.amount >= 0)
+            .map((limit) => ({
+              kind: isRequirementLimitKind(limit.kind) ? limit.kind : "other",
+              amount: limit.amount,
+              label: limit.label?.trim() || undefined,
+            }))
+        : undefined,
+    maxDeductible:
+      args.kind === "coverage" && args.maxDeductible
+        ? {
+          amount: args.maxDeductible.amount,
+          label: args.maxDeductible.label?.trim() || undefined,
+        }
+        : undefined,
+    coverageForm: args.kind === "coverage" ? args.coverageForm : undefined,
+    retroactiveDateOnOrBefore:
+      args.kind === "coverage"
+        ? args.retroactiveDateOnOrBefore?.trim() || undefined
+        : undefined,
+    provisions:
+      args.kind === "coverage"
+        ? Array.from(
+          new Set((args.provisions ?? []).filter(isRequirementProvision)),
+        )
+        : undefined,
+    requiredForms:
+      args.kind === "coverage"
+        ? (args.requiredForms ?? [])
+            .map((form) => form.trim())
+            .filter(Boolean)
+        : undefined,
+    minAmBestRating:
+      args.kind === "insurer" ? args.minAmBestRating?.trim() || undefined : undefined,
+    minAmBestFinancialSize:
+      args.kind === "insurer"
+        ? args.minAmBestFinancialSize?.trim() || undefined
+        : undefined,
+    admittedRequired:
+      args.kind === "insurer" ? args.admittedRequired : undefined,
+    conditionType:
+      args.kind === "condition" ? args.conditionType ?? "other" : undefined,
+    noticeDays:
+      args.kind === "condition" && Number.isFinite(args.noticeDays)
+        ? args.noticeDays
+        : undefined,
+  };
 }
 
 async function listRequirementsForOrg(
@@ -694,18 +239,68 @@ async function listRequirementsForOrg(
     .collect();
 }
 
-function vendorScopedRequirements(
+function requirementsForVendor(
+  _relationship: Doc<"connectedOrgRelationships"> | null | undefined,
   requirements: Doc<"insuranceRequirements">[],
 ) {
-  return requirements.filter(shouldEvaluateConnectedVendorRequirement);
+  return requirements.filter((requirement) => requirement.scope === "vendors");
+}
+
+async function listPoliciesForOrg(ctx: QueryCtx, orgId: Id<"organizations">) {
+  return await ctx.db
+    .query("policies")
+    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .collect();
+}
+
+async function latestChecksForSubject(
+  ctx: QueryCtx,
+  requirementId: Id<"insuranceRequirements">,
+  subjectOrgId: Id<"organizations">,
+) {
+  return await ctx.db
+    .query("complianceChecks")
+    .withIndex("by_requirementId_subjectOrgId", (q) =>
+      q.eq("requirementId", requirementId).eq("subjectOrgId", subjectOrgId),
+    )
+    .collect();
+}
+
+function resultNotes(result: ComplianceCheckResult) {
+  if (result.matchedSummary) return result.matchedSummary;
+  return result.reasons.length ? formatComplianceReasons(result.reasons) : undefined;
+}
+
+async function assessForSubject(
+  ctx: QueryCtx,
+  requirement: Doc<"insuranceRequirements">,
+  policies: Doc<"policies">[],
+  subjectOrgId: Id<"organizations">,
+  subjectOrg: Doc<"organizations"> | null,
+  options?: {
+    relationshipId?: Id<"connectedOrgRelationships">;
+    includePreviewPolicies?: boolean;
+  },
+) {
+  const checks = await latestChecksForSubject(ctx, requirement._id, subjectOrgId);
+  const result = assessRequirementCompliance(requirement, policies, {
+    expectedInsuredName: subjectOrg?.name,
+    expectedInsuredNames: orgLegalNames(subjectOrg),
+    includePreviewPolicies: options?.includePreviewPolicies,
+    existingChecks: checks,
+  });
+  return {
+    ...result,
+    relationshipId: options?.relationshipId,
+    notes: resultNotes(result),
+  };
 }
 
 async function listClientRequirementsForVendor(
   ctx: QueryCtx,
   vendorOrgId: Id<"organizations">,
   vendorPolicies: Doc<"policies">[],
-  vendorName?: string,
-  vendorLegalNames?: string[],
+  vendorOrg: Doc<"organizations"> | null,
 ) {
   const relationships = await ctx.db
     .query("connectedOrgRelationships")
@@ -716,32 +311,30 @@ async function listClientRequirementsForVendor(
   const rows = [];
   for (const rel of relationships) {
     const clientOrg = await ctx.db.get(rel.clientOrgId);
-    const requirements = vendorScopedRequirements(
+    const requirements = requirementsForVendor(
+      rel,
       await listRequirementsForOrg(ctx, rel.clientOrgId),
     );
     for (const requirement of requirements) {
-      const requirementWithSemantics = requirementWithSemanticDefaults({
-        ...requirement,
-        appliesTo: "own_org" as const,
-      });
       rows.push({
-        ...requirementWithSemantics,
-        complianceCheck: assessRequirement(
+        ...requirement,
+        complianceCheck: await assessForSubject(
+          ctx,
           requirement,
           vendorPolicies,
-          dayjs().valueOf(),
-          vendorName,
-          vendorLegalNames,
+          vendorOrgId,
+          vendorOrg,
+          { relationshipId: rel._id },
         ),
         canArchive: false,
         clientRequirementSource: {
           relationshipId: rel._id,
           clientOrg: clientOrg
             ? {
-                _id: clientOrg._id,
-                name: clientOrg.name,
-                website: clientOrg.website,
-              }
+              _id: clientOrg._id,
+              name: clientOrg.name,
+              website: clientOrg.website,
+            }
             : null,
         },
       });
@@ -754,7 +347,7 @@ async function listRequirementsVisibleToOrg(
   ctx: QueryCtx,
   orgId: Id<"organizations">,
 ) {
-  const [ownRequirements, orgPolicies] = await Promise.all([
+  const [ownRequirements, orgPolicies, org] = await Promise.all([
     ctx.db
       .query("insuranceRequirements")
       .withIndex("by_orgId_status", (q) =>
@@ -762,36 +355,27 @@ async function listRequirementsVisibleToOrg(
       )
       .order("desc")
       .collect(),
-    ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
-      .collect(),
+    listPoliciesForOrg(ctx, orgId),
+    ctx.db.get(orgId),
   ]);
-  const org = await ctx.db.get(orgId);
   const clientRequirements = await listClientRequirementsForVendor(
     ctx,
     orgId,
     orgPolicies,
-    org?.name,
-    orgLegalNames(org),
+    org,
   );
-  return [
-    ...ownRequirements.map((requirement) => ({
-      ...requirementWithSemanticDefaults(requirement),
+  const ownRows = [];
+  for (const requirement of ownRequirements) {
+    ownRows.push({
+      ...requirement,
       complianceCheck:
-        shouldEvaluateOwnOrgRequirement(requirement)
-          ? assessRequirementWithManualReview(
-              requirement,
-              orgPolicies,
-              dayjs().valueOf(),
-              org?.name,
-              orgLegalNames(org),
-            )
+        requirement.scope === "own_org"
+          ? await assessForSubject(ctx, requirement, orgPolicies, orgId, org)
           : undefined,
       canArchive: true,
-    })),
-    ...clientRequirements,
-  ].sort((a, b) => b.updatedAt - a.updatedAt);
+    });
+  }
+  return [...ownRows, ...clientRequirements].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export const listRequirements = query({
@@ -816,145 +400,61 @@ export const upsertRequirement = mutation({
   args: {
     orgId: v.id("organizations"),
     requirementId: v.optional(v.id("insuranceRequirements")),
+    kind: requirementKindValidator,
+    scope: requirementScopeValidator,
     title: v.string(),
-    category: requirementCategoryValidator,
     requirementText: v.string(),
-    name: v.optional(v.string()),
-    coverageCode: v.optional(v.string()),
-    limit: v.optional(v.string()),
-    limitAmount: v.optional(v.number()),
-    limitType: v.optional(v.string()),
-    limitValueType: v.optional(v.string()),
-    deductible: v.optional(v.string()),
-    deductibleAmount: v.optional(v.number()),
-    deductibleType: v.optional(v.string()),
-    deductibleValueType: v.optional(v.string()),
-    originalContent: v.optional(v.string()),
+    lineOfBusiness: v.optional(v.string()),
+    limits: v.optional(v.array(limitValidator)),
+    maxDeductible: v.optional(deductibleValidator),
+    coverageForm: v.optional(coverageFormValidator),
+    retroactiveDateOnOrBefore: v.optional(v.string()),
+    provisions: v.optional(v.array(requirementProvisionValidator)),
+    requiredForms: v.optional(v.array(v.string())),
+    minAmBestRating: v.optional(v.string()),
+    minAmBestFinancialSize: v.optional(v.string()),
+    admittedRequired: v.optional(v.boolean()),
+    conditionType: v.optional(requirementConditionTypeValidator),
+    noticeDays: v.optional(v.number()),
     sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
     sourceDocumentName: v.optional(v.string()),
     sourceType: v.optional(requirementSourceTypeValidator),
     sourceExcerpt: v.optional(v.string()),
     sourcePageStart: v.optional(v.number()),
     sourcePageEnd: v.optional(v.number()),
-    appliesTo: v.optional(
-      v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
-    ),
-    evaluationTarget: v.optional(requirementEvaluationTargetValidator),
-    evaluationReason: v.optional(v.string()),
-    semanticReviewStatus: v.optional(requirementSemanticReviewStatusValidator),
-    minimumRequired: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin")
+    if (access.role !== "admin") {
       throw new Error("Admin role required to update compliance requirements");
-    const now = dayjs().valueOf();
-    const trimmedTitle = args.title.trim();
-    const trimmedText = args.requirementText.trim();
-    if (!trimmedTitle || !trimmedText)
-      throw new Error("Title and requirement text are required");
-    const coverage = normalizeRequirementCoverage({
-      title: trimmedTitle,
-      requirementText: trimmedText,
-      name: args.name,
-      coverageCode: args.coverageCode,
-      limit: args.limit,
-      limitAmount: args.limitAmount,
-      limitType: args.limitType,
-      limitValueType: args.limitValueType,
-      deductible: args.deductible,
-      deductibleAmount: args.deductibleAmount,
-      deductibleType: args.deductibleType,
-      deductibleValueType: args.deductibleValueType,
-      originalContent: args.originalContent,
-    });
-    const appliesTo = args.appliesTo ?? "vendors";
-    const semantics = semanticFieldsForRequirement({
-      appliesTo,
-      title: trimmedTitle,
-      category: args.category,
-      requirementText: trimmedText,
-      ...coverage,
-      sourceExcerpt: args.sourceExcerpt,
-      sourceType: args.sourceType,
-      evaluationTarget: args.evaluationTarget,
-      evaluationReason: args.evaluationReason,
-      semanticReviewStatus: args.semanticReviewStatus,
-    });
-    if (args.requirementId) {
-      const existing = await ctx.db.get(args.requirementId);
-      if (!existing || existing.orgId !== args.orgId)
-        throw new Error("Requirement not found");
-      const updatedAppliesTo = args.appliesTo ?? existing.appliesTo ?? "vendors";
-      const updatedSemantics = semanticFieldsForRequirement({
-        appliesTo: updatedAppliesTo,
-        title: trimmedTitle,
-        category: args.category,
-        requirementText: trimmedText,
-        ...coverage,
-        sourceExcerpt: args.sourceExcerpt ?? existing.sourceExcerpt,
-        sourceType: args.sourceType ?? existing.sourceType,
-        evaluationTarget:
-          args.evaluationTarget ??
-          (existing.semanticReviewStatus === "user_confirmed"
-            ? existing.evaluationTarget
-            : undefined),
-        evaluationReason:
-          args.evaluationReason ??
-          (existing.semanticReviewStatus === "user_confirmed"
-            ? existing.evaluationReason
-            : undefined),
-        semanticReviewStatus:
-          args.semanticReviewStatus ??
-          (existing.semanticReviewStatus === "user_confirmed"
-            ? "user_confirmed"
-            : undefined),
-      });
-      await ctx.db.patch(args.requirementId, {
-        title: trimmedTitle,
-        category: args.category,
-        requirementText: trimmedText,
-        ...coverage,
-        sourceDocumentId: args.sourceDocumentId ?? existing.sourceDocumentId,
-        sourceDocumentName:
-          args.sourceDocumentName?.trim() || existing.sourceDocumentName,
-        sourceType: args.sourceType ?? existing.sourceType ?? "manual",
-        sourceExcerpt: args.sourceExcerpt?.trim() || existing.sourceExcerpt,
-        sourcePageStart: args.sourcePageStart ?? existing.sourcePageStart,
-        sourcePageEnd: args.sourcePageEnd ?? existing.sourcePageEnd,
-        appliesTo: updatedAppliesTo,
-        evaluationTarget: updatedSemantics.evaluationTarget,
-        evaluationReason: updatedSemantics.evaluationReason,
-        semanticReviewStatus: updatedSemantics.semanticReviewStatus,
-        minimumRequired:
-          args.minimumRequired ?? existing.minimumRequired ?? true,
-        updatedByUserId: access.userId,
-        updatedAt: now,
-      });
-      return args.requirementId;
     }
-    return await ctx.db.insert("insuranceRequirements", {
-      orgId: args.orgId,
-      title: trimmedTitle,
-      category: args.category,
-      requirementText: trimmedText,
-      ...coverage,
+    const now = dayjs().valueOf();
+    const sanitized = sanitizeRequirementArgs(args);
+    const patch = {
+      ...sanitized,
       sourceDocumentId: args.sourceDocumentId,
       sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
       sourceType: args.sourceType ?? "manual",
       sourceExcerpt: args.sourceExcerpt?.trim() || undefined,
       sourcePageStart: args.sourcePageStart,
       sourcePageEnd: args.sourcePageEnd,
-      appliesTo,
-      evaluationTarget: semantics.evaluationTarget,
-      evaluationReason: semantics.evaluationReason,
-      semanticReviewStatus: semantics.semanticReviewStatus,
-      minimumRequired: args.minimumRequired ?? true,
+      updatedByUserId: access.userId,
+      updatedAt: now,
+    };
+    if (args.requirementId) {
+      const existing = await ctx.db.get(args.requirementId);
+      if (!existing || existing.orgId !== args.orgId) {
+        throw new Error("Requirement not found");
+      }
+      await ctx.db.patch(args.requirementId, patch);
+      return args.requirementId;
+    }
+    return await ctx.db.insert("insuranceRequirements", {
+      orgId: args.orgId,
+      ...patch,
       status: "active",
       createdByUserId: access.userId,
-      updatedByUserId: access.userId,
       createdAt: now,
-      updatedAt: now,
     });
   },
 });
@@ -966,11 +466,13 @@ export const archiveRequirement = mutation({
   },
   handler: async (ctx, args) => {
     const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin")
+    if (access.role !== "admin") {
       throw new Error("Admin role required to archive compliance requirements");
+    }
     const existing = await ctx.db.get(args.requirementId);
-    if (!existing || existing.orgId !== args.orgId)
+    if (!existing || existing.orgId !== args.orgId) {
       throw new Error("Requirement not found");
+    }
     await ctx.db.patch(args.requirementId, {
       status: "archived",
       updatedByUserId: access.userId,
@@ -983,11 +485,138 @@ export const generateRequirementImportUploadUrl = mutation({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
     const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin")
+    if (access.role !== "admin") {
       throw new Error("Admin role required to import compliance requirements");
+    }
     return await ctx.storage.generateUploadUrl();
   },
 });
+
+export const generateEvidenceUploadUrl = mutation({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await requireOrgMember(ctx, args.orgId);
+    if (access.role !== "admin") {
+      throw new Error("Admin role required to verify requirements");
+    }
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const verifyRequirement = mutation({
+  args: {
+    orgId: v.id("organizations"),
+    requirementId: v.id("insuranceRequirements"),
+    subjectOrgId: v.optional(v.id("organizations")),
+    relationshipId: v.optional(v.id("connectedOrgRelationships")),
+    status: v.optional(complianceCheckStatusValidator),
+    evidence: v.optional(evidenceValidator),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireOrgMember(ctx, args.orgId);
+    if (access.role !== "admin") {
+      throw new Error("Admin role required to verify requirements");
+    }
+    const requirement = await ctx.db.get(args.requirementId);
+    if (!requirement || requirement.orgId !== args.orgId) {
+      throw new Error("Requirement not found");
+    }
+    const now = dayjs().valueOf();
+    return await ctx.db.insert("complianceChecks", {
+      orgId: args.orgId,
+      requirementId: args.requirementId,
+      subjectOrgId: args.subjectOrgId ?? args.orgId,
+      relationshipId: args.relationshipId,
+      status: args.status ?? "met",
+      reasons: [],
+      matchedPolicyIds: [],
+      matchedSummary: "Verified manually.",
+      evidence: args.evidence
+        ? {
+          note: args.evidence.note?.trim() || undefined,
+          fileId: args.evidence.fileId,
+          fileName: args.evidence.fileName?.trim() || undefined,
+          validUntil: args.evidence.validUntil?.trim() || undefined,
+        }
+        : undefined,
+      checkedAt: now,
+      checkedBy: "user",
+      checkedByUserId: access.userId,
+    });
+  },
+});
+
+async function vendorComplianceRows(
+  ctx: QueryCtx,
+  clientOrgId: Id<"organizations">,
+  includePreviewPolicies = true,
+) {
+  const clientRequirements = await listRequirementsForOrg(ctx, clientOrgId);
+  const relationships = await ctx.db
+    .query("connectedOrgRelationships")
+    .withIndex("by_clientOrgId_status", (q) =>
+      q.eq("clientOrgId", clientOrgId).eq("status", "active"),
+    )
+    .collect();
+  const rows = [];
+  for (const rel of relationships) {
+    const vendorOrg = await ctx.db.get(rel.vendorOrgId);
+    const requirements = requirementsForVendor(rel, clientRequirements);
+    const policies = await listPoliciesForOrg(ctx, rel.vendorOrgId);
+    const policyCount = policies.filter((policy) =>
+      policyReadableForCompliance(policy, includePreviewPolicies),
+    ).length;
+    const checks = [];
+    for (const requirement of requirements) {
+      const check = await assessForSubject(ctx, requirement, policies, rel.vendorOrgId, vendorOrg, {
+        relationshipId: rel._id,
+        includePreviewPolicies,
+      });
+      checks.push({
+        requirement,
+        ...check,
+      });
+    }
+    const notMetCount = checks.filter(
+      (check) => check.status === "not_met" || check.status === "expired",
+    ).length;
+    const expiringSoonCount = checks.filter(
+      (check) => check.status === "expiring_soon",
+    ).length;
+    const unverifiedCount = checks.filter(
+      (check) => check.status === "unverified",
+    ).length;
+    rows.push({
+      relationshipId: rel._id,
+      vendorOrg: vendorOrg
+        ? {
+          _id: vendorOrg._id,
+          name: vendorOrg.name,
+          website: vendorOrg.website,
+        }
+        : null,
+      vendorOrgId: rel.vendorOrgId,
+      vendorName: vendorOrg?.name ?? "Unknown vendor",
+      status:
+        notMetCount > 0
+          ? "non_compliant"
+          : expiringSoonCount > 0 || unverifiedCount > 0
+            ? "attention"
+            : requirements.length === 0
+              ? "no_requirements"
+              : "compliant",
+      requirementCount: requirements.length,
+      policyCount,
+      metCount: checks.filter((check) => check.status === "met").length,
+      notMetCount,
+      missingCount: notMetCount,
+      expiringSoonCount,
+      unverifiedCount,
+      checks,
+    });
+  }
+  return rows;
+}
 
 export const listVendorCompliance = query({
   args: { clientOrgId: v.optional(v.id("organizations")) },
@@ -1003,70 +632,7 @@ export const listVendorCompliance = query({
       clientOrgId = membership.orgId;
     }
     await requireOrgMember(ctx, clientOrgId);
-    const requirements = vendorScopedRequirements(
-      await listRequirementsForOrg(ctx, clientOrgId),
-    );
-    const relationships = await ctx.db
-      .query("connectedOrgRelationships")
-      .withIndex("by_clientOrgId_status", (q) =>
-        q.eq("clientOrgId", clientOrgId).eq("status", "active"),
-      )
-      .collect();
-    const rows = [];
-    for (const rel of relationships) {
-      const vendorOrg = await ctx.db.get(rel.vendorOrgId);
-      const policies = await ctx.db
-        .query("policies")
-        .withIndex("by_orgId", (q) => q.eq("orgId", rel.vendorOrgId))
-        .collect();
-      const policyCount = policies.filter((policy) =>
-        policyReadableForCompliance(policy, true),
-      ).length;
-      const checks = requirements.map((requirement) => ({
-        requirement: requirementWithSemanticDefaults(requirement),
-        ...assessRequirement(
-          requirement,
-          policies,
-          dayjs().valueOf(),
-          vendorOrg?.name,
-          orgLegalNames(vendorOrg),
-        ),
-      }));
-      const missing = checks.filter(
-        (check) =>
-          check.status === "missing" ||
-          check.status === "expired" ||
-          check.status === "needs_review",
-      ).length;
-      const expiringSoon = checks.filter(
-        (check) => check.status === "expiring_soon",
-      ).length;
-      rows.push({
-        relationshipId: rel._id,
-        vendorOrg: vendorOrg
-          ? {
-              _id: vendorOrg._id,
-              name: vendorOrg.name,
-              website: vendorOrg.website,
-            }
-          : null,
-        status:
-          missing > 0
-            ? "non_compliant"
-            : expiringSoon > 0
-              ? "attention"
-              : requirements.length === 0
-                ? "no_requirements"
-                : "compliant",
-        requirementCount: requirements.length,
-        policyCount,
-        metCount: checks.filter((check) => check.status === "met").length,
-        missingCount: missing,
-        expiringSoonCount: expiringSoon,
-        checks,
-      });
-    }
-    return rows;
+    return await vendorComplianceRows(ctx, clientOrgId, true);
   },
 });
 
@@ -1089,49 +655,44 @@ export const getVendorChecklist = query({
     await requireOrgMember(ctx, vendorOrgId);
     const relationships = args.clientOrgId
       ? await ctx.db
-          .query("connectedOrgRelationships")
-          .withIndex("by_clientOrgId_vendorOrgId", (q) =>
-            q
-              .eq("clientOrgId", args.clientOrgId!)
-              .eq("vendorOrgId", vendorOrgId),
-          )
-          .collect()
+        .query("connectedOrgRelationships")
+        .withIndex("by_clientOrgId_vendorOrgId", (q) =>
+          q.eq("clientOrgId", args.clientOrgId!).eq("vendorOrgId", vendorOrgId),
+        )
+        .collect()
       : await ctx.db
-          .query("connectedOrgRelationships")
-          .withIndex("by_vendorOrgId_status", (q) =>
-            q.eq("vendorOrgId", vendorOrgId).eq("status", "active"),
-          )
-          .collect();
-    const policies = await ctx.db
-      .query("policies")
-      .withIndex("by_orgId", (q) => q.eq("orgId", vendorOrgId))
-      .collect();
-    const vendorOrg = await ctx.db.get(vendorOrgId);
+        .query("connectedOrgRelationships")
+        .withIndex("by_vendorOrgId_status", (q) =>
+          q.eq("vendorOrgId", vendorOrgId).eq("status", "active"),
+        )
+        .collect();
+    const [policies, vendorOrg] = await Promise.all([
+      listPoliciesForOrg(ctx, vendorOrgId),
+      ctx.db.get(vendorOrgId),
+    ]);
     const rows = [];
-    for (const rel of relationships.filter(
-      (relationship) => relationship.status === "active",
-    )) {
+    for (const rel of relationships.filter((relationship) => relationship.status === "active")) {
       const clientOrg = await ctx.db.get(rel.clientOrgId);
-      const requirements = vendorScopedRequirements(
+      const requirements = requirementsForVendor(
+        rel,
         await listRequirementsForOrg(ctx, rel.clientOrgId),
       );
-      const checks = requirements.map((requirement) => ({
-        requirement: requirementWithSemanticDefaults(requirement),
-        ...assessRequirement(
+      const checks = [];
+      for (const requirement of requirements) {
+        checks.push({
           requirement,
-          policies,
-          dayjs().valueOf(),
-          vendorOrg?.name,
-          orgLegalNames(vendorOrg),
-        ),
-      }));
+          ...(await assessForSubject(ctx, requirement, policies, vendorOrgId, vendorOrg, {
+            relationshipId: rel._id,
+          })),
+        });
+      }
       rows.push({
         clientOrg: clientOrg
           ? {
-              _id: clientOrg._id,
-              name: clientOrg.name,
-              website: clientOrg.website,
-            }
+            _id: clientOrg._id,
+            name: clientOrg.name,
+            website: clientOrg.website,
+          }
           : null,
         checks,
       });
@@ -1142,8 +703,7 @@ export const getVendorChecklist = query({
 
 export const listRequirementsInternal = internalQuery({
   args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) =>
-    await listRequirementsVisibleToOrg(ctx, args.orgId),
+  handler: async (ctx, args) => await listRequirementsVisibleToOrg(ctx, args.orgId),
 });
 
 export const getManualComplianceReviewContextInternal = internalQuery({
@@ -1160,7 +720,6 @@ export const getManualComplianceReviewContextInternal = internalQuery({
       )
       .first();
     if (!membership) throw new Error("Organization access required");
-
     const requirement = await ctx.db.get(args.requirementId);
     if (
       !requirement ||
@@ -1169,68 +728,32 @@ export const getManualComplianceReviewContextInternal = internalQuery({
     ) {
       throw new Error("Requirement not found");
     }
-    if (
-      requirement.appliesTo !== "own_org" &&
-      requirement.appliesTo !== "both"
-    ) {
-      throw new Error(
-        "This requirement is not checked against your organization",
-      );
+    if (requirement.scope !== "own_org" || requirement.kind !== "coverage") {
+      throw new Error("Only own coverage requirements can be deeply rechecked");
     }
-    const semantics = requirementSemantics(requirement);
-    if (
-      !shouldEvaluateOwnOrgRequirement(requirement) ||
-      semantics.evaluationTarget !== "own_policy"
-    ) {
-      throw new Error(
-        "Only own-policy requirements can be checked against current organization policies",
-      );
-    }
-
     const [org, policies] = await Promise.all([
       ctx.db.get(args.orgId),
-      ctx.db
-        .query("policies")
-        .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
-        .collect(),
+      listPoliciesForOrg(ctx, args.orgId),
     ]);
     const activePolicies = policies.filter((policy) =>
       policyReadableForCompliance(policy, true),
     );
-
     return {
       org: org
         ? {
-            _id: org._id,
-            name: org.name,
-            relatedLegalEntities: org.relatedLegalEntities ?? [],
-          }
+          _id: org._id,
+          name: org.name,
+          relatedLegalEntities: org.relatedLegalEntities ?? [],
+        }
         : null,
-      requirement: {
-        _id: requirement._id,
-        title: requirement.title,
-        category: requirement.category,
-        requirementText: requirement.requirementText,
-        limit: requirement.limit,
-        limitAmount: requirement.limitAmount,
-        deductible: requirement.deductible,
-        deductibleAmount: requirement.deductibleAmount,
-        appliesTo: requirement.appliesTo,
-        evaluationTarget: semantics.evaluationTarget,
-        evaluationReason: semantics.evaluationReason,
-        semanticReviewStatus: semantics.semanticReviewStatus,
-        sourceExcerpt: requirement.sourceExcerpt,
-      },
-      deterministicCheck: assessRequirement(
-        requirement,
-        activePolicies,
-        dayjs().valueOf(),
-        org?.name,
-        orgLegalNames(org),
-      ),
+      requirement,
+      deterministicCheck: assessRequirementCompliance(requirement, activePolicies, {
+        expectedInsuredName: org?.name,
+        expectedInsuredNames: orgLegalNames(org),
+      }),
       policies: activePolicies.map((policy) => ({
         _id: policy._id,
-        carrier: policy.carrier,
+        carrier: policy.mga || policy.carrier || policy.security,
         policyNumber: policy.policyNumber,
         insuredName: policy.insuredName,
         effectiveDate: policy.effectiveDate,
@@ -1238,12 +761,16 @@ export const getManualComplianceReviewContextInternal = internalQuery({
         linesOfBusiness: policyLobCodes(policy),
         policyTypes: policyLobCodes(policy),
         summary: policy.summary,
+        formInventory: policy.formInventory,
+        operationalProfile: policy.operationalProfile,
         coverages: (policy.coverages ?? []).map((coverage) => ({
           name: coverage.name,
+          lineOfBusiness: coverage.lineOfBusiness,
           coverageCode: coverage.coverageCode,
           limit: coverage.limit,
           limitAmount: coverage.limitAmount,
           limitType: coverage.limitType,
+          limits: coverage.limits,
           deductible: coverage.deductible,
           deductibleAmount: coverage.deductibleAmount,
           deductibleType: coverage.deductibleType,
@@ -1262,34 +789,30 @@ export const saveManualComplianceReviewInternal = internalMutation({
     orgId: v.id("organizations"),
     requirementId: v.id("insuranceRequirements"),
     userId: v.id("users"),
-    status: complianceStatusValidator,
+    status: complianceCheckStatusValidator,
     matchedPolicyIds: v.array(v.id("policies")),
     expiresAt: v.optional(v.string()),
     daysUntilExpiration: v.optional(v.number()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
-        q.eq("orgId", args.orgId).eq("userId", args.userId),
-      )
-      .first();
-    if (!membership) throw new Error("Organization access required");
+    await requireAdminWriteActor(ctx, args.orgId, args.userId, "Admin role required");
     const requirement = await ctx.db.get(args.requirementId);
     if (!requirement || requirement.orgId !== args.orgId) {
       throw new Error("Requirement not found");
     }
-    await ctx.db.patch(args.requirementId, {
-      manualComplianceReview: {
-        status: args.status,
-        matchedPolicyIds: args.matchedPolicyIds,
-        expiresAt: args.expiresAt,
-        daysUntilExpiration: args.daysUntilExpiration,
-        notes: args.notes?.trim() || undefined,
-        checkedAt: dayjs().valueOf(),
-        checkedByUserId: args.userId,
-      },
+    return await ctx.db.insert("complianceChecks", {
+      orgId: args.orgId,
+      requirementId: args.requirementId,
+      subjectOrgId: args.orgId,
+      status: args.status,
+      reasons: args.status === "met" ? [] : ["agent_review"],
+      matchedPolicyIds: args.matchedPolicyIds,
+      matchedSummary: args.notes?.trim() || undefined,
+      expiresAt: args.expiresAt,
+      checkedAt: dayjs().valueOf(),
+      checkedBy: "agent",
+      checkedByUserId: args.userId,
     });
   },
 });
@@ -1298,88 +821,42 @@ export const upsertRequirementInternal = internalMutation({
   args: {
     orgId: v.id("organizations"),
     userId: v.id("users"),
+    kind: requirementKindValidator,
+    scope: requirementScopeValidator,
     title: v.string(),
-    category: requirementCategoryValidator,
     requirementText: v.string(),
-    name: v.optional(v.string()),
-    coverageCode: v.optional(v.string()),
-    limit: v.optional(v.string()),
-    limitAmount: v.optional(v.number()),
-    limitType: v.optional(v.string()),
-    limitValueType: v.optional(v.string()),
-    deductible: v.optional(v.string()),
-    deductibleAmount: v.optional(v.number()),
-    deductibleType: v.optional(v.string()),
-    deductibleValueType: v.optional(v.string()),
-    originalContent: v.optional(v.string()),
+    lineOfBusiness: v.optional(v.string()),
+    limits: v.optional(v.array(limitValidator)),
+    maxDeductible: v.optional(deductibleValidator),
+    coverageForm: v.optional(coverageFormValidator),
+    retroactiveDateOnOrBefore: v.optional(v.string()),
+    provisions: v.optional(v.array(requirementProvisionValidator)),
+    requiredForms: v.optional(v.array(v.string())),
+    minAmBestRating: v.optional(v.string()),
+    minAmBestFinancialSize: v.optional(v.string()),
+    admittedRequired: v.optional(v.boolean()),
+    conditionType: v.optional(requirementConditionTypeValidator),
+    noticeDays: v.optional(v.number()),
     sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
     sourceDocumentName: v.optional(v.string()),
     sourceType: v.optional(requirementSourceTypeValidator),
     sourceExcerpt: v.optional(v.string()),
     sourcePageStart: v.optional(v.number()),
     sourcePageEnd: v.optional(v.number()),
-    appliesTo: v.optional(
-      v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
-    ),
-    evaluationTarget: v.optional(requirementEvaluationTargetValidator),
-    evaluationReason: v.optional(v.string()),
-    semanticReviewStatus: v.optional(requirementSemanticReviewStatusValidator),
   },
   handler: async (ctx, args) => {
-    await requireAdminWriteActor(
-      ctx,
-      args.orgId,
-      args.userId,
-      "Admin role required",
-    );
+    await requireAdminWriteActor(ctx, args.orgId, args.userId, "Admin role required");
     const now = dayjs().valueOf();
-    const title = args.title.trim();
-    const requirementText = args.requirementText.trim();
-    const coverage = normalizeRequirementCoverage({
-      title,
-      requirementText,
-      name: args.name,
-      coverageCode: args.coverageCode,
-      limit: args.limit,
-      limitAmount: args.limitAmount,
-      limitType: args.limitType,
-      limitValueType: args.limitValueType,
-      deductible: args.deductible,
-      deductibleAmount: args.deductibleAmount,
-      deductibleType: args.deductibleType,
-      deductibleValueType: args.deductibleValueType,
-      originalContent: args.originalContent,
-    });
-    const appliesTo = args.appliesTo ?? "vendors";
-    const semantics = semanticFieldsForRequirement({
-      appliesTo,
-      title,
-      category: args.category,
-      requirementText,
-      ...coverage,
-      sourceExcerpt: args.sourceExcerpt,
-      sourceType: args.sourceType,
-      evaluationTarget: args.evaluationTarget,
-      evaluationReason: args.evaluationReason,
-      semanticReviewStatus: args.semanticReviewStatus,
-    });
+    const sanitized = sanitizeRequirementArgs(args);
     return await ctx.db.insert("insuranceRequirements", {
       orgId: args.orgId,
-      title,
-      category: args.category,
-      requirementText,
-      ...coverage,
+      ...sanitized,
       sourceDocumentId: args.sourceDocumentId,
       sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
       sourceType: args.sourceType ?? "manual",
       sourceExcerpt: args.sourceExcerpt?.trim() || undefined,
       sourcePageStart: args.sourcePageStart,
       sourcePageEnd: args.sourcePageEnd,
-      appliesTo,
-      evaluationTarget: semantics.evaluationTarget,
-      evaluationReason: semantics.evaluationReason,
-      semanticReviewStatus: semantics.semanticReviewStatus,
-      minimumRequired: true,
       status: "active",
       createdByUserId: args.userId,
       updatedByUserId: args.userId,
@@ -1390,29 +867,37 @@ export const upsertRequirementInternal = internalMutation({
 });
 
 export const getRequirementImportContextInternal = internalQuery({
-  args: { orgId: v.id("organizations") },
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args) => {
-    const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin")
+    const access = args.userId
+      ? null
+      : await requireOrgMember(ctx, args.orgId);
+    if (args.userId) {
+      const membership = await ctx.db
+        .query("orgMemberships")
+        .withIndex("by_orgId_userId", (q) =>
+          q.eq("orgId", args.orgId).eq("userId", args.userId!),
+        )
+        .first();
+      if (membership?.role !== "admin") {
+        throw new Error("Admin role required to import compliance requirements");
+      }
+    } else if (access?.role !== "admin") {
       throw new Error("Admin role required to import compliance requirements");
+    }
     const existing = await listRequirementsForOrg(ctx, args.orgId);
     return {
-      userId: access.userId,
+      userId: args.userId ?? access!.userId,
       existingRequirements: existing.map((requirement) => ({
+        kind: requirement.kind,
+        scope: requirement.scope,
         title: requirement.title,
-        category: requirement.category,
         requirementText: requirement.requirementText,
-        name: requirement.name,
-        coverageCode: requirement.coverageCode,
-        limit: requirement.limit,
-        limitAmount: requirement.limitAmount,
-        limitType: requirement.limitType,
-        limitValueType: requirement.limitValueType,
-        deductible: requirement.deductible,
-        deductibleAmount: requirement.deductibleAmount,
-        deductibleType: requirement.deductibleType,
-        deductibleValueType: requirement.deductibleValueType,
-        originalContent: requirement.originalContent,
+        lineOfBusiness: requirement.lineOfBusiness,
+        conditionType: requirement.conditionType,
       })),
     };
   },
@@ -1427,26 +912,19 @@ export const getRequirementImportContextForUserInternal = internalQuery({
         q.eq("orgId", args.orgId).eq("userId", args.userId),
       )
       .first();
-    if (membership?.role !== "admin")
+    if (membership?.role !== "admin") {
       throw new Error("Admin role required to import compliance requirements");
+    }
     const existing = await listRequirementsForOrg(ctx, args.orgId);
     return {
       userId: args.userId,
       existingRequirements: existing.map((requirement) => ({
+        kind: requirement.kind,
+        scope: requirement.scope,
         title: requirement.title,
-        category: requirement.category,
         requirementText: requirement.requirementText,
-        name: requirement.name,
-        coverageCode: requirement.coverageCode,
-        limit: requirement.limit,
-        limitAmount: requirement.limitAmount,
-        limitType: requirement.limitType,
-        limitValueType: requirement.limitValueType,
-        deductible: requirement.deductible,
-        deductibleAmount: requirement.deductibleAmount,
-        deductibleType: requirement.deductibleType,
-        deductibleValueType: requirement.deductibleValueType,
-        originalContent: requirement.originalContent,
+        lineOfBusiness: requirement.lineOfBusiness,
+        conditionType: requirement.conditionType,
       })),
     };
   },
@@ -1470,17 +948,10 @@ export const createRequirementSourceDocumentInternal = internalMutation({
         v.literal("plain_text"),
       ),
     ),
-    parserVersion: v.optional(v.string()),
     parsedAt: v.optional(v.number()),
-    parsingMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireAdminWriteActor(
-      ctx,
-      args.orgId,
-      args.userId,
-      "Admin role required",
-    );
+    await requireAdminWriteActor(ctx, args.orgId, args.userId, "Admin role required");
     const now = dayjs().valueOf();
     return await ctx.db.insert("requirementSourceDocuments", {
       orgId: args.orgId,
@@ -1491,9 +962,7 @@ export const createRequirementSourceDocumentInternal = internalMutation({
       title: args.title.trim() || args.fileName || "Requirement source",
       sourceTextExcerpt: args.sourceTextExcerpt?.trim() || undefined,
       parserBackend: args.parserBackend,
-      parserVersion: args.parserVersion,
       parsedAt: args.parsedAt,
-      parsingMs: args.parsingMs,
       status: "complete",
       createdByUserId: args.userId,
       createdAt: now,
@@ -1506,111 +975,65 @@ export const createRequirementsInternal = internalMutation({
   args: {
     orgId: v.id("organizations"),
     userId: v.id("users"),
-    appliesTo: v.optional(
-      v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
-    ),
+    scope: v.optional(requirementScopeValidator),
     sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
     sourceDocumentName: v.optional(v.string()),
     sourceType: v.optional(requirementSourceTypeValidator),
     requirements: v.array(
       v.object({
+        kind: requirementKindValidator,
+        scope: v.optional(requirementScopeValidator),
         title: v.string(),
-        category: requirementCategoryValidator,
         requirementText: v.string(),
-        name: v.optional(v.string()),
-        coverageCode: v.optional(v.string()),
-        limit: v.optional(v.string()),
-        limitAmount: v.optional(v.number()),
-        limitType: v.optional(v.string()),
-        limitValueType: v.optional(v.string()),
-        deductible: v.optional(v.string()),
-        deductibleAmount: v.optional(v.number()),
-        deductibleType: v.optional(v.string()),
-        deductibleValueType: v.optional(v.string()),
-        originalContent: v.optional(v.string()),
+        lineOfBusiness: v.optional(v.string()),
+        limits: v.optional(v.array(limitValidator)),
+        maxDeductible: v.optional(deductibleValidator),
+        coverageForm: v.optional(coverageFormValidator),
+        retroactiveDateOnOrBefore: v.optional(v.string()),
+        provisions: v.optional(v.array(v.string())),
+        requiredForms: v.optional(v.array(v.string())),
+        minAmBestRating: v.optional(v.string()),
+        minAmBestFinancialSize: v.optional(v.string()),
+        admittedRequired: v.optional(v.boolean()),
+        conditionType: v.optional(requirementConditionTypeValidator),
+        noticeDays: v.optional(v.number()),
         sourceExcerpt: v.optional(v.string()),
         sourcePageStart: v.optional(v.number()),
         sourcePageEnd: v.optional(v.number()),
-        evaluationTarget: v.optional(requirementEvaluationTargetValidator),
-        evaluationReason: v.optional(v.string()),
-        semanticReviewStatus: v.optional(
-          requirementSemanticReviewStatusValidator,
-        ),
       }),
     ),
   },
   handler: async (ctx, args) => {
-    await requireAdminWriteActor(
-      ctx,
-      args.orgId,
-      args.userId,
-      "Admin role required",
-    );
+    await requireAdminWriteActor(ctx, args.orgId, args.userId, "Admin role required");
     const existing = await listRequirementsForOrg(ctx, args.orgId);
     const seen = new Set(
       existing.map((requirement) =>
-        normalizeText(`${requirement.title} ${requirement.requirementText}`),
+        normalizeText(
+          `${requirement.kind} ${requirement.lineOfBusiness ?? requirement.conditionType ?? ""} ${requirement.title}`,
+        ),
       ),
     );
     const now = dayjs().valueOf();
     const ids: Id<"insuranceRequirements">[] = [];
     for (const requirement of args.requirements) {
-      const title = requirement.title.trim();
-      const requirementText = requirement.requirementText.trim();
-      if (!title || !requirementText) continue;
-      const key = normalizeText(`${title} ${requirementText}`);
+      const scope = requirement.scope ?? args.scope ?? "vendors";
+      const sanitized = sanitizeRequirementArgs({ ...requirement, scope });
+      const key = normalizeText(
+        `${sanitized.kind} ${sanitized.lineOfBusiness ?? sanitized.conditionType ?? ""} ${sanitized.title}`,
+      );
       if (seen.has(key)) continue;
       seen.add(key);
-      const appliesTo = args.appliesTo ?? "vendors";
-      const coverage = normalizeRequirementCoverage({
-        title,
-        requirementText,
-        name: requirement.name,
-        coverageCode: requirement.coverageCode,
-        limit: requirement.limit,
-        limitAmount: requirement.limitAmount,
-        limitType: requirement.limitType,
-        limitValueType: requirement.limitValueType,
-        deductible: requirement.deductible,
-        deductibleAmount: requirement.deductibleAmount,
-        deductibleType: requirement.deductibleType,
-        deductibleValueType: requirement.deductibleValueType,
-        originalContent: requirement.originalContent,
-      });
-      const sourceExcerpt =
-        requirement.sourceExcerpt?.trim() ||
-        requirement.originalContent?.trim() ||
-        requirementText;
-      const semantics = semanticFieldsForRequirement({
-        appliesTo,
-        title,
-        category: requirement.category,
-        requirementText,
-        ...coverage,
-        sourceExcerpt,
-        sourceType: args.sourceType,
-        evaluationTarget: requirement.evaluationTarget,
-        evaluationReason: requirement.evaluationReason,
-        semanticReviewStatus: requirement.semanticReviewStatus,
-      });
       ids.push(
         await ctx.db.insert("insuranceRequirements", {
           orgId: args.orgId,
-          title,
-          category: requirement.category,
-          requirementText,
-          ...coverage,
+          ...sanitized,
           sourceDocumentId: args.sourceDocumentId,
           sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
           sourceType: args.sourceType ?? "bulk_import",
-          sourceExcerpt,
+          sourceExcerpt:
+            requirement.sourceExcerpt?.trim() || sanitized.requirementText,
           sourcePageStart: requirement.sourcePageStart,
           sourcePageEnd: requirement.sourcePageEnd,
-          appliesTo,
-          evaluationTarget: semantics.evaluationTarget,
-          evaluationReason: semantics.evaluationReason,
-          semanticReviewStatus: semantics.semanticReviewStatus,
-          minimumRequired: true,
           status: "active",
           createdByUserId: args.userId,
           updatedByUserId: args.userId,
@@ -1628,153 +1051,12 @@ export const listVendorComplianceInternal = internalQuery({
     clientOrgId: v.id("organizations"),
     includePreviewPolicies: v.optional(v.boolean()),
   },
-  handler: async (ctx, args) => {
-    const includePreviewPolicies = args.includePreviewPolicies !== false;
-    const requirements = vendorScopedRequirements(
-      await listRequirementsForOrg(ctx, args.clientOrgId),
-    );
-    const relationships = await ctx.db
-      .query("connectedOrgRelationships")
-      .withIndex("by_clientOrgId_status", (q) =>
-        q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
-      )
-      .collect();
-    const rows = [];
-    for (const rel of relationships) {
-      const vendorOrg = await ctx.db.get(rel.vendorOrgId);
-      const policies = await ctx.db
-        .query("policies")
-        .withIndex("by_orgId", (q) => q.eq("orgId", rel.vendorOrgId))
-        .collect();
-      const policyCount = policies.filter((policy) =>
-        policyReadableForCompliance(policy, includePreviewPolicies),
-      ).length;
-      const checks = requirements.map((requirement) => ({
-        requirement: requirementWithSemanticDefaults(requirement),
-        ...assessRequirement(
-          requirement,
-          policies,
-          dayjs().valueOf(),
-          vendorOrg?.name,
-          orgLegalNames(vendorOrg),
-          { includePreviewPolicies },
-        ),
-      }));
-      const missing = checks.filter(
-        (check) =>
-          check.status === "missing" ||
-          check.status === "expired" ||
-          check.status === "needs_review",
-      ).length;
-      const expiringSoon = checks.filter(
-        (check) => check.status === "expiring_soon",
-      ).length;
-      rows.push({
-        relationshipId: rel._id,
-        vendorOrg: vendorOrg
-          ? {
-              _id: vendorOrg._id,
-              name: vendorOrg.name,
-              website: vendorOrg.website,
-            }
-          : null,
-        status:
-          missing > 0
-            ? "non_compliant"
-            : expiringSoon > 0
-              ? "attention"
-              : requirements.length === 0
-                ? "no_requirements"
-                : "compliant",
-        requirementCount: requirements.length,
-        policyCount,
-        metCount: checks.filter((check) => check.status === "met").length,
-        missingCount: missing,
-        expiringSoonCount: expiringSoon,
-        checks,
-      });
-    }
-    return rows;
-  },
-});
-
-export const backfillRequirementSemanticsInternal = internalMutation({
-  args: {
-    orgId: v.optional(v.id("organizations")),
-    dryRun: v.optional(v.boolean()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = Math.min(Math.max(args.limit ?? 500, 1), 1000);
-    const rows = args.orgId
-      ? await ctx.db
-          .query("insuranceRequirements")
-          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId!))
-          .take(limit)
-      : (await ctx.db.query("insuranceRequirements").collect()).slice(
-          0,
-          limit,
-        );
-    const changes: Array<{
-      requirementId: Id<"insuranceRequirements">;
-      title: string;
-      appliesTo: RequirementScope;
-      previous: {
-        evaluationTarget?: string;
-        semanticReviewStatus?: string;
-      };
-      next: ReturnType<typeof semanticFieldsForRequirement>;
-    }> = [];
-
-    for (const requirement of rows) {
-      if (requirement.semanticReviewStatus === "user_confirmed") continue;
-      const semantics = semanticFieldsForRequirement({
-        appliesTo: requirement.appliesTo,
-        title: requirement.title,
-        category: requirement.category,
-        requirementText: requirement.requirementText,
-        name: requirement.name,
-        coverageCode: requirement.coverageCode,
-        limit: requirement.limit,
-        limitAmount: requirement.limitAmount,
-        deductible: requirement.deductible,
-        deductibleAmount: requirement.deductibleAmount,
-        originalContent: requirement.originalContent,
-        sourceExcerpt: requirement.sourceExcerpt,
-        sourceType: requirement.sourceType,
-      });
-      const changed =
-        requirement.evaluationTarget !== semantics.evaluationTarget ||
-        requirement.evaluationReason !== semantics.evaluationReason ||
-        requirement.semanticReviewStatus !== semantics.semanticReviewStatus;
-      if (!changed) continue;
-      changes.push({
-        requirementId: requirement._id,
-        title: requirement.title,
-        appliesTo: requirement.appliesTo,
-        previous: {
-          evaluationTarget: requirement.evaluationTarget,
-          semanticReviewStatus: requirement.semanticReviewStatus,
-        },
-        next: semantics,
-      });
-      if (!args.dryRun) {
-        await ctx.db.patch(requirement._id, {
-          evaluationTarget: semantics.evaluationTarget,
-          evaluationReason: semantics.evaluationReason,
-          semanticReviewStatus: semantics.semanticReviewStatus,
-          updatedAt: dayjs().valueOf(),
-        });
-      }
-    }
-
-    return {
-      scannedCount: rows.length,
-      changedCount: changes.length,
-      dryRun: args.dryRun === true,
-      changes: changes.slice(0, 50),
-    };
-  },
+  handler: async (ctx, args) =>
+    await vendorComplianceRows(
+      ctx,
+      args.clientOrgId,
+      args.includePreviewPolicies !== false,
+    ),
 });
 
 export const listClientOrgIdsWithActiveVendorsInternal = internalQuery({
@@ -1806,22 +1088,18 @@ export const getConnectedVendorContactInternal = internalQuery({
       .collect();
     const invitation = invitations
       .filter(
-        (invitation) =>
-          invitation.relationshipId === args.relationshipId ||
-          invitation.vendorOrgId === args.vendorOrgId,
+        (row) =>
+          row.relationshipId === args.relationshipId ||
+          row.vendorOrgId === args.vendorOrgId,
       )
       .sort((a, b) => b.updatedAt - a.updatedAt)[0];
-
     const memberships = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.vendorOrgId))
       .collect();
     const vendorUsers = (
-      await Promise.all(
-        memberships.map((membership) => ctx.db.get(membership.userId)),
-      )
+      await Promise.all(memberships.map((membership) => ctx.db.get(membership.userId)))
     ).filter(Boolean);
-
     return {
       vendorEmail:
         invitation?.vendorEmail ??
@@ -1862,14 +1140,14 @@ export const recordVendorComplianceRunInternal = internalMutation({
 
     for (const row of args.rows) {
       const previousSnapshots = await ctx.db
-        .query("vendorComplianceChecks")
+        .query("complianceChecks")
         .withIndex("by_relationshipId", (q) =>
           q.eq("relationshipId", row.relationshipId),
         )
         .collect();
       const latestByRequirement = new Map<
         Id<"insuranceRequirements">,
-        Doc<"vendorComplianceChecks">
+        Doc<"complianceChecks">
       >();
       for (const snapshot of previousSnapshots) {
         const current = latestByRequirement.get(snapshot.requirementId);
@@ -1877,8 +1155,12 @@ export const recordVendorComplianceRunInternal = internalMutation({
           latestByRequirement.set(snapshot.requirementId, snapshot);
         }
       }
-
-      const issueChecks = row.checks.filter((check) => check.status !== "met");
+      const issueChecks = row.checks.filter(
+        (check) =>
+          check.status === "not_met" ||
+          check.status === "expired" ||
+          check.status === "expiring_soon",
+      );
       const alertableIssueChecks = issueChecks.filter((check) => {
         const latest = latestByRequirement.get(check.requirementId);
         return (
@@ -1888,7 +1170,10 @@ export const recordVendorComplianceRunInternal = internalMutation({
         );
       });
       const previousHadIssue = [...latestByRequirement.values()].some(
-        (snapshot) => snapshot.status !== "met",
+        (snapshot) =>
+          snapshot.status === "not_met" ||
+          snapshot.status === "expired" ||
+          snapshot.status === "expiring_soon",
       );
       const currentIsCompliant =
         row.requirementCount > 0 &&
@@ -1896,17 +1181,18 @@ export const recordVendorComplianceRunInternal = internalMutation({
         row.checks.every((check) => check.status === "met");
 
       for (const check of row.checks) {
-        await ctx.db.insert("vendorComplianceChecks", {
-          clientOrgId: args.clientOrgId,
-          vendorOrgId: row.vendorOrgId,
-          relationshipId: row.relationshipId,
+        await ctx.db.insert("complianceChecks", {
+          orgId: args.clientOrgId,
           requirementId: check.requirementId,
+          subjectOrgId: row.vendorOrgId,
+          relationshipId: row.relationshipId,
           status: check.status,
+          reasons: check.reasons,
           matchedPolicyIds: check.matchedPolicyIds,
+          matchedSummary: check.matchedSummary ?? check.notes,
           expiresAt: check.expiresAt,
           checkedAt: now,
           checkedBy: "system",
-          notes: check.notes,
         });
       }
 
@@ -1925,15 +1211,12 @@ export const recordVendorComplianceRunInternal = internalMutation({
         });
         continue;
       }
-
       if (alertableIssueChecks.length === 0) continue;
-
       const hasExpired = alertableIssueChecks.some(
         (check) => check.status === "expired",
       );
       const hasGap = alertableIssueChecks.some(
-        (check) =>
-          check.status === "missing" || check.status === "needs_review",
+        (check) => check.status === "not_met",
       );
       const type = hasExpired
         ? "vendor_policy_expired"
@@ -1961,10 +1244,7 @@ export const recordVendorComplianceRunInternal = internalMutation({
               : `${row.vendorName} is missing vendor requirements`;
       const body = `${issueCount} vendor ${noun} attention for ${row.vendorName}: ${issueLines
         .slice(0, 3)
-        .join(
-          "; ",
-        )}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`;
-
+        .join("; ")}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`;
       events.push({
         type,
         title,
@@ -1978,7 +1258,6 @@ export const recordVendorComplianceRunInternal = internalMutation({
         issueLines,
       });
     }
-
     return events;
   },
 });
@@ -2006,8 +1285,8 @@ export const notifyVendorComplianceEventInternal = internalMutation({
     sourceRef: v.optional(v.any()),
     nowMs: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
-    return await notify(ctx, {
+  handler: async (ctx, args) =>
+    await notify(ctx, {
       orgId: args.orgId,
       type: args.type,
       title: args.title,
@@ -2023,6 +1302,41 @@ export const notifyVendorComplianceEventInternal = internalMutation({
         String(args.relationshipId),
       ],
       nowMs: args.nowMs,
-    });
+    }),
+});
+
+export const wipeComplianceDataInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    let deletedRequirements = 0;
+    for (const row of await ctx.db.query("insuranceRequirements").collect()) {
+      await ctx.db.delete(row._id);
+      deletedRequirements += 1;
+    }
+    let deletedSourceDocuments = 0;
+    for (const row of await ctx.db.query("requirementSourceDocuments").collect()) {
+      await ctx.db.delete(row._id);
+      deletedSourceDocuments += 1;
+    }
+    let deletedChecks = 0;
+    for (const row of await ctx.db.query("complianceChecks").collect()) {
+      await ctx.db.delete(row._id);
+      deletedChecks += 1;
+    }
+    return { deletedRequirements, deletedSourceDocuments, deletedChecks };
   },
 });
+
+export function policyMatchesAnyInsuredName(
+  policy: Doc<"policies">,
+  expectedNames: string[],
+) {
+  if (expectedNames.length === 0) return true;
+  return expectedNames.some((expectedName) =>
+    insuredNameMatches(policy.insuredName, expectedName),
+  );
+}
+
+export function lineOfBusinessLabel(value?: string) {
+  return value ? lobLabel(value) : "Coverage";
+}
