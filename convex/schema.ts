@@ -1301,6 +1301,7 @@ export default defineSchema({
     coverages: v.array(
       v.object({
         name: v.string(),
+        lineOfBusiness: v.optional(v.string()),
         endorsementNumber: v.optional(v.string()),
         coverageCode: v.optional(v.string()),
         formEditionDate: v.optional(v.string()),

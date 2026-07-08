@@ -1,5 +1,13 @@
+import {
+  type AcordLobCode,
+  isLobCode,
+  lobLabel,
+  toLobCodes,
+} from "./linesOfBusiness";
+
 export type CoverageBreakdownRow = {
   name: string;
+  lineOfBusiness?: AcordLobCode;
   limit?: string;
   limits?: Array<{ label: string; value: string }>;
   deductible?: string;
@@ -9,8 +17,16 @@ export type CoverageBreakdownRow = {
   sectionRef?: string;
 };
 
+export type CoverageBreakdownGroup = {
+  lineOfBusiness: AcordLobCode;
+  label: string;
+  items: CoverageBreakdownRow[];
+};
+
 export type CoverageBreakdown = {
   all: CoverageBreakdownRow[];
+  groups: CoverageBreakdownGroup[];
+  unassigned: CoverageBreakdownRow[];
 };
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {
@@ -50,8 +66,31 @@ function coverageTerms(value: unknown): Array<{ label: string; value: string }> 
     .filter((row): row is { label: string; value: string } => Boolean(row));
 }
 
-function coverageRowsFrom(value: unknown): CoverageBreakdownRow[] {
+function specificLobCodes(value: unknown): AcordLobCode[] {
+  const values = Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  return toLobCodes(values).filter((code) => code !== "UN");
+}
+
+function coverageLineOfBusiness(row: Record<string, unknown>): AcordLobCode | undefined {
+  const value = realText(row.lineOfBusiness);
+  if (!value) return undefined;
+  const [code] = toLobCodes([value]);
+  return code && code !== "UN" && isLobCode(code) ? code : undefined;
+}
+
+function fallbackLineOfBusiness(profileLinesOfBusiness: unknown): AcordLobCode | undefined {
+  const codes = specificLobCodes(profileLinesOfBusiness);
+  return codes.length === 1 ? codes[0] : undefined;
+}
+
+function coverageRowsFrom(
+  value: unknown,
+  profileLinesOfBusiness?: unknown,
+): CoverageBreakdownRow[] {
   if (!Array.isArray(value)) return [];
+  const fallbackLob = fallbackLineOfBusiness(profileLinesOfBusiness);
   return value
     .map(recordValue)
     .filter((row): row is Record<string, unknown> => Boolean(row))
@@ -63,6 +102,7 @@ function coverageRowsFrom(value: unknown): CoverageBreakdownRow[] {
         "Coverage";
       return {
         name,
+        lineOfBusiness: coverageLineOfBusiness(row) ?? fallbackLob,
         limit: realText(row.limit),
         limits: coverageTerms(row.limits),
         deductible: realText(row.deductible),
@@ -86,12 +126,36 @@ function coverageRowsFrom(value: unknown): CoverageBreakdownRow[] {
     );
 }
 
+function groupCoverageRows(rows: CoverageBreakdownRow[]): Pick<CoverageBreakdown, "groups" | "unassigned"> {
+  const byLob = new Map<AcordLobCode, CoverageBreakdownRow[]>();
+  const unassigned: CoverageBreakdownRow[] = [];
+  for (const row of rows) {
+    if (!row.lineOfBusiness || row.lineOfBusiness === "UN") {
+      unassigned.push(row);
+      continue;
+    }
+    const group = byLob.get(row.lineOfBusiness) ?? [];
+    group.push(row);
+    byLob.set(row.lineOfBusiness, group);
+  }
+  return {
+    groups: [...byLob.entries()].map(([lineOfBusiness, items]) => ({
+      lineOfBusiness,
+      label: lobLabel(lineOfBusiness),
+      items,
+    })),
+    unassigned,
+  };
+}
+
 export function buildCoverageBreakdown(policy: unknown): CoverageBreakdown {
   const record = recordValue(policy);
   const profile = recordValue(record?.operationalProfile);
-  const profileRows = coverageRowsFrom(profile?.coverages);
-  const rows = profileRows.length > 0 ? profileRows : coverageRowsFrom(record?.coverages);
-  return { all: rows };
+  const profileRows = coverageRowsFrom(profile?.coverages, profile?.linesOfBusiness ?? record?.linesOfBusiness);
+  const rows = profileRows.length > 0
+    ? profileRows
+    : coverageRowsFrom(record?.coverages, record?.linesOfBusiness);
+  return { all: rows, ...groupCoverageRows(rows) };
 }
 
 export function formatCoverageBreakdownForPrompt(policy: unknown, maxRows = 16): string {
@@ -108,7 +172,13 @@ export function formatCoverageBreakdownForPrompt(policy: unknown, maxRows = 16):
     }
   };
 
-  addRows("Coverage schedules", breakdown.all);
+  for (const group of breakdown.groups) {
+    addRows(`${group.label} coverage schedules`, group.items);
+  }
+  addRows(
+    breakdown.groups.length ? "Unassigned coverage schedules" : "Coverage schedules",
+    breakdown.unassigned,
+  );
   return lines.join("\n");
 }
 

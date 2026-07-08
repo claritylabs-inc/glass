@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { buildCoverageBreakdown } from "./coverageBreakdown";
 import { normalizeOperationalProfile, normalizeSourceTree, operationalProfilePolicyFields, sourceTreePolicyFields, type DocumentSourceNode, type PolicyOperationalProfile, type SourceSpanLike } from "./sourceTree";
 
 const sourceSpans: SourceSpanLike[] = [
@@ -1491,5 +1492,48 @@ describe("sourceTreePolicyFields", () => {
     expect(byField.get("policyPeriodStart")?.value).toBe("02/01/2026");
     expect(byField.get("policyPeriodEnd")?.value).toBe("02/01/2027");
     expect(byField.get("premium")?.value).toBe("CAD $42,000");
+  });
+
+  it("projects coverage line of business into stored coverages and breakdown groups", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["CGL"],
+        coverages: [
+          {
+            name: "Commercial General Liability",
+            lineOfBusiness: "CGL",
+            limits: [
+              {
+                kind: "each_occurrence_limit",
+                label: "Each Occurrence",
+                value: "$1,000,000",
+                sourceNodeIds: ["period-row"],
+                sourceSpanIds: ["span-period"],
+              },
+            ],
+            sourceNodeIds: ["period-row"],
+            sourceSpanIds: ["span-period"],
+          },
+        ],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+    });
+
+    expect((fields.coverages as Array<Record<string, unknown>>)[0]).toEqual(
+      expect.objectContaining({ lineOfBusiness: "CGL" }),
+    );
+    const breakdown = buildCoverageBreakdown(fields);
+    expect(breakdown.groups).toEqual([
+      expect.objectContaining({
+        lineOfBusiness: "CGL",
+        label: "Commercial General Liability",
+      }),
+    ]);
   });
 });
