@@ -711,7 +711,8 @@ function RequirementDrawer({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title="Coverage requirement"
+      title={requirement.title}
+      actions={check ? <StatusBadge status={check.status} /> : undefined}
       footer={
         <>
           {requirement.canArchive !== false ? (
@@ -733,21 +734,11 @@ function RequirementDrawer({
       }
     >
       <div className="space-y-5">
-        <section className="space-y-2 rounded-lg border border-foreground/6 px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-base font-medium text-foreground">{requirement.title}</p>
-              <p className="truncate text-base text-muted-foreground">
-                {requirement.lineOfBusiness
-                  ? lineDisplayLabel(requirement.lineOfBusiness)
-                  : "Coverage"}
-              </p>
-            </div>
-            {check ? <StatusBadge status={check.status} /> : null}
-          </div>
-          <p className="text-base text-muted-foreground">{requirement.requirementText}</p>
-        </section>
+        <p className="text-base text-muted-foreground">{requirement.requirementText}</p>
         <section className="space-y-2 border-t border-foreground/6 pt-5">
+          {requirement.lineOfBusiness ? (
+            <DrawerDetail label="Line" value={lineDisplayLabel(requirement.lineOfBusiness)} />
+          ) : null}
           {(requirement.limits ?? []).map((limit, index) => (
             <DrawerDetail
               key={index}
@@ -776,12 +767,7 @@ function RequirementDrawer({
           {(requirement.requiredForms ?? []).length > 0 ? (
             <DrawerDetail label="Required forms" value={(requirement.requiredForms ?? []).join(", ")} />
           ) : null}
-          {requirement.clientRequirementSource?.clientOrg ? (
-            <DrawerDetail
-              label="Required by"
-              value={requirement.clientRequirementSource.clientOrg.name}
-            />
-          ) : null}
+          <DrawerDetail label="Source" value={requirementSourceLine(requirement)} />
         </section>
         {check ? (
           <section className="space-y-2 border-t border-foreground/6 pt-5">
@@ -810,18 +796,8 @@ function RequirementDrawer({
               <p className="text-base text-muted-foreground">No current policy match.</p>
             )}
             {check.notes ? (
-              <p className="rounded-md border border-foreground/8 bg-muted/40 px-3 py-2 text-base text-muted-foreground">
-                {check.notes}
-              </p>
+              <p className="text-base text-muted-foreground">{check.notes}</p>
             ) : null}
-          </section>
-        ) : null}
-        {requirement.sourceExcerpt ? (
-          <section className="space-y-2 border-t border-foreground/6 pt-5">
-            <p className="text-label text-muted-foreground">{requirementSourceLine(requirement)}</p>
-            <p className="rounded-md border border-foreground/8 bg-muted/40 px-3 py-2 text-base leading-5 text-foreground/80">
-              {requirement.sourceExcerpt}
-            </p>
           </section>
         ) : null}
       </div>
