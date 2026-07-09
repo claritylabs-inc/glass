@@ -410,12 +410,18 @@ export function MailboxSettingsDrawer({
 }) {
   const updateSettings = useMutation(api.connectedEmail.updateSettings);
   const revokeConnectedEmail = useMutation(api.connectedEmail.revoke);
+  const scanMailboxRange = useAction(api.actions.connectedEmailScan.scanMailboxRange);
   const initialAutomation = configuredAutomation(account);
   const [scope, setScope] = useState(account.scope);
   const [automation, setAutomation] = useState(initialAutomation);
   const [saving, setSaving] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [scanFrom, setScanFrom] = useState(() =>
+    dayjs().subtract(30, "day").format("YYYY-MM-DD"),
+  );
+  const [scanTo, setScanTo] = useState(() => dayjs().format("YYYY-MM-DD"));
+  const [scanning, setScanning] = useState(false);
 
   const hasChanges =
     !account.automationConfigured ||
@@ -439,6 +445,41 @@ export function MailboxSettingsDrawer({
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runManualScan() {
+    setScanning(true);
+    try {
+      const result = await scanMailboxRange({
+        accountId: account._id,
+        dateFrom: scanFrom,
+        dateTo: scanTo,
+      });
+      if (result.matchedCount === 0) {
+        toast.info("No emails were found in that date range");
+        return;
+      }
+      const parts = [
+        `Scanned ${result.scannedCount} email${result.scannedCount === 1 ? "" : "s"}`,
+      ];
+      if (result.alreadyProcessedCount > 0) {
+        parts.push(`${result.alreadyProcessedCount} already handled`);
+      }
+      if (result.attentionCount > 0) {
+        parts.push(`${result.attentionCount} need${result.attentionCount === 1 ? "s" : ""} attention`);
+      }
+      toast.success(parts.join(" · "), {
+        description: result.truncated
+          ? `The date range matched ${result.matchedCount} emails; the newest ${result.scannedCount} were scanned.`
+          : "Results appear in a Glass thread when there is something to review.",
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to scan the mailbox",
+      );
+    } finally {
+      setScanning(false);
     }
   }
 
@@ -576,6 +617,53 @@ export function MailboxSettingsDrawer({
               Just me.
             </p>
           </div>
+
+          {canManageMailbox ? (
+            <div className="space-y-2">
+              <div>
+                <p className="text-base font-medium text-foreground">
+                  Manual scan
+                </p>
+                <p className="text-base text-muted-foreground">
+                  Scan a date range now using the monitoring settings above.
+                  Already-processed emails are skipped.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="manual-scan-from">From</Label>
+                  <Input
+                    id="manual-scan-from"
+                    type="date"
+                    value={scanFrom}
+                    max={scanTo}
+                    disabled={scanning}
+                    onChange={(event) => setScanFrom(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="manual-scan-to">To</Label>
+                  <Input
+                    id="manual-scan-to"
+                    type="date"
+                    value={scanTo}
+                    min={scanFrom}
+                    disabled={scanning}
+                    onChange={(event) => setScanTo(event.target.value)}
+                  />
+                </div>
+              </div>
+              <PillButton
+                size="compact"
+                variant="secondary"
+                disabled={scanning || !scanFrom || !scanTo}
+                onClick={() => void runManualScan()}
+              >
+                {scanning ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                {scanning ? "Scanning…" : "Scan mailbox"}
+              </PillButton>
+            </div>
+          ) : null}
         </div>
       )}
     </SettingsDrawer>

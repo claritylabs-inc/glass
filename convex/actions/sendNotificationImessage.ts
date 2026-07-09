@@ -2,10 +2,11 @@
 
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalAction, type ActionCtx } from "../_generated/server";
+import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { sendIdempotentOutboundImessage, truncateImessageText } from "../lib/imessageOutbound";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Id } from "../_generated/dataModel";
+import { resolveNotificationThreadContext } from "../lib/notificationThreadContext";
 
 export const send = internalAction({
   args: { notificationId: v.id("notifications") },
@@ -16,7 +17,7 @@ export const send = internalAction({
     );
     if (!notification || notification.imessageStatus !== "scheduled") return;
 
-    const privateThreadOwner = await resolvePrivateViewThreadOwner(
+    const { privateThreadOwner } = await resolveNotificationThreadContext(
       ctx,
       notification,
     );
@@ -106,32 +107,3 @@ export const send = internalAction({
     );
   },
 });
-
-function objectRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-async function resolvePrivateViewThreadOwner(
-  ctx: ActionCtx,
-  notification: Doc<"notifications">,
-): Promise<Id<"users"> | undefined> {
-  if (notification.actionType !== "view_thread") return undefined;
-  const threadId = objectRecord(notification.actionPayload)?.threadId;
-  if (typeof threadId !== "string" || !threadId.trim()) return undefined;
-  try {
-    const thread = await ctx.runQuery(internal.threads.getInternal, {
-      id: threadId as Id<"threads">,
-    });
-    if (
-      thread?.orgId === notification.orgId &&
-      thread.visibility === "user_private"
-    ) {
-      return thread.createdBy;
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}

@@ -191,6 +191,70 @@ export const claimItemInternal = internalMutation({
   },
 });
 
+// A message the IMAP fetch cannot read must not stall the scan watermark
+// forever: record the failure per attempt, then give up and skip the message
+// so the watermark can advance past it.
+export const MAX_UNREADABLE_MESSAGE_ATTEMPTS = 3;
+
+export const recordUnreadableItemInternal = internalMutation({
+  args: {
+    accountId: v.id("connectedEmailAccounts"),
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    mailbox: v.string(),
+    uid: v.number(),
+    messageKey: v.string(),
+    emailRef: v.string(),
+    error: v.string(),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ attempts: number; willRetry: boolean }> => {
+    const now = dayjs().valueOf();
+    const existing = await ctx.db
+      .query("connectedEmailAutomationItems")
+      .withIndex("by_accountId_messageKey", (query) =>
+        query.eq("accountId", args.accountId).eq("messageKey", args.messageKey),
+      )
+      .first();
+    if (existing?.status === "completed" || existing?.status === "skipped") {
+      return { attempts: existing.attempts, willRetry: false };
+    }
+    const attempts = (existing?.attempts ?? 0) + 1;
+    const gaveUp = attempts >= MAX_UNREADABLE_MESSAGE_ATTEMPTS;
+    const patch = {
+      status: gaveUp ? ("skipped" as const) : ("failed" as const),
+      attempts,
+      lastError: args.error,
+      actionSummary: gaveUp
+        ? "Skipped: Glass could not read this mailbox message after repeated attempts."
+        : undefined,
+      updatedAt: now,
+    };
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert("connectedEmailAutomationItems", {
+        accountId: args.accountId,
+        orgId: args.orgId,
+        userId: args.userId,
+        mailbox: args.mailbox,
+        uid: args.uid,
+        messageKey: args.messageKey,
+        emailRef: args.emailRef,
+        subject: "(unreadable message)",
+        classification: "review_needed",
+        confidence: 0,
+        reason: "Glass could not read this mailbox message.",
+        createdAt: now,
+        ...patch,
+      });
+    }
+    return { attempts, willRetry: !gaveUp };
+  },
+});
+
 export const finishItemInternal = internalMutation({
   args: {
     itemId: v.id("connectedEmailAutomationItems"),

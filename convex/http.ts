@@ -1,7 +1,7 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import { getImessageWorkerUrl, isImessageInboundEnabled } from "./lib/imessageConfig";
@@ -252,10 +252,8 @@ http.route({
     }
 
     const result = await ctx.runAction(
-      api.actions.connectedEmail.scanPreviousDay,
-      {
-        cronSecret: expectedSecret,
-      },
+      internal.actions.connectedEmailScan.scanAllMailboxes,
+      {},
     );
     return new Response(JSON.stringify(result), {
       status: 200,

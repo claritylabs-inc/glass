@@ -2,9 +2,9 @@
 // convex/actions/sendNotificationEmail.ts
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalAction, type ActionCtx } from "../_generated/server";
+import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 import {
   buildNotificationEmail,
   type NotificationEmailBranding,
@@ -16,6 +16,10 @@ import {
 } from "../lib/resend";
 import { isWhiteLabelingEnabled } from "../lib/branding";
 import { getPortalUrlForOrg } from "../lib/domains";
+import {
+  objectRecord,
+  resolveNotificationThreadContext,
+} from "../lib/notificationThreadContext";
 
 export const send = internalAction({
   args: { notificationId: v.id("notifications") },
@@ -34,12 +38,8 @@ export const send = internalAction({
     );
     if (!recipientOrg) return;
 
-    const contextThread = await resolveReferencedThread(ctx, notification);
-    const privateThreadOwner =
-      notification.actionType === "view_thread" &&
-      contextThread?.visibility === "user_private"
-        ? contextThread.createdBy
-        : undefined;
+    const { thread: contextThread, privateThreadOwner } =
+      await resolveNotificationThreadContext(ctx, notification);
 
     // Collect recipients (user-targeted or org-wide)
     const memberships = privateThreadOwner
@@ -168,12 +168,6 @@ function notificationCtaLabel(type: string): string {
   }
 }
 
-function objectRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 function trustedThreadReplyAddress(value: string | undefined): string | undefined {
   const address = value?.trim();
   if (!address || /[\r\n]/.test(address)) return undefined;
@@ -195,25 +189,6 @@ function resolveContextLabel(
     }
   }
   return replyThread?.title.trim() || undefined;
-}
-
-async function resolveReferencedThread(
-  ctx: ActionCtx,
-  notification: Doc<"notifications">,
-): Promise<Doc<"threads"> | null> {
-  for (const candidate of [notification.actionPayload, notification.sourceRef]) {
-    const threadId = objectRecord(candidate)?.threadId;
-    if (typeof threadId !== "string" || !threadId.trim()) continue;
-    try {
-      const thread = await ctx.runQuery(internal.threads.getInternal, {
-        id: threadId as Id<"threads">,
-      });
-      if (thread?.orgId === notification.orgId) return thread;
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 function buildCtaUrl(

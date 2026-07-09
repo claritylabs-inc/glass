@@ -4,19 +4,7 @@ import dayjs from "dayjs";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { internalAction } from "../_generated/server";
-import type { OwnComplianceEvent } from "../compliance";
-
-type OwnComplianceAssessment = {
-  requirementId: Id<"insuranceRequirements">;
-  title: string;
-  status: "met" | "not_met" | "expiring_soon" | "expired" | "unverified";
-  reasons?: string[];
-  matchedPolicyIds: Id<"policies">[];
-  matchedSummary?: string;
-  expiresAt?: string;
-  daysUntilExpiration?: number;
-  notes?: string;
-};
+import type { OwnComplianceAssessment, OwnComplianceEvent } from "../compliance";
 
 export function buildOwnComplianceThreadContent(event: OwnComplianceEvent) {
   if (event.type === "own_compliance_resolved") {

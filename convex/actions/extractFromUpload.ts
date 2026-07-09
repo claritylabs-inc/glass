@@ -152,7 +152,6 @@ export const extractFromUploadInternal = internalAction({
     orgId: v.id("organizations"),
     userId: v.id("users"),
   },
-  returns: v.any(),
   handler: async (
     ctx,
     args,
