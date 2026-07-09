@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { useAction, useMutation } from "convex/react";
-import { FileText } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -11,7 +10,6 @@ import { AppShell } from "@/components/app-shell";
 import {
   CertificateDetailPanel,
   CERTIFICATE_PANEL_CONTAINER_CLASS,
-  certificateBadge,
   certificateHolderActionAddress,
   certificateHolderAddress,
   certificatePolicyLabel,
@@ -53,9 +51,6 @@ import { usePdf } from "@/components/pdf-context";
 
 type CertificateWorkspaceTab = "active" | "review" | "archived";
 type CertificatePolicyFilter = "all" | `policy:${string}`;
-type CertificateTypeFilter = "all" | "holder" | "additional_insured";
-type CertificateContactFilter = "all" | "has_email" | "missing_email";
-type CertificateStatusFilter = "all" | `status:${string}`;
 
 type CertificateWorkflowJob = {
   _id: Id<"certificateWorkflowJobs">;
@@ -87,63 +82,32 @@ function certificatePolicyFilterValue(row: PolicyCertificateRecord): Certificate
   return `policy:${String(row.policyId)}`;
 }
 
-function certificateTypeValue(row: PolicyCertificateRecord): CertificateTypeFilter {
-  return row.currentVersion?.requestKind === "additional_insured"
-    ? "additional_insured"
-    : "holder";
-}
-
-function certificateTypeLabel(value: CertificateTypeFilter) {
-  if (value === "all") return "All types";
-  return value === "additional_insured" ? "Additional insured" : "Holder";
-}
-
-function certificateStatusValue(row: PolicyCertificateRecord): CertificateStatusFilter {
-  if (row.status === "archived") return "status:archived";
-  return row.currentVersion?.status
-    ? `status:${row.currentVersion.status}`
-    : "status:no_issued_version";
-}
-
-function certificateStatusLabel(value: CertificateStatusFilter) {
-  if (value === "all") return "All statuses";
-  if (value === "status:no_issued_version") return "No issued version";
-  return value
-    .slice("status:".length)
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function certificateContactFilterLabel(value: CertificateContactFilter) {
-  if (value === "all") return "All holders";
-  return value === "has_email" ? "Has email" : "Missing email";
-}
-
 function certificateCarrier(row: PolicyCertificateRecord) {
   return row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga;
 }
 
-function certificateHolderAddressSummary(row: PolicyCertificateRecord) {
-  return certificateHolderAddress(row.holder)
+function certificateHolderAddressDisplay(row: PolicyCertificateRecord) {
+  const address = row.holder?.address;
+  const formattedLines = certificateHolderAddress(row.holder)
     ?.split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 2)
-    .join(" · ");
+    .filter(Boolean) ?? [];
+  const street = [address?.line1, address?.line2].filter(Boolean).join(", ") ||
+    (formattedLines.length > 1
+      ? formattedLines.slice(0, -1).join(", ")
+      : formattedLines[0]);
+  const statePostal = [address?.state, address?.postalCode].filter(Boolean).join(" ");
+  const locality = [address?.city, statePostal, address?.country].filter(Boolean).join(", ") ||
+    (formattedLines.length > 1 ? formattedLines[formattedLines.length - 1] : undefined);
+  return { street, locality };
 }
 
 function certificateContactSummary(row: PolicyCertificateRecord) {
-  const primary =
-    row.holder?.email ??
-    row.holder?.phone ??
-    row.holder?.contactName ??
-    "No email";
-  const secondary = [
-    row.holder?.contactName && row.holder.contactName !== primary
-      ? row.holder.contactName
-      : undefined,
-    row.holder?.phone && row.holder.phone !== primary ? row.holder.phone : undefined,
-  ].filter(Boolean).join(" · ");
+  const contactName = row.holder?.contactName?.trim();
+  const email = row.holder?.email?.trim();
+  const phone = row.holder?.phone?.trim();
+  const primary = contactName ?? email ?? phone ?? "No contact";
+  const secondary = contactName ? email : undefined;
   return { primary, secondary };
 }
 
@@ -159,45 +123,15 @@ function certificatePolicyFilterOptions(rows: PolicyCertificateRecord[]) {
   ];
 }
 
-function certificateTypeFilterOptions(rows: PolicyCertificateRecord[]) {
-  const present = new Set(rows.map(certificateTypeValue));
-  const values: CertificateTypeFilter[] = ["holder", "additional_insured"];
-  return [
-    { value: "all" as const, label: certificateTypeLabel("all") },
-    ...values
-      .filter((value) => present.has(value))
-      .map((value) => ({ value, label: certificateTypeLabel(value) })),
-  ];
-}
-
-function certificateStatusFilterOptions(rows: PolicyCertificateRecord[]) {
-  const present = Array.from(new Set(rows.map(certificateStatusValue)))
-    .sort((left, right) => certificateStatusLabel(left).localeCompare(certificateStatusLabel(right)));
-  return [
-    { value: "all" as const, label: certificateStatusLabel("all") },
-    ...present.map((value) => ({ value, label: certificateStatusLabel(value) })),
-  ];
-}
-
 function filterCertificates({
   rows,
   policyFilter,
-  typeFilter,
-  contactFilter,
-  statusFilter,
 }: {
   rows: PolicyCertificateRecord[];
   policyFilter: CertificatePolicyFilter;
-  typeFilter: CertificateTypeFilter;
-  contactFilter: CertificateContactFilter;
-  statusFilter: CertificateStatusFilter;
 }) {
   return rows.filter((row) =>
-    (policyFilter === "all" || certificatePolicyFilterValue(row) === policyFilter) &&
-    (typeFilter === "all" || certificateTypeValue(row) === typeFilter) &&
-    (contactFilter === "all" ||
-      (contactFilter === "has_email" ? Boolean(row.holder?.email) : !row.holder?.email)) &&
-    (statusFilter === "all" || certificateStatusValue(row) === statusFilter),
+    policyFilter === "all" || certificatePolicyFilterValue(row) === policyFilter,
   );
 }
 
@@ -264,25 +198,36 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
   );
 }
 
-function CertificatesFilterSelect({
-  label,
+function CertificatesPolicyFilter({
   value,
+  label,
+  options,
   onValueChange,
-  children,
 }: {
+  value: CertificatePolicyFilter;
   label: string;
-  value: string;
-  onValueChange: (value: string) => void;
-  children: ReactNode;
+  options: Array<{ value: CertificatePolicyFilter; label: string }>;
+  onValueChange: (value: CertificatePolicyFilter) => void;
 }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5 text-label font-medium text-muted-foreground">
-      {label}
-      <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
+    <label className="flex min-w-0 max-w-xl flex-col gap-1.5 text-label font-medium text-muted-foreground">
+      Policy
+      <Select
+        value={value}
+        onValueChange={(next) => next && onValueChange(next as CertificatePolicyFilter)}
+      >
         <SelectTrigger size="sm" className="w-full bg-background">
-          <SelectValue />
+          <SelectValue>{label}</SelectValue>
         </SelectTrigger>
-        <SelectContent>{children}</SelectContent>
+        <SelectContent className="w-auto min-w-(--anchor-width) max-w-[36rem]">
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              <span className="block max-w-[32rem] truncate">
+                {option.label}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
     </label>
   );
@@ -292,37 +237,30 @@ function CertificatesTable({
   rows,
   selectedCertificateId,
   onSelectCertificate,
-  onOpenPdf,
 }: {
   rows: PolicyCertificateRecord[];
   selectedCertificateId?: Id<"policyCertificates"> | null;
   onSelectCertificate: (row: PolicyCertificateRecord) => void;
-  onOpenPdf: (url: string) => void;
 }) {
   return (
     <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
-      <Table className="min-w-[1120px]">
+      <Table className="min-w-[1040px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[21%] px-4">Holder</TableHead>
+            <TableHead className="w-[22%] px-4">Holder</TableHead>
+            <TableHead className="w-[24%]">Address</TableHead>
             <TableHead className="w-[18%]">Contact</TableHead>
-            <TableHead className="w-[22%]">Policy</TableHead>
-            <TableHead className="w-[14%]">Type</TableHead>
-            <TableHead className="w-[13%]">Issued</TableHead>
-            <TableHead className="w-[7%]">Status</TableHead>
-            <TableHead className="w-[5%] px-4 text-right">PDF</TableHead>
+            <TableHead className="w-[24%]">Policy</TableHead>
+            <TableHead className="w-[12%] px-4">Issued</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => {
-            const badge = certificateBadge(row);
             const contact = certificateContactSummary(row);
-            const address = certificateHolderAddressSummary(row);
+            const address = certificateHolderAddressDisplay(row);
             const currentVersion = row.currentVersion;
-            const currentUrl = row.url ?? currentVersion?.url;
             const selected = row._id === selectedCertificateId;
             const issuedAt = row.lastIssuedAt ?? currentVersion?.issuedAt ?? currentVersion?.createdAt;
-            const type = certificateTypeValue(row);
             const carrier = certificateCarrier(row);
 
             return (
@@ -341,14 +279,25 @@ function CertificatesTable({
                   <p className="truncate font-medium text-foreground">
                     {row.holder?.displayName ?? "Certificate holder"}
                   </p>
-                  {address ? (
-                    <p className="truncate text-label text-muted-foreground">
-                      {address}
-                    </p>
-                  ) : null}
+                </TableCell>
+                <TableCell className="max-w-72">
+                  {address.street ? (
+                    <>
+                      <p className="truncate text-foreground">
+                        {address.street}
+                      </p>
+                      {address.locality ? (
+                        <p className="truncate text-label text-muted-foreground">
+                          {address.locality}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">No address</span>
+                  )}
                 </TableCell>
                 <TableCell className="max-w-56">
-                  <p className={row.holder?.email ? "truncate text-foreground" : "truncate text-muted-foreground"}>
+                  <p className={contact.primary === "No contact" ? "truncate text-muted-foreground" : "truncate text-foreground"}>
                     {contact.primary}
                   </p>
                   {contact.secondary ? (
@@ -361,23 +310,13 @@ function CertificatesTable({
                   <p className="truncate font-medium text-foreground">
                     {row.policy?.policyNumber ?? "Policy"}
                   </p>
-                  {carrier || row.policy?.insuredName ? (
+                  {carrier ? (
                     <p className="truncate text-label text-muted-foreground">
-                      {[carrier, row.policy?.insuredName].filter(Boolean).join(" · ")}
+                      {carrier}
                     </p>
                   ) : null}
                 </TableCell>
-                <TableCell className="max-w-48">
-                  <p className="truncate text-foreground">
-                    {certificateTypeLabel(type)}
-                  </p>
-                  {currentVersion?.additionalInsuredName ? (
-                    <p className="truncate text-label text-muted-foreground">
-                      {currentVersion.additionalInsuredName}
-                    </p>
-                  ) : null}
-                </TableCell>
-                <TableCell>
+                <TableCell className="px-4">
                   <p className="text-foreground">
                     {formatCertificateTime(issuedAt)}
                   </p>
@@ -386,30 +325,6 @@ function CertificatesTable({
                       Version {currentVersion.versionNumber}
                     </p>
                   ) : null}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={badge.variant} className="capitalize">
-                    {badge.label}
-                  </Badge>
-                </TableCell>
-                <TableCell
-                  className="px-4 text-right"
-                  onClick={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => event.stopPropagation()}
-                >
-                  {currentUrl ? (
-                    <PillButton
-                      type="button"
-                      variant="secondary"
-                      size="compact"
-                      onClick={() => onOpenPdf(currentUrl)}
-                    >
-                      <FileText className="size-3.5" />
-                      PDF
-                    </PillButton>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
                 </TableCell>
               </TableRow>
             );
@@ -455,7 +370,9 @@ function CertificatesPageContext({
   useEffect(() => {
     setPageContext({
       pageType: "certificates",
-      summary: `${activeCount} active certificate${activeCount === 1 ? "" : "s"} · ${reviewCount} review job${reviewCount === 1 ? "" : "s"}`,
+      summary: reviewCount > 0
+        ? `${activeCount} active certificate${activeCount === 1 ? "" : "s"} · ${reviewCount} review job${reviewCount === 1 ? "" : "s"}`
+        : `${activeCount} active certificate${activeCount === 1 ? "" : "s"}`,
     });
 
     return () => setPageContext(null);
@@ -475,9 +392,6 @@ export default function CertificatesPage() {
   const [archivingCertificateId, setArchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [unarchivingCertificateId, setUnarchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [policyFilter, setPolicyFilter] = useState<CertificatePolicyFilter>("all");
-  const [typeFilter, setTypeFilter] = useState<CertificateTypeFilter>("all");
-  const [contactFilter, setContactFilter] = useState<CertificateContactFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<CertificateStatusFilter>("all");
   const viewerOrg = useCachedViewerOrg();
   const orgId = viewerOrg?.org?._id as Id<"organizations"> | undefined;
   const certificates = useCachedQuery(
@@ -524,44 +438,28 @@ export default function CertificatesPage() {
       null,
     [certificates, selectedCertificateId],
   );
-  const tableCertificates = tab === "archived" ? archivedCertificates : activeCertificates;
+  const hasReviewJobs = reviewJobs.length > 0;
+  const visibleTab = tab === "review" && !hasReviewJobs ? "active" : tab;
+  const visibleTabs = hasReviewJobs
+    ? TABS
+    : TABS.filter((item) => item.value !== "review");
+  const tableCertificates = visibleTab === "archived" ? archivedCertificates : activeCertificates;
   const policyFilters = useMemo(
     () => certificatePolicyFilterOptions(tableCertificates),
-    [tableCertificates],
-  );
-  const typeFilters = useMemo(
-    () => certificateTypeFilterOptions(tableCertificates),
-    [tableCertificates],
-  );
-  const statusFilters = useMemo(
-    () => certificateStatusFilterOptions(tableCertificates),
     [tableCertificates],
   );
   const effectivePolicyFilter = policyFilters.some((option) => option.value === policyFilter)
     ? policyFilter
     : "all";
-  const effectiveTypeFilter = typeFilters.some((option) => option.value === typeFilter)
-    ? typeFilter
-    : "all";
-  const effectiveStatusFilter = statusFilters.some((option) => option.value === statusFilter)
-    ? statusFilter
-    : "all";
+  const policyFilterLabel = policyFilters.find((option) => option.value === effectivePolicyFilter)?.label ??
+    "All policies";
   const visibleCertificates = useMemo(
     () =>
       filterCertificates({
         rows: tableCertificates,
         policyFilter: effectivePolicyFilter,
-        typeFilter: effectiveTypeFilter,
-        contactFilter,
-        statusFilter: effectiveStatusFilter,
       }),
-    [
-      contactFilter,
-      effectivePolicyFilter,
-      effectiveStatusFilter,
-      effectiveTypeFilter,
-      tableCertificates,
-    ],
+    [effectivePolicyFilter, tableCertificates],
   );
 
   const isLoading =
@@ -661,11 +559,11 @@ export default function CertificatesPage() {
       />
       <div className="space-y-4">
         <Tabs
-          value={tab}
+          value={visibleTab}
           onValueChange={(value) => setTab(value as CertificateWorkspaceTab)}
         >
           <TabsList variant="pill">
-            {TABS.map((item) => (
+            {visibleTabs.map((item) => (
               <TabsTrigger key={item.value} value={item.value}>
                 {item.label}
               </TabsTrigger>
@@ -675,75 +573,28 @@ export default function CertificatesPage() {
 
         {isLoading ? (
           <OperationalSkeletonList rows={4} />
-        ) : tab === "review" ? (
+        ) : visibleTab === "review" ? (
           <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
             <OperationalPanelHeader title="Certificate review jobs" />
-            {reviewJobs.length > 0 ? (
-              reviewJobs.map((job) => (
-                <ReviewJobRow key={job._id} job={job} />
-              ))
-            ) : (
-              <OperationalPanelBody className="px-4 py-10 text-center">
-                <p className="text-base font-medium text-foreground">
-                  No review jobs
-                </p>
-              </OperationalPanelBody>
-            )}
+            {reviewJobs.map((job) => (
+              <ReviewJobRow key={job._id} job={job} />
+            ))}
           </OperationalPanel>
         ) : tableCertificates.length > 0 ? (
           <>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <CertificatesFilterSelect
-                label="Policy"
+            <div>
+              <CertificatesPolicyFilter
                 value={effectivePolicyFilter}
-                onValueChange={(value) => setPolicyFilter(value as CertificatePolicyFilter)}
-              >
-                {policyFilters.map((filter) => (
-                  <SelectItem key={filter.value} value={filter.value}>
-                    {filter.label}
-                  </SelectItem>
-                ))}
-              </CertificatesFilterSelect>
-              <CertificatesFilterSelect
-                label="Type"
-                value={effectiveTypeFilter}
-                onValueChange={(value) => setTypeFilter(value as CertificateTypeFilter)}
-              >
-                {typeFilters.map((filter) => (
-                  <SelectItem key={filter.value} value={filter.value}>
-                    {filter.label}
-                  </SelectItem>
-                ))}
-              </CertificatesFilterSelect>
-              <CertificatesFilterSelect
-                label="Holder email"
-                value={contactFilter}
-                onValueChange={(value) => setContactFilter(value as CertificateContactFilter)}
-              >
-                {(["all", "has_email", "missing_email"] as CertificateContactFilter[]).map((filter) => (
-                  <SelectItem key={filter} value={filter}>
-                    {certificateContactFilterLabel(filter)}
-                  </SelectItem>
-                ))}
-              </CertificatesFilterSelect>
-              <CertificatesFilterSelect
-                label="Status"
-                value={effectiveStatusFilter}
-                onValueChange={(value) => setStatusFilter(value as CertificateStatusFilter)}
-              >
-                {statusFilters.map((filter) => (
-                  <SelectItem key={filter.value} value={filter.value}>
-                    {filter.label}
-                  </SelectItem>
-                ))}
-              </CertificatesFilterSelect>
+                label={policyFilterLabel}
+                options={policyFilters}
+                onValueChange={setPolicyFilter}
+              />
             </div>
             {visibleCertificates.length > 0 ? (
               <CertificatesTable
                 rows={visibleCertificates}
                 selectedCertificateId={selectedCertificateId}
                 onSelectCertificate={(row) => setSelectedCertificateId(row._id)}
-                onOpenPdf={openWithUrl}
               />
             ) : (
               <CertificateEmptyPanel title="No certificates match these filters" />
@@ -751,9 +602,9 @@ export default function CertificatesPage() {
           </>
         ) : (
           <CertificateEmptyPanel
-            title={tab === "archived" ? "No archived certificates" : "No active certificates"}
+            title={visibleTab === "archived" ? "No archived certificates" : "No active certificates"}
             description={
-              tab === "archived"
+              visibleTab === "archived"
                 ? undefined
                 : "Generate a COI from a policy to create the first holder-based certificate."
             }
