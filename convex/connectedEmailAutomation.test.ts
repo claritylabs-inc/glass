@@ -1,0 +1,111 @@
+/// <reference types="vite/client" />
+import { convexTest } from "convex-test";
+import { describe, expect, test } from "vitest";
+import schema from "./schema";
+import type { Doc } from "./_generated/dataModel";
+import {
+  claimItemInternal,
+  failItemInternal,
+  finishItemInternal,
+  getScanStateInternal,
+  recordScanAttemptInternal,
+  recordScanSuccessInternal,
+} from "./connectedEmailAutomation";
+
+const modules = import.meta.glob("./**/*.ts");
+const claimItemFn = claimItemInternal as any;
+const failItemFn = failItemInternal as any;
+const finishItemFn = finishItemInternal as any;
+const getScanStateFn = getScanStateInternal as any;
+const recordScanAttemptFn = recordScanAttemptInternal as any;
+const recordScanSuccessFn = recordScanSuccessInternal as any;
+
+async function seed() {
+  const t = convexTest(schema, modules);
+  const ids = await t.run(async (ctx) => {
+    const orgId = await ctx.db.insert("organizations", {
+      name: "Acme",
+      type: "client",
+    });
+    const userId = await ctx.db.insert("users", { email: "user@example.com" });
+    const accountId = await ctx.db.insert("connectedEmailAccounts", {
+      orgId,
+      userId,
+      scope: "user",
+      emailAddress: "user@example.com",
+      host: "imap.example.com",
+      port: 993,
+      secure: true,
+      username: "user@example.com",
+      encryptedPassword: "encrypted",
+      status: "active",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return { orgId, userId, accountId };
+  });
+  return { t, ...ids };
+}
+
+describe("connected email automation ledger", () => {
+  test("resets the UID cursor when UIDVALIDITY changes", async () => {
+    const { t, orgId, accountId } = await seed();
+    const base = { accountId, orgId, mailbox: "INBOX" };
+    await t.mutation(recordScanSuccessFn, {
+      ...base,
+      uidValidity: "one",
+      lastUid: 42,
+    });
+    await t.mutation(recordScanAttemptFn, {
+      ...base,
+      uidValidity: "two",
+    });
+
+    const state = await t.query(getScanStateFn, {
+      accountId,
+      mailbox: "INBOX",
+    });
+    expect(state).toMatchObject({ uidValidity: "two" });
+    expect(state.lastUid).toBeUndefined();
+  });
+
+  test("never reclaims or fails a completed message", async () => {
+    const { t, orgId, userId, accountId } = await seed();
+    const args = {
+      accountId,
+      orgId,
+      userId,
+      mailbox: "INBOX",
+      uid: 42,
+      messageKey: "message-key",
+      emailRef: "email-ref",
+      subject: "Policy documents",
+      classification: "policy_document" as const,
+      confidence: 0.99,
+      reason: "Explicit bound policy attachment.",
+    };
+    const first = await t.mutation(claimItemFn, args);
+    expect(first.claimed).toBe(true);
+    await t.mutation(finishItemFn, {
+      itemId: first.itemId,
+      status: "completed",
+      actionSummary: "Policy imported.",
+    });
+    await t.mutation(failItemFn, {
+      itemId: first.itemId,
+      error: "late scan failure",
+    });
+
+    const second = await t.mutation(claimItemFn, args);
+    expect(second).toMatchObject({
+      claimed: false,
+      itemId: first.itemId,
+      status: "completed",
+    });
+    const item = await t.run((ctx) =>
+      ctx.db.get(first.itemId) as Promise<Doc<"connectedEmailAutomationItems"> | null>,
+    );
+    expect(item?.status).toBe("completed");
+    expect(item?.lastError).toBeUndefined();
+  });
+});

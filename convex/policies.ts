@@ -1039,6 +1039,59 @@ export const insert = mutation({
   },
 });
 
+export const insertAutomationUploadInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    orgId: v.id("organizations"),
+    fileId: v.id("_storage"),
+    fileName: v.string(),
+    uploadFileSha256s: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const uploadFileSha256s = normalizeFileSha256s(args.uploadFileSha256s);
+    if (!uploadFileSha256s?.length) {
+      throw new Error("Automation policy uploads require a SHA-256 hash");
+    }
+
+    const existing = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (query) => query.eq("orgId", args.orgId))
+      .collect();
+    const duplicate = existing.find(
+      (policy) =>
+        !policy.deletedAt &&
+        uploadFileSha256s.every((hash) =>
+          policy.uploadFileSha256s?.includes(hash),
+        ),
+    );
+    if (duplicate) {
+      return { created: false as const, policyId: duplicate._id };
+    }
+
+    const now = nowMs();
+    const policyId = await ctx.db.insert("policies", {
+      userId: args.userId,
+      orgId: args.orgId,
+      fileId: args.fileId,
+      fileName: args.fileName,
+      uploadFileSha256s,
+      carrier: "Extracting...",
+      policyNumber: "Extracting...",
+      linesOfBusiness: ["UN"],
+      documentType: "policy",
+      policyYear: dayjs().year(),
+      effectiveDate: "Extracting...",
+      expirationDate: "Extracting...",
+      isRenewal: false,
+      coverages: [],
+      insuredName: "Extracting...",
+      extractionDataStage: "placeholder",
+      extractionDataStageUpdatedAt: now,
+    });
+    return { created: true as const, policyId };
+  },
+});
+
 export const updateExtraction = mutation({
   args: {
     id: v.id("policies"),
@@ -1550,6 +1603,28 @@ export const checkDuplicateUploadByHash = mutation({
       carrier: duplicate.carrier ?? null,
       uploadedAt: duplicate._creationTime,
     };
+  },
+});
+
+export const hasPendingExtractionInternal = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const policies = await ctx.db
+      .query("policies")
+      .withIndex("by_orgId", (query) => query.eq("orgId", args.orgId))
+      .collect();
+    const nonFinalPolicies = policies.filter(
+      (policy) =>
+        !policy.deletedAt && effectiveExtractionDataStage(policy) !== "final",
+    );
+    const pending = await Promise.all(
+      nonFinalPolicies.map(async (policy) => {
+        const run = await getPolicyExtractionRun(ctx, policy._id);
+        const status = run?.pipelineStatus ?? policy.pipelineStatus ?? "idle";
+        return status === "idle" || status === "running" || status === "paused";
+      }),
+    );
+    return pending.some(Boolean);
   },
 });
 

@@ -191,6 +191,7 @@ describe("sendNotificationEmail", () => {
         title: "Renewal Review",
         createdBy: userId,
         lastMessageAt: dayjs().valueOf(),
+        threadEmail: "agent+renewal@glass.insure",
         originChannel: "chat",
       })
     );
@@ -203,6 +204,8 @@ describe("sendNotificationEmail", () => {
         severity: "warning",
         status: "unread",
         emailStatus: "scheduled",
+        actionType: "view_thread",
+        actionPayload: { threadId },
         sourceRef: { threadId },
         createdAt: dayjs().valueOf(),
       })
@@ -223,6 +226,62 @@ describe("sendNotificationEmail", () => {
     expect(callBody.html).toContain("Renewal Review");
     expect(callBody.html).toContain('<td align="center" style="padding:24px 40px 0 40px;">');
     expect(callBody.text).toContain("Thread: Renewal Review");
+    expect(callBody.reply_to).toBe("agent+renewal@glass.insure");
+
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  test("omits Reply-To when a thread email uses an untrusted domain", async () => {
+    const t = convexTest(schema, modules);
+    const { notificationId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Acme",
+        type: "client",
+      });
+      const userId = await ctx.db.insert("users", {
+        name: "Alice",
+        email: "alice@acme.co",
+      });
+      await ctx.db.insert("orgMemberships", {
+        orgId,
+        userId,
+        role: "admin",
+      });
+      const threadId = await ctx.db.insert("threads", {
+        orgId,
+        title: "Mailbox review",
+        createdBy: userId,
+        lastMessageAt: dayjs().valueOf(),
+        threadEmail: "agent+mailbox@attacker.example",
+        originChannel: "chat",
+      });
+      const notificationId = await ctx.db.insert("notifications", {
+        orgId,
+        userId,
+        type: "mailbox_attention",
+        title: "Mailbox item needs attention",
+        body: "Glass found an item to review.",
+        severity: "warning",
+        status: "unread",
+        emailStatus: "scheduled",
+        actionType: "view_thread",
+        actionPayload: { threadId },
+        createdAt: dayjs().valueOf(),
+      });
+      return { notificationId };
+    });
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ id: "resend-msg-untrusted" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
+
+    await t.action(sendFn, { notificationId });
+
+    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(callBody).not.toHaveProperty("reply_to");
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

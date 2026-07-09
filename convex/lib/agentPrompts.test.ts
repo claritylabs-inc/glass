@@ -3,6 +3,7 @@ import {
   MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS,
   SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG,
   SOURCE_NODE_MATCH_LIMIT,
+  rankOrgMemoryForQuery,
   rankSourceNodesForQuery,
 } from "./agentPrompts";
 
@@ -41,5 +42,26 @@ describe("agent prompt retrieval bounds", () => {
       nodeId: "node-17",
       title: "Terrorism Risk Insurance Act Disclosure",
     });
+  });
+
+  it("prefers company facts relevant to the current question before recent noise", () => {
+    const memories = [
+      {
+        content: "Acme renewed its office lease in Oakland.",
+        updatedAt: 30,
+      },
+      {
+        content: "Acme manufactures battery storage systems in Nevada.",
+        updatedAt: 10,
+      },
+      {
+        content: "Acme hired a new finance leader.",
+        updatedAt: 20,
+      },
+    ];
+
+    expect(
+      rankOrgMemoryForQuery("battery manufacturing operations", memories, 2),
+    ).toEqual([memories[1], memories[0]]);
   });
 });

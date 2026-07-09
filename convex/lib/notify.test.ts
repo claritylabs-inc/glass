@@ -1,8 +1,10 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, describe } from "vitest";
+import dayjs from "dayjs";
 import schema from "../schema";
 import { notifyInternal } from "./notify";
+import { resolveChannelPreference } from "../notificationPreferences";
 
 const notifyInternalFn = notifyInternal as any;
 
@@ -137,7 +139,7 @@ describe("notify() — preference resolution", () => {
         type: "__all__",
         channel: "email",
         enabled: false,
-        updatedAt: Date.now(),
+        updatedAt: dayjs().valueOf(),
       })
     );
 
@@ -149,7 +151,7 @@ describe("notify() — preference resolution", () => {
         type: "incomplete_extraction",
         channel: "email",
         enabled: true,
-        updatedAt: Date.now(),
+        updatedAt: dayjs().valueOf(),
       })
     );
 
@@ -179,5 +181,124 @@ describe("notify() — preference resolution", () => {
 
     // info severity defaults to false
     expect(shouldEmail).toBe(false);
+  });
+});
+
+describe("notify() — proactive preference resolution", () => {
+  test("uses __proactive__ before __all__ for proactive events", async () => {
+    const t = convexTest(schema, modules);
+    const { orgId, userId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Acme",
+        type: "client",
+      });
+      const userId = await ctx.db.insert("users", { name: "Alice" });
+      await ctx.db.insert("notificationPreferences", {
+        userId,
+        orgId,
+        type: "__all__",
+        channel: "email",
+        enabled: false,
+        updatedAt: dayjs().valueOf(),
+      });
+      await ctx.db.insert("notificationPreferences", {
+        userId,
+        orgId,
+        type: "__proactive__",
+        channel: "email",
+        enabled: true,
+        updatedAt: dayjs().valueOf(),
+      });
+      return { orgId, userId };
+    });
+
+    const enabled = await t.run((ctx) =>
+      resolveChannelPreference(ctx, {
+        userId,
+        orgId,
+        type: "mailbox_attention",
+        channel: "email",
+        severity: "warning",
+      }),
+    );
+
+    expect(enabled).toBe(true);
+  });
+
+  test("uses an event override before __proactive__", async () => {
+    const t = convexTest(schema, modules);
+    const { orgId, userId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Acme",
+        type: "client",
+      });
+      const userId = await ctx.db.insert("users", { name: "Alice" });
+      for (const preference of [
+        { type: "__proactive__", enabled: true },
+        { type: "mailbox_attention", enabled: false },
+      ]) {
+        await ctx.db.insert("notificationPreferences", {
+          userId,
+          orgId,
+          type: preference.type,
+          channel: "email",
+          enabled: preference.enabled,
+          updatedAt: dayjs().valueOf(),
+        });
+      }
+      return { orgId, userId };
+    });
+
+    const enabled = await t.run((ctx) =>
+      resolveChannelPreference(ctx, {
+        userId,
+        orgId,
+        type: "mailbox_attention",
+        channel: "email",
+        severity: "warning",
+      }),
+    );
+
+    expect(enabled).toBe(false);
+  });
+
+  test("does not apply __proactive__ to ordinary notifications", async () => {
+    const t = convexTest(schema, modules);
+    const { orgId, userId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Acme",
+        type: "client",
+      });
+      const userId = await ctx.db.insert("users", { name: "Alice" });
+      await ctx.db.insert("notificationPreferences", {
+        userId,
+        orgId,
+        type: "__proactive__",
+        channel: "email",
+        enabled: true,
+        updatedAt: dayjs().valueOf(),
+      });
+      await ctx.db.insert("notificationPreferences", {
+        userId,
+        orgId,
+        type: "__all__",
+        channel: "email",
+        enabled: false,
+        updatedAt: dayjs().valueOf(),
+      });
+      return { orgId, userId };
+    });
+
+    const enabled = await t.run((ctx) =>
+      resolveChannelPreference(ctx, {
+        userId,
+        orgId,
+        type: "incomplete_extraction",
+        channel: "email",
+        severity: "warning",
+      }),
+    );
+
+    expect(enabled).toBe(false);
   });
 });

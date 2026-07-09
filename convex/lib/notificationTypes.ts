@@ -5,6 +5,9 @@ import dayjs from "dayjs";
 export const ACTIVE_NOTIFICATION_TYPES = [
   "broker_action",
   "incomplete_extraction",
+  "mailbox_attention",
+  "own_compliance_gap",
+  "own_compliance_resolved",
   "client_invitation_accepted",
   "client_onboarding_completed",
   "vendor_compliance_met",
@@ -42,9 +45,34 @@ export type StoredNotificationType = (typeof ALL_NOTIFICATION_TYPES)[number];
 
 export type NotificationSeverity = "info" | "warning" | "critical";
 
+export const PROACTIVE_PREFERENCE_TYPE = "__proactive__";
+
+export const PROACTIVE_NOTIFICATION_TYPES = [
+  "mailbox_attention",
+  "own_compliance_gap",
+  "own_compliance_resolved",
+  "vendor_compliance_met",
+  "vendor_compliance_gap",
+  "vendor_policy_expiring",
+  "vendor_policy_expired",
+] as const satisfies readonly NotificationType[];
+
+const PROACTIVE_NOTIFICATION_TYPE_SET = new Set<NotificationType>(
+  PROACTIVE_NOTIFICATION_TYPES,
+);
+
+export function isProactiveNotificationType(
+  type: string,
+): type is (typeof PROACTIVE_NOTIFICATION_TYPES)[number] {
+  return PROACTIVE_NOTIFICATION_TYPE_SET.has(type as NotificationType);
+}
+
 export const NOTIFICATION_SEVERITY: Record<StoredNotificationType, NotificationSeverity> = {
   broker_action: "info",
   incomplete_extraction: "warning",
+  mailbox_attention: "warning",
+  own_compliance_gap: "warning",
+  own_compliance_resolved: "info",
   client_invitation_accepted: "info",
   client_onboarding_completed: "info",
   vendor_compliance_met: "info",
@@ -69,6 +97,9 @@ export const NOTIFICATION_SEVERITY: Record<StoredNotificationType, NotificationS
 
 /** Active notification types that coalesce. Value is window in ms. */
 export const COALESCE_WINDOW_MS: Partial<Record<NotificationType, number>> = {
+  mailbox_attention: 24 * 60 * 60 * 1000,
+  own_compliance_gap: 24 * 60 * 60 * 1000,
+  own_compliance_resolved: 24 * 60 * 60 * 1000,
   vendor_compliance_met: 24 * 60 * 60 * 1000,
   vendor_compliance_gap: 24 * 60 * 60 * 1000,
   vendor_policy_expiring: 24 * 60 * 60 * 1000,
@@ -115,6 +146,24 @@ export interface NotificationSettingsRow {
 }
 
 export const NOTIFICATION_SETTINGS_ROWS: readonly NotificationSettingsRow[] = [
+  {
+    type: "mailbox_attention",
+    label: "Mailbox items need attention",
+    group: "Mailbox",
+    audiences: ["broker", "client"],
+  },
+  {
+    type: "own_compliance_gap",
+    label: "Your insurance has a compliance gap",
+    group: "Your insurance",
+    audiences: ["broker", "client"],
+  },
+  {
+    type: "own_compliance_resolved",
+    label: "Your insurance becomes compliant",
+    group: "Your insurance",
+    audiences: ["broker", "client"],
+  },
   {
     type: "client_invitation_accepted",
     label: "Client accepted invitation",

@@ -2,11 +2,18 @@
 // convex/actions/sendNotificationEmail.ts
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalAction } from "../_generated/server";
+import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { buildNotificationEmail, NotificationEmailBranding } from "../lib/notificationEmailTemplate";
-import { NotificationType, getEffectiveEmailDefault } from "../lib/notificationTypes";
-import { sendResendEmail, getNotificationFromAddress } from "../lib/resend";
+import type { Doc, Id } from "../_generated/dataModel";
+import {
+  buildNotificationEmail,
+  type NotificationEmailBranding,
+} from "../lib/notificationEmailTemplate";
+import {
+  getAgentDomains,
+  getNotificationFromAddress,
+  sendResendEmail,
+} from "../lib/resend";
 import { isWhiteLabelingEnabled } from "../lib/branding";
 import { getPortalUrlForOrg } from "../lib/domains";
 
@@ -14,7 +21,7 @@ export const send = internalAction({
   args: { notificationId: v.id("notifications") },
   handler: async (ctx, args) => {
     const notification = await ctx.runQuery(
-      (internal as any).notifications.getInternal,
+      internal.notifications.getInternal,
       { id: args.notificationId },
     );
 
@@ -22,46 +29,59 @@ export const send = internalAction({
     if (notification.emailStatus !== "scheduled") return;
 
     const recipientOrg = await ctx.runQuery(
-      (internal as any).organizations.getInternal,
+      internal.organizations.getInternal,
       { id: notification.orgId },
     );
     if (!recipientOrg) return;
 
+    const contextThread = await resolveReferencedThread(ctx, notification);
+    const privateThreadOwner =
+      notification.actionType === "view_thread" &&
+      contextThread?.visibility === "user_private"
+        ? contextThread.createdBy
+        : undefined;
+
     // Collect recipients (user-targeted or org-wide)
-    const memberships = notification.userId
+    const memberships = privateThreadOwner
+      ? [{ userId: privateThreadOwner }]
+      : notification.userId
       ? [{ userId: notification.userId }]
       : await ctx.runQuery(
-          (internal as any).organizations.listMembershipsForOrg,
+          internal.organizations.listMembershipsForOrg,
           { orgId: notification.orgId },
         );
 
     // Preference check at send time
-    const type = notification.type as NotificationType;
-    const severity = notification.severity as "info" | "warning" | "critical";
+    const type = notification.type;
+    const severity = notification.severity;
 
-    const recipientsToEmail: Array<{ userId: string; email: string }> = [];
+    const recipientsToEmail: Array<{ email: string }> = [];
 
     for (const m of memberships) {
       const user = await ctx.runQuery(
-        (internal as any).users.getInternal,
+        internal.users.getInternal,
         { id: m.userId },
       );
       if (!user?.email) continue;
 
-      const pref: boolean | null = await ctx.runQuery(
-        (internal as any).notificationPreferences.resolveForUser,
-        { userId: m.userId, orgId: notification.orgId, type },
+      const shouldEmail = await ctx.runQuery(
+        internal.notificationPreferences.resolveChannelForUser,
+        {
+          userId: m.userId,
+          orgId: notification.orgId,
+          type,
+          channel: "email",
+          severity,
+        },
       );
-
-      const shouldEmail = pref !== null ? pref : getEffectiveEmailDefault(severity);
       if (shouldEmail) {
-        recipientsToEmail.push({ userId: m.userId, email: user.email });
+        recipientsToEmail.push({ email: user.email });
       }
     }
 
     if (recipientsToEmail.length === 0) {
       await ctx.runMutation(
-        (internal as any).notifications.patchEmailStatus,
+        internal.notifications.patchEmailStatus,
         { id: args.notificationId, emailStatus: "suppressed_by_preference" },
       );
       return;
@@ -73,7 +93,7 @@ export const send = internalAction({
 
     if (recipientOrg.type === "client" && recipientOrg.brokerOrgId) {
       const brokerOrg = await ctx.runQuery(
-        (internal as any).organizations.getInternal,
+        internal.organizations.getInternal,
         { id: recipientOrg.brokerOrgId },
       );
       // Get logo URL via storage if iconStorageId is set
@@ -97,6 +117,9 @@ export const send = internalAction({
 
     // Build CTA URL from actionPayload or fallback to inbox
     const ctaUrl = buildCtaUrl(notification.actionType, notification.actionPayload, siteUrl);
+    const replyThread =
+      notification.actionType === "view_thread" ? contextThread : null;
+    const replyTo = trustedThreadReplyAddress(replyThread?.threadEmail);
 
     const emailContent = buildNotificationEmail({
       title: notification.title,
@@ -105,7 +128,7 @@ export const send = internalAction({
       ctaLabel: notificationCtaLabel(type),
       branding,
       siteUrl,
-      threadLabel: await resolveContextLabel(ctx, notification),
+      threadLabel: resolveContextLabel(notification, contextThread),
     });
 
     // Send to all recipients
@@ -118,18 +141,19 @@ export const send = internalAction({
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
+        ...(replyTo ? { reply_to: replyTo } : {}),
       },
       { retries: 2 },
     );
 
     if (result.ok) {
       await ctx.runMutation(
-        (internal as any).notifications.patchEmailStatus,
+        internal.notifications.patchEmailStatus,
         { id: args.notificationId, emailStatus: "sent", emailSentAt: dayjs().valueOf() },
       );
     } else {
       await ctx.runMutation(
-        (internal as any).notifications.patchEmailStatus,
+        internal.notifications.patchEmailStatus,
         { id: args.notificationId, emailStatus: "failed" },
       );
       console.error(`[sendNotificationEmail] Failed to send notification ${args.notificationId}`);
@@ -137,44 +161,59 @@ export const send = internalAction({
   },
 });
 
-function notificationCtaLabel(type: NotificationType): string {
+function notificationCtaLabel(type: string): string {
   switch (type) {
     default:
       return "View in Glass";
   }
 }
 
-async function resolveContextLabel(
-  ctx: any,
-  notification: any,
-): Promise<string | undefined> {
-  return await resolveThreadLabel(ctx, notification);
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
-async function resolveThreadLabel(ctx: any, notification: any): Promise<string | undefined> {
+function trustedThreadReplyAddress(value: string | undefined): string | undefined {
+  const address = value?.trim();
+  if (!address || /[\r\n]/.test(address)) return undefined;
+  const at = address.lastIndexOf("@");
+  if (at <= 0 || at === address.length - 1) return undefined;
+  const domain = address.slice(at + 1).toLowerCase();
+  return getAgentDomains().includes(domain) ? address : undefined;
+}
+
+function resolveContextLabel(
+  notification: Doc<"notifications">,
+  replyThread: Doc<"threads"> | null,
+): string | undefined {
   for (const candidate of [notification.actionPayload, notification.sourceRef]) {
-    if (!candidate || typeof candidate !== "object") continue;
-    const value = candidate as Record<string, unknown>;
+    const value = objectRecord(candidate);
+    if (!value) continue;
     if (typeof value.threadTitle === "string" && value.threadTitle.trim()) {
       return value.threadTitle.trim();
     }
-    if (typeof value.threadId !== "string" || !value.threadId.trim()) continue;
+  }
+  return replyThread?.title.trim() || undefined;
+}
+
+async function resolveReferencedThread(
+  ctx: ActionCtx,
+  notification: Doc<"notifications">,
+): Promise<Doc<"threads"> | null> {
+  for (const candidate of [notification.actionPayload, notification.sourceRef]) {
+    const threadId = objectRecord(candidate)?.threadId;
+    if (typeof threadId !== "string" || !threadId.trim()) continue;
     try {
-      const thread = await ctx.runQuery((internal as any).threads.getInternal, {
-        id: value.threadId,
+      const thread = await ctx.runQuery(internal.threads.getInternal, {
+        id: threadId as Id<"threads">,
       });
-      if (
-        thread?.orgId === notification.orgId &&
-        typeof thread.title === "string" &&
-        thread.title.trim()
-      ) {
-        return thread.title;
-      }
+      if (thread?.orgId === notification.orgId) return thread;
     } catch {
-      // Notification payloads are loose, so stale or invalid thread refs are ignored.
+      continue;
     }
   }
-  return undefined;
+  return null;
 }
 
 function buildCtaUrl(

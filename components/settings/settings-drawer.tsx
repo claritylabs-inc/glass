@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { X } from "lucide-react";
 
 const EASE = [0.2, 0, 0, 1] as const;
@@ -21,6 +21,8 @@ export function SettingsDrawer({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <AnimatePresence mode="popLayout">
       {open && (
@@ -32,9 +34,9 @@ export function SettingsDrawer({
           className="max-lg:fixed! max-lg:inset-0! max-lg:z-50! flex h-full w-full shrink-0 overflow-hidden"
         >
           <motion.div
-            initial={{ opacity: 0, x: 8 }}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 8 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 8 }}
             transition={{ duration: 0.1, ease: EASE }}
             className="flex min-h-0 w-full flex-1 flex-col border-l border-foreground/6 bg-background"
           >

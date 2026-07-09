@@ -69,6 +69,12 @@ const notificationChannelValidator = v.union(
   v.literal("imessage"),
 );
 
+const connectedEmailAutomationValidator = v.object({
+  policyImports: v.boolean(),
+  requirementImports: v.boolean(),
+  companyMemory: v.boolean(),
+});
+
 const publicDemoChannelValidator = v.union(
   v.literal("email"),
   v.literal("imessage"),
@@ -577,6 +583,7 @@ export default defineSchema({
     username: v.string(),
     encryptedPassword: v.string(),
     encryptionKeyVersion: v.optional(v.string()),
+    automation: v.optional(connectedEmailAutomationValidator),
     status: v.union(
       v.literal("active"),
       v.literal("error"),
@@ -589,7 +596,64 @@ export default defineSchema({
   })
     .index("by_orgId", ["orgId"])
     .index("by_userId", ["userId"])
-    .index("by_orgId_status", ["orgId", "status"]),
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_status", ["status"]),
+
+  connectedEmailScanStates: defineTable({
+    accountId: v.id("connectedEmailAccounts"),
+    orgId: v.id("organizations"),
+    mailbox: v.string(),
+    uidValidity: v.optional(v.string()),
+    lastUid: v.optional(v.number()),
+    lastAttemptedAt: v.number(),
+    lastSuccessfulAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_accountId_mailbox", ["accountId", "mailbox"])
+    .index("by_orgId", ["orgId"]),
+
+  connectedEmailAutomationItems: defineTable({
+    accountId: v.id("connectedEmailAccounts"),
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    mailbox: v.string(),
+    uid: v.number(),
+    messageKey: v.string(),
+    emailRef: v.string(),
+    sourceMessageId: v.optional(v.string()),
+    subject: v.string(),
+    from: v.optional(v.string()),
+    receivedAt: v.optional(v.number()),
+    classification: v.union(
+      v.literal("ignore"),
+      v.literal("policy_document"),
+      v.literal("insurance_requirements"),
+      v.literal("company_context"),
+      v.literal("multiple"),
+      v.literal("review_needed"),
+    ),
+    confidence: v.number(),
+    reason: v.string(),
+    status: v.union(
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    attempts: v.number(),
+    actionSummary: v.optional(v.string()),
+    policyIds: v.optional(v.array(v.id("policies"))),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    memoryIds: v.optional(v.array(v.id("orgMemory"))),
+    threadId: v.optional(v.id("threads")),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_accountId_messageKey", ["accountId", "messageKey"])
+    .index("by_orgId_updatedAt", ["orgId", "updatedAt"])
+    .index("by_status_updatedAt", ["status", "updatedAt"]),
 
   // Org memory — persistent AI knowledge (facts, preferences, risk notes, observations)
   orgMemory: defineTable({
@@ -609,12 +673,16 @@ export default defineSchema({
       v.literal("imessage"),
     ),
     policyId: v.optional(v.id("policies")),
+    sourceRef: v.optional(v.string()),
+    confidence: v.optional(v.number()),
+    observedAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_org", ["orgId"])
-    .index("by_org_type", ["orgId", "type"]),
+    .index("by_org_type", ["orgId", "type"])
+    .index("by_org_sourceRef", ["orgId", "sourceRef"]),
 
   // Passport, integrations, email-inbox, and org-documents tables
   // were removed as part of the v0.2.0 scope simplification. See git history.
@@ -954,7 +1022,8 @@ export default defineSchema({
     minimumRequired: v.optional(v.boolean()),
   })
     .index("by_orgId", ["orgId"])
-    .index("by_orgId_status", ["orgId", "status"]),
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_status_scope", ["status", "scope"]),
 
   complianceChecks: defineTable({
     orgId: v.id("organizations"),
@@ -981,6 +1050,8 @@ export default defineSchema({
       }),
     ),
     checkedAt: v.number(),
+    // Carried across monitor snapshots to gate seven-day reminders.
+    alertedAt: v.optional(v.number()),
     checkedBy: v.union(
       v.literal("system"),
       v.literal("user"),
@@ -993,7 +1064,13 @@ export default defineSchema({
       "subjectOrgId",
     ])
     .index("by_orgId_subjectOrgId", ["orgId", "subjectOrgId"])
-    .index("by_relationshipId", ["relationshipId"]),
+    .index("by_relationshipId", ["relationshipId"])
+    .index("by_requirementId_subjectOrgId_checkedBy_checkedAt", [
+      "requirementId",
+      "subjectOrgId",
+      "checkedBy",
+      "checkedAt",
+    ]),
   clientInvitations: defineTable({
     brokerOrgId: v.id("organizations"),
     clientOrgName: v.optional(v.string()),
@@ -1993,6 +2070,9 @@ export default defineSchema({
       v.literal("vendor_policy_expired"),
       v.literal("policy_change_needs_info"),
       v.literal("policy_change_completed"),
+      v.literal("mailbox_attention"),
+      v.literal("own_compliance_gap"),
+      v.literal("own_compliance_resolved"),
     ),
     title: v.string(),
     body: v.string(),
@@ -2497,7 +2577,11 @@ export default defineSchema({
       }),
     ),
     visibility: v.optional(
-      v.union(v.literal("broker_visible"), v.literal("client_internal")),
+      v.union(
+        v.literal("broker_visible"),
+        v.literal("client_internal"),
+        v.literal("user_private"),
+      ),
     ),
     threadPhone: v.optional(v.string()),
     imessageChatGuid: v.optional(v.string()),

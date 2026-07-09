@@ -8,6 +8,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 type NotificationVisibilityRow = {
   status: string;
   type: string;
+  userId?: Id<"users">;
 };
 
 function isBaseVisibleNotification(notification: { status: string; type: string }) {
@@ -18,8 +19,15 @@ function isBaseVisibleNotification(notification: { status: string; type: string 
   );
 }
 
-function filterVisibleNotifications<T extends NotificationVisibilityRow>(rows: T[]) {
-  return rows.filter(isBaseVisibleNotification);
+function filterVisibleNotifications<T extends NotificationVisibilityRow>(
+  rows: T[],
+  userId?: Id<"users">,
+) {
+  return rows.filter(
+    (notification) =>
+      isBaseVisibleNotification(notification) &&
+      (!notification.userId || !userId || notification.userId === userId),
+  );
 }
 
 // ── Public queries ──────────────────────────────────────────────────────────
@@ -50,7 +58,7 @@ export const listInbox = query({
       .order("desc")
       .take(limit * 2); // over-fetch to filter dismissed
 
-    const visible = filterVisibleNotifications(rows).slice(0, limit);
+    const visible = filterVisibleNotifications(rows, access.userId).slice(0, limit);
 
     // Enrich with relatedOrg name when present
     const enriched = await Promise.all(
@@ -109,7 +117,7 @@ export const list = query({
         .take(effectiveLimit);
     }
 
-    return filterVisibleNotifications(results);
+    return filterVisibleNotifications(results, access.userId);
   },
 });
 
@@ -127,7 +135,7 @@ export const unreadCount = query({
         q.eq("orgId", orgId).eq("status", "unread")
       )
       .take(100);
-    return filterVisibleNotifications(unread).length;
+    return filterVisibleNotifications(unread, access.userId).length;
   },
 });
 
@@ -136,10 +144,14 @@ export const unreadCount = query({
 export const markRead = mutation({
   args: { ids: v.array(v.id("notifications")) },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { orgId, userId } = await requireOrgAccess(ctx);
     for (const id of args.ids) {
       const n = await ctx.db.get(id);
-      if (n && n.orgId === orgId) {
+      if (
+        n &&
+        n.orgId === orgId &&
+        (!n.userId || n.userId === userId)
+      ) {
         await ctx.db.patch(id, { status: "read" });
       }
     }
@@ -159,18 +171,30 @@ export const markAllRead = mutation({
         q.eq("orgId", orgId).eq("status", "unread")
       )
       .collect();
-    await Promise.all(unread.map((n) => ctx.db.patch(n._id, { status: "read" })));
+    await Promise.all(
+      unread
+        .filter((notification) =>
+          !notification.userId || notification.userId === access.userId,
+        )
+        .map((notification) =>
+          ctx.db.patch(notification._id, { status: "read" }),
+        ),
+    );
   },
 });
 
 export const dismiss = mutation({
   args: { id: v.optional(v.id("notifications")), notificationId: v.optional(v.id("notifications")) },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { orgId, userId } = await requireOrgAccess(ctx);
     const id = args.id ?? args.notificationId;
     if (!id) throw new Error("id required");
     const n = await ctx.db.get(id);
-    if (!n || n.orgId !== orgId) throw new Error("Not found");
+    if (
+      !n ||
+      n.orgId !== orgId ||
+      (n.userId && n.userId !== userId)
+    ) throw new Error("Not found");
     await ctx.db.patch(id, { status: "dismissed" });
   },
 });
@@ -178,9 +202,13 @@ export const dismiss = mutation({
 export const markActioned = mutation({
   args: { notificationId: v.id("notifications") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { orgId, userId } = await requireOrgAccess(ctx);
     const n = await ctx.db.get(args.notificationId);
-    if (!n || n.orgId !== orgId) throw new Error("Not found");
+    if (
+      !n ||
+      n.orgId !== orgId ||
+      (n.userId && n.userId !== userId)
+    ) throw new Error("Not found");
     await ctx.db.patch(args.notificationId, { status: "actioned" });
   },
 });
@@ -227,7 +255,7 @@ export const listInternal = internalQuery({
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
       .order("desc")
       .take(limit * 2); // over-fetch to filter dismissed
-    return filterVisibleNotifications(rows).slice(0, limit);
+    return filterVisibleNotifications(rows, args.userId).slice(0, limit);
   },
 });
 

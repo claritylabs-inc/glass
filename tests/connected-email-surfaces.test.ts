@@ -35,6 +35,15 @@ describe("connected email surfaces", () => {
     expect(backend).toContain("IMAP_SOCKET_TIMEOUT_MS");
     expect(backend).toContain("IMAP search failed");
     expect(backend).toContain("Skipping unreadable message");
+    expect(backend).toContain("bodyStructure: true");
+    expect(backend).toContain("AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES");
+    expect(backend).toContain("Mailbox scan was incomplete");
+    expect(backend).toContain("AUTOMATION_INITIAL_LOOKBACK_DAYS = 400");
+    expect(backend).toContain("AUTOMATION_HISTORY_SUBJECT_TERMS");
+    expect(backend).toContain("downloaded.meta.expectedSize");
+    expect(backend).toContain("args.filenames === undefined");
+    expect(backend).toContain("importedComplianceAttentionAfterBatch");
+    expect(backend).toContain("success && files.length > 1");
     expect(coordinator).toContain("mailboxErrors");
     expect(coordinator).toContain('record.type === "mailbox_search_error"');
   });
@@ -152,15 +161,18 @@ describe("connected email surfaces", () => {
     const sections = read("lib/settings-sections.ts");
     const settingsPage = read("app/settings/page.tsx");
     const connections = read("components/settings/connections-section.tsx");
-    const emailSettings = read("components/settings/email-connections-section.tsx");
+    const emailList = read("components/settings/email-connections-section.tsx");
+    const emailDrawers = read("components/settings/email-connection-drawers.tsx");
+    const emailUi = read("components/settings/email-connection-ui.tsx");
+    const emailSettings = [emailList, emailDrawers, emailUi].join("\n");
 
     expect(sections).toContain('id: "email"');
     expect(settingsPage).toContain("<EmailConnectionsSection />");
     expect(connections).not.toContain("connectedEmailAccounts");
-    expect(emailSettings).toContain("SettingsDrawer");
+    expect(emailDrawers).toContain("SettingsDrawer");
     expect(emailSettings).toContain("Add mailbox");
-    expect(emailSettings.indexOf("Connected mailboxes")).toBeGreaterThan(
-      emailSettings.indexOf("return ("),
+    expect(emailList.indexOf("Connected mailboxes")).toBeGreaterThan(
+      emailList.indexOf("return ("),
     );
     expect(emailSettings).toContain("Google Workspace");
     expect(emailSettings).toContain("Outlook");
@@ -170,10 +182,18 @@ describe("connected email surfaces", () => {
     expect(emailSettings).toContain("GoogleLogo");
     expect(emailSettings).toContain("MicrosoftLogo");
     expect(emailSettings).toContain("https://myaccount.google.com/apppasswords");
-    expect(emailSettings).toContain("Add your first inbox");
+    expect(emailSettings).toContain("Connect your first mailbox");
     expect(emailSettings).toContain("EmailScopeSelect");
     expect(emailSettings).toContain("canManageOrgMailboxes");
     expect(emailSettings).toContain("allowOrgScope={canManageOrgMailboxes}");
+    expect(emailSettings).toContain("api.connectedEmail.updateSettings");
+    expect(emailSettings).toContain("automationConfigured");
+    expect(emailSettings).toContain("Policy documents");
+    expect(emailSettings).toContain("Insurance requirements");
+    expect(emailSettings).toContain("Company context");
+    expect(emailList).toContain("setSelectedAccountId(account._id)");
+    expect(emailList).not.toContain("updateConnectedEmailScope");
+    expect(emailList).not.toContain("revokeConnectedEmail");
     expect(emailSettings).not.toContain("<select");
     expect(emailSettings).not.toContain("Username");
   });
@@ -200,11 +220,11 @@ describe("connected email surfaces", () => {
 
     expect(backend).toContain("scanPreviousDayForOrg");
     expect(backend).toContain("scanPreviousDay");
-    expect(backend).toContain("listOrgScopedInternal");
-    expect(backend).toContain("listOrgIdsWithOrgScopedAccountsInternal");
+    expect(backend).toContain("listAutomationEligibleForOrgInternal");
+    expect(backend).toContain("listAutomationEligibleInternal");
     expect(backend).toContain("createProactiveInternal");
     expect(backend).toContain("mailbox_coordinator");
     expect(backend).toContain("EMAIL_SCAN_CRON_SECRET");
-    expect(docs).toContain("Daily mailbox attention scans");
+    expect(docs).toContain("connected-mailbox automation");
   });
 });
