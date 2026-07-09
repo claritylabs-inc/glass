@@ -16,6 +16,9 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).toContain("OverviewTab");
     expect(page).toContain("RequirementsTable");
     expect(page).toContain("RequirementDrawer");
+    expect(page).toContain("RequirementSourcesTable");
+    expect(page).toContain("TabsTrigger value=\"sources\"");
+    expect(page).toContain("Archive selected");
     expect(page).not.toContain("Insurer standards");
     expect(page).not.toContain("conditionType");
     expect(page).not.toContain("verifyRequirement");
@@ -53,9 +56,13 @@ describe("coverage-only compliance requirement surfaces", () => {
     const extraction = read("convex/actions/complianceRequirements.ts");
 
     expect(compliance).toContain("Only coverage requirements are supported");
+    expect(compliance).toContain("listRequirementSources");
+    expect(compliance).toContain("renameRequirementSource");
+    expect(compliance).toContain("archiveRequirementSources");
     expect(compliance).toContain("archiveNonCoverageRequirementsInternal");
     expect(compliance).toContain('row.kind === "coverage"');
     expect(extraction).not.toContain('z.enum(["coverage", "insurer", "condition"])');
+    expect(extraction).toContain("sourceName: v.optional(v.string())");
     expect(extraction).toContain("Amounts must be plain numbers");
   });
 });

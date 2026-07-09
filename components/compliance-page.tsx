@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
+import dayjs from "dayjs";
 import {
   AlertCircle,
   CheckCircle2,
@@ -66,13 +67,17 @@ type SourceFilter = "all" | RequirementSourceType;
 type LineFilter = "all" | `line:${string}`;
 type LimitFilter = "all" | "deductible" | "forms" | "provisions" | `limit:${string}`;
 type StatusFilter = "all" | ComplianceStatus | "defined";
-type ComplianceView = "overview" | "requirements";
+type ComplianceView = "overview" | "requirements" | "sources";
+type RequirementSourceDocumentType = Exclude<RequirementSourceType, "manual" | "bulk_import">;
 
 type ComplianceApi = {
   compliance: {
     listRequirements: FunctionReference<"query">;
+    listRequirementSources: FunctionReference<"query">;
     upsertRequirement: FunctionReference<"mutation">;
     archiveRequirement: FunctionReference<"mutation">;
+    renameRequirementSource: FunctionReference<"mutation">;
+    archiveRequirementSources: FunctionReference<"mutation">;
     generateRequirementImportUploadUrl: FunctionReference<"mutation">;
   };
   actions: {
@@ -123,6 +128,7 @@ type Requirement = {
   coverageForm?: "occurrence" | "claims_made";
   provisions?: string[];
   requiredForms?: string[];
+  sourceDocumentId?: Id<"requirementSourceDocuments">;
   sourceType?: RequirementSourceType;
   sourceDocumentName?: string;
   sourceExcerpt?: string;
@@ -158,6 +164,22 @@ type Requirement = {
       website?: string;
     } | null;
   };
+};
+
+type RequirementSource = {
+  _id: Id<"requirementSourceDocuments">;
+  orgId: Id<"organizations">;
+  fileName?: string;
+  contentType?: string;
+  sourceType: RequirementSourceDocumentType;
+  title: string;
+  sourceTextExcerpt?: string;
+  parserBackend?: "liteparse" | "pdfjs" | "mammoth" | "plain_text";
+  status: "idle" | "running" | "paused" | "complete" | "error";
+  pipelineError?: string;
+  requirementCount: number;
+  createdAt: number;
+  updatedAt: number;
 };
 
 type ConnectedOrgRow = {
@@ -259,23 +281,25 @@ function pageLabel(requirement: Requirement) {
 }
 
 function requirementSourceLine(requirement: Requirement) {
-  return [
-    REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)],
-    requirement.sourceDocumentName,
-    pageLabel(requirement),
-  ]
+  return [requirementSourcePrimary(requirement), requirementSourceSecondary(requirement)]
     .filter(Boolean)
     .join(" · ");
 }
 
 function requirementSourcePrimary(requirement: Requirement) {
-  return requirement.clientRequirementSource?.clientOrg?.name ?? REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)];
+  return (
+    requirement.sourceDocumentName ??
+    requirement.clientRequirementSource?.clientOrg?.name ??
+    REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)]
+  );
 }
 
 function requirementSourceSecondary(requirement: Requirement) {
   return [
-    requirement.clientRequirementSource?.clientOrg ? REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)] : undefined,
-    requirement.sourceDocumentName,
+    requirement.sourceDocumentName ? REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)] : undefined,
+    requirement.clientRequirementSource?.clientOrg
+      ? `Required by ${requirement.clientRequirementSource.clientOrg.name}`
+      : undefined,
     pageLabel(requirement),
   ]
     .filter(Boolean)
@@ -789,6 +813,151 @@ function RequirementsLoadingSkeleton() {
   return <OperationalSkeletonList rows={4} />;
 }
 
+function RequirementSourcesTable({
+  sources,
+  titleDrafts,
+  selectedSourceIds,
+  renamingSourceId,
+  archivingSources,
+  onTitleChange,
+  onRename,
+  onArchive,
+  onToggleSource,
+  onToggleAll,
+}: {
+  sources: RequirementSource[];
+  titleDrafts: Record<string, string>;
+  selectedSourceIds: Id<"requirementSourceDocuments">[];
+  renamingSourceId: Id<"requirementSourceDocuments"> | null;
+  archivingSources: boolean;
+  onTitleChange: (sourceId: Id<"requirementSourceDocuments">, title: string) => void;
+  onRename: (source: RequirementSource) => void;
+  onArchive: (sourceIds: Id<"requirementSourceDocuments">[]) => void;
+  onToggleSource: (sourceId: Id<"requirementSourceDocuments">, selected: boolean) => void;
+  onToggleAll: (selected: boolean) => void;
+}) {
+  const selected = new Set(selectedSourceIds);
+  const allSelected = sources.length > 0 && sources.every((source) => selected.has(source._id));
+
+  if (sources.length === 0) {
+    return (
+      <OperationalPanel as="div" className="p-5">
+        <p className="text-base font-medium text-foreground">No requirement sources yet</p>
+        <p className="mt-1 text-base text-muted-foreground">
+          Imported leases, client contracts, and vendor requirement packets will appear here.
+        </p>
+      </OperationalPanel>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-label text-muted-foreground">
+          {selectedSourceIds.length} selected
+        </p>
+        <PillButton
+          type="button"
+          size="compact"
+          variant="secondary"
+          disabled={selectedSourceIds.length === 0 || archivingSources}
+          onClick={() => onArchive(selectedSourceIds)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {archivingSources ? "Archiving..." : "Archive selected"}
+        </PillButton>
+      </div>
+      <OperationalPanel as="div">
+        <Table className="min-w-[920px]">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-[44px] px-4">
+                <input
+                  aria-label="Select all requirement sources"
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(event) => onToggleAll(event.target.checked)}
+                  className="h-4 w-4 accent-foreground"
+                />
+              </TableHead>
+              <TableHead className="w-[38%]">Name</TableHead>
+              <TableHead className="w-[18%]">Source type</TableHead>
+              <TableHead className="w-[12%]">Requirements</TableHead>
+              <TableHead className="w-[16%]">Added</TableHead>
+              <TableHead className="w-[16%] px-4 text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sources.map((source) => {
+              const draft = titleDrafts[source._id] ?? source.title;
+              const canSave = draft.trim() !== "" && draft.trim() !== source.title;
+              const isRenaming = renamingSourceId === source._id;
+              return (
+                <TableRow key={source._id}>
+                  <TableCell className="px-4">
+                    <input
+                      aria-label={`Select ${source.title}`}
+                      type="checkbox"
+                      checked={selected.has(source._id)}
+                      onChange={(event) => onToggleSource(source._id, event.target.checked)}
+                      className="h-4 w-4 accent-foreground"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      value={draft}
+                      onChange={(event) => onTitleChange(source._id, event.target.value)}
+                      aria-label={`Name for ${source.title}`}
+                      className="h-8 bg-background"
+                    />
+                    {source.fileName ? (
+                      <p className="mt-1 truncate text-label text-muted-foreground">
+                        {source.fileName}
+                      </p>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {REQUIREMENT_SOURCE_TYPE_LABELS[source.sourceType]}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-foreground">
+                    {source.requirementCount}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {dayjs(source.createdAt).format("MMM D, YYYY")}
+                  </TableCell>
+                  <TableCell className="px-4">
+                    <div className="flex justify-end gap-2">
+                      <PillButton
+                        type="button"
+                        size="compact"
+                        variant="secondary"
+                        disabled={!canSave || isRenaming}
+                        onClick={() => onRename(source)}
+                      >
+                        {isRenaming ? "Saving..." : "Save"}
+                      </PillButton>
+                      <PillButton
+                        type="button"
+                        size="compact"
+                        variant="secondary"
+                        disabled={archivingSources}
+                        onClick={() => onArchive([source._id])}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Archive
+                      </PillButton>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </OperationalPanel>
+    </div>
+  );
+}
+
 export function CompliancePage() {
   const router = useRouter();
   const currentOrg = useActiveOrgContext();
@@ -807,6 +976,11 @@ export function CompliancePage() {
     complianceApi.compliance.listRequirements,
     orgId ? { orgId } : "skip",
   ) as Requirement[] | undefined;
+  const requirementSources = useCachedQuery(
+    "compliance.listRequirementSources",
+    complianceApi.compliance.listRequirementSources,
+    orgId ? { orgId } : "skip",
+  ) as RequirementSource[] | undefined;
   const vendorRowsResult = useCachedConnectedVendors(
     orgId && showConnectFeatures ? orgId : undefined,
   ) as ConnectedOrgRow[] | undefined;
@@ -819,8 +993,11 @@ export function CompliancePage() {
   const vendorRows = showConnectFeatures ? vendorRowsResult : [];
   const clientRows = showConnectFeatures ? clientRowsResult : [];
   const updateRequirements = useUpdateCachedQuery<Requirement[], { orgId: Id<"organizations"> }>("compliance.listRequirements");
+  const updateRequirementSources = useUpdateCachedQuery<RequirementSource[], { orgId: Id<"organizations"> }>("compliance.listRequirementSources");
   const upsertRequirement = useMutation(complianceApi.compliance.upsertRequirement);
   const archiveRequirement = useMutation(complianceApi.compliance.archiveRequirement);
+  const renameRequirementSource = useMutation(complianceApi.compliance.renameRequirementSource);
+  const archiveRequirementSources = useMutation(complianceApi.compliance.archiveRequirementSources);
   const generateRequirementImportUploadUrl = useMutation(complianceApi.compliance.generateRequirementImportUploadUrl);
   const importRequirements = useAction(complianceApi.actions.complianceRequirements.importRequirements);
   const recheckOwnRequirement = useAction(complianceApi.actions.complianceReview.recheckOwnRequirement);
@@ -834,8 +1011,11 @@ export function CompliancePage() {
   const [limitFilter, setLimitFilter] = useState<LimitFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedRequirementId, setSelectedRequirementId] = useState<Id<"insuranceRequirements"> | null>(null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Id<"requirementSourceDocuments">[]>([]);
+  const [sourceTitleDrafts, setSourceTitleDrafts] = useState<Record<string, string>>({});
   const [sourceText, setSourceText] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [sourceName, setSourceName] = useState("");
   const [sourceTypeValue, setSourceTypeValue] = useState<Exclude<RequirementSourceType, "manual" | "bulk_import">>("vendor_requirements");
   const [title, setTitle] = useState("");
   const [lineOfBusiness, setLineOfBusiness] = useState("CGL");
@@ -845,6 +1025,8 @@ export function CompliancePage() {
   const [provisions, setProvisions] = useState<RequirementProvision[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [renamingSourceId, setRenamingSourceId] = useState<Id<"requirementSourceDocuments"> | null>(null);
+  const [archivingSources, setArchivingSources] = useState(false);
   const [checkingRequirementId, setCheckingRequirementId] = useState<Id<"insuranceRequirements"> | null>(null);
 
   const hasActiveClients = (clientRows ?? []).some((row) => row.status === "active");
@@ -1010,6 +1192,7 @@ export function CompliancePage() {
         fileName: sourceFile?.name,
         contentType: sourceFile?.type,
         sourceType: sourceTypeValue,
+        sourceName: sourceName.trim() || undefined,
         scope: activeRequirementScope,
       })) as { createdCount: number };
       toast[result.createdCount === 0 ? "info" : "success"](
@@ -1019,6 +1202,7 @@ export function CompliancePage() {
       );
       setSourceText("");
       setSourceFile(null);
+      setSourceName("");
       setDrawerOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to generate requirements");
@@ -1030,6 +1214,77 @@ export function CompliancePage() {
   function openAddRequirements() {
     setDrawerMode("bulk");
     setDrawerOpen(true);
+  }
+
+  function toggleSourceSelection(sourceId: Id<"requirementSourceDocuments">, selected: boolean) {
+    setSelectedSourceIds((current) =>
+      selected
+        ? Array.from(new Set([...current, sourceId]))
+        : current.filter((id) => id !== sourceId),
+    );
+  }
+
+  function toggleAllSources(selected: boolean) {
+    setSelectedSourceIds(selected ? (requirementSources ?? []).map((source) => source._id) : []);
+  }
+
+  async function saveRequirementSourceName(source: RequirementSource) {
+    if (!orgId) return;
+    const title = (sourceTitleDrafts[source._id] ?? source.title).trim();
+    if (!title) {
+      toast.error("Source name is required");
+      return;
+    }
+    setRenamingSourceId(source._id);
+    try {
+      await renameRequirementSource({ orgId, sourceDocumentId: source._id, title });
+      const now = dayjs().valueOf();
+      await updateRequirementSources({ orgId }, (current) =>
+        current.map((item) =>
+          item._id === source._id ? { ...item, title, updatedAt: now } : item,
+        ),
+      );
+      await updateRequirements({ orgId }, (current) =>
+        current.map((requirement) =>
+          requirement.sourceDocumentId === source._id
+            ? { ...requirement, sourceDocumentName: title, updatedAt: now }
+            : requirement,
+        ),
+      );
+      toast.success("Requirement source renamed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to rename source");
+    } finally {
+      setRenamingSourceId(null);
+    }
+  }
+
+  async function archiveSources(sourceIds: Id<"requirementSourceDocuments">[]) {
+    if (!orgId || sourceIds.length === 0) return;
+    setArchivingSources(true);
+    try {
+      const result = (await archiveRequirementSources({
+        orgId,
+        sourceDocumentIds: sourceIds,
+      })) as { archivedSourceCount: number; archivedRequirementCount: number };
+      const archivedIds = new Set(sourceIds);
+      await updateRequirementSources({ orgId }, (current) =>
+        current.filter((source) => !archivedIds.has(source._id)),
+      );
+      await updateRequirements({ orgId }, (current) =>
+        current.filter((requirement) => !requirement.sourceDocumentId || !archivedIds.has(requirement.sourceDocumentId)),
+      );
+      setSelectedSourceIds((current) => current.filter((id) => !archivedIds.has(id)));
+      toast.success(
+        result.archivedRequirementCount > 0
+          ? `Archived ${result.archivedRequirementCount} requirement${result.archivedRequirementCount === 1 ? "" : "s"}`
+          : "Requirement source archived",
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to archive sources");
+    } finally {
+      setArchivingSources(false);
+    }
   }
 
   const addPanel = (
@@ -1064,7 +1319,16 @@ export function CompliancePage() {
         {drawerMode === "bulk" ? (
           <>
             <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
-              Source
+              Source name
+              <Input
+                value={sourceName}
+                onChange={(event) => setSourceName(event.target.value)}
+                placeholder={sourceFile?.name ?? "Client vendor requirements"}
+                disabled={importing}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+              Source type
               <Select value={sourceTypeValue} onValueChange={(value) => setSourceTypeValue(value as Exclude<RequirementSourceType, "manual" | "bulk_import">)}>
                 <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1079,7 +1343,17 @@ export function CompliancePage() {
               Requirement text
               <Textarea className="min-h-0 flex-1 resize-none field-sizing-fixed" rows={12} value={sourceText} onChange={(event) => setSourceText(event.target.value)} placeholder="Paste insurance requirements or contract language." disabled={importing} />
             </label>
-            <FileDropZone accept=".txt,.md,.markdown,.pdf,.docx,.csv,.json,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,application/json" disabled={importing} idleLabel="Upload requirement document" busyLabel="Generating requirements..." hint="TXT, Markdown, PDF, DOCX, CSV, or JSON" onFile={setSourceFile} />
+            <FileDropZone
+              accept=".txt,.md,.markdown,.pdf,.docx,.csv,.json,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,application/json"
+              disabled={importing}
+              idleLabel="Upload requirement document"
+              busyLabel="Generating requirements..."
+              hint="TXT, Markdown, PDF, DOCX, CSV, or JSON"
+              onFile={(file) => {
+                setSourceFile(file);
+                setSourceName((current) => current.trim() || file.name);
+              }}
+            />
             {sourceFile ? (
               <OperationalPanel as="div" className="flex items-center justify-between gap-3 px-3 py-2">
                 <p className="min-w-0 truncate text-base font-medium text-foreground">{sourceFile.name}</p>
@@ -1165,9 +1439,29 @@ export function CompliancePage() {
           <TabsList variant="pill">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="requirements">Requirements</TabsTrigger>
+            <TabsTrigger value="sources">Sources</TabsTrigger>
           </TabsList>
         </Tabs>
-        {requirements === undefined ||
+        {view === "sources" ? (
+          requirementSources === undefined ? (
+            <RequirementsLoadingSkeleton />
+          ) : (
+            <RequirementSourcesTable
+              sources={requirementSources}
+              titleDrafts={sourceTitleDrafts}
+              selectedSourceIds={selectedSourceIds}
+              renamingSourceId={renamingSourceId}
+              archivingSources={archivingSources}
+              onTitleChange={(sourceId, nextTitle) =>
+                setSourceTitleDrafts((current) => ({ ...current, [sourceId]: nextTitle }))
+              }
+              onRename={(source) => void saveRequirementSourceName(source)}
+              onArchive={(sourceIds) => void archiveSources(sourceIds)}
+              onToggleSource={toggleSourceSelection}
+              onToggleAll={toggleAllSources}
+            />
+          )
+        ) : requirements === undefined ||
         (showConnectFeatures && (clientRows === undefined || vendorRows === undefined)) ? (
           <RequirementsLoadingSkeleton />
         ) : view === "overview" ? (
