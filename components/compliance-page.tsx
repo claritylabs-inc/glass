@@ -314,6 +314,17 @@ function requirementSourceSecondary(requirement: Requirement) {
     .join(" · ");
 }
 
+function requirementTableSourceSecondary(requirement: Requirement) {
+  return [
+    requirement.sourceDocumentName && requirement.clientRequirementSource?.clientOrg
+      ? `Required by ${requirement.clientRequirementSource.clientOrg.name}`
+      : undefined,
+    pageLabel(requirement),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function statusMeta(status?: ComplianceStatus) {
   switch (status) {
     case "met":
@@ -560,11 +571,11 @@ function RequirementsTable({
       <Table className="min-w-[1080px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[14%] px-4">Line</TableHead>
+            <TableHead className="w-[13%] px-4">Line</TableHead>
             <TableHead className="w-[21%]">Coverage</TableHead>
-            <TableHead className="w-[18%]">Source</TableHead>
-            <TableHead className="w-[16%]">Limit type</TableHead>
-            <TableHead className="w-[9%]">Limit</TableHead>
+            <TableHead className="w-[28%]">Source</TableHead>
+            <TableHead className="w-[8%]">Limit</TableHead>
+            <TableHead className="w-[8%]">Limit type</TableHead>
             <TableHead className="w-[10%]">Status</TableHead>
             <TableHead className="w-[12%] px-4">Policy match</TableHead>
           </TableRow>
@@ -573,7 +584,7 @@ function RequirementsTable({
           {sorted.map((requirement) => {
             const limits = requirement.limits ?? [];
             const policyIds = matchedPolicyIdsForRequirement(requirement);
-            const sourceSecondary = requirementSourceSecondary(requirement);
+            const sourceSecondary = requirementTableSourceSecondary(requirement);
             return (
               <TableRow
                 key={requirement._id}
@@ -591,11 +602,18 @@ function RequirementsTable({
                     </p>
                   ) : null}
                 </TableCell>
-                <TableCell className="max-w-52">
+                <TableCell className="max-w-80">
                   <p className="truncate text-foreground">{requirementSourcePrimary(requirement)}</p>
                   {sourceSecondary ? (
                     <p className="truncate text-label text-muted-foreground">{sourceSecondary}</p>
                   ) : null}
+                </TableCell>
+                <TableCell className="tabular-nums text-foreground">
+                  {limits.length > 0
+                    ? limits.map((limit, index) => (
+                        <p key={index} className="leading-5">{formatMoneyCompact(limit.amount)}</p>
+                      ))
+                    : "—"}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {limits.length > 0
@@ -605,13 +623,6 @@ function RequirementsTable({
                     : (requirement.provisions ?? []).length > 0
                       ? "Provisions"
                       : "—"}
-                </TableCell>
-                <TableCell className="tabular-nums text-foreground">
-                  {limits.length > 0
-                    ? limits.map((limit, index) => (
-                        <p key={index} className="leading-5">{formatMoneyCompact(limit.amount)}</p>
-                      ))
-                    : "—"}
                 </TableCell>
                 <TableCell>
                   {requirement.complianceCheck ? (
