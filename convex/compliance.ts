@@ -375,6 +375,45 @@ export const listRequirements = query({
   },
 });
 
+export const listRequirementSources = query({
+  args: { orgId: v.optional(v.id("organizations")) },
+  handler: async (ctx, args) => {
+    const { userId } = await requireAuth(ctx);
+    let orgId = args.orgId;
+    if (!orgId) {
+      const membership = await ctx.db
+        .query("orgMemberships")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .first();
+      if (!membership) throw new Error("Organization required");
+      orgId = membership.orgId;
+    }
+    await requireOrgMember(ctx, orgId);
+    const [sources, requirements] = await Promise.all([
+      ctx.db
+        .query("requirementSourceDocuments")
+        .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+        .collect(),
+      listRequirementsForOrg(ctx, orgId),
+    ]);
+    const countsBySourceId = new Map<Id<"requirementSourceDocuments">, number>();
+    for (const requirement of requirements) {
+      if (!requirement.sourceDocumentId) continue;
+      countsBySourceId.set(
+        requirement.sourceDocumentId,
+        (countsBySourceId.get(requirement.sourceDocumentId) ?? 0) + 1,
+      );
+    }
+    return sources
+      .filter((source) => !source.archivedAt)
+      .map((source) => ({
+        ...source,
+        requirementCount: countsBySourceId.get(source._id) ?? 0,
+      }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+});
+
 export const upsertRequirement = mutation({
   args: {
     orgId: v.id("organizations"),
@@ -430,6 +469,92 @@ export const upsertRequirement = mutation({
       createdByUserId: access.userId,
       createdAt: now,
     });
+  },
+});
+
+export const renameRequirementSource = mutation({
+  args: {
+    orgId: v.id("organizations"),
+    sourceDocumentId: v.id("requirementSourceDocuments"),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireOrgMember(ctx, args.orgId);
+    if (access.role !== "admin") {
+      throw new Error("Admin role required to rename requirement sources");
+    }
+    const source = await ctx.db.get(args.sourceDocumentId);
+    if (!source || source.orgId !== args.orgId || source.archivedAt) {
+      throw new Error("Requirement source not found");
+    }
+    const title = args.title.trim();
+    if (!title) throw new Error("Source name is required");
+    const now = dayjs().valueOf();
+    await ctx.db.patch(args.sourceDocumentId, {
+      title,
+      updatedAt: now,
+    });
+    const requirements = await ctx.db
+      .query("insuranceRequirements")
+      .withIndex("by_orgId_status", (q) =>
+        q.eq("orgId", args.orgId).eq("status", "active"),
+      )
+      .collect();
+    for (const requirement of requirements) {
+      if (requirement.sourceDocumentId !== args.sourceDocumentId) continue;
+      await ctx.db.patch(requirement._id, {
+        sourceDocumentName: title,
+        updatedByUserId: access.userId,
+        updatedAt: now,
+      });
+    }
+  },
+});
+
+export const archiveRequirementSources = mutation({
+  args: {
+    orgId: v.id("organizations"),
+    sourceDocumentIds: v.array(v.id("requirementSourceDocuments")),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireOrgMember(ctx, args.orgId);
+    if (access.role !== "admin") {
+      throw new Error("Admin role required to archive requirement sources");
+    }
+    const sourceDocumentIds = Array.from(new Set(args.sourceDocumentIds));
+    if (sourceDocumentIds.length === 0) {
+      throw new Error("Select at least one requirement source");
+    }
+    const now = dayjs().valueOf();
+    let archivedSourceCount = 0;
+    for (const sourceDocumentId of sourceDocumentIds) {
+      const source = await ctx.db.get(sourceDocumentId);
+      if (!source || source.orgId !== args.orgId || source.archivedAt) continue;
+      await ctx.db.patch(sourceDocumentId, {
+        archivedAt: now,
+        archivedByUserId: access.userId,
+        updatedAt: now,
+      });
+      archivedSourceCount += 1;
+    }
+    const selected = new Set(sourceDocumentIds);
+    const requirements = await ctx.db
+      .query("insuranceRequirements")
+      .withIndex("by_orgId_status", (q) =>
+        q.eq("orgId", args.orgId).eq("status", "active"),
+      )
+      .collect();
+    let archivedRequirementCount = 0;
+    for (const requirement of requirements) {
+      if (!requirement.sourceDocumentId || !selected.has(requirement.sourceDocumentId)) continue;
+      await ctx.db.patch(requirement._id, {
+        status: "archived",
+        updatedByUserId: access.userId,
+        updatedAt: now,
+      });
+      archivedRequirementCount += 1;
+    }
+    return { archivedSourceCount, archivedRequirementCount };
   },
 });
 

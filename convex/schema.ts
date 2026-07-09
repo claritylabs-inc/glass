@@ -821,6 +821,8 @@ export default defineSchema({
     status: pipelineStatusValidator,
     pipelineError: v.optional(v.string()),
     createdByUserId: v.id("users"),
+    archivedAt: v.optional(v.number()),
+    archivedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
