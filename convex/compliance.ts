@@ -472,28 +472,34 @@ export const upsertRequirement = mutation({
   },
 });
 
-export const renameRequirementSource = mutation({
+export const updateRequirementSource = mutation({
   args: {
     orgId: v.id("organizations"),
     sourceDocumentId: v.id("requirementSourceDocuments"),
-    title: v.string(),
+    title: v.optional(v.string()),
+    sourceType: v.optional(sourceDocumentTypeValidator),
   },
   handler: async (ctx, args) => {
     const access = await requireOrgMember(ctx, args.orgId);
     if (access.role !== "admin") {
-      throw new Error("Admin role required to rename requirement sources");
+      throw new Error("Admin role required to update requirement sources");
     }
     const source = await ctx.db.get(args.sourceDocumentId);
     if (!source || source.orgId !== args.orgId || source.archivedAt) {
       throw new Error("Requirement source not found");
     }
-    const title = args.title.trim();
-    if (!title) throw new Error("Source name is required");
+    const title = args.title?.trim();
+    if (args.title !== undefined && !title) throw new Error("Source name is required");
+    if (title === undefined && args.sourceType === undefined) {
+      throw new Error("No source updates provided");
+    }
     const now = dayjs().valueOf();
-    await ctx.db.patch(args.sourceDocumentId, {
-      title,
+    const sourcePatch: Partial<Doc<"requirementSourceDocuments">> = {
       updatedAt: now,
-    });
+    };
+    if (title !== undefined) sourcePatch.title = title;
+    if (args.sourceType !== undefined) sourcePatch.sourceType = args.sourceType;
+    await ctx.db.patch(args.sourceDocumentId, sourcePatch);
     const requirements = await ctx.db
       .query("insuranceRequirements")
       .withIndex("by_orgId_status", (q) =>
@@ -502,11 +508,13 @@ export const renameRequirementSource = mutation({
       .collect();
     for (const requirement of requirements) {
       if (requirement.sourceDocumentId !== args.sourceDocumentId) continue;
-      await ctx.db.patch(requirement._id, {
-        sourceDocumentName: title,
+      const requirementPatch: Partial<Doc<"insuranceRequirements">> = {
         updatedByUserId: access.userId,
         updatedAt: now,
-      });
+      };
+      if (title !== undefined) requirementPatch.sourceDocumentName = title;
+      if (args.sourceType !== undefined) requirementPatch.sourceType = args.sourceType;
+      await ctx.db.patch(requirement._id, requirementPatch);
     }
   },
 });

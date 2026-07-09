@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as actions_archiveNonCoverageRequirements from "../actions/archiveNonCoverageRequirements.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_backfillComplianceRequirementShape from "../actions/backfillComplianceRequirementShape.js";
 import type * as actions_backfillLinesOfBusiness from "../actions/backfillLinesOfBusiness.js";
@@ -233,6 +234,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "actions/archiveNonCoverageRequirements": typeof actions_archiveNonCoverageRequirements;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/backfillComplianceRequirementShape": typeof actions_backfillComplianceRequirementShape;
   "actions/backfillLinesOfBusiness": typeof actions_backfillLinesOfBusiness;
