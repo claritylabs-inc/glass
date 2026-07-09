@@ -180,6 +180,45 @@ describe("orgMemory", () => {
     ).rejects.toThrow("Memory must be a stable company fact");
   });
 
+  test("deduplicates normalized facts while retaining email provenance", async () => {
+    const t = convexTest(schema, modules);
+    const orgId = await t.run((ctx) =>
+      ctx.db.insert("organizations", {
+        name: "Clarity Labs Inc.",
+        type: "client",
+      }),
+    );
+
+    const firstId = await t.mutation(upsertFn, {
+      orgId,
+      type: "fact",
+      content: "Clarity Labs is a Delaware C corporation.",
+      source: "email",
+      sourceRef: "connected-email:message-1:fact-1",
+      confidence: 0.92,
+      observedAt: 10,
+    });
+    const duplicateId = await t.mutation(upsertFn, {
+      orgId,
+      type: "fact",
+      content: "Clarity Labs is a Delaware C corporation!",
+      source: "email",
+      sourceRef: "connected-email:message-2:fact-1",
+      confidence: 0.98,
+      observedAt: 20,
+    });
+
+    expect(duplicateId).toBe(firstId);
+    const memories = await t.query(listByOrgFn, { orgId });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]).toMatchObject({
+      source: "email",
+      sourceRef: "connected-email:message-1:fact-1",
+      confidence: 0.98,
+      observedAt: 20,
+    });
+  });
+
   test("does not persist raw conversation turns", async () => {
     const t = convexTest(schema, modules);
     const orgId = await t.run(async (ctx) =>

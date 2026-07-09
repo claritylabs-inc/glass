@@ -1,6 +1,7 @@
 "use node";
 
 import dayjs from "dayjs";
+import { createHash } from "node:crypto";
 import { v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
@@ -92,7 +93,7 @@ export const extractFromUpload = action({
 
     // Create policyFile record for multi-file tracking
     const policyFileId: Id<"policyFiles"> = await ctx.runMutation(
-      (internal as any).policyFiles.insert,
+      internal.policyFiles.insert,
       {
         policyId,
         fileId: primaryFileId,
@@ -105,7 +106,7 @@ export const extractFromUpload = action({
     // Update denormalized files array on policy. If we merged, also patch the
     // policy's primary fileId/fileName so the broker-pre-created row points
     // at the merged PDF instead of the first uploaded file.
-    await ctx.runMutation((internal as any).policies.updateFiles, {
+    await ctx.runMutation(internal.policies.updateFiles, {
       id: policyId,
       files: [{ fileId: primaryFileId, fileName: primaryFileName || "upload.pdf", fileType: "unknown", status: "extracting" }],
       reconciliationStatus: "pending" as const,
@@ -145,24 +146,36 @@ export const extractFromUploadInternal = internalAction({
       v.object({
         fileId: v.id("_storage"),
         fileName: v.optional(v.string()),
+        fileSha256: v.optional(v.string()),
       }),
     ),
     orgId: v.id("organizations"),
     userId: v.id("users"),
   },
-  returns: v.any(),
   handler: async (
     ctx,
     args,
-  ): Promise<{ error: string } | { success: true; policyId: string }> => {
+  ): Promise<
+    | { error: string }
+    | { success: true; policyId: string; duplicate: boolean }
+  > => {
     if (args.files.length < 1) return { error: "No files provided" };
 
     // Verify every file exists in storage first + collect URLs for potential merge
     const urls: string[] = [];
+    const uploadFileSha256s: string[] = [];
     for (const f of args.files) {
       const url = await ctx.storage.getUrl(f.fileId);
       if (!url) return { error: `File not found in storage: ${f.fileName ?? f.fileId}` };
       urls.push(url);
+      if (f.fileSha256) {
+        uploadFileSha256s.push(f.fileSha256);
+        continue;
+      }
+      const blob = await ctx.storage.get(f.fileId);
+      if (!blob) return { error: `File not found in storage: ${f.fileName ?? f.fileId}` };
+      const bytes = Buffer.from(await blob.arrayBuffer());
+      uploadFileSha256s.push(createHash("sha256").update(bytes).digest("hex"));
     }
 
     // If multiple files, merge into a single PDF and use that as the primary.
@@ -176,26 +189,26 @@ export const extractFromUploadInternal = internalAction({
       primaryFileName = mergedFileName(primaryFileName, args.files.length);
     }
 
-    const policyId: Id<"policies"> = await ctx.runMutation(api.policies.insert, {
-      userId: args.userId,
-      orgId: args.orgId,
-      fileId: primaryFileId,
-      fileName: primaryFileName,
-      carrier: "Extracting...",
-      policyNumber: "Extracting...",
-      linesOfBusiness: ["UN"],
-      documentType: "policy",
-      policyYear: dayjs().year(),
-      effectiveDate: "Extracting...",
-      expirationDate: "Extracting...",
-      isRenewal: false,
-      coverages: [],
-      insuredName: "Extracting...",
-    });
-
+    const inserted = await ctx.runMutation(
+      internal.policies.insertAutomationUploadInternal,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        fileId: primaryFileId,
+        fileName: primaryFileName,
+        uploadFileSha256s,
+      },
+    );
+    const policyId: Id<"policies"> = inserted.policyId;
+    if (!inserted.created) {
+      if (args.files.length > 1) {
+        await ctx.storage.delete(primaryFileId);
+      }
+      return { success: true, policyId: String(policyId), duplicate: true };
+    }
 
     const policyFileId: Id<"policyFiles"> = await ctx.runMutation(
-      (internal as any).policyFiles.insert,
+      internal.policyFiles.insert,
       {
         policyId,
         fileId: primaryFileId,
@@ -205,8 +218,7 @@ export const extractFromUploadInternal = internalAction({
       },
     );
 
-
-    await ctx.runMutation((internal as any).policies.updateFiles, {
+    await ctx.runMutation(internal.policies.updateFiles, {
       id: policyId,
       files: [
         {
@@ -238,6 +250,6 @@ export const extractFromUploadInternal = internalAction({
       },
     );
 
-    return { success: true, policyId: String(policyId) };
+    return { success: true, policyId: String(policyId), duplicate: false };
   },
 });

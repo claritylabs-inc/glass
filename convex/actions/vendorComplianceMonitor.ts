@@ -1,6 +1,7 @@
 "use node";
 
 import dayjs from "dayjs";
+import type { FunctionReturnType } from "convex/server";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -9,8 +10,6 @@ import {
   resolveEmailAgentIdentity,
   upsertEmailDraftArtifact,
 } from "../lib/emailSubagent";
-import { getImessageWorkerUrl } from "../lib/imessageConfig";
-import { getClientPortalUrl } from "../lib/domains";
 
 export type ComplianceEvent = {
   type:
@@ -34,58 +33,39 @@ type OrgMemberWithUser = {
   user?: {
     _id?: Id<"users">;
     email?: string;
-    phone?: string;
   } | null;
 };
 
-function vendorDisplayName(row: Record<string, unknown>) {
-  const vendorOrg = row.vendorOrg as Record<string, unknown> | null | undefined;
-  return String(vendorOrg?.name ?? "Unknown vendor");
-}
+type VendorComplianceRows = FunctionReturnType<
+  typeof internal.compliance.listVendorComplianceInternal
+>;
 
-function vendorOrgId(row: Record<string, unknown>) {
-  const vendorOrg = row.vendorOrg as Record<string, unknown> | null | undefined;
-  return vendorOrg?._id as Id<"organizations"> | undefined;
-}
-
-function serializeMonitorRows(rows: Record<string, unknown>[]) {
+function serializeMonitorRows(rows: VendorComplianceRows) {
   return rows.flatMap((row) => {
-    const vendorId = vendorOrgId(row);
+    const vendorId = row.vendorOrg?._id;
     if (!vendorId) return [];
-    const checks = Array.isArray(row.checks) ? row.checks : [];
     return [{
-      relationshipId: row.relationshipId as Id<"connectedOrgRelationships">,
+      relationshipId: row.relationshipId,
       vendorOrgId: vendorId,
-      vendorName: vendorDisplayName(row),
-      status: String(row.status ?? ""),
-      requirementCount: Number(row.requirementCount ?? 0),
-      policyCount: Number(row.policyCount ?? 0),
-      missingCount: Number(row.missingCount ?? 0),
-      expiringSoonCount: Number(row.expiringSoonCount ?? 0),
-      checks: checks.flatMap((check) => {
-        const c = check as Record<string, unknown>;
-        const requirement = c.requirement as Record<string, unknown> | undefined;
-        if (!requirement?._id) return [];
-        return [{
-          requirementId: requirement._id as Id<"insuranceRequirements">,
-          requirementTitle: String(requirement.title ?? "Requirement"),
-          status: c.status as
-            | "met"
-            | "missing"
-            | "expiring_soon"
-            | "expired"
-            | "needs_review",
-          matchedPolicyIds: Array.isArray(c.matchedPolicyIds)
-            ? c.matchedPolicyIds as Id<"policies">[]
-            : [],
-          expiresAt: typeof c.expiresAt === "string" ? c.expiresAt : undefined,
-          daysUntilExpiration:
-            typeof c.daysUntilExpiration === "number"
-              ? c.daysUntilExpiration
-              : undefined,
-          notes: typeof c.notes === "string" ? c.notes : undefined,
-        }];
-      }),
+      vendorName: row.vendorName,
+      status: row.status,
+      requirementCount: row.requirementCount,
+      policyCount: row.policyCount,
+      notMetCount: row.notMetCount,
+      missingCount: row.missingCount,
+      expiringSoonCount: row.expiringSoonCount,
+      unverifiedCount: row.unverifiedCount,
+      checks: row.checks.map((check) => ({
+        requirementId: check.requirement._id,
+        requirementTitle: check.requirement.title,
+        status: check.status,
+        reasons: check.reasons,
+        matchedPolicyIds: check.matchedPolicyIds,
+        matchedSummary: check.matchedSummary,
+        expiresAt: check.expiresAt,
+        daysUntilExpiration: check.daysUntilExpiration,
+        notes: check.notes,
+      })),
     }];
   });
 }
@@ -137,19 +117,14 @@ export function buildFollowUpThreadContext(
   ].join("\n");
 }
 
-function buildTextBody(event: ComplianceEvent) {
-  const reviewUrl = `${getClientPortalUrl()}/connect/vendors`;
-  return `Glass: ${event.vendorName} has ${event.issueLines.length} vendor compliance item${event.issueLines.length === 1 ? "" : "s"} needing attention for ${event.clientName}. Review: ${reviewUrl}`;
-}
-
 async function createFollowUpDraft(
   ctx: ActionCtx,
   event: ComplianceEvent,
   vendorEmail: string,
 ) {
   const [org, members] = await Promise.all([
-    ctx.runQuery((internal as any).orgs.getInternal, { id: event.clientOrgId }),
-    ctx.runQuery((internal as any).orgs.getMembersInternal, { orgId: event.clientOrgId }),
+    ctx.runQuery(internal.orgs.getInternal, { id: event.clientOrgId }),
+    ctx.runQuery(internal.orgs.getMembersInternal, { orgId: event.clientOrgId }),
   ]);
   if (!org) return null;
   const orgMembers = members as OrgMemberWithUser[];
@@ -165,7 +140,7 @@ async function createFollowUpDraft(
 
   const subject = `${event.clientName} vendor insurance requirements`;
   const initialContext = buildFollowUpThreadContext(event, vendorEmail, "draft");
-  const proactiveThread = await ctx.runMutation((internal as any).threads.createProactiveInternal, {
+  const proactiveThread = await ctx.runMutation(internal.threads.createProactiveInternal, {
     orgId: event.clientOrgId,
     userId: owner.user._id,
     title: `Vendor compliance follow-up - ${event.vendorName}`,
@@ -197,17 +172,17 @@ async function createFollowUpDraft(
   });
 
   if (!draftId) {
-    await ctx.runMutation((internal as any).threads.deleteMessageInternal, {
+    await ctx.runMutation(internal.threads.deleteMessageInternal, {
       id: contextMessageId,
     });
     return null;
   }
   if (org.autoSendEmails === true) {
     try {
-      await ctx.runAction((internal as any).actions.sendPendingEmail.sendDraftInternal, {
+      await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
         id: draftId,
       });
-      await ctx.runMutation((internal as any).threads.updateAgentMessage, {
+      await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: contextMessageId,
         content: buildFollowUpThreadContext(event, vendorEmail, "sent"),
         pendingEmailId: draftId,
@@ -215,7 +190,7 @@ async function createFollowUpDraft(
       return { threadId, draftId, status: "sent" as const };
     } catch (error) {
       console.warn("[vendorComplianceMonitor] Vendor follow-up send failed:", error);
-      await ctx.runMutation((internal as any).threads.updateAgentMessage, {
+      await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: contextMessageId,
         content: buildFollowUpThreadContext(event, vendorEmail, "send_failed"),
         pendingEmailId: draftId,
@@ -224,7 +199,7 @@ async function createFollowUpDraft(
     }
   }
 
-  await ctx.runMutation((internal as any).threads.updateAgentMessage, {
+  await ctx.runMutation(internal.threads.updateAgentMessage, {
     id: contextMessageId,
     content: buildFollowUpThreadContext(event, vendorEmail, "draft"),
     pendingEmailId: draftId,
@@ -232,52 +207,12 @@ async function createFollowUpDraft(
   return { threadId, draftId, status: "draft" as const };
 }
 
-async function sendTextAlerts(ctx: ActionCtx, event: ComplianceEvent) {
-  const workerUrl = getImessageWorkerUrl();
-  if (!workerUrl) return;
-
-  const members = await ctx.runQuery((internal as any).orgs.getMembersInternal, {
-    orgId: event.clientOrgId,
-  });
-  const phones = [
-    ...new Set(
-      (members as OrgMemberWithUser[])
-        .filter((member) => member.role === "admin")
-        .map((member) => member.user?.phone)
-        .filter((phone): phone is string => typeof phone === "string" && phone.length > 0),
-    ),
-  ].slice(0, 5);
-  if (phones.length === 0) return;
-
-  const message = buildTextBody(event);
-  await Promise.all(
-    phones.map(async (toPhone) => {
-      try {
-        const res = await fetch(`${workerUrl}/send`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.IMESSAGE_WORKER_SECRET ?? ""}`,
-          },
-          body: JSON.stringify({ toPhone, message }),
-        });
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          console.warn(`[vendorComplianceMonitor] Text alert failed ${res.status}: ${body}`);
-        }
-      } catch (error) {
-        console.warn("[vendorComplianceMonitor] Text alert failed:", error);
-      }
-    }),
-  );
-}
-
 export const run = internalAction({
   args: {},
   handler: async (ctx) => {
     const nowMs = dayjs().valueOf();
     const clientOrgIds = await ctx.runQuery(
-      (internal as any).compliance.listClientOrgIdsWithActiveVendorsInternal,
+      internal.compliance.listClientOrgIdsWithActiveVendorsInternal,
       {},
     ) as Id<"organizations">[];
 
@@ -285,19 +220,18 @@ export const run = internalAction({
     let notificationCount = 0;
     let draftCount = 0;
     let sentEmailCount = 0;
-    let textEventCount = 0;
 
     for (const clientOrgId of clientOrgIds) {
       const complianceRows = await ctx.runQuery(
-        (internal as any).compliance.listVendorComplianceInternal,
+        internal.compliance.listVendorComplianceInternal,
         { clientOrgId, includePreviewPolicies: false },
-      ) as Record<string, unknown>[];
+      );
       const rows = serializeMonitorRows(complianceRows);
       checkedVendors += rows.length;
       if (rows.length === 0) continue;
 
       const events = await ctx.runMutation(
-        (internal as any).compliance.recordVendorComplianceRunInternal,
+        internal.compliance.recordVendorComplianceRunInternal,
         { clientOrgId, rows, nowMs },
       ) as ComplianceEvent[];
 
@@ -311,7 +245,7 @@ export const run = internalAction({
           | null = null;
         if (event.type !== "vendor_compliance_met") {
           const contact = await ctx.runQuery(
-            (internal as any).compliance.getConnectedVendorContactInternal,
+            internal.compliance.getConnectedVendorContactInternal,
             {
               clientOrgId: event.clientOrgId,
               vendorOrgId: event.vendorOrgId,
@@ -325,12 +259,10 @@ export const run = internalAction({
               if (draft.status === "sent") sentEmailCount += 1;
             }
           }
-          await sendTextAlerts(ctx, event);
-          textEventCount += 1;
         }
 
         await ctx.runMutation(
-          (internal as any).compliance.notifyVendorComplianceEventInternal,
+          internal.compliance.notifyVendorComplianceEventInternal,
           {
             orgId: event.clientOrgId,
             vendorOrgId: event.vendorOrgId,
@@ -372,7 +304,6 @@ export const run = internalAction({
       notifications: notificationCount,
       drafts: draftCount,
       sentEmails: sentEmailCount,
-      textEvents: textEventCount,
     };
   },
 });

@@ -1,18 +1,17 @@
 // convex/lib/notify.ts
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, MutationCtx } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import {
-  NotificationType,
-  NOTIFICATION_SEVERITY,
   COALESCE_WINDOW_MS,
+  NOTIFICATION_SEVERITY,
   buildCoalesceKey,
-  getEffectiveEmailDefault,
-  getEffectiveChannelDefault,
-  NotificationSeverity,
+  type NotificationSeverity,
+  type NotificationType,
 } from "./notificationTypes";
+import { resolveChannelPreference } from "../notificationPreferences";
 
 export interface NotifyArgs {
   orgId: Id<"organizations">;
@@ -41,32 +40,15 @@ export async function resolveEmailPreference(
   type: NotificationType,
   severity: NotificationSeverity,
 ): Promise<{ shouldEmail: boolean }> {
-  // Per-type row takes precedence
-  const perType = await ctx.db
-    .query("notificationPreferences")
-    .withIndex("by_userId_orgId_type_channel", (q) =>
-      q.eq("userId", userId).eq("orgId", orgId).eq("type", type).eq("channel", "email")
-    )
-    .first();
-
-  if (perType !== null) {
-    return { shouldEmail: perType.enabled };
-  }
-
-  // __all__ catch-all
-  const catchAll = await ctx.db
-    .query("notificationPreferences")
-    .withIndex("by_userId_orgId_type_channel", (q) =>
-      q.eq("userId", userId).eq("orgId", orgId).eq("type", "__all__").eq("channel", "email")
-    )
-    .first();
-
-  if (catchAll !== null) {
-    return { shouldEmail: catchAll.enabled };
-  }
-
-  // Severity default
-    return { shouldEmail: getEffectiveEmailDefault(severity) };
+  return {
+    shouldEmail: await resolveChannelPreference(ctx, {
+      userId,
+      orgId,
+      type,
+      channel: "email",
+      severity,
+    }),
+  };
 }
 
 async function resolveImessagePreference(
@@ -76,23 +58,13 @@ async function resolveImessagePreference(
   type: NotificationType,
   severity: NotificationSeverity,
 ): Promise<boolean> {
-  const perType = await ctx.db
-    .query("notificationPreferences")
-    .withIndex("by_userId_orgId_type_channel", (q) =>
-      q.eq("userId", userId).eq("orgId", orgId).eq("type", type).eq("channel", "imessage")
-    )
-    .first();
-  if (perType !== null) return perType.enabled;
-
-  const catchAll = await ctx.db
-    .query("notificationPreferences")
-    .withIndex("by_userId_orgId_type_channel", (q) =>
-      q.eq("userId", userId).eq("orgId", orgId).eq("type", "__all__").eq("channel", "imessage")
-    )
-    .first();
-  if (catchAll !== null) return catchAll.enabled;
-
-  return getEffectiveChannelDefault("imessage", severity);
+  return await resolveChannelPreference(ctx, {
+    userId,
+    orgId,
+    type,
+    channel: "imessage",
+    severity,
+  });
 }
 
 /**
@@ -199,7 +171,7 @@ export const notifyInternal = internalMutation({
 
     if (anyEmailScheduled) {
       await ctx.db.patch(notificationId, { emailStatus: "scheduled" });
-      await ctx.scheduler.runAfter(0, (internal as any).actions.sendNotificationEmail.send, {
+      await ctx.scheduler.runAfter(0, internal.actions.sendNotificationEmail.send, {
         notificationId,
       });
     } else {
@@ -212,7 +184,7 @@ export const notifyInternal = internalMutation({
 
     if (anyImessageScheduled) {
       await ctx.db.patch(notificationId, { imessageStatus: "scheduled" });
-      await ctx.scheduler.runAfter(0, (internal as any).actions.sendNotificationImessage.send, {
+      await ctx.scheduler.runAfter(0, internal.actions.sendNotificationImessage.send, {
         notificationId,
       });
     } else {
@@ -231,5 +203,5 @@ export const notifyInternal = internalMutation({
  * Usage: await notify(ctx, { orgId, type, title, body, ... })
  */
 export async function notify(ctx: MutationCtx, args: NotifyArgs): Promise<Id<"notifications">> {
-  return await ctx.runMutation((internal as any).lib.notify.notifyInternal, args);
+  return await ctx.runMutation(internal.lib.notify.notifyInternal, args);
 }

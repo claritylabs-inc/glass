@@ -16,6 +16,15 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).toContain("OverviewTab");
     expect(page).toContain("RequirementsTable");
     expect(page).toContain("RequirementDrawer");
+    expect(page).toContain("RequirementSourcesTable");
+    expect(page).toContain("SourceDrawer");
+    expect(page).toContain("RequirementEditForm");
+    expect(page).toContain("function latestCheckNote");
+    expect(page).toContain('text-base font-medium text-muted-foreground/60');
+    expect(page).toContain("TabsTrigger value=\"sources\"");
+    expect(page).not.toContain("Archive selected");
+    expect(page).toContain('className="h-1.5 w-full overflow-hidden rounded-full bg-muted"');
+    expect(page).not.toContain("pr-32");
     expect(page).not.toContain("Insurer standards");
     expect(page).not.toContain("conditionType");
     expect(page).not.toContain("verifyRequirement");
@@ -53,9 +62,13 @@ describe("coverage-only compliance requirement surfaces", () => {
     const extraction = read("convex/actions/complianceRequirements.ts");
 
     expect(compliance).toContain("Only coverage requirements are supported");
+    expect(compliance).toContain("listRequirementSources");
+    expect(compliance).toContain("updateRequirementSource");
+    expect(compliance).toContain("archiveRequirementSources");
     expect(compliance).toContain("archiveNonCoverageRequirementsInternal");
     expect(compliance).toContain('row.kind === "coverage"');
     expect(extraction).not.toContain('z.enum(["coverage", "insurer", "condition"])');
+    expect(extraction).toContain("sourceName: v.optional(v.string())");
     expect(extraction).toContain("Amounts must be plain numbers");
   });
 });

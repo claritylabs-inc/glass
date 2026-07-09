@@ -133,18 +133,18 @@ export async function buildDocumentContext(
 export async function buildIntelligenceContext(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
-  _queryText: string,
+  queryText: string,
   _excludePolicyIds?: string[],
 ): Promise<string> {
   try {
     const memories = await ctx.runQuery(internal.orgMemory.listByOrg, {
       orgId,
-      limit: 30,
+      limit: 100,
     });
     if (!memories || memories.length === 0) return "";
 
     const grouped: Record<string, string[]> = {};
-    for (const m of memories) {
+    for (const m of rankOrgMemoryForQuery(queryText, memories, 30)) {
       const bucket = m.type ?? "observation";
       if (!grouped[bucket]) grouped[bucket] = [];
       grouped[bucket].push(`- ${m.content}`);
@@ -165,6 +165,38 @@ export async function buildIntelligenceContext(
   } catch {
     return "";
   }
+}
+
+type OrgMemoryContextItem = {
+  type?: string;
+  content: string;
+  updatedAt: number;
+};
+
+export function rankOrgMemoryForQuery<T extends OrgMemoryContextItem>(
+  queryText: string,
+  memories: T[],
+  limit: number,
+): T[] {
+  const normalizedQuery = queryText.trim().toLowerCase();
+  const terms = sourceQueryTerms(queryText);
+  return memories
+    .map((memory) => {
+      const content = memory.content.toLowerCase();
+      const score =
+        (normalizedQuery && content.includes(normalizedQuery) ? 8 : 0) +
+        terms.reduce(
+          (total, term) => total + (content.includes(term) ? 1 : 0),
+          0,
+        );
+      return { memory, score };
+    })
+    .sort(
+      (a, b) =>
+        b.score - a.score || b.memory.updatedAt - a.memory.updatedAt,
+    )
+    .slice(0, limit)
+    .map(({ memory }) => memory);
 }
 
 export async function buildComplianceRequirementsContext(

@@ -1,15 +1,19 @@
 "use client";
 
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
+import dayjs from "dayjs";
 import {
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
   CheckCircle2,
   Clock,
   FileUp,
+  Loader2,
   Plus,
   ShieldCheck,
   Trash2,
@@ -48,6 +52,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { isFeatureEnabled } from "@/convex/lib/featureFlags";
 import {
+  REQUIREMENT_LIMIT_KINDS,
   REQUIREMENT_LIMIT_KIND_LABELS,
   REQUIREMENT_PROVISION_LABELS,
   REQUIREMENT_SOURCE_TYPE_LABELS,
@@ -66,13 +71,18 @@ type SourceFilter = "all" | RequirementSourceType;
 type LineFilter = "all" | `line:${string}`;
 type LimitFilter = "all" | "deductible" | "forms" | "provisions" | `limit:${string}`;
 type StatusFilter = "all" | ComplianceStatus | "defined";
-type ComplianceView = "overview" | "requirements";
+type ComplianceView = "overview" | "requirements" | "sources";
+type RequirementKind = "coverage" | "insurer" | "condition";
+type RequirementSourceDocumentType = Exclude<RequirementSourceType, "manual" | "bulk_import">;
 
 type ComplianceApi = {
   compliance: {
     listRequirements: FunctionReference<"query">;
+    listRequirementSources: FunctionReference<"query">;
     upsertRequirement: FunctionReference<"mutation">;
     archiveRequirement: FunctionReference<"mutation">;
+    updateRequirementSource: FunctionReference<"mutation">;
+    archiveRequirementSources: FunctionReference<"mutation">;
     generateRequirementImportUploadUrl: FunctionReference<"mutation">;
   };
   actions: {
@@ -92,16 +102,12 @@ const complianceApi = api as unknown as ComplianceApi;
 
 const COMMON_LOBS = ["CGL", "AUTOB", "WORK", "UMBRC", "EXLIA", "EO", "PROPC", "BOP", "CRIME", "EPLI"] as const;
 
-const LIMIT_KIND_OPTIONS: RequirementLimitKind[] = [
-  "per_occurrence",
-  "general_aggregate",
-  "products_completed_ops_aggregate",
-  "per_claim",
-  "aggregate",
-  "combined_single_limit",
-  "el_each_accident",
-  "el_disease_each_employee",
-  "el_disease_policy_limit",
+const LIMIT_KIND_OPTIONS: RequirementLimitKind[] = [...REQUIREMENT_LIMIT_KINDS];
+
+const REQUIREMENT_SOURCE_DOCUMENT_TYPES: RequirementSourceDocumentType[] = [
+  "lease_agreement",
+  "client_contract",
+  "vendor_requirements",
   "other",
 ];
 
@@ -114,6 +120,7 @@ const PROVISION_OPTIONS: RequirementProvision[] = [
 type Requirement = {
   _id: Id<"insuranceRequirements">;
   orgId: Id<"organizations">;
+  kind?: RequirementKind;
   scope: RequirementScope;
   title: string;
   requirementText: string;
@@ -123,6 +130,7 @@ type Requirement = {
   coverageForm?: "occurrence" | "claims_made";
   provisions?: string[];
   requiredForms?: string[];
+  sourceDocumentId?: Id<"requirementSourceDocuments">;
   sourceType?: RequirementSourceType;
   sourceDocumentName?: string;
   sourceExcerpt?: string;
@@ -160,6 +168,22 @@ type Requirement = {
   };
 };
 
+type RequirementSource = {
+  _id: Id<"requirementSourceDocuments">;
+  orgId: Id<"organizations">;
+  fileName?: string;
+  contentType?: string;
+  sourceType: RequirementSourceDocumentType;
+  title: string;
+  sourceTextExcerpt?: string;
+  parserBackend?: "liteparse" | "pdfjs" | "mammoth" | "plain_text";
+  status: "idle" | "running" | "paused" | "complete" | "error";
+  pipelineError?: string;
+  requirementCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 type ConnectedOrgRow = {
   status: "pending" | "active" | "expired" | "revoked";
 };
@@ -193,6 +217,12 @@ function limitKindLabel(kind: string) {
   return (
     REQUIREMENT_LIMIT_KIND_LABELS[kind as keyof typeof REQUIREMENT_LIMIT_KIND_LABELS] ?? kind
   );
+}
+
+function asRequirementLimitKind(kind: string): RequirementLimitKind {
+  return (REQUIREMENT_LIMIT_KINDS as readonly string[]).includes(kind)
+    ? (kind as RequirementLimitKind)
+    : "other";
 }
 
 function provisionLabel(provision: string) {
@@ -259,23 +289,36 @@ function pageLabel(requirement: Requirement) {
 }
 
 function requirementSourceLine(requirement: Requirement) {
+  return [requirementSourcePrimary(requirement), requirementSourceSecondary(requirement)]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function requirementSourcePrimary(requirement: Requirement) {
+  return (
+    requirement.sourceDocumentName ??
+    requirement.clientRequirementSource?.clientOrg?.name ??
+    REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)]
+  );
+}
+
+function requirementSourceSecondary(requirement: Requirement) {
   return [
-    REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)],
-    requirement.sourceDocumentName,
+    requirement.sourceDocumentName ? REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)] : undefined,
+    requirement.clientRequirementSource?.clientOrg
+      ? `Required by ${requirement.clientRequirementSource.clientOrg.name}`
+      : undefined,
     pageLabel(requirement),
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
-function requirementSourcePrimary(requirement: Requirement) {
-  return requirement.clientRequirementSource?.clientOrg?.name ?? REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)];
-}
-
-function requirementSourceSecondary(requirement: Requirement) {
+function requirementTableSourceSecondary(requirement: Requirement) {
   return [
-    requirement.clientRequirementSource?.clientOrg ? REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)] : undefined,
-    requirement.sourceDocumentName,
+    requirement.sourceDocumentName && requirement.clientRequirementSource?.clientOrg
+      ? `Required by ${requirement.clientRequirementSource.clientOrg.name}`
+      : undefined,
     pageLabel(requirement),
   ]
     .filter(Boolean)
@@ -456,33 +499,35 @@ function OverviewTab({
                   onOpenRequirements(lob);
                 }
               }}
-              className="relative cursor-pointer px-4 py-3 pr-32"
+              className="cursor-pointer px-4 py-3"
             >
-              {groupAttention > 0 ? (
-                <Badge
-                  variant="outline"
-                  className="absolute right-3 top-3 border-red-500/25 bg-red-500/10 text-red-500"
-                >
-                  {groupAttention} needs attention
-                </Badge>
-              ) : groupExpiring > 0 ? (
-                <Badge
-                  variant="outline"
-                  className="absolute right-3 top-3 border-amber-500/25 bg-amber-500/10 text-amber-500"
-                >
-                  {groupExpiring} expiring
-                </Badge>
-              ) : (
-                <Badge
-                  variant="outline"
-                  className="absolute right-3 top-3 border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
-                >
-                  Met
-                </Badge>
-              )}
-              <p className="truncate text-base font-medium text-foreground">
-                {lineDisplayLabel(lob)}
-              </p>
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <p className="min-w-0 truncate text-base font-medium text-foreground">
+                  {lineDisplayLabel(lob)}
+                </p>
+                {groupAttention > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-red-500/25 bg-red-500/10 text-red-500"
+                  >
+                    {groupAttention} needs attention
+                  </Badge>
+                ) : groupExpiring > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-amber-500/25 bg-amber-500/10 text-amber-500"
+                  >
+                    {groupExpiring} expiring
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
+                  >
+                    Met
+                  </Badge>
+                )}
+              </div>
               <p className="mt-2 text-label text-muted-foreground">
                 {groupMet} of {rows.length} requirements met
               </p>
@@ -526,11 +571,11 @@ function RequirementsTable({
       <Table className="min-w-[1080px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[14%] px-4">Line</TableHead>
+            <TableHead className="w-[13%] px-4">Line</TableHead>
             <TableHead className="w-[21%]">Coverage</TableHead>
-            <TableHead className="w-[18%]">Source</TableHead>
-            <TableHead className="w-[16%]">Limit type</TableHead>
-            <TableHead className="w-[9%]">Limit</TableHead>
+            <TableHead className="w-[28%]">Source</TableHead>
+            <TableHead className="w-[8%]">Limit</TableHead>
+            <TableHead className="w-[8%]">Limit type</TableHead>
             <TableHead className="w-[10%]">Status</TableHead>
             <TableHead className="w-[12%] px-4">Policy match</TableHead>
           </TableRow>
@@ -539,7 +584,7 @@ function RequirementsTable({
           {sorted.map((requirement) => {
             const limits = requirement.limits ?? [];
             const policyIds = matchedPolicyIdsForRequirement(requirement);
-            const sourceSecondary = requirementSourceSecondary(requirement);
+            const sourceSecondary = requirementTableSourceSecondary(requirement);
             return (
               <TableRow
                 key={requirement._id}
@@ -557,11 +602,18 @@ function RequirementsTable({
                     </p>
                   ) : null}
                 </TableCell>
-                <TableCell className="max-w-52">
+                <TableCell className="max-w-80">
                   <p className="truncate text-foreground">{requirementSourcePrimary(requirement)}</p>
                   {sourceSecondary ? (
                     <p className="truncate text-label text-muted-foreground">{sourceSecondary}</p>
                   ) : null}
+                </TableCell>
+                <TableCell className="tabular-nums text-foreground">
+                  {limits.length > 0
+                    ? limits.map((limit, index) => (
+                        <p key={index} className="leading-5">{formatMoneyCompact(limit.amount)}</p>
+                      ))
+                    : "—"}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {limits.length > 0
@@ -571,13 +623,6 @@ function RequirementsTable({
                     : (requirement.provisions ?? []).length > 0
                       ? "Provisions"
                       : "—"}
-                </TableCell>
-                <TableCell className="tabular-nums text-foreground">
-                  {limits.length > 0
-                    ? limits.map((limit, index) => (
-                        <p key={index} className="leading-5">{formatMoneyCompact(limit.amount)}</p>
-                      ))
-                    : "—"}
                 </TableCell>
                 <TableCell>
                   {requirement.complianceCheck ? (
@@ -606,11 +651,13 @@ function RequirementsTable({
 function RequirementsFilterSelect({
   label,
   value,
+  valueLabel,
   onValueChange,
   children,
 }: {
   label: string;
   value: string;
+  valueLabel: string;
   onValueChange: (value: string) => void;
   children: ReactNode;
 }) {
@@ -619,7 +666,7 @@ function RequirementsFilterSelect({
       {label}
       <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
         <SelectTrigger size="sm" className="w-full bg-background">
-          <SelectValue />
+          <SelectValue>{valueLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>{children}</SelectContent>
       </Select>
@@ -634,6 +681,21 @@ function DrawerDetail({ label, value }: { label: string; value: ReactNode }) {
       <div className="min-w-0 break-words text-foreground">{value}</div>
     </div>
   );
+}
+
+function normalizeCheckNote(value: string | undefined) {
+  return value?.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function latestCheckNote(check: Requirement["complianceCheck"]) {
+  const note = check?.notes?.trim();
+  const policy = check?.matchedPolicy;
+  if (!note) return undefined;
+  if (policy) {
+    const matchedSummary = `Matched ${policy.carrier ?? "policy"} ${policy.policyNumber ?? ""}`;
+    if (normalizeCheckNote(note) === normalizeCheckNote(matchedSummary)) return undefined;
+  }
+  return note;
 }
 
 function RequirementDrawer({
@@ -652,6 +714,7 @@ function RequirementDrawer({
   const check = requirement.complianceCheck;
   const policy = check?.matchedPolicy;
   const policyIds = matchedPolicyIdsForRequirement(requirement);
+  const checkNote = latestCheckNote(check);
   const canDeepCheck =
     requirement.canArchive !== false &&
     requirement.scope === "own_org" &&
@@ -664,12 +727,10 @@ function RequirementDrawer({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title="Coverage requirement"
+      title={requirement.title}
+      actions={check ? <StatusBadge status={check.status} /> : undefined}
       footer={
         <>
-          <PillButton type="button" variant="secondary" onClick={onClose}>
-            Close
-          </PillButton>
           {requirement.canArchive !== false ? (
             <PillButton
               type="button"
@@ -689,21 +750,11 @@ function RequirementDrawer({
       }
     >
       <div className="space-y-5">
-        <section className="space-y-2 rounded-lg border border-foreground/6 px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-base font-medium text-foreground">{requirement.title}</p>
-              <p className="truncate text-base text-muted-foreground">
-                {requirement.lineOfBusiness
-                  ? lineDisplayLabel(requirement.lineOfBusiness)
-                  : "Coverage"}
-              </p>
-            </div>
-            {check ? <StatusBadge status={check.status} /> : null}
-          </div>
-          <p className="text-base text-muted-foreground">{requirement.requirementText}</p>
-        </section>
+        <p className="text-base text-muted-foreground">{requirement.requirementText}</p>
         <section className="space-y-2 border-t border-foreground/6 pt-5">
+          {requirement.lineOfBusiness ? (
+            <DrawerDetail label="Line" value={lineDisplayLabel(requirement.lineOfBusiness)} />
+          ) : null}
           {(requirement.limits ?? []).map((limit, index) => (
             <DrawerDetail
               key={index}
@@ -732,16 +783,13 @@ function RequirementDrawer({
           {(requirement.requiredForms ?? []).length > 0 ? (
             <DrawerDetail label="Required forms" value={(requirement.requiredForms ?? []).join(", ")} />
           ) : null}
-          {requirement.clientRequirementSource?.clientOrg ? (
-            <DrawerDetail
-              label="Required by"
-              value={requirement.clientRequirementSource.clientOrg.name}
-            />
-          ) : null}
+          <DrawerDetail label="Source" value={requirementSourceLine(requirement)} />
         </section>
         {check ? (
           <section className="space-y-2 border-t border-foreground/6 pt-5">
-            <p className="text-label text-muted-foreground">Latest check</p>
+            <p className="text-base font-medium text-muted-foreground/60">
+              Latest check
+            </p>
             {policy || policyIds.length > 0 ? (
               <>
                 {policyIds.length > 0 ? (
@@ -765,19 +813,9 @@ function RequirementDrawer({
             ) : (
               <p className="text-base text-muted-foreground">No current policy match.</p>
             )}
-            {check.notes ? (
-              <p className="rounded-md border border-foreground/8 bg-muted/40 px-3 py-2 text-base text-muted-foreground">
-                {check.notes}
-              </p>
+            {checkNote ? (
+              <p className="text-base text-muted-foreground">{checkNote}</p>
             ) : null}
-          </section>
-        ) : null}
-        {requirement.sourceExcerpt ? (
-          <section className="space-y-2 border-t border-foreground/6 pt-5">
-            <p className="text-label text-muted-foreground">{requirementSourceLine(requirement)}</p>
-            <p className="rounded-md border border-foreground/8 bg-muted/40 px-3 py-2 text-base leading-5 text-foreground/80">
-              {requirement.sourceExcerpt}
-            </p>
           </section>
         ) : null}
       </div>
@@ -787,6 +825,605 @@ function RequirementDrawer({
 
 function RequirementsLoadingSkeleton() {
   return <OperationalSkeletonList rows={4} />;
+}
+
+type RequirementLimitEdit = {
+  kind: RequirementLimitKind;
+  amount: number;
+  label?: string;
+};
+
+type RequirementEditValues = {
+  title: string;
+  lineOfBusiness: string;
+  limits?: RequirementLimitEdit[];
+  provisions?: RequirementProvision[];
+  requirementText: string;
+};
+
+type SourceUpdatePatch = {
+  title?: string;
+  sourceType?: RequirementSourceDocumentType;
+};
+
+type LimitDraft = {
+  id: string;
+  kind: RequirementLimitKind;
+  amount: string;
+};
+
+function limitDraftsForRequirement(requirement: Requirement): LimitDraft[] {
+  return (requirement.limits ?? []).map((limit, index) => ({
+    id: `${requirement._id}:${index}`,
+    kind: asRequirementLimitKind(limit.kind),
+    amount: limit.label ?? formatMoney(limit.amount) ?? String(limit.amount),
+  }));
+}
+
+function provisionsForRequirement(requirement: Requirement): RequirementProvision[] {
+  return (requirement.provisions ?? []).filter((provision): provision is RequirementProvision =>
+    (PROVISION_OPTIONS as readonly string[]).includes(provision),
+  );
+}
+
+type RequirementEditDrafts = {
+  title: string;
+  lineOfBusiness: string;
+  limitDrafts: LimitDraft[];
+  provisions: RequirementProvision[];
+  requirementText: string;
+};
+
+function requirementEditValuesFromDrafts(
+  drafts: RequirementEditDrafts,
+): RequirementEditValues | "invalid_amount" {
+  const limits: RequirementLimitEdit[] = [];
+  for (const draft of drafts.limitDrafts) {
+    if (!draft.amount.trim()) continue;
+    const amount = parseMoneyInput(draft.amount);
+    if (amount === undefined) return "invalid_amount";
+    limits.push({ kind: draft.kind, amount, label: draft.amount.trim() });
+  }
+  return {
+    title: drafts.title.trim(),
+    lineOfBusiness: drafts.lineOfBusiness,
+    limits: limits.length > 0 ? limits : undefined,
+    provisions: drafts.provisions.length > 0 ? drafts.provisions : undefined,
+    requirementText: drafts.requirementText.trim(),
+  };
+}
+
+function RequirementEditForm({
+  requirement,
+  onSave,
+  onArchive,
+}: {
+  requirement: Requirement;
+  onSave: (values: RequirementEditValues) => Promise<void>;
+  onArchive: () => void;
+}) {
+  const [title, setTitle] = useState(requirement.title);
+  const [lineOfBusiness, setLineOfBusiness] = useState(requirement.lineOfBusiness ?? "CGL");
+  const [limitDrafts, setLimitDrafts] = useState<LimitDraft[]>(() =>
+    limitDraftsForRequirement(requirement),
+  );
+  const [provisions, setProvisions] = useState<RequirementProvision[]>(() =>
+    provisionsForRequirement(requirement),
+  );
+  const [requirementText, setRequirementText] = useState(requirement.requirementText);
+  const [saving, setSaving] = useState(false);
+  const savedSnapshot = useRef<string | null>(null);
+  if (savedSnapshot.current === null) {
+    const initial = requirementEditValuesFromDrafts({
+      title,
+      lineOfBusiness,
+      limitDrafts,
+      provisions,
+      requirementText,
+    });
+    savedSnapshot.current = initial === "invalid_amount" ? "" : JSON.stringify(initial);
+  }
+
+  async function commit(next: Partial<RequirementEditDrafts> = {}) {
+    const drafts: RequirementEditDrafts = {
+      title,
+      lineOfBusiness,
+      limitDrafts,
+      provisions,
+      requirementText,
+      ...next,
+    };
+    if (!drafts.title.trim() || !drafts.requirementText.trim()) return;
+    const values = requirementEditValuesFromDrafts(drafts);
+    if (values === "invalid_amount") {
+      toast.error("Enter a valid limit amount");
+      return;
+    }
+    const snapshot = JSON.stringify(values);
+    if (snapshot === savedSnapshot.current) return;
+    setSaving(true);
+    try {
+      await onSave(values);
+      savedSnapshot.current = snapshot;
+    } catch {
+      // onSave reverts the cache and reports the error; drafts stay so the user can retry
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+        Title
+        <Input
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          onBlur={() => {
+            if (!title.trim()) {
+              setTitle(requirement.title);
+              return;
+            }
+            void commit();
+          }}
+          disabled={saving}
+          required
+        />
+      </label>
+      <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+        Line
+        <Select
+          value={lineOfBusiness}
+          onValueChange={(value) => {
+            if (!value || value === lineOfBusiness) return;
+            setLineOfBusiness(value);
+            void commit({ lineOfBusiness: value });
+          }}
+          disabled={saving}
+        >
+          <SelectTrigger size="sm" className="w-full bg-background">
+            <SelectValue>{lobLabel(lineOfBusiness)}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {COMMON_LOBS.map((code) => (
+              <SelectItem key={code} value={code}>{lobLabel(code)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-label font-medium text-muted-foreground">Limits</p>
+          <PillButton
+            type="button"
+            size="compact"
+            variant="secondary"
+            disabled={saving}
+            onClick={() =>
+              setLimitDrafts((current) => [
+                ...current,
+                {
+                  id: `limit:${dayjs().valueOf()}:${current.length}`,
+                  kind: "per_occurrence",
+                  amount: "",
+                },
+              ])
+            }
+          >
+            Add limit
+          </PillButton>
+        </div>
+        {limitDrafts.length === 0 ? (
+          <p className="text-base text-muted-foreground">
+            No explicit limits. Add one or rely on provisions.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {limitDrafts.map((draft) => (
+              <div
+                key={draft.id}
+                className="grid grid-cols-[minmax(0,1fr)_120px_auto] items-center gap-2"
+              >
+                <Select
+                  value={draft.kind}
+                  onValueChange={(value) => {
+                    if (!value || value === draft.kind) return;
+                    const next = limitDrafts.map((item) =>
+                      item.id === draft.id
+                        ? { ...item, kind: value as RequirementLimitKind }
+                        : item,
+                    );
+                    setLimitDrafts(next);
+                    void commit({ limitDrafts: next });
+                  }}
+                  disabled={saving}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full min-w-0 bg-background"
+                    aria-label="Limit type"
+                  >
+                    <SelectValue>{REQUIREMENT_LIMIT_KIND_LABELS[draft.kind]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LIMIT_KIND_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {REQUIREMENT_LIMIT_KIND_LABELS[option]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={draft.amount}
+                  onChange={(event) =>
+                    setLimitDrafts((current) =>
+                      current.map((item) =>
+                        item.id === draft.id
+                          ? { ...item, amount: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                  onBlur={() => void commit()}
+                  placeholder="$1,000,000"
+                  aria-label="Limit amount"
+                  disabled={saving}
+                />
+                <PillButton
+                  type="button"
+                  variant="icon"
+                  disabled={saving}
+                  onClick={() => {
+                    const next = limitDrafts.filter((item) => item.id !== draft.id);
+                    setLimitDrafts(next);
+                    void commit({ limitDrafts: next });
+                  }}
+                  aria-label="Remove limit"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </PillButton>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {PROVISION_OPTIONS.map((option) => (
+          <PillButton
+            key={option}
+            type="button"
+            size="compact"
+            variant={provisions.includes(option) ? "primary" : "secondary"}
+            disabled={saving}
+            onClick={() => {
+              const next = provisions.includes(option)
+                ? provisions.filter((item) => item !== option)
+                : [...provisions, option];
+              setProvisions(next);
+              void commit({ provisions: next });
+            }}
+          >
+            {REQUIREMENT_PROVISION_LABELS[option]}
+          </PillButton>
+        ))}
+      </div>
+      <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+        Requirement
+        <Textarea
+          className="min-h-28 resize-y"
+          rows={5}
+          value={requirementText}
+          onChange={(event) => setRequirementText(event.target.value)}
+          onBlur={() => {
+            if (!requirementText.trim()) {
+              setRequirementText(requirement.requirementText);
+              return;
+            }
+            void commit();
+          }}
+          disabled={saving}
+          required
+        />
+      </label>
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-1.5 text-label text-muted-foreground">
+          {saving ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Saving
+            </>
+          ) : null}
+        </span>
+        <PillButton
+          type="button"
+          size="compact"
+          variant="secondary"
+          disabled={saving}
+          onClick={onArchive}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Archive requirement
+        </PillButton>
+      </div>
+    </div>
+  );
+}
+
+function requirementDrawerSummary(requirement: Requirement) {
+  const limits = requirement.limits ?? [];
+  const limitSummary =
+    limits.length > 0
+      ? limits
+          .map((limit) => `${limitKindLabel(limit.kind)} ${formatMoneyCompact(limit.amount)}`)
+          .join(", ")
+      : (requirement.provisions ?? []).length > 0
+        ? (requirement.provisions ?? []).map(provisionLabel).join(", ")
+        : "No limit";
+  return [lineDisplayLabel(requirement.lineOfBusiness), limitSummary].join(" · ");
+}
+
+function SourceDrawer({
+  source,
+  requirements,
+  archiving,
+  onUpdateSource,
+  onSaveRequirement,
+  onArchiveRequirement,
+  onArchiveSource,
+  onClose,
+}: {
+  source: RequirementSource;
+  requirements: Requirement[] | undefined;
+  archiving: boolean;
+  onUpdateSource: (source: RequirementSource, patch: SourceUpdatePatch) => Promise<void>;
+  onSaveRequirement: (
+    requirement: Requirement,
+    values: RequirementEditValues,
+  ) => Promise<void>;
+  onArchiveRequirement: (requirementId: Id<"insuranceRequirements">) => Promise<void>;
+  onArchiveSource: (sourceId: Id<"requirementSourceDocuments">) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [titleDraft, setTitleDraft] = useState(source.title);
+  const [sourceTypeDraft, setSourceTypeDraft] = useState<RequirementSourceDocumentType>(
+    source.sourceType,
+  );
+  const [savingField, setSavingField] = useState<"title" | "sourceType" | null>(null);
+  const [expandedRequirementId, setExpandedRequirementId] =
+    useState<Id<"insuranceRequirements"> | null>(null);
+
+  async function commitTitle() {
+    const title = titleDraft.trim();
+    if (title === source.title) {
+      setTitleDraft(source.title);
+      return;
+    }
+    if (!title) {
+      toast.error("Source name is required");
+      setTitleDraft(source.title);
+      return;
+    }
+    setSavingField("title");
+    try {
+      await onUpdateSource(source, { title });
+      setTitleDraft(title);
+    } catch {
+      setTitleDraft(source.title);
+    } finally {
+      setSavingField(null);
+    }
+  }
+
+  async function changeSourceType(value: string) {
+    const sourceType = value as RequirementSourceDocumentType;
+    if (sourceType === source.sourceType) return;
+    setSourceTypeDraft(sourceType);
+    setSavingField("sourceType");
+    try {
+      await onUpdateSource(source, { sourceType });
+    } catch {
+      setSourceTypeDraft(source.sourceType);
+    } finally {
+      setSavingField(null);
+    }
+  }
+
+  async function archiveSource() {
+    const archived = await onArchiveSource(source._id);
+    if (archived) onClose();
+  }
+
+  return (
+    <SettingsDrawer
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Requirement source"
+      footer={
+        <PillButton
+          type="button"
+          variant="secondary"
+          disabled={archiving}
+          onClick={() => void archiveSource()}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {archiving ? "Archiving..." : "Archive source"}
+        </PillButton>
+      }
+    >
+      <div className="space-y-5">
+        <section className="space-y-3">
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              Name
+              {savingField === "title" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            </span>
+            <Input
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={() => void commitTitle()}
+              disabled={savingField !== null}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              Source type
+              {savingField === "sourceType" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            </span>
+            <Select
+              value={sourceTypeDraft}
+              onValueChange={(value) => {
+                if (value) void changeSourceType(value);
+              }}
+              disabled={savingField !== null}
+            >
+              <SelectTrigger size="sm" className="w-full bg-background">
+                <SelectValue>{REQUIREMENT_SOURCE_TYPE_LABELS[sourceTypeDraft]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {REQUIREMENT_SOURCE_DOCUMENT_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {REQUIREMENT_SOURCE_TYPE_LABELS[type]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </section>
+        <section className="space-y-2 border-t border-foreground/6 pt-5">
+          {source.fileName ? <DrawerDetail label="File" value={source.fileName} /> : null}
+          <DrawerDetail
+            label="Added"
+            value={dayjs(source.createdAt).format("MMM D, YYYY")}
+          />
+          <DrawerDetail label="Requirements" value={source.requirementCount} />
+        </section>
+        <section className="space-y-3 border-t border-foreground/6 pt-5">
+          <div>
+            <p className="text-base font-medium text-foreground">Requirements</p>
+            <p className="text-base text-muted-foreground">
+              Edit the coverage requirements extracted from this source.
+            </p>
+          </div>
+          {requirements === undefined ? (
+            <OperationalSkeletonList rows={3} />
+          ) : requirements.length === 0 ? (
+            <OperationalPanel as="div" className="p-4">
+              <p className="text-base text-muted-foreground">
+                No active requirements are attached to this source.
+              </p>
+            </OperationalPanel>
+          ) : (
+            <div className="space-y-2">
+              {requirements.map((requirement) => {
+                const expanded = expandedRequirementId === requirement._id;
+                return (
+                  <div
+                    key={requirement._id}
+                    className="rounded-md border border-foreground/8 bg-background"
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-3 px-3 py-3 text-left"
+                      aria-expanded={expanded}
+                      onClick={() =>
+                        setExpandedRequirementId(expanded ? null : requirement._id)
+                      }
+                    >
+                      {expanded ? (
+                        <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-base font-medium text-foreground">
+                          {requirement.title}
+                        </span>
+                        <span className="block truncate text-label text-muted-foreground">
+                          {requirementDrawerSummary(requirement)}
+                        </span>
+                      </span>
+                    </button>
+                    {expanded ? (
+                      <div className="border-t border-foreground/6 px-3 pb-3 pt-3">
+                        <RequirementEditForm
+                          requirement={requirement}
+                          onSave={(values) => onSaveRequirement(requirement, values)}
+                          onArchive={() => void onArchiveRequirement(requirement._id)}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+    </SettingsDrawer>
+  );
+}
+
+function RequirementSourcesTable({
+  sources,
+  onSelect,
+}: {
+  sources: RequirementSource[];
+  onSelect: (sourceId: Id<"requirementSourceDocuments">) => void;
+}) {
+  if (sources.length === 0) {
+    return (
+      <OperationalPanel as="div" className="p-5">
+        <p className="text-base font-medium text-foreground">No requirement sources yet</p>
+        <p className="mt-1 text-base text-muted-foreground">
+          Imported leases, client contracts, and vendor requirement packets will appear here.
+        </p>
+      </OperationalPanel>
+    );
+  }
+
+  return (
+    <OperationalPanel as="div">
+      <Table className="min-w-[840px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[44%] px-4">Name</TableHead>
+            <TableHead className="w-[22%]">Source type</TableHead>
+            <TableHead className="w-[14%]">Requirements</TableHead>
+            <TableHead className="w-[20%] px-4">Added</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sources.map((source) => (
+            <TableRow
+              key={source._id}
+              className="cursor-pointer"
+              onClick={() => onSelect(source._id)}
+            >
+              <TableCell className="max-w-72 px-4">
+                <p className="truncate font-medium text-foreground">{source.title}</p>
+                {source.fileName ? (
+                  <p className="mt-1 truncate text-label text-muted-foreground">
+                    {source.fileName}
+                  </p>
+                ) : null}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {REQUIREMENT_SOURCE_TYPE_LABELS[source.sourceType]}
+              </TableCell>
+              <TableCell className="tabular-nums text-foreground">
+                {source.requirementCount}
+              </TableCell>
+              <TableCell className="px-4 text-muted-foreground">
+                {dayjs(source.createdAt).format("MMM D, YYYY")}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </OperationalPanel>
+  );
 }
 
 export function CompliancePage() {
@@ -807,6 +1444,11 @@ export function CompliancePage() {
     complianceApi.compliance.listRequirements,
     orgId ? { orgId } : "skip",
   ) as Requirement[] | undefined;
+  const requirementSources = useCachedQuery(
+    "compliance.listRequirementSources",
+    complianceApi.compliance.listRequirementSources,
+    orgId ? { orgId } : "skip",
+  ) as RequirementSource[] | undefined;
   const vendorRowsResult = useCachedConnectedVendors(
     orgId && showConnectFeatures ? orgId : undefined,
   ) as ConnectedOrgRow[] | undefined;
@@ -819,8 +1461,11 @@ export function CompliancePage() {
   const vendorRows = showConnectFeatures ? vendorRowsResult : [];
   const clientRows = showConnectFeatures ? clientRowsResult : [];
   const updateRequirements = useUpdateCachedQuery<Requirement[], { orgId: Id<"organizations"> }>("compliance.listRequirements");
+  const updateRequirementSources = useUpdateCachedQuery<RequirementSource[], { orgId: Id<"organizations"> }>("compliance.listRequirementSources");
   const upsertRequirement = useMutation(complianceApi.compliance.upsertRequirement);
   const archiveRequirement = useMutation(complianceApi.compliance.archiveRequirement);
+  const updateRequirementSource = useMutation(complianceApi.compliance.updateRequirementSource);
+  const archiveRequirementSources = useMutation(complianceApi.compliance.archiveRequirementSources);
   const generateRequirementImportUploadUrl = useMutation(complianceApi.compliance.generateRequirementImportUploadUrl);
   const importRequirements = useAction(complianceApi.actions.complianceRequirements.importRequirements);
   const recheckOwnRequirement = useAction(complianceApi.actions.complianceReview.recheckOwnRequirement);
@@ -834,9 +1479,11 @@ export function CompliancePage() {
   const [limitFilter, setLimitFilter] = useState<LimitFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedRequirementId, setSelectedRequirementId] = useState<Id<"insuranceRequirements"> | null>(null);
+  const [selectedSourceId, setSelectedSourceId] = useState<Id<"requirementSourceDocuments"> | null>(null);
   const [sourceText, setSourceText] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
-  const [sourceTypeValue, setSourceTypeValue] = useState<Exclude<RequirementSourceType, "manual" | "bulk_import">>("vendor_requirements");
+  const [sourceName, setSourceName] = useState("");
+  const [sourceTypeValue, setSourceTypeValue] = useState<RequirementSourceDocumentType>("vendor_requirements");
   const [title, setTitle] = useState("");
   const [lineOfBusiness, setLineOfBusiness] = useState("CGL");
   const [limitKind, setLimitKind] = useState<RequirementLimitKind>("per_occurrence");
@@ -845,6 +1492,7 @@ export function CompliancePage() {
   const [provisions, setProvisions] = useState<RequirementProvision[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [archivingSources, setArchivingSources] = useState(false);
   const [checkingRequirementId, setCheckingRequirementId] = useState<Id<"insuranceRequirements"> | null>(null);
 
   const hasActiveClients = (clientRows ?? []).some((row) => row.status === "active");
@@ -897,6 +1545,11 @@ export function CompliancePage() {
   );
   const selectedRequirement =
     (requirements ?? []).find((requirement) => requirement._id === selectedRequirementId) ?? null;
+  const selectedSource =
+    (requirementSources ?? []).find((source) => source._id === selectedSourceId) ?? null;
+  const selectedSourceRequirements = selectedSource
+    ? requirements?.filter((requirement) => requirement.sourceDocumentId === selectedSource._id)
+    : undefined;
 
   if (isBroker) return null;
 
@@ -939,11 +1592,25 @@ export function CompliancePage() {
 
   async function removeRequirement(requirementId: Id<"insuranceRequirements">) {
     if (!orgId) return;
+    const archivedRequirement =
+      (requirements ?? []).find((requirement) => requirement._id === requirementId) ?? null;
     try {
       await archiveRequirement({ orgId, requirementId });
       await updateRequirements({ orgId }, (current) =>
         current.filter((requirement) => requirement._id !== requirementId),
       );
+      if (archivedRequirement?.sourceDocumentId) {
+        await updateRequirementSources({ orgId }, (current) =>
+          current.map((source) =>
+            source._id === archivedRequirement.sourceDocumentId
+              ? {
+                  ...source,
+                  requirementCount: Math.max(0, source.requirementCount - 1),
+                }
+              : source,
+          ),
+        );
+      }
       setSelectedRequirementId(null);
       toast.success("Requirement archived");
     } catch (error) {
@@ -1010,6 +1677,7 @@ export function CompliancePage() {
         fileName: sourceFile?.name,
         contentType: sourceFile?.type,
         sourceType: sourceTypeValue,
+        sourceName: sourceName.trim() || undefined,
         scope: activeRequirementScope,
       })) as { createdCount: number };
       toast[result.createdCount === 0 ? "info" : "success"](
@@ -1019,6 +1687,7 @@ export function CompliancePage() {
       );
       setSourceText("");
       setSourceFile(null);
+      setSourceName("");
       setDrawerOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to generate requirements");
@@ -1029,7 +1698,137 @@ export function CompliancePage() {
 
   function openAddRequirements() {
     setDrawerMode("bulk");
+    setSelectedRequirementId(null);
+    setSelectedSourceId(null);
     setDrawerOpen(true);
+  }
+
+  async function updateSource(source: RequirementSource, patch: SourceUpdatePatch) {
+    if (!orgId) throw new Error("Organization required");
+    const now = dayjs().valueOf();
+    await updateRequirementSources({ orgId }, (current) =>
+      current.map((item) =>
+        item._id === source._id
+          ? {
+              ...item,
+              ...patch,
+              updatedAt: now,
+            }
+          : item,
+      ),
+    );
+    await updateRequirements({ orgId }, (current) =>
+      current.map((requirement) =>
+        requirement.sourceDocumentId === source._id
+          ? {
+              ...requirement,
+              sourceDocumentName: patch.title ?? requirement.sourceDocumentName,
+              sourceType: patch.sourceType ?? requirement.sourceType,
+              updatedAt: now,
+            }
+          : requirement,
+      ),
+    );
+    try {
+      await updateRequirementSource({
+        orgId,
+        sourceDocumentId: source._id,
+        ...patch,
+      });
+      toast.success("Requirement source updated");
+    } catch (error) {
+      await updateRequirementSources({ orgId }, (current) =>
+        current.map((item) => (item._id === source._id ? source : item)),
+      );
+      await updateRequirements({ orgId }, (current) =>
+        current.map((requirement) =>
+          requirement.sourceDocumentId === source._id
+            ? {
+                ...requirement,
+                sourceDocumentName: source.title,
+                sourceType: source.sourceType,
+              }
+            : requirement,
+        ),
+      );
+      toast.error(error instanceof Error ? error.message : "Unable to update source");
+      throw error;
+    }
+  }
+
+  async function saveRequirementEdits(
+    requirement: Requirement,
+    values: RequirementEditValues,
+  ) {
+    if (!orgId) throw new Error("Organization required");
+    const now = dayjs().valueOf();
+    const nextRequirement: Requirement = {
+      ...requirement,
+      ...values,
+      updatedAt: now,
+    };
+    await updateRequirements({ orgId }, (current) =>
+      current.map((item) => (item._id === requirement._id ? nextRequirement : item)),
+    );
+    try {
+      await upsertRequirement({
+        orgId,
+        requirementId: requirement._id,
+        kind: requirement.kind ?? "coverage",
+        scope: requirement.scope,
+        title: values.title,
+        requirementText: values.requirementText,
+        lineOfBusiness: values.lineOfBusiness,
+        limits: values.limits,
+        maxDeductible: requirement.maxDeductible,
+        coverageForm: requirement.coverageForm,
+        provisions: values.provisions,
+        requiredForms: requirement.requiredForms,
+        sourceDocumentId: requirement.sourceDocumentId,
+        sourceDocumentName: requirement.sourceDocumentName,
+        sourceType: requirement.sourceType,
+        sourceExcerpt: requirement.sourceExcerpt,
+        sourcePageStart: requirement.sourcePageStart,
+        sourcePageEnd: requirement.sourcePageEnd,
+      });
+      toast.success("Requirement saved");
+    } catch (error) {
+      await updateRequirements({ orgId }, (current) =>
+        current.map((item) => (item._id === requirement._id ? requirement : item)),
+      );
+      toast.error(error instanceof Error ? error.message : "Unable to save requirement");
+      throw error;
+    }
+  }
+
+  async function archiveSources(sourceIds: Id<"requirementSourceDocuments">[]) {
+    if (!orgId || sourceIds.length === 0) return false;
+    setArchivingSources(true);
+    try {
+      const result = (await archiveRequirementSources({
+        orgId,
+        sourceDocumentIds: sourceIds,
+      })) as { archivedSourceCount: number; archivedRequirementCount: number };
+      const archivedIds = new Set(sourceIds);
+      await updateRequirementSources({ orgId }, (current) =>
+        current.filter((source) => !archivedIds.has(source._id)),
+      );
+      await updateRequirements({ orgId }, (current) =>
+        current.filter((requirement) => !requirement.sourceDocumentId || !archivedIds.has(requirement.sourceDocumentId)),
+      );
+      setSelectedSourceId((current) => (current && archivedIds.has(current) ? null : current));
+      toast.success(
+        result.archivedRequirementCount > 0
+          ? `Archived ${result.archivedRequirementCount} requirement${result.archivedRequirementCount === 1 ? "" : "s"}`
+          : "Requirement source archived",
+      );
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to archive sources");
+      return false;
+    } finally {
+      setArchivingSources(false);
+    }
   }
 
   const addPanel = (
@@ -1064,14 +1863,26 @@ export function CompliancePage() {
         {drawerMode === "bulk" ? (
           <>
             <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
-              Source
-              <Select value={sourceTypeValue} onValueChange={(value) => setSourceTypeValue(value as Exclude<RequirementSourceType, "manual" | "bulk_import">)}>
-                <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
+              Source name
+              <Input
+                value={sourceName}
+                onChange={(event) => setSourceName(event.target.value)}
+                placeholder={sourceFile?.name ?? "Client vendor requirements"}
+                disabled={importing}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+              Source type
+              <Select value={sourceTypeValue} onValueChange={(value) => setSourceTypeValue(value as RequirementSourceDocumentType)}>
+                <SelectTrigger size="sm" className="w-full bg-background">
+                  <SelectValue>{REQUIREMENT_SOURCE_TYPE_LABELS[sourceTypeValue]}</SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="lease_agreement">Lease agreement</SelectItem>
-                  <SelectItem value="client_contract">Client requirements</SelectItem>
-                  <SelectItem value="vendor_requirements">Vendor requirements</SelectItem>
-                  <SelectItem value="other">Other source</SelectItem>
+                  {REQUIREMENT_SOURCE_DOCUMENT_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {REQUIREMENT_SOURCE_TYPE_LABELS[type]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </label>
@@ -1079,7 +1890,17 @@ export function CompliancePage() {
               Requirement text
               <Textarea className="min-h-0 flex-1 resize-none field-sizing-fixed" rows={12} value={sourceText} onChange={(event) => setSourceText(event.target.value)} placeholder="Paste insurance requirements or contract language." disabled={importing} />
             </label>
-            <FileDropZone accept=".txt,.md,.markdown,.pdf,.docx,.csv,.json,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,application/json" disabled={importing} idleLabel="Upload requirement document" busyLabel="Generating requirements..." hint="TXT, Markdown, PDF, DOCX, CSV, or JSON" onFile={setSourceFile} />
+            <FileDropZone
+              accept=".txt,.md,.markdown,.pdf,.docx,.csv,.json,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,application/json"
+              disabled={importing}
+              idleLabel="Upload requirement document"
+              busyLabel="Generating requirements..."
+              hint="TXT, Markdown, PDF, DOCX, CSV, or JSON"
+              onFile={(file) => {
+                setSourceFile(file);
+                setSourceName((current) => current.trim() || file.name);
+              }}
+            />
             {sourceFile ? (
               <OperationalPanel as="div" className="flex items-center justify-between gap-3 px-3 py-2">
                 <p className="min-w-0 truncate text-base font-medium text-foreground">{sourceFile.name}</p>
@@ -1098,7 +1919,9 @@ export function CompliancePage() {
             <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Line
               <Select value={lineOfBusiness} onValueChange={(value) => value && setLineOfBusiness(value)}>
-                <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
+                <SelectTrigger size="sm" className="w-full bg-background">
+                  <SelectValue>{lobLabel(lineOfBusiness)}</SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {COMMON_LOBS.map((code) => (
                     <SelectItem key={code} value={code}>{lobLabel(code)}</SelectItem>
@@ -1110,7 +1933,9 @@ export function CompliancePage() {
               <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                 Limit
                 <Select value={limitKind} onValueChange={(value) => setLimitKind(value as RequirementLimitKind)}>
-                  <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
+                  <SelectTrigger size="sm" className="w-full bg-background">
+                    <SelectValue>{REQUIREMENT_LIMIT_KIND_LABELS[limitKind]}</SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {LIMIT_KIND_OPTIONS.map((option) => (
                       <SelectItem key={option} value={option}>{REQUIREMENT_LIMIT_KIND_LABELS[option]}</SelectItem>
@@ -1149,6 +1974,19 @@ export function CompliancePage() {
       onClose={() => setSelectedRequirementId(null)}
     />
   ) : null;
+  const sourcePanel = selectedSource ? (
+    <SourceDrawer
+      key={selectedSource._id}
+      source={selectedSource}
+      requirements={selectedSourceRequirements}
+      archiving={archivingSources}
+      onUpdateSource={updateSource}
+      onSaveRequirement={saveRequirementEdits}
+      onArchiveRequirement={removeRequirement}
+      onArchiveSource={(sourceId) => archiveSources([sourceId])}
+      onClose={() => setSelectedSourceId(null)}
+    />
+  ) : null;
 
   return (
     <AppShell
@@ -1158,16 +1996,30 @@ export function CompliancePage() {
           Add requirements
         </PillButton>
       }
-      rightPanel={detailPanel ?? addPanel}
+      rightPanel={detailPanel ?? sourcePanel ?? addPanel}
     >
       <div className="flex w-full flex-col gap-4">
         <Tabs value={view} onValueChange={(value) => setView(value as ComplianceView)}>
           <TabsList variant="pill">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="requirements">Requirements</TabsTrigger>
+            <TabsTrigger value="sources">Sources</TabsTrigger>
           </TabsList>
         </Tabs>
-        {requirements === undefined ||
+        {view === "sources" ? (
+          requirementSources === undefined ? (
+            <RequirementsLoadingSkeleton />
+          ) : (
+            <RequirementSourcesTable
+              sources={requirementSources}
+              onSelect={(sourceId) => {
+                setSelectedSourceId(sourceId);
+                setSelectedRequirementId(null);
+                setDrawerOpen(false);
+              }}
+            />
+          )
+        ) : requirements === undefined ||
         (showConnectFeatures && (clientRows === undefined || vendorRows === undefined)) ? (
           <RequirementsLoadingSkeleton />
         ) : view === "overview" ? (
@@ -1196,6 +2048,7 @@ export function CompliancePage() {
               <RequirementsFilterSelect
                 label="Source"
                 value={effectiveSourceFilter}
+                valueLabel={sourceLabel(effectiveSourceFilter)}
                 onValueChange={(value) => setSourceFilter(value as SourceFilter)}
               >
                 {sourceFilters.map((filter) => (
@@ -1205,6 +2058,7 @@ export function CompliancePage() {
               <RequirementsFilterSelect
                 label="Line"
                 value={effectiveLineFilter}
+                valueLabel={lineFilterLabel(effectiveLineFilter)}
                 onValueChange={(value) => setLineFilter(value as LineFilter)}
               >
                 {lineFilters.map((filter) => (
@@ -1214,6 +2068,7 @@ export function CompliancePage() {
               <RequirementsFilterSelect
                 label="Limit type"
                 value={effectiveLimitFilter}
+                valueLabel={limitFilterLabel(effectiveLimitFilter)}
                 onValueChange={(value) => setLimitFilter(value as LimitFilter)}
               >
                 {limitFilters.map((filter) => (
@@ -1223,6 +2078,7 @@ export function CompliancePage() {
               <RequirementsFilterSelect
                 label="Status"
                 value={effectiveStatusFilter}
+                valueLabel={statusFilterLabel(effectiveStatusFilter)}
                 onValueChange={(value) => setStatusFilter(value as StatusFilter)}
               >
                 {statusFilters.map((filter) => (
@@ -1235,7 +2091,11 @@ export function CompliancePage() {
             ) : (
               <RequirementsTable
                 requirements={visibleRequirements}
-                onSelect={setSelectedRequirementId}
+                onSelect={(requirementId) => {
+                  setSelectedRequirementId(requirementId);
+                  setSelectedSourceId(null);
+                  setDrawerOpen(false);
+                }}
               />
             )}
           </>

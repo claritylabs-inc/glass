@@ -1,45 +1,142 @@
 "use node";
 
 import dayjs from "dayjs";
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { ImapFlow } from "imapflow";
+import { createHash } from "node:crypto";
 import mammoth from "mammoth";
-import { simpleParser, type ParsedMail } from "mailparser";
+import type { ParsedMail } from "mailparser";
 import { v } from "convex/values";
-import { z } from "zod";
 import { action, internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
-import { api, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Id } from "../_generated/dataModel";
-import { getImessageWorkerUrl } from "../lib/imessageConfig";
-import {
-  resolveImapDestination,
-  type ResolvedImapDestination,
-} from "../lib/imapDestination";
-import { generateObjectForOrg } from "../lib/models";
+import { resolveImapDestination } from "../lib/imapDestination";
 import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
+import {
+  accessibleAccount,
+  encryptPassword,
+  fetchParsedMessage,
+  imapErrorMessage,
+  isGlassSearchLoopEmail,
+  messageRef,
+  parseMessageRef,
+  withClient,
+  IMPORT_DOWNLOAD_MAX_BYTES,
+  type ConnectedEmailAccount,
+} from "../lib/imapMailbox";
+import {
+  isPdfMailboxAttachment,
+  isSupportedRequirementAttachment,
+} from "../lib/mailboxAutomation";
 
-type ConnectedEmailAccount = {
-  _id: Id<"connectedEmailAccounts">;
-  orgId: Id<"organizations">;
-  userId: Id<"users">;
-  scope: "user" | "org";
-  emailAddress: string;
-  host: string;
-  port: number;
-  secure: boolean;
-  username: string;
-  encryptedPassword: string;
-};
-
-const IMAP_CONNECTION_TIMEOUT_MS = 15_000;
-const IMAP_GREETING_TIMEOUT_MS = 10_000;
-const IMAP_SOCKET_TIMEOUT_MS = 18_000;
 const SEARCH_CANDIDATE_MULTIPLIER = 3;
 const SEARCH_MAX_CANDIDATES = 30;
-const SEARCH_DOWNLOAD_MAX_BYTES = 5 * 1024 * 1024;
 const THREAD_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+
+type MailboxAttachmentInfo = {
+  filename?: string;
+  contentType: string;
+  size: number;
+};
+
+type MailboxSearchRow = {
+  emailRef: string;
+  accountId: Id<"connectedEmailAccounts">;
+  accountEmail: string;
+  accountHost: string;
+  mailbox: string;
+  uid: number;
+  dateFrom: string;
+  dateTo?: string;
+  subject: string;
+  from?: string;
+  to: string[];
+  cc: string[];
+  date?: string;
+  snippet: string;
+  attachmentCount: number;
+  attachments: MailboxAttachmentInfo[];
+};
+
+type MailboxSearchErrorRow = {
+  type: "mailbox_search_error";
+  accountId: Id<"connectedEmailAccounts">;
+  accountEmail: string;
+  accountHost: string;
+  mailbox: string;
+  message: string;
+  hint: string;
+};
+
+type SavedThreadAttachment = {
+  filename: string;
+  contentType: string;
+  size: number;
+  fileId: Id<"_storage">;
+};
+
+export type SaveAttachmentsOutcome =
+  | { status: "no_saveable_attachments" }
+  | {
+      status: "duplicate_attachments";
+      attachments: SavedThreadAttachment[];
+      skippedDuplicateFilenames: string[];
+    }
+  | {
+      status: "saved";
+      messageId: Id<"threadMessages">;
+      attachments: SavedThreadAttachment[];
+      skippedDuplicateFilenames: string[];
+    };
+
+export type SaveMessageOutcome =
+  | { status: "message_too_large"; message: string }
+  | {
+      status: "duplicate_attachments";
+      attachments: SavedThreadAttachment[];
+      skippedDuplicateFilenames: string[];
+    }
+  | {
+      status: "saved";
+      messageId: Id<"threadMessages">;
+      attachment: SavedThreadAttachment;
+      attachments: SavedThreadAttachment[];
+    };
+
+export type PolicyImportFile = {
+  fileId: Id<"_storage">;
+  fileName: string;
+  fileSha256: string;
+};
+
+export type PolicyImportOutcome =
+  | { status: "no_pdf_attachments" }
+  | {
+      status: "duplicate" | "started" | "failed";
+      files: PolicyImportFile[];
+      result:
+        | { error: string }
+        | { success: true; policyId: string; duplicate: boolean };
+    };
+
+export type RequirementImportEntry =
+  | {
+      source: "email_body";
+      subject: string;
+      createdCount: number;
+      requirementIds: Id<"insuranceRequirements">[];
+    }
+  | {
+      source: "attachment";
+      fileId: Id<"_storage">;
+      fileName: string;
+      createdCount: number;
+      requirementIds: Id<"insuranceRequirements">[];
+    };
+
+export type RequirementImportOutcome =
+  | { status: "no_requirement_sources" }
+  | { status: "imported"; imports: RequirementImportEntry[] };
 
 function normalizeThreadAttachmentFilename(filename?: string | null) {
   return (filename?.trim() || "email-attachment").toLowerCase();
@@ -52,59 +149,12 @@ async function getExistingThreadAttachmentNames(
   const attachments = await ctx.runQuery(
     internal.threads.listThreadAttachmentsInternal,
     args,
-  ) as Array<{ filename: string }>;
+  );
   return new Set(
     attachments.map((attachment) =>
       normalizeThreadAttachmentFilename(attachment.filename),
     ),
   );
-}
-
-const DailyAttentionSchema = z.object({
-  items: z.array(
-    z.object({
-      subject: z.string(),
-      from: z.string().optional(),
-      reason: z.string(),
-      suggestedAction: z.string(),
-      urgency: z.enum(["low", "normal", "high"]),
-    }),
-  ).max(8),
-});
-
-function encryptionKey() {
-  const secret = process.env.EMAIL_CONNECTIONS_ENCRYPTION_KEY;
-  if (!secret) {
-    throw new Error("EMAIL_CONNECTIONS_ENCRYPTION_KEY is not configured");
-  }
-  return createHash("sha256").update(secret).digest();
-}
-
-function encryptPassword(password: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(password, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return JSON.stringify({
-    v: 1,
-    iv: iv.toString("base64"),
-    tag: tag.toString("base64"),
-    data: ciphertext.toString("base64"),
-  });
-}
-
-function decryptPassword(encrypted: string): string {
-  const parsed = JSON.parse(encrypted) as { iv: string; tag: string; data: string };
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    encryptionKey(),
-    Buffer.from(parsed.iv, "base64"),
-  );
-  decipher.setAuthTag(Buffer.from(parsed.tag, "base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(parsed.data, "base64")),
-    decipher.final(),
-  ]).toString("utf8");
 }
 
 function headerLine(name: string, value?: string) {
@@ -170,65 +220,22 @@ function buildSavedMessageExport(args: {
   ].join("");
 }
 
-async function requireOrgMember(ctx: any, orgId: Id<"organizations">, userId: Id<"users">) {
+async function requireOrgMember(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  userId: Id<"users">,
+) {
   const members = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
-  const membership = members.find((member: any) => String(member.userId) === String(userId));
+  const membership = members.find((member) => member.userId === userId);
   if (!membership) throw new Error("Connected email is available only to direct org members");
   return membership;
 }
 
-async function withClient<T>(
+function mailboxSearchError(
   account: ConnectedEmailAccount,
-  fn: (client: ImapFlow) => Promise<T>,
-  destination?: ResolvedImapDestination,
-): Promise<T> {
-  const resolvedDestination =
-    destination ??
-    await resolveImapDestination({
-      host: account.host,
-      port: account.port,
-    });
-  const client = new ImapFlow({
-    host: resolvedDestination.connectionHost,
-    port: resolvedDestination.port,
-    servername: resolvedDestination.servername,
-    secure: account.secure,
-    connectionTimeout: IMAP_CONNECTION_TIMEOUT_MS,
-    greetingTimeout: IMAP_GREETING_TIMEOUT_MS,
-    socketTimeout: IMAP_SOCKET_TIMEOUT_MS,
-    auth: {
-      user: account.username,
-      pass: decryptPassword(account.encryptedPassword),
-    },
-    logger: false,
-  });
-  await client.connect();
-  try {
-    return await fn(client);
-  } finally {
-    await client.logout().catch(() => undefined);
-  }
-}
-
-function imapErrorMessage(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return String(error);
-  }
-  const record = error as Record<string, unknown>;
-  const parts = [
-    record.message,
-    record.response,
-    record.responseText,
-    record.serverResponse,
-    record.code,
-    record.command,
-  ]
-    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
-    .map((part) => part.trim());
-  return [...new Set(parts)].join(" · ") || "IMAP command failed";
-}
-
-function mailboxSearchError(account: ConnectedEmailAccount, mailbox: string, error: unknown) {
+  mailbox: string,
+  error: unknown,
+): MailboxSearchErrorRow {
   const message = imapErrorMessage(error);
   console.warn("[connectedEmail.searchInternal] IMAP search failed", {
     accountId: account._id,
@@ -238,7 +245,7 @@ function mailboxSearchError(account: ConnectedEmailAccount, mailbox: string, err
     error: message,
   });
   return {
-    type: "mailbox_search_error" as const,
+    type: "mailbox_search_error",
     accountId: account._id,
     accountEmail: account.emailAddress,
     accountHost: account.host,
@@ -284,74 +291,14 @@ function searchDateWindow(args: {
   };
 }
 
-async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
-}
-
-function messageRef(accountId: string, mailbox: string, uid: number) {
-  return Buffer.from(JSON.stringify({ accountId, mailbox, uid }), "utf8").toString("base64url");
-}
-
-function parseMessageRef(ref: string): {
-  accountId: Id<"connectedEmailAccounts">;
-  mailbox: string;
-  uid: number;
-} {
-  const parsed = JSON.parse(Buffer.from(ref, "base64url").toString("utf8"));
-  return {
-    accountId: parsed.accountId,
-    mailbox: parsed.mailbox,
-    uid: Number(parsed.uid),
-  };
-}
-
 function addressText(value: ParsedMail["from"] | ParsedMail["to"] | ParsedMail["cc"]) {
   if (!value) return [];
   const list = Array.isArray(value) ? value : [value];
-  return list.flatMap((entry) => entry.value.map((item) => item.address).filter(Boolean));
-}
-
-function isGlassSearchLoopAddress(address?: string) {
-  const domain = address?.split("@").pop()?.trim().toLowerCase();
-  return !!domain && (
-    domain === "glass.insure" ||
-    domain.endsWith(".glass.insure") ||
-    domain === "glass.claritylabs.inc" ||
-    domain.endsWith(".glass.claritylabs.inc")
+  return list.flatMap((entry) =>
+    entry.value
+      .map((item) => item.address)
+      .filter((address): address is string => Boolean(address)),
   );
-}
-
-function isGlassSearchLoopEmail(parsed: ParsedMail) {
-  return parsed.from?.value.some((item) => isGlassSearchLoopAddress(item.address)) ?? false;
-}
-
-function isRequirementAttachment(attachment: ParsedMail["attachments"][number]) {
-  const name = attachment.filename?.toLowerCase() ?? "";
-  const type = attachment.contentType.toLowerCase();
-  return (
-    type === "application/pdf" ||
-    type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    type === "text/plain" ||
-    type === "text/markdown" ||
-    type === "text/csv" ||
-    type === "application/json" ||
-    name.endsWith(".pdf") ||
-    name.endsWith(".docx") ||
-    name.endsWith(".txt") ||
-    name.endsWith(".md") ||
-    name.endsWith(".csv") ||
-    name.endsWith(".json")
-  );
-}
-
-function isPdfAttachment(attachment: ParsedMail["attachments"][number]) {
-  const name = attachment.filename?.toLowerCase() ?? "";
-  const type = attachment.contentType.toLowerCase();
-  return type === "application/pdf" || type.includes("pdf") || name.endsWith(".pdf");
 }
 
 function buildEmailRequirementText(parsed: ParsedMail) {
@@ -406,39 +353,6 @@ async function extractAttachmentText(attachment: ParsedMail["attachments"][numbe
   throw new Error("Unsupported attachment type for text reading");
 }
 
-async function fetchParsedMessage(client: ImapFlow, mailbox: string, uid: number) {
-  await client.mailboxOpen(mailbox);
-  const downloaded = await client.download(String(uid), undefined, {
-    uid: true,
-    maxBytes: SEARCH_DOWNLOAD_MAX_BYTES,
-  });
-  const raw = await streamToBuffer(downloaded.content);
-  return await simpleParser(raw);
-}
-
-async function accessibleAccount(ctx: any, args: {
-  orgId: Id<"organizations">;
-  userId?: Id<"users">;
-  accountId?: Id<"connectedEmailAccounts">;
-}): Promise<ConnectedEmailAccount> {
-  if (args.accountId) {
-    const account = await ctx.runQuery(internal.connectedEmail.getAccessibleInternal, {
-      accountId: args.accountId,
-      orgId: args.orgId,
-      userId: args.userId,
-    }) as ConnectedEmailAccount | null;
-    if (!account) throw new Error("Connected email account not found");
-    return account as ConnectedEmailAccount;
-  }
-  const accounts = await ctx.runQuery(internal.connectedEmail.listAccessibleInternal, {
-    orgId: args.orgId,
-    userId: args.userId,
-  }) as ConnectedEmailAccount[];
-  const account = accounts[0];
-  if (!account) throw new Error("No connected email account is available");
-  return account;
-}
-
 export const connect = action({
   args: {
     orgId: v.id("organizations"),
@@ -450,6 +364,13 @@ export const connect = action({
     secure: v.boolean(),
     username: v.string(),
     password: v.string(),
+    automation: v.optional(
+      v.object({
+        policyImports: v.boolean(),
+        requirementImports: v.boolean(),
+        companyMemory: v.boolean(),
+      }),
+    ),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<Id<"connectedEmailAccounts">> => {
@@ -466,22 +387,20 @@ export const connect = action({
       port: args.port,
     });
     const encryptedPassword = encryptPassword(args.password);
-    const testAccount: ConnectedEmailAccount = {
-      _id: "test" as Id<"connectedEmailAccounts">,
-      orgId: args.orgId,
-      userId: userId as Id<"users">,
-      scope,
-      emailAddress: args.emailAddress.trim().toLowerCase(),
-      host: destination.normalizedHost,
-      port: destination.port,
-      secure: args.secure,
-      username: args.username.trim(),
-      encryptedPassword,
-    };
-    await withClient(testAccount, async (client) => {
-      await client.mailboxOpen("INBOX");
-      return true;
-    }, destination);
+    await withClient(
+      {
+        host: destination.normalizedHost,
+        port: destination.port,
+        secure: args.secure,
+        username: args.username.trim(),
+        encryptedPassword,
+      },
+      async (client) => {
+        await client.mailboxOpen("INBOX");
+        return true;
+      },
+      destination,
+    );
 
     return await ctx.runMutation(internal.connectedEmail.upsertInternal, {
       orgId: args.orgId,
@@ -495,7 +414,8 @@ export const connect = action({
       username: args.username.trim(),
       encryptedPassword,
       encryptionKeyVersion: "v1",
-    }) as Id<"connectedEmailAccounts">;
+      automation: args.automation,
+    });
   },
 });
 
@@ -511,9 +431,11 @@ export const searchInternal = internalAction({
     dateTo: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<unknown[]> => {
-    const account: ConnectedEmailAccount = await accessibleAccount(ctx, args);
+  handler: async (
+    ctx,
+    args,
+  ): Promise<Array<MailboxSearchRow | MailboxSearchErrorRow>> => {
+    const account = await accessibleAccount(ctx, args);
     const mailbox = args.mailbox ?? "INBOX";
     const window = searchDateWindow({
       sinceDays: args.sinceDays,
@@ -539,7 +461,7 @@ export const searchInternal = internalAction({
           Math.max(limit * SEARCH_CANDIDATE_MULTIPLIER, limit),
         );
         const uids = Array.isArray(searchResult) ? searchResult.slice(-candidateLimit).reverse() : [];
-        const rows = [];
+        const rows: MailboxSearchRow[] = [];
         for (const uid of uids) {
           if (rows.length >= limit) break;
           try {
@@ -599,8 +521,7 @@ export const readInternal = internalAction({
     userId: v.optional(v.id("users")),
     emailRef: v.string(),
   },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args) => {
     const ref = parseMessageRef(args.emailRef);
     const account = await accessibleAccount(ctx, {
       orgId: args.orgId,
@@ -640,8 +561,7 @@ export const readAttachmentInternal = internalAction({
     emailRef: v.string(),
     filename: v.string(),
   },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args) => {
     const ref = parseMessageRef(args.emailRef);
     const account = await accessibleAccount(ctx, {
       orgId: args.orgId,
@@ -684,15 +604,14 @@ export const saveAttachmentsToThreadInternal = internalAction({
     emailRef: v.string(),
     filenames: v.optional(v.array(v.string())),
   },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args): Promise<SaveAttachmentsOutcome> => {
     const ref = parseMessageRef(args.emailRef);
     const account = await accessibleAccount(ctx, {
       orgId: args.orgId,
       userId: args.userId,
       accountId: ref.accountId,
     });
-    return await withClient(account, async (client): Promise<Record<string, unknown>> => {
+    return await withClient(account, async (client): Promise<SaveAttachmentsOutcome> => {
       const parsed = await fetchParsedMessage(client, ref.mailbox, ref.uid);
       const requested = new Set((args.filenames ?? []).map((name) => name.toLowerCase()));
       const existingNames = await getExistingThreadAttachmentNames(ctx, {
@@ -724,7 +643,7 @@ export const saveAttachmentsToThreadInternal = internalAction({
           : { status: "no_saveable_attachments" as const };
       }
 
-      const saved = [];
+      const saved: SavedThreadAttachment[] = [];
       for (const attachment of attachments) {
         const copy = new Uint8Array(attachment.content.length);
         copy.set(attachment.content);
@@ -748,7 +667,7 @@ export const saveAttachmentsToThreadInternal = internalAction({
           parsed.subject ? `Source email: ${parsed.subject}` : undefined,
         ].filter(Boolean).join("\n"),
         attachments: saved,
-      }) as Id<"threadMessages">;
+      });
 
       return {
         status: "saved" as const,
@@ -768,15 +687,14 @@ export const saveMessageToThreadInternal = internalAction({
     emailRef: v.string(),
     filename: v.optional(v.string()),
   },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args): Promise<SaveMessageOutcome> => {
     const ref = parseMessageRef(args.emailRef);
     const account = await accessibleAccount(ctx, {
       orgId: args.orgId,
       userId: args.userId,
       accountId: ref.accountId,
     });
-    return await withClient(account, async (client): Promise<Record<string, unknown>> => {
+    return await withClient(account, async (client): Promise<SaveMessageOutcome> => {
       const parsed = await fetchParsedMessage(client, ref.mailbox, ref.uid);
       const exportContent = buildSavedMessageExport({
         subject: parsed.subject ?? "(no subject)",
@@ -808,7 +726,7 @@ export const saveMessageToThreadInternal = internalAction({
         };
       }
 
-      const saved = {
+      const saved: SavedThreadAttachment = {
         filename,
         contentType: "message/rfc822",
         size,
@@ -824,7 +742,7 @@ export const saveMessageToThreadInternal = internalAction({
           parsed.from?.text ? `From: ${parsed.from.text}` : undefined,
         ].filter(Boolean).join("\n"),
         attachments: [saved],
-      }) as Id<"threadMessages">;
+      });
 
       return {
         status: "saved" as const,
@@ -844,17 +762,21 @@ export const saveAttachmentsToThread = action({
     filenames: v.optional(v.array(v.string())),
   },
   returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args): Promise<SaveAttachmentsOutcome> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
-    return await ctx.runAction(internal.actions.connectedEmail.saveAttachmentsToThreadInternal, {
-      orgId: args.orgId,
-      userId: userId as Id<"users">,
-      threadId: args.threadId,
-      emailRef: args.emailRef,
-      filenames: args.filenames,
-    }) as Record<string, unknown>;
+    const outcome: SaveAttachmentsOutcome = await ctx.runAction(
+      internal.actions.connectedEmail.saveAttachmentsToThreadInternal,
+      {
+        orgId: args.orgId,
+        userId: userId as Id<"users">,
+        threadId: args.threadId,
+        emailRef: args.emailRef,
+        filenames: args.filenames,
+      },
+    );
+    return outcome;
   },
 });
 
@@ -865,24 +787,29 @@ export const importPolicyAttachmentsInternal = internalAction({
     emailRef: v.string(),
     filenames: v.optional(v.array(v.string())),
   },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args): Promise<PolicyImportOutcome> => {
     const ref = parseMessageRef(args.emailRef);
     const account = await accessibleAccount(ctx, {
       orgId: args.orgId,
       userId: args.userId,
       accountId: ref.accountId,
     });
-    return await withClient(account, async (client): Promise<Record<string, unknown>> => {
-      const parsed = await fetchParsedMessage(client, ref.mailbox, ref.uid);
+    // Download and store attachments while connected; extraction runs after the
+    // IMAP client is closed so long model calls don't hold the socket open.
+    const files = await withClient(account, async (client): Promise<PolicyImportFile[]> => {
+      const parsed = await fetchParsedMessage(
+        client,
+        ref.mailbox,
+        ref.uid,
+        IMPORT_DOWNLOAD_MAX_BYTES,
+      );
       const requested = new Set((args.filenames ?? []).map((name) => name.toLowerCase()));
       const attachments = parsed.attachments.filter((attachment) => {
-        if (!isPdfAttachment(attachment)) return false;
+        if (!isPdfMailboxAttachment(attachment)) return false;
         if (requested.size === 0) return true;
         return !!attachment.filename && requested.has(attachment.filename.toLowerCase());
       });
-      if (attachments.length === 0) return { status: "no_pdf_attachments" as const };
-      const files = [];
+      const stored: PolicyImportFile[] = [];
       for (const attachment of attachments) {
         const copy = new Uint8Array(attachment.content.length);
         copy.set(attachment.content);
@@ -890,25 +817,34 @@ export const importPolicyAttachmentsInternal = internalAction({
           type: attachment.contentType,
         });
         const fileId = await ctx.storage.store(blob);
-        files.push({
+        stored.push({
           fileId,
           fileName: attachment.filename ?? "email-attachment.pdf",
+          fileSha256: createHash("sha256").update(attachment.content).digest("hex"),
         });
       }
-      const result = await ctx.runAction(
-        internal.actions.extractFromUpload.extractFromUploadInternal,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          files,
-        },
-      ) as unknown;
-      return {
-        status: "started" as const,
-        files,
-        result,
-      };
+      return stored;
     });
+    if (files.length === 0) return { status: "no_pdf_attachments" as const };
+
+    const result = await ctx.runAction(
+      internal.actions.extractFromUpload.extractFromUploadInternal,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        files,
+      },
+    );
+    const success = "success" in result && result.success === true;
+    const duplicate = success && result.duplicate === true;
+    if (duplicate || (success && files.length > 1)) {
+      await Promise.all(files.map((file) => ctx.storage.delete(file.fileId)));
+    }
+    return {
+      status: duplicate ? "duplicate" : success ? "started" : "failed",
+      files,
+      result,
+    };
   },
 });
 
@@ -919,16 +855,20 @@ export const importPolicyAttachments = action({
     filenames: v.optional(v.array(v.string())),
   },
   returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args): Promise<PolicyImportOutcome> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
-    return await ctx.runAction(internal.actions.connectedEmail.importPolicyAttachmentsInternal, {
-      orgId: args.orgId,
-      userId: userId as Id<"users">,
-      emailRef: args.emailRef,
-      filenames: args.filenames,
-    }) as Record<string, unknown>;
+    const outcome: PolicyImportOutcome = await ctx.runAction(
+      internal.actions.connectedEmail.importPolicyAttachmentsInternal,
+      {
+        orgId: args.orgId,
+        userId: userId as Id<"users">,
+        emailRef: args.emailRef,
+        filenames: args.filenames,
+      },
+    );
+    return outcome;
   },
 });
 
@@ -936,9 +876,11 @@ export const importRequirementAttachmentsInternal = internalAction({
   args: {
     orgId: v.id("organizations"),
     userId: v.id("users"),
+    mailboxUserId: v.optional(v.id("users")),
     emailRef: v.string(),
     filenames: v.optional(v.array(v.string())),
     includeEmailBody: v.optional(v.boolean()),
+    sourceName: v.optional(v.string()),
     sourceType: v.optional(
       v.union(
         v.literal("lease_agreement"),
@@ -952,48 +894,35 @@ export const importRequirementAttachmentsInternal = internalAction({
     ),
     scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
   },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args): Promise<RequirementImportOutcome> => {
     const ref = parseMessageRef(args.emailRef);
     const account = await accessibleAccount(ctx, {
       orgId: args.orgId,
-      userId: args.userId,
+      userId: args.mailboxUserId ?? args.userId,
       accountId: ref.accountId,
     });
-    return await withClient(account, async (client): Promise<Record<string, unknown>> => {
-      const parsed = await fetchParsedMessage(client, ref.mailbox, ref.uid);
-      const requested = new Set((args.filenames ?? []).map((name) => name.toLowerCase()));
+    // Download and store requirement sources while connected; the extraction
+    // actions run after the IMAP client is closed.
+    const sources = await withClient(account, async (client) => {
+      const parsed = await fetchParsedMessage(
+        client,
+        ref.mailbox,
+        ref.uid,
+        IMPORT_DOWNLOAD_MAX_BYTES,
+      );
+      const requested = args.filenames === undefined
+        ? null
+        : new Set(args.filenames.map((name) => name.toLowerCase()));
       const attachments = parsed.attachments.filter((attachment) => {
-        if (!isRequirementAttachment(attachment)) return false;
-        if (requested.size === 0) return true;
+        if (!isSupportedRequirementAttachment(attachment)) return false;
+        if (requested === null) return true;
         return !!attachment.filename && requested.has(attachment.filename.toLowerCase());
       });
-      const emailText = args.includeEmailBody ? buildEmailRequirementText(parsed) : "";
-      if (attachments.length === 0 && !emailText) {
-        return { status: "no_requirement_sources" as const };
-      }
-
-      const imports = [];
-      if (emailText) {
-        const result = await ctx.runAction(
-          internal.actions.complianceRequirements.importRequirementsInternal,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            pastedText: emailText,
-            sourceType: args.sourceType,
-            scope: args.scope,
-            appliesTo: args.appliesTo,
-          },
-        ) as { createdCount: number; requirementIds: Id<"insuranceRequirements">[] };
-        imports.push({
-          source: "email_body" as const,
-          subject: parsed.subject ?? "(no subject)",
-          createdCount: result.createdCount,
-          requirementIds: result.requirementIds,
-        });
-      }
-
+      const stored: Array<{
+        fileId: Id<"_storage">;
+        fileName: string;
+        contentType: string;
+      }> = [];
       for (const attachment of attachments) {
         const copy = new Uint8Array(attachment.content.length);
         copy.set(attachment.content);
@@ -1001,33 +930,72 @@ export const importRequirementAttachmentsInternal = internalAction({
           type: attachment.contentType,
         });
         const fileId = await ctx.storage.store(blob);
-        const result = await ctx.runAction(
-          internal.actions.complianceRequirements.importRequirementsInternal,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            fileId,
-            fileName: attachment.filename ?? "email-requirements",
-            contentType: attachment.contentType,
-            sourceType: args.sourceType,
-            scope: args.scope,
-            appliesTo: args.appliesTo,
-          },
-        ) as { createdCount: number; requirementIds: Id<"insuranceRequirements">[] };
-        imports.push({
-          source: "attachment" as const,
+        stored.push({
           fileId,
           fileName: attachment.filename ?? "email-requirements",
-          createdCount: result.createdCount,
-          requirementIds: result.requirementIds,
+          contentType: attachment.contentType,
         });
       }
-
       return {
-        status: "imported" as const,
-        imports,
+        stored,
+        emailText: args.includeEmailBody ? buildEmailRequirementText(parsed) : "",
+        subject: parsed.subject ?? "(no subject)",
       };
     });
+    if (sources.stored.length === 0 && !sources.emailText) {
+      return { status: "no_requirement_sources" as const };
+    }
+
+    const imports: RequirementImportEntry[] = [];
+    if (sources.emailText) {
+      const result = await ctx.runAction(
+        internal.actions.complianceRequirements.importRequirementsInternal,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          pastedText: sources.emailText,
+          sourceType: args.sourceType,
+          sourceName: args.sourceName,
+          scope: args.scope,
+          appliesTo: args.appliesTo,
+        },
+      );
+      imports.push({
+        source: "email_body" as const,
+        subject: sources.subject,
+        createdCount: result.createdCount,
+        requirementIds: result.requirementIds,
+      });
+    }
+
+    for (const file of sources.stored) {
+      const result = await ctx.runAction(
+        internal.actions.complianceRequirements.importRequirementsInternal,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          fileId: file.fileId,
+          fileName: file.fileName,
+          contentType: file.contentType,
+          sourceType: args.sourceType,
+          sourceName: args.sourceName,
+          scope: args.scope,
+          appliesTo: args.appliesTo,
+        },
+      );
+      imports.push({
+        source: "attachment" as const,
+        fileId: file.fileId,
+        fileName: file.fileName,
+        createdCount: result.createdCount,
+        requirementIds: result.requirementIds,
+      });
+    }
+
+    return {
+      status: "imported" as const,
+      imports,
+    };
   },
 });
 
@@ -1037,6 +1005,7 @@ export const importRequirementAttachments = action({
     emailRef: v.string(),
     filenames: v.optional(v.array(v.string())),
     includeEmailBody: v.optional(v.boolean()),
+    sourceName: v.optional(v.string()),
     sourceType: v.optional(
       v.union(
         v.literal("lease_agreement"),
@@ -1051,201 +1020,24 @@ export const importRequirementAttachments = action({
     scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
   },
   returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args): Promise<RequirementImportOutcome> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
-    return await ctx.runAction(internal.actions.connectedEmail.importRequirementAttachmentsInternal, {
-      orgId: args.orgId,
-      userId: userId as Id<"users">,
-      emailRef: args.emailRef,
-      filenames: args.filenames,
-      includeEmailBody: args.includeEmailBody,
-      sourceType: args.sourceType,
-      scope: args.scope,
-      appliesTo: args.appliesTo,
-    }) as Record<string, unknown>;
-  },
-});
-
-export const scanPreviousDayForOrg = action({
-  args: {
-    orgId: v.id("organizations"),
-    cronSecret: v.optional(v.string()),
-  },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
-    const expectedSecret = process.env.EMAIL_SCAN_CRON_SECRET;
-    if (!expectedSecret) {
-      throw new Error("EMAIL_SCAN_CRON_SECRET is not configured");
-    }
-    if (args.cronSecret !== expectedSecret) {
-      throw new Error("Unauthorized mailbox scan");
-    }
-
-    const accounts = await ctx.runQuery(
-      internal.connectedEmail.listOrgScopedInternal,
-      { orgId: args.orgId },
-    ) as ConnectedEmailAccount[];
-    if (accounts.length === 0) return { status: "no_org_mailboxes" as const };
-
-    const members = await ctx.runQuery(internal.orgs.getMembersInternal, {
-      orgId: args.orgId,
-    }) as Array<{
-      userId: Id<"users">;
-      role: string;
-      user?: { name?: string; phone?: string };
-    }>;
-    const firstMember = members[0];
-    if (!firstMember) return { status: "no_org_members" as const };
-
-    const start = dayjs().subtract(1, "day").startOf("day");
-    const end = dayjs().startOf("day");
-    const rows: Array<Record<string, unknown>> = [];
-
-    for (const account of accounts.slice(0, 5)) {
-      const accountRows = await withClient(account, async (client) => {
-        await client.mailboxOpen("INBOX");
-        const searchResult = await client.search(
-          { since: start.toDate(), before: end.toDate() },
-          { uid: true },
-        );
-        const uids = Array.isArray(searchResult) ? searchResult.slice(-50).reverse() : [];
-        const messages = [];
-        for (const uid of uids) {
-          const parsed = await fetchParsedMessage(client, "INBOX", uid);
-          messages.push({
-            emailRef: messageRef(account._id, "INBOX", uid),
-            account: account.emailAddress,
-            subject: parsed.subject ?? "(no subject)",
-            from: parsed.from?.text,
-            date: parsed.date ? dayjs(parsed.date).toISOString() : undefined,
-            snippet: (parsed.text ?? "").replace(/\s+/g, " ").trim().slice(0, 800),
-            attachments: parsed.attachments.map((attachment) => ({
-              filename: attachment.filename,
-              contentType: attachment.contentType,
-              size: attachment.size,
-            })),
-          });
-        }
-        return messages;
-      });
-      rows.push(...accountRows);
-    }
-
-    if (rows.length === 0) return { status: "no_messages" as const };
-
-    const classification = await generateObjectForOrg(ctx, args.orgId, "mailbox_coordinator", {
-      schema: DailyAttentionSchema,
-      system:
-        "You review yesterday's mailbox summaries for a commercial insurance team. Return only messages that appear to need insurance-specific attention, such as policy renewals, certificates, claims, compliance requirements, vendor insurance, lease/contract insurance language, cancellations, nonrenewals, premium issues, or broker/client follow-up. Ignore marketing, newsletters, receipts, generic scheduling, and unrelated personal mail.",
-      prompt: JSON.stringify(rows),
-    });
-
-    const items = classification.object.items;
-    if (items.length === 0) {
-      return { status: "no_attention_items" as const, scannedCount: rows.length };
-    }
-
-    const body = [
-      `Yesterday's connected-mailbox scan found ${items.length} item${items.length === 1 ? "" : "s"} that may need insurance attention:`,
-      ...items.map(
-        (item, index) =>
-          `${index + 1}. ${item.subject}${item.from ? ` from ${item.from}` : ""}: ${item.reason} Suggested action: ${item.suggestedAction}`,
-      ),
-    ].join("\n\n");
-
-    const workerUrl = getImessageWorkerUrl();
-    const phoneMembers = members
-      .filter((member) => typeof member.user?.phone === "string" && member.user.phone.length > 0)
-      .slice(0, 10);
-    const sentPhones: string[] = [];
-    if (workerUrl && phoneMembers.length > 0) {
-      const seenPhones = new Set<string>();
-      for (const member of phoneMembers) {
-        const toPhone = member.user!.phone!;
-        if (seenPhones.has(toPhone)) continue;
-        seenPhones.add(toPhone);
-        try {
-          const response = await fetch(`${workerUrl.replace(/\/$/, "")}/send`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${process.env.IMESSAGE_WORKER_SECRET ?? ""}`,
-            },
-            body: JSON.stringify({ toPhone, message: body }),
-          });
-          if (response.ok) {
-            sentPhones.push(toPhone);
-            const threadId = await ctx.runMutation(internal.threads.findOrCreateByPhone, {
-              orgId: args.orgId,
-              userId: member.userId,
-              fromPhone: toPhone,
-              userName: member.user?.name,
-            });
-            await ctx.runMutation(internal.threads.insertImessageMessage, {
-              threadId,
-              orgId: args.orgId,
-              role: "agent",
-              userId: member.userId,
-              content: body,
-            });
-          }
-        } catch (error) {
-          console.warn("[connectedEmail] Daily iMessage scan alert failed:", error);
-        }
-      }
-    }
-
-    const webThread = sentPhones.length === 0
-      ? await ctx.runMutation(internal.threads.createProactiveInternal, {
-          orgId: args.orgId,
-          userId: firstMember.userId,
-          title: "Mailbox items needing attention",
-          content: body,
-        })
-      : undefined;
-
-    return {
-      status: "surfaced" as const,
-      scannedCount: rows.length,
-      itemCount: items.length,
-      sentPhones,
-      webThread,
-    };
-  },
-});
-
-export const scanPreviousDay = action({
-  args: {
-    cronSecret: v.string(),
-  },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
-    const expectedSecret = process.env.EMAIL_SCAN_CRON_SECRET;
-    if (!expectedSecret) {
-      throw new Error("EMAIL_SCAN_CRON_SECRET is not configured");
-    }
-    if (args.cronSecret !== expectedSecret) {
-      throw new Error("Unauthorized mailbox scan");
-    }
-
-    const orgIds = await ctx.runQuery(
-      internal.connectedEmail.listOrgIdsWithOrgScopedAccountsInternal,
-      {},
-    ) as Id<"organizations">[];
-    const results = [];
-    for (const orgId of orgIds) {
-      const result = await ctx.runAction(api.actions.connectedEmail.scanPreviousDayForOrg, {
-        orgId,
-        cronSecret: args.cronSecret,
-      });
-      results.push({ orgId, result });
-    }
-    return {
-      status: "scanned" as const,
-      orgCount: orgIds.length,
-      results,
-    };
+    const outcome: RequirementImportOutcome = await ctx.runAction(
+      internal.actions.connectedEmail.importRequirementAttachmentsInternal,
+      {
+        orgId: args.orgId,
+        userId: userId as Id<"users">,
+        emailRef: args.emailRef,
+        filenames: args.filenames,
+        includeEmailBody: args.includeEmailBody,
+        sourceName: args.sourceName,
+        sourceType: args.sourceType,
+        scope: args.scope,
+        appliesTo: args.appliesTo,
+      },
+    );
+    return outcome;
   },
 });

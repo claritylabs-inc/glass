@@ -62,7 +62,7 @@ const evidenceValidator = v.object({
   validUntil: v.optional(v.string()),
 });
 
-const vendorComplianceMonitorCheckValidator = v.object({
+const complianceMonitorCheckValidator = v.object({
   requirementId: v.id("insuranceRequirements"),
   requirementTitle: v.string(),
   status: complianceCheckStatusValidator,
@@ -85,8 +85,19 @@ const vendorComplianceMonitorRowValidator = v.object({
   missingCount: v.number(),
   expiringSoonCount: v.number(),
   unverifiedCount: v.number(),
-  checks: v.array(vendorComplianceMonitorCheckValidator),
+  checks: v.array(complianceMonitorCheckValidator),
 });
+
+export type OwnComplianceEvent = {
+  type: "own_compliance_gap" | "own_compliance_resolved";
+  title: string;
+  body: string;
+  severity: "info" | "warning" | "critical";
+  orgId: Id<"organizations">;
+  orgName: string;
+  requirementIds: Id<"insuranceRequirements">[];
+  issueLines: string[];
+};
 
 async function requireOrgMember(
   ctx: QueryCtx | MutationCtx,
@@ -375,6 +386,45 @@ export const listRequirements = query({
   },
 });
 
+export const listRequirementSources = query({
+  args: { orgId: v.optional(v.id("organizations")) },
+  handler: async (ctx, args) => {
+    const { userId } = await requireAuth(ctx);
+    let orgId = args.orgId;
+    if (!orgId) {
+      const membership = await ctx.db
+        .query("orgMemberships")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .first();
+      if (!membership) throw new Error("Organization required");
+      orgId = membership.orgId;
+    }
+    await requireOrgMember(ctx, orgId);
+    const [sources, requirements] = await Promise.all([
+      ctx.db
+        .query("requirementSourceDocuments")
+        .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+        .collect(),
+      listRequirementsForOrg(ctx, orgId),
+    ]);
+    const countsBySourceId = new Map<Id<"requirementSourceDocuments">, number>();
+    for (const requirement of requirements) {
+      if (!requirement.sourceDocumentId) continue;
+      countsBySourceId.set(
+        requirement.sourceDocumentId,
+        (countsBySourceId.get(requirement.sourceDocumentId) ?? 0) + 1,
+      );
+    }
+    return sources
+      .filter((source) => !source.archivedAt)
+      .map((source) => ({
+        ...source,
+        requirementCount: countsBySourceId.get(source._id) ?? 0,
+      }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+});
+
 export const upsertRequirement = mutation({
   args: {
     orgId: v.id("organizations"),
@@ -430,6 +480,100 @@ export const upsertRequirement = mutation({
       createdByUserId: access.userId,
       createdAt: now,
     });
+  },
+});
+
+export const updateRequirementSource = mutation({
+  args: {
+    orgId: v.id("organizations"),
+    sourceDocumentId: v.id("requirementSourceDocuments"),
+    title: v.optional(v.string()),
+    sourceType: v.optional(sourceDocumentTypeValidator),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireOrgMember(ctx, args.orgId);
+    if (access.role !== "admin") {
+      throw new Error("Admin role required to update requirement sources");
+    }
+    const source = await ctx.db.get(args.sourceDocumentId);
+    if (!source || source.orgId !== args.orgId || source.archivedAt) {
+      throw new Error("Requirement source not found");
+    }
+    const title = args.title?.trim();
+    if (args.title !== undefined && !title) throw new Error("Source name is required");
+    if (title === undefined && args.sourceType === undefined) {
+      throw new Error("No source updates provided");
+    }
+    const now = dayjs().valueOf();
+    const sourcePatch: Partial<Doc<"requirementSourceDocuments">> = {
+      updatedAt: now,
+    };
+    if (title !== undefined) sourcePatch.title = title;
+    if (args.sourceType !== undefined) sourcePatch.sourceType = args.sourceType;
+    await ctx.db.patch(args.sourceDocumentId, sourcePatch);
+    const requirements = await ctx.db
+      .query("insuranceRequirements")
+      .withIndex("by_orgId_status", (q) =>
+        q.eq("orgId", args.orgId).eq("status", "active"),
+      )
+      .collect();
+    for (const requirement of requirements) {
+      if (requirement.sourceDocumentId !== args.sourceDocumentId) continue;
+      const requirementPatch: Partial<Doc<"insuranceRequirements">> = {
+        updatedByUserId: access.userId,
+        updatedAt: now,
+      };
+      if (title !== undefined) requirementPatch.sourceDocumentName = title;
+      if (args.sourceType !== undefined) requirementPatch.sourceType = args.sourceType;
+      await ctx.db.patch(requirement._id, requirementPatch);
+    }
+  },
+});
+
+export const archiveRequirementSources = mutation({
+  args: {
+    orgId: v.id("organizations"),
+    sourceDocumentIds: v.array(v.id("requirementSourceDocuments")),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireOrgMember(ctx, args.orgId);
+    if (access.role !== "admin") {
+      throw new Error("Admin role required to archive requirement sources");
+    }
+    const sourceDocumentIds = Array.from(new Set(args.sourceDocumentIds));
+    if (sourceDocumentIds.length === 0) {
+      throw new Error("Select at least one requirement source");
+    }
+    const now = dayjs().valueOf();
+    let archivedSourceCount = 0;
+    for (const sourceDocumentId of sourceDocumentIds) {
+      const source = await ctx.db.get(sourceDocumentId);
+      if (!source || source.orgId !== args.orgId || source.archivedAt) continue;
+      await ctx.db.patch(sourceDocumentId, {
+        archivedAt: now,
+        archivedByUserId: access.userId,
+        updatedAt: now,
+      });
+      archivedSourceCount += 1;
+    }
+    const selected = new Set(sourceDocumentIds);
+    const requirements = await ctx.db
+      .query("insuranceRequirements")
+      .withIndex("by_orgId_status", (q) =>
+        q.eq("orgId", args.orgId).eq("status", "active"),
+      )
+      .collect();
+    let archivedRequirementCount = 0;
+    for (const requirement of requirements) {
+      if (!requirement.sourceDocumentId || !selected.has(requirement.sourceDocumentId)) continue;
+      await ctx.db.patch(requirement._id, {
+        status: "archived",
+        updatedByUserId: access.userId,
+        updatedAt: now,
+      });
+      archivedRequirementCount += 1;
+    }
+    return { archivedSourceCount, archivedRequirementCount };
   },
 });
 
@@ -678,6 +822,66 @@ export const getVendorChecklist = query({
 export const listRequirementsInternal = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => await listRequirementsVisibleToOrg(ctx, args.orgId),
+});
+
+export type OwnComplianceAssessment = Awaited<
+  ReturnType<typeof assessForSubject>
+> & { title: string };
+
+export const assessOwnRequirementsInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    includePreviewPolicies: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<OwnComplianceAssessment[]> => {
+    const [requirements, policies, org] = await Promise.all([
+      listRequirementsForOrg(ctx, args.orgId),
+      listPoliciesForOrg(ctx, args.orgId),
+      ctx.db.get(args.orgId),
+    ]);
+    const requestedIds = args.requirementIds
+      ? new Set(args.requirementIds)
+      : null;
+    const ownRequirements = requirements.filter(
+      (requirement) =>
+        requirement.scope === "own_org" &&
+        (!requestedIds || requestedIds.has(requirement._id)),
+    );
+
+    return await Promise.all(
+      ownRequirements.map(async (requirement) => ({
+        title: requirement.title,
+        ...(await assessForSubject(
+          ctx,
+          requirement,
+          policies,
+          args.orgId,
+          org,
+          { includePreviewPolicies: args.includePreviewPolicies },
+        )),
+      })),
+    );
+  },
+});
+
+export const listOrgIdsWithActiveOwnRequirementsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const requirements = await ctx.db
+      .query("insuranceRequirements")
+      .withIndex("by_status_scope", (query) =>
+        query.eq("status", "active").eq("scope", "own_org"),
+      )
+      .collect();
+    return [
+      ...new Set<Id<"organizations">>(
+        requirements
+          .filter((requirement) => requirement.kind === "coverage")
+          .map((requirement) => requirement.orgId),
+      ),
+    ];
+  },
 });
 
 export const getManualComplianceReviewContextInternal = internalQuery({
@@ -1073,6 +1277,215 @@ export const getConnectedVendorContactInternal = internalQuery({
         .filter((email): email is string => Boolean(email)),
     };
   },
+});
+
+const OWN_COMPLIANCE_REMINDER_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isOwnComplianceIssue(status: Doc<"complianceChecks">["status"]) {
+  return (
+    status === "not_met" ||
+    status === "expiring_soon" ||
+    status === "expired"
+  );
+}
+
+function ownComplianceIssueLine(
+  check: {
+    requirementTitle: string;
+    status: Doc<"complianceChecks">["status"];
+    daysUntilExpiration?: number;
+    notes?: string;
+  },
+) {
+  const status =
+    check.status === "expiring_soon" &&
+    check.daysUntilExpiration !== undefined
+      ? `expires in ${check.daysUntilExpiration} days`
+      : check.status.replaceAll("_", " ");
+  return `${check.requirementTitle}: ${status}${check.notes ? ` - ${check.notes}` : ""}`;
+}
+
+function ownComplianceCheckChanged(
+  previous: Doc<"complianceChecks">,
+  check: {
+    status: Doc<"complianceChecks">["status"];
+    reasons?: string[];
+    matchedPolicyIds: Id<"policies">[];
+    matchedSummary?: string;
+    notes?: string;
+    expiresAt?: string;
+  },
+) {
+  const previousPolicyIds = previous.matchedPolicyIds
+    .map(String)
+    .sort()
+    .join("|");
+  const nextPolicyIds = check.matchedPolicyIds.map(String).sort().join("|");
+  return (
+    previous.status !== check.status ||
+    (previous.reasons ?? []).join("|") !== (check.reasons ?? []).join("|") ||
+    previousPolicyIds !== nextPolicyIds ||
+    previous.matchedSummary !== (check.matchedSummary ?? check.notes) ||
+    previous.expiresAt !== check.expiresAt
+  );
+}
+
+export const recordOwnComplianceRunInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    checks: v.array(complianceMonitorCheckValidator),
+    nowMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<OwnComplianceEvent[]> => {
+    const now = args.nowMs ?? dayjs().valueOf();
+    const org = await ctx.db.get(args.orgId);
+    const previousByRequirement = new Map<
+      Id<"insuranceRequirements">,
+      Doc<"complianceChecks"> | null
+    >();
+
+    for (const check of args.checks) {
+      const latest = await ctx.db
+        .query("complianceChecks")
+        .withIndex(
+          "by_requirementId_subjectOrgId_checkedBy_checkedAt",
+          (query) =>
+            query
+              .eq("requirementId", check.requirementId)
+              .eq("subjectOrgId", args.orgId)
+              .eq("checkedBy", "system"),
+        )
+        .order("desc")
+        .first();
+      previousByRequirement.set(check.requirementId, latest ?? null);
+    }
+
+    const currentIssues = args.checks.filter((check) =>
+      isOwnComplianceIssue(check.status),
+    );
+    const emitGap = currentIssues.some((check) => {
+      const previous = previousByRequirement.get(check.requirementId);
+      return (
+        !previous ||
+        previous.status !== check.status ||
+        previous.alertedAt === undefined ||
+        now - previous.alertedAt >= OWN_COMPLIANCE_REMINDER_MS
+      );
+    });
+    const resolvedChecks = args.checks.filter((check) => {
+      const previous = previousByRequirement.get(check.requirementId);
+      return (
+        check.status === "met" &&
+        Boolean(previous && isOwnComplianceIssue(previous.status))
+      );
+    });
+    const emitResolved = currentIssues.length === 0 && resolvedChecks.length > 0;
+    const resolvedRequirementIds = new Set(
+      resolvedChecks.map((check) => check.requirementId),
+    );
+
+    for (const check of args.checks) {
+      const previous = previousByRequirement.get(check.requirementId);
+      const issueIncludedInAlert = emitGap && isOwnComplianceIssue(check.status);
+      const resolvedIncludedInAlert =
+        emitResolved && resolvedRequirementIds.has(check.requirementId);
+      if (
+        previous &&
+        !ownComplianceCheckChanged(previous, check) &&
+        !issueIncludedInAlert &&
+        !resolvedIncludedInAlert
+      ) {
+        continue;
+      }
+      let alertedAt =
+        previous?.status === check.status ? previous.alertedAt : undefined;
+      if (issueIncludedInAlert || resolvedIncludedInAlert) alertedAt = now;
+      await ctx.db.insert("complianceChecks", {
+        orgId: args.orgId,
+        requirementId: check.requirementId,
+        subjectOrgId: args.orgId,
+        status: check.status,
+        reasons: check.reasons,
+        matchedPolicyIds: check.matchedPolicyIds,
+        matchedSummary: check.matchedSummary ?? check.notes,
+        expiresAt: check.expiresAt,
+        checkedAt: now,
+        alertedAt,
+        checkedBy: "system",
+      });
+    }
+
+    const orgName = org?.name ?? "Your organization";
+    if (emitGap) {
+      const issueLines = currentIssues.map(ownComplianceIssueLine);
+      const hasExpired = currentIssues.some((check) => check.status === "expired");
+      const issueCount = currentIssues.length;
+      return [{
+        type: "own_compliance_gap",
+        title: hasExpired
+          ? "Your insurance has expired coverage"
+          : "Your insurance has compliance gaps",
+        body: `${issueCount} ${issueCount === 1 ? "requirement needs" : "requirements need"} attention for ${orgName}: ${issueLines.slice(0, 3).join("; ")}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`,
+        severity: hasExpired ? "critical" : "warning",
+        orgId: args.orgId,
+        orgName,
+        requirementIds: currentIssues.map((check) => check.requirementId),
+        issueLines,
+      }];
+    }
+
+    if (emitResolved) {
+      const resolvedTitles = resolvedChecks.map((check) => check.requirementTitle);
+      return [{
+        type: "own_compliance_resolved",
+        title: "Your insurance requirements are now met",
+        body: `${orgName} now meets all ${args.checks.length} active insurance requirements in Glass.`,
+        severity: "info",
+        orgId: args.orgId,
+        orgName,
+        requirementIds: resolvedChecks.map((check) => check.requirementId),
+        issueLines: resolvedTitles,
+      }];
+    }
+
+    return [];
+  },
+});
+
+export const notifyOwnComplianceEventInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    type: v.union(
+      v.literal("own_compliance_gap"),
+      v.literal("own_compliance_resolved"),
+    ),
+    title: v.string(),
+    body: v.string(),
+    severity: v.union(
+      v.literal("info"),
+      v.literal("warning"),
+      v.literal("critical"),
+    ),
+    threadId: v.id("threads"),
+    requirementIds: v.array(v.id("insuranceRequirements")),
+    nowMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) =>
+    await notify(ctx, {
+      orgId: args.orgId,
+      type: args.type,
+      title: args.title,
+      body: args.body,
+      severity: args.severity,
+      actionType: "view_thread",
+      actionPayload: { threadId: args.threadId },
+      sourceRef: {
+        threadId: args.threadId,
+        requirementIds: args.requirementIds,
+      },
+      coalesceKeyParts: [args.type, String(args.orgId)],
+      nowMs: args.nowMs,
+    }),
 });
 
 export const recordVendorComplianceRunInternal = internalMutation({

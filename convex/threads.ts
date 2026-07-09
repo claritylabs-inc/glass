@@ -7,6 +7,7 @@ import { requireCurrentOrgAccess as requireOrgAccess, getCurrentOrgAccess as get
 import { getBrokerAccessToClientForQuery } from "./lib/access";
 import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
 import { getActiveOperatorImpersonation, writeOperatorAudit } from "./lib/operatorIdentity";
+import { canAccessThread } from "./lib/threadAccess";
 
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
@@ -70,10 +71,49 @@ function shortId(): string {
   return result;
 }
 
+function createThreadEmail(
+  agentHandle: string | undefined,
+  domain = FALLBACK_AGENT_DOMAIN,
+) {
+  return agentHandle ? `${agentHandle}+${shortId()}@${domain}` : undefined;
+}
+
 function formatImessageThreadTitle(args: { isGroup: boolean; displayName: string }): string {
   return args.isGroup
     ? `${IMESSAGE_GROUP_TITLE_PREFIX}${args.displayName}`
     : `${IMESSAGE_DIRECT_TITLE_PREFIX}${args.displayName}`;
+}
+
+function isDirectUserImessageThread(thread: Doc<"threads">): boolean {
+  return (
+    thread.originChannel === "imessage" &&
+    !thread.imessageIsGroup &&
+    !thread.deliveryContactKey
+  );
+}
+
+function findPrivateDirectUserThread(
+  threads: Array<Doc<"threads">>,
+  userId: Id<"users">,
+) {
+  return threads.find(
+    (thread) =>
+      isDirectUserImessageThread(thread) &&
+      thread.createdBy === userId &&
+      thread.visibility === "user_private",
+  );
+}
+
+function findMigratableDirectUserThread(
+  threads: Array<Doc<"threads">>,
+  userId: Id<"users">,
+) {
+  return threads.find(
+    (thread) =>
+      isDirectUserImessageThread(thread) &&
+      thread.createdBy === userId &&
+      thread.visibility !== "user_private",
+  );
 }
 
 async function deriveImessageGroupDisplayTitle(
@@ -120,6 +160,45 @@ async function withImessageGroupDisplayTitles(
   return await Promise.all(threads.map((thread) => withImessageGroupDisplayTitle(ctx, thread)));
 }
 
+function canCurrentOrgUserAccessThread(args: {
+  userId: Id<"users">;
+  orgId: Id<"organizations">;
+  thread: Doc<"threads">;
+}) {
+  return canAccessThread({
+    userId: args.userId,
+    userOrgId: args.orgId,
+    thread: args.thread,
+    clientOrg: null,
+  });
+}
+
+async function requireCurrentOrgThread(
+  ctx: QueryCtx | MutationCtx,
+  threadId: Id<"threads">,
+) {
+  const { userId, orgId } = await requireOrgAccess(ctx);
+  const thread = await ctx.db.get(threadId);
+  if (
+    !thread ||
+    !canCurrentOrgUserAccessThread({ userId, orgId, thread })
+  ) {
+    throw new Error("Not found");
+  }
+  return { userId, orgId, thread };
+}
+
+async function requireCurrentOrgThreadMessage(
+  ctx: MutationCtx,
+  messageId: Id<"threadMessages">,
+) {
+  const message = await ctx.db.get(messageId);
+  if (!message) throw new Error("Not found");
+  const access = await requireCurrentOrgThread(ctx, message.threadId);
+  if (message.orgId !== access.orgId) throw new Error("Not found");
+  return { ...access, message };
+}
+
 // ── Public queries/mutations ──
 
 export const list = query({
@@ -127,25 +206,28 @@ export const list = query({
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx);
     if (!access) return [];
-    const { orgId } = access;
+    const { userId, orgId } = access;
     const all = await ctx.db
       .query("threads")
       .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", orgId))
       .order("desc")
       .collect();
+    const visible = all.filter((thread) =>
+      canCurrentOrgUserAccessThread({ userId, orgId, thread }),
+    );
     if (args.archived) {
-      return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !!t.archivedAt));
+      return await withImessageGroupDisplayTitles(ctx, visible.filter((t) => !!t.archivedAt));
     }
-    return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !t.archivedAt));
+    return await withImessageGroupDisplayTitles(ctx, visible.filter((t) => !t.archivedAt));
   },
 });
 
 export const get = query({
   args: { id: v.id("threads") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { userId, orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.id);
-    if (!thread || thread.orgId !== orgId) return null;
+    if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread })) return null;
     return await withImessageGroupDisplayTitle(ctx, thread);
   },
 });
@@ -153,12 +235,12 @@ export const get = query({
 export const tryGet = query({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { userId, orgId } = await requireOrgAccess(ctx);
     try {
       const normalized = ctx.db.normalizeId("threads", args.id);
       if (!normalized) return null;
       const thread = await ctx.db.get(normalized);
-      if (!thread || thread.orgId !== orgId) return null;
+      if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread })) return null;
       return await withImessageGroupDisplayTitle(ctx, thread);
     } catch {
       return null;
@@ -169,9 +251,9 @@ export const tryGet = query({
 export const messages = query({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { userId, orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.threadId);
-    if (!thread || thread.orgId !== orgId) return [];
+    if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread })) return [];
     return await ctx.db
       .query("threadMessages")
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
@@ -194,10 +276,18 @@ export const listForClient = query({
       .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.clientOrgId))
       .order("desc")
       .collect();
+    const visible = all.filter((thread) =>
+      canAccessThread({
+        userId: access.userId,
+        userOrgId: access.brokerOrgId,
+        thread,
+        clientOrg: access.org,
+      }),
+    );
     if (args.archived) {
-      return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !!t.archivedAt));
+      return await withImessageGroupDisplayTitles(ctx, visible.filter((t) => !!t.archivedAt));
     }
-    return await withImessageGroupDisplayTitles(ctx, all.filter((t) => !t.archivedAt));
+    return await withImessageGroupDisplayTitles(ctx, visible.filter((t) => !t.archivedAt));
   },
 });
 
@@ -210,7 +300,15 @@ export const getForClient = query({
     const access = await getBrokerAccessToClientForQuery(ctx, args.clientOrgId);
     if (!access) return null;
     const thread = await ctx.db.get(args.id);
-    if (!thread || thread.orgId !== args.clientOrgId) return null;
+    if (
+      !thread ||
+      !canAccessThread({
+        userId: access.userId,
+        userOrgId: access.brokerOrgId,
+        thread,
+        clientOrg: access.org,
+      })
+    ) return null;
     return await withImessageGroupDisplayTitle(ctx, thread);
   },
 });
@@ -224,7 +322,15 @@ export const messagesForClient = query({
     const access = await getBrokerAccessToClientForQuery(ctx, args.clientOrgId);
     if (!access) return [];
     const thread = await ctx.db.get(args.threadId);
-    if (!thread || thread.orgId !== args.clientOrgId) return [];
+    if (
+      !thread ||
+      !canAccessThread({
+        userId: access.userId,
+        userOrgId: access.brokerOrgId,
+        thread,
+        clientOrg: access.org,
+      })
+    ) return [];
     return await ctx.db
       .query("threadMessages")
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
@@ -252,17 +358,19 @@ export const create = mutation({
           q.eq("orgId", orgId).eq("clientMutationId", args.clientMutationId),
         )
         .first();
-      if (existing) return existing._id;
+      if (
+        existing &&
+        canCurrentOrgUserAccessThread({ userId, orgId, thread: existing })
+      ) {
+        return existing._id;
+      }
     }
     const now = dayjs().valueOf();
     const domain = args.agentDomain || FALLBACK_AGENT_DOMAIN;
 
     // Look up the org's agent handle to build the thread-specific email
     const org = await ctx.db.get(orgId);
-    const handle = org?.agentHandle;
-    const threadEmail = handle
-      ? `${handle}+${shortId()}@${domain}`
-      : undefined;
+    const threadEmail = createThreadEmail(org?.agentHandle, domain);
 
     return await ctx.db.insert("threads", {
       orgId,
@@ -288,9 +396,9 @@ export const generateUploadUrl = mutation({
 export const getAttachmentUrl = query({
   args: { threadId: v.id("threads"), fileId: v.id("_storage") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { userId, orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.threadId);
-    if (!thread || thread.orgId !== orgId) return null;
+    if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread })) return null;
     const messages = await ctx.db
       .query("threadMessages")
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
@@ -307,9 +415,9 @@ export const getAttachmentUrl = query({
 export const getAttachmentUrls = query({
   args: { threadId: v.id("threads"), fileIds: v.array(v.id("_storage")) },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const { userId, orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.threadId);
-    if (!thread || thread.orgId !== orgId) return [];
+    if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread })) return [];
     const requested = new Set(args.fileIds);
     const messages = await ctx.db
       .query("threadMessages")
@@ -356,9 +464,10 @@ export const sendMessage = mutation({
     clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
-    const thread = await ctx.db.get(args.threadId);
-    if (!thread || thread.orgId !== orgId) throw new Error("Not found");
+    const { userId, orgId, thread } = await requireCurrentOrgThread(
+      ctx,
+      args.threadId,
+    );
 
     if (args.clientMutationId) {
       const existing = await ctx.db
@@ -476,9 +585,7 @@ export const sendMessage = mutation({
 export const archive = mutation({
   args: { id: v.id("threads") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const thread = await ctx.db.get(args.id);
-    if (!thread || thread.orgId !== orgId) throw new Error("Not found");
+    await requireCurrentOrgThread(ctx, args.id);
     await ctx.db.patch(args.id, { archivedAt: dayjs().valueOf() });
   },
 });
@@ -486,9 +593,7 @@ export const archive = mutation({
 export const unarchive = mutation({
   args: { id: v.id("threads") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const thread = await ctx.db.get(args.id);
-    if (!thread || thread.orgId !== orgId) throw new Error("Not found");
+    await requireCurrentOrgThread(ctx, args.id);
     await ctx.db.patch(args.id, { archivedAt: undefined });
   },
 });
@@ -496,9 +601,7 @@ export const unarchive = mutation({
 export const updateTitle = mutation({
   args: { id: v.id("threads"), title: v.string() },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const thread = await ctx.db.get(args.id);
-    if (!thread || thread.orgId !== orgId) throw new Error("Not found");
+    await requireCurrentOrgThread(ctx, args.id);
     await ctx.db.patch(args.id, { title: args.title });
   },
 });
@@ -510,9 +613,7 @@ export const updateTitle = mutation({
 export const insertProcessingMessage = mutation({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const thread = await ctx.db.get(args.threadId);
-    if (!thread || thread.orgId !== orgId) throw new Error("Not found");
+    const { orgId } = await requireCurrentOrgThread(ctx, args.threadId);
     return await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId,
@@ -531,9 +632,7 @@ export const updateAgentResponse = mutation({
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const msg = await ctx.db.get(args.messageId);
-    if (!msg || msg.orgId !== orgId) throw new Error("Not found");
+    const { message: msg } = await requireCurrentOrgThreadMessage(ctx, args.messageId);
     await ctx.db.patch(args.messageId, {
       content: args.content,
       status: undefined,
@@ -546,9 +645,7 @@ export const updateAgentResponse = mutation({
 export const streamContent = mutation({
   args: { messageId: v.id("threadMessages"), content: v.string() },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const msg = await ctx.db.get(args.messageId);
-    if (!msg || msg.orgId !== orgId) throw new Error("Not found");
+    await requireCurrentOrgThreadMessage(ctx, args.messageId);
     await ctx.db.patch(args.messageId, { content: args.content });
   },
 });
@@ -556,9 +653,7 @@ export const streamContent = mutation({
 export const setMessageError = mutation({
   args: { messageId: v.id("threadMessages"), error: v.string() },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const msg = await ctx.db.get(args.messageId);
-    if (!msg || msg.orgId !== orgId) throw new Error("Not found");
+    await requireCurrentOrgThreadMessage(ctx, args.messageId);
     await ctx.db.patch(args.messageId, { status: "error", error: args.error });
   },
 });
@@ -566,9 +661,8 @@ export const setMessageError = mutation({
 export const cancelProcessing = mutation({
   args: { messageId: v.id("threadMessages") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
-    const msg = await ctx.db.get(args.messageId);
-    if (!msg || msg.orgId !== orgId || msg.role !== "agent") throw new Error("Not found");
+    const { message: msg } = await requireCurrentOrgThreadMessage(ctx, args.messageId);
+    if (msg.role !== "agent") throw new Error("Not found");
     if (msg.status !== "processing") return; // already finished
     await ctx.db.patch(args.messageId, {
       content: "Response cancelled.",
@@ -581,9 +675,11 @@ export const cancelProcessing = mutation({
 export const retryAgentResponse = mutation({
   args: { messageId: v.id("threadMessages") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
-    const msg = await ctx.db.get(args.messageId);
-    if (!msg || msg.orgId !== orgId || msg.role !== "agent") throw new Error("Not found");
+    const { userId, orgId, message: msg } = await requireCurrentOrgThreadMessage(
+      ctx,
+      args.messageId,
+    );
+    if (msg.role !== "agent") throw new Error("Not found");
 
     // Find the user message that triggered this agent response
     // (the most recent user message before this agent message)
@@ -934,14 +1030,26 @@ export const updateTitleInternal = internalMutation({
 });
 
 export const listByOrg = internalQuery({
-  args: { orgId: v.id("organizations") },
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args) => {
     const threads = await ctx.db
       .query("threads")
       .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(50);
-    return await withImessageGroupDisplayTitles(ctx, threads);
+    const visible = args.userId
+      ? threads.filter((thread) =>
+          canCurrentOrgUserAccessThread({
+            userId: args.userId!,
+            orgId: args.orgId,
+            thread,
+          }),
+        )
+      : threads;
+    return await withImessageGroupDisplayTitles(ctx, visible);
   },
 });
 
@@ -966,17 +1074,22 @@ export const createProactiveInternal = internalMutation({
   args: {
     orgId: v.id("organizations"),
     userId: v.id("users"),
+    visibility: v.optional(v.literal("user_private")),
     title: v.string(),
     content: v.string(),
   },
   handler: async (ctx, args) => {
     const now = dayjs().valueOf();
+    const org = await ctx.db.get(args.orgId);
+    const threadEmail = createThreadEmail(org?.agentHandle);
     const threadId = await ctx.db.insert("threads", {
       orgId: args.orgId,
       title: args.title,
       createdBy: args.userId,
       lastMessageAt: now,
+      threadEmail,
       originChannel: "chat",
+      visibility: args.visibility,
     });
     const messageId = await ctx.db.insert("threadMessages", {
       threadId,
@@ -985,7 +1098,91 @@ export const createProactiveInternal = internalMutation({
       role: "agent",
       content: args.content,
     });
-    return { threadId, messageId };
+    return { threadId, messageId, threadEmail };
+  },
+});
+
+export const recordNotificationImessageInternal = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    userName: v.optional(v.string()),
+    phone: v.string(),
+    content: v.string(),
+    idempotencyKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existingMessage = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_messageId", (q) => q.eq("messageId", args.idempotencyKey))
+      .first();
+    if (existingMessage) {
+      const existingThread = await ctx.db.get(existingMessage.threadId);
+      if (
+        existingThread &&
+        existingThread.createdBy === args.userId &&
+        existingThread.visibility !== "user_private" &&
+        isDirectUserImessageThread(existingThread)
+      ) {
+        await ctx.db.patch(existingThread._id, { visibility: "user_private" });
+      } else if (
+        existingThread?.visibility !== "user_private" ||
+        existingThread.createdBy !== args.userId
+      ) {
+        throw new Error("Notification iMessage idempotency key belongs to another thread");
+      }
+      return {
+        threadId: existingMessage.threadId,
+        messageId: existingMessage._id,
+        duplicate: true,
+      };
+    }
+
+    const phoneThreads = await ctx.db
+      .query("threads")
+      .withIndex("by_orgId_threadPhone", (q) =>
+        q.eq("orgId", args.orgId).eq("threadPhone", args.phone),
+      )
+      .collect();
+    let thread = findPrivateDirectUserThread(phoneThreads, args.userId);
+    const now = dayjs().valueOf();
+    if (!thread) {
+      const migratable = findMigratableDirectUserThread(phoneThreads, args.userId);
+      if (migratable) {
+        await ctx.db.patch(migratable._id, {
+          lastMessageAt: now,
+          visibility: "user_private",
+        });
+        thread = { ...migratable, lastMessageAt: now, visibility: "user_private" };
+      }
+    }
+    if (!thread) {
+      const threadId = await ctx.db.insert("threads", {
+        orgId: args.orgId,
+        title: `iMessage - ${args.userName ?? args.phone}`,
+        createdBy: args.userId,
+        lastMessageAt: now,
+        threadPhone: args.phone,
+        originChannel: "imessage",
+        visibility: "user_private",
+      });
+      const created = await ctx.db.get(threadId);
+      if (!created) throw new Error("Could not create iMessage thread");
+      thread = created;
+    }
+
+    const messageId = await ctx.db.insert("threadMessages", {
+      threadId: thread._id,
+      orgId: args.orgId,
+      channel: "imessage",
+      role: "agent",
+      userId: args.userId,
+      userName: args.userName,
+      content: args.content,
+      messageId: args.idempotencyKey,
+    });
+    await ctx.db.patch(thread._id, { lastMessageAt: now });
+    return { threadId: thread._id, messageId, duplicate: false };
   },
 });
 
@@ -1017,10 +1214,7 @@ export const findOrCreateForDeliveryContact = internalMutation({
 
     const domain = args.agentDomain || FALLBACK_AGENT_DOMAIN;
     const org = await ctx.db.get(args.orgId);
-    const handle = org?.agentHandle;
-    const threadEmail = handle
-      ? `${handle}+${shortId()}@${domain}`
-      : undefined;
+    const threadEmail = createThreadEmail(org?.agentHandle, domain);
 
     return await ctx.db.insert("threads", {
       orgId: args.orgId,
@@ -1078,14 +1272,20 @@ export const findOrCreateByPhone = internalMutation({
     userName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
+    const candidates = await ctx.db
       .query("threads")
       .withIndex("by_orgId_threadPhone", (q) =>
         q.eq("orgId", args.orgId).eq("threadPhone", args.fromPhone)
       )
-      .first();
+      .collect();
+    const existing =
+      findPrivateDirectUserThread(candidates, args.userId) ??
+      findMigratableDirectUserThread(candidates, args.userId);
     if (existing) {
-      await ctx.db.patch(existing._id, { lastMessageAt: dayjs().valueOf() });
+      await ctx.db.patch(existing._id, {
+        lastMessageAt: dayjs().valueOf(),
+        visibility: "user_private",
+      });
       return existing._id;
     }
     const displayName = args.userName ?? args.fromPhone;
@@ -1096,6 +1296,7 @@ export const findOrCreateByPhone = internalMutation({
       lastMessageAt: dayjs().valueOf(),
       threadPhone: args.fromPhone,
       originChannel: "imessage",
+      visibility: "user_private",
     });
   },
 });
@@ -1118,9 +1319,30 @@ export const findOrCreateByImessageChat = internalMutation({
         q.eq("orgId", args.orgId).eq("imessageChatGuid", args.chatGuid),
       )
       .collect();
-    const existing = existingThreads.find(
+    const matchingChatThreads = existingThreads.filter(
       (thread) => (thread.imessageIsGroup ?? false) === args.isGroup,
     );
+    let existing = args.isGroup
+      ? existingThreads.find(
+          (thread) => (thread.imessageIsGroup ?? false) === args.isGroup,
+        )
+      : findPrivateDirectUserThread(matchingChatThreads, args.userId) ??
+        findMigratableDirectUserThread(matchingChatThreads, args.userId);
+    const fallbackPhone = args.fallbackPhone;
+    if (!args.isGroup && !existing && fallbackPhone) {
+      const phoneThreads = await ctx.db
+        .query("threads")
+        .withIndex("by_orgId_threadPhone", (q) =>
+          q.eq("orgId", args.orgId).eq("threadPhone", fallbackPhone),
+        )
+        .collect();
+      const unboundPhoneThreads = phoneThreads.filter(
+        (thread) => !thread.imessageChatGuid,
+      );
+      existing =
+        findPrivateDirectUserThread(unboundPhoneThreads, args.userId) ??
+        findMigratableDirectUserThread(unboundPhoneThreads, args.userId);
+    }
     if (existing) {
       const displayName = args.title ?? args.userName ?? args.fallbackPhone ?? "Group chat";
       const nextTitle = formatImessageThreadTitle({ isGroup: args.isGroup, displayName });
@@ -1128,7 +1350,9 @@ export const findOrCreateByImessageChat = internalMutation({
         lastMessageAt: dayjs().valueOf(),
         imessageIsGroup: args.isGroup,
         imessageScope: args.scope,
+        imessageChatGuid: existing.imessageChatGuid ?? args.chatGuid,
         threadPhone: existing.threadPhone ?? args.fallbackPhone,
+        visibility: args.isGroup ? undefined : "user_private",
         ...(args.isGroup && existing.title.startsWith(IMESSAGE_GROUP_TITLE_PREFIX)
           ? { title: nextTitle }
           : {}),
@@ -1147,6 +1371,7 @@ export const findOrCreateByImessageChat = internalMutation({
       imessageIsGroup: args.isGroup,
       imessageScope: args.scope,
       originChannel: "imessage",
+      visibility: args.isGroup ? undefined : "user_private",
     });
   },
 });
@@ -1368,10 +1593,7 @@ export const findOrCreateForEmail = internalMutation({
 
     // Look up agent handle for thread email
     const org = await ctx.db.get(args.orgId);
-    const handle = org?.agentHandle;
-    const threadEmail = handle
-      ? `${handle}+${shortId()}@${domain}`
-      : undefined;
+    const threadEmail = createThreadEmail(org?.agentHandle, domain);
 
     // Create a new thread
     const threadId = await ctx.db.insert("threads", {

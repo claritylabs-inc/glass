@@ -2,10 +2,23 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess } from "./lib/access";
+import { resolveMailboxAutomationPolicy } from "./lib/mailboxAutomation";
 
-function publicAccount(account: any) {
+const automationValidator = v.object({
+  policyImports: v.boolean(),
+  requirementImports: v.boolean(),
+  companyMemory: v.boolean(),
+});
+
+type ConnectedEmailScanState = Doc<"connectedEmailScanStates"> | null;
+
+function publicAccount(
+  account: Doc<"connectedEmailAccounts">,
+  scanState: ConnectedEmailScanState = null,
+) {
   return {
     _id: account._id,
     orgId: account.orgId,
@@ -17,15 +30,38 @@ function publicAccount(account: any) {
     port: account.port,
     secure: account.secure,
     username: account.username,
+    automation: account.automation,
+    automationConfigured: account.automation !== undefined,
     status: account.status,
     lastError: account.lastError,
     lastTestedAt: account.lastTestedAt,
+    lastScanAt: scanState?.lastSuccessfulAt ?? scanState?.lastAttemptedAt,
+    lastScanError: scanState?.lastError,
     createdAt: account.createdAt,
     updatedAt: account.updatedAt,
   };
 }
 
-async function requireDirectOrgMember(ctx: any, orgId: Id<"organizations">) {
+function isAutomationEligible(account: Doc<"connectedEmailAccounts">) {
+  if (account.status !== "active") return false;
+  return resolveMailboxAutomationPolicy(account).eligible;
+}
+
+function canManageConnectedMailbox(
+  account: Doc<"connectedEmailAccounts">,
+  userId: Id<"users">,
+  role: "admin" | "member" | undefined,
+) {
+  return (
+    account.userId === userId ||
+    (account.scope === "org" && role === "admin")
+  );
+}
+
+async function requireDirectOrgMember(
+  ctx: QueryCtx | MutationCtx,
+  orgId: Id<"organizations">,
+) {
   const access = await getOrgAccess(ctx, orgId);
   if (access.accessType !== "member") {
     throw new Error("Connected email is available only to direct org members");
@@ -43,13 +79,22 @@ export const list = query({
       .query("connectedEmailAccounts")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
       .collect();
-    return accounts
-      .filter(
-        (account) =>
-          account.status !== "revoked" &&
-          (account.scope === "org" || account.userId === access.userId),
-      )
-      .map(publicAccount);
+    const visible = accounts.filter(
+      (account) =>
+        account.status !== "revoked" &&
+        (account.scope === "org" || account.userId === access.userId),
+    );
+    return await Promise.all(
+      visible.map(async (account) => {
+        const scanState = await ctx.db
+          .query("connectedEmailScanStates")
+          .withIndex("by_accountId_mailbox", (query) =>
+            query.eq("accountId", account._id).eq("mailbox", "INBOX"),
+          )
+          .first();
+        return publicAccount(account, scanState);
+      }),
+    );
   },
 });
 
@@ -90,32 +135,69 @@ export const listAccessibleInternal = internalQuery({
   },
 });
 
-export const listOrgScopedInternal = internalQuery({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("connectedEmailAccounts")
-      .withIndex("by_orgId_status", (q) =>
-        q.eq("orgId", args.orgId).eq("status", "active"),
-      )
-      .filter((q) => q.eq(q.field("scope"), "org"))
-      .collect();
-  },
-});
-
-export const listOrgIdsWithOrgScopedAccountsInternal = internalQuery({
+export const listAutomationEligibleInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
     const accounts = await ctx.db
       .query("connectedEmailAccounts")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("status"), "active"),
-          q.eq(q.field("scope"), "org"),
-        ),
+      .withIndex("by_status", (query) => query.eq("status", "active"))
+      .collect();
+    return accounts.filter(isAutomationEligible);
+  },
+});
+
+export const listAutomationEligibleForOrgInternal = internalQuery({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const accounts = await ctx.db
+      .query("connectedEmailAccounts")
+      .withIndex("by_orgId_status", (query) =>
+        query.eq("orgId", args.orgId).eq("status", "active"),
       )
       .collect();
-    return [...new Set(accounts.map((account) => account.orgId))];
+    return accounts.filter(isAutomationEligible);
+  },
+});
+
+export const getAutomationEligibleInternal = internalQuery({
+  args: { accountId: v.id("connectedEmailAccounts") },
+  handler: async (ctx, args) => {
+    const account = await ctx.db.get(args.accountId);
+    if (!account || account.status !== "active") return null;
+    const policy = resolveMailboxAutomationPolicy(account);
+    if (!policy.eligible) return null;
+    return {
+      account,
+      automation: policy.automation,
+      alertOnly: policy.alertOnly,
+    };
+  },
+});
+
+export const getManageableForUserInternal = internalQuery({
+  args: {
+    accountId: v.id("connectedEmailAccounts"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const account = await ctx.db.get(args.accountId);
+    if (!account || account.status !== "active") return null;
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", account.orgId).eq("userId", args.userId),
+      )
+      .first();
+    if (!membership) return null;
+    if (!canManageConnectedMailbox(account, args.userId, membership.role)) {
+      return null;
+    }
+    const policy = resolveMailboxAutomationPolicy(account);
+    return {
+      account,
+      automation: policy.automation,
+      alertOnly: policy.alertOnly,
+    };
   },
 });
 
@@ -132,6 +214,7 @@ export const upsertInternal = internalMutation({
     username: v.string(),
     encryptedPassword: v.string(),
     encryptionKeyVersion: v.optional(v.string()),
+    automation: v.optional(automationValidator),
   },
   handler: async (ctx, args) => {
     const now = dayjs().valueOf();
@@ -156,6 +239,7 @@ export const upsertInternal = internalMutation({
       username: args.username,
       encryptedPassword: args.encryptedPassword,
       encryptionKeyVersion: args.encryptionKeyVersion,
+      ...(args.automation !== undefined ? { automation: args.automation } : {}),
       status: "active" as const,
       lastError: undefined,
       lastTestedAt: now,
@@ -199,8 +283,10 @@ export const updateScope = mutation({
     const account = await ctx.db.get(args.accountId);
     if (!account || account.status === "revoked") throw new Error("Email account not found");
     const access = await requireDirectOrgMember(ctx, account.orgId);
-    if (account.userId !== userId && access.role !== "admin") {
-      throw new Error("Only the account owner or an org admin can update scope");
+    if (!canManageConnectedMailbox(account, userId, access.role)) {
+      throw new Error(
+        "Only the owner can manage a personal mailbox; org admins can manage shared mailboxes",
+      );
     }
     if (args.scope === "org" && access.role !== "admin") {
       throw new Error("Only org admins can make a mailbox available to the organization");
@@ -212,6 +298,46 @@ export const updateScope = mutation({
   },
 });
 
+export const updateSettings = mutation({
+  args: {
+    accountId: v.id("connectedEmailAccounts"),
+    scope: v.union(v.literal("user"), v.literal("org")),
+    automation: automationValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const account = await ctx.db.get(args.accountId);
+    if (!account || account.status === "revoked") {
+      throw new Error("Email account not found");
+    }
+    const access = await requireDirectOrgMember(ctx, account.orgId);
+    if (!canManageConnectedMailbox(account, userId, access.role)) {
+      throw new Error(
+        "Only the owner can manage a personal mailbox; org admins can manage shared mailboxes",
+      );
+    }
+    if (args.scope === "org" && access.role !== "admin") {
+      throw new Error("Only org admins can make a mailbox available to the organization");
+    }
+    await ctx.db.patch(account._id, {
+      scope: args.scope,
+      automation: args.automation,
+      updatedAt: dayjs().valueOf(),
+    });
+    const scanState = await ctx.db
+      .query("connectedEmailScanStates")
+      .withIndex("by_accountId_mailbox", (query) =>
+        query.eq("accountId", account._id).eq("mailbox", "INBOX"),
+      )
+      .first();
+    return publicAccount(
+      { ...account, scope: args.scope, automation: args.automation },
+      scanState,
+    );
+  },
+});
+
 export const revoke = mutation({
   args: { accountId: v.id("connectedEmailAccounts") },
   handler: async (ctx, args) => {
@@ -220,8 +346,10 @@ export const revoke = mutation({
     const account = await ctx.db.get(args.accountId);
     if (!account || account.status === "revoked") return;
     const access = await requireDirectOrgMember(ctx, account.orgId);
-    if (account.userId !== userId && access.role !== "admin") {
-      throw new Error("Only the account owner or an org admin can disconnect this mailbox");
+    if (!canManageConnectedMailbox(account, userId, access.role)) {
+      throw new Error(
+        "Only the owner can manage a personal mailbox; org admins can manage shared mailboxes",
+      );
     }
     await ctx.db.patch(account._id, {
       status: "revoked",

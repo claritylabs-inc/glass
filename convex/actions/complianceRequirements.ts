@@ -306,12 +306,12 @@ async function runRequirementImport(
     fileName?: string;
     contentType?: string;
     sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
+    sourceName?: string;
     scope?: RequirementScope;
     appliesTo?: RequirementScope | "both";
   },
   context: RequirementImportContext,
   titlePrefix: "Pasted requirements" | "Mailbox requirements",
-  fallbackSourceDocumentName: "Pasted source text" | "Mailbox source text",
 ): Promise<{
   createdCount: number;
   requirementIds: Id<"insuranceRequirements">[];
@@ -339,8 +339,12 @@ async function runRequirementImport(
       ? "lease_agreement"
       : args.fileName?.toLowerCase().includes("contract")
         ? "client_contract"
-        : "vendor_requirements");
+      : "vendor_requirements");
   const scope = scopeFromArgs(args);
+  const sourceDocumentName =
+    args.sourceName?.trim() ||
+    args.fileName ||
+    `${titlePrefix} ${dayjs().format("YYYY-MM-DD HH:mm")}`;
 
   const sourceDocumentId: Id<"requirementSourceDocuments"> =
     await ctx.runMutation(
@@ -352,9 +356,7 @@ async function runRequirementImport(
         fileName: args.fileName,
         contentType: args.contentType,
         sourceType,
-        title:
-          args.fileName ||
-          `${titlePrefix} ${dayjs().format("YYYY-MM-DD HH:mm")}`,
+        title: sourceDocumentName,
         sourceTextExcerpt: sourceText.slice(0, 4000),
         parserBackend: fileExtraction?.parserBackend,
         parsedAt: fileExtraction?.parsedAt,
@@ -379,7 +381,7 @@ async function runRequirementImport(
       userId: context.userId,
       scope,
       sourceDocumentId,
-      sourceDocumentName: args.fileName || fallbackSourceDocumentName,
+      sourceDocumentName,
       sourceType,
       requirements: result.object.requirements
         .map((requirement) => normalizeImportedRequirement(requirement, scope))
@@ -398,6 +400,7 @@ export const importRequirements = action({
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
     sourceType: v.optional(sourceDocumentTypeValidator),
+    sourceName: v.optional(v.string()),
     scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
@@ -419,7 +422,6 @@ export const importRequirements = action({
       args,
       context,
       "Pasted requirements",
-      "Pasted source text",
     );
   },
 });
@@ -433,6 +435,7 @@ export const importRequirementsInternal = internalAction({
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
     sourceType: v.optional(sourceDocumentTypeValidator),
+    sourceName: v.optional(v.string()),
     scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
@@ -454,7 +457,6 @@ export const importRequirementsInternal = internalAction({
       args,
       context,
       "Mailbox requirements",
-      "Mailbox source text",
     );
   },
 });

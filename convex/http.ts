@@ -1,13 +1,14 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import { getImessageWorkerUrl, isImessageInboundEnabled } from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { getEmailDeliveryMode } from "./lib/resend";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
+import { canAccessThread } from "./lib/threadAccess";
 import {
   type McpPolicySummarySource,
   policyMatchesMcpFilters,
@@ -251,10 +252,8 @@ http.route({
     }
 
     const result = await ctx.runAction(
-      api.actions.connectedEmail.scanPreviousDay,
-      {
-        cronSecret: expectedSecret,
-      },
+      internal.actions.connectedEmailScan.scanAllMailboxes,
+      {},
     );
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -1118,6 +1117,7 @@ http.route({
       const identity = await requireMcpAuth(ctx, request);
       const threads = await ctx.runQuery(internal.threads.listByOrg, {
         orgId: identity.orgId as Id<"organizations">,
+        userId: identity.userId as Id<"users">,
       });
       return jsonResponse(threads.map(toMcpThreadSummaryDto));
     } catch (e) {
@@ -1144,7 +1144,12 @@ http.route({
       });
       if (
         !thread ||
-        (thread as Record<string, unknown>).orgId !== identity.orgId
+        !canAccessThread({
+          userId: identity.userId as Id<"users">,
+          userOrgId: identity.orgId as Id<"organizations">,
+          thread,
+          clientOrg: null,
+        })
       ) {
         return jsonResponse({ error: "Not found" }, 404);
       }
@@ -1961,7 +1966,10 @@ async function handleToolCall(
       };
     }
     case "list_threads": {
-      const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });
+      const threads = await ctx.runQuery(internal.threads.listByOrg, {
+        orgId,
+        userId,
+      });
       return {
         content: [
           {
@@ -1978,7 +1986,12 @@ async function handleToolCall(
       });
       if (
         !thread ||
-        (thread as Record<string, unknown>).orgId !== identity.orgId
+        !canAccessThread({
+          userId,
+          userOrgId: orgId,
+          thread,
+          clientOrg: null,
+        })
       )
         throw new Error("Not found");
       const messages = await ctx.runQuery(internal.threads.messagesInternal, {

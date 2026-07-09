@@ -2,8 +2,16 @@
 import { convexTest } from "convex-test";
 import { expect, test, describe } from "vitest";
 import schema from "./schema";
+import type { Id } from "./_generated/dataModel";
+import { listInbox, markRead } from "./notifications";
 
 const modules = import.meta.glob("./**/*.ts");
+const listInboxFn = listInbox as any;
+const markReadFn = markRead as any;
+
+function sessionFor(userId: Id<"users">) {
+  return { subject: `${userId}|session` };
+}
 
 async function seed(t: ReturnType<typeof convexTest>) {
   const orgId = await t.run(async (ctx) =>
@@ -147,5 +155,48 @@ describe("access control", () => {
     );
 
     expect(items).toHaveLength(0);
+  });
+
+  test("keeps user-targeted notifications private inside an organization", async () => {
+    const t = convexTest(schema, modules);
+    const { orgId, userId } = await seed(t);
+    const otherUserId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("users", { name: "Bob" });
+      await ctx.db.insert("orgMemberships", {
+        orgId,
+        userId: id,
+        role: "member",
+      });
+      return id;
+    });
+    const privateNotificationId = await t.run((ctx) =>
+      ctx.db.insert("notifications", {
+        orgId,
+        userId: otherUserId,
+        type: "mailbox_attention",
+        title: "Private mailbox item",
+        body: "Review your connected mailbox.",
+        severity: "warning",
+        status: "unread",
+        createdAt: 1000,
+      }),
+    );
+
+    const aliceInbox = await t
+      .withIdentity(sessionFor(userId))
+      .query(listInboxFn, { orgId });
+    expect(aliceInbox).toEqual([]);
+
+    await t.withIdentity(sessionFor(userId)).mutation(markReadFn, {
+      ids: [privateNotificationId],
+    });
+    expect(
+      await t.run((ctx) => ctx.db.get(privateNotificationId)),
+    ).toMatchObject({ status: "unread" });
+
+    const bobInbox = await t
+      .withIdentity(sessionFor(otherUserId))
+      .query(listInboxFn, { orgId });
+    expect(bobInbox).toHaveLength(1);
   });
 });

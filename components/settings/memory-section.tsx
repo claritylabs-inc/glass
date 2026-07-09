@@ -1,19 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
-import type { FunctionReference } from "convex/server";
 import dayjs from "dayjs";
-import { Check, Loader2, Pencil, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useSettingsActions } from "@/components/settings/settings-actions-context";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { Label } from "@/components/ui/label";
 import {
-  OperationalItem,
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
   OperationalPanel,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { Textarea } from "@/components/ui/textarea";
+import { useCurrentOrg } from "@/hooks/use-current-org";
 import {
   useCachedQuery,
   useUpdateCachedQuery,
@@ -26,23 +32,6 @@ type MemoryItem = {
   source: string;
   updatedAt: number;
 };
-
-type OrgMemoryApi = typeof api.orgMemory & {
-  update: FunctionReference<
-    "mutation",
-    "public",
-    { id: Id<"orgMemory">; content: string },
-    MemoryItem
-  >;
-  remove: FunctionReference<
-    "mutation",
-    "public",
-    { id: Id<"orgMemory"> },
-    { deleted: boolean }
-  >;
-};
-
-const orgMemoryApi = api.orgMemory as OrgMemoryApi;
 
 const TYPE_LABELS: Record<string, string> = {
   fact: "Facts",
@@ -59,89 +48,226 @@ const SOURCE_LABELS: Record<string, string> = {
   analysis: "Analysis",
 };
 
-const listArgs = {};
-
-function errorMessage(error: unknown) {
+const MEMORY_TYPE_ORDER = ["fact", "preference", "risk_note", "observation"];
+function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error
     ? error.message.replace(/^Uncaught Error: /, "")
-    : "Failed to update memory";
+    : fallback;
 }
 
-export function MemorySection() {
-  const memories = useCachedQuery(
-    "orgMemory.list",
-    api.orgMemory.list,
-    listArgs,
-  ) as MemoryItem[] | undefined;
-  const updateMemory = useMutation(orgMemoryApi.update);
-  const removeMemory = useMutation(orgMemoryApi.remove);
-  const updateCachedMemory = useUpdateCachedQuery<MemoryItem[], typeof listArgs>(
-    "orgMemory.list",
-  );
-  const [editingId, setEditingId] = useState<Id<"orgMemory"> | null>(null);
-  const [draft, setDraft] = useState("");
-  const [savingId, setSavingId] = useState<Id<"orgMemory"> | null>(null);
-  const [deletingId, setDeletingId] = useState<Id<"orgMemory"> | null>(null);
+function MemoryEditDrawer({
+  memory,
+  onOpenChange,
+  onUpdated,
+  onRemoved,
+}: {
+  memory: MemoryItem;
+  onOpenChange: (open: boolean) => void;
+  onUpdated: (memory: MemoryItem) => Promise<void>;
+  onRemoved: (id: Id<"orgMemory">) => Promise<void>;
+}) {
+  const updateMemory = useMutation(api.orgMemory.update);
+  const removeMemory = useMutation(api.orgMemory.remove);
+  const [draft, setDraft] = useState(memory.content);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const normalizedDraft = draft.trim().replace(/\s+/g, " ");
+  const canSave = !!normalizedDraft && normalizedDraft !== memory.content && !saving;
 
-  function startEdit(memory: MemoryItem) {
-    setEditingId(memory._id);
-    setDraft(memory.content);
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setDraft("");
-  }
-
-  async function saveEdit(memory: MemoryItem) {
-    const content = draft.trim().replace(/\s+/g, " ");
-    if (!content) {
+  async function saveMemory() {
+    if (!normalizedDraft) {
       toast.error("Memory cannot be empty");
       return;
     }
-    if (content === memory.content) {
-      cancelEdit();
-      return;
-    }
 
-    setSavingId(memory._id);
+    setSaving(true);
     try {
-      await updateMemory({ id: memory._id, content });
-      const updatedAt = dayjs().valueOf();
-      await updateCachedMemory(listArgs, (current) =>
-        current.map((row) =>
-          row._id === memory._id ? { ...row, content, updatedAt } : row,
-        ),
-      );
-      cancelEdit();
+      const updated = await updateMemory({
+        id: memory._id,
+        content: normalizedDraft,
+      });
+      await onUpdated(updated);
+      toast.success("Memory updated");
+      onOpenChange(false);
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, "Failed to update memory"));
     } finally {
-      setSavingId(null);
+      setSaving(false);
     }
   }
 
-  async function deleteMemory(memory: MemoryItem) {
-    if (!window.confirm("Delete this memory item?")) return;
-
-    setDeletingId(memory._id);
+  async function deleteMemory() {
+    setDeleting(true);
     try {
       await removeMemory({ id: memory._id });
-      await updateCachedMemory(listArgs, (current) =>
-        current.filter((row) => row._id !== memory._id),
-      );
-      if (editingId === memory._id) cancelEdit();
+      await onRemoved(memory._id);
+      toast.success("Memory deleted");
+      onOpenChange(false);
     } catch (error) {
-      toast.error(errorMessage(error));
+      toast.error(errorMessage(error, "Failed to delete memory"));
     } finally {
-      setDeletingId(null);
+      setDeleting(false);
     }
   }
+
+  return (
+    <SettingsDrawer
+      open
+      onOpenChange={onOpenChange}
+      title="Edit memory"
+      footer={
+        confirmDelete ? (
+          <>
+            <PillButton
+              variant="secondary"
+              disabled={deleting}
+              onClick={() => setConfirmDelete(false)}
+            >
+              Keep memory
+            </PillButton>
+            <PillButton
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void deleteMemory()}
+            >
+              {deleting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              {deleting ? "Deleting…" : "Delete memory"}
+            </PillButton>
+          </>
+        ) : (
+          <>
+            <PillButton
+              variant="destructive"
+              disabled={saving}
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete
+            </PillButton>
+            <PillButton disabled={!canSave} onClick={() => void saveMemory()}>
+              {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {saving ? "Saving…" : "Save changes"}
+            </PillButton>
+          </>
+        )
+      }
+    >
+      {confirmDelete ? (
+        <OperationalPanel as="div" className="border-destructive/20 bg-destructive/5 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
+            <div>
+              <p className="text-base font-medium text-foreground">
+                Delete this company memory?
+              </p>
+              <p className="mt-1 text-base text-muted-foreground">
+                Glass will stop using it in future advice and servicing.
+              </p>
+            </div>
+          </div>
+        </OperationalPanel>
+      ) : (
+        <div className="space-y-5">
+          <div className="space-y-1.5">
+            <Label htmlFor={`memory-${memory._id}`}>Company context</Label>
+            <Textarea
+              id={`memory-${memory._id}`}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              className="min-h-28 resize-y"
+              autoFocus
+            />
+          </div>
+
+          <OperationalLabelValueList title="Memory details">
+            <OperationalLabelValueRow
+              label="Type"
+              value={TYPE_LABELS[memory.type] ?? memory.type}
+            />
+            <OperationalLabelValueRow
+              label="Source"
+              value={SOURCE_LABELS[memory.source] ?? memory.source}
+            />
+            <OperationalLabelValueRow
+              label="Last updated"
+              value={dayjs(memory.updatedAt).format("MMM D, YYYY")}
+            />
+          </OperationalLabelValueList>
+        </div>
+      )}
+    </SettingsDrawer>
+  );
+}
+
+export function MemorySection() {
+  const orgId = useCurrentOrg()?.orgId;
+  const listArgs = useMemo(() => (orgId ? { orgId } : null), [orgId]);
+  const memories = useCachedQuery(
+    "orgMemory.list",
+    api.orgMemory.list,
+    listArgs ?? "skip",
+  );
+  const updateCachedMemory = useUpdateCachedQuery<
+    MemoryItem[],
+    { orgId: Id<"organizations"> }
+  >("orgMemory.list");
+  const { setRightPanel } = useSettingsActions();
+  const [selectedMemoryId, setSelectedMemoryId] =
+    useState<Id<"orgMemory"> | null>(null);
+  const selectedMemory = memories?.find(
+    (memory) => memory._id === selectedMemoryId,
+  );
+
+  const updateMemoryLocally = useCallback(
+    async (updated: MemoryItem) => {
+      if (!listArgs) return;
+      await updateCachedMemory(listArgs, (current) =>
+        current.map((row) => (row._id === updated._id ? updated : row)),
+      );
+    },
+    [listArgs, updateCachedMemory],
+  );
+
+  const removeMemoryLocally = useCallback(
+    async (id: Id<"orgMemory">) => {
+      if (!listArgs) return;
+      await updateCachedMemory(listArgs, (current) =>
+        current.filter((row) => row._id !== id),
+      );
+    },
+    [listArgs, updateCachedMemory],
+  );
+
+  useEffect(() => {
+    setRightPanel(
+      selectedMemory ? (
+        <MemoryEditDrawer
+          key={selectedMemory._id}
+          memory={selectedMemory}
+          onOpenChange={(open) => {
+            if (!open) setSelectedMemoryId(null);
+          }}
+          onUpdated={updateMemoryLocally}
+          onRemoved={removeMemoryLocally}
+        />
+      ) : null,
+    );
+    return () => setRightPanel(null);
+  }, [
+    removeMemoryLocally,
+    selectedMemory,
+    setRightPanel,
+    updateMemoryLocally,
+  ]);
 
   if (memories === undefined) {
     return (
-      <OperationalPanel as="div" className="px-5 py-10 text-center text-base text-muted-foreground/60">
-        Loading memory...
+      <OperationalPanel as="div" className="px-5 py-10 text-center text-base text-muted-foreground">
+        Loading memory…
       </OperationalPanel>
     );
   }
@@ -149,7 +275,7 @@ export function MemorySection() {
   if (memories.length === 0) {
     return (
       <OperationalPanel as="div" className="px-5 py-10 text-center">
-        <p className="text-base text-muted-foreground">No memory items</p>
+        <p className="text-base text-muted-foreground">No company memory yet</p>
       </OperationalPanel>
     );
   }
@@ -161,110 +287,42 @@ export function MemorySection() {
     return acc;
   }, {});
 
-  const order = ["fact", "preference", "risk_note", "observation"];
-
   return (
     <div className="space-y-3">
-      {order
-        .filter((type) => grouped[type]?.length)
-        .map((type) => (
-          <OperationalPanel key={type}>
-            <OperationalPanelHeader
-              title={TYPE_LABELS[type] ?? type}
-              action={
-                <span className="text-label text-muted-foreground/50">
-                  {grouped[type].length}
+      {MEMORY_TYPE_ORDER.filter((type) => grouped[type]?.length).map((type) => (
+        <OperationalPanel key={type}>
+          <OperationalPanelHeader
+            title={TYPE_LABELS[type] ?? type}
+            action={
+              <span className="text-base text-muted-foreground">
+                {grouped[type].length}
+              </span>
+            }
+            className="px-5 py-3.5"
+          />
+          <div className="divide-y divide-foreground/6">
+            {grouped[type].map((memory) => (
+              <button
+                key={memory._id}
+                type="button"
+                onClick={() => setSelectedMemoryId(memory._id)}
+                className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/10"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-base leading-snug text-foreground">
+                    {memory.content}
+                  </span>
+                  <span className="mt-1 block text-base text-muted-foreground">
+                    {SOURCE_LABELS[memory.source] ?? memory.source} ·{" "}
+                    {dayjs(memory.updatedAt).format("MMM D, YYYY")}
+                  </span>
                 </span>
-              }
-              className="px-5 py-3.5"
-            />
-            <div className="divide-y divide-foreground/6">
-              {grouped[type].map((memory) => {
-                const isEditing = editingId === memory._id;
-                const isSaving = savingId === memory._id;
-                const isDeleting = deletingId === memory._id;
-                return (
-                  <OperationalItem
-                    key={memory._id}
-                    className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-start sm:justify-between"
-                  >
-                    <div className="min-w-0 flex-1">
-                      {isEditing ? (
-                        <textarea
-                          value={draft}
-                          onChange={(event) => setDraft(event.target.value)}
-                          className="min-h-20 w-full resize-y rounded-md border border-foreground/10 bg-background px-3 py-2 text-base leading-snug text-foreground outline-none transition-colors focus:border-foreground/25 focus:ring-2 focus:ring-foreground/5"
-                          autoFocus
-                        />
-                      ) : (
-                        <p className="text-base leading-snug text-foreground">
-                          {memory.content}
-                        </p>
-                      )}
-                      <p className="mt-1 text-label text-muted-foreground/50">
-                        {SOURCE_LABELS[memory.source] ?? memory.source}
-                        {" · "}
-                        {dayjs(memory.updatedAt).format("M/D/YYYY")}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {isEditing ? (
-                        <>
-                          <PillButton
-                            variant="icon"
-                            size="compact"
-                            label="Save memory"
-                            disabled={isSaving}
-                            onClick={() => void saveEdit(memory)}
-                          >
-                            {isSaving ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <Check className="size-3.5" />
-                            )}
-                          </PillButton>
-                          <PillButton
-                            variant="icon"
-                            size="compact"
-                            label="Cancel edit"
-                            disabled={isSaving}
-                            onClick={cancelEdit}
-                          >
-                            <X className="size-3.5" />
-                          </PillButton>
-                        </>
-                      ) : (
-                        <PillButton
-                          variant="icon"
-                          size="compact"
-                          label="Edit memory"
-                          disabled={isDeleting}
-                          onClick={() => startEdit(memory)}
-                        >
-                          <Pencil className="size-3.5" />
-                        </PillButton>
-                      )}
-                      <PillButton
-                        variant="icon"
-                        size="compact"
-                        label="Delete memory"
-                        disabled={isSaving || isDeleting}
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => void deleteMemory(memory)}
-                      >
-                        {isDeleting ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="size-3.5" />
-                        )}
-                      </PillButton>
-                    </div>
-                  </OperationalItem>
-                );
-              })}
-            </div>
-          </OperationalPanel>
-        ))}
+                <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground/50" />
+              </button>
+            ))}
+          </div>
+        </OperationalPanel>
+      ))}
     </div>
   );
 }
