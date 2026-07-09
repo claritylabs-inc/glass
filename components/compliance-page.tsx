@@ -683,6 +683,21 @@ function DrawerDetail({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+function normalizeCheckNote(value: string | undefined) {
+  return value?.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function latestCheckNote(check: Requirement["complianceCheck"]) {
+  const note = check?.notes?.trim();
+  const policy = check?.matchedPolicy;
+  if (!note) return undefined;
+  if (policy) {
+    const matchedSummary = `Matched ${policy.carrier ?? "policy"} ${policy.policyNumber ?? ""}`;
+    if (normalizeCheckNote(note) === normalizeCheckNote(matchedSummary)) return undefined;
+  }
+  return note;
+}
+
 function RequirementDrawer({
   requirement,
   checking,
@@ -699,6 +714,7 @@ function RequirementDrawer({
   const check = requirement.complianceCheck;
   const policy = check?.matchedPolicy;
   const policyIds = matchedPolicyIdsForRequirement(requirement);
+  const checkNote = latestCheckNote(check);
   const canDeepCheck =
     requirement.canArchive !== false &&
     requirement.scope === "own_org" &&
@@ -771,7 +787,9 @@ function RequirementDrawer({
         </section>
         {check ? (
           <section className="space-y-2 border-t border-foreground/6 pt-5">
-            <p className="text-label text-muted-foreground">Latest check</p>
+            <p className="text-base font-medium text-muted-foreground/60">
+              Latest check
+            </p>
             {policy || policyIds.length > 0 ? (
               <>
                 {policyIds.length > 0 ? (
@@ -795,8 +813,8 @@ function RequirementDrawer({
             ) : (
               <p className="text-base text-muted-foreground">No current policy match.</p>
             )}
-            {check.notes ? (
-              <p className="text-base text-muted-foreground">{check.notes}</p>
+            {checkNote ? (
+              <p className="text-base text-muted-foreground">{checkNote}</p>
             ) : null}
           </section>
         ) : null}
