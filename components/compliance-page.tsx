@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
@@ -15,8 +16,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { PolicyCitation } from "@/components/context-reference-card";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
-import { ActionSurfaceButton } from "@/components/ui/action-surface";
+import { ActionSurface } from "@/components/ui/action-surface";
 import { Badge } from "@/components/ui/badge";
 import { FileDropZone } from "@/components/ui/file-drop";
 import { Input } from "@/components/ui/input";
@@ -61,6 +63,9 @@ import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-quer
 type RequirementScope = "vendors" | "own_org";
 type ComplianceStatus = "met" | "not_met" | "expiring_soon" | "expired" | "unverified";
 type SourceFilter = "all" | RequirementSourceType;
+type LineFilter = "all" | `line:${string}`;
+type LimitFilter = "all" | "deductible" | "forms" | "provisions" | `limit:${string}`;
+type StatusFilter = "all" | ComplianceStatus | "defined";
 type ComplianceView = "overview" | "requirements";
 
 type ComplianceApi = {
@@ -135,6 +140,7 @@ type Requirement = {
     checkedAt?: number;
     checkedBy?: "system" | "user" | "agent";
     matchedPolicy?: {
+      _id?: Id<"policies">;
       carrier?: string;
       policyNumber?: string;
       insuredName?: string;
@@ -204,16 +210,73 @@ function sourceLabel(value: SourceFilter) {
   return value === "all" ? "All sources" : REQUIREMENT_SOURCE_TYPE_LABELS[value];
 }
 
+function lineFilterValue(lineOfBusiness: string | undefined): LineFilter {
+  return `line:${lineOfBusiness ?? "UN"}`;
+}
+
+function lineFilterLabel(value: LineFilter) {
+  return value === "all" ? "All lines" : lobLabel(value.slice("line:".length));
+}
+
+function lineDisplayLabel(lineOfBusiness: string | undefined) {
+  return lineOfBusiness ? lobLabel(lineOfBusiness) : lobLabel("UN");
+}
+
+function limitFilterValue(kind: string): LimitFilter {
+  return `limit:${kind}`;
+}
+
+function requirementLimitFilters(requirement: Requirement): LimitFilter[] {
+  const filters = (requirement.limits ?? []).map((limit) => limitFilterValue(limit.kind));
+  if (requirement.maxDeductible) filters.push("deductible");
+  if ((requirement.requiredForms ?? []).length > 0) filters.push("forms");
+  if ((requirement.provisions ?? []).length > 0) filters.push("provisions");
+  return Array.from(new Set(filters));
+}
+
+function limitFilterLabel(value: LimitFilter) {
+  if (value === "all") return "All limit types";
+  if (value === "deductible") return "Deductible";
+  if (value === "forms") return "Required forms";
+  if (value === "provisions") return "Provisions";
+  return limitKindLabel(value.slice("limit:".length));
+}
+
+function statusFilterValue(requirement: Requirement): StatusFilter {
+  return requirement.complianceCheck?.status ?? "defined";
+}
+
+function statusFilterLabel(value: StatusFilter) {
+  return value === "all" ? "All statuses" : statusMeta(value === "defined" ? undefined : value).label;
+}
+
+function pageLabel(requirement: Requirement) {
+  if (!requirement.sourcePageStart) return undefined;
+  if (requirement.sourcePageEnd && requirement.sourcePageEnd !== requirement.sourcePageStart) {
+    return `pp. ${requirement.sourcePageStart}-${requirement.sourcePageEnd}`;
+  }
+  return `p. ${requirement.sourcePageStart}`;
+}
+
 function requirementSourceLine(requirement: Requirement) {
-  const page =
-    requirement.sourcePageStart &&
-    (requirement.sourcePageEnd && requirement.sourcePageEnd !== requirement.sourcePageStart
-      ? `pp. ${requirement.sourcePageStart}-${requirement.sourcePageEnd}`
-      : `p. ${requirement.sourcePageStart}`);
   return [
     REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)],
     requirement.sourceDocumentName,
-    page,
+    pageLabel(requirement),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function requirementSourcePrimary(requirement: Requirement) {
+  return requirement.clientRequirementSource?.clientOrg?.name ?? REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)];
+}
+
+function requirementSourceSecondary(requirement: Requirement) {
+  return [
+    requirement.clientRequirementSource?.clientOrg ? REQUIREMENT_SOURCE_TYPE_LABELS[sourceType(requirement)] : undefined,
+    requirement.sourceDocumentName,
+    pageLabel(requirement),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -270,6 +333,47 @@ function needsAttention(status?: ComplianceStatus) {
   return status === "not_met" || status === "expired";
 }
 
+function matchedPolicyIdsForRequirement(requirement: Requirement) {
+  return Array.from(
+    new Set(
+      [
+        ...(requirement.complianceCheck?.matchedPolicyIds ?? []),
+        requirement.complianceCheck?.matchedPolicy?._id,
+      ].filter((id): id is Id<"policies"> => Boolean(id)),
+    ),
+  );
+}
+
+function matchedPolicyIdsForRequirements(requirements: Requirement[]) {
+  return Array.from(
+    new Set(requirements.flatMap((requirement) => matchedPolicyIdsForRequirement(requirement))),
+  );
+}
+
+function PolicyTagList({
+  policyIds,
+  emptyLabel,
+}: {
+  policyIds: Id<"policies">[];
+  emptyLabel?: string;
+}) {
+  if (policyIds.length === 0) {
+    return emptyLabel ? <span className="text-muted-foreground">{emptyLabel}</span> : null;
+  }
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1">
+      {policyIds.slice(0, 3).map((policyId) => (
+        <PolicyCitation key={policyId} id={policyId} />
+      ))}
+      {policyIds.length > 3 ? (
+        <Badge variant="outline" className="h-5 rounded-full px-1.5 text-tag text-muted-foreground">
+          +{policyIds.length - 3}
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <OperationalPanel as="div" className="p-5">
@@ -311,18 +415,10 @@ function OverviewTab({
   onAdd,
 }: {
   requirements: Requirement[];
-  onOpenRequirements: () => void;
+  onOpenRequirements: (lineOfBusiness: string) => void;
   onAdd: () => void;
 }) {
   const checked = requirements.filter((requirement) => requirement.complianceCheck);
-  const met = checked.filter((requirement) => requirement.complianceCheck?.status === "met");
-  const attention = checked.filter((requirement) =>
-    needsAttention(requirement.complianceCheck?.status),
-  );
-  const expiring = checked.filter(
-    (requirement) => requirement.complianceCheck?.status === "expiring_soon",
-  );
-
   const lobGroups = new Map<string, Requirement[]>();
   for (const requirement of checked) {
     const key = requirement.lineOfBusiness ?? "UN";
@@ -334,69 +430,79 @@ function OverviewTab({
 
   if (checked.length === 0) return <EmptyState onAdd={onAdd} />;
 
-  const stats = [
-    { label: "Met", count: met.length, icon: CheckCircle2, iconClass: "text-emerald-500" },
-    {
-      label: "Not met",
-      count: attention.length,
-      icon: AlertCircle,
-      iconClass: attention.length > 0 ? "text-red-500" : "text-muted-foreground",
-    },
-    {
-      label: "Expiring soon",
-      count: expiring.length,
-      icon: Clock,
-      iconClass: expiring.length > 0 ? "text-amber-500" : "text-muted-foreground",
-    },
-  ];
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        {stats.map((stat) => (
-          <OperationalPanel key={stat.label} as="div" className="px-4 py-3">
-            <div className="flex items-center gap-1.5 text-label text-muted-foreground">
-              <stat.icon className={`h-3.5 w-3.5 ${stat.iconClass}`} />
-              {stat.label}
-            </div>
-            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-              {stat.count}
-            </p>
-          </OperationalPanel>
-        ))}
-      </div>
       <div className="grid gap-3 md:grid-cols-2">
         {sortedGroups.map(([lob, rows]) => {
           const groupMet = rows.filter(
             (requirement) => requirement.complianceCheck?.status === "met",
           ).length;
           const groupAttention = rows.filter(
-            (requirement) =>
-              requirement.complianceCheck &&
-              requirement.complianceCheck.status !== "met",
+            (requirement) => needsAttention(requirement.complianceCheck?.status),
           ).length;
+          const groupExpiring = rows.filter(
+            (requirement) => requirement.complianceCheck?.status === "expiring_soon",
+          ).length;
+          const policyIds = matchedPolicyIdsForRequirements(rows);
           return (
-            <ActionSurfaceButton
+            <ActionSurface
               key={lob}
-              type="button"
-              onClick={onOpenRequirements}
-              className="px-4 py-3"
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpenRequirements(lob)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOpenRequirements(lob);
+                }
+              }}
+              className="relative cursor-pointer px-4 py-3 pr-32"
             >
+              {groupAttention > 0 ? (
+                <Badge
+                  variant="outline"
+                  className="absolute right-3 top-3 border-red-500/25 bg-red-500/10 text-red-500"
+                >
+                  {groupAttention} needs attention
+                </Badge>
+              ) : groupExpiring > 0 ? (
+                <Badge
+                  variant="outline"
+                  className="absolute right-3 top-3 border-amber-500/25 bg-amber-500/10 text-amber-500"
+                >
+                  {groupExpiring} expiring
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="absolute right-3 top-3 border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
+                >
+                  Met
+                </Badge>
+              )}
               <p className="truncate text-base font-medium text-foreground">
-                {lob} · {lobLabel(lob)}
+                {lineDisplayLabel(lob)}
               </p>
-              <p className="mt-2 text-label text-muted-foreground">Needs attention</p>
-              <p className="text-2xl font-semibold tabular-nums text-foreground">
-                {groupAttention}
+              <p className="mt-2 text-label text-muted-foreground">
+                {groupMet} of {rows.length} requirements met
               </p>
-              <div className="mt-2">
+              <div className="mt-3">
                 <ComplianceMeter met={groupMet} total={rows.length} />
               </div>
               <div className="mt-1.5 flex items-center justify-between text-label text-muted-foreground">
                 <span>{groupMet} met</span>
                 <span>{rows.length} total</span>
               </div>
-            </ActionSurfaceButton>
+              {policyIds.length > 0 ? (
+                <div
+                  className="mt-3"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <PolicyTagList policyIds={policyIds} />
+                </div>
+              ) : null}
+            </ActionSurface>
           );
         })}
       </div>
@@ -417,21 +523,23 @@ function RequirementsTable({
   });
   return (
     <OperationalPanel as="div">
-      <Table className="min-w-[860px]">
+      <Table className="min-w-[1080px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[9%] px-4">Line</TableHead>
-            <TableHead className="w-[27%]">Coverage</TableHead>
-            <TableHead className="w-[20%]">Limit type</TableHead>
-            <TableHead className="w-[11%]">Limit</TableHead>
-            <TableHead className="w-[12%]">Status</TableHead>
-            <TableHead className="w-[21%] px-4">Policy match</TableHead>
+            <TableHead className="w-[14%] px-4">Line</TableHead>
+            <TableHead className="w-[21%]">Coverage</TableHead>
+            <TableHead className="w-[18%]">Source</TableHead>
+            <TableHead className="w-[16%]">Limit type</TableHead>
+            <TableHead className="w-[9%]">Limit</TableHead>
+            <TableHead className="w-[10%]">Status</TableHead>
+            <TableHead className="w-[12%] px-4">Policy match</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {sorted.map((requirement) => {
             const limits = requirement.limits ?? [];
-            const policy = requirement.complianceCheck?.matchedPolicy;
+            const policyIds = matchedPolicyIdsForRequirement(requirement);
+            const sourceSecondary = requirementSourceSecondary(requirement);
             return (
               <TableRow
                 key={requirement._id}
@@ -439,7 +547,7 @@ function RequirementsTable({
                 onClick={() => onSelect(requirement._id)}
               >
                 <TableCell className="px-4 font-medium text-foreground">
-                  {requirement.lineOfBusiness ?? "—"}
+                  {lineDisplayLabel(requirement.lineOfBusiness)}
                 </TableCell>
                 <TableCell className="max-w-64">
                   <p className="truncate font-medium text-foreground">{requirement.title}</p>
@@ -447,6 +555,12 @@ function RequirementsTable({
                     <p className="truncate text-label text-muted-foreground">
                       From {requirement.clientRequirementSource.clientOrg.name}
                     </p>
+                  ) : null}
+                </TableCell>
+                <TableCell className="max-w-52">
+                  <p className="truncate text-foreground">{requirementSourcePrimary(requirement)}</p>
+                  {sourceSecondary ? (
+                    <p className="truncate text-label text-muted-foreground">{sourceSecondary}</p>
                   ) : null}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
@@ -473,15 +587,12 @@ function RequirementsTable({
                   )}
                 </TableCell>
                 <TableCell className="max-w-52 px-4">
-                  {policy ? (
-                    <p className="truncate text-foreground">
-                      {[policy.carrier, policy.policyNumber].filter(Boolean).join(" · ")}
-                    </p>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {requirement.complianceCheck ? "No match" : "—"}
-                    </span>
-                  )}
+                  <div onClick={(event) => event.stopPropagation()}>
+                    <PolicyTagList
+                      policyIds={policyIds}
+                      emptyLabel={requirement.complianceCheck ? "No match" : "—"}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -492,11 +603,35 @@ function RequirementsTable({
   );
 }
 
-function DrawerDetail({ label, value }: { label: string; value: string }) {
+function RequirementsFilterSelect({
+  label,
+  value,
+  onValueChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1.5 text-label font-medium text-muted-foreground">
+      {label}
+      <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
+        <SelectTrigger size="sm" className="w-full bg-background">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>{children}</SelectContent>
+      </Select>
+    </label>
+  );
+}
+
+function DrawerDetail({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="grid grid-cols-[10rem_1fr] gap-3 text-base">
       <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0 break-words text-foreground">{value}</span>
+      <div className="min-w-0 break-words text-foreground">{value}</div>
     </div>
   );
 }
@@ -516,6 +651,7 @@ function RequirementDrawer({
 }) {
   const check = requirement.complianceCheck;
   const policy = check?.matchedPolicy;
+  const policyIds = matchedPolicyIdsForRequirement(requirement);
   const canDeepCheck =
     requirement.canArchive !== false &&
     requirement.scope === "own_org" &&
@@ -559,7 +695,7 @@ function RequirementDrawer({
               <p className="truncate text-base font-medium text-foreground">{requirement.title}</p>
               <p className="truncate text-base text-muted-foreground">
                 {requirement.lineOfBusiness
-                  ? `${requirement.lineOfBusiness} · ${lobLabel(requirement.lineOfBusiness)}`
+                  ? lineDisplayLabel(requirement.lineOfBusiness)
                   : "Coverage"}
               </p>
             </div>
@@ -606,19 +742,23 @@ function RequirementDrawer({
         {check ? (
           <section className="space-y-2 border-t border-foreground/6 pt-5">
             <p className="text-label text-muted-foreground">Latest check</p>
-            {policy ? (
+            {policy || policyIds.length > 0 ? (
               <>
-                <DrawerDetail
-                  label="Matched policy"
-                  value={[policy.carrier, policy.policyNumber].filter(Boolean).join(" · ")}
-                />
-                {policy.coverageName ? (
+                {policyIds.length > 0 ? (
+                  <DrawerDetail label="Matched policy" value={<PolicyTagList policyIds={policyIds} />} />
+                ) : policy ? (
+                  <DrawerDetail
+                    label="Matched policy"
+                    value={[policy.carrier, policy.policyNumber].filter(Boolean).join(" · ")}
+                  />
+                ) : null}
+                {policy?.coverageName ? (
                   <DrawerDetail label="Coverage" value={policy.coverageName} />
                 ) : null}
                 {detectedLimit ? (
                   <DrawerDetail label="Current limit" value={detectedLimit} />
                 ) : null}
-                {policy.expirationDate ? (
+                {policy?.expirationDate ? (
                   <DrawerDetail label="Expires" value={policy.expirationDate} />
                 ) : null}
               </>
@@ -690,6 +830,9 @@ export function CompliancePage() {
   const [drawerMode, setDrawerMode] = useState<"bulk" | "manual">("bulk");
   const [requirementScope, setRequirementScope] = useState<RequirementScope>("own_org");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [lineFilter, setLineFilter] = useState<LineFilter>("all");
+  const [limitFilter, setLimitFilter] = useState<LimitFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedRequirementId, setSelectedRequirementId] = useState<Id<"insuranceRequirements"> | null>(null);
   const [sourceText, setSourceText] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
@@ -724,8 +867,33 @@ export function CompliancePage() {
     const present = Array.from(new Set(scopedRequirements.map(sourceType)));
     return ["all", ...present] as SourceFilter[];
   }, [scopedRequirements]);
+  const lineFilters = useMemo(() => {
+    const present = Array.from(
+      new Set(scopedRequirements.map((requirement) => lineFilterValue(requirement.lineOfBusiness))),
+    ).sort((a, b) => lineFilterLabel(a).localeCompare(lineFilterLabel(b)));
+    return ["all", ...present] as LineFilter[];
+  }, [scopedRequirements]);
+  const limitFilters = useMemo(() => {
+    const present = Array.from(
+      new Set(scopedRequirements.flatMap(requirementLimitFilters)),
+    ).sort((a, b) => limitFilterLabel(a).localeCompare(limitFilterLabel(b)));
+    return ["all", ...present] as LimitFilter[];
+  }, [scopedRequirements]);
+  const statusFilters = useMemo(() => {
+    const order: StatusFilter[] = ["met", "not_met", "expired", "expiring_soon", "unverified", "defined"];
+    const present = new Set(scopedRequirements.map(statusFilterValue));
+    return ["all", ...order.filter((status) => present.has(status))] as StatusFilter[];
+  }, [scopedRequirements]);
+  const effectiveSourceFilter = sourceFilters.includes(sourceFilter) ? sourceFilter : "all";
+  const effectiveLineFilter = lineFilters.includes(lineFilter) ? lineFilter : "all";
+  const effectiveLimitFilter = limitFilters.includes(limitFilter) ? limitFilter : "all";
+  const effectiveStatusFilter = statusFilters.includes(statusFilter) ? statusFilter : "all";
   const visibleRequirements = scopedRequirements.filter(
-    (requirement) => sourceFilter === "all" || sourceType(requirement) === sourceFilter,
+    (requirement) =>
+      (effectiveSourceFilter === "all" || sourceType(requirement) === effectiveSourceFilter) &&
+      (effectiveLineFilter === "all" || lineFilterValue(requirement.lineOfBusiness) === effectiveLineFilter) &&
+      (effectiveLimitFilter === "all" || requirementLimitFilters(requirement).includes(effectiveLimitFilter)) &&
+      (effectiveStatusFilter === "all" || statusFilterValue(requirement) === effectiveStatusFilter),
   );
   const selectedRequirement =
     (requirements ?? []).find((requirement) => requirement._id === selectedRequirementId) ?? null;
@@ -933,7 +1101,7 @@ export function CompliancePage() {
                 <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {COMMON_LOBS.map((code) => (
-                    <SelectItem key={code} value={code}>{code} · {lobLabel(code)}</SelectItem>
+                    <SelectItem key={code} value={code}>{lobLabel(code)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1005,7 +1173,13 @@ export function CompliancePage() {
         ) : view === "overview" ? (
           <OverviewTab
             requirements={requirements}
-            onOpenRequirements={() => setView("requirements")}
+            onOpenRequirements={(line) => {
+              setSourceFilter("all");
+              setLineFilter(lineFilterValue(line));
+              setLimitFilter("all");
+              setStatusFilter("all");
+              setView("requirements");
+            }}
             onAdd={openAddRequirements}
           />
         ) : (
@@ -1018,15 +1192,44 @@ export function CompliancePage() {
                 </TabsList>
               </Tabs>
             ) : null}
-            {sourceFilters.length > 2 ? (
-              <Tabs value={sourceFilter} onValueChange={(value) => setSourceFilter(value as SourceFilter)}>
-                <TabsList variant="pill">
-                  {sourceFilters.map((filter) => (
-                    <TabsTrigger key={filter} value={filter}>{sourceLabel(filter)}</TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            ) : null}
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <RequirementsFilterSelect
+                label="Source"
+                value={effectiveSourceFilter}
+                onValueChange={(value) => setSourceFilter(value as SourceFilter)}
+              >
+                {sourceFilters.map((filter) => (
+                  <SelectItem key={filter} value={filter}>{sourceLabel(filter)}</SelectItem>
+                ))}
+              </RequirementsFilterSelect>
+              <RequirementsFilterSelect
+                label="Line"
+                value={effectiveLineFilter}
+                onValueChange={(value) => setLineFilter(value as LineFilter)}
+              >
+                {lineFilters.map((filter) => (
+                  <SelectItem key={filter} value={filter}>{lineFilterLabel(filter)}</SelectItem>
+                ))}
+              </RequirementsFilterSelect>
+              <RequirementsFilterSelect
+                label="Limit type"
+                value={effectiveLimitFilter}
+                onValueChange={(value) => setLimitFilter(value as LimitFilter)}
+              >
+                {limitFilters.map((filter) => (
+                  <SelectItem key={filter} value={filter}>{limitFilterLabel(filter)}</SelectItem>
+                ))}
+              </RequirementsFilterSelect>
+              <RequirementsFilterSelect
+                label="Status"
+                value={effectiveStatusFilter}
+                onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+              >
+                {statusFilters.map((filter) => (
+                  <SelectItem key={filter} value={filter}>{statusFilterLabel(filter)}</SelectItem>
+                ))}
+              </RequirementsFilterSelect>
+            </div>
             {visibleRequirements.length === 0 ? (
               <EmptyState onAdd={openAddRequirements} />
             ) : (
