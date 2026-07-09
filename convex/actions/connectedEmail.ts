@@ -18,14 +18,16 @@ import {
   fetchParsedMessage,
   imapErrorMessage,
   isGlassSearchLoopEmail,
-  isPdfAttachment,
-  isRequirementAttachment,
   messageRef,
   parseMessageRef,
   withClient,
   IMPORT_DOWNLOAD_MAX_BYTES,
   type ConnectedEmailAccount,
 } from "../lib/imapMailbox";
+import {
+  isPdfMailboxAttachment,
+  isSupportedRequirementAttachment,
+} from "../lib/mailboxAutomation";
 
 const SEARCH_CANDIDATE_MULTIPLIER = 3;
 const SEARCH_MAX_CANDIDATES = 30;
@@ -803,7 +805,7 @@ export const importPolicyAttachmentsInternal = internalAction({
       );
       const requested = new Set((args.filenames ?? []).map((name) => name.toLowerCase()));
       const attachments = parsed.attachments.filter((attachment) => {
-        if (!isPdfAttachment(attachment)) return false;
+        if (!isPdfMailboxAttachment(attachment)) return false;
         if (requested.size === 0) return true;
         return !!attachment.filename && requested.has(attachment.filename.toLowerCase());
       });
@@ -912,7 +914,7 @@ export const importRequirementAttachmentsInternal = internalAction({
         ? null
         : new Set(args.filenames.map((name) => name.toLowerCase()));
       const attachments = parsed.attachments.filter((attachment) => {
-        if (!isRequirementAttachment(attachment)) return false;
+        if (!isSupportedRequirementAttachment(attachment)) return false;
         if (requested === null) return true;
         return !!attachment.filename && requested.has(attachment.filename.toLowerCase());
       });

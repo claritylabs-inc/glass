@@ -7,7 +7,7 @@ import type {
   MessageAddressObject,
   MessageStructureObject,
 } from "imapflow";
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -124,19 +124,20 @@ type ScanAccountResult =
     }
   | { status: "error"; error: string };
 
-export type ManualScanResult = {
-  status: "scanned";
-  dateFrom: string;
-  dateTo: string;
-  matchedCount: number;
-  scannedCount: number;
-  processedCount: number;
-  alreadyProcessedCount: number;
-  unreadableCount: number;
-  attentionCount: number;
-  truncated: boolean;
-  threadId?: Id<"threads">;
-};
+const manualScanResultValidator = v.object({
+  status: v.literal("scanned"),
+  dateFrom: v.string(),
+  dateTo: v.string(),
+  matchedCount: v.number(),
+  scannedCount: v.number(),
+  processedCount: v.number(),
+  alreadyProcessedCount: v.number(),
+  unreadableCount: v.number(),
+  attentionCount: v.number(),
+  truncated: v.boolean(),
+  threadId: v.optional(v.id("threads")),
+});
+type ManualScanResult = Infer<typeof manualScanResultValidator>;
 
 const automationInternal = internal.connectedEmailAutomation;
 
@@ -1161,7 +1162,7 @@ export const scanMailboxRange = action({
     dateFrom: v.string(),
     dateTo: v.string(),
   },
-  returns: v.any(),
+  returns: manualScanResultValidator,
   handler: async (ctx, args): Promise<ManualScanResult> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");

@@ -1,6 +1,8 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 
 const classificationValidator = v.union(
   v.literal("ignore"),
@@ -10,6 +12,19 @@ const classificationValidator = v.union(
   v.literal("multiple"),
   v.literal("review_needed"),
 );
+
+function automationItemByMessageKey(
+  ctx: MutationCtx,
+  accountId: Id<"connectedEmailAccounts">,
+  messageKey: string,
+) {
+  return ctx.db
+    .query("connectedEmailAutomationItems")
+    .withIndex("by_accountId_messageKey", (query) =>
+      query.eq("accountId", accountId).eq("messageKey", messageKey),
+    )
+    .first();
+}
 
 export const getScanStateInternal = internalQuery({
   args: {
@@ -153,12 +168,11 @@ export const claimItemInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = dayjs().valueOf();
-    const existing = await ctx.db
-      .query("connectedEmailAutomationItems")
-      .withIndex("by_accountId_messageKey", (query) =>
-        query.eq("accountId", args.accountId).eq("messageKey", args.messageKey),
-      )
-      .first();
+    const existing = await automationItemByMessageKey(
+      ctx,
+      args.accountId,
+      args.messageKey,
+    );
     if (existing?.status === "completed" || existing?.status === "skipped") {
       return { claimed: false, itemId: existing._id, status: existing.status };
     }
@@ -194,7 +208,7 @@ export const claimItemInternal = internalMutation({
 // A message the IMAP fetch cannot read must not stall the scan watermark
 // forever: record the failure per attempt, then give up and skip the message
 // so the watermark can advance past it.
-export const MAX_UNREADABLE_MESSAGE_ATTEMPTS = 3;
+const MAX_UNREADABLE_MESSAGE_ATTEMPTS = 3;
 
 export const recordUnreadableItemInternal = internalMutation({
   args: {
@@ -212,12 +226,11 @@ export const recordUnreadableItemInternal = internalMutation({
     args,
   ): Promise<{ attempts: number; willRetry: boolean }> => {
     const now = dayjs().valueOf();
-    const existing = await ctx.db
-      .query("connectedEmailAutomationItems")
-      .withIndex("by_accountId_messageKey", (query) =>
-        query.eq("accountId", args.accountId).eq("messageKey", args.messageKey),
-      )
-      .first();
+    const existing = await automationItemByMessageKey(
+      ctx,
+      args.accountId,
+      args.messageKey,
+    );
     if (existing?.status === "completed" || existing?.status === "skipped") {
       return { attempts: existing.attempts, willRetry: false };
     }
