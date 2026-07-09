@@ -55,25 +55,23 @@ export function registerClientTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "create_insurance_requirement",
-    "Create a typed insurance compliance requirement. Requires write scope and org admin role.",
+    "Create a typed insurance coverage requirement checked against policy coverages. Requires write scope and org admin role. Limit amounts are plain numbers (1000000, not \"$1M\").",
     {
       title: z.string(),
-      kind: z.enum(["coverage", "insurer", "condition"]),
+      kind: z.literal("coverage").default("coverage"),
       scope: z.enum(["vendors", "own_org"]).default("vendors"),
       requirementText: z.string(),
-      lineOfBusiness: z.string().optional(),
+      lineOfBusiness: z.string(),
       limits: z.array(z.object({
         kind: z.string(),
         amount: z.number(),
         label: z.string().optional(),
       })).optional(),
       provisions: z.array(z.string()).optional(),
-      minAmBestRating: z.string().optional(),
-      conditionType: z.string().optional(),
       sourceDocumentName: z.string().optional(),
       sourceExcerpt: z.string().optional(),
     },
-    async ({ title, kind, scope, requirementText, lineOfBusiness, limits, provisions, minAmBestRating, conditionType, sourceDocumentName, sourceExcerpt }) => {
+    async ({ title, kind, scope, requirementText, lineOfBusiness, limits, provisions, sourceDocumentName, sourceExcerpt }) => {
       const data = await client.post("/api/v1/compliance/requirements", {
         title,
         kind,
@@ -82,8 +80,6 @@ export function registerClientTools(server: McpServer, client: GlassClient) {
         line_of_business: lineOfBusiness,
         limits,
         provisions,
-        min_am_best_rating: minAmBestRating,
-        condition_type: conditionType,
         source_document_name: sourceDocumentName,
         source_excerpt: sourceExcerpt,
       });

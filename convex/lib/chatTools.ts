@@ -1,8 +1,5 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { REQUIREMENT_KINDS } from "./complianceTypes";
-
-const REQUIREMENT_KIND_FILTER_VALUES = [...REQUIREMENT_KINDS, "all"] as const;
 
 /**
  * Tool definitions for agentic chat.
@@ -39,7 +36,7 @@ export const compareCoverages = tool({
 
 export const lookupComplianceRequirements = tool({
   description:
-    "Look up the organization's saved insurance compliance requirements. Use this when the user asks what contractors/vendors must carry, asks about my requirements, internal insurance standards, minimum required limits, deductibles, endorsements, certificate instructions, or compliance checklist requirements. Results distinguish scope and rule kind.",
+    "Look up the organization's saved insurance coverage requirements. Use this when the user asks what contractors/vendors must carry, asks about my requirements, minimum required limits, deductibles, endorsements, or compliance checklist requirements. Results distinguish scope.",
   inputSchema: z.object({
     query: z
       .string()
@@ -52,12 +49,6 @@ export const lookupComplianceRequirements = tool({
       .optional()
       .describe(
         "Filter by scope. Use vendors for contractor/vendor obligations, own_org for requirements owned by this org, or all to search every requirement.",
-      ),
-    kind: z
-      .enum(REQUIREMENT_KIND_FILTER_VALUES)
-      .optional()
-      .describe(
-        "Filter by rule kind: coverage, insurer, condition, or all.",
       ),
   }),
 });

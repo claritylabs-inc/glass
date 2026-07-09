@@ -1633,13 +1633,13 @@ const MCP_TOOLS = [
   {
     name: "create_insurance_requirement",
     description:
-      "Create a typed insurance compliance requirement. Requires write scope and org admin role.",
+      "Create a typed insurance coverage requirement checked against policy coverages. Requires write scope and org admin role.",
     inputSchema: {
       type: "object" as const,
       properties: {
         kind: {
           type: "string",
-          description: "coverage, insurer, or condition",
+          description: 'Always "coverage"',
         },
         scope: {
           type: "string",
@@ -1652,21 +1652,12 @@ const MCP_TOOLS = [
         },
         line_of_business: {
           type: "string",
-          description: "ACORD line of business code for coverage rules, e.g. CGL",
+          description: "ACORD line of business code, e.g. CGL",
         },
         limits: {
           type: "array",
           description:
-            "Coverage limits: { kind, amount, label }. Limit kinds include per_occurrence, general_aggregate, combined_single_limit, other.",
-        },
-        min_am_best_rating: {
-          type: "string",
-          description: "Minimum AM Best rating for insurer rules, e.g. A-",
-        },
-        condition_type: {
-          type: "string",
-          description:
-            "Condition type, e.g. cancellation_notice, certificate_delivery, claims_reporting, subcontractor_insurance, other",
+            "Coverage limits: { kind, amount, label }. amount is a plain number (1000000, not \"$1M\"). Limit kinds include per_occurrence, general_aggregate, combined_single_limit, other.",
         },
         source_document_name: {
           type: "string",
@@ -1678,7 +1669,7 @@ const MCP_TOOLS = [
             "Optional exact original source language supporting the requirement",
         },
       },
-      required: ["kind", "scope", "title", "requirement_text"],
+      required: ["kind", "scope", "title", "requirement_text", "line_of_business"],
     },
   },
   {
@@ -2320,12 +2311,6 @@ async function handleToolCall(
             ? String(args.line_of_business)
             : undefined,
           limits: Array.isArray(args.limits) ? args.limits : undefined,
-          minAmBestRating: args.min_am_best_rating
-            ? String(args.min_am_best_rating)
-            : undefined,
-          conditionType: args.condition_type
-            ? String(args.condition_type)
-            : undefined,
           sourceDocumentName: args.source_document_name
             ? String(args.source_document_name)
             : undefined,
@@ -3492,33 +3477,6 @@ http.route({
             : Array.isArray(body.requiredForms)
               ? body.requiredForms
               : undefined,
-          minAmBestRating: body.min_am_best_rating
-            ? String(body.min_am_best_rating)
-            : body.minAmBestRating
-              ? String(body.minAmBestRating)
-              : undefined,
-          minAmBestFinancialSize: body.min_am_best_financial_size
-            ? String(body.min_am_best_financial_size)
-            : body.minAmBestFinancialSize
-              ? String(body.minAmBestFinancialSize)
-              : undefined,
-          admittedRequired:
-            typeof body.admitted_required === "boolean"
-              ? body.admitted_required
-              : typeof body.admittedRequired === "boolean"
-                ? body.admittedRequired
-                : undefined,
-          conditionType: body.condition_type
-            ? String(body.condition_type)
-            : body.conditionType
-              ? String(body.conditionType)
-              : undefined,
-          noticeDays:
-            typeof body.notice_days === "number"
-              ? body.notice_days
-              : typeof body.noticeDays === "number"
-                ? body.noticeDays
-                : undefined,
           sourceDocumentName: body.source_document_name
             ? String(body.source_document_name)
             : body.sourceDocumentName

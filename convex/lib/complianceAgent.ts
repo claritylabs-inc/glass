@@ -1,10 +1,8 @@
 import type { Doc } from "../_generated/dataModel";
 import {
-  REQUIREMENT_CONDITION_TYPE_LABELS,
   REQUIREMENT_LIMIT_KIND_LABELS,
   REQUIREMENT_PROVISION_LABELS,
   REQUIREMENT_SOURCE_TYPE_LABELS,
-  type RequirementKind,
   type RequirementScope,
 } from "./complianceTypes";
 import { lobLabel } from "./linesOfBusiness";
@@ -12,7 +10,6 @@ import { lobLabel } from "./linesOfBusiness";
 type Requirement = Pick<
   Doc<"insuranceRequirements">,
   | "_id"
-  | "kind"
   | "scope"
   | "title"
   | "requirementText"
@@ -21,11 +18,6 @@ type Requirement = Pick<
   | "maxDeductible"
   | "provisions"
   | "requiredForms"
-  | "minAmBestRating"
-  | "minAmBestFinancialSize"
-  | "admittedRequired"
-  | "conditionType"
-  | "noticeDays"
   | "sourceType"
   | "sourceDocumentName"
   | "sourceExcerpt"
@@ -84,7 +76,6 @@ function formatRequirementDetails(requirement: Requirement) {
         }`
       : undefined,
     `scope: ${SCOPE_LABELS[requirement.scope ?? "vendors"]}`,
-    `kind: ${requirement.kind ?? "coverage"}`,
     requirement.lineOfBusiness
       ? `lineOfBusiness: ${requirement.lineOfBusiness} (${lobLabel(requirement.lineOfBusiness)})`
       : undefined,
@@ -105,19 +96,6 @@ function formatRequirementDetails(requirement: Requirement) {
     requirement.requiredForms?.length
       ? `requiredForms: ${requirement.requiredForms.join(", ")}`
       : undefined,
-    requirement.minAmBestRating
-      ? `minAmBestRating: ${requirement.minAmBestRating}`
-      : undefined,
-    requirement.minAmBestFinancialSize
-      ? `minAmBestFinancialSize: ${requirement.minAmBestFinancialSize}`
-      : undefined,
-    requirement.admittedRequired ? "admittedRequired: true" : undefined,
-    requirement.conditionType
-      ? `conditionType: ${REQUIREMENT_CONDITION_TYPE_LABELS[requirement.conditionType]}`
-      : undefined,
-    requirement.noticeDays !== undefined
-      ? `noticeDays: ${requirement.noticeDays}`
-      : undefined,
   ];
   return details.filter(Boolean).join("; ");
 }
@@ -127,11 +105,9 @@ export function filterComplianceRequirements(
   {
     query,
     scope,
-    kind,
   }: {
     query?: string;
     scope?: RequirementScope | "all";
-    kind?: RequirementKind | "all";
   },
 ) {
   const queryTerms = normalizeText(query)
@@ -140,12 +116,10 @@ export function filterComplianceRequirements(
 
   return requirements.filter((requirement) => {
     if (scope && scope !== "all" && requirement.scope !== scope) return false;
-    if (kind && kind !== "all" && requirement.kind !== kind) return false;
     if (!queryTerms.length) return true;
     const haystack = normalizeText(
       [
         requirement.title,
-        requirement.kind,
         requirement.scope,
         requirement.lineOfBusiness,
         requirement.lineOfBusiness ? lobLabel(requirement.lineOfBusiness) : "",
@@ -195,5 +169,5 @@ export function formatComplianceRequirementsContext(
     );
   }
 
-  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are typed insurance compliance rules. scope says whose obligation this is. kind says how it is evaluated: coverage rules are checked against structured policy coverage evidence, insurer rules are manually verified carrier standards, and condition rules are manually verified administrative obligations. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
+  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are typed insurance coverage requirements checked against structured policy coverage evidence. scope says whose obligation this is. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
 }
