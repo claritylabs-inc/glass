@@ -11,7 +11,6 @@ import type { ActionCtx } from "../_generated/server";
 import { generateObjectForOrg } from "../lib/models";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import {
-  REQUIREMENT_CONDITION_TYPES,
   REQUIREMENT_LIMIT_KINDS,
   REQUIREMENT_PROVISIONS,
   REQUIREMENT_SCOPES,
@@ -54,7 +53,6 @@ const sourceDocumentTypeValidator = v.union(
 const ScopeSchema = z.enum(REQUIREMENT_SCOPES);
 
 const RequirementSchema = z.object({
-  kind: z.enum(["coverage", "insurer", "condition"]),
   scope: ScopeSchema.nullable(),
   title: z.string().min(1).max(120),
   requirementText: z.string().min(1).max(4000),
@@ -79,11 +77,6 @@ const RequirementSchema = z.object({
   retroactiveDateOnOrBefore: z.string().min(1).max(60).nullable(),
   provisions: z.array(z.enum(REQUIREMENT_PROVISIONS)).max(8).nullable(),
   requiredForms: z.array(z.string().min(1).max(40)).max(12).nullable(),
-  minAmBestRating: z.string().min(1).max(20).nullable(),
-  minAmBestFinancialSize: z.string().min(1).max(20).nullable(),
-  admittedRequired: z.boolean().nullable(),
-  conditionType: z.enum(REQUIREMENT_CONDITION_TYPES).nullable(),
-  noticeDays: z.number().int().nonnegative().nullable(),
   sourceExcerpt: z.string().min(1).max(4000),
   sourcePageStart: z.number().int().positive().nullable(),
   sourcePageEnd: z.number().int().positive().nullable(),
@@ -148,53 +141,44 @@ function normalizeImportedRequirement(
   requirement: ImportedRequirement,
   defaultScope: RequirementScope,
 ) {
-  const kind = requirement.kind;
-  const scope = requirement.scope ?? defaultScope;
   return {
-    kind,
-    scope,
+    kind: "coverage" as const,
+    scope: requirement.scope ?? defaultScope,
     title: requirement.title.trim(),
     requirementText: requirement.requirementText.trim(),
-    lineOfBusiness:
-      kind === "coverage" ? optionalString(requirement.lineOfBusiness) : undefined,
-    limits:
-      kind === "coverage"
-        ? (requirement.limits ?? []).map((limit) => ({
-          kind: limit.kind,
-          amount: limit.amount,
-          label: optionalString(limit.label),
-        }))
-        : undefined,
-    maxDeductible:
-      kind === "coverage" && requirement.maxDeductible
-        ? {
-          amount: requirement.maxDeductible.amount,
-          label: optionalString(requirement.maxDeductible.label),
-        }
-        : undefined,
-    coverageForm: kind === "coverage" ? requirement.coverageForm ?? undefined : undefined,
-    retroactiveDateOnOrBefore:
-      kind === "coverage"
-        ? optionalString(requirement.retroactiveDateOnOrBefore)
-        : undefined,
-    provisions: kind === "coverage" ? requirement.provisions ?? undefined : undefined,
-    requiredForms: kind === "coverage" ? requirement.requiredForms ?? undefined : undefined,
-    minAmBestRating:
-      kind === "insurer" ? optionalString(requirement.minAmBestRating) : undefined,
-    minAmBestFinancialSize:
-      kind === "insurer"
-        ? optionalString(requirement.minAmBestFinancialSize)
-        : undefined,
-    admittedRequired:
-      kind === "insurer" ? requirement.admittedRequired ?? undefined : undefined,
-    conditionType:
-      kind === "condition" ? requirement.conditionType ?? "other" : undefined,
-    noticeDays:
-      kind === "condition" ? optionalNumber(requirement.noticeDays) : undefined,
+    lineOfBusiness: optionalString(requirement.lineOfBusiness),
+    limits: (requirement.limits ?? []).map((limit) => ({
+      kind: limit.kind,
+      amount: limit.amount,
+      label: optionalString(limit.label),
+    })),
+    maxDeductible: requirement.maxDeductible
+      ? {
+        amount: requirement.maxDeductible.amount,
+        label: optionalString(requirement.maxDeductible.label),
+      }
+      : undefined,
+    coverageForm: requirement.coverageForm ?? undefined,
+    retroactiveDateOnOrBefore: optionalString(
+      requirement.retroactiveDateOnOrBefore,
+    ),
+    provisions: requirement.provisions ?? undefined,
+    requiredForms: requirement.requiredForms ?? undefined,
     sourceExcerpt: requirement.sourceExcerpt.trim(),
     sourcePageStart: optionalNumber(requirement.sourcePageStart),
     sourcePageEnd: optionalNumber(requirement.sourcePageEnd),
   };
+}
+
+function isCheckableCoverageRequirement(
+  requirement: ReturnType<typeof normalizeImportedRequirement>,
+) {
+  return Boolean(
+    requirement.lineOfBusiness &&
+    (requirement.limits.length > 0 ||
+      requirement.maxDeductible ||
+      requirement.provisions?.length),
+  );
 }
 
 async function extractPdfRequirementText(
@@ -271,7 +255,7 @@ function buildPrompt({
     ? existingRequirements
         .map(
           (requirement) =>
-            `- ${requirement.kind}/${requirement.scope}/${requirement.lineOfBusiness ?? requirement.conditionType ?? "n/a"}: ${requirement.title}: ${requirement.requirementText}`,
+            `- ${requirement.scope}/${requirement.lineOfBusiness ?? "n/a"}: ${requirement.title}: ${requirement.requirementText}`,
         )
         .join("\n")
     : "None";
@@ -279,34 +263,27 @@ function buildPrompt({
     (code) => `${code}: ${ACORD_LOB_LABELS[code]}`,
   ).join("\n");
 
-  return `Create a concise, source-backed insurance compliance rule set from the source text.
+  return `Extract policy coverage requirements from the source text as a concise, source-backed rule set.
 
 Default scope: ${scope}. Use "vendors" for requirements vendors/contractors must satisfy. Use "own_org" for requirements this organization must satisfy.
 
-Each rule must be one of:
-- coverage: policy coverage requirement that can be checked against structured policy coverages.
-- insurer: carrier/insurer standard such as AM Best rating, financial size, admitted/licensed status. These are manually verified in v1.
-- condition: administrative obligation such as cancellation notice, certificate delivery, claims reporting, or subcontractor insurance. These are manually verified in v1.
+Only extract coverage requirements: rules that can be checked against a structured insurance policy (line of business, limits, deductibles, coverage form, provisions, endorsement forms).
 
-Coverage rules:
+Skip everything that is not a policy coverage requirement, including:
+- carrier/insurer standards such as AM Best rating, financial size, or admitted/licensed status
+- administrative conditions such as cancellation notice, certificate of insurance delivery, claims reporting, or subcontractor flow-down obligations
+- indemnification, warranty, and other contract clauses that are not insurance coverage
+
+For each coverage rule:
 - Set lineOfBusiness to an ACORD code. Use one of these common commercial codes when possible:
 ${commonLobs}
 - Split unrelated insurance lines into separate rules.
 - Extract each required limit into limits[] with kind, amount, and original label.
+- Amounts must be plain numbers: 1000000 for "$1M" or "$1,000,000". Keep the source wording in label.
 - Use limit kinds only from: ${REQUIREMENT_LIMIT_KINDS.join(", ")}.
 - Extract provisions from: ${REQUIREMENT_PROVISIONS.join(", ")}.
 - Extract required endorsement/form numbers such as CG 20 10 or CG 20 37 into requiredForms.
 - Extract max deductible/retention only when the source states a ceiling.
-
-Insurer rules:
-- Store AM Best rating and financial size fields when stated.
-- Keep carrier ratings manual; do not invent rating data.
-
-Condition rules:
-- Use conditionType from: ${REQUIREMENT_CONDITION_TYPES.join(", ")}.
-- Use noticeDays for cancellation/nonrenewal notice periods.
-
-For every rule:
 - sourceExcerpt is required and should be the shortest exact source language supporting the rule.
 - Set source pages when obvious from page markers; otherwise leave null.
 - Do not invent unsupported requirements.
@@ -387,7 +364,7 @@ async function runRequirementImport(
   const result = await generateObjectForOrg(ctx, args.orgId, "requirement_extraction", {
     schema: RequirementImportSchema,
     system:
-      "You convert contract, lease, certificate, and vendor insurance language into typed ACORD-25-style compliance rules for Glass.",
+      "You convert contract, lease, certificate, and vendor insurance language into typed ACORD-25-style coverage requirements for Glass.",
     prompt: buildPrompt({
       sourceText,
       existingRequirements: context.existingRequirements,
@@ -404,9 +381,9 @@ async function runRequirementImport(
       sourceDocumentId,
       sourceDocumentName: args.fileName || fallbackSourceDocumentName,
       sourceType,
-      requirements: result.object.requirements.map((requirement) =>
-        normalizeImportedRequirement(requirement, scope),
-      ),
+      requirements: result.object.requirements
+        .map((requirement) => normalizeImportedRequirement(requirement, scope))
+        .filter(isCheckableCoverageRequirement),
     },
   );
 

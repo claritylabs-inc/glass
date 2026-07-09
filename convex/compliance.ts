@@ -20,7 +20,6 @@ import {
   complianceCheckStatusValidator,
   isRequirementLimitKind,
   isRequirementProvision,
-  requirementConditionTypeValidator,
   requirementKindValidator,
   requirementProvisionValidator,
   requirementScopeValidator,
@@ -145,12 +144,12 @@ function sanitizeRequirementArgs(args: {
   retroactiveDateOnOrBefore?: string;
   provisions?: string[];
   requiredForms?: string[];
-  minAmBestRating?: string;
-  minAmBestFinancialSize?: string;
-  admittedRequired?: boolean;
-  conditionType?: Doc<"insuranceRequirements">["conditionType"];
-  noticeDays?: number;
 }) {
+  if (args.kind !== "coverage") {
+    throw new Error(
+      "Only coverage requirements are supported. Carrier standards and administrative conditions are not tracked as compliance requirements.",
+    );
+  }
   const title = args.title.trim();
   const requirementText = args.requirementText.trim();
   if (!title || !requirementText) {
@@ -158,20 +157,18 @@ function sanitizeRequirementArgs(args: {
   }
 
   const lineOfBusiness = args.lineOfBusiness?.trim() || undefined;
-  if (args.kind === "coverage") {
-    if (!lineOfBusiness || !isLobCode(lineOfBusiness)) {
-      throw new Error("Coverage requirements need a valid ACORD line of business");
-    }
-    const limits = (args.limits ?? [])
-      .filter((limit) => Number.isFinite(limit.amount) && limit.amount >= 0)
-      .map((limit) => ({
-        kind: isRequirementLimitKind(limit.kind) ? limit.kind : "other",
-        amount: limit.amount,
-        label: limit.label?.trim() || undefined,
-      }));
-    if (limits.length === 0 && !args.maxDeductible && !args.provisions?.length) {
-      throw new Error("Coverage requirements need at least one limit, deductible, or provision");
-    }
+  if (!lineOfBusiness || !isLobCode(lineOfBusiness)) {
+    throw new Error("Coverage requirements need a valid ACORD line of business");
+  }
+  const limits = (args.limits ?? [])
+    .filter((limit) => Number.isFinite(limit.amount) && limit.amount >= 0)
+    .map((limit) => ({
+      kind: isRequirementLimitKind(limit.kind) ? limit.kind : "other",
+      amount: limit.amount,
+      label: limit.label?.trim() || undefined,
+    }));
+  if (limits.length === 0 && !args.maxDeductible && !args.provisions?.length) {
+    throw new Error("Coverage requirements need at least one limit, deductible, or provision");
   }
 
   return {
@@ -179,55 +176,29 @@ function sanitizeRequirementArgs(args: {
     scope: args.scope,
     title,
     requirementText,
-    lineOfBusiness: args.kind === "coverage" ? lineOfBusiness : undefined,
-    limits:
-      args.kind === "coverage"
-        ? (args.limits ?? [])
-            .filter((limit) => Number.isFinite(limit.amount) && limit.amount >= 0)
-            .map((limit) => ({
-              kind: isRequirementLimitKind(limit.kind) ? limit.kind : "other",
-              amount: limit.amount,
-              label: limit.label?.trim() || undefined,
-            }))
-        : undefined,
-    maxDeductible:
-      args.kind === "coverage" && args.maxDeductible
-        ? {
-          amount: args.maxDeductible.amount,
-          label: args.maxDeductible.label?.trim() || undefined,
-        }
-        : undefined,
-    coverageForm: args.kind === "coverage" ? args.coverageForm : undefined,
+    lineOfBusiness,
+    limits,
+    maxDeductible: args.maxDeductible
+      ? {
+        amount: args.maxDeductible.amount,
+        label: args.maxDeductible.label?.trim() || undefined,
+      }
+      : undefined,
+    coverageForm: args.coverageForm,
     retroactiveDateOnOrBefore:
-      args.kind === "coverage"
-        ? args.retroactiveDateOnOrBefore?.trim() || undefined
-        : undefined,
-    provisions:
-      args.kind === "coverage"
-        ? Array.from(
-          new Set((args.provisions ?? []).filter(isRequirementProvision)),
-        )
-        : undefined,
-    requiredForms:
-      args.kind === "coverage"
-        ? (args.requiredForms ?? [])
-            .map((form) => form.trim())
-            .filter(Boolean)
-        : undefined,
-    minAmBestRating:
-      args.kind === "insurer" ? args.minAmBestRating?.trim() || undefined : undefined,
-    minAmBestFinancialSize:
-      args.kind === "insurer"
-        ? args.minAmBestFinancialSize?.trim() || undefined
-        : undefined,
-    admittedRequired:
-      args.kind === "insurer" ? args.admittedRequired : undefined,
-    conditionType:
-      args.kind === "condition" ? args.conditionType ?? "other" : undefined,
-    noticeDays:
-      args.kind === "condition" && Number.isFinite(args.noticeDays)
-        ? args.noticeDays
-        : undefined,
+      args.retroactiveDateOnOrBefore?.trim() || undefined,
+    provisions: Array.from(
+      new Set((args.provisions ?? []).filter(isRequirementProvision)),
+    ),
+    requiredForms: (args.requiredForms ?? [])
+      .map((form) => form.trim())
+      .filter(Boolean),
+    // Clear any legacy non-coverage fields when updating an existing row.
+    minAmBestRating: undefined,
+    minAmBestFinancialSize: undefined,
+    admittedRequired: undefined,
+    conditionType: undefined,
+    noticeDays: undefined,
   };
 }
 
@@ -235,12 +206,13 @@ async function listRequirementsForOrg(
   ctx: QueryCtx,
   orgId: Id<"organizations">,
 ) {
-  return await ctx.db
+  const rows = await ctx.db
     .query("insuranceRequirements")
     .withIndex("by_orgId_status", (q) =>
       q.eq("orgId", orgId).eq("status", "active"),
     )
     .collect();
+  return rows.filter((row) => row.kind === "coverage");
 }
 
 function requirementsForVendor(
@@ -351,7 +323,7 @@ async function listRequirementsVisibleToOrg(
   ctx: QueryCtx,
   orgId: Id<"organizations">,
 ) {
-  const [ownRequirements, orgPolicies, org] = await Promise.all([
+  const [ownRequirementRows, orgPolicies, org] = await Promise.all([
     ctx.db
       .query("insuranceRequirements")
       .withIndex("by_orgId_status", (q) =>
@@ -362,6 +334,9 @@ async function listRequirementsVisibleToOrg(
     listPoliciesForOrg(ctx, orgId),
     ctx.db.get(orgId),
   ]);
+  const ownRequirements = ownRequirementRows.filter(
+    (row) => row.kind === "coverage",
+  );
   const clientRequirements = await listClientRequirementsForVendor(
     ctx,
     orgId,
@@ -415,11 +390,6 @@ export const upsertRequirement = mutation({
     retroactiveDateOnOrBefore: v.optional(v.string()),
     provisions: v.optional(v.array(requirementProvisionValidator)),
     requiredForms: v.optional(v.array(v.string())),
-    minAmBestRating: v.optional(v.string()),
-    minAmBestFinancialSize: v.optional(v.string()),
-    admittedRequired: v.optional(v.boolean()),
-    conditionType: v.optional(requirementConditionTypeValidator),
-    noticeDays: v.optional(v.number()),
     sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
     sourceDocumentName: v.optional(v.string()),
     sourceType: v.optional(requirementSourceTypeValidator),
@@ -836,11 +806,6 @@ export const upsertRequirementInternal = internalMutation({
     retroactiveDateOnOrBefore: v.optional(v.string()),
     provisions: v.optional(v.array(requirementProvisionValidator)),
     requiredForms: v.optional(v.array(v.string())),
-    minAmBestRating: v.optional(v.string()),
-    minAmBestFinancialSize: v.optional(v.string()),
-    admittedRequired: v.optional(v.boolean()),
-    conditionType: v.optional(requirementConditionTypeValidator),
-    noticeDays: v.optional(v.number()),
     sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
     sourceDocumentName: v.optional(v.string()),
     sourceType: v.optional(requirementSourceTypeValidator),
@@ -996,11 +961,6 @@ export const createRequirementsInternal = internalMutation({
         retroactiveDateOnOrBefore: v.optional(v.string()),
         provisions: v.optional(v.array(v.string())),
         requiredForms: v.optional(v.array(v.string())),
-        minAmBestRating: v.optional(v.string()),
-        minAmBestFinancialSize: v.optional(v.string()),
-        admittedRequired: v.optional(v.boolean()),
-        conditionType: v.optional(requirementConditionTypeValidator),
-        noticeDays: v.optional(v.number()),
         sourceExcerpt: v.optional(v.string()),
         sourcePageStart: v.optional(v.number()),
         sourcePageEnd: v.optional(v.number()),
@@ -1387,6 +1347,46 @@ export const backfillComplianceRequirementShapeInternal = internalMutation({
         ).length - (dryRun ? 0 : changedCount),
       samples,
     };
+  },
+});
+
+export const archiveNonCoverageRequirementsInternal = internalMutation({
+  args: {
+    orgId: v.optional(v.id("organizations")),
+    dryRun: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    const maxRows = args.limit ?? 200;
+    const rows = await ctx.db.query("insuranceRequirements").collect();
+    const now = dayjs().valueOf();
+    let scannedCount = 0;
+    let archivedCount = 0;
+    const samples: Array<{
+      requirementId: Id<"insuranceRequirements">;
+      title: string;
+      kind: string;
+    }> = [];
+    for (const row of rows) {
+      if (args.orgId && row.orgId !== args.orgId) continue;
+      if (row.status !== "active") continue;
+      scannedCount += 1;
+      if (row.kind === "coverage") continue;
+      if (archivedCount >= maxRows) continue;
+      archivedCount += 1;
+      if (samples.length < 25) {
+        samples.push({
+          requirementId: row._id,
+          title: row.title,
+          kind: row.kind ?? "legacy",
+        });
+      }
+      if (!dryRun) {
+        await ctx.db.patch(row._id, { status: "archived", updatedAt: now });
+      }
+    }
+    return { dryRun, scannedCount, archivedCount, samples };
   },
 });
 
