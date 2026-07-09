@@ -19,7 +19,7 @@ import { PolicyDeliverySection } from "@/components/settings/policy-delivery-sec
 import { CertificateWorkflowSection } from "@/components/settings/certificate-workflow-section";
 import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
 import { BetaFeaturesSection } from "@/components/settings/beta-features-section";
-import NotificationPreferencesPage from "./notifications/page";
+import { NotificationPreferencesSection } from "@/components/settings/notification-preferences-section";
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
@@ -109,7 +109,7 @@ function SectionContent({
          section === "email" ? <EmailConnectionsSection /> :
          section === "connections" ? <ConnectionsSection /> :
          section === "notifications" && currentOrg?.orgId ? (
-           <NotificationPreferencesPage orgId={currentOrg.orgId} orgType="broker" />
+           <NotificationPreferencesSection orgId={currentOrg.orgId} orgType="broker" />
          ) : null}
       </div>
     );
@@ -135,7 +135,7 @@ function SectionContent({
       ) : section === "connections" ? (
         <ConnectionsSection />
       ) : section === "notifications" && currentOrg?.orgId ? (
-        <NotificationPreferencesPage orgId={currentOrg.orgId} orgType="client" />
+        <NotificationPreferencesSection orgId={currentOrg.orgId} orgType="client" />
       ) : null}
     </div>
   );

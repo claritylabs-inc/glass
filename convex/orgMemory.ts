@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { requireAuth } from "./lib/access";
+import { getOrgAccess, requireAuth } from "./lib/access";
 import {
   isCompanyContextMemory,
   normalizeMemoryContent,
@@ -77,6 +77,12 @@ function activeCompanyFacts<T extends {
   );
 }
 
+function memoryContentKey(content: string) {
+  return normalizeMemoryContent(content)
+    .toLowerCase()
+    .replace(/[.!?]+$/g, "");
+}
+
 export const listAllInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -129,6 +135,9 @@ export const upsert = internalMutation({
     content: v.string(),
     source: orgMemorySourceValidator,
     policyId: v.optional(v.id("policies")),
+    sourceRef: v.optional(v.string()),
+    confidence: v.optional(v.number()),
+    observedAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -144,15 +153,36 @@ export const upsert = internalMutation({
     }
 
     const now = dayjs().valueOf();
+    const sourceMatch = args.sourceRef
+      ? await ctx.db
+          .query("orgMemory")
+          .withIndex("by_org_sourceRef", (q) =>
+            q.eq("orgId", args.orgId).eq("sourceRef", args.sourceRef),
+          )
+          .first()
+      : null;
     const existing = await ctx.db
       .query("orgMemory")
       .withIndex("by_org_type", (q) =>
         q.eq("orgId", args.orgId).eq("type", args.type),
       )
       .take(500);
-    const duplicate = existing.find((m) => m.content === content);
+    const contentKey = memoryContentKey(content);
+    const duplicate =
+      sourceMatch ??
+      existing.find((memory) => memoryContentKey(memory.content) === contentKey);
     if (duplicate) {
-      await ctx.db.patch(duplicate._id, { updatedAt: now });
+      await ctx.db.patch(duplicate._id, {
+        confidence:
+          args.confidence === undefined
+            ? duplicate.confidence
+            : Math.max(duplicate.confidence ?? 0, args.confidence),
+        observedAt:
+          args.observedAt === undefined
+            ? duplicate.observedAt
+            : Math.max(duplicate.observedAt ?? 0, args.observedAt),
+        updatedAt: now,
+      });
       return duplicate._id;
     }
     return await ctx.db.insert("orgMemory", {
@@ -184,6 +214,9 @@ export const bulkInsert = internalMutation({
           v.literal("imessage"),
         ),
         policyId: v.optional(v.id("policies")),
+        sourceRef: v.optional(v.string()),
+        confidence: v.optional(v.number()),
+        observedAt: v.optional(v.number()),
       }),
     ),
   },
@@ -205,13 +238,40 @@ export const bulkInsert = internalMutation({
       })) {
         continue;
       }
+      const sourceMatch = item.sourceRef
+        ? await ctx.db
+            .query("orgMemory")
+            .withIndex("by_org_sourceRef", (q) =>
+              q.eq("orgId", item.orgId).eq("sourceRef", item.sourceRef),
+            )
+            .first()
+        : null;
       const existing = await ctx.db
         .query("orgMemory")
         .withIndex("by_org_type", (q) =>
           q.eq("orgId", item.orgId).eq("type", item.type),
         )
         .take(500);
-      if (existing.some((m) => m.content === content)) continue;
+      const contentKey = memoryContentKey(content);
+      const duplicate =
+        sourceMatch ??
+        existing.find(
+          (memory) => memoryContentKey(memory.content) === contentKey,
+        );
+      if (duplicate) {
+        await ctx.db.patch(duplicate._id, {
+          confidence:
+            item.confidence === undefined
+              ? duplicate.confidence
+              : Math.max(duplicate.confidence ?? 0, item.confidence),
+          observedAt:
+            item.observedAt === undefined
+              ? duplicate.observedAt
+              : Math.max(duplicate.observedAt ?? 0, item.observedAt),
+          updatedAt: now,
+        });
+        continue;
+      }
       const id = await ctx.db.insert("orgMemory", {
         ...item,
         content,
@@ -246,19 +306,17 @@ export const deleteExpired = internalMutation({
 // ── Public query (for UI) ──
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const { userId } = await requireAuth(ctx);
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .first();
-    if (!membership) return [];
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx, args.orgId);
+    if (access.accessType !== "member") {
+      throw new Error("Company memory is available only to direct org members");
+    }
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org", (q) => q.eq("orgId", membership.orgId))
+      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
       .take(500);
-    const orgName = await orgNameById(ctx, membership.orgId);
+    const orgName = await orgNameById(ctx, args.orgId);
     return activeCompanyFacts(memories, orgName)
       .sort((a, b) => b.updatedAt - a.updatedAt);
   },

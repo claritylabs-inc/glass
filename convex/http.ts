@@ -8,6 +8,7 @@ import { getImessageWorkerUrl, isImessageInboundEnabled } from "./lib/imessageCo
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { getEmailDeliveryMode } from "./lib/resend";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
+import { canAccessThread } from "./lib/threadAccess";
 import {
   type McpPolicySummarySource,
   policyMatchesMcpFilters,
@@ -1118,6 +1119,7 @@ http.route({
       const identity = await requireMcpAuth(ctx, request);
       const threads = await ctx.runQuery(internal.threads.listByOrg, {
         orgId: identity.orgId as Id<"organizations">,
+        userId: identity.userId as Id<"users">,
       });
       return jsonResponse(threads.map(toMcpThreadSummaryDto));
     } catch (e) {
@@ -1144,7 +1146,12 @@ http.route({
       });
       if (
         !thread ||
-        (thread as Record<string, unknown>).orgId !== identity.orgId
+        !canAccessThread({
+          userId: identity.userId as Id<"users">,
+          userOrgId: identity.orgId as Id<"organizations">,
+          thread,
+          clientOrg: null,
+        })
       ) {
         return jsonResponse({ error: "Not found" }, 404);
       }
@@ -1961,7 +1968,10 @@ async function handleToolCall(
       };
     }
     case "list_threads": {
-      const threads = await ctx.runQuery(internal.threads.listByOrg, { orgId });
+      const threads = await ctx.runQuery(internal.threads.listByOrg, {
+        orgId,
+        userId,
+      });
       return {
         content: [
           {
@@ -1978,7 +1988,12 @@ async function handleToolCall(
       });
       if (
         !thread ||
-        (thread as Record<string, unknown>).orgId !== identity.orgId
+        !canAccessThread({
+          userId,
+          userOrgId: orgId,
+          thread,
+          clientOrg: null,
+        })
       )
         throw new Error("Not found");
       const messages = await ctx.runQuery(internal.threads.messagesInternal, {

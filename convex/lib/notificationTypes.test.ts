@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   ACTIVE_NOTIFICATION_TYPES,
   NOTIFICATION_SEVERITY,
+  PROACTIVE_NOTIFICATION_TYPES,
   COALESCE_WINDOW_MS,
   buildCoalesceKey,
   getEffectiveEmailDefault,
@@ -18,6 +19,8 @@ describe("NOTIFICATION_SEVERITY", () => {
   test("client event types have severity", () => {
     expect(NOTIFICATION_SEVERITY["incomplete_extraction"]).toBe("warning");
     expect(NOTIFICATION_SEVERITY["vendor_policy_expired"]).toBe("critical");
+    expect(NOTIFICATION_SEVERITY["own_compliance_gap"]).toBe("warning");
+    expect(NOTIFICATION_SEVERITY["own_compliance_resolved"]).toBe("info");
   });
 });
 
@@ -70,5 +73,9 @@ describe("notification settings rows", () => {
     expect(settingsTypes).not.toContain("policy_delivered_by_broker");
     expect(settingsTypes).not.toContain("renewal_reminder");
     expect(settingsTypes).not.toContain("policy_lapsed");
+    expect(settingsTypes).toContain("own_compliance_gap");
+    expect(settingsTypes).toContain("own_compliance_resolved");
+    expect(PROACTIVE_NOTIFICATION_TYPES).toContain("own_compliance_gap");
+    expect(PROACTIVE_NOTIFICATION_TYPES).toContain("own_compliance_resolved");
   });
 });

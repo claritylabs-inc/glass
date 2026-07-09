@@ -1,9 +1,23 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import dayjs from "dayjs";
 import { expect, test, describe } from "vitest";
 import schema from "./schema";
+import type { Id } from "./_generated/dataModel";
+import {
+  getProactiveChannels,
+  setChannels,
+  setProactiveChannels,
+} from "./notificationPreferences";
 
 const modules = import.meta.glob("./**/*.ts");
+const setChannelsFn = setChannels as any;
+const setProactiveChannelsFn = setProactiveChannels as any;
+const getProactiveChannelsFn = getProactiveChannels as any;
+
+function sessionFor(userId: Id<"users">) {
+  return { subject: `${userId}|session` };
+}
 
 // Helper: sets up a user+org+membership and returns ids
 // Uses t.run to bypass auth for setup
@@ -33,7 +47,7 @@ describe("notificationPreferences — upsert logic", () => {
         type: "incomplete_extraction",
         channel: "email",
         enabled: false,
-        updatedAt: Date.now(),
+        updatedAt: dayjs().valueOf(),
       });
     });
 
@@ -52,7 +66,7 @@ describe("notificationPreferences — upsert logic", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("notificationPreferences", {
         userId, orgId, type: "incomplete_extraction",
-        channel: "email", enabled: false, updatedAt: Date.now(),
+        channel: "email", enabled: false, updatedAt: dayjs().valueOf(),
       });
     });
 
@@ -66,7 +80,10 @@ describe("notificationPreferences — upsert logic", () => {
         )
         .first();
       if (existing) {
-        await ctx.db.patch(existing._id, { enabled: true, updatedAt: Date.now() });
+        await ctx.db.patch(existing._id, {
+          enabled: true,
+          updatedAt: dayjs().valueOf(),
+        });
       }
     });
 
@@ -86,7 +103,7 @@ describe("notificationPreferences.setAllEmail", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("notificationPreferences", {
         userId, orgId, type: "__all__", channel: "email",
-        enabled: false, updatedAt: Date.now(),
+        enabled: false, updatedAt: dayjs().valueOf(),
       });
     });
 
@@ -108,7 +125,7 @@ describe("notificationPreferences — query", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("notificationPreferences", {
         userId, orgId, type: "vendor_compliance_gap", channel: "email",
-        enabled: true, updatedAt: Date.now(),
+        enabled: true, updatedAt: dayjs().valueOf(),
       });
     });
 
@@ -131,12 +148,12 @@ describe("resolveForUser", () => {
       // __all__ disables email
       await ctx.db.insert("notificationPreferences", {
         userId, orgId, type: "__all__", channel: "email",
-        enabled: false, updatedAt: Date.now(),
+        enabled: false, updatedAt: dayjs().valueOf(),
       });
       // per-type enables email for this type
       await ctx.db.insert("notificationPreferences", {
         userId, orgId, type: "incomplete_extraction", channel: "email",
-        enabled: true, updatedAt: Date.now(),
+        enabled: true, updatedAt: dayjs().valueOf(),
       });
     });
 
@@ -159,5 +176,88 @@ describe("resolveForUser", () => {
 
     // info severity defaults to false
     expect(result.shouldEmail).toBe(false);
+  });
+});
+
+describe("notificationPreferences — atomic channel updates", () => {
+  test("updates email and iMessage rows together", async () => {
+    const t = convexTest(schema, modules);
+    const { orgId, userId } = await setupUserAndOrg(t);
+
+    await t.withIdentity(sessionFor(userId)).mutation(setChannelsFn, {
+      orgId,
+      type: "mailbox_attention",
+      email: true,
+      imessage: false,
+    });
+
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_userId_orgId", (q) =>
+          q.eq("userId", userId).eq("orgId", orgId),
+        )
+        .collect(),
+    );
+    expect(rows).toMatchObject([
+      { type: "mailbox_attention", channel: "email", enabled: true },
+      { type: "mailbox_attention", channel: "imessage", enabled: false },
+    ]);
+  });
+
+  test("reports effective proactive routing inherited from __all__", async () => {
+    const t = convexTest(schema, modules);
+    const { orgId, userId } = await setupUserAndOrg(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("notificationPreferences", {
+        userId,
+        orgId,
+        type: "__all__",
+        channel: "email",
+        enabled: false,
+        updatedAt: dayjs().valueOf(),
+      });
+      await ctx.db.insert("notificationPreferences", {
+        userId,
+        orgId,
+        type: "__all__",
+        channel: "imessage",
+        enabled: true,
+        updatedAt: dayjs().valueOf(),
+      });
+    });
+
+    const result = await t
+      .withIdentity(sessionFor(userId))
+      .query(getProactiveChannelsFn, { orgId });
+
+    expect(result).toEqual({
+      email: false,
+      imessage: true,
+      configured: false,
+    });
+  });
+
+  test("does not partially save proactive channels when iMessage is unavailable", async () => {
+    const t = convexTest(schema, modules);
+    const { orgId, userId } = await setupUserAndOrg(t);
+
+    await expect(
+      t.withIdentity(sessionFor(userId)).mutation(setProactiveChannelsFn, {
+        orgId,
+        email: true,
+        imessage: true,
+      }),
+    ).rejects.toThrow("Add a mobile number before choosing iMessage");
+
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query("notificationPreferences")
+        .withIndex("by_userId_orgId", (q) =>
+          q.eq("userId", userId).eq("orgId", orgId),
+        )
+        .collect(),
+    );
+    expect(rows).toEqual([]);
   });
 });
