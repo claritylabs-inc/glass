@@ -1,20 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useAction, useMutation } from "convex/react";
+import { FileText } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import {
   CertificateDetailPanel,
-  CertificatePolicyGroupCard,
   CERTIFICATE_PANEL_CONTAINER_CLASS,
+  certificateBadge,
   certificateHolderActionAddress,
+  certificateHolderAddress,
   certificatePolicyLabel,
   formatCertificateTime,
-  groupCertificatesByPolicy,
   type CertificateHolderRecord,
   type CertificatePolicyRecord,
   type CertificateVersionRecord,
@@ -29,6 +30,21 @@ import {
   OperationalSkeletonList,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -36,6 +52,10 @@ import { usePageContext } from "@/hooks/use-page-context";
 import { usePdf } from "@/components/pdf-context";
 
 type CertificateWorkspaceTab = "active" | "review" | "archived";
+type CertificatePolicyFilter = "all" | `policy:${string}`;
+type CertificateTypeFilter = "all" | "holder" | "additional_insured";
+type CertificateContactFilter = "all" | "has_email" | "missing_email";
+type CertificateStatusFilter = "all" | `status:${string}`;
 
 type CertificateWorkflowJob = {
   _id: Id<"certificateWorkflowJobs">;
@@ -62,6 +82,133 @@ const TABS: Array<{ value: CertificateWorkspaceTab; label: string }> = [
   { value: "review", label: "Review" },
   { value: "archived", label: "Archived" },
 ];
+
+function certificatePolicyFilterValue(row: PolicyCertificateRecord): CertificatePolicyFilter {
+  return `policy:${String(row.policyId)}`;
+}
+
+function certificateTypeValue(row: PolicyCertificateRecord): CertificateTypeFilter {
+  return row.currentVersion?.requestKind === "additional_insured"
+    ? "additional_insured"
+    : "holder";
+}
+
+function certificateTypeLabel(value: CertificateTypeFilter) {
+  if (value === "all") return "All types";
+  return value === "additional_insured" ? "Additional insured" : "Holder";
+}
+
+function certificateStatusValue(row: PolicyCertificateRecord): CertificateStatusFilter {
+  if (row.status === "archived") return "status:archived";
+  return row.currentVersion?.status
+    ? `status:${row.currentVersion.status}`
+    : "status:no_issued_version";
+}
+
+function certificateStatusLabel(value: CertificateStatusFilter) {
+  if (value === "all") return "All statuses";
+  if (value === "status:no_issued_version") return "No issued version";
+  return value
+    .slice("status:".length)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function certificateContactFilterLabel(value: CertificateContactFilter) {
+  if (value === "all") return "All holders";
+  return value === "has_email" ? "Has email" : "Missing email";
+}
+
+function certificateCarrier(row: PolicyCertificateRecord) {
+  return row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga;
+}
+
+function certificateHolderAddressSummary(row: PolicyCertificateRecord) {
+  return certificateHolderAddress(row.holder)
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" · ");
+}
+
+function certificateContactSummary(row: PolicyCertificateRecord) {
+  const primary =
+    row.holder?.email ??
+    row.holder?.phone ??
+    row.holder?.contactName ??
+    "No email";
+  const secondary = [
+    row.holder?.contactName && row.holder.contactName !== primary
+      ? row.holder.contactName
+      : undefined,
+    row.holder?.phone && row.holder.phone !== primary ? row.holder.phone : undefined,
+  ].filter(Boolean).join(" · ");
+  return { primary, secondary };
+}
+
+function certificatePolicyFilterOptions(rows: PolicyCertificateRecord[]) {
+  const byValue = new Map<CertificatePolicyFilter, string>();
+  for (const row of rows) {
+    byValue.set(certificatePolicyFilterValue(row), certificatePolicyLabel(row.policy));
+  }
+  return [
+    { value: "all" as const, label: "All policies" },
+    ...Array.from(byValue, ([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+  ];
+}
+
+function certificateTypeFilterOptions(rows: PolicyCertificateRecord[]) {
+  const present = new Set(rows.map(certificateTypeValue));
+  const values: CertificateTypeFilter[] = ["holder", "additional_insured"];
+  return [
+    { value: "all" as const, label: certificateTypeLabel("all") },
+    ...values
+      .filter((value) => present.has(value))
+      .map((value) => ({ value, label: certificateTypeLabel(value) })),
+  ];
+}
+
+function certificateStatusFilterOptions(rows: PolicyCertificateRecord[]) {
+  const present = Array.from(new Set(rows.map(certificateStatusValue)))
+    .sort((left, right) => certificateStatusLabel(left).localeCompare(certificateStatusLabel(right)));
+  return [
+    { value: "all" as const, label: certificateStatusLabel("all") },
+    ...present.map((value) => ({ value, label: certificateStatusLabel(value) })),
+  ];
+}
+
+function filterCertificates({
+  rows,
+  policyFilter,
+  typeFilter,
+  contactFilter,
+  statusFilter,
+}: {
+  rows: PolicyCertificateRecord[];
+  policyFilter: CertificatePolicyFilter;
+  typeFilter: CertificateTypeFilter;
+  contactFilter: CertificateContactFilter;
+  statusFilter: CertificateStatusFilter;
+}) {
+  return rows.filter((row) =>
+    (policyFilter === "all" || certificatePolicyFilterValue(row) === policyFilter) &&
+    (typeFilter === "all" || certificateTypeValue(row) === typeFilter) &&
+    (contactFilter === "all" ||
+      (contactFilter === "has_email" ? Boolean(row.holder?.email) : !row.holder?.email)) &&
+    (statusFilter === "all" || certificateStatusValue(row) === statusFilter),
+  );
+}
+
+function openTableRowOnKeyboard(
+  event: KeyboardEvent<HTMLTableRowElement>,
+  action: () => void,
+) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  action();
+}
 
 function jobBadge(status: string) {
   if (status === "failed" || status === "blocked_missing_contact") return "destructive" as const;
@@ -117,6 +264,185 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
   );
 }
 
+function CertificatesFilterSelect({
+  label,
+  value,
+  onValueChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1.5 text-label font-medium text-muted-foreground">
+      {label}
+      <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
+        <SelectTrigger size="sm" className="w-full bg-background">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>{children}</SelectContent>
+      </Select>
+    </label>
+  );
+}
+
+function CertificatesTable({
+  rows,
+  selectedCertificateId,
+  onSelectCertificate,
+  onOpenPdf,
+}: {
+  rows: PolicyCertificateRecord[];
+  selectedCertificateId?: Id<"policyCertificates"> | null;
+  onSelectCertificate: (row: PolicyCertificateRecord) => void;
+  onOpenPdf: (url: string) => void;
+}) {
+  return (
+    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
+      <Table className="min-w-[1120px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[21%] px-4">Holder</TableHead>
+            <TableHead className="w-[18%]">Contact</TableHead>
+            <TableHead className="w-[22%]">Policy</TableHead>
+            <TableHead className="w-[14%]">Type</TableHead>
+            <TableHead className="w-[13%]">Issued</TableHead>
+            <TableHead className="w-[7%]">Status</TableHead>
+            <TableHead className="w-[5%] px-4 text-right">PDF</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => {
+            const badge = certificateBadge(row);
+            const contact = certificateContactSummary(row);
+            const address = certificateHolderAddressSummary(row);
+            const currentVersion = row.currentVersion;
+            const currentUrl = row.url ?? currentVersion?.url;
+            const selected = row._id === selectedCertificateId;
+            const issuedAt = row.lastIssuedAt ?? currentVersion?.issuedAt ?? currentVersion?.createdAt;
+            const type = certificateTypeValue(row);
+            const carrier = certificateCarrier(row);
+
+            return (
+              <TableRow
+                key={row._id}
+                aria-selected={selected}
+                className="cursor-pointer"
+                data-state={selected ? "selected" : undefined}
+                onClick={() => onSelectCertificate(row)}
+                onKeyDown={(event) =>
+                  openTableRowOnKeyboard(event, () => onSelectCertificate(row))
+                }
+                tabIndex={0}
+              >
+                <TableCell className="max-w-64 px-4">
+                  <p className="truncate font-medium text-foreground">
+                    {row.holder?.displayName ?? "Certificate holder"}
+                  </p>
+                  {address ? (
+                    <p className="truncate text-label text-muted-foreground">
+                      {address}
+                    </p>
+                  ) : null}
+                </TableCell>
+                <TableCell className="max-w-56">
+                  <p className={row.holder?.email ? "truncate text-foreground" : "truncate text-muted-foreground"}>
+                    {contact.primary}
+                  </p>
+                  {contact.secondary ? (
+                    <p className="truncate text-label text-muted-foreground">
+                      {contact.secondary}
+                    </p>
+                  ) : null}
+                </TableCell>
+                <TableCell className="max-w-72">
+                  <p className="truncate font-medium text-foreground">
+                    {row.policy?.policyNumber ?? "Policy"}
+                  </p>
+                  {carrier || row.policy?.insuredName ? (
+                    <p className="truncate text-label text-muted-foreground">
+                      {[carrier, row.policy?.insuredName].filter(Boolean).join(" · ")}
+                    </p>
+                  ) : null}
+                </TableCell>
+                <TableCell className="max-w-48">
+                  <p className="truncate text-foreground">
+                    {certificateTypeLabel(type)}
+                  </p>
+                  {currentVersion?.additionalInsuredName ? (
+                    <p className="truncate text-label text-muted-foreground">
+                      {currentVersion.additionalInsuredName}
+                    </p>
+                  ) : null}
+                </TableCell>
+                <TableCell>
+                  <p className="text-foreground">
+                    {formatCertificateTime(issuedAt)}
+                  </p>
+                  {currentVersion ? (
+                    <p className="text-label text-muted-foreground">
+                      Version {currentVersion.versionNumber}
+                    </p>
+                  ) : null}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={badge.variant} className="capitalize">
+                    {badge.label}
+                  </Badge>
+                </TableCell>
+                <TableCell
+                  className="px-4 text-right"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  {currentUrl ? (
+                    <PillButton
+                      type="button"
+                      variant="secondary"
+                      size="compact"
+                      onClick={() => onOpenPdf(currentUrl)}
+                    >
+                      <FileText className="size-3.5" />
+                      PDF
+                    </PillButton>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </OperationalPanel>
+  );
+}
+
+function CertificateEmptyPanel({
+  title,
+  description,
+}: {
+  title: string;
+  description?: string;
+}) {
+  return (
+    <OperationalPanel as="div">
+      <OperationalPanelBody className="px-4 py-10 text-center">
+        <p className="text-base font-medium text-foreground">
+          {title}
+        </p>
+        {description ? (
+          <p className="mt-1 text-base text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
+      </OperationalPanelBody>
+    </OperationalPanel>
+  );
+}
+
 function CertificatesPageContext({
   activeCount,
   reviewCount,
@@ -148,6 +474,10 @@ export default function CertificatesPage() {
   const [reissuingCertificateId, setReissuingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [archivingCertificateId, setArchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [unarchivingCertificateId, setUnarchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
+  const [policyFilter, setPolicyFilter] = useState<CertificatePolicyFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<CertificateTypeFilter>("all");
+  const [contactFilter, setContactFilter] = useState<CertificateContactFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<CertificateStatusFilter>("all");
   const viewerOrg = useCachedViewerOrg();
   const orgId = viewerOrg?.org?._id as Id<"organizations"> | undefined;
   const certificates = useCachedQuery(
@@ -171,10 +501,6 @@ export default function CertificatesPage() {
         ),
     [certificates],
   );
-  const activeCertificateGroups = useMemo(
-    () => groupCertificatesByPolicy(activeCertificates),
-    [activeCertificates],
-  );
   const archivedCertificates = useMemo(
     () =>
       (certificates ?? [])
@@ -184,10 +510,6 @@ export default function CertificatesPage() {
           Number(left.archivedAt ?? left.updatedAt ?? 0),
         ),
     [certificates],
-  );
-  const archivedCertificateGroups = useMemo(
-    () => groupCertificatesByPolicy(archivedCertificates),
-    [archivedCertificates],
   );
   const reviewJobs = useMemo(
     () =>
@@ -201,6 +523,45 @@ export default function CertificatesPage() {
       (certificates ?? []).find((row) => row._id === selectedCertificateId) ??
       null,
     [certificates, selectedCertificateId],
+  );
+  const tableCertificates = tab === "archived" ? archivedCertificates : activeCertificates;
+  const policyFilters = useMemo(
+    () => certificatePolicyFilterOptions(tableCertificates),
+    [tableCertificates],
+  );
+  const typeFilters = useMemo(
+    () => certificateTypeFilterOptions(tableCertificates),
+    [tableCertificates],
+  );
+  const statusFilters = useMemo(
+    () => certificateStatusFilterOptions(tableCertificates),
+    [tableCertificates],
+  );
+  const effectivePolicyFilter = policyFilters.some((option) => option.value === policyFilter)
+    ? policyFilter
+    : "all";
+  const effectiveTypeFilter = typeFilters.some((option) => option.value === typeFilter)
+    ? typeFilter
+    : "all";
+  const effectiveStatusFilter = statusFilters.some((option) => option.value === statusFilter)
+    ? statusFilter
+    : "all";
+  const visibleCertificates = useMemo(
+    () =>
+      filterCertificates({
+        rows: tableCertificates,
+        policyFilter: effectivePolicyFilter,
+        typeFilter: effectiveTypeFilter,
+        contactFilter,
+        statusFilter: effectiveStatusFilter,
+      }),
+    [
+      contactFilter,
+      effectivePolicyFilter,
+      effectiveStatusFilter,
+      effectiveTypeFilter,
+      tableCertificates,
+    ],
   );
 
   const isLoading =
@@ -329,49 +690,74 @@ export default function CertificatesPage() {
               </OperationalPanelBody>
             )}
           </OperationalPanel>
-        ) : tab === "archived" ? (
-          archivedCertificateGroups.length > 0 ? (
-            <div className="space-y-3">
-              {archivedCertificateGroups.map((group) => (
-                <CertificatePolicyGroupCard
-                  key={group.key}
-                  group={group}
-                  selectedCertificateId={selectedCertificateId}
-                  onSelectCertificate={(row) => setSelectedCertificateId(row._id)}
-                />
-              ))}
+        ) : tableCertificates.length > 0 ? (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <CertificatesFilterSelect
+                label="Policy"
+                value={effectivePolicyFilter}
+                onValueChange={(value) => setPolicyFilter(value as CertificatePolicyFilter)}
+              >
+                {policyFilters.map((filter) => (
+                  <SelectItem key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </SelectItem>
+                ))}
+              </CertificatesFilterSelect>
+              <CertificatesFilterSelect
+                label="Type"
+                value={effectiveTypeFilter}
+                onValueChange={(value) => setTypeFilter(value as CertificateTypeFilter)}
+              >
+                {typeFilters.map((filter) => (
+                  <SelectItem key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </SelectItem>
+                ))}
+              </CertificatesFilterSelect>
+              <CertificatesFilterSelect
+                label="Holder email"
+                value={contactFilter}
+                onValueChange={(value) => setContactFilter(value as CertificateContactFilter)}
+              >
+                {(["all", "has_email", "missing_email"] as CertificateContactFilter[]).map((filter) => (
+                  <SelectItem key={filter} value={filter}>
+                    {certificateContactFilterLabel(filter)}
+                  </SelectItem>
+                ))}
+              </CertificatesFilterSelect>
+              <CertificatesFilterSelect
+                label="Status"
+                value={effectiveStatusFilter}
+                onValueChange={(value) => setStatusFilter(value as CertificateStatusFilter)}
+              >
+                {statusFilters.map((filter) => (
+                  <SelectItem key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </SelectItem>
+                ))}
+              </CertificatesFilterSelect>
             </div>
-          ) : (
-            <OperationalPanel as="div">
-              <OperationalPanelBody className="px-4 py-10 text-center">
-                <p className="text-base font-medium text-muted-foreground">
-                  No archived certificates
-                </p>
-              </OperationalPanelBody>
-            </OperationalPanel>
-          )
-        ) : activeCertificateGroups.length > 0 ? (
-          <div className="space-y-3">
-            {activeCertificateGroups.map((group) => (
-              <CertificatePolicyGroupCard
-                key={group.key}
-                group={group}
+            {visibleCertificates.length > 0 ? (
+              <CertificatesTable
+                rows={visibleCertificates}
                 selectedCertificateId={selectedCertificateId}
                 onSelectCertificate={(row) => setSelectedCertificateId(row._id)}
+                onOpenPdf={openWithUrl}
               />
-            ))}
-          </div>
+            ) : (
+              <CertificateEmptyPanel title="No certificates match these filters" />
+            )}
+          </>
         ) : (
-          <OperationalPanel as="div">
-            <OperationalPanelBody className="px-4 py-10 text-center">
-              <p className="text-base font-medium text-foreground">
-                No active certificates
-              </p>
-              <p className="mt-1 text-base text-muted-foreground">
-                Generate a COI from a policy to create the first holder-based certificate.
-              </p>
-            </OperationalPanelBody>
-          </OperationalPanel>
+          <CertificateEmptyPanel
+            title={tab === "archived" ? "No archived certificates" : "No active certificates"}
+            description={
+              tab === "archived"
+                ? undefined
+                : "Generate a COI from a policy to create the first holder-based certificate."
+            }
+          />
         )}
       </div>
     </AppShell>
