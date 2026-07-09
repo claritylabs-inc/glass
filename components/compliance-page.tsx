@@ -480,33 +480,35 @@ function OverviewTab({
                   onOpenRequirements(lob);
                 }
               }}
-              className="relative cursor-pointer px-4 py-3 pr-32"
+              className="cursor-pointer px-4 py-3"
             >
-              {groupAttention > 0 ? (
-                <Badge
-                  variant="outline"
-                  className="absolute right-3 top-3 border-red-500/25 bg-red-500/10 text-red-500"
-                >
-                  {groupAttention} needs attention
-                </Badge>
-              ) : groupExpiring > 0 ? (
-                <Badge
-                  variant="outline"
-                  className="absolute right-3 top-3 border-amber-500/25 bg-amber-500/10 text-amber-500"
-                >
-                  {groupExpiring} expiring
-                </Badge>
-              ) : (
-                <Badge
-                  variant="outline"
-                  className="absolute right-3 top-3 border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
-                >
-                  Met
-                </Badge>
-              )}
-              <p className="truncate text-base font-medium text-foreground">
-                {lineDisplayLabel(lob)}
-              </p>
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <p className="min-w-0 truncate text-base font-medium text-foreground">
+                  {lineDisplayLabel(lob)}
+                </p>
+                {groupAttention > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-red-500/25 bg-red-500/10 text-red-500"
+                  >
+                    {groupAttention} needs attention
+                  </Badge>
+                ) : groupExpiring > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-amber-500/25 bg-amber-500/10 text-amber-500"
+                  >
+                    {groupExpiring} expiring
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
+                  >
+                    Met
+                  </Badge>
+                )}
+              </div>
               <p className="mt-2 text-label text-muted-foreground">
                 {groupMet} of {rows.length} requirements met
               </p>

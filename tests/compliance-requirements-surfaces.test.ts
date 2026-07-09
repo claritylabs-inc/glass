@@ -19,6 +19,8 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).toContain("RequirementSourcesTable");
     expect(page).toContain("TabsTrigger value=\"sources\"");
     expect(page).toContain("Archive selected");
+    expect(page).toContain('className="h-1.5 w-full overflow-hidden rounded-full bg-muted"');
+    expect(page).not.toContain("pr-32");
     expect(page).not.toContain("Insurer standards");
     expect(page).not.toContain("conditionType");
     expect(page).not.toContain("verifyRequirement");
