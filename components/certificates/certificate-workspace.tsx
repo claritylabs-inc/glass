@@ -30,6 +30,7 @@ export type CertificateHolderRecord = {
     city?: string;
     state?: string;
     postalCode?: string;
+    country?: string;
   };
 };
 
