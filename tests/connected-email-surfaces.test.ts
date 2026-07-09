@@ -118,7 +118,7 @@ describe("connected email surfaces", () => {
     expect(backend).toContain("THREAD_ATTACHMENT_MAX_BYTES");
     expect(backend).toContain("buildEmailRequirementText");
     expect(backend).toContain("includeEmailBody");
-    expect(backend).toContain("isPdfAttachment");
+    expect(backend).toContain("isPdfMailboxAttachment");
     expect(read("convex/threads.ts")).toContain("insertAttachmentMessageInternal");
     expect(read("convex/threads.ts")).toContain("listThreadAttachmentsInternal");
     expect(read("convex/lib/emailSubagent.ts")).toContain("listThreadAttachmentsInternal");
@@ -190,6 +190,9 @@ describe("connected email surfaces", () => {
     expect(emailSettings).toContain("allowOrgScope={canManageOrgMailboxes}");
     expect(emailSettings).toContain("api.connectedEmail.updateSettings");
     expect(emailSettings).toContain("automationConfigured");
+    expect(emailSettings).toContain("<DialogTitle>Scan mailbox</DialogTitle>");
+    expect(emailSettings).toContain("!hasChanges");
+    expect(emailSettings).toContain("disabled={!canScan}");
     expect(emailSettings).toContain("Policy documents");
     expect(emailSettings).toContain("Insurance requirements");
     expect(emailSettings).toContain("Company context");

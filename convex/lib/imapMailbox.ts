@@ -151,31 +151,6 @@ export function isGlassSearchLoopEmail(parsed: ParsedMail) {
   return parsed.from?.value.some((item) => isGlassSearchLoopAddress(item.address)) ?? false;
 }
 
-export function isRequirementAttachment(attachment: ParsedMail["attachments"][number]) {
-  const name = attachment.filename?.toLowerCase() ?? "";
-  const type = attachment.contentType.toLowerCase();
-  return (
-    type === "application/pdf" ||
-    type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    type === "text/plain" ||
-    type === "text/markdown" ||
-    type === "text/csv" ||
-    type === "application/json" ||
-    name.endsWith(".pdf") ||
-    name.endsWith(".docx") ||
-    name.endsWith(".txt") ||
-    name.endsWith(".md") ||
-    name.endsWith(".csv") ||
-    name.endsWith(".json")
-  );
-}
-
-export function isPdfAttachment(attachment: ParsedMail["attachments"][number]) {
-  const name = attachment.filename?.toLowerCase() ?? "";
-  const type = attachment.contentType.toLowerCase();
-  return type === "application/pdf" || type.includes("pdf") || name.endsWith(".pdf");
-}
-
 export async function fetchParsedMessage(
   client: ImapFlow,
   mailbox: string,

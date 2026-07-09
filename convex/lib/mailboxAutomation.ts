@@ -107,7 +107,9 @@ function normalizedFilename(value: string) {
   return value.trim().toLowerCase();
 }
 
-function supportedRequirementAttachment(attachment: MailboxAttachmentSummary) {
+export function isSupportedRequirementAttachment(
+  attachment: MailboxAttachmentSummary,
+) {
   const filename = normalizedFilename(attachment.filename ?? "");
   const contentType = attachment.contentType.toLowerCase();
   return (
@@ -119,6 +121,14 @@ function supportedRequirementAttachment(attachment: MailboxAttachmentSummary) {
     [".pdf", ".docx", ".txt", ".md", ".markdown", ".csv", ".json"].some(
       (suffix) => filename.endsWith(suffix),
     )
+  );
+}
+
+export function isPdfMailboxAttachment(attachment: MailboxAttachmentSummary) {
+  const filename = normalizedFilename(attachment.filename ?? "");
+  return (
+    attachment.contentType.toLowerCase().includes("pdf") ||
+    filename.endsWith(".pdf")
   );
 }
 
@@ -138,10 +148,7 @@ export function sanitizeMailboxAutomationDecision(
       const key = normalizedFilename(filename);
       const attachment = attachmentByName.get(key);
       if (!attachment || seenPolicyFiles.has(key)) return false;
-      const isPdf =
-        attachment.contentType.toLowerCase().includes("pdf") ||
-        key.endsWith(".pdf");
-      if (!isPdf) return false;
+      if (!isPdfMailboxAttachment(attachment)) return false;
       seenPolicyFiles.add(key);
       return true;
     });
@@ -149,7 +156,7 @@ export function sanitizeMailboxAutomationDecision(
   });
   const requirementFilenames = decision.requirementFilenames.filter((filename) => {
     const attachment = attachmentByName.get(normalizedFilename(filename));
-    return attachment ? supportedRequirementAttachment(attachment) : false;
+    return attachment ? isSupportedRequirementAttachment(attachment) : false;
   });
 
   const sanitized = {

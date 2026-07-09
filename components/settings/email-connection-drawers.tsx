@@ -34,6 +34,14 @@ import {
 } from "@/components/settings/email-connection-ui";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -417,6 +425,7 @@ export function MailboxSettingsDrawer({
   const [saving, setSaving] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [scanFrom, setScanFrom] = useState(() =>
     dayjs().subtract(30, "day").format("YYYY-MM-DD"),
   );
@@ -431,6 +440,14 @@ export function MailboxSettingsDrawer({
     automation.companyMemory !== initialAutomation.companyMemory;
   const error = account.lastScanError ?? account.lastError;
   const healthy = account.status === "active" && !error;
+  const scanDatesOutOfOrder =
+    Boolean(scanFrom && scanTo) &&
+    dayjs(scanFrom).isAfter(dayjs(scanTo), "day");
+  const canScan =
+    Boolean(scanFrom && scanTo) &&
+    !scanDatesOutOfOrder &&
+    !hasChanges &&
+    !scanning;
 
   async function saveSettings() {
     setSaving(true);
@@ -457,6 +474,7 @@ export function MailboxSettingsDrawer({
         dateTo: scanTo,
       });
       if (result.matchedCount === 0) {
+        setScanDialogOpen(false);
         toast.info("No emails were found in that date range");
         return;
       }
@@ -474,6 +492,7 @@ export function MailboxSettingsDrawer({
           ? `The date range matched ${result.matchedCount} emails; the newest ${result.scannedCount} were scanned.`
           : "Results appear in a Glass thread when there is something to review.",
       });
+      setScanDialogOpen(false);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to scan the mailbox",
@@ -504,6 +523,18 @@ export function MailboxSettingsDrawer({
       open
       onOpenChange={onOpenChange}
       title={account.emailAddress}
+      actions={
+        canManageMailbox && !confirmDisconnect ? (
+          <PillButton
+            size="compact"
+            variant="secondary"
+            disabled={scanning}
+            onClick={() => setScanDialogOpen(true)}
+          >
+            Scan mailbox
+          </PillButton>
+        ) : null
+      }
       footer={
         confirmDisconnect ? (
           <>
@@ -617,55 +648,80 @@ export function MailboxSettingsDrawer({
               Just me.
             </p>
           </div>
-
-          {canManageMailbox ? (
-            <div className="space-y-2">
-              <div>
-                <p className="text-base font-medium text-foreground">
-                  Manual scan
-                </p>
-                <p className="text-base text-muted-foreground">
-                  Scan a date range now using the monitoring settings above.
-                  Already-processed emails are skipped.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="manual-scan-from">From</Label>
-                  <Input
-                    id="manual-scan-from"
-                    type="date"
-                    value={scanFrom}
-                    max={scanTo}
-                    disabled={scanning}
-                    onChange={(event) => setScanFrom(event.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="manual-scan-to">To</Label>
-                  <Input
-                    id="manual-scan-to"
-                    type="date"
-                    value={scanTo}
-                    min={scanFrom}
-                    disabled={scanning}
-                    onChange={(event) => setScanTo(event.target.value)}
-                  />
-                </div>
-              </div>
-              <PillButton
-                size="compact"
-                variant="secondary"
-                disabled={scanning || !scanFrom || !scanTo}
-                onClick={() => void runManualScan()}
-              >
-                {scanning ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                {scanning ? "Scanning…" : "Scan mailbox"}
-              </PillButton>
-            </div>
-          ) : null}
         </div>
       )}
+
+      <Dialog
+        open={scanDialogOpen}
+        onOpenChange={(open) => {
+          if (!scanning) setScanDialogOpen(open);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Scan mailbox</DialogTitle>
+            <DialogDescription>
+              Choose a date range to scan in{" "}
+              <strong>{account.emailAddress}</strong>. Glass uses the saved
+              monitoring settings and skips emails it has already processed.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-scan-from">From</Label>
+              <Input
+                id="manual-scan-from"
+                type="date"
+                value={scanFrom}
+                max={scanTo}
+                disabled={scanning}
+                aria-invalid={scanDatesOutOfOrder}
+                onChange={(event) => setScanFrom(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-scan-to">To</Label>
+              <Input
+                id="manual-scan-to"
+                type="date"
+                value={scanTo}
+                min={scanFrom}
+                disabled={scanning}
+                aria-invalid={scanDatesOutOfOrder}
+                onChange={(event) => setScanTo(event.target.value)}
+              />
+            </div>
+          </div>
+
+          {scanDatesOutOfOrder ? (
+            <p className="text-base text-destructive">
+              The end date must be on or after the start date.
+            </p>
+          ) : hasChanges ? (
+            <p className="rounded-lg border border-foreground/6 bg-foreground/3 px-3 py-2 text-base text-muted-foreground">
+              Save your monitoring changes before running a scan.
+            </p>
+          ) : null}
+
+          <DialogFooter>
+            <PillButton
+              variant="secondary"
+              disabled={scanning}
+              onClick={() => setScanDialogOpen(false)}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              disabled={!canScan}
+              onClick={() => void runManualScan()}
+            >
+              {scanning ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {scanning ? "Scanning…" : "Scan mailbox"}
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SettingsDrawer>
   );
 }

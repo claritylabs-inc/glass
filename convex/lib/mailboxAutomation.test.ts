@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   canAutoExecuteMailboxDecision,
   effectiveConnectedEmailAutomation,
+  isPdfMailboxAttachment,
+  isSupportedRequirementAttachment,
   sanitizeMailboxAutomationDecision,
   mailboxMessageIdentity,
   type MailboxAutomationDecision,
@@ -47,6 +49,33 @@ describe("mailbox automation decisions", () => {
     ]);
     expect(sanitized.policyGroups).toEqual([{ filenames: ["Policy.pdf"] }]);
     expect(sanitized.requirementFilenames).toEqual(["requirements.docx"]);
+  });
+
+  test("uses one attachment eligibility rule for classification and imports", () => {
+    expect(
+      isPdfMailboxAttachment({
+        filename: "policy.PDF",
+        contentType: "application/octet-stream",
+      }),
+    ).toBe(true);
+    expect(
+      isSupportedRequirementAttachment({
+        filename: "requirements.markdown",
+        contentType: "application/octet-stream",
+      }),
+    ).toBe(true);
+    expect(
+      isSupportedRequirementAttachment({
+        filename: "notes.bin",
+        contentType: "text/plain",
+      }),
+    ).toBe(true);
+    expect(
+      isSupportedRequirementAttachment({
+        filename: "installer.exe",
+        contentType: "application/octet-stream",
+      }),
+    ).toBe(false);
   });
 
   test("requires high confidence and never auto-executes review decisions", () => {

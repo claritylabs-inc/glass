@@ -4,7 +4,6 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
 import {
   buildNotificationEmail,
   type NotificationEmailBranding,
@@ -16,10 +15,7 @@ import {
 } from "../lib/resend";
 import { isWhiteLabelingEnabled } from "../lib/branding";
 import { getPortalUrlForOrg } from "../lib/domains";
-import {
-  objectRecord,
-  resolveNotificationThreadContext,
-} from "../lib/notificationThreadContext";
+import { resolveNotificationThreadContext } from "../lib/notificationThreadContext";
 
 export const send = internalAction({
   args: { notificationId: v.id("notifications") },
@@ -38,7 +34,7 @@ export const send = internalAction({
     );
     if (!recipientOrg) return;
 
-    const { thread: contextThread, privateThreadOwner } =
+    const { thread: contextThread, privateThreadOwner, threadLabel } =
       await resolveNotificationThreadContext(ctx, notification);
 
     // Collect recipients (user-targeted or org-wide)
@@ -128,7 +124,7 @@ export const send = internalAction({
       ctaLabel: notificationCtaLabel(type),
       branding,
       siteUrl,
-      threadLabel: resolveContextLabel(notification, contextThread),
+      threadLabel,
     });
 
     // Send to all recipients
@@ -175,20 +171,6 @@ function trustedThreadReplyAddress(value: string | undefined): string | undefine
   if (at <= 0 || at === address.length - 1) return undefined;
   const domain = address.slice(at + 1).toLowerCase();
   return getAgentDomains().includes(domain) ? address : undefined;
-}
-
-function resolveContextLabel(
-  notification: Doc<"notifications">,
-  replyThread: Doc<"threads"> | null,
-): string | undefined {
-  for (const candidate of [notification.actionPayload, notification.sourceRef]) {
-    const value = objectRecord(candidate);
-    if (!value) continue;
-    if (typeof value.threadTitle === "string" && value.threadTitle.trim()) {
-      return value.threadTitle.trim();
-    }
-  }
-  return replyThread?.title.trim() || undefined;
 }
 
 function buildCtaUrl(

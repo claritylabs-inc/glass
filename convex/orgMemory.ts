@@ -83,8 +83,6 @@ function memoryContentKey(content: string) {
     .replace(/[.!?]+$/g, "");
 }
 
-// Matches an incoming memory item against existing rows by sourceRef, then by
-// normalized content, and merges confidence/observedAt into the duplicate.
 async function findAndMergeDuplicate(
   ctx: MutationCtx,
   item: {
@@ -105,16 +103,19 @@ async function findAndMergeDuplicate(
         )
         .first()
     : null;
-  const existing = await ctx.db
-    .query("orgMemory")
-    .withIndex("by_org_type", (q) =>
-      q.eq("orgId", item.orgId).eq("type", item.type),
-    )
-    .take(500);
-  const contentKey = memoryContentKey(item.content);
-  const duplicate =
-    sourceMatch ??
-    existing.find((memory) => memoryContentKey(memory.content) === contentKey);
+  let duplicate = sourceMatch;
+  if (!duplicate) {
+    const contentKey = memoryContentKey(item.content);
+    const existing = await ctx.db
+      .query("orgMemory")
+      .withIndex("by_org_type", (q) =>
+        q.eq("orgId", item.orgId).eq("type", item.type),
+      )
+      .take(500);
+    duplicate = existing.find(
+      (memory) => memoryContentKey(memory.content) === contentKey,
+    ) ?? null;
+  }
   if (!duplicate) return null;
   await ctx.db.patch(duplicate._id, {
     confidence:
@@ -243,25 +244,27 @@ export const bulkInsert = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = dayjs().valueOf();
-    const inserted: string[] = [];
+    const inserted: Id<"orgMemory">[] = [];
     const orgNames = new Map<string, string | null>();
     for (const item of args.items) {
       const orgKey = String(item.orgId);
-      if (!orgNames.has(orgKey)) {
-        orgNames.set(orgKey, await orgNameById(ctx, item.orgId));
+      let orgName = orgNames.get(orgKey);
+      if (orgName === undefined) {
+        orgName = await orgNameById(ctx, item.orgId);
+        orgNames.set(orgKey, orgName);
       }
       const content = normalizeMemoryContent(item.content);
       if (!isCompanyContextMemory({
-        type: item.type as OrgMemoryType,
+        type: item.type,
         content,
-        orgName: orgNames.get(orgKey),
+        orgName,
         policyId: item.policyId,
       })) {
         continue;
       }
       const duplicateId = await findAndMergeDuplicate(
         ctx,
-        { ...item, type: item.type as OrgMemoryType, content },
+        { ...item, content },
         now,
       );
       if (duplicateId) continue;
