@@ -608,6 +608,8 @@ async function buildMessageHistoryWithAttachmentContext(
         content: buildAssistantMessageContentWithArtifacts({
           content,
           toolArtifacts: msg.toolArtifacts,
+          usedTools: msg.usedTools,
+          attachments: msg.attachments,
         }),
       });
     }
@@ -771,7 +773,7 @@ export const run = internalAction({
         : undefined;
 
       const scope = (await ctx.runQuery(
-        (internal as any).lib.agentScope.resolveForAction,
+        internal.lib.agentScope.resolveForAction,
         {
           orgId: args.orgId,
           userId: args.userId,

@@ -18,6 +18,16 @@ export type ImessageOutboundAppCard = {
   summary?: string;
 };
 
+type ImessageAttachmentFailure = {
+  filename: string;
+  error?: string;
+};
+
+type ImessageSendResult = {
+  ok: boolean;
+  attachmentFailures: ImessageAttachmentFailure[];
+};
+
 export type StoredThreadAttachment = {
   filename: string;
   contentType: string;
@@ -117,9 +127,23 @@ export async function sendOutboundImessage(params: {
   clientMessageId?: string;
   logPrefix?: string;
 }): Promise<boolean> {
+  return (await sendOutboundImessageWithResult(params)).ok;
+}
+
+async function sendOutboundImessageWithResult(params: {
+  toPhone?: string;
+  chatGuid?: string;
+  message: string;
+  attachments?: ImessageOutboundAttachment[];
+  appCards?: ImessageOutboundAppCard[];
+  clientMessageId?: string;
+  logPrefix?: string;
+}): Promise<ImessageSendResult> {
   const workerUrl = getImessageWorkerUrl();
-  if (!workerUrl) return false;
-  if (!params.toPhone && !params.chatGuid) return false;
+  if (!workerUrl) return { ok: false, attachmentFailures: [] };
+  if (!params.toPhone && !params.chatGuid) {
+    return { ok: false, attachmentFailures: [] };
+  }
 
   const attachments =
     params.attachments?.filter((attachment) => attachment.url) ?? [];
@@ -128,10 +152,10 @@ export async function sendOutboundImessage(params: {
     params.message.trim() ||
     (appCards.length > 0
       ? "Glass shared a link."
-      : attachments.length > 0
-        ? "Glass shared attachment(s)."
-        : "");
-  if (!message) return false;
+        : attachments.length > 0
+          ? "Glass shared attachment(s)."
+          : "");
+  if (!message) return { ok: false, attachmentFailures: [] };
 
   try {
     const res = await fetch(`${workerUrl}/send`, {
@@ -156,17 +180,48 @@ export async function sendOutboundImessage(params: {
       console.warn(
         `[${prefix}] iMessage send failed ${res.status}: ${body}`,
       );
-      return false;
+      return { ok: false, attachmentFailures: [] };
     }
-    return true;
+    const body = await res.json().catch(() => null);
+    const attachmentFailures = parseAttachmentFailures(body);
+    if (attachmentFailures.length > 0) {
+      const prefix = params.logPrefix ?? "imessageOutbound";
+      console.warn(`[${prefix}] iMessage attachment send failed`, {
+        attachmentFailures,
+      });
+    }
+    return { ok: true, attachmentFailures };
   } catch (error) {
     const prefix = params.logPrefix ?? "imessageOutbound";
     console.warn(
       `[${prefix}] iMessage send failed:`,
       error,
     );
-    return false;
+    return { ok: false, attachmentFailures: [] };
   }
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function parseAttachmentFailures(body: unknown): ImessageAttachmentFailure[] {
+  const failures = objectRecord(body)?.attachmentFailures;
+  if (!Array.isArray(failures)) return [];
+  return failures.flatMap((failure) => {
+    const record = objectRecord(failure);
+    if (!record) return [];
+    const filename = record.filename;
+    if (typeof filename !== "string" || !filename.trim()) return [];
+    const error = record.error;
+    const errorText = typeof error === "string" ? error.trim() : "";
+    return [
+      errorText
+        ? { filename: filename.trim(), error: errorText }
+        : { filename: filename.trim() },
+    ];
+  });
 }
 
 export async function sendIdempotentOutboundImessage(
@@ -192,7 +247,7 @@ export async function sendIdempotentOutboundImessage(
   });
   if (!claim.claimed) return true;
 
-  const sent = await sendOutboundImessage({
+  const result = await sendOutboundImessageWithResult({
     toPhone: params.toPhone,
     chatGuid: params.chatGuid,
     message: params.message,
@@ -202,10 +257,20 @@ export async function sendIdempotentOutboundImessage(
     logPrefix: params.logPrefix,
   });
 
-  if (sent) {
+  if (result.ok) {
     await ctx.runMutation(internal.imessageOutboundSends.complete, {
       idempotencyKey: params.idempotencyKey,
     });
+    if (params.threadMessageId && result.attachmentFailures.length > 0) {
+      await ctx.runMutation(
+        internal.threads.recordImessageAttachmentDeliveryFailure,
+        {
+          threadMessageId: params.threadMessageId,
+          stage: "worker_delivery",
+          failures: result.attachmentFailures,
+        },
+      );
+    }
   } else {
     await ctx.runMutation(internal.imessageOutboundSends.fail, {
       idempotencyKey: params.idempotencyKey,
@@ -213,5 +278,5 @@ export async function sendIdempotentOutboundImessage(
     });
   }
 
-  return sent;
+  return result.ok;
 }

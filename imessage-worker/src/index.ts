@@ -10,9 +10,11 @@ import {
 import { imessage } from "@spectrum-ts/imessage";
 import { terminal } from "@spectrum-ts/terminal";
 import {
+  reportImessageDeliveryEvent,
   sendToConvex,
   type ImessageAttachment,
   type ImessageAppCard,
+  type ImessageDeliveryFailure,
   type ImessageResponseAttachment,
 } from "./convex.js";
 
@@ -85,6 +87,10 @@ type AdvancedImessageClient = {
     ): Promise<unknown>;
   };
 };
+
+type AttachmentDownload =
+  | { buffer: Buffer }
+  | { failure: ImessageDeliveryFailure };
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -237,25 +243,108 @@ function readTimestamp(value: unknown, fieldNames: string[]): number | undefined
   return undefined;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function allAttachmentsFailed(
+  attachments: ImessageResponseAttachment[] | undefined,
+  error: string,
+): ImessageDeliveryFailure[] {
+  return (attachments ?? []).map((att) => ({
+    filename: att.filename,
+    error,
+  }));
+}
+
+function withAttachmentFailures<T extends Record<string, unknown>>(
+  body: T,
+  failures: ImessageDeliveryFailure[],
+): T & { attachmentFailures?: ImessageDeliveryFailure[] } {
+  return failures.length > 0
+    ? { ...body, attachmentFailures: failures }
+    : body;
+}
+
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  body: Record<string, unknown>,
+  attachmentFailures: ImessageDeliveryFailure[] = [],
+): void {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(withAttachmentFailures(body, attachmentFailures)));
+}
+
+function completeSendWithJson(
+  res: http.ServerResponse,
+  clientMessageId: string | undefined,
+  body: Record<string, unknown>,
+  attachmentFailures: ImessageDeliveryFailure[] = [],
+): void {
+  sendJson(res, 200, body, attachmentFailures);
+  completeSendIdempotencyKey(clientMessageId);
+}
+
+async function downloadOutboundAttachment(
+  att: ImessageResponseAttachment,
+): Promise<AttachmentDownload> {
+  try {
+    const res = await fetch(att.url);
+    if (!res.ok) {
+      console.warn(
+        `[glass-imessage] Failed to download attachment ${att.filename}: ${res.status}`,
+      );
+      return {
+        failure: {
+          filename: att.filename,
+          error: `Download failed with status ${res.status}`,
+        },
+      };
+    }
+    return { buffer: Buffer.from(await res.arrayBuffer()) };
+  } catch (err) {
+    console.warn(
+      `[glass-imessage] Failed to download attachment ${att.filename}:`,
+      err,
+    );
+    return {
+      failure: {
+        filename: att.filename,
+        error: errorMessage(err),
+      },
+    };
+  }
+}
+
 async function sendOutboundAttachments(
   space: Space,
   attachments?: ImessageResponseAttachment[],
-) {
+): Promise<ImessageDeliveryFailure[]> {
+  const failures: ImessageDeliveryFailure[] = [];
   for (const att of attachments ?? []) {
+    const download = await downloadOutboundAttachment(att);
+    if ("failure" in download) {
+      failures.push(download.failure);
+      continue;
+    }
+
     try {
-      const res = await fetch(att.url);
-      if (!res.ok) {
-        console.warn(`[glass-imessage] Failed to download attachment ${att.filename}: ${res.status}`);
-        continue;
-      }
-      const buffer = Buffer.from(await res.arrayBuffer());
       await space.send(
-        attachment(buffer, { name: att.filename, mimeType: att.mimeType }),
+        attachment(download.buffer, {
+          name: att.filename,
+          mimeType: att.mimeType,
+        }),
       );
     } catch (err) {
       console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
+      failures.push({
+        filename: att.filename,
+        error: errorMessage(err),
+      });
     }
   }
+  return failures;
 }
 
 function appCardFallbackText(card: ImessageAppCard) {
@@ -422,22 +511,27 @@ async function sendAttachmentsThroughClient(
   chatGuid: string,
   attachments?: ImessageResponseAttachment[],
   clientMessageId?: string,
-) {
-  if (!attachments?.length) return;
+): Promise<ImessageDeliveryFailure[]> {
+  const failures: ImessageDeliveryFailure[] = [];
+  if (!attachments?.length) return failures;
   if (!client.attachments?.upload || !client.messages?.sendAttachment) {
     console.warn("[glass-imessage] Attachment send by chat GUID is not available");
-    return;
+    return allAttachmentsFailed(
+      attachments,
+      "Attachment send by chat GUID is not available",
+    );
   }
 
   for (const [index, att] of attachments.entries()) {
+    const download = await downloadOutboundAttachment(att);
+    if ("failure" in download) {
+      failures.push(download.failure);
+      continue;
+    }
+
     try {
-      const res = await fetch(att.url);
-      if (!res.ok) {
-        console.warn(`[glass-imessage] Failed to download attachment ${att.filename}: ${res.status}`);
-        continue;
-      }
       const uploaded = await client.attachments.upload({
-        data: Buffer.from(await res.arrayBuffer()),
+        data: download.buffer,
         fileName: att.filename,
       });
       await client.messages.sendAttachment(chatGuid, uploaded.attachment.guid, {
@@ -447,8 +541,13 @@ async function sendAttachmentsThroughClient(
       });
     } catch (err) {
       console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
+      failures.push({
+        filename: att.filename,
+        error: errorMessage(err),
+      });
     }
   }
+  return failures;
 }
 
 async function sendAppCardsThroughClient(
@@ -506,10 +605,17 @@ async function sendByChatGuid(params: {
   attachments?: ImessageResponseAttachment[];
   appCards?: ImessageAppCard[];
   clientMessageId?: string;
-}) {
-  if (TRANSPORT !== "imessage") return false;
+}): Promise<{
+  sent: boolean;
+  attachmentFailures: ImessageDeliveryFailure[];
+}> {
+  if (TRANSPORT !== "imessage") {
+    return { sent: false, attachmentFailures: [] };
+  }
   const client = getAdvancedImessageClient(params.app);
-  if (!client?.messages?.sendText) return false;
+  if (!client?.messages?.sendText) {
+    return { sent: false, attachmentFailures: [] };
+  }
 
   try {
     await client.messages.sendText(params.chatGuid, params.message, {
@@ -521,19 +627,19 @@ async function sendByChatGuid(params: {
       params.appCards,
       params.clientMessageId,
     );
-    await sendAttachmentsThroughClient(
+    const attachmentFailures = await sendAttachmentsThroughClient(
       client,
       params.chatGuid,
       params.attachments,
       params.clientMessageId,
     );
-    return true;
+    return { sent: true, attachmentFailures };
   } catch (err) {
     console.warn(
       `[glass-imessage] Failed to send by chat GUID ${params.chatGuid}:`,
       err,
     );
-    return false;
+    return { sent: false, attachmentFailures: [] };
   }
 }
 
@@ -655,8 +761,7 @@ async function main() {
     const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
     if (req.method === "GET" && requestUrl.pathname === "/health") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
+      sendJson(res, 200, {
         ok: true,
         service: "glass-imessage-worker",
         glassEnv: GLASS_ENV,
@@ -669,20 +774,18 @@ async function main() {
         gitSha: process.env.RAILWAY_GIT_COMMIT_SHA,
         gitBranch: process.env.RAILWAY_GIT_BRANCH,
         httpPorts,
-      }));
+      });
       return;
     }
 
     if (req.method !== "POST" || requestUrl.pathname !== "/send") {
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Not found" }));
+      sendJson(res, 404, { error: "Not found" });
       return;
     }
 
     const authHeader = req.headers["authorization"] ?? "";
     if (WORKER_SECRET && authHeader !== `Bearer ${WORKER_SECRET}`) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
+      sendJson(res, 401, { error: "Unauthorized" });
       return;
     }
 
@@ -706,8 +809,7 @@ async function main() {
     try {
       payload = JSON.parse(body);
     } catch {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Invalid JSON" }));
+      sendJson(res, 400, { error: "Invalid JSON" });
       return;
     }
 
@@ -718,14 +820,14 @@ async function main() {
           ? "Glass shared attachment(s)."
           : "");
     if ((!payload.toPhone && !payload.chatGuid && !payload.participants?.length) || !messageText) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "toPhone, chatGuid, or participants and message/appCards/attachments are required" }));
+      sendJson(res, 400, {
+        error: "toPhone, chatGuid, or participants and message/appCards/attachments are required",
+      });
       return;
     }
 
     if (!claimSendIdempotencyKey(payload.clientMessageId)) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, duplicate: true }));
+      sendJson(res, 200, { ok: true, duplicate: true });
       return;
     }
 
@@ -734,8 +836,9 @@ async function main() {
         const participants = [...new Set(payload.participants.map(normalizePhone).filter(Boolean))];
         if (participants.length < 2) {
           releaseSendIdempotencyKey(payload.clientMessageId);
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "At least two participants are required for a group chat" }));
+          sendJson(res, 400, {
+            error: "At least two participants are required for a group chat",
+          });
           return;
         }
 
@@ -744,24 +847,31 @@ async function main() {
           const space = await terminalClient.space.get(TERMINAL_SPACE_ID);
           await space.send(`[new group: ${participants.join(", ")}] ${messageText}`);
           await sendOutboundAppCards(space, payload.appCards);
-          await sendOutboundAttachments(space, payload.attachments);
+          const attachmentFailures = await sendOutboundAttachments(
+            space,
+            payload.attachments,
+          );
           const chatGuid = deterministicTerminalGroupGuid(participants);
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({
-            ok: true,
-            chatGuid,
-            isGroup: true,
-            participants: participants.map((address) => ({ address })),
-          }));
-          completeSendIdempotencyKey(payload.clientMessageId);
+          completeSendWithJson(
+            res,
+            payload.clientMessageId,
+            {
+              ok: true,
+              chatGuid,
+              isGroup: true,
+              participants: participants.map((address) => ({ address })),
+            },
+            attachmentFailures,
+          );
           return;
         }
 
         const imessageClient = getAdvancedImessageClient(app);
         if (!imessageClient?.chats?.create) {
           releaseSendIdempotencyKey(payload.clientMessageId);
-          res.writeHead(501, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "iMessage group creation is not available" }));
+          sendJson(res, 501, {
+            error: "iMessage group creation is not available",
+          });
           return;
         }
 
@@ -775,6 +885,10 @@ async function main() {
         if (payload.attachments?.length) {
           console.warn("[glass-imessage] Attachment send is not available during new group creation");
         }
+        const attachmentFailures = allAttachmentsFailed(
+          payload.attachments,
+          "Attachment send is not available during new group creation",
+        );
         const chatGuid = created.chat.guid;
         if (payload.title?.trim() && imessageClient.groups?.setDisplayName) {
           await imessageClient.groups.setDisplayName(chatGuid, payload.title.trim(), {
@@ -788,14 +902,17 @@ async function main() {
               address: normalizePhone(participant.address),
             }))
           : participants.map((address) => ({ address }));
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          ok: true,
-          chatGuid,
-          isGroup: true,
-          participants: returnedParticipants,
-        }));
-        completeSendIdempotencyKey(payload.clientMessageId);
+        completeSendWithJson(
+          res,
+          payload.clientMessageId,
+          {
+            ok: true,
+            chatGuid,
+            isGroup: true,
+            participants: returnedParticipants,
+          },
+          attachmentFailures,
+        );
         return;
       }
 
@@ -805,10 +922,16 @@ async function main() {
       if (activeChatSpace) {
         await activeChatSpace.send(messageText);
         await sendOutboundAppCards(activeChatSpace, payload.appCards);
-        await sendOutboundAttachments(activeChatSpace, payload.attachments);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-        completeSendIdempotencyKey(payload.clientMessageId);
+        const attachmentFailures = await sendOutboundAttachments(
+          activeChatSpace,
+          payload.attachments,
+        );
+        completeSendWithJson(
+          res,
+          payload.clientMessageId,
+          { ok: true },
+          attachmentFailures,
+        );
         return;
       }
 
@@ -821,18 +944,20 @@ async function main() {
           appCards: payload.appCards,
           clientMessageId: payload.clientMessageId,
         });
-        if (sentByChatGuid) {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: true }));
-          completeSendIdempotencyKey(payload.clientMessageId);
+        if (sentByChatGuid.sent) {
+          completeSendWithJson(
+            res,
+            payload.clientMessageId,
+            { ok: true },
+            sentByChatGuid.attachmentFailures,
+          );
           return;
         }
       }
 
       if (!payload.toPhone) {
         releaseSendIdempotencyKey(payload.clientMessageId);
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "No active chat space" }));
+        sendJson(res, 404, { error: "No active chat space" });
         return;
       }
 
@@ -841,10 +966,16 @@ async function main() {
       if (activeSpace) {
         await activeSpace.send(messageText);
         await sendOutboundAppCards(activeSpace, payload.appCards);
-        await sendOutboundAttachments(activeSpace, payload.attachments);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-        completeSendIdempotencyKey(payload.clientMessageId);
+        const attachmentFailures = await sendOutboundAttachments(
+          activeSpace,
+          payload.attachments,
+        );
+        completeSendWithJson(
+          res,
+          payload.clientMessageId,
+          { ok: true },
+          attachmentFailures,
+        );
         return;
       }
 
@@ -853,10 +984,16 @@ async function main() {
         const space = await terminalClient.space.get(TERMINAL_SPACE_ID);
         await space.send(messageText);
         await sendOutboundAppCards(space, payload.appCards);
-        await sendOutboundAttachments(space, payload.attachments);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-        completeSendIdempotencyKey(payload.clientMessageId);
+        const attachmentFailures = await sendOutboundAttachments(
+          space,
+          payload.attachments,
+        );
+        completeSendWithJson(
+          res,
+          payload.clientMessageId,
+          { ok: true },
+          attachmentFailures,
+        );
         return;
       }
 
@@ -865,15 +1002,20 @@ async function main() {
       const space = await imessageClient.space.create(user);
       await space.send(messageText);
       await sendOutboundAppCards(space, payload.appCards);
-      await sendOutboundAttachments(space, payload.attachments);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
-      completeSendIdempotencyKey(payload.clientMessageId);
+      const attachmentFailures = await sendOutboundAttachments(
+        space,
+        payload.attachments,
+      );
+      completeSendWithJson(
+        res,
+        payload.clientMessageId,
+        { ok: true },
+        attachmentFailures,
+      );
     } catch (err) {
       releaseSendIdempotencyKey(payload.clientMessageId);
       console.error("[glass-imessage] Failed to send outbound message:", err);
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Failed to send message" }));
+      sendJson(res, 500, { error: "Failed to send message" });
     }
   };
 
@@ -1001,7 +1143,20 @@ async function main() {
           await sendOutboundAppCards(space, result.appCards);
 
           // Send any file attachments (e.g. COI PDFs)
-          await sendOutboundAttachments(space, result.attachments);
+          const attachmentFailures = await sendOutboundAttachments(
+            space,
+            result.attachments,
+          );
+          if (
+            attachmentFailures.length > 0 &&
+            result.threadMessageId &&
+            CONVEX_SITE_URL
+          ) {
+            await reportImessageDeliveryEvent(CONVEX_SITE_URL, WORKER_SECRET, {
+              threadMessageId: result.threadMessageId,
+              attachmentFailures,
+            });
+          }
 
           if (result.leaveGroup && result.chatGuid && TRANSPORT === "imessage") {
             try {

@@ -30,6 +30,11 @@ import {
   toPolicyVersionDto,
 } from "./lib/apiDto";
 const http = httpRouter();
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
+}
 
 auth.addHttpRoutes(http);
 
@@ -110,10 +115,7 @@ http.route({
     const secret = process.env.IMESSAGE_WORKER_SECRET;
     const authHeader = request.headers.get("Authorization") ?? "";
     if (secret && authHeader !== `Bearer ${secret}`) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
     let body: {
@@ -174,6 +176,54 @@ http.route({
         headers: { "Content-Type": "application/json" },
       });
     }
+  }),
+});
+
+http.route({
+  path: "/imessage-delivery-events",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.IMESSAGE_WORKER_SECRET;
+    const authHeader = request.headers.get("Authorization") ?? "";
+    if (secret && authHeader !== `Bearer ${secret}`) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    let body: {
+      threadMessageId?: string;
+      attachmentFailures?: Array<{ filename?: string; error?: string }>;
+    };
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: "Invalid JSON" }, 400);
+    }
+
+    const threadMessageId = body.threadMessageId?.trim();
+    const failures = (body.attachmentFailures ?? [])
+      .map((failure) => ({
+        filename: failure.filename?.trim() ?? "",
+        error: failure.error?.trim() || undefined,
+      }))
+      .filter((failure) => failure.filename);
+
+    if (!threadMessageId || failures.length === 0) {
+      return jsonResponse(
+        { error: "threadMessageId and attachmentFailures are required" },
+        400,
+      );
+    }
+
+    await ctx.runMutation(
+      internal.threads.recordImessageAttachmentDeliveryFailure,
+      {
+        threadMessageId: threadMessageId as Id<"threadMessages">,
+        stage: "worker_delivery",
+        failures,
+      },
+    );
+
+    return jsonResponse({ ok: true });
   }),
 });
 
@@ -499,8 +549,6 @@ http.route({
 
 // ── MCP API Routes ──
 
-const JSON_HEADERS = { "Content-Type": "application/json" };
-
 type McpIdentity = {
   userId: string;
   orgId: string;
@@ -594,10 +642,6 @@ async function requireMcpAuth(
       "WWW-Authenticate": mcpResourceMetadataAuthenticateHeader(request),
     },
   });
-}
-
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
 
 function getQueryParam(request: Request, name: string): string | null {

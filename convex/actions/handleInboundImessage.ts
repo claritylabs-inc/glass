@@ -70,6 +70,7 @@ type ImessageResponse = {
   appCards?: ImessageAppCard[];
   leaveGroup?: boolean;
   chatGuid?: string;
+  threadMessageId?: string;
 };
 
 async function sendImmediateImessage(params: {
@@ -83,6 +84,19 @@ async function sendImmediateImessage(params: {
     message: params.message,
     logPrefix: "imessage",
   });
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function appendAttachmentFailureNotice(responseText: string): string {
+  const notice =
+    "Heads up: the PDF did not attach. Say \"resend\" and I'll attach it again.";
+  const trimmed = responseText.trim();
+  if (!trimmed) return notice;
+  if (trimmed.includes(notice)) return trimmed;
+  return `${trimmed}\n\n${notice}`;
 }
 
 export const processInbound = internalAction({
@@ -162,7 +176,11 @@ export const processInbound = internalAction({
     const finish = async (
       response: string,
       attachments?: ImessageResponse["attachments"],
-      options?: { leaveGroup?: boolean; appCards?: ImessageAppCard[] },
+      options?: {
+        leaveGroup?: boolean;
+        appCards?: ImessageAppCard[];
+        threadMessageId?: Id<"threadMessages">;
+      },
     ) => {
       await ctx.runMutation(internal.imessageInboundEvents.complete, {
         eventKey,
@@ -174,6 +192,9 @@ export const processInbound = internalAction({
         appCards: options?.appCards,
         leaveGroup: options?.leaveGroup,
         chatGuid,
+        threadMessageId: options?.threadMessageId
+          ? String(options.threadMessageId)
+          : undefined,
       };
     };
 
@@ -767,6 +788,11 @@ export const processInbound = internalAction({
         filename: string;
         mimeType: string;
       }> = [];
+      const resolvedFileAttachments: typeof responseFileAttachments = [];
+      const attachmentResolutionFailures: Array<{
+        filename: string;
+        error: string;
+      }> = [];
       for (const fileAttachment of responseFileAttachments) {
         try {
           const url = await ctx.storage.getUrl(fileAttachment.storageId);
@@ -776,13 +802,35 @@ export const processInbound = internalAction({
               filename: fileAttachment.filename,
               mimeType: "application/pdf",
             });
+            resolvedFileAttachments.push(fileAttachment);
+          } else {
+            attachmentResolutionFailures.push({
+              filename: fileAttachment.filename,
+              error: "Storage URL was unavailable.",
+            });
           }
         } catch (err) {
           console.warn("[imessage] Failed to get attachment URL:", err);
+          attachmentResolutionFailures.push({
+            filename: fileAttachment.filename,
+            error: errorText(err),
+          });
         }
       }
 
-      const agentAttachments = responseFileAttachments.map((c) => ({
+      if (attachmentResolutionFailures.length > 0) {
+        responseText = appendAttachmentFailureNotice(responseText);
+        imessageToolArtifacts.push({
+          type: "imessage_attachment_delivery",
+          data: {
+            status: "failed",
+            stage: "url_resolution",
+            failures: attachmentResolutionFailures,
+          },
+        });
+      }
+
+      const agentAttachments = resolvedFileAttachments.map((c) => ({
         filename: c.filename,
         contentType: "application/pdf",
         size: 0,
@@ -825,7 +873,10 @@ export const processInbound = internalAction({
       return await finish(
         responseAlreadySent ? "" : responseText,
         responseAttachments.length > 0 ? responseAttachments : undefined,
-        appCards.length > 0 ? { appCards } : undefined,
+        {
+          appCards: appCards.length > 0 ? appCards : undefined,
+          threadMessageId: agentResponseMessageId,
+        },
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

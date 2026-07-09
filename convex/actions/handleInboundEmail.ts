@@ -963,12 +963,16 @@ export const processInbound = internalAction({
     }
 
     try {
-      const scope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
-        orgId,
-        userId: primaryUserId,
-        surface: "email",
-        allowBrokerPortfolio: org.type === "broker" && isInternal && effectiveMode === "direct",
-      })) as AgentScope;
+      const scope = (await ctx.runQuery(
+        internal.lib.agentScope.resolveForAction,
+        {
+          orgId,
+          userId: primaryUserId,
+          surface: "email",
+          allowBrokerPortfolio:
+            org.type === "broker" && isInternal && effectiveMode === "direct",
+        },
+      )) as AgentScope;
 
       const policiesByOrg = new Map<string, any[]>();
       await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
@@ -1071,6 +1075,8 @@ export const processInbound = internalAction({
               content: buildAssistantMessageContentWithArtifacts({
                 content: msg.content,
                 toolArtifacts: msg.toolArtifacts,
+                usedTools: msg.usedTools,
+                attachments: msg.attachments,
               }),
             });
           }
