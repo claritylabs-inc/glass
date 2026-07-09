@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
@@ -640,11 +640,13 @@ function RequirementsTable({
 function RequirementsFilterSelect({
   label,
   value,
+  valueLabel,
   onValueChange,
   children,
 }: {
   label: string;
   value: string;
+  valueLabel: string;
   onValueChange: (value: string) => void;
   children: ReactNode;
 }) {
@@ -653,7 +655,7 @@ function RequirementsFilterSelect({
       {label}
       <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
         <SelectTrigger size="sm" className="w-full bg-background">
-          <SelectValue />
+          <SelectValue>{valueLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>{children}</SelectContent>
       </Select>
@@ -701,9 +703,6 @@ function RequirementDrawer({
       title="Coverage requirement"
       footer={
         <>
-          <PillButton type="button" variant="secondary" onClick={onClose}>
-            Close
-          </PillButton>
           {requirement.canArchive !== false ? (
             <PillButton
               type="button"
@@ -862,14 +861,41 @@ function provisionsForRequirement(requirement: Requirement): RequirementProvisio
   );
 }
 
+type RequirementEditDrafts = {
+  title: string;
+  lineOfBusiness: string;
+  limitDrafts: LimitDraft[];
+  provisions: RequirementProvision[];
+  requirementText: string;
+};
+
+function requirementEditValuesFromDrafts(
+  drafts: RequirementEditDrafts,
+): RequirementEditValues | "invalid_amount" {
+  const limits: RequirementLimitEdit[] = [];
+  for (const draft of drafts.limitDrafts) {
+    if (!draft.amount.trim()) continue;
+    const amount = parseMoneyInput(draft.amount);
+    if (amount === undefined) return "invalid_amount";
+    limits.push({ kind: draft.kind, amount, label: draft.amount.trim() });
+  }
+  return {
+    title: drafts.title.trim(),
+    lineOfBusiness: drafts.lineOfBusiness,
+    limits: limits.length > 0 ? limits : undefined,
+    provisions: drafts.provisions.length > 0 ? drafts.provisions : undefined,
+    requirementText: drafts.requirementText.trim(),
+  };
+}
+
 function RequirementEditForm({
   requirement,
   onSave,
-  onCancel,
+  onArchive,
 }: {
   requirement: Requirement;
   onSave: (values: RequirementEditValues) => Promise<void>;
-  onCancel: () => void;
+  onArchive: () => void;
 }) {
   const [title, setTitle] = useState(requirement.title);
   const [lineOfBusiness, setLineOfBusiness] = useState(requirement.lineOfBusiness ?? "CGL");
@@ -881,48 +907,60 @@ function RequirementEditForm({
   );
   const [requirementText, setRequirementText] = useState(requirement.requirementText);
   const [saving, setSaving] = useState(false);
+  const savedSnapshot = useRef<string | null>(null);
+  if (savedSnapshot.current === null) {
+    const initial = requirementEditValuesFromDrafts({
+      title,
+      lineOfBusiness,
+      limitDrafts,
+      provisions,
+      requirementText,
+    });
+    savedSnapshot.current = initial === "invalid_amount" ? "" : JSON.stringify(initial);
+  }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const parsedLimits: RequirementLimitEdit[] = [];
-    for (const draft of limitDrafts) {
-      if (!draft.amount.trim()) continue;
-      const amount = parseMoneyInput(draft.amount);
-      if (amount === undefined) {
-        toast.error("Enter a valid limit amount");
-        return;
-      }
-      parsedLimits.push({
-        kind: draft.kind,
-        amount,
-        label: draft.amount.trim(),
-      });
+  async function commit(next: Partial<RequirementEditDrafts> = {}) {
+    const drafts: RequirementEditDrafts = {
+      title,
+      lineOfBusiness,
+      limitDrafts,
+      provisions,
+      requirementText,
+      ...next,
+    };
+    if (!drafts.title.trim() || !drafts.requirementText.trim()) return;
+    const values = requirementEditValuesFromDrafts(drafts);
+    if (values === "invalid_amount") {
+      toast.error("Enter a valid limit amount");
+      return;
     }
+    const snapshot = JSON.stringify(values);
+    if (snapshot === savedSnapshot.current) return;
     setSaving(true);
     try {
-      await onSave({
-        title,
-        lineOfBusiness,
-        limits: parsedLimits.length > 0 ? parsedLimits : undefined,
-        provisions: provisions.length > 0 ? provisions : undefined,
-        requirementText,
-      });
-      onCancel();
+      await onSave(values);
+      savedSnapshot.current = snapshot;
+    } catch {
+      // onSave reverts the cache and reports the error; drafts stay so the user can retry
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="space-y-3 rounded-md border border-foreground/8 bg-muted/30 px-3 py-3"
-    >
+    <div className="space-y-3">
       <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
         Title
         <Input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
+          onBlur={() => {
+            if (!title.trim()) {
+              setTitle(requirement.title);
+              return;
+            }
+            void commit();
+          }}
           disabled={saving}
           required
         />
@@ -931,10 +969,16 @@ function RequirementEditForm({
         Line
         <Select
           value={lineOfBusiness}
-          onValueChange={(value) => value && setLineOfBusiness(value)}
+          onValueChange={(value) => {
+            if (!value || value === lineOfBusiness) return;
+            setLineOfBusiness(value);
+            void commit({ lineOfBusiness: value });
+          }}
           disabled={saving}
         >
-          <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
+          <SelectTrigger size="sm" className="w-full bg-background">
+            <SelectValue>{lobLabel(lineOfBusiness)}</SelectValue>
+          </SelectTrigger>
           <SelectContent>
             {COMMON_LOBS.map((code) => (
               <SelectItem key={code} value={code}>{lobLabel(code)}</SelectItem>
@@ -973,58 +1017,62 @@ function RequirementEditForm({
             {limitDrafts.map((draft) => (
               <div
                 key={draft.id}
-                className="grid grid-cols-[minmax(0,1fr)_120px_auto] items-end gap-2"
+                className="grid grid-cols-[minmax(0,1fr)_120px_auto] items-center gap-2"
               >
-                <label className="flex min-w-0 flex-col gap-1.5 text-label font-medium text-muted-foreground">
-                  Limit
-                  <Select
-                    value={draft.kind}
-                    onValueChange={(value) =>
-                      setLimitDrafts((current) =>
-                        current.map((item) =>
-                          item.id === draft.id
-                            ? { ...item, kind: value as RequirementLimitKind }
-                            : item,
-                        ),
-                      )
-                    }
-                    disabled={saving}
+                <Select
+                  value={draft.kind}
+                  onValueChange={(value) => {
+                    if (!value || value === draft.kind) return;
+                    const next = limitDrafts.map((item) =>
+                      item.id === draft.id
+                        ? { ...item, kind: value as RequirementLimitKind }
+                        : item,
+                    );
+                    setLimitDrafts(next);
+                    void commit({ limitDrafts: next });
+                  }}
+                  disabled={saving}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full min-w-0 bg-background"
+                    aria-label="Limit type"
                   >
-                    <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {LIMIT_KIND_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {REQUIREMENT_LIMIT_KIND_LABELS[option]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </label>
-                <label className="flex min-w-0 flex-col gap-1.5 text-label font-medium text-muted-foreground">
-                  Amount
-                  <Input
-                    value={draft.amount}
-                    onChange={(event) =>
-                      setLimitDrafts((current) =>
-                        current.map((item) =>
-                          item.id === draft.id
-                            ? { ...item, amount: event.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                    placeholder="$1,000,000"
-                    disabled={saving}
-                  />
-                </label>
+                    <SelectValue>{REQUIREMENT_LIMIT_KIND_LABELS[draft.kind]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LIMIT_KIND_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {REQUIREMENT_LIMIT_KIND_LABELS[option]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={draft.amount}
+                  onChange={(event) =>
+                    setLimitDrafts((current) =>
+                      current.map((item) =>
+                        item.id === draft.id
+                          ? { ...item, amount: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                  onBlur={() => void commit()}
+                  placeholder="$1,000,000"
+                  aria-label="Limit amount"
+                  disabled={saving}
+                />
                 <PillButton
                   type="button"
-                  size="compact"
-                  variant="secondary"
+                  variant="icon"
                   disabled={saving}
-                  onClick={() =>
-                    setLimitDrafts((current) => current.filter((item) => item.id !== draft.id))
-                  }
+                  onClick={() => {
+                    const next = limitDrafts.filter((item) => item.id !== draft.id);
+                    setLimitDrafts(next);
+                    void commit({ limitDrafts: next });
+                  }}
                   aria-label="Remove limit"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -1042,13 +1090,13 @@ function RequirementEditForm({
             size="compact"
             variant={provisions.includes(option) ? "primary" : "secondary"}
             disabled={saving}
-            onClick={() =>
-              setProvisions((current) =>
-                current.includes(option)
-                  ? current.filter((item) => item !== option)
-                  : [...current, option],
-              )
-            }
+            onClick={() => {
+              const next = provisions.includes(option)
+                ? provisions.filter((item) => item !== option)
+                : [...provisions, option];
+              setProvisions(next);
+              void commit({ provisions: next });
+            }}
           >
             {REQUIREMENT_PROVISION_LABELS[option]}
           </PillButton>
@@ -1061,19 +1109,38 @@ function RequirementEditForm({
           rows={5}
           value={requirementText}
           onChange={(event) => setRequirementText(event.target.value)}
+          onBlur={() => {
+            if (!requirementText.trim()) {
+              setRequirementText(requirement.requirementText);
+              return;
+            }
+            void commit();
+          }}
           disabled={saving}
           required
         />
       </label>
-      <div className="flex justify-end gap-2">
-        <PillButton type="button" variant="secondary" disabled={saving} onClick={onCancel}>
-          Cancel
-        </PillButton>
-        <PillButton type="submit" disabled={saving}>
-          {saving ? "Saving..." : "Save requirement"}
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-1.5 text-label text-muted-foreground">
+          {saving ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Saving
+            </>
+          ) : null}
+        </span>
+        <PillButton
+          type="button"
+          size="compact"
+          variant="secondary"
+          disabled={saving}
+          onClick={onArchive}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Archive requirement
         </PillButton>
       </div>
-    </form>
+    </div>
   );
 }
 
@@ -1169,26 +1236,24 @@ function SourceDrawer({
       }}
       title="Requirement source"
       footer={
-        <>
-          <PillButton type="button" variant="secondary" onClick={onClose}>
-            Close
-          </PillButton>
-          <PillButton
-            type="button"
-            variant="secondary"
-            disabled={archiving}
-            onClick={() => void archiveSource()}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {archiving ? "Archiving..." : "Archive source"}
-          </PillButton>
-        </>
+        <PillButton
+          type="button"
+          variant="secondary"
+          disabled={archiving}
+          onClick={() => void archiveSource()}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {archiving ? "Archiving..." : "Archive source"}
+        </PillButton>
       }
     >
       <div className="space-y-5">
         <section className="space-y-3">
           <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
-            Name
+            <span className="flex items-center gap-1.5">
+              Name
+              {savingField === "title" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            </span>
             <Input
               value={titleDraft}
               onChange={(event) => setTitleDraft(event.target.value)}
@@ -1197,7 +1262,10 @@ function SourceDrawer({
             />
           </label>
           <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
-            Source type
+            <span className="flex items-center gap-1.5">
+              Source type
+              {savingField === "sourceType" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            </span>
             <Select
               value={sourceTypeDraft}
               onValueChange={(value) => {
@@ -1205,7 +1273,9 @@ function SourceDrawer({
               }}
               disabled={savingField !== null}
             >
-              <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
+              <SelectTrigger size="sm" className="w-full bg-background">
+                <SelectValue>{REQUIREMENT_SOURCE_TYPE_LABELS[sourceTypeDraft]}</SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 {REQUIREMENT_SOURCE_DOCUMENT_TYPES.map((type) => (
                   <SelectItem key={type} value={type}>
@@ -1215,16 +1285,6 @@ function SourceDrawer({
               </SelectContent>
             </Select>
           </label>
-          <div className="flex min-h-5 justify-end">
-            <span className="flex items-center gap-1.5 text-label text-muted-foreground">
-              {savingField ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Saving
-                </>
-              ) : null}
-            </span>
-          </div>
         </section>
         <section className="space-y-2 border-t border-foreground/6 pt-5">
           {source.fileName ? <DrawerDetail label="File" value={source.fileName} /> : null}
@@ -1281,23 +1341,12 @@ function SourceDrawer({
                       </span>
                     </button>
                     {expanded ? (
-                      <div className="space-y-3 border-t border-foreground/6 px-3 pb-3 pt-3">
+                      <div className="border-t border-foreground/6 px-3 pb-3 pt-3">
                         <RequirementEditForm
                           requirement={requirement}
                           onSave={(values) => onSaveRequirement(requirement, values)}
-                          onCancel={() => setExpandedRequirementId(null)}
+                          onArchive={() => void onArchiveRequirement(requirement._id)}
                         />
-                        <div className="flex justify-end">
-                          <PillButton
-                            type="button"
-                            size="compact"
-                            variant="secondary"
-                            onClick={() => void onArchiveRequirement(requirement._id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Archive requirement
-                          </PillButton>
-                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -1820,7 +1869,9 @@ export function CompliancePage() {
             <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Source type
               <Select value={sourceTypeValue} onValueChange={(value) => setSourceTypeValue(value as RequirementSourceDocumentType)}>
-                <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
+                <SelectTrigger size="sm" className="w-full bg-background">
+                  <SelectValue>{REQUIREMENT_SOURCE_TYPE_LABELS[sourceTypeValue]}</SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {REQUIREMENT_SOURCE_DOCUMENT_TYPES.map((type) => (
                     <SelectItem key={type} value={type}>
@@ -1863,7 +1914,9 @@ export function CompliancePage() {
             <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Line
               <Select value={lineOfBusiness} onValueChange={(value) => value && setLineOfBusiness(value)}>
-                <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
+                <SelectTrigger size="sm" className="w-full bg-background">
+                  <SelectValue>{lobLabel(lineOfBusiness)}</SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {COMMON_LOBS.map((code) => (
                     <SelectItem key={code} value={code}>{lobLabel(code)}</SelectItem>
@@ -1875,7 +1928,9 @@ export function CompliancePage() {
               <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                 Limit
                 <Select value={limitKind} onValueChange={(value) => setLimitKind(value as RequirementLimitKind)}>
-                  <SelectTrigger className="w-full bg-background"><SelectValue /></SelectTrigger>
+                  <SelectTrigger size="sm" className="w-full bg-background">
+                    <SelectValue>{REQUIREMENT_LIMIT_KIND_LABELS[limitKind]}</SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {LIMIT_KIND_OPTIONS.map((option) => (
                       <SelectItem key={option} value={option}>{REQUIREMENT_LIMIT_KIND_LABELS[option]}</SelectItem>
@@ -1988,6 +2043,7 @@ export function CompliancePage() {
               <RequirementsFilterSelect
                 label="Source"
                 value={effectiveSourceFilter}
+                valueLabel={sourceLabel(effectiveSourceFilter)}
                 onValueChange={(value) => setSourceFilter(value as SourceFilter)}
               >
                 {sourceFilters.map((filter) => (
@@ -1997,6 +2053,7 @@ export function CompliancePage() {
               <RequirementsFilterSelect
                 label="Line"
                 value={effectiveLineFilter}
+                valueLabel={lineFilterLabel(effectiveLineFilter)}
                 onValueChange={(value) => setLineFilter(value as LineFilter)}
               >
                 {lineFilters.map((filter) => (
@@ -2006,6 +2063,7 @@ export function CompliancePage() {
               <RequirementsFilterSelect
                 label="Limit type"
                 value={effectiveLimitFilter}
+                valueLabel={limitFilterLabel(effectiveLimitFilter)}
                 onValueChange={(value) => setLimitFilter(value as LimitFilter)}
               >
                 {limitFilters.map((filter) => (
@@ -2015,6 +2073,7 @@ export function CompliancePage() {
               <RequirementsFilterSelect
                 label="Status"
                 value={effectiveStatusFilter}
+                valueLabel={statusFilterLabel(effectiveStatusFilter)}
                 onValueChange={(value) => setStatusFilter(value as StatusFilter)}
               >
                 {statusFilters.map((filter) => (
