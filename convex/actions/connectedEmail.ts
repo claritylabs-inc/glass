@@ -950,6 +950,7 @@ export const importRequirementAttachmentsInternal = internalAction({
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
+    scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<Record<string, unknown>> => {
@@ -981,6 +982,7 @@ export const importRequirementAttachmentsInternal = internalAction({
             userId: args.userId,
             pastedText: emailText,
             sourceType: args.sourceType,
+            scope: args.scope,
             appliesTo: args.appliesTo,
           },
         ) as { createdCount: number; requirementIds: Id<"insuranceRequirements">[] };
@@ -1008,6 +1010,7 @@ export const importRequirementAttachmentsInternal = internalAction({
             fileName: attachment.filename ?? "email-requirements",
             contentType: attachment.contentType,
             sourceType: args.sourceType,
+            scope: args.scope,
             appliesTo: args.appliesTo,
           },
         ) as { createdCount: number; requirementIds: Id<"insuranceRequirements">[] };
@@ -1045,6 +1048,7 @@ export const importRequirementAttachments = action({
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
+    scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<Record<string, unknown>> => {
@@ -1058,6 +1062,7 @@ export const importRequirementAttachments = action({
       filenames: args.filenames,
       includeEmailBody: args.includeEmailBody,
       sourceType: args.sourceType,
+      scope: args.scope,
       appliesTo: args.appliesTo,
     }) as Record<string, unknown>;
   },

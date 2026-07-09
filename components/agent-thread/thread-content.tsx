@@ -826,7 +826,6 @@ function MessageFooterActions({
                         citedSections={citedSections}
                         citedCoverageNames={citedCoverageNames}
                         citedSourceSpanIds={citedSourceSpanIds}
-                        index={index + 1}
                       />
                     </span>
                   ))

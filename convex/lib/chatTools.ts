@@ -1,11 +1,5 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { REQUIREMENT_EVALUATION_TARGETS } from "./requirementSemantics";
-
-const REQUIREMENT_EVALUATION_TARGET_FILTER_VALUES = [
-  ...REQUIREMENT_EVALUATION_TARGETS,
-  "all",
-] as const;
 
 /**
  * Tool definitions for agentic chat.
@@ -42,7 +36,7 @@ export const compareCoverages = tool({
 
 export const lookupComplianceRequirements = tool({
   description:
-    "Look up the organization's saved insurance compliance requirements. Use this when the user asks what contractors/vendors must carry, asks about my requirements, internal insurance standards, minimum required limits, deductibles, endorsements, certificate instructions, or compliance checklist requirements. Results distinguish obligation owner from evidence target.",
+    "Look up the organization's saved insurance coverage requirements. Use this when the user asks what contractors/vendors must carry, asks about my requirements, minimum required limits, deductibles, endorsements, or compliance checklist requirements. Results distinguish scope.",
   inputSchema: z.object({
     query: z
       .string()
@@ -50,17 +44,11 @@ export const lookupComplianceRequirements = tool({
       .describe(
         "Requirement topic to search for, such as contractors, general liability, cyber, auto, workers comp, additional insured, waiver, or a limit amount.",
       ),
-    appliesTo: z
-      .enum(["vendors", "own_org", "both", "all"])
+    scope: z
+      .enum(["vendors", "own_org", "all"])
       .optional()
       .describe(
-        "Filter by obligation owner. Use vendors for contractor/vendor obligations, own_org for my requirements owned by this org, both for shared obligations, or all to search every requirement.",
-      ),
-    evaluationTarget: z
-      .enum(REQUIREMENT_EVALUATION_TARGET_FILTER_VALUES)
-      .optional()
-      .describe(
-        "Filter by evidence target: own_policy, connected_vendor_policy, subcontractor_policy, manual_control, not_policy_checkable, or all.",
+        "Filter by scope. Use vendors for contractor/vendor obligations, own_org for requirements owned by this org, or all to search every requirement.",
       ),
   }),
 });
@@ -187,7 +175,7 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate or retrieve the right ACORD-style insurance certificate PDF for a specific policy. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
+    "Generate or retrieve the right ACORD-style insurance certificate PDF for a specific policy and attach it to the current chat/iMessage/SMS response. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     certificateHolder: z
@@ -316,10 +304,10 @@ export const importConnectedEmailRequirementAttachments = tool({
       .enum(["lease_agreement", "client_contract", "vendor_requirements", "other"])
       .optional()
       .describe("Source document type. Infer lease_agreement for leases and client_contract for customer/client contracts."),
-    appliesTo: z
-      .enum(["vendors", "own_org", "both"])
+    scope: z
+      .enum(["vendors", "own_org"])
       .optional()
-      .describe("Requirement ownership. Use own_org for the org's lease/client obligations, vendors for vendor/customer standards, or both if it applies to both."),
+      .describe("Requirement scope. Use own_org for the org's lease/client obligations or vendors for vendor/customer standards."),
   }),
 });
 

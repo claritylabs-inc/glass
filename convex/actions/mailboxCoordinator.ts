@@ -380,7 +380,7 @@ ${selectedAccountRows.length ? selectedAccountRows.map((account) => `  - ${accou
             filenames?: string[];
             includeEmailBody?: boolean;
             sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
-            appliesTo?: "vendors" | "own_org" | "both";
+            scope?: "vendors" | "own_org";
           }): Promise<unknown> =>
             await ctx.runAction(
               internal.actions.connectedEmail.importRequirementAttachmentsInternal,
@@ -391,7 +391,7 @@ ${selectedAccountRows.length ? selectedAccountRows.map((account) => `  - ${accou
                 filenames: input.filenames,
                 includeEmailBody: input.includeEmailBody,
                 sourceType: input.sourceType,
-                appliesTo: input.appliesTo,
+                scope: input.scope,
               },
             ),
         },

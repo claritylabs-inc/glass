@@ -147,8 +147,9 @@ describe("source spans and policy update backend surfaces", () => {
     expect(threadContent).toContain("relatedEmailMessages.flatMap");
     expect(referenceCards).toContain("function PolicyCitation");
     expect(referenceCards).toContain("function PolicySourcePill");
-    expect(referenceCards).toContain("index: number");
-    expect(referenceCards).toContain('<span className="text-muted-foreground/35">{index}</span>');
+    expect(threadContent).toContain("showSingleCount");
+    expect(referenceCards).not.toContain("index: number");
+    expect(referenceCards).not.toContain("{index}");
     expect(referenceCards).not.toContain(">Sources<");
     expect(threadContent).not.toContain("Hide tool calls");
   });

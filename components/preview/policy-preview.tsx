@@ -17,7 +17,6 @@ import {
   highlightBoxesForSpans,
   type SourceSpanDoc,
 } from "@/app/policies/[id]/source-provenance";
-import { CoverageRow } from "./coverage-row";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -122,33 +121,41 @@ function metadataRows(
   ].filter((row): row is MetadataRow => Boolean(row.value));
 }
 
-function coverageTerms(row: CoverageBreakdownRow) {
-  const terms = row.limits
-    ?.map((term) => {
-      const label = realText(term.label);
-      const value = realText(term.value);
-      if (!label || !value) return undefined;
-      return `${label} ${value}`;
-    })
-    .filter((term): term is string => Boolean(term));
-
-  if (terms?.length) return terms;
-  return row.limit ? [`Limit ${row.limit}`] : [];
+function normalizedCoverageText(value: string | undefined) {
+  return value
+    ?.toLowerCase()
+    .replace(/[^a-z0-9$.,/%]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function coveragePrimaryLimit(row: CoverageBreakdownRow) {
-  const terms = coverageTerms(row);
-  return terms.length ? terms.slice(0, 2).join(" / ") : undefined;
-}
+function coverageTermRows(row: CoverageBreakdownRow) {
+  const terms = [...(row.limits ?? [])];
+  const seen = new Set(
+    terms.map(
+      (term) =>
+        `${normalizedCoverageText(term.label)}|${normalizedCoverageText(term.value)}`,
+    ),
+  );
+  const hasLabel = (pattern: RegExp) =>
+    terms.some((term) => pattern.test(normalizedCoverageText(term.label) ?? ""));
+  const push = (label: string, value: string | undefined) => {
+    if (!value) return;
+    const key = `${normalizedCoverageText(label)}|${normalizedCoverageText(value)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    terms.push({ label, value });
+  };
 
-function coverageDetailItems(row: CoverageBreakdownRow) {
-  return [
-    ...coverageTerms(row).slice(2),
-    row.deductible ? `Deductible ${row.deductible}` : undefined,
-    row.premium ? `Premium ${row.premium}` : undefined,
-    row.retroactiveDate ? `Retroactive ${row.retroactiveDate}` : undefined,
-    [row.formNumber, row.sectionRef].filter(Boolean).join(" | ") || undefined,
-  ].filter((item): item is string => Boolean(item));
+  if (!row.limits?.length) push("Limit", row.limit);
+  if (!hasLabel(/\bdeductible\b|\bretention\b/)) {
+    push("Deductible", row.deductible);
+  }
+  if (!hasLabel(/\bpremium\b/)) push("Premium", row.premium);
+  if (!hasLabel(/\bretroactive\b/)) {
+    push("Retroactive Date", row.retroactiveDate);
+  }
+  return terms;
 }
 
 export function PolicyPreview({
@@ -463,16 +470,31 @@ function CoveragePreviewGroupList({
 }
 
 function CoverageScheduleRow({ row }: { row: CoverageBreakdownRow }) {
-  const details = coverageDetailItems(row);
+  const terms = coverageTermRows(row);
+  const visibleTerms = terms.length
+    ? terms
+    : [{ label: "Limit", value: row.limit ?? "\u2014" }];
 
   return (
-    <div className="min-w-0">
-      <CoverageRow name={row.name} limit={coveragePrimaryLimit(row)} />
-      {details.length > 0 && (
-        <p className="-mt-1 px-3 pb-2 text-label leading-5 text-muted-foreground/55 [overflow-wrap:anywhere]">
-          {details.join(" | ")}
-        </p>
-      )}
-    </div>
+    <section className="min-w-0 px-3 py-3">
+      <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+        {row.name}
+      </div>
+      <dl className="mt-2 divide-y divide-foreground/6">
+        {visibleTerms.map((term, termIndex) => (
+          <div
+            key={`${term.label}:${termIndex}`}
+            className="grid grid-cols-[minmax(0,1fr)_minmax(6rem,auto)] gap-3 py-1.5 first:pt-0 last:pb-0"
+          >
+            <dt className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+              {term.label}
+            </dt>
+            <dd className="min-w-0 text-right text-base font-medium leading-5 tabular-nums text-foreground [overflow-wrap:anywhere]">
+              {term.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }

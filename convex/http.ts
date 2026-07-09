@@ -30,6 +30,11 @@ import {
   toPolicyVersionDto,
 } from "./lib/apiDto";
 const http = httpRouter();
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
+}
 
 auth.addHttpRoutes(http);
 
@@ -110,10 +115,7 @@ http.route({
     const secret = process.env.IMESSAGE_WORKER_SECRET;
     const authHeader = request.headers.get("Authorization") ?? "";
     if (secret && authHeader !== `Bearer ${secret}`) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
     let body: {
@@ -174,6 +176,54 @@ http.route({
         headers: { "Content-Type": "application/json" },
       });
     }
+  }),
+});
+
+http.route({
+  path: "/imessage-delivery-events",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.IMESSAGE_WORKER_SECRET;
+    const authHeader = request.headers.get("Authorization") ?? "";
+    if (secret && authHeader !== `Bearer ${secret}`) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    let body: {
+      threadMessageId?: string;
+      attachmentFailures?: Array<{ filename?: string; error?: string }>;
+    };
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: "Invalid JSON" }, 400);
+    }
+
+    const threadMessageId = body.threadMessageId?.trim();
+    const failures = (body.attachmentFailures ?? [])
+      .map((failure) => ({
+        filename: failure.filename?.trim() ?? "",
+        error: failure.error?.trim() || undefined,
+      }))
+      .filter((failure) => failure.filename);
+
+    if (!threadMessageId || failures.length === 0) {
+      return jsonResponse(
+        { error: "threadMessageId and attachmentFailures are required" },
+        400,
+      );
+    }
+
+    await ctx.runMutation(
+      internal.threads.recordImessageAttachmentDeliveryFailure,
+      {
+        threadMessageId: threadMessageId as Id<"threadMessages">,
+        stage: "worker_delivery",
+        failures,
+      },
+    );
+
+    return jsonResponse({ ok: true });
   }),
 });
 
@@ -499,8 +549,6 @@ http.route({
 
 // ── MCP API Routes ──
 
-const JSON_HEADERS = { "Content-Type": "application/json" };
-
 type McpIdentity = {
   userId: string;
   orgId: string;
@@ -594,10 +642,6 @@ async function requireMcpAuth(
       "WWW-Authenticate": mcpResourceMetadataAuthenticateHeader(request),
     },
   });
-}
-
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
 
 function getQueryParam(request: Request, name: string): string | null {
@@ -1589,20 +1633,31 @@ const MCP_TOOLS = [
   {
     name: "create_insurance_requirement",
     description:
-      "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role. For extracted lease/contract requirements, include source_document_name/source_excerpt when available.",
+      "Create a typed insurance coverage requirement checked against policy coverages. Requires write scope and org admin role.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        title: { type: "string", description: "Short requirement title" },
-        category: {
+        kind: {
           type: "string",
-          description:
-            "general_liability, auto, workers_comp, umbrella, professional, cyber, property, or other",
+          description: 'Always "coverage"',
         },
+        scope: {
+          type: "string",
+          description: "vendors or own_org",
+        },
+        title: { type: "string", description: "Short requirement title" },
         requirement_text: {
           type: "string",
+          description: "Plain-language requirement text",
+        },
+        line_of_business: {
+          type: "string",
+          description: "ACORD line of business code, e.g. CGL",
+        },
+        limits: {
+          type: "array",
           description:
-            "Plain-language requirement to check against policy data",
+            "Coverage limits: { kind, amount, label }. amount is a plain number (1000000, not \"$1M\"). Limit kinds include per_occurrence, general_aggregate, combined_single_limit, other.",
         },
         source_document_name: {
           type: "string",
@@ -1613,13 +1668,8 @@ const MCP_TOOLS = [
           description:
             "Optional exact original source language supporting the requirement",
         },
-        evaluation_target: {
-          type: "string",
-          description:
-            "Optional evidence target: own_policy, connected_vendor_policy, subcontractor_policy, manual_control, or not_policy_checkable. Defaults to connected_vendor_policy for this vendor-oriented API.",
-        },
       },
-      required: ["title", "category", "requirement_text"],
+      required: ["kind", "scope", "title", "requirement_text", "line_of_business"],
     },
   },
   {
@@ -2246,16 +2296,21 @@ async function handleToolCall(
     }
     case "create_insurance_requirement": {
       requireMcpWriteScope(identity);
-      if (!args.title || !args.category || !args.requirement_text)
-        throw new Error("Missing title, category, or requirement_text");
+      if (!args.kind || !args.scope || !args.title || !args.requirement_text)
+        throw new Error("Missing kind, scope, title, or requirement_text");
       const requirementId = await ctx.runMutation(
         (internal as any).compliance.upsertRequirementInternal,
         {
           orgId,
           userId,
+          kind: String(args.kind),
+          scope: String(args.scope),
           title: String(args.title),
-          category: String(args.category),
           requirementText: String(args.requirement_text),
+          lineOfBusiness: args.line_of_business
+            ? String(args.line_of_business)
+            : undefined,
+          limits: Array.isArray(args.limits) ? args.limits : undefined,
           sourceDocumentName: args.source_document_name
             ? String(args.source_document_name)
             : undefined,
@@ -2265,10 +2320,6 @@ async function handleToolCall(
               : "manual",
           sourceExcerpt: args.source_excerpt
             ? String(args.source_excerpt)
-            : undefined,
-          appliesTo: "vendors",
-          evaluationTarget: args.evaluation_target
-            ? String(args.evaluation_target)
             : undefined,
         },
       );
@@ -3407,11 +3458,25 @@ http.route({
         {
           orgId: identity.orgId,
           userId: identity.userId,
+          kind: String(body.kind ?? ""),
+          scope: String(body.scope ?? "vendors"),
           title: String(body.title ?? ""),
-          category: String(body.category ?? "other"),
           requirementText: String(
             body.requirement_text ?? body.requirementText ?? "",
           ),
+          lineOfBusiness: body.line_of_business
+            ? String(body.line_of_business)
+            : body.lineOfBusiness
+              ? String(body.lineOfBusiness)
+              : undefined,
+          limits: Array.isArray(body.limits) ? body.limits : undefined,
+          maxDeductible: body.max_deductible ?? body.maxDeductible,
+          provisions: Array.isArray(body.provisions) ? body.provisions : undefined,
+          requiredForms: Array.isArray(body.required_forms)
+            ? body.required_forms
+            : Array.isArray(body.requiredForms)
+              ? body.requiredForms
+              : undefined,
           sourceDocumentName: body.source_document_name
             ? String(body.source_document_name)
             : body.sourceDocumentName
@@ -3428,12 +3493,6 @@ http.route({
             ? String(body.source_excerpt)
             : body.sourceExcerpt
               ? String(body.sourceExcerpt)
-              : undefined,
-          appliesTo: "vendors",
-          evaluationTarget: body.evaluation_target
-            ? String(body.evaluation_target)
-            : body.evaluationTarget
-              ? String(body.evaluationTarget)
               : undefined,
         },
       );

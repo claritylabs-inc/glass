@@ -63,4 +63,31 @@ describe("iMessage agent context helpers", () => {
       content: "[Terry]: Current message",
     });
   });
+
+  test("builds model messages with compact assistant tool activity", async () => {
+    const messages = await buildImessageModelMessages({
+      history: [
+        { role: "user", userName: "Terry", content: "Generate a COI" },
+        {
+          role: "agent",
+          content: "COI generated and attached.",
+          usedTools: ["generate_coi"],
+          attachments: [{ filename: "COI - Example Holder.pdf" }],
+        },
+      ],
+      messageText: "Where is the PDF?",
+      currentSpeakerLabel: "Terry",
+      attachmentRecords: [],
+    });
+
+    expect(messages).toEqual([
+      { role: "user", content: "[Terry]: Generate a COI" },
+      {
+        role: "assistant",
+        content:
+          'COI generated and attached.\n\n[tool activity: tools: generate_coi; attached: "COI - Example Holder.pdf"]',
+      },
+      { role: "user", content: "[Terry]: Where is the PDF?" },
+    ]);
+  });
 });

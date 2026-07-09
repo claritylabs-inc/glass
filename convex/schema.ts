@@ -817,9 +817,7 @@ export default defineSchema({
         v.literal("plain_text"),
       ),
     ),
-    parserVersion: v.optional(v.string()),
     parsedAt: v.optional(v.number()),
-    parsingMs: v.optional(v.number()),
     status: pipelineStatusValidator,
     pipelineError: v.optional(v.string()),
     createdByUserId: v.id("users"),
@@ -831,31 +829,52 @@ export default defineSchema({
 
   insuranceRequirements: defineTable({
     orgId: v.id("organizations"),
+    // Legacy staging/prod rows from the pre-redesign requirement model do not
+    // have kind/scope yet. Keep these optional until all environments have run
+    // the compliance requirement shape backfill.
+    kind: v.optional(v.union(
+      v.literal("coverage"),
+      v.literal("insurer"),
+      v.literal("condition"),
+    )),
+    scope: v.optional(v.union(v.literal("own_org"), v.literal("vendors"))),
     title: v.string(),
-    category: v.union(
-      v.literal("general_liability"),
-      v.literal("auto"),
-      v.literal("workers_comp"),
-      v.literal("umbrella"),
-      v.literal("professional"),
-      v.literal("cyber"),
-      v.literal("property"),
-      v.literal("other"),
-    ),
     requirementText: v.string(),
-    // Coverage-like fields mirror policies.coverages so requirement checks can
-    // compare structured values instead of parsing unrelated schemas.
-    name: v.optional(v.string()),
-    coverageCode: v.optional(v.string()),
-    limit: v.optional(v.string()),
-    limitAmount: v.optional(v.number()),
-    limitType: v.optional(v.string()),
-    limitValueType: v.optional(v.string()),
-    deductible: v.optional(v.string()),
-    deductibleAmount: v.optional(v.number()),
-    deductibleType: v.optional(v.string()),
-    deductibleValueType: v.optional(v.string()),
-    originalContent: v.optional(v.string()),
+    lineOfBusiness: v.optional(v.string()),
+    limits: v.optional(
+      v.array(
+        v.object({
+          kind: v.string(),
+          amount: v.number(),
+          label: v.optional(v.string()),
+        }),
+      ),
+    ),
+    maxDeductible: v.optional(
+      v.object({
+        amount: v.number(),
+        label: v.optional(v.string()),
+      }),
+    ),
+    coverageForm: v.optional(
+      v.union(v.literal("occurrence"), v.literal("claims_made")),
+    ),
+    retroactiveDateOnOrBefore: v.optional(v.string()),
+    provisions: v.optional(v.array(v.string())),
+    requiredForms: v.optional(v.array(v.string())),
+    minAmBestRating: v.optional(v.string()),
+    minAmBestFinancialSize: v.optional(v.string()),
+    admittedRequired: v.optional(v.boolean()),
+    conditionType: v.optional(
+      v.union(
+        v.literal("cancellation_notice"),
+        v.literal("certificate_delivery"),
+        v.literal("claims_reporting"),
+        v.literal("subcontractor_insurance"),
+        v.literal("other"),
+      ),
+    ),
+    noticeDays: v.optional(v.number()),
     sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
     sourceDocumentName: v.optional(v.string()),
     sourceType: v.optional(
@@ -871,10 +890,30 @@ export default defineSchema({
     sourceExcerpt: v.optional(v.string()),
     sourcePageStart: v.optional(v.number()),
     sourcePageEnd: v.optional(v.number()),
-    appliesTo: v.union(
-      v.literal("vendors"),
-      v.literal("own_org"),
-      v.literal("both"),
+    status: v.union(v.literal("active"), v.literal("archived")),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    // Deprecated legacy requirement fields. Do not write these in new code.
+    category: v.optional(v.string()),
+    name: v.optional(v.string()),
+    coverageCode: v.optional(v.string()),
+    limit: v.optional(v.string()),
+    limitAmount: v.optional(v.number()),
+    limitType: v.optional(v.string()),
+    limitValueType: v.optional(v.string()),
+    deductible: v.optional(v.string()),
+    deductibleAmount: v.optional(v.number()),
+    deductibleType: v.optional(v.string()),
+    deductibleValueType: v.optional(v.string()),
+    originalContent: v.optional(v.string()),
+    appliesTo: v.optional(
+      v.union(
+        v.literal("vendors"),
+        v.literal("own_org"),
+        v.literal("both"),
+      ),
     ),
     evaluationTarget: v.optional(
       v.union(
@@ -910,43 +949,49 @@ export default defineSchema({
         checkedByUserId: v.id("users"),
       }),
     ),
-    minimumRequired: v.boolean(),
-    status: v.union(v.literal("active"), v.literal("archived")),
-    createdByUserId: v.id("users"),
-    updatedByUserId: v.id("users"),
-    createdAt: v.number(),
-    updatedAt: v.number(),
+    minimumRequired: v.optional(v.boolean()),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_status", ["orgId", "status"]),
 
-  vendorComplianceChecks: defineTable({
-    clientOrgId: v.id("organizations"),
-    vendorOrgId: v.id("organizations"),
-    relationshipId: v.id("connectedOrgRelationships"),
+  complianceChecks: defineTable({
+    orgId: v.id("organizations"),
     requirementId: v.id("insuranceRequirements"),
+    subjectOrgId: v.id("organizations"),
+    relationshipId: v.optional(v.id("connectedOrgRelationships")),
     status: v.union(
       v.literal("met"),
-      v.literal("missing"),
+      v.literal("not_met"),
       v.literal("expiring_soon"),
       v.literal("expired"),
-      v.literal("needs_review"),
+      v.literal("unverified"),
     ),
+    reasons: v.optional(v.array(v.string())),
     matchedPolicyIds: v.array(v.id("policies")),
+    matchedSummary: v.optional(v.string()),
     expiresAt: v.optional(v.string()),
+    evidence: v.optional(
+      v.object({
+        note: v.optional(v.string()),
+        fileId: v.optional(v.id("_storage")),
+        fileName: v.optional(v.string()),
+        validUntil: v.optional(v.string()),
+      }),
+    ),
     checkedAt: v.number(),
     checkedBy: v.union(
       v.literal("system"),
       v.literal("user"),
       v.literal("agent"),
     ),
-    notes: v.optional(v.string()),
+    checkedByUserId: v.optional(v.id("users")),
   })
-    .index("by_clientOrgId", ["clientOrgId"])
-    .index("by_vendorOrgId", ["vendorOrgId"])
-    .index("by_relationshipId", ["relationshipId"])
-    .index("by_requirementId", ["requirementId"])
-    .index("by_clientOrgId_vendorOrgId", ["clientOrgId", "vendorOrgId"]),
+    .index("by_requirementId_subjectOrgId", [
+      "requirementId",
+      "subjectOrgId",
+    ])
+    .index("by_orgId_subjectOrgId", ["orgId", "subjectOrgId"])
+    .index("by_relationshipId", ["relationshipId"]),
   clientInvitations: defineTable({
     brokerOrgId: v.id("organizations"),
     clientOrgName: v.optional(v.string()),
@@ -1100,6 +1145,9 @@ export default defineSchema({
         state: v.optional(v.string()),
         zip: v.optional(v.string()),
         country: v.optional(v.string()),
+        documentNodeId: v.optional(v.string()),
+        sourceSpanIds: v.optional(v.array(v.string())),
+        sourceTextHash: v.optional(v.string()),
       }),
     ),
     insuredEntityType: v.optional(v.string()), // corporation, llc, partnership, etc.
@@ -1726,6 +1774,8 @@ export default defineSchema({
     formCode: v.optional(certificateFormCodeValidator),
     lastIssuedAt: v.optional(v.number()),
     source: v.optional(certificateSourceValidator),
+    archivedAt: v.optional(v.number()),
+    archivedByUserId: v.optional(v.id("users")),
     createdByUserId: v.optional(v.id("users")),
     updatedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),

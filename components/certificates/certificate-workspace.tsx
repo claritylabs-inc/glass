@@ -2,7 +2,7 @@
 
 import dayjs from "dayjs";
 import { type KeyboardEvent, type ReactNode } from "react";
-import { RefreshCw } from "lucide-react";
+import { Archive, ArchiveRestore, RefreshCw } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf } from "@/components/pdf-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
@@ -30,6 +30,7 @@ export type CertificateHolderRecord = {
     city?: string;
     state?: string;
     postalCode?: string;
+    country?: string;
   };
 };
 
@@ -64,6 +65,7 @@ export type PolicyCertificateRecord = {
   holderId: Id<"certificateHolders">;
   status: string;
   lastIssuedAt?: number;
+  archivedAt?: number;
   createdAt?: number;
   updatedAt?: number;
   holder?: CertificateHolderRecord | null;
@@ -118,6 +120,7 @@ export function formatCertificateTime(value?: number) {
 }
 
 export function certificateBadge(row: PolicyCertificateRecord) {
+  if (row.status === "archived") return { label: "Archived", variant: "outline" as const };
   const version = row.currentVersion;
   if (!version) return { label: "No issued version", variant: "outline" as const };
   if (version.status === "issued") {
@@ -362,12 +365,20 @@ export function CertificateDetailPanel({
   row,
   onClose,
   onReissue,
+  onArchive,
+  onUnarchive,
   reissuing,
+  archiving,
+  unarchiving,
 }: {
   row: PolicyCertificateRecord | null;
   onClose: () => void;
   onReissue?: (row: PolicyCertificateRecord) => void;
+  onArchive?: (row: PolicyCertificateRecord) => void;
+  onUnarchive?: (row: PolicyCertificateRecord) => void;
   reissuing?: boolean;
+  archiving?: boolean;
+  unarchiving?: boolean;
 }) {
   const { openWithUrl } = usePdf();
   const versions = row ? sortedVersions(row) : [];
@@ -376,6 +387,7 @@ export function CertificateDetailPanel({
   const currentUrl = row?.url ?? currentVersion?.url;
   const holderName = row?.holder?.displayName ?? "Certificate holder";
   const holderAddressText = row ? certificateHolderAddress(row.holder) : null;
+  const isArchived = row?.status === "archived";
 
   return (
     <SettingsDrawer
@@ -402,8 +414,30 @@ export function CertificateDetailPanel({
       }
       footer={
         row ? (
-          <div className="flex items-center gap-2">
-            {onReissue ? (
+          <>
+            {isArchived && onUnarchive ? (
+              <PillButton
+                type="button"
+                variant="secondary"
+                onClick={() => onUnarchive(row)}
+                disabled={unarchiving}
+              >
+                <ArchiveRestore className="size-3.5" />
+                Restore
+              </PillButton>
+            ) : null}
+            {!isArchived && onArchive ? (
+              <PillButton
+                type="button"
+                variant="secondary"
+                onClick={() => onArchive(row)}
+                disabled={archiving}
+              >
+                <Archive className="size-3.5" />
+                Archive
+              </PillButton>
+            ) : null}
+            {!isArchived && onReissue ? (
               <PillButton
                 type="button"
                 variant="secondary"
@@ -423,7 +457,7 @@ export function CertificateDetailPanel({
                 View PDF
               </PillButton>
             ) : null}
-          </div>
+          </>
         ) : null
       }
     >

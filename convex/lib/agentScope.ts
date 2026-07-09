@@ -118,12 +118,15 @@ async function summarizeOrg(ctx: any, org: Doc<"organizations">, args: {
   const expiringPolicyCount = policyExpiry.filter((value: number) => value >= now && value <= soon).length;
 
   const vendorRows = await ctx.db
-    .query("vendorComplianceChecks")
-    .withIndex("by_clientOrgId", (q: any) => q.eq("clientOrgId", org._id))
+    .query("complianceChecks")
+    .withIndex("by_orgId_subjectOrgId", (q: any) => q.eq("orgId", org._id))
     .collect()
     .catch(() => []);
   const openVendorComplianceItems = vendorRows.filter(
-    (row: Doc<"vendorComplianceChecks">) => row.status !== "met",
+    (row: Doc<"complianceChecks">) =>
+      row.status === "not_met" ||
+      row.status === "expired" ||
+      row.status === "expiring_soon",
   ).length;
 
   const recentSince = dayjs().subtract(30, "day").valueOf();

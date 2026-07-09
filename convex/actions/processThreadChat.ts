@@ -75,10 +75,7 @@ import {
   runWebChatEmailControls,
   runWebChatTaskControl,
 } from "../lib/webChatDeterministicControls";
-import {
-  requirementEvaluationTargetLabel,
-  requirementSemantics,
-} from "../lib/requirementSemantics";
+import { lobLabel } from "../lib/linesOfBusiness";
 import {
   isUnsupportedSpreadsheetAttachment,
   isXlsxSpreadsheetAttachment,
@@ -94,10 +91,17 @@ function normalizeConfidenceRepair(text: string, fallback: string): string {
 
 function restoreSentenceBoundarySpacing(text: string): string {
   return text
-    .replace(/([a-z0-9)\]][.!?])(?=[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)\]][.!?])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)\]][.!?]\]\])(?=[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)\]][.!?]\]\])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ");
+    .replace(/([a-z0-9)"')\]][.!?])(?=[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)"')\]][.!?])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)"')\]][.!?]\]\])(?=[A-Z])/g, "$1 ")
+    .replace(/([a-z0-9)"')\]][.!?]\]\])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ");
+}
+
+function normalizeReasoningText(text: string): string {
+  return restoreSentenceBoundarySpacing(text).replace(
+    /([a-z0-9)"')\]][.!?])(?=["'([]?[A-Z])/g,
+    "$1 ",
+  );
 }
 
 async function repairMissingConfidenceMarkers({
@@ -604,6 +608,8 @@ async function buildMessageHistoryWithAttachmentContext(
         content: buildAssistantMessageContentWithArtifacts({
           content,
           toolArtifacts: msg.toolArtifacts,
+          usedTools: msg.usedTools,
+          attachments: msg.attachments,
         }),
       });
     }
@@ -767,7 +773,7 @@ export const run = internalAction({
         : undefined;
 
       const scope = (await ctx.runQuery(
-        (internal as any).lib.agentScope.resolveForAction,
+        internal.lib.agentScope.resolveForAction,
         {
           orgId: args.orgId,
           userId: args.userId,
@@ -918,22 +924,9 @@ export const run = internalAction({
                 : "",
               selectedRequirements.length
                 ? `Requirements:\n${selectedRequirements
-                    .map((requirement: any) => {
-                      const semantics = requirementSemantics({
-                        appliesTo: requirement.appliesTo ?? "vendors",
-                        title: requirement.title,
-                        category: requirement.category,
-                        requirementText: requirement.requirementText,
-                        originalContent: requirement.originalContent,
-                        sourceExcerpt: requirement.sourceExcerpt,
-                        sourceType: requirement.sourceType,
-                        evaluationTarget: requirement.evaluationTarget,
-                        evaluationReason: requirement.evaluationReason,
-                        semanticReviewStatus:
-                          requirement.semanticReviewStatus,
-                      });
-                      return `- ${requirement.title} (obligationOwner:${requirement.appliesTo ?? "vendors"}, evaluationTarget:${semantics.evaluationTarget} ${requirementEvaluationTargetLabel(semantics.evaluationTarget)}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`;
-                    })
+                    .map((requirement: any) =>
+                      `- ${requirement.title} (scope:${requirement.scope ?? "vendors"}, kind:${requirement.kind ?? "coverage"}${requirement.lineOfBusiness ? `, line:${requirement.lineOfBusiness} ${lobLabel(requirement.lineOfBusiness)}` : ""}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`,
+                    )
                     .join("\n")}`
                 : "",
               selectedMailboxes.length
@@ -1482,7 +1475,7 @@ export const run = internalAction({
               lastReasoningFlush = now;
               await ctx.runMutation(internal.threads.streamReasoning, {
                 id: agentMsgId,
-                reasoning,
+                reasoning: normalizeReasoningText(reasoning),
               });
             }
           } else if (part.type === "text-delta") {
@@ -1836,7 +1829,7 @@ export const run = internalAction({
       if (reasoning) {
         await ctx.runMutation(internal.threads.streamReasoning, {
           id: agentMsgId,
-          reasoning,
+          reasoning: normalizeReasoningText(reasoning),
         });
       }
 

@@ -38,6 +38,7 @@ export interface ImessageResponse {
   appCards?: ImessageAppCard[];
   leaveGroup?: boolean;
   chatGuid?: string;
+  threadMessageId?: string;
 }
 
 export async function sendToConvex(
@@ -60,4 +61,40 @@ export async function sendToConvex(
   }
 
   return res.json() as Promise<ImessageResponse>;
+}
+
+export interface ImessageDeliveryFailure {
+  filename: string;
+  error?: string;
+}
+
+export async function reportImessageDeliveryEvent(
+  siteUrl: string,
+  secret: string,
+  payload: {
+    threadMessageId: string;
+    attachmentFailures: ImessageDeliveryFailure[];
+  },
+): Promise<boolean> {
+  let res: Response;
+  try {
+    res = await fetch(`${siteUrl}/imessage-delivery-events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.warn("Convex delivery callback failed:", err);
+    return false;
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "(no body)");
+    console.warn(`Convex delivery callback failed ${res.status}: ${text}`);
+    return false;
+  }
+  return true;
 }

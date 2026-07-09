@@ -55,21 +55,31 @@ export function registerClientTools(server: McpServer, client: GlassClient) {
 
   server.tool(
     "create_insurance_requirement",
-    "Create an insurance compliance requirement for contractors/vendors. Requires write scope and org admin role. Optionally include evaluationTarget to distinguish vendor policy evidence from subcontractor evidence, manual controls, or context-only rows. Include sourceDocumentName/sourceExcerpt when creating extracted lease or contract requirements.",
+    "Create a typed insurance coverage requirement checked against policy coverages. Requires write scope and org admin role. Limit amounts are plain numbers (1000000, not \"$1M\").",
     {
       title: z.string(),
-      category: z.enum(["general_liability", "auto", "workers_comp", "umbrella", "professional", "cyber", "property", "other"]),
+      kind: z.literal("coverage").default("coverage"),
+      scope: z.enum(["vendors", "own_org"]).default("vendors"),
       requirementText: z.string(),
-      evaluationTarget: z.enum(["own_policy", "connected_vendor_policy", "subcontractor_policy", "manual_control", "not_policy_checkable"]).optional(),
+      lineOfBusiness: z.string(),
+      limits: z.array(z.object({
+        kind: z.string(),
+        amount: z.number(),
+        label: z.string().optional(),
+      })).optional(),
+      provisions: z.array(z.string()).optional(),
       sourceDocumentName: z.string().optional(),
       sourceExcerpt: z.string().optional(),
     },
-    async ({ title, category, requirementText, evaluationTarget, sourceDocumentName, sourceExcerpt }) => {
+    async ({ title, kind, scope, requirementText, lineOfBusiness, limits, provisions, sourceDocumentName, sourceExcerpt }) => {
       const data = await client.post("/api/v1/compliance/requirements", {
         title,
-        category,
+        kind,
+        scope,
         requirement_text: requirementText,
-        evaluation_target: evaluationTarget,
+        line_of_business: lineOfBusiness,
+        limits,
+        provisions,
         source_document_name: sourceDocumentName,
         source_excerpt: sourceExcerpt,
       });

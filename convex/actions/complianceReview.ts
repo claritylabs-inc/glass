@@ -10,7 +10,7 @@ import type { Id } from "../_generated/dataModel";
 import { generateObjectForOrg } from "../lib/models";
 
 const ComplianceReviewSchema = z.object({
-  status: z.enum(["met", "missing", "expiring_soon", "expired", "needs_review"]),
+  status: z.enum(["met", "not_met", "expiring_soon", "expired", "unverified"]),
   matchedPolicyIds: z.array(z.string()).max(8),
   expiresAt: z.string().nullable(),
   daysUntilExpiration: z.number().int().nullable(),
@@ -18,7 +18,7 @@ const ComplianceReviewSchema = z.object({
 });
 
 type ComplianceReviewResult = {
-  status: "met" | "missing" | "expiring_soon" | "expired" | "needs_review";
+  status: "met" | "not_met" | "expiring_soon" | "expired" | "unverified";
   matchedPolicyIds: Id<"policies">[];
   expiresAt?: string;
   daysUntilExpiration?: number;
@@ -55,10 +55,10 @@ export const recheckOwnRequirement = action({
   returns: v.object({
     status: v.union(
       v.literal("met"),
-      v.literal("missing"),
+      v.literal("not_met"),
       v.literal("expiring_soon"),
       v.literal("expired"),
-      v.literal("needs_review"),
+      v.literal("unverified"),
     ),
     matchedPolicyIds: v.array(v.id("policies")),
     expiresAt: v.optional(v.string()),
@@ -92,10 +92,10 @@ export const recheckOwnRequirement = action({
 
 Status rules:
 - met: active policy evidence clearly satisfies the requirement.
-- missing: no active policy evidence satisfies it, or the detected active limit/deductible/coverage is below the requirement.
+- not_met: no active policy evidence satisfies it, or the detected active limit/deductible/coverage is below the requirement.
 - expiring_soon: otherwise met, but the satisfying policy expires within 30 days.
 - expired: only expired policy evidence matches.
-- needs_review: evidence is present but ambiguous, contradictory, or not structured enough to decide.
+- unverified: evidence is present but ambiguous, contradictory, or not structured enough to decide.
 
 Named insured must reasonably match the organization name unless the requirement or policy evidence makes a different insured acceptable.
 Use matchedPolicyIds only from the provided policies. Keep notes short and specific; mention the decisive policy/evidence and any gap.

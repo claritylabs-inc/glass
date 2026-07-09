@@ -20,6 +20,8 @@ export type ImessageHistoryMessage = {
   userName?: string;
   responseMessageId?: string;
   toolArtifacts?: Array<{ type: string; data: unknown }>;
+  usedTools?: string[];
+  attachments?: Array<{ filename: string }>;
 };
 
 type ImessageContentPart =
@@ -166,6 +168,8 @@ export async function buildImessageModelMessages(
         content: buildAssistantMessageContentWithArtifacts({
           content: msg.content,
           toolArtifacts: msg.toolArtifacts,
+          usedTools: msg.usedTools,
+          attachments: msg.attachments,
         }),
       });
     }

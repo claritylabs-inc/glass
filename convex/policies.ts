@@ -857,6 +857,9 @@ const addressValidator = v.object({
   state: v.optional(v.string()),
   zip: v.optional(v.string()),
   country: v.optional(v.string()),
+  documentNodeId: v.optional(v.string()),
+  sourceSpanIds: v.optional(v.array(v.string())),
+  sourceTextHash: v.optional(v.string()),
 });
 
 const limitsValidator = v.object({
