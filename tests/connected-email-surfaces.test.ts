@@ -8,17 +8,19 @@ const read = (path: string) => readFileSync(join(ROOT, path), "utf-8");
 describe("connected email surfaces", () => {
   it("stores only connection settings and encrypted credentials", () => {
     const schema = read("convex/schema.ts");
-    const backend = read("convex/actions/connectedEmail.ts");
+    const imapLib = read("convex/lib/imapMailbox.ts");
 
     expect(schema).toContain("connectedEmailAccounts: defineTable");
     expect(schema).toContain("encryptedPassword: v.string()");
     expect(schema).not.toContain("connectedEmailMessages: defineTable");
-    expect(backend).toContain("aes-256-gcm");
-    expect(backend).toContain("EMAIL_CONNECTIONS_ENCRYPTION_KEY");
+    expect(imapLib).toContain("aes-256-gcm");
+    expect(imapLib).toContain("EMAIL_CONNECTIONS_ENCRYPTION_KEY");
   });
 
   it("returns recoverable mailbox search errors instead of crashing coordinator tasks", () => {
     const backend = read("convex/actions/connectedEmail.ts");
+    const scan = read("convex/actions/connectedEmailScan.ts");
+    const imapLib = read("convex/lib/imapMailbox.ts");
     const coordinator = read("convex/actions/mailboxCoordinator.ts");
 
     expect(backend).toContain("mailboxSearchError");
@@ -26,23 +28,23 @@ describe("connected email surfaces", () => {
     expect(backend).toContain("mailboxSearchQuery");
     expect(backend).toContain("searchDateWindow");
     expect(backend).toContain("isGlassSearchLoopEmail");
-    expect(backend).toContain('domain.endsWith(".glass.insure")');
-    expect(backend).toContain('domain.endsWith(".glass.claritylabs.inc")');
+    expect(imapLib).toContain('domain.endsWith(".glass.insure")');
+    expect(imapLib).toContain('domain.endsWith(".glass.claritylabs.inc")');
     expect(backend).toContain("dateFrom: v.optional(v.string())");
     expect(backend).toContain("dateTo: v.optional(v.string())");
     expect(backend).toContain("criteria.before = args.before");
     expect(backend).toContain("SEARCH_MAX_CANDIDATES");
-    expect(backend).toContain("IMAP_SOCKET_TIMEOUT_MS");
+    expect(imapLib).toContain("IMAP_SOCKET_TIMEOUT_MS");
     expect(backend).toContain("IMAP search failed");
     expect(backend).toContain("Skipping unreadable message");
-    expect(backend).toContain("bodyStructure: true");
-    expect(backend).toContain("AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES");
-    expect(backend).toContain("Mailbox scan was incomplete");
-    expect(backend).toContain("AUTOMATION_INITIAL_LOOKBACK_DAYS = 400");
-    expect(backend).toContain("AUTOMATION_HISTORY_SUBJECT_TERMS");
-    expect(backend).toContain("downloaded.meta.expectedSize");
+    expect(scan).toContain("bodyStructure: true");
+    expect(scan).toContain("AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES");
+    expect(scan).toContain("Mailbox scan was incomplete");
+    expect(scan).toContain("AUTOMATION_INITIAL_LOOKBACK_DAYS = 400");
+    expect(scan).toContain("AUTOMATION_HISTORY_SUBJECT_TERMS");
+    expect(imapLib).toContain("downloaded.meta.expectedSize");
     expect(backend).toContain("args.filenames === undefined");
-    expect(backend).toContain("importedComplianceAttentionAfterBatch");
+    expect(scan).toContain("importedComplianceAttentionAfterBatch");
     expect(backend).toContain("success && files.length > 1");
     expect(coordinator).toContain("mailboxErrors");
     expect(coordinator).toContain('record.type === "mailbox_search_error"');
@@ -214,17 +216,23 @@ describe("connected email surfaces", () => {
     );
   });
 
-  it("has a cron-callable previous-day attention scan that does not persist messages", () => {
-    const backend = read("convex/actions/connectedEmail.ts");
+  it("has an internal cron-driven mailbox scan and a manual date-range scan", () => {
+    const scan = read("convex/actions/connectedEmailScan.ts");
+    const http = read("convex/http.ts");
     const docs = read("AGENTS.md");
 
-    expect(backend).toContain("scanPreviousDayForOrg");
-    expect(backend).toContain("scanPreviousDay");
-    expect(backend).toContain("listAutomationEligibleForOrgInternal");
-    expect(backend).toContain("listAutomationEligibleInternal");
-    expect(backend).toContain("createProactiveInternal");
-    expect(backend).toContain("mailbox_coordinator");
-    expect(backend).toContain("EMAIL_SCAN_CRON_SECRET");
+    expect(scan).toContain("scanOrgMailboxes");
+    expect(scan).toContain("scanAllMailboxes");
+    expect(scan).toContain("scanMailboxRange");
+    expect(scan).toContain("internalAction");
+    expect(scan).not.toContain("cronSecret");
+    expect(scan).toContain("listAutomationEligibleForOrgInternal");
+    expect(scan).toContain("listAutomationEligibleInternal");
+    expect(scan).toContain("getManageableForUserInternal");
+    expect(scan).toContain("createProactiveInternal");
+    expect(scan).toContain("mailbox_coordinator");
+    expect(http).toContain("EMAIL_SCAN_CRON_SECRET");
+    expect(http).toContain("internal.actions.connectedEmailScan.scanAllMailboxes");
     expect(docs).toContain("connected-mailbox automation");
   });
 });

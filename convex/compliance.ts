@@ -824,13 +824,17 @@ export const listRequirementsInternal = internalQuery({
   handler: async (ctx, args) => await listRequirementsVisibleToOrg(ctx, args.orgId),
 });
 
+export type OwnComplianceAssessment = Awaited<
+  ReturnType<typeof assessForSubject>
+> & { title: string };
+
 export const assessOwnRequirementsInternal = internalQuery({
   args: {
     orgId: v.id("organizations"),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     includePreviewPolicies: v.optional(v.boolean()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<OwnComplianceAssessment[]> => {
     const [requirements, policies, org] = await Promise.all([
       listRequirementsForOrg(ctx, args.orgId),
       listPoliciesForOrg(ctx, args.orgId),

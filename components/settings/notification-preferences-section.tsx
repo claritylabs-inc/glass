@@ -223,10 +223,11 @@ export function NotificationPreferencesSection({
     )?.enabled;
   }
 
-  function defaultPreference(channel: NotificationChannel) {
-    const explicit = explicitPreference("__all__", channel);
-    if (explicit !== undefined) return explicit;
-    return channel === "email";
+  // The `__all__` row is an explicit override. When it does not exist, the
+  // backend falls back to severity-based defaults per event, so there is no
+  // single on/off state to show here.
+  function defaultOverride(channel: NotificationChannel) {
+    return explicitPreference("__all__", channel);
   }
 
   function effectivePreference(
@@ -276,8 +277,8 @@ export function NotificationPreferencesSection({
   );
 
   async function toggleDefault(channel: NotificationChannel) {
-    const previous = defaultPreference(channel);
-    const next = !previous;
+    const previous = defaultOverride(channel);
+    const next = !(previous ?? false);
     setLocalPreference("__all__", channel, next);
     setSavingDefault(channel);
     try {
@@ -287,7 +288,14 @@ export function NotificationPreferencesSection({
         await setAllChannel({ orgId, channel, enabled: next });
       }
     } catch (error) {
-      setLocalPreference("__all__", channel, previous);
+      if (previous === undefined) {
+        setLocalPrefs((current) => {
+          const { [prefKey("__all__", channel)]: _removed, ...rest } = current;
+          return rest;
+        });
+      } else {
+        setLocalPreference("__all__", channel, previous);
+      }
       toast.error(
         error instanceof Error
           ? error.message
@@ -344,8 +352,12 @@ export function NotificationPreferencesSection({
         <DefaultNotificationRow
           icon={Mail}
           title="Default email delivery"
-          description="Used when an event has no custom email setting."
-          checked={defaultPreference("email")}
+          description={
+            defaultOverride("email") === undefined
+              ? "Set a default for all events. Events currently follow Glass defaults by importance."
+              : "Overrides the Glass default for events without a custom email setting."
+          }
+          checked={defaultOverride("email") ?? false}
           disabled={savingDefault !== null}
           onCheckedChange={() => void toggleDefault("email")}
           label="Default email delivery"
@@ -353,8 +365,12 @@ export function NotificationPreferencesSection({
         <DefaultNotificationRow
           icon={MessageSquareText}
           title="Default text delivery"
-          description="Used when an event has no custom text setting."
-          checked={defaultPreference("imessage")}
+          description={
+            defaultOverride("imessage") === undefined
+              ? "Set a default for all events. Events currently follow Glass defaults by importance."
+              : "Overrides the Glass default for events without a custom text setting."
+          }
+          checked={defaultOverride("imessage") ?? false}
           disabled={savingDefault !== null}
           onCheckedChange={() => void toggleDefault("imessage")}
           label="Default text delivery"

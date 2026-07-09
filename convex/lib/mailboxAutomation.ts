@@ -33,6 +33,28 @@ export function hasConnectedEmailAutomation(
   );
 }
 
+export type MailboxAutomationPolicy = {
+  automation: ConnectedEmailAutomation;
+  /** Legacy mailbox connected before automation settings existed: never auto-execute, alert only. */
+  alertOnly: boolean;
+  eligible: boolean;
+};
+
+export function resolveMailboxAutomationPolicy(account: {
+  scope: "user" | "org";
+  automation?: Partial<ConnectedEmailAutomation>;
+}): MailboxAutomationPolicy {
+  const alertOnly = account.automation === undefined;
+  const automation = effectiveConnectedEmailAutomation(account.automation);
+  return {
+    automation,
+    alertOnly,
+    eligible: alertOnly
+      ? account.scope === "org"
+      : hasConnectedEmailAutomation(automation),
+  };
+}
+
 export const MAILBOX_AUTOMATION_CONFIDENCE_THRESHOLD = 0.9;
 
 export const mailboxAutomationClassificationSchema = z.enum([

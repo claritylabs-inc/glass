@@ -16,6 +16,7 @@ import type * as actions_cleanupLegacyLineOfBusinessFields from "../actions/clea
 import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
 import type * as actions_complianceReview from "../actions/complianceReview.js";
 import type * as actions_connectedEmail from "../actions/connectedEmail.js";
+import type * as actions_connectedEmailScan from "../actions/connectedEmailScan.js";
 import type * as actions_createOutboundImessageGroup from "../actions/createOutboundImessageGroup.js";
 import type * as actions_emailDrafts from "../actions/emailDrafts.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -143,6 +144,7 @@ import type * as lib_extractionPostProcess from "../lib/extractionPostProcess.js
 import type * as lib_featureFlags from "../lib/featureFlags.js";
 import type * as lib_fireworksStructuredOutput from "../lib/fireworksStructuredOutput.js";
 import type * as lib_imapDestination from "../lib/imapDestination.js";
+import type * as lib_imapMailbox from "../lib/imapMailbox.js";
 import type * as lib_imessageAgentContext from "../lib/imessageAgentContext.js";
 import type * as lib_imessageAgentRunState from "../lib/imessageAgentRunState.js";
 import type * as lib_imessageAppCards from "../lib/imessageAppCards.js";
@@ -163,6 +165,7 @@ import type * as lib_mergePdfs from "../lib/mergePdfs.js";
 import type * as lib_modelCatalog from "../lib/modelCatalog.js";
 import type * as lib_models from "../lib/models.js";
 import type * as lib_notificationEmailTemplate from "../lib/notificationEmailTemplate.js";
+import type * as lib_notificationThreadContext from "../lib/notificationThreadContext.js";
 import type * as lib_notificationTypes from "../lib/notificationTypes.js";
 import type * as lib_notify from "../lib/notify.js";
 import type * as lib_operatorIdentity from "../lib/operatorIdentity.js";
@@ -245,6 +248,7 @@ declare const fullApi: ApiFromModules<{
   "actions/complianceRequirements": typeof actions_complianceRequirements;
   "actions/complianceReview": typeof actions_complianceReview;
   "actions/connectedEmail": typeof actions_connectedEmail;
+  "actions/connectedEmailScan": typeof actions_connectedEmailScan;
   "actions/createOutboundImessageGroup": typeof actions_createOutboundImessageGroup;
   "actions/emailDrafts": typeof actions_emailDrafts;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
@@ -372,6 +376,7 @@ declare const fullApi: ApiFromModules<{
   "lib/featureFlags": typeof lib_featureFlags;
   "lib/fireworksStructuredOutput": typeof lib_fireworksStructuredOutput;
   "lib/imapDestination": typeof lib_imapDestination;
+  "lib/imapMailbox": typeof lib_imapMailbox;
   "lib/imessageAgentContext": typeof lib_imessageAgentContext;
   "lib/imessageAgentRunState": typeof lib_imessageAgentRunState;
   "lib/imessageAppCards": typeof lib_imessageAppCards;
@@ -392,6 +397,7 @@ declare const fullApi: ApiFromModules<{
   "lib/modelCatalog": typeof lib_modelCatalog;
   "lib/models": typeof lib_models;
   "lib/notificationEmailTemplate": typeof lib_notificationEmailTemplate;
+  "lib/notificationThreadContext": typeof lib_notificationThreadContext;
   "lib/notificationTypes": typeof lib_notificationTypes;
   "lib/notify": typeof lib_notify;
   "lib/operatorIdentity": typeof lib_operatorIdentity;

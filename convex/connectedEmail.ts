@@ -5,7 +5,7 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess } from "./lib/access";
-import { hasConnectedEmailAutomation } from "./lib/mailboxAutomation";
+import { resolveMailboxAutomationPolicy } from "./lib/mailboxAutomation";
 
 const automationValidator = v.object({
   policyImports: v.boolean(),
@@ -44,8 +44,7 @@ function publicAccount(
 
 function isAutomationEligible(account: Doc<"connectedEmailAccounts">) {
   if (account.status !== "active") return false;
-  if (account.automation) return hasConnectedEmailAutomation(account.automation);
-  return account.scope === "org";
+  return resolveMailboxAutomationPolicy(account).eligible;
 }
 
 function canManageConnectedMailbox(
@@ -136,35 +135,6 @@ export const listAccessibleInternal = internalQuery({
   },
 });
 
-export const listOrgScopedInternal = internalQuery({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("connectedEmailAccounts")
-      .withIndex("by_orgId_status", (q) =>
-        q.eq("orgId", args.orgId).eq("status", "active"),
-      )
-      .filter((q) => q.eq(q.field("scope"), "org"))
-      .collect();
-  },
-});
-
-export const listOrgIdsWithOrgScopedAccountsInternal = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const accounts = await ctx.db
-      .query("connectedEmailAccounts")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("status"), "active"),
-          q.eq(q.field("scope"), "org"),
-        ),
-      )
-      .collect();
-    return [...new Set(accounts.map((account) => account.orgId))];
-  },
-});
-
 export const listAutomationEligibleInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -193,14 +163,41 @@ export const getAutomationEligibleInternal = internalQuery({
   args: { accountId: v.id("connectedEmailAccounts") },
   handler: async (ctx, args) => {
     const account = await ctx.db.get(args.accountId);
-    if (
-      !account ||
-      account.status !== "active" ||
-      !isAutomationEligible(account)
-    ) {
+    if (!account || account.status !== "active") return null;
+    const policy = resolveMailboxAutomationPolicy(account);
+    if (!policy.eligible) return null;
+    return {
+      account,
+      automation: policy.automation,
+      alertOnly: policy.alertOnly,
+    };
+  },
+});
+
+export const getManageableForUserInternal = internalQuery({
+  args: {
+    accountId: v.id("connectedEmailAccounts"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const account = await ctx.db.get(args.accountId);
+    if (!account || account.status !== "active") return null;
+    const membership = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId_userId", (q) =>
+        q.eq("orgId", account.orgId).eq("userId", args.userId),
+      )
+      .first();
+    if (!membership) return null;
+    if (!canManageConnectedMailbox(account, args.userId, membership.role)) {
       return null;
     }
-    return account;
+    const policy = resolveMailboxAutomationPolicy(account);
+    return {
+      account,
+      automation: policy.automation,
+      alertOnly: policy.alertOnly,
+    };
   },
 });
 

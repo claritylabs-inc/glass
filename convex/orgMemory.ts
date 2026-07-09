@@ -83,6 +83,53 @@ function memoryContentKey(content: string) {
     .replace(/[.!?]+$/g, "");
 }
 
+// Matches an incoming memory item against existing rows by sourceRef, then by
+// normalized content, and merges confidence/observedAt into the duplicate.
+async function findAndMergeDuplicate(
+  ctx: MutationCtx,
+  item: {
+    orgId: Id<"organizations">;
+    type: OrgMemoryType;
+    content: string;
+    sourceRef?: string;
+    confidence?: number;
+    observedAt?: number;
+  },
+  now: number,
+): Promise<Id<"orgMemory"> | null> {
+  const sourceMatch = item.sourceRef
+    ? await ctx.db
+        .query("orgMemory")
+        .withIndex("by_org_sourceRef", (q) =>
+          q.eq("orgId", item.orgId).eq("sourceRef", item.sourceRef),
+        )
+        .first()
+    : null;
+  const existing = await ctx.db
+    .query("orgMemory")
+    .withIndex("by_org_type", (q) =>
+      q.eq("orgId", item.orgId).eq("type", item.type),
+    )
+    .take(500);
+  const contentKey = memoryContentKey(item.content);
+  const duplicate =
+    sourceMatch ??
+    existing.find((memory) => memoryContentKey(memory.content) === contentKey);
+  if (!duplicate) return null;
+  await ctx.db.patch(duplicate._id, {
+    confidence:
+      item.confidence === undefined
+        ? duplicate.confidence
+        : Math.max(duplicate.confidence ?? 0, item.confidence),
+    observedAt:
+      item.observedAt === undefined
+        ? duplicate.observedAt
+        : Math.max(duplicate.observedAt ?? 0, item.observedAt),
+    updatedAt: now,
+  });
+  return duplicate._id;
+}
+
 export const listAllInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -153,38 +200,12 @@ export const upsert = internalMutation({
     }
 
     const now = dayjs().valueOf();
-    const sourceMatch = args.sourceRef
-      ? await ctx.db
-          .query("orgMemory")
-          .withIndex("by_org_sourceRef", (q) =>
-            q.eq("orgId", args.orgId).eq("sourceRef", args.sourceRef),
-          )
-          .first()
-      : null;
-    const existing = await ctx.db
-      .query("orgMemory")
-      .withIndex("by_org_type", (q) =>
-        q.eq("orgId", args.orgId).eq("type", args.type),
-      )
-      .take(500);
-    const contentKey = memoryContentKey(content);
-    const duplicate =
-      sourceMatch ??
-      existing.find((memory) => memoryContentKey(memory.content) === contentKey);
-    if (duplicate) {
-      await ctx.db.patch(duplicate._id, {
-        confidence:
-          args.confidence === undefined
-            ? duplicate.confidence
-            : Math.max(duplicate.confidence ?? 0, args.confidence),
-        observedAt:
-          args.observedAt === undefined
-            ? duplicate.observedAt
-            : Math.max(duplicate.observedAt ?? 0, args.observedAt),
-        updatedAt: now,
-      });
-      return duplicate._id;
-    }
+    const duplicateId = await findAndMergeDuplicate(
+      ctx,
+      { ...args, content },
+      now,
+    );
+    if (duplicateId) return duplicateId;
     return await ctx.db.insert("orgMemory", {
       ...args,
       content,
@@ -238,40 +259,12 @@ export const bulkInsert = internalMutation({
       })) {
         continue;
       }
-      const sourceMatch = item.sourceRef
-        ? await ctx.db
-            .query("orgMemory")
-            .withIndex("by_org_sourceRef", (q) =>
-              q.eq("orgId", item.orgId).eq("sourceRef", item.sourceRef),
-            )
-            .first()
-        : null;
-      const existing = await ctx.db
-        .query("orgMemory")
-        .withIndex("by_org_type", (q) =>
-          q.eq("orgId", item.orgId).eq("type", item.type),
-        )
-        .take(500);
-      const contentKey = memoryContentKey(content);
-      const duplicate =
-        sourceMatch ??
-        existing.find(
-          (memory) => memoryContentKey(memory.content) === contentKey,
-        );
-      if (duplicate) {
-        await ctx.db.patch(duplicate._id, {
-          confidence:
-            item.confidence === undefined
-              ? duplicate.confidence
-              : Math.max(duplicate.confidence ?? 0, item.confidence),
-          observedAt:
-            item.observedAt === undefined
-              ? duplicate.observedAt
-              : Math.max(duplicate.observedAt ?? 0, item.observedAt),
-          updatedAt: now,
-        });
-        continue;
-      }
+      const duplicateId = await findAndMergeDuplicate(
+        ctx,
+        { ...item, type: item.type as OrgMemoryType, content },
+        now,
+      );
+      if (duplicateId) continue;
       const id = await ctx.db.insert("orgMemory", {
         ...item,
         content,

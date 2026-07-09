@@ -10,6 +10,7 @@ import {
   getScanStateInternal,
   recordScanAttemptInternal,
   recordScanSuccessInternal,
+  recordUnreadableItemInternal,
 } from "./connectedEmailAutomation";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -19,6 +20,7 @@ const finishItemFn = finishItemInternal as any;
 const getScanStateFn = getScanStateInternal as any;
 const recordScanAttemptFn = recordScanAttemptInternal as any;
 const recordScanSuccessFn = recordScanSuccessInternal as any;
+const recordUnreadableFn = recordUnreadableItemInternal as any;
 
 async function seed() {
   const t = convexTest(schema, modules);
@@ -107,5 +109,66 @@ describe("connected email automation ledger", () => {
     );
     expect(item?.status).toBe("completed");
     expect(item?.lastError).toBeUndefined();
+  });
+
+  test("skips a permanently unreadable message after repeated attempts so the watermark can advance", async () => {
+    const { t, orgId, userId, accountId } = await seed();
+    const args = {
+      accountId,
+      orgId,
+      userId,
+      mailbox: "INBOX",
+      uid: 7,
+      messageKey: "unreadable-key",
+      emailRef: "unreadable-ref",
+      error: "IMAP FETCH failed",
+    };
+
+    expect(await t.mutation(recordUnreadableFn, args)).toEqual({
+      attempts: 1,
+      willRetry: true,
+    });
+    expect(await t.mutation(recordUnreadableFn, args)).toEqual({
+      attempts: 2,
+      willRetry: true,
+    });
+    expect(await t.mutation(recordUnreadableFn, args)).toEqual({
+      attempts: 3,
+      willRetry: false,
+    });
+
+    const item = await t.run(async (ctx) => {
+      const items = await ctx.db
+        .query("connectedEmailAutomationItems")
+        .withIndex("by_accountId_messageKey", (query: any) =>
+          query.eq("accountId", accountId).eq("messageKey", "unreadable-key"),
+        )
+        .first();
+      return items as Doc<"connectedEmailAutomationItems"> | null;
+    });
+    expect(item?.status).toBe("skipped");
+    expect(item?.lastError).toBe("IMAP FETCH failed");
+    expect(item?.attempts).toBe(3);
+
+    // Once skipped, later scans and claims must treat it as done so the scan
+    // watermark advances past the poisoned uid instead of stalling forever.
+    expect(await t.mutation(recordUnreadableFn, args)).toEqual({
+      attempts: 3,
+      willRetry: false,
+    });
+    const claim = await t.mutation(claimItemFn, {
+      accountId,
+      orgId,
+      userId,
+      mailbox: "INBOX",
+      uid: 7,
+      messageKey: "unreadable-key",
+      emailRef: "unreadable-ref",
+      subject: "(unreadable message)",
+      classification: "review_needed" as const,
+      confidence: 0,
+      reason: "retry",
+    });
+    expect(claim).toMatchObject({ claimed: false, status: "skipped" });
   });
 });
