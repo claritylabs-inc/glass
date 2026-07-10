@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { stableHash, useSyncStore, type SyncStore } from "@claritylabs/cl-sync";
 import {
@@ -34,6 +39,11 @@ type LocalFirstAutoSaveOptions<TArgs, TResult> = {
 
 export type AutoSaveStatus = "saved" | "saving" | "unsaved" | "error";
 
+type PendingAutoSaveRequest = AutoSaveRequestIdentity & {
+  promise: Promise<boolean>;
+  completion: Promise<boolean>;
+};
+
 export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   mutationName,
   args,
@@ -66,16 +76,14 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   const wasEnabledRef = useRef(enabled);
   const lastResetKeyRef = useRef(resetKey);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef<{
-    generation: number;
-    requestId: number;
-    resetKey: string;
-    valueKey: string;
-    promise: Promise<boolean>;
-  } | null>(null);
+  const pendingSavesRef = useRef(
+    new Map<string, PendingAutoSaveRequest>(),
+  );
   const latestRequestsRef = useRef(new Map<string, AutoSaveRequestState>());
   const resetGenerationRef = useRef(0);
   const nextRequestIdRef = useRef(0);
+  const intentRevisionRef = useRef(0);
+  const lastIntentRef = useRef({ resetKey, valueKey });
   const argsRef = useRef(args);
   const valueKeyRef = useRef(valueKey);
   const resetKeyRef = useRef(resetKey);
@@ -86,7 +94,15 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   const onFlushedRef = useRef(onFlushed);
   const onErrorRef = useRef(onError);
   const errorMessageRef = useRef(errorMessage);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const previousIntent = lastIntentRef.current;
+    if (
+      previousIntent.resetKey === resetKey &&
+      previousIntent.valueKey !== valueKey
+    ) {
+      intentRevisionRef.current += 1;
+    }
+    lastIntentRef.current = { resetKey, valueKey };
     argsRef.current = args;
     valueKeyRef.current = valueKey;
     resetKeyRef.current = resetKey;
@@ -110,7 +126,7 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
     valueKey,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (resetKey === lastResetKeyRef.current) return;
     lastResetKeyRef.current = resetKey;
     const nextGeneration = resetGenerationRef.current + 1;
@@ -131,14 +147,11 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
       const resetKey = resetKeyRef.current;
       const generation = resetGenerationRef.current;
       const current = { generation, resetKey, valueKey };
-      const pendingSave = pendingSaveRef.current;
+      const latestRequest = latestRequestsRef.current.get(resetKey) ?? null;
+      const pendingSave = pendingSavesRef.current.get(resetKey);
       if (
         pendingSave &&
-        isCurrentAutoSaveRequest(
-          pendingSave,
-          latestRequestsRef.current.get(resetKey) ?? null,
-          current,
-        )
+        isCurrentAutoSaveRequest(pendingSave, latestRequest, current)
       ) {
         return pendingSave.promise;
       }
@@ -146,7 +159,7 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
         return Promise.resolve(false);
       }
       const divergentWritePending = isDivergentAutoSaveRequest(
-        latestRequestsRef.current.get(resetKey) ?? null,
+        latestRequest,
         current,
       );
       if (
@@ -154,6 +167,25 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
         valueKey === lastSavedKeyRef.current &&
         !divergentWritePending
       ) {
+        if (
+          latestRequest !== null &&
+          !latestRequest.settled &&
+          latestRequest.generation !== generation &&
+          pendingSave?.requestId === latestRequest.requestId
+        ) {
+          const barrierRequestId = latestRequest.requestId;
+          const barrierIntentRevision = intentRevisionRef.current;
+          return pendingSave.completion.then(
+            (succeeded) =>
+              succeeded &&
+              resetGenerationRef.current === generation &&
+              resetKeyRef.current === resetKey &&
+              valueKeyRef.current === valueKey &&
+              intentRevisionRef.current === barrierIntentRevision &&
+              latestRequestsRef.current.get(resetKey)?.requestId ===
+                barrierRequestId,
+          );
+        }
         return Promise.resolve(true);
       }
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -199,8 +231,10 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
           },
         );
 
+      let flushSucceeded = false;
       const promise = result
         .then((flushResult) => {
+          flushSucceeded = true;
           const isCurrent = isRequestCurrent();
           if (isCurrent) {
             lastSavedKeyRef.current = queuedKey;
@@ -227,8 +261,10 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
           return false;
         })
         .finally(() => {
-          if (pendingSaveRef.current?.requestId === requestId) {
-            pendingSaveRef.current = null;
+          if (
+            pendingSavesRef.current.get(queuedResetKey)?.requestId === requestId
+          ) {
+            pendingSavesRef.current.delete(queuedResetKey);
           }
           const latestRequest = latestRequestsRef.current.get(queuedResetKey);
           if (latestRequest?.requestId === requestId) {
@@ -246,13 +282,15 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
           }
         });
 
-      pendingSaveRef.current = {
+      const completion = promise.then(() => flushSucceeded);
+      pendingSavesRef.current.set(queuedResetKey, {
         generation,
         requestId,
         resetKey: queuedResetKey,
         valueKey: queuedKey,
         promise,
-      };
+        completion,
+      });
       return promise;
     },
     [mutationName, sequencer, store],
@@ -260,7 +298,7 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
 
   const latestRequest = latestRequests.get(resetKey) ?? null;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!enabled) {
       if (wasEnabledRef.current) {
         const nextGeneration = resetGenerationRef.current + 1;

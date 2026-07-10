@@ -370,7 +370,7 @@ describe("useLocalFirstAutoSave", () => {
       resetKey: "entity-1",
       valueKey: "A",
     });
-    const restoredCurrent = harness.startSave();
+    const restoredCurrent = harness.startSave({ force: true });
 
     await act(async () => {
       success.resolve("B");
@@ -459,6 +459,248 @@ describe("useLocalFirstAutoSave", () => {
     expect(flush).toHaveBeenCalledOnce();
     expect(persisted).toBe("B");
     expect(harness.current.status).toBe("saved");
+  });
+
+  it("does not overwrite an unsettled entity save with stale rebased props", async () => {
+    const saved = deferred<string>();
+    let persisted = "A";
+    const flush = vi.fn(async (args: SaveArgs) => {
+      if (args.payload === "B") await saved.promise;
+      persisted = args.payload;
+      return args.payload;
+    });
+    const harness = createHarness({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "B",
+    });
+    const entitySave = harness.startSave();
+    await act(async () => Promise.resolve());
+    await harness.render({
+      args: { payload: "C" },
+      flush,
+      resetKey: "entity-2",
+      valueKey: "C",
+    });
+    await harness.render({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    const rebased = harness.startSave();
+    let rebasedResult: boolean | undefined;
+    void rebased.then((result) => {
+      rebasedResult = result;
+    });
+
+    await act(async () => Promise.resolve());
+    expect(rebasedResult).toBeUndefined();
+    expect(flush).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      saved.resolve("B");
+      await entitySave;
+      await rebased;
+    });
+
+    expect(await entitySave).toBe(false);
+    expect(await rebased).toBe(true);
+    expect(flush).toHaveBeenCalledOnce();
+    expect(persisted).toBe("B");
+    expect(harness.current.status).toBe("saved");
+  });
+
+  it("fails a rebased save barrier when the older entity write fails", async () => {
+    const saved = deferred<string>();
+    let persisted = "A";
+    const flush = vi.fn(async (args: SaveArgs) => {
+      if (args.payload === "B") await saved.promise;
+      persisted = args.payload;
+      return args.payload;
+    });
+    const harness = createHarness({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "B",
+    });
+    const entitySave = harness.startSave();
+    await act(async () => Promise.resolve());
+    await harness.render({
+      args: { payload: "C" },
+      flush,
+      resetKey: "entity-2",
+      valueKey: "C",
+    });
+    await harness.render({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    const rebased = harness.startSave();
+    let rebasedResult: boolean | undefined;
+    void rebased.then((result) => {
+      rebasedResult = result;
+    });
+
+    await act(async () => Promise.resolve());
+    expect(rebasedResult).toBeUndefined();
+
+    await act(async () => {
+      saved.reject(new Error("offline"));
+      await entitySave;
+      await rebased;
+    });
+
+    expect(await entitySave).toBe(false);
+    expect(await rebased).toBe(false);
+    expect(flush).toHaveBeenCalledOnce();
+    expect(persisted).toBe("A");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("invalidates a rebased barrier when a newer same-entity save supersedes it", async () => {
+    const older = deferred<string>();
+    const newer = deferred<string>();
+    const started: string[] = [];
+    let persisted = "A";
+    const flush = vi.fn(async (args: SaveArgs) => {
+      started.push(args.payload);
+      await (args.payload === "B" ? older.promise : newer.promise);
+      persisted = args.payload;
+      return args.payload;
+    });
+    const harness = createHarness({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "B",
+    });
+    const olderSave = harness.startSave();
+    await act(async () => Promise.resolve());
+    await harness.render({
+      args: { payload: "C" },
+      flush,
+      resetKey: "entity-2",
+      valueKey: "C",
+    });
+    await harness.render({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    const barrier = harness.startSave();
+    await harness.render({
+      args: { payload: "D" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "D",
+    });
+    const newerSave = harness.startSave();
+
+    await act(async () => {
+      older.resolve("B");
+      await olderSave;
+      await barrier;
+    });
+
+    expect(await olderSave).toBe(false);
+    expect(await barrier).toBe(false);
+    expect(started).toEqual(["B", "D"]);
+    expect(persisted).toBe("B");
+
+    await act(async () => {
+      newer.resolve("D");
+      await newerSave;
+    });
+
+    expect(await newerSave).toBe(true);
+    expect(persisted).toBe("D");
+  });
+
+  it("invalidates a rebased barrier when intent changes back to its baseline", async () => {
+    const saved = deferred<string>();
+    let persisted = "A";
+    const flush = vi.fn(async (args: SaveArgs) => {
+      await saved.promise;
+      persisted = args.payload;
+      return args.payload;
+    });
+    const harness = createHarness({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "B",
+    });
+    const olderSave = harness.startSave();
+    await act(async () => Promise.resolve());
+    await harness.render({
+      args: { payload: "C" },
+      flush,
+      resetKey: "entity-2",
+      valueKey: "C",
+    });
+    await harness.render({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    const barrier = harness.startSave();
+    await harness.render({
+      args: { payload: "D" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "D",
+    });
+    await harness.render({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+
+    await act(async () => {
+      saved.resolve("B");
+      await olderSave;
+      await barrier;
+    });
+
+    expect(await barrier).toBe(false);
+    expect(flush).toHaveBeenCalledOnce();
+    expect(persisted).toBe("B");
   });
 
   it("keeps a policy-style full-draft key saved after pending args clear", async () => {
