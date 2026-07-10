@@ -307,7 +307,7 @@ function CertificatesTable({
                   ) : null}
                 </TableCell>
                 <TableCell className="max-w-72">
-                  <p className="truncate font-medium text-foreground">
+                  <p className="truncate text-foreground">
                     {row.policy?.policyNumber ?? "Policy"}
                   </p>
                   {carrier ? (
