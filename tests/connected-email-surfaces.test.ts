@@ -192,7 +192,11 @@ describe("connected email surfaces", () => {
     expect(emailSettings).toContain("automationConfigured");
     expect(emailSettings).toContain("<DialogTitle>Scan mailbox</DialogTitle>");
     expect(emailDrawers).toContain("useLocalFirstAutoSave");
-    expect(emailDrawers).toContain("await settingsAutoSave.saveNow");
+    expect(emailDrawers).toContain("await saveSettingsBeforeAction()");
+    expect(emailDrawers).toContain("onSaveBarrierChange(saveSettingsBeforeAction)");
+    expect(emailList).toContain("mailboxSaveBarrierRef.current");
+    expect(emailList).toContain("if (barrier && !(await barrier())) return");
+    expect(emailList).toContain("onClick={() => void openMailbox(account._id)}");
     expect(emailDrawers).toContain(
       'variant="secondary"\n              disabled={savingSettings || scanning}',
     );
@@ -221,7 +225,7 @@ describe("connected email surfaces", () => {
     expect(emailDrawers).not.toContain(
       "Choose what Glass can import and learn from this mailbox.",
     );
-    expect(emailList).toContain("setSelectedAccountId(account._id)");
+    expect(emailList).toContain("void openMailbox(account._id)");
     expect(emailList).not.toContain("updateConnectedEmailScope");
     expect(emailList).not.toContain("revokeConnectedEmail");
     expect(emailSettings).not.toContain("<select");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { ChevronRight, Loader2, Mail, Plus } from "lucide-react";
 
@@ -54,6 +54,7 @@ export function EmailConnectionsSection() {
   const [addMailboxOpen, setAddMailboxOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] =
     useState<Id<"connectedEmailAccounts"> | null>(null);
+  const mailboxSaveBarrierRef = useRef<(() => Promise<boolean>) | null>(null);
 
   const selectedAccount = connectedEmailAccounts?.find(
     (account) => account._id === selectedAccountId,
@@ -110,19 +111,43 @@ export function EmailConnectionsSection() {
     [orgId, updateConnectedEmailAccounts],
   );
 
+  const setMailboxSaveBarrier = useCallback(
+    (barrier: (() => Promise<boolean>) | null) => {
+      mailboxSaveBarrierRef.current = barrier;
+    },
+    [],
+  );
+
+  const openMailbox = useCallback(
+    async (accountId: Id<"connectedEmailAccounts">) => {
+      if (accountId === selectedAccountId) return;
+      const barrier = mailboxSaveBarrierRef.current;
+      if (barrier && !(await barrier())) return;
+      setSelectedAccountId(accountId);
+    },
+    [selectedAccountId],
+  );
+
+  const openAddMailbox = useCallback(async () => {
+    const barrier = mailboxSaveBarrierRef.current;
+    if (barrier && !(await barrier())) return;
+    setSelectedAccountId(null);
+    setAddMailboxOpen(true);
+  }, []);
+
   useEffect(() => {
     setActions(
       <PillButton
         size="compact"
         variant="secondary"
-        onClick={() => setAddMailboxOpen(true)}
+        onClick={() => void openAddMailbox()}
       >
         <Plus className="size-3.5" />
         Add mailbox
       </PillButton>,
     );
     return () => setActions(null);
-  }, [setActions]);
+  }, [openAddMailbox, setActions]);
 
   useEffect(() => {
     if (selectedAccount) {
@@ -139,6 +164,7 @@ export function EmailConnectionsSection() {
           }}
           onSaved={saveConnectedAccount}
           onDisconnected={removeConnectedAccount}
+          onSaveBarrierChange={setMailboxSaveBarrier}
         />,
       );
     } else {
@@ -162,6 +188,7 @@ export function EmailConnectionsSection() {
     removeConnectedAccount,
     saveConnectedAccount,
     selectedAccount,
+    setMailboxSaveBarrier,
     setRightPanel,
     viewer?._id,
   ]);
@@ -187,7 +214,7 @@ export function EmailConnectionsSection() {
               <button
                 key={account._id}
                 type="button"
-                onClick={() => setSelectedAccountId(account._id)}
+                onClick={() => void openMailbox(account._id)}
                 className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/10"
               >
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-foreground">
@@ -236,7 +263,7 @@ export function EmailConnectionsSection() {
             size="compact"
             variant="secondary"
             className="mt-4"
-            onClick={() => setAddMailboxOpen(true)}
+            onClick={() => void openAddMailbox()}
           >
             <Plus className="size-3.5" />
             Add mailbox

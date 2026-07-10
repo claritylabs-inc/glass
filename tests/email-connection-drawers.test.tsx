@@ -151,7 +151,12 @@ function buttonWithText(container: ParentNode, text: string) {
   return button;
 }
 
-async function renderDrawer() {
+async function mountDrawer(options?: {
+  canManageMailbox?: boolean;
+  onSaveBarrierChange?: (
+    barrier: (() => Promise<boolean>) | null,
+  ) => void;
+}) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -161,14 +166,21 @@ async function renderDrawer() {
     root.render(
       <MailboxSettingsDrawer
         account={ACCOUNT}
-        canManageMailbox
+        canManageMailbox={options?.canManageMailbox ?? true}
         canManageOrgMailboxes
         onOpenChange={vi.fn()}
         onSaved={vi.fn(async () => undefined)}
         onDisconnected={vi.fn(async () => undefined)}
+        onSaveBarrierChange={options?.onSaveBarrierChange ?? vi.fn()}
       />,
     );
   });
+
+  return container;
+}
+
+async function renderDrawer() {
+  const container = await mountDrawer();
 
   await act(async () => {
     buttonWithText(container, "Scan mailbox").click();
@@ -258,5 +270,19 @@ describe("MailboxSettingsDrawer manual scan", () => {
         "Scan mailbox",
       ).disabled,
     ).toBe(false);
+  });
+
+  it("registers a pass-through barrier for a read-only mailbox", async () => {
+    let barrier: (() => Promise<boolean>) | null = null;
+    await mountDrawer({
+      canManageMailbox: false,
+      onSaveBarrierChange: (nextBarrier) => {
+        barrier = nextBarrier;
+      },
+    });
+
+    expect(barrier).not.toBeNull();
+    await expect(barrier!()).resolves.toBe(true);
+    expect(mocks.saveNow).not.toHaveBeenCalled();
   });
 });

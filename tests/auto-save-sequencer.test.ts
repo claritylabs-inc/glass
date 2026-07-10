@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   createAutoSaveSequencer,
+  hasRebasedAutoSaveIntent,
   isCurrentAutoSaveRequest,
   isDivergentAutoSaveRequest,
+  waitForStableAutoSaveBarriers,
 } from "../lib/sync/auto-save-sequencer";
 
 function deferred() {
@@ -105,6 +107,45 @@ describe("auto-save sequencer", () => {
         current,
       ),
     ).toBe(false);
+  });
+
+  it("restores an explicit rebased intent after an older value request", () => {
+    const oldPending = {
+      generation: 1,
+      requestId: 4,
+      resetKey: "entity-1",
+      valueKey: "B",
+      settled: false,
+    };
+    const current = {
+      generation: 3,
+      resetKey: "entity-1",
+      valueKey: "A",
+    };
+
+    expect(hasRebasedAutoSaveIntent(oldPending, current, false)).toBe(false);
+    expect(hasRebasedAutoSaveIntent(oldPending, current, true)).toBe(true);
+    expect(
+      hasRebasedAutoSaveIntent(
+        { ...oldPending, valueKey: "A" },
+        current,
+        true,
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a multi-save barrier when intent changes while another save waits", async () => {
+    const slow = deferred();
+    let revision = 0;
+    const barrier = waitForStableAutoSaveBarriers(
+      [async () => true, async () => slow.promise.then(() => true)],
+      () => revision,
+    );
+
+    revision += 1;
+    slow.resolve();
+
+    await expect(barrier).resolves.toBe(false);
   });
 
   it("persists A -> B -> A in intent order even when earlier writes are slow", async () => {

@@ -122,6 +122,16 @@ function createHarness(initialProps: HarnessProps) {
     async start() {
       await render(initialProps);
     },
+    async unmount() {
+      await act(async () => root.unmount());
+      if (mountedRoot === root) mountedRoot = null;
+      container.remove();
+    },
+    unmountSync() {
+      root.unmount();
+      if (mountedRoot === root) mountedRoot = null;
+      container.remove();
+    },
   };
 }
 
@@ -703,6 +713,77 @@ describe("useLocalFirstAutoSave", () => {
     expect(persisted).toBe("B");
   });
 
+  it("restores a rebased baseline when intent changed before saveNow", async () => {
+    const older = deferred<string>();
+    const restored = deferred<string>();
+    const started: string[] = [];
+    let persisted = "A";
+    const flush = vi.fn(async (args: SaveArgs) => {
+      started.push(args.payload);
+      await (args.payload === "B" ? older.promise : restored.promise);
+      persisted = args.payload;
+      return args.payload;
+    });
+    const harness = createHarness({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "B",
+    });
+    const olderSave = harness.startSave();
+    await act(async () => Promise.resolve());
+    await harness.render({
+      args: { payload: "C" },
+      flush,
+      resetKey: "entity-2",
+      valueKey: "C",
+    });
+    await harness.render({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    await harness.render({
+      args: { payload: "D" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "D",
+    });
+    await harness.render({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    const restoredSave = harness.startSave();
+
+    await act(async () => {
+      older.resolve("B");
+      await olderSave;
+      await Promise.resolve();
+    });
+
+    expect(await olderSave).toBe(false);
+    expect(started).toEqual(["B", "A"]);
+    expect(persisted).toBe("B");
+
+    await act(async () => {
+      restored.resolve("A");
+      await restoredSave;
+    });
+
+    expect(await restoredSave).toBe(true);
+    expect(persisted).toBe("A");
+  });
+
   it("keeps a policy-style full-draft key saved after pending args clear", async () => {
     const flush = vi.fn(async () => "saved");
     const harness = createHarness({
@@ -859,5 +940,103 @@ describe("useLocalFirstAutoSave", () => {
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(flush).toHaveBeenCalledWith({ payload: "B" }, expect.any(String));
     expect(harness.current.status).toBe("saved");
+  });
+
+  it("flushes a valid pending intent when the surface unmounts", async () => {
+    const flush = vi.fn(async (args: SaveArgs) => args.payload);
+    const harness = createHarness({
+      args: { payload: "A" },
+      autoSave: true,
+      delayMs: 10_000,
+      flush,
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      autoSave: true,
+      delayMs: 10_000,
+      flush,
+      valueKey: "B",
+    });
+
+    expect(flush).not.toHaveBeenCalled();
+    await harness.unmount();
+    await act(async () => Promise.resolve());
+
+    expect(flush).toHaveBeenCalledOnce();
+    expect(flush).toHaveBeenCalledWith({ payload: "B" }, expect.any(String));
+  });
+
+  it("flushes a valid draft on unmount while timed auto-save is paused", async () => {
+    const flush = vi.fn(async (args: SaveArgs) => args.payload);
+    const harness = createHarness({
+      args: { payload: "A" },
+      autoSave: false,
+      flush,
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      autoSave: false,
+      flush,
+      valueKey: "B",
+    });
+
+    await harness.unmount();
+    await act(async () => Promise.resolve());
+
+    expect(flush).toHaveBeenCalledOnce();
+    expect(flush).toHaveBeenCalledWith({ payload: "B" }, expect.any(String));
+  });
+
+  it("does not retry a failed save when onError unmounts the surface", async () => {
+    const flush = vi.fn<(args: SaveArgs) => Promise<string>>().mockRejectedValue(
+      new Error("offline"),
+    );
+    const onError = vi.fn();
+    const harness = createHarness({
+      args: { payload: "A" },
+      flush,
+      onError,
+      valueKey: "A",
+    });
+    onError.mockImplementation(() => harness.unmountSync());
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      flush,
+      onError,
+      valueKey: "B",
+    });
+
+    const failed = harness.startSave();
+    await act(async () => {
+      await failed;
+      await Promise.resolve();
+    });
+
+    expect(await failed).toBe(false);
+    expect(flush).toHaveBeenCalledOnce();
+  });
+
+  it("treats a clean baseline as saved even when new writes are invalid", async () => {
+    const flush = vi.fn(async (args: SaveArgs) => args.payload);
+    const harness = createHarness({
+      args: { payload: "A" },
+      canSave: false,
+      flush,
+      valueKey: "A",
+    });
+    await harness.start();
+
+    const saved = harness.startSave();
+    await act(async () => {
+      await saved;
+    });
+
+    expect(await saved).toBe(true);
+    expect(flush).not.toHaveBeenCalled();
   });
 });

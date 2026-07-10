@@ -126,7 +126,7 @@ describe("auto-save surfaces", () => {
     const rename = read("components/editable-breadcrumb-title.tsx");
 
     expect(mailboxClose).toContain(
-      "const saved = await settingsAutoSave.saveNow",
+      "const saved = await saveSettingsBeforeAction()",
     );
     expect(mailboxClose).toContain("if (!open && canManageMailbox)");
     expect(mailboxClose).not.toContain("if (!open && hasChanges");
@@ -142,5 +142,63 @@ describe("auto-save surfaces", () => {
     );
     expect(rename).toContain("setRenameGeneration((current) => current + 1)");
     expect(rename).toContain('resetKey: `${saveKey}:${renameGeneration}`');
+  });
+
+  it("drains operator and organization saves before dependent actions", () => {
+    const broker = read("app/operator/page.tsx");
+    const client = read("app/operator/clients/page.tsx");
+    const organization = read(
+      "components/settings/organization-section.tsx",
+    );
+
+    for (const [source, helper, autoSave] of [
+      [
+        broker,
+        "saveBrokerSettingsBeforeTransition",
+        "brokerSettingsAutoSave",
+      ],
+      [client, "saveClientSettingsBeforeAction", "clientSettingsAutoSave"],
+    ] as const) {
+      expect(source).toContain(`return ${autoSave}.saveNow()`);
+      expect(source).not.toContain("settingsDirty");
+      expect(source.indexOf(`await ${helper}()`)).toBeLessThan(
+        source.indexOf("await startImpersonation"),
+      );
+    }
+
+    expect(broker.indexOf("await saveBrokerSettingsBeforeTransition()")).toBeLessThan(
+      broker.indexOf("await launchBroker"),
+    );
+    expect(client.indexOf("await saveClientSettingsBeforeAction()")).toBeLessThan(
+      client.indexOf("await launchClient"),
+    );
+    expect(broker).toContain(
+      '<fieldset disabled={busy} className="space-y-3">',
+    );
+    expect(client).toContain(
+      '<fieldset disabled={busy} className="space-y-4">',
+    );
+    expect(organization.indexOf("await saveOrganizationBeforeAction()")).toBeLessThan(
+      organization.indexOf("await resetAccount()"),
+    );
+    expect(organization).toContain(
+      "if (isBroker) barriers.push(slugAutoSave.saveNow)",
+    );
+    expect(organization).toContain("waitForStableAutoSaveBarriers(");
+    expect(organization).toContain("slug === currentSlug ||");
+    expect(organization).toContain(
+      '<fieldset disabled={resetting} className="contents">',
+    );
+    expect(organization).toContain("if (extracting) return");
+    expect(organization).toContain("disabled={resetting || extracting}");
+
+    const resetHandler = organization.slice(
+      organization.indexOf("async function handleReset()"),
+      organization.indexOf("function updateRelatedLegalEntity"),
+    );
+    expect(resetHandler).not.toContain("finally");
+    expect(resetHandler.lastIndexOf("setResetting(false)")).toBeLessThan(
+      resetHandler.indexOf('router.replace("/onboarding")'),
+    );
   });
 });

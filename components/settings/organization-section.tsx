@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useQuery, useMutation, useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
@@ -24,6 +30,7 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { waitForStableAutoSaveBarriers } from "@/lib/sync/auto-save-sequencer";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
@@ -134,14 +141,15 @@ export function OrganizationSection() {
     mutationName: "settings.organization.updateSlug",
     args: {
       brokerOrgId: currentOrg?.orgId as Id<"organizations">,
-      slug: debouncedSlug,
+      slug,
     },
     valueKey: slug,
     enabled: isBroker && !!currentOrg?.orgId && settingsHydrated,
     canSave:
-      debouncedSlug.length >= 3 &&
-      slug === debouncedSlug &&
-      (debouncedSlug === currentSlug || slugCheck?.available === true),
+      slug === currentSlug ||
+      (debouncedSlug.length >= 3 &&
+        slug === debouncedSlug &&
+        slugCheck?.available === true),
     delayMs: 0,
     flush: (args) => updateSlug(args),
     onFlushed: (normalized, args) => {
@@ -194,6 +202,19 @@ export function OrganizationSection() {
       }))
       .filter((entity) => entity.legalName),
   };
+  const organizationActionKey = JSON.stringify({
+    orgSettingsArgs,
+    context,
+    slug,
+  });
+  const organizationActionRevisionRef = useRef(0);
+  const lastOrganizationActionKeyRef = useRef(organizationActionKey);
+  useLayoutEffect(() => {
+    if (lastOrganizationActionKeyRef.current !== organizationActionKey) {
+      organizationActionRevisionRef.current += 1;
+      lastOrganizationActionKeyRef.current = organizationActionKey;
+    }
+  }, [organizationActionKey]);
 
   const saveOrgSettings = useCallback(
     async (args: OrgSettingsArgs) => {
@@ -227,6 +248,15 @@ export function OrganizationSection() {
     slugAutoSave.status,
   );
 
+  async function saveOrganizationBeforeAction() {
+    const barriers = [orgAutoSave.saveNow, contextAutoSave.saveNow];
+    if (isBroker) barriers.push(slugAutoSave.saveNow);
+    return waitForStableAutoSaveBarriers(
+      barriers,
+      () => organizationActionRevisionRef.current,
+    );
+  }
+
   useEffect(() => {
     setActions(
       <div className="flex items-center gap-3">
@@ -235,7 +265,7 @@ export function OrganizationSection() {
           variant="secondary"
           size="compact"
           onClick={handleExtract}
-          disabled={extracting || !website}
+          disabled={extracting || resetting || showResetDialog || !website}
         >
           {extracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
           {extracting ? "Extracting…" : "Extract from website"}
@@ -244,7 +274,7 @@ export function OrganizationSection() {
     );
     return () => setActions(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationSaveStatus, extracting, website]);
+  }, [organizationSaveStatus, extracting, resetting, showResetDialog, website]);
 
   useEffect(() => {
     setRightPanel(
@@ -264,7 +294,7 @@ export function OrganizationSection() {
             <PillButton
               variant="destructive"
               onClick={handleReset}
-              disabled={resetting}
+              disabled={resetting || extracting}
             >
               {resetting ? "Resetting…" : "Yes, reset everything"}
             </PillButton>
@@ -286,7 +316,7 @@ export function OrganizationSection() {
   }, [showResetDialog, resetting]);
 
   async function handleExtract() {
-    if (!website) return;
+    if (!website || resetting || showResetDialog) return;
     setExtracting(true);
     try {
       let url = website;
@@ -312,17 +342,22 @@ export function OrganizationSection() {
   }
 
   async function handleReset() {
+    if (extracting) return;
     setResetting(true);
+    if (!(await saveOrganizationBeforeAction())) {
+      setResetting(false);
+      return;
+    }
     try {
       await resetAccount();
-      setShowResetDialog(false);
-      toast.success("Account reset successfully");
-      router.replace("/onboarding");
     } catch {
       toast.error("Failed to reset account");
-    } finally {
       setResetting(false);
+      return;
     }
+    setShowResetDialog(false);
+    toast.success("Account reset successfully");
+    router.replace("/onboarding");
   }
 
   function updateRelatedLegalEntity(
@@ -361,9 +396,10 @@ export function OrganizationSection() {
     <div className="space-y-4">
       {/* Organization info */}
       <div>
-        <OperationalPanel className="mb-4">
-          <OperationalPanelHeader title="Organization" className="px-5 py-3.5" />
-          <OperationalPanelBody className="space-y-4 px-5 py-5">
+        <fieldset disabled={resetting} className="contents">
+          <OperationalPanel className="mb-4">
+            <OperationalPanelHeader title="Organization" className="px-5 py-3.5" />
+            <OperationalPanelBody className="space-y-4 px-5 py-5">
             <div>
               <label className="text-label font-medium text-muted-foreground block mb-1.5">
                 Organization Name
@@ -542,10 +578,11 @@ export function OrganizationSection() {
               </div>
             )}
 
-          </OperationalPanelBody>
-        </OperationalPanel>
+            </OperationalPanelBody>
+          </OperationalPanel>
 
-        <BrandingCard website={website} />
+          <BrandingCard website={website} />
+        </fieldset>
 
       </div>
 
@@ -565,8 +602,12 @@ export function OrganizationSection() {
             </div>
             <PillButton
               variant="secondary"
+              disabled={resetting}
               onClick={async () => {
                 try {
+                  if (!(await saveOrganizationBeforeAction())) {
+                    return;
+                  }
                   await restartOnboarding();
                   toast.success("Restarting onboarding...");
                   router.replace("/onboarding");
@@ -604,6 +645,7 @@ export function OrganizationSection() {
                 </div>
                 <PillButton
                   variant="destructive"
+                  disabled={resetting || extracting}
                   onClick={() => setShowResetDialog(true)}
                 >
                   Reset
