@@ -44,6 +44,32 @@ export function isDivergentAutoSaveRequest(
   );
 }
 
+export function hasRebasedAutoSaveIntent(
+  latest: AutoSaveRequestState | null,
+  current: Pick<
+    AutoSaveRequestIdentity,
+    "generation" | "resetKey" | "valueKey"
+  >,
+  intentChanged: boolean,
+) {
+  return (
+    intentChanged &&
+    latest !== null &&
+    latest.resetKey === current.resetKey &&
+    latest.generation !== current.generation &&
+    latest.valueKey !== current.valueKey
+  );
+}
+
+export async function waitForStableAutoSaveBarriers(
+  barriers: Array<() => Promise<boolean>>,
+  getRevision: () => number,
+) {
+  const revision = getRevision();
+  const results = await Promise.all(barriers.map((barrier) => barrier()));
+  return results.every(Boolean) && getRevision() === revision;
+}
+
 export function createAutoSaveSequencer(): AutoSaveSequencer {
   let tail = Promise.resolve();
 

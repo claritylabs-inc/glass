@@ -103,7 +103,6 @@ export default function OperatorPage() {
   const [editAdminName, setEditAdminName] = useState("");
   const [editAdminPhone, setEditAdminPhone] = useState("");
   const [busy, setBusy] = useState(false);
-  const [settingsDirty, setSettingsDirty] = useState(false);
   const [debouncedSlug, setDebouncedSlug] = useState("");
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
   const [debouncedEditSlug, setDebouncedEditSlug] = useState("");
@@ -215,17 +214,6 @@ export default function OperatorPage() {
     setEditAgentHandle(broker.agentHandle ?? "");
     setEditAdminName(broker.adminName ?? "");
     setEditAdminPhone(broker.adminPhone ?? "");
-    setSettingsDirty(false);
-  }
-
-  function openDetails(broker: BrokerRow) {
-    setSelectedId(broker._id);
-    primeEditState(broker);
-    setPanelMode("details");
-  }
-
-  function markBrokerSettingsDirty() {
-    setSettingsDirty(true);
   }
 
   const brokerSettingsArgs = {
@@ -250,14 +238,23 @@ export default function OperatorPage() {
       const { brokerOrgId, ...patch } = args;
       await patchBrokerSettings(brokerOrgId, patch);
     },
-    onFlushed: (_result, args) => {
-      if (brokerSettingsValueKey === JSON.stringify(args)) {
-        setSettingsDirty(false);
-      }
-    },
     errorMessage: (error) =>
       error instanceof Error ? error.message : "Broker settings could not be saved.",
   });
+
+  async function saveBrokerSettingsBeforeTransition() {
+    if (panelMode !== "details" || !selected) return true;
+    return brokerSettingsAutoSave.saveNow();
+  }
+
+  async function openDetails(broker: BrokerRow) {
+    if (panelMode === "details" && selectedId === broker._id) return;
+    const saved = await saveBrokerSettingsBeforeTransition();
+    if (!saved) return;
+    setSelectedId(broker._id);
+    primeEditState(broker);
+    setPanelMode("details");
+  }
 
   async function submitBroker(event: React.FormEvent) {
     event.preventDefault();
@@ -302,13 +299,24 @@ export default function OperatorPage() {
   }
 
   async function impersonate(broker: BrokerRow) {
-    await startImpersonation({ targetOrgId: broker._id, targetRole: "admin" });
-    router.push("/clients");
+    setBusy(true);
+    try {
+      const saved = await saveBrokerSettingsBeforeTransition();
+      if (!saved) return;
+      await startImpersonation({ targetOrgId: broker._id, targetRole: "admin" });
+      router.push("/clients");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to impersonate broker");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function launch(broker: BrokerRow) {
     setBusy(true);
     try {
+      const saved = await saveBrokerSettingsBeforeTransition();
+      if (!saved) return;
       await launchBroker({ brokerOrgId: broker._id });
       await patchBrokerStatus(broker._id, "live");
       toast.success("Broker launched and login email sent");
@@ -322,6 +330,8 @@ export default function OperatorPage() {
   async function moveToOnboarding(broker: BrokerRow) {
     setBusy(true);
     try {
+      const saved = await saveBrokerSettingsBeforeTransition();
+      if (!saved) return;
       await setBrokerStatus({ brokerOrgId: broker._id, status: "onboarding" });
       await patchBrokerStatus(broker._id, "onboarding");
       toast.success("Broker account disabled");
@@ -339,6 +349,8 @@ export default function OperatorPage() {
           variant="secondary"
           size="compact"
           onClick={async () => {
+            const saved = await saveBrokerSettingsBeforeTransition();
+            if (!saved) return;
             await stopOperatorImpersonation();
             toast.success("Impersonation stopped");
           }}
@@ -349,7 +361,11 @@ export default function OperatorPage() {
       <PillButton
         size="compact"
         variant="secondary"
-        onClick={() => setPanelMode("create")}
+        onClick={async () => {
+          const saved = await saveBrokerSettingsBeforeTransition();
+          if (!saved) return;
+          setPanelMode("create");
+        }}
       >
         Create broker
       </PillButton>
@@ -358,15 +374,11 @@ export default function OperatorPage() {
   const rightPanel = (
     <SettingsDrawer
       open={panelMode !== null}
-      onOpenChange={(open) => {
+      onOpenChange={async (open) => {
         if (open) return;
-        if (panelMode !== "details" || !settingsDirty) {
-          setPanelMode(null);
-          return;
-        }
-        void brokerSettingsAutoSave.saveNow().then((saved) => {
-          if (saved) setPanelMode(null);
-        });
+        const saved = await saveBrokerSettingsBeforeTransition();
+        if (!saved) return;
+        setPanelMode(null);
       }}
       title={
         panelMode === "create" || !selected ? (
@@ -395,11 +407,20 @@ export default function OperatorPage() {
           </PillButton>
         ) : selected ? (
           <>
-            <PillButton type="button" variant="secondary" onClick={() => impersonate(selected)}>
+            <PillButton
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void impersonate(selected)}
+            >
               Impersonate
             </PillButton>
             {selected.operatorStatus === "onboarding" ? (
-              <PillButton type="button" disabled={busy} onClick={() => launch(selected)}>
+              <PillButton
+                type="button"
+                disabled={busy}
+                onClick={() => void launch(selected)}
+              >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Send activation email
               </PillButton>
@@ -408,7 +429,7 @@ export default function OperatorPage() {
                 type="button"
                 variant="secondary"
                 disabled={busy}
-                onClick={() => moveToOnboarding(selected)}
+                onClick={() => void moveToOnboarding(selected)}
               >
                 Disable account
               </PillButton>
@@ -527,10 +548,9 @@ export default function OperatorPage() {
               <input
                 className={AFFIXED_INPUT_CLASSES}
                 value={editSlug}
-                onChange={(event) => {
-                  setEditSlug(normalizeIdentifierInput(event.target.value));
-                  markBrokerSettingsDirty();
-                }}
+                onChange={(event) =>
+                  setEditSlug(normalizeIdentifierInput(event.target.value))
+                }
                 placeholder="release"
               />
             </div>
@@ -554,10 +574,7 @@ export default function OperatorPage() {
             <input
               className={INPUT_CLASSES}
               value={editWebsite}
-              onChange={(event) => {
-                setEditWebsite(event.target.value);
-                markBrokerSettingsDirty();
-              }}
+              onChange={(event) => setEditWebsite(event.target.value)}
               placeholder="https://releaserent.com"
             />
           </Field>
@@ -566,10 +583,9 @@ export default function OperatorPage() {
               <input
                 className={AFFIXED_INPUT_CLASSES}
                 value={editAgentHandle}
-                onChange={(event) => {
-                  setEditAgentHandle(normalizeIdentifierInput(event.target.value));
-                  markBrokerSettingsDirty();
-                }}
+                onChange={(event) =>
+                  setEditAgentHandle(normalizeIdentifierInput(event.target.value))
+                }
                 placeholder="release"
               />
               <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
@@ -596,10 +612,7 @@ export default function OperatorPage() {
             <input
               className={INPUT_CLASSES}
               value={editAdminName}
-              onChange={(event) => {
-                setEditAdminName(event.target.value);
-                markBrokerSettingsDirty();
-              }}
+              onChange={(event) => setEditAdminName(event.target.value)}
               placeholder="Broker admin"
             />
           </Field>
@@ -614,10 +627,7 @@ export default function OperatorPage() {
           >
             <PhoneInput
               value={editAdminPhone}
-              onChange={(value) => {
-                setEditAdminPhone(value ?? "");
-                markBrokerSettingsDirty();
-              }}
+              onChange={(value) => setEditAdminPhone(value ?? "")}
               defaultCountry="US"
               placeholder="(555) 123-4567"
             />
@@ -676,11 +686,11 @@ export default function OperatorPage() {
                   <TableRow
                     key={broker._id}
                     tabIndex={0}
-                    onClick={() => openDetails(broker)}
+                    onClick={() => void openDetails(broker)}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
-                      openDetails(broker);
+                      void openDetails(broker);
                     }}
                     className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                       selectedId === broker._id ? "bg-muted/50" : ""

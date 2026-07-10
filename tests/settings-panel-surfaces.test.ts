@@ -11,7 +11,7 @@ describe("settings panel surfaces", () => {
     const drawers = read("components/settings/email-connection-drawers.tsx");
 
     expect(list).toContain("MailboxSettingsDrawer");
-    expect(list).toContain("setSelectedAccountId(account._id)");
+    expect(list).toContain("void openMailbox(account._id)");
     expect(list).toContain("automationSummary(account)");
     expect(list).toContain("lastScanAt ?? account.lastTestedAt");
     expect(list).not.toContain("EmailScopeSelect");

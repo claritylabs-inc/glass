@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  useCallback,
+  useLayoutEffect,
   useMemo,
   useState,
   type ComponentType,
@@ -406,6 +408,7 @@ export function MailboxSettingsDrawer({
   onOpenChange,
   onSaved,
   onDisconnected,
+  onSaveBarrierChange,
 }: {
   account: ConnectedEmailAccountRow;
   canManageMailbox: boolean;
@@ -417,6 +420,9 @@ export function MailboxSettingsDrawer({
     automation: MailboxAutomation,
   ) => Promise<void>;
   onDisconnected: (accountId: Id<"connectedEmailAccounts">) => Promise<void>;
+  onSaveBarrierChange: (
+    barrier: (() => Promise<boolean>) | null,
+  ) => void;
 }) {
   const updateSettings = useMutation(api.connectedEmail.updateSettings);
   const revokeConnectedEmail = useMutation(api.connectedEmail.revoke);
@@ -462,6 +468,20 @@ export function MailboxSettingsDrawer({
         ? error.message
         : "Mailbox settings could not be saved.",
   });
+  const saveSettings = settingsAutoSave.saveNow;
+  const saveSettingsBeforeAction = useCallback(
+    () => {
+      if (!canManageMailbox) return Promise.resolve(true);
+      return saveSettings({
+        force: needsConfiguration && !settingsChanged,
+      });
+    },
+    [canManageMailbox, needsConfiguration, saveSettings, settingsChanged],
+  );
+  useLayoutEffect(() => {
+    onSaveBarrierChange(saveSettingsBeforeAction);
+    return () => onSaveBarrierChange(null);
+  }, [onSaveBarrierChange, saveSettingsBeforeAction]);
   const savingSettings = settingsAutoSave.saving;
   const canScan =
     Boolean(scanFrom && scanTo) &&
@@ -471,9 +491,7 @@ export function MailboxSettingsDrawer({
 
   async function handleDrawerOpenChange(open: boolean) {
     if (!open && canManageMailbox) {
-      const saved = await settingsAutoSave.saveNow({
-        force: needsConfiguration && !settingsChanged,
-      });
+      const saved = await saveSettingsBeforeAction();
       if (!saved) return;
     }
     onOpenChange(open);
@@ -482,9 +500,7 @@ export function MailboxSettingsDrawer({
   async function runManualScan() {
     setScanning(true);
     try {
-      const saved = await settingsAutoSave.saveNow({
-        force: needsConfiguration && !settingsChanged,
-      });
+      const saved = await saveSettingsBeforeAction();
       if (!saved) return;
 
       const result = await scanMailboxRange({
@@ -524,6 +540,7 @@ export function MailboxSettingsDrawer({
   async function disconnectMailbox() {
     setDisconnecting(true);
     try {
+      if (!(await saveSettingsBeforeAction())) return;
       await revokeConnectedEmail({ accountId: account._id });
       await onDisconnected(account._id);
       toast.success("Mailbox disconnected");

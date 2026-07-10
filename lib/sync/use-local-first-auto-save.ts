@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { stableHash, useSyncStore, type SyncStore } from "@claritylabs/cl-sync";
 import {
   createAutoSaveSequencer,
+  hasRebasedAutoSaveIntent,
   isCurrentAutoSaveRequest,
   isDivergentAutoSaveRequest,
   type AutoSaveRequestIdentity,
@@ -62,6 +63,8 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   const store = useSyncStore();
   const [sequencer] = useState(createAutoSaveSequencer);
   const [resetGeneration, setResetGeneration] = useState(0);
+  const [intentRevision, setIntentRevision] = useState(0);
+  const [resetIntentRevision, setResetIntentRevision] = useState(0);
   const [failedSave, setFailedSave] =
     useState<AutoSaveRequestIdentity | null>(null);
   const [latestRequests, setLatestRequests] = useState(
@@ -79,10 +82,12 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   const pendingSavesRef = useRef(
     new Map<string, PendingAutoSaveRequest>(),
   );
+  const failedSaveRef = useRef<AutoSaveRequestIdentity | null>(null);
   const latestRequestsRef = useRef(new Map<string, AutoSaveRequestState>());
   const resetGenerationRef = useRef(0);
   const nextRequestIdRef = useRef(0);
   const intentRevisionRef = useRef(0);
+  const resetIntentRevisionRef = useRef(0);
   const lastIntentRef = useRef({ resetKey, valueKey });
   const argsRef = useRef(args);
   const valueKeyRef = useRef(valueKey);
@@ -100,7 +105,9 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
       previousIntent.resetKey === resetKey &&
       previousIntent.valueKey !== valueKey
     ) {
-      intentRevisionRef.current += 1;
+      const nextRevision = intentRevisionRef.current + 1;
+      intentRevisionRef.current = nextRevision;
+      setIntentRevision(nextRevision);
     }
     lastIntentRef.current = { resetKey, valueKey };
     argsRef.current = args;
@@ -113,12 +120,14 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
     onFlushedRef.current = onFlushed;
     onErrorRef.current = onError;
     errorMessageRef.current = errorMessage;
+    failedSaveRef.current = failedSave;
   }, [
     applyLocal,
     args,
     canSave,
     enabled,
     errorMessage,
+    failedSave,
     flush,
     onError,
     onFlushed,
@@ -131,6 +140,8 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
     lastResetKeyRef.current = resetKey;
     const nextGeneration = resetGenerationRef.current + 1;
     resetGenerationRef.current = nextGeneration;
+    resetIntentRevisionRef.current = intentRevisionRef.current;
+    setResetIntentRevision(intentRevisionRef.current);
     lastSavedKeyRef.current = valueKey;
     wasEnabledRef.current = enabled;
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -138,6 +149,7 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
     setResetGeneration(nextGeneration);
     setSettledResetKey(resetKey);
     setEnabledBaselineKey(enabled ? valueKey : null);
+    failedSaveRef.current = null;
     setFailedSave(null);
   }, [enabled, resetKey, valueKey]);
 
@@ -155,13 +167,16 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
       ) {
         return pendingSave.promise;
       }
-      if (!enabledRef.current || !canSaveRef.current) {
+      if (!enabledRef.current) {
         return Promise.resolve(false);
       }
-      const divergentWritePending = isDivergentAutoSaveRequest(
-        latestRequest,
-        current,
-      );
+      const divergentWritePending =
+        isDivergentAutoSaveRequest(latestRequest, current) ||
+        hasRebasedAutoSaveIntent(
+          latestRequest,
+          current,
+          intentRevisionRef.current !== resetIntentRevisionRef.current,
+        );
       if (
         !options?.force &&
         valueKey === lastSavedKeyRef.current &&
@@ -188,6 +203,9 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
         }
         return Promise.resolve(true);
       }
+      if (!canSaveRef.current) {
+        return Promise.resolve(false);
+      }
       if (timerRef.current) clearTimeout(timerRef.current);
 
       const queuedKey = valueKey;
@@ -196,6 +214,7 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
       const requestId = nextRequestIdRef.current + 1;
       nextRequestIdRef.current = requestId;
       const clientMutationId = createClientMutationId(mutationName);
+      failedSaveRef.current = null;
       setFailedSave(null);
       const request = {
         generation,
@@ -240,6 +259,7 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
             lastSavedKeyRef.current = queuedKey;
             setLastSavedKey(queuedKey);
             queuedApplyLocal?.(store, queuedArgs, clientMutationId);
+            failedSaveRef.current = null;
             setFailedSave(null);
             onFlushedRef.current?.(flushResult, queuedArgs);
           }
@@ -247,6 +267,7 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
         })
         .catch((error) => {
           if (isRequestCurrent()) {
+            failedSaveRef.current = request;
             setFailedSave(request);
             onErrorRef.current?.(error, queuedArgs);
             const detail =
@@ -297,13 +318,59 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   );
 
   const latestRequest = latestRequests.get(resetKey) ?? null;
+  const queueSaveRef = useRef(queueSave);
+
+  useLayoutEffect(() => {
+    queueSaveRef.current = queueSave;
+  }, [queueSave]);
+
+  useLayoutEffect(
+    () => () => {
+      const resetKey = resetKeyRef.current;
+      const current = {
+        generation: resetGenerationRef.current,
+        resetKey,
+        valueKey: valueKeyRef.current,
+      };
+      const latest = latestRequestsRef.current.get(resetKey) ?? null;
+      const divergentWritePending =
+        isDivergentAutoSaveRequest(latest, current) ||
+        hasRebasedAutoSaveIntent(
+          latest,
+          current,
+          intentRevisionRef.current !== resetIntentRevisionRef.current,
+        );
+      const failedCurrentRequest =
+        failedSaveRef.current !== null &&
+        isCurrentAutoSaveRequest(failedSaveRef.current, latest, current);
+      const dirty =
+        current.valueKey !== lastSavedKeyRef.current || divergentWritePending;
+
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (
+        enabledRef.current &&
+        canSaveRef.current &&
+        dirty &&
+        !failedCurrentRequest
+      ) {
+        void queueSaveRef.current();
+      }
+      enabledRef.current = false;
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     if (!enabled) {
       if (wasEnabledRef.current) {
         const nextGeneration = resetGenerationRef.current + 1;
         resetGenerationRef.current = nextGeneration;
+        resetIntentRevisionRef.current = intentRevisionRef.current;
         setResetGeneration(nextGeneration);
+        setResetIntentRevision(intentRevisionRef.current);
       }
       wasEnabledRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -314,20 +381,27 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
     if (!wasEnabledRef.current) {
       lastSavedKeyRef.current = valueKey;
       wasEnabledRef.current = true;
+      resetIntentRevisionRef.current = intentRevisionRef.current;
       setLastSavedKey(valueKey);
+      setResetIntentRevision(intentRevisionRef.current);
       setEnabledBaselineKey(valueKey);
+      failedSaveRef.current = null;
       setFailedSave(null);
       return;
     }
 
-    const divergentWritePending = isDivergentAutoSaveRequest(
-      latestRequest,
-      {
-        generation: resetGenerationRef.current,
-        resetKey,
-        valueKey,
-      },
-    );
+    const current = {
+      generation: resetGenerationRef.current,
+      resetKey,
+      valueKey,
+    };
+    const divergentWritePending =
+      isDivergentAutoSaveRequest(latestRequest, current) ||
+      hasRebasedAutoSaveIntent(
+        latestRequest,
+        current,
+        intentRevisionRef.current !== resetIntentRevisionRef.current,
+      );
     const failedCurrentRequest =
       failedSave !== null &&
       isCurrentAutoSaveRequest(failedSave, latestRequest, {
@@ -359,10 +433,6 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
     timerRef.current = setTimeout(() => {
       void queueSave();
     }, delayMs);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
   }, [
     autoSave,
     canSave,
@@ -377,10 +447,14 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
 
   const resetting = resetKey !== settledResetKey;
   const resuming = enabled && enabledBaselineKey === null;
-  const divergentWritePending = isDivergentAutoSaveRequest(
-    latestRequest,
-    { generation: resetGeneration, resetKey, valueKey },
-  );
+  const renderRequest = { generation: resetGeneration, resetKey, valueKey };
+  const divergentWritePending =
+    isDivergentAutoSaveRequest(latestRequest, renderRequest) ||
+    hasRebasedAutoSaveIntent(
+      latestRequest,
+      renderRequest,
+      intentRevision !== resetIntentRevision,
+    );
   const currentRequestPending =
     latestRequest !== null &&
     !latestRequest.settled &&
