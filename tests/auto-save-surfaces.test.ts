@@ -135,11 +135,22 @@ describe("auto-save surfaces", () => {
       mailboxClose.indexOf("onOpenChange(open)"),
     );
     expect(resetOverride.indexOf("const saved = await settingsAutoSave.saveNow()")).toBeLessThan(
-      resetOverride.indexOf("if (!saved) return"),
+      resetOverride.indexOf("if (!saved) {"),
     );
-    expect(resetOverride.indexOf("if (!saved) return")).toBeLessThan(
+    expect(resetOverride.indexOf("if (!saved) {")).toBeLessThan(
       resetOverride.indexOf("await clearOverride"),
     );
+    expect(resetOverride.indexOf("setClearingOverride(true)")).toBeLessThan(
+      resetOverride.indexOf("await settingsAutoSave.saveNow()"),
+    );
+    expect(resetOverride).not.toContain("finally");
+    const clearSuccess = resetOverride.slice(
+      resetOverride.indexOf("try {"),
+      resetOverride.indexOf("} catch"),
+    );
+    expect(clearSuccess).toContain('toast.success("Client override cleared")');
+    expect(clearSuccess).not.toContain("setClearingOverride(false)");
+    expect(policyDelivery).toContain("disabled={clearingOverride}");
     expect(rename).toContain("setRenameGeneration((current) => current + 1)");
     expect(rename).toContain('resetKey: `${saveKey}:${renameGeneration}`');
   });

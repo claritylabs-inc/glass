@@ -371,6 +371,7 @@ function PolicyDeliveryEditor({
   const [editingRule, setEditingRule] = useState<RuleRow | null>(null);
   const [draft, setDraft] = useState<SettingsRow>(settings);
   const [copyInstructionsFocused, setCopyInstructionsFocused] = useState(false);
+  const [clearingOverride, setClearingOverride] = useState(false);
   const isInheritedClientSettings = !!clientOrgId && !hasClientOverride;
 
   const settingsAutoSave = useLocalFirstAutoSave({
@@ -417,11 +418,22 @@ function PolicyDeliveryEditor({
   }, [setActions]);
 
   async function resetOverride() {
-    if (!clientOrgId) return;
+    if (!clientOrgId || clearingOverride) return;
+    setClearingOverride(true);
     const saved = await settingsAutoSave.saveNow();
-    if (!saved) return;
-    await clearOverride({ clientOrgId });
-    toast.success("Client override cleared");
+    if (!saved) {
+      setClearingOverride(false);
+      return;
+    }
+    try {
+      await clearOverride({ clientOrgId });
+      toast.success("Client override cleared");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to clear client override",
+      );
+      setClearingOverride(false);
+    }
   }
 
   async function addOverride() {
@@ -477,7 +489,10 @@ function PolicyDeliveryEditor({
             </PillButton>
           </div>
         ) : (
-          <div className="space-y-5 px-5 py-5">
+          <fieldset
+            disabled={clearingOverride}
+            className="space-y-5 px-5 py-5"
+          >
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-base font-medium text-foreground">Enable delivery automation</p>
@@ -518,12 +533,20 @@ function PolicyDeliveryEditor({
             </label>
             <div className="flex justify-end gap-2">
               {clientOrgId ? (
-                <PillButton type="button" variant="secondary" onClick={resetOverride}>
+                <PillButton
+                  type="button"
+                  variant="secondary"
+                  onClick={resetOverride}
+                  disabled={clearingOverride}
+                >
+                  {clearingOverride ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : null}
                   Clear override
                 </PillButton>
               ) : null}
             </div>
-          </div>
+          </fieldset>
         )}
       </OperationalPanel>
 
