@@ -471,7 +471,7 @@ export function MailboxSettingsDrawer({
     !scanning;
 
   async function handleDrawerOpenChange(open: boolean) {
-    if (!open && hasChanges && canManageMailbox) {
+    if (!open && canManageMailbox) {
       const saved = await settingsAutoSave.saveNow({
         force: needsConfiguration && !settingsChanged,
       });

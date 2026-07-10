@@ -128,11 +128,16 @@ describe("auto-save surfaces", () => {
     expect(mailboxClose).toContain(
       "const saved = await settingsAutoSave.saveNow",
     );
+    expect(mailboxClose).toContain("if (!open && canManageMailbox)");
+    expect(mailboxClose).not.toContain("if (!open && hasChanges");
     expect(mailboxClose).toContain("if (!saved) return");
     expect(mailboxClose.indexOf("if (!saved) return")).toBeLessThan(
       mailboxClose.indexOf("onOpenChange(open)"),
     );
-    expect(resetOverride.indexOf("await settingsAutoSave.saveNow()")).toBeLessThan(
+    expect(resetOverride.indexOf("const saved = await settingsAutoSave.saveNow()")).toBeLessThan(
+      resetOverride.indexOf("if (!saved) return"),
+    );
+    expect(resetOverride.indexOf("if (!saved) return")).toBeLessThan(
       resetOverride.indexOf("await clearOverride"),
     );
     expect(rename).toContain("setRenameGeneration((current) => current + 1)");
