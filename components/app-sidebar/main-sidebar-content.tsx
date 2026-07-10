@@ -29,12 +29,11 @@ import {
   MENU_ITEM_INACTIVE,
   MENU_ITEM_INACTIVE_SUBTLE,
   navShortcut,
-  SHORTCUT_TOOLTIP_CLASS,
-  SHORTCUT_TOOLTIP_DELAY_MS,
-  SHORTCUT_TOOLTIP_SIDE_OFFSET,
+  SIDEBAR_TOOLTIP_CLASS,
+  SIDEBAR_TOOLTIP_SIDE_OFFSET,
 } from "./nav-config";
 import {
-  NavItem,
+  SidebarMenuItem,
   SectionHeader,
   ShortcutTooltipContent,
   stableSidebarTooltipId,
@@ -125,44 +124,34 @@ export function MainSidebarContent({
 
       <div className="relative px-2 py-2 border-b border-foreground/6">
         {onAskGlass ? (
-          <button
-            type="button"
+          <SidebarMenuItem
             onClick={onAskGlass}
-            className={`mb-0.5 w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} ${MENU_ITEM_INACTIVE} text-base ${
-              collapsed ? "justify-center" : ""
-            }`}
-            title={collapsed ? "Ask Glass" : undefined}
-          >
-            <MousePointer2 className="w-4 h-4 shrink-0" />
-            {!collapsed && <span className="flex-1 text-left">Ask Glass</span>}
-          </button>
+            label="Ask Glass"
+            icon={MousePointer2}
+            active={false}
+            collapsed={collapsed}
+            className="mb-0.5"
+          />
         ) : null}
-        <button
-          type="button"
+        <SidebarMenuItem
           onClick={onToggleNotifications}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
-            collapsed ? "justify-center" : ""
-          } ${notificationsPanelOpen ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE}`}
-          title={collapsed ? "Notifications" : undefined}
-        >
-          {collapsed ? (
-            <Bell className="w-4 h-4 shrink-0" />
-          ) : (
-            <>
-              <Bell className="w-4 h-4 shrink-0" />
-              <span className="flex-1 text-left">Notifications</span>
-            </>
-          )}
-          {(unreadCount ?? 0) > 0 && (
-            <span
-              className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-label font-medium leading-none shrink-0 ${
-                collapsed ? "w-4 h-4" : "min-w-4.5 h-4 px-1"
-              }`}
-            >
-              {unreadCount! > 99 ? "99+" : unreadCount}
-            </span>
-          )}
-        </button>
+          label="Notifications"
+          icon={Bell}
+          active={notificationsPanelOpen}
+          collapsed={collapsed}
+          ariaPressed={notificationsPanelOpen}
+          trailing={
+            (unreadCount ?? 0) > 0 ? (
+              <span
+                className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-label font-medium leading-none shrink-0 ${
+                  collapsed ? "w-4 h-4" : "min-w-4.5 h-4 px-1"
+                }`}
+              >
+                {unreadCount! > 99 ? "99+" : unreadCount}
+              </span>
+            ) : null
+          }
+        />
         {notificationsPanelOpen && !isDesktop && orgId && (
           <NotificationsPanel
             orgId={orgId}
@@ -177,7 +166,7 @@ export function MainSidebarContent({
           collapsed={collapsed}
         />
         {navItems.map((item) => (
-          <NavItem
+          <SidebarMenuItem
             key={item.href}
             href={item.href}
             label={item.label}
@@ -192,7 +181,7 @@ export function MainSidebarContent({
           <>
             <SectionHeader label="Connect" collapsed={collapsed} />
             {connectItems.map((item) => (
-              <NavItem
+              <SidebarMenuItem
                 key={item.href}
                 href={item.href}
                 label={item.label}
@@ -233,7 +222,7 @@ export function MainSidebarContent({
 
       <div className="border-t border-foreground/6 px-2 py-2 space-y-0.5">
         {canManageSettings ? (
-          <NavItem
+          <SidebarMenuItem
             href="/settings"
             label="Settings"
             icon={Settings}
@@ -242,7 +231,7 @@ export function MainSidebarContent({
             shortcut={navShortcut("s")}
           />
         ) : null}
-        <NavItem
+        <SidebarMenuItem
           href="/profile"
           label="Profile"
           icon={User}
@@ -250,16 +239,13 @@ export function MainSidebarContent({
           collapsed={collapsed}
           shortcut={navShortcut("u")}
         />
-        <button
-          type="button"
+        <SidebarMenuItem
           onClick={onSignOut}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${MENU_ITEM_INACTIVE} ${
-            collapsed ? "justify-center" : ""
-          }`}
-        >
-          <LogOut className="w-4 h-4 shrink-0" />
-          {!collapsed && <span>Sign out</span>}
-        </button>
+          label="Sign out"
+          icon={LogOut}
+          active={false}
+          collapsed={collapsed}
+        />
       </div>
     </div>
   );
@@ -406,12 +392,12 @@ function SidebarThreadRow({
 
   return (
     <Tooltip>
-      <TooltipTrigger render={threadLink} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
+      <TooltipTrigger render={threadLink} />
       <TooltipContent
         side="right"
         align="center"
-        sideOffset={SHORTCUT_TOOLTIP_SIDE_OFFSET}
-        className={SHORTCUT_TOOLTIP_CLASS}
+        sideOffset={SIDEBAR_TOOLTIP_SIDE_OFFSET}
+        className={SIDEBAR_TOOLTIP_CLASS}
       >
         <ShortcutTooltipContent label={shortcutLabel} shortcut={shortcut} />
       </TooltipContent>

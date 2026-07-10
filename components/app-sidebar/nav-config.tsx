@@ -16,7 +16,7 @@ import type { NavItemConfig, NavShortcut } from "./types";
 export const AGENT_DOMAIN = getPublicAgentDomain();
 
 export const MENU_ITEM_BASE =
-  "rounded-md transition-[background-color,color,box-shadow] duration-100 ease-out";
+  "cursor-pointer rounded-md transition-[background-color,color,box-shadow] duration-100 ease-out";
 export const MENU_ITEM_HOVER =
   "hover:bg-foreground/5 hover:text-foreground dark:hover:bg-foreground/10";
 export const MENU_ITEM_ACTIVE =
@@ -27,10 +27,10 @@ export const MENU_ITEM_INACTIVE_SUBTLE =
 
 export const SHORTCUT_PREFIX_KEY = "g";
 export const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1500;
-export const SHORTCUT_TOOLTIP_DELAY_MS = 1500;
-export const SHORTCUT_TOOLTIP_SIDE_OFFSET = 4;
-export const SHORTCUT_TOOLTIP_CLASS =
-  "border border-foreground/10 bg-background text-label text-foreground has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden";
+export const SIDEBAR_TOOLTIP_DELAY_MS = 500;
+export const SIDEBAR_TOOLTIP_SIDE_OFFSET = 4;
+export const SIDEBAR_TOOLTIP_CLASS =
+  "border border-foreground/10 bg-background text-label text-foreground data-instant:animate-none has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden";
 
 export function navShortcut(key: string): NavShortcut {
   return { key };
