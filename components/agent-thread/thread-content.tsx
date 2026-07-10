@@ -2001,13 +2001,11 @@ export function UnifiedThreadContent({
     onMeta({
       detail: (
         <EditableBreadcrumbTitle
+          key={threadId}
           title={getThreadDisplayLabel(thread)}
+          saveKey={threadId}
           onSave={async (next) => {
-            try {
-              await updateTitle({ id: threadId, title: next });
-            } catch {
-              toast.error("Failed to update title");
-            }
+            await updateTitle({ id: threadId, title: next });
           }}
         />
       ),

@@ -5,7 +5,6 @@ import dayjs from "dayjs";
 import { useMutation } from "convex/react";
 import { isValidPhoneNumber } from "react-phone-number-input";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PhoneInput } from "@/components/ui/phone-input";
@@ -23,6 +22,7 @@ import {
   cachedQueryCollectionFor,
   useCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
@@ -66,20 +66,6 @@ type BrokerIdentitySaveArgs = {
   contactPhone: string;
 };
 
-function identityKey(identity: BrokerIdentity) {
-  return [
-    identity.connected ? "connected" : "none",
-    identity.brokerCompanyName ?? "",
-    identity.contactName ?? "",
-    identity.contactEmail ?? "",
-    identity.contactPhone ?? "",
-    identity.selectedContactUserId ?? "",
-    identity.overrides?.contactName ?? "",
-    identity.overrides?.contactEmail ?? "",
-    identity.overrides?.contactPhone ?? "",
-  ].join("|");
-}
-
 export function BrokerIdentitySection({
   orgId,
   surface = "card",
@@ -111,7 +97,7 @@ export function BrokerIdentitySection({
 
   return (
     <BrokerIdentityForm
-      key={identityKey(identity)}
+      key={orgId}
       orgId={orgId}
       identity={identity}
       surface={surface}
@@ -235,16 +221,11 @@ function BrokerIdentityForm({
       ]);
     },
     flush: saveBrokerIdentity,
-    onError: (error) =>
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to save broker contact",
-      ),
+    errorMessage: (error) =>
+      error instanceof Error
+        ? error.message
+        : "The broker contact could not be saved.",
   });
-
-  const saving = autoSave.saving;
-  const savedAt = autoSave.savedAt;
 
   const content = (
     <>
@@ -401,16 +382,7 @@ function BrokerIdentityForm({
             <span />
           )}
           {identity.canEdit ? (
-            <span className="flex items-center gap-1.5 text-label text-muted-foreground">
-              {saving ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Saving
-                </>
-              ) : savedAt ? (
-                "Saved"
-              ) : null}
-            </span>
+            <AutoSaveStatus status={autoSave.status} />
           ) : null}
         </div>
       </div>

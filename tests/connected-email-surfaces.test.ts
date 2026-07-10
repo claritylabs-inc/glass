@@ -191,11 +191,36 @@ describe("connected email surfaces", () => {
     expect(emailSettings).toContain("api.connectedEmail.updateSettings");
     expect(emailSettings).toContain("automationConfigured");
     expect(emailSettings).toContain("<DialogTitle>Scan mailbox</DialogTitle>");
-    expect(emailSettings).toContain("!hasChanges");
+    expect(emailDrawers).toContain("useLocalFirstAutoSave");
+    expect(emailDrawers).toContain("await settingsAutoSave.saveNow");
+    expect(emailDrawers).toContain(
+      'variant="secondary"\n              disabled={savingSettings || scanning}',
+    );
+    expect(emailDrawers).toContain("onClick={() => setScanDialogOpen(true)}");
+    expect(emailDrawers).not.toContain("Save changes");
     expect(emailSettings).toContain("disabled={!canScan}");
     expect(emailSettings).toContain("Policy documents");
     expect(emailSettings).toContain("Insurance requirements");
     expect(emailSettings).toContain("Company context");
+    expect(emailDrawers).toContain("Organization sharing");
+    const organizationSharingIndex = emailDrawers.lastIndexOf(
+      "Organization sharing",
+    );
+    const organizationVisibilityNoteIndex = emailDrawers.lastIndexOf(
+      "Imported policies, requirements",
+    );
+    const proactiveMonitoringIndex = emailDrawers.lastIndexOf(
+      "Proactive monitoring",
+    );
+    expect(organizationVisibilityNoteIndex).toBeGreaterThan(
+      organizationSharingIndex,
+    );
+    expect(proactiveMonitoringIndex).toBeGreaterThan(
+      organizationVisibilityNoteIndex,
+    );
+    expect(emailDrawers).not.toContain(
+      "Choose what Glass can import and learn from this mailbox.",
+    );
     expect(emailList).toContain("setSelectedAccountId(account._id)");
     expect(emailList).not.toContain("updateConnectedEmailScope");
     expect(emailList).not.toContain("revokeConnectedEmail");
