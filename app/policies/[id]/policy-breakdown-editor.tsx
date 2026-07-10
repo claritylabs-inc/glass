@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import dayjs from "dayjs";
 import { Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +16,7 @@ import {
   cachedQueryCollectionFor,
 } from "@/lib/sync/use-cached-query";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 
 import {
   SourceEvidenceButton,
@@ -142,6 +142,17 @@ function normalizeTaxRows(value: unknown): EditableTaxFee[] {
     .filter((row) => row.name.trim() || row.amount.trim());
 }
 
+function withoutFlushedFields(
+  current: Record<string, unknown>,
+  flushed: Record<string, unknown>,
+) {
+  const next = { ...current };
+  for (const [key, value] of Object.entries(flushed)) {
+    if (JSON.stringify(current[key]) === JSON.stringify(value)) delete next[key];
+  }
+  return next;
+}
+
 type EditableCoverage = {
   name: string;
   limit?: string;
@@ -249,11 +260,11 @@ export function PolicyBreakdownEditor({
       }
     },
     flush: savePolicyFields,
-    onQueued: () => setPendingFields({}),
-    onError: () => toast.error("Failed to save policy fields"),
+    onFlushed: (_result, args) =>
+      setPendingFields((current) => withoutFlushedFields(current, args.fields)),
+    errorMessage: "Policy fields could not be saved.",
   });
 
-  const saving = policyFieldAutoSave.saving;
   const allSourceSpanIds = useMemo(
     () => collectSourceSpanIds(policy),
     [policy],
@@ -359,6 +370,16 @@ export function PolicyBreakdownEditor({
 
   if (readOnly) return null;
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen || Object.keys(pendingFields).length === 0) {
+      onOpenChange(nextOpen);
+      return;
+    }
+    void policyFieldAutoSave.saveNow().then((saved) => {
+      if (saved) onOpenChange(false);
+    });
+  }
+
   const fields = [
     { key: "carrier", label: "Carrier", kind: "text" },
     { key: "policyNumber", label: "Policy number", kind: "text" },
@@ -371,12 +392,10 @@ export function PolicyBreakdownEditor({
   return (
     <SettingsDrawer
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={handleOpenChange}
       title="Edit extracted fields"
       footer={
-        <span className="text-label text-muted-foreground">
-          {saving ? "Saving..." : "Saved on change"}
-        </span>
+        <AutoSaveStatus status={policyFieldAutoSave.status} />
       }
     >
       <div className="space-y-5">

@@ -30,6 +30,10 @@ import {
 } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { useSyncStore } from "@claritylabs/cl-sync";
+import {
+  AutoSaveStatus,
+  combineAutoSaveStatuses,
+} from "@/components/ui/auto-save-status";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
@@ -94,7 +98,6 @@ export function OrganizationSection() {
     (currentOrg?.org as { slug?: string } | undefined)?.slug ?? "";
   const [slug, setSlug] = useState(currentSlug);
   const [debouncedSlug, setDebouncedSlug] = useState(currentSlug);
-  const [savingSlug, setSavingSlug] = useState(false);
   const slugHydratedRef = useRef(false);
 
   useEffect(() => {
@@ -127,51 +130,35 @@ export function OrganizationSection() {
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
 
-  // Auto-save slug when debounced value is valid, available, and differs from current.
-  useEffect(() => {
-    if (!isBroker) return;
-    if (!currentOrg?.orgId) return;
-    if (debouncedSlug.length < 3) return;
-    if (debouncedSlug === currentSlug) return;
-    if (slug !== debouncedSlug) return;
-    if (!slugCheck || !slugCheck.available) return;
-    let cancelled = false;
-    (async () => {
-      setSavingSlug(true);
-      try {
-        const normalized = await updateSlug({
-          brokerOrgId: currentOrg.orgId as Id<"organizations">,
-          slug: debouncedSlug,
-        });
-        if (!cancelled) {
-          setSlug(normalized);
-          setDebouncedSlug(normalized);
-          patchCachedViewerOrg(store, { slug: normalized });
-          toast.success("Slug saved");
-        }
-      } catch (err) {
-        if (!cancelled) toast.error(String(err));
-      } finally {
-        if (!cancelled) setSavingSlug(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    isBroker,
-    debouncedSlug,
-    slug,
-    currentSlug,
-    slugCheck,
-    currentOrg?.orgId,
-    store,
-    updateSlug,
-  ]);
+  const slugAutoSave = useLocalFirstAutoSave({
+    mutationName: "settings.organization.updateSlug",
+    args: {
+      brokerOrgId: currentOrg?.orgId as Id<"organizations">,
+      slug: debouncedSlug,
+    },
+    valueKey: debouncedSlug,
+    enabled: isBroker && !!currentOrg?.orgId && settingsHydrated,
+    canSave:
+      debouncedSlug.length >= 3 &&
+      debouncedSlug !== currentSlug &&
+      slug === debouncedSlug &&
+      slugCheck?.available === true,
+    delayMs: 0,
+    flush: (args) => updateSlug(args),
+    onFlushed: (normalized, args) => {
+      const savedSlug = normalized ?? args.slug;
+      setSlug(savedSlug);
+      setDebouncedSlug(savedSlug);
+      patchCachedViewerOrg(store, { slug: savedSlug });
+    },
+    errorMessage: (error) =>
+      error instanceof Error ? error.message : "The workspace link could not be saved.",
+  });
 
   const { setActions, setRightPanel } = useSettingsActions();
 
   const contextRef = useRef<HTMLTextAreaElement>(null);
+  const [contextFocused, setContextFocused] = useState(false);
   const autoResize = useCallback(() => {
     const el = contextRef.current;
     if (el) {
@@ -200,7 +187,6 @@ export function OrganizationSection() {
   const orgSettingsArgs: OrgSettingsArgs = {
     name: name || undefined,
     website: website || undefined,
-    context: context || undefined,
     industry: industry || undefined,
     industryVertical: industryVertical || undefined,
     relatedLegalEntities: relatedLegalEntities
@@ -223,25 +209,29 @@ export function OrganizationSection() {
     enabled: settingsHydrated,
     applyLocal: (store, args) => patchCachedViewerOrg(store, args),
     flush: saveOrgSettings,
-    onError: () => toast.error("Failed to save settings"),
+    errorMessage: "Organization settings could not be saved.",
   });
 
-  const saving = orgAutoSave.saving;
-  const savedAt = orgAutoSave.savedAt;
+  const contextAutoSave = useLocalFirstAutoSave({
+    mutationName: "settings.organization.updateContext",
+    args: { context: context || undefined },
+    enabled: settingsHydrated,
+    autoSave: !contextFocused,
+    applyLocal: (store, args) => patchCachedViewerOrg(store, args),
+    flush: saveOrgSettings,
+    errorMessage: "Company context could not be saved.",
+  });
+
+  const organizationSaveStatus = combineAutoSaveStatuses(
+    orgAutoSave.status,
+    contextAutoSave.status,
+    slugAutoSave.status,
+  );
 
   useEffect(() => {
     setActions(
       <div className="flex items-center gap-3">
-        <span className="text-label text-muted-foreground flex items-center gap-1.5">
-          {saving ? (
-            <>
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Saving
-            </>
-          ) : savedAt ? (
-            "Saved"
-          ) : null}
-        </span>
+        <AutoSaveStatus status={organizationSaveStatus} />
         <PillButton
           variant="secondary"
           size="compact"
@@ -255,7 +245,7 @@ export function OrganizationSection() {
     );
     return () => setActions(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saving, savedAt, extracting, website]);
+  }, [organizationSaveStatus, extracting, website]);
 
   useEffect(() => {
     setRightPanel(
@@ -410,7 +400,7 @@ export function OrganizationSection() {
                   />
                 </div>
                 <HandleAvailability
-                  saving={savingSlug}
+                  saving={slugAutoSave.saving}
                   checking={slugChecking}
                   input={slug}
                   current={currentSlug}
@@ -540,6 +530,11 @@ export function OrganizationSection() {
                   ref={contextRef}
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
+                  onFocus={() => setContextFocused(true)}
+                  onBlur={() => {
+                    setContextFocused(false);
+                    void contextAutoSave.saveNow();
+                  }}
                   onInput={autoResize}
                   placeholder="Brief description of your company, industry, and insurance needs..."
                   rows={4}
@@ -693,7 +688,7 @@ function BrandingCard({ website }: { website: string }) {
     [updateBranding],
   );
 
-  useLocalFirstAutoSave({
+  const brandingAutoSave = useLocalFirstAutoSave({
     mutationName: "settings.organization.updateBranding",
     args: brandingArgs ?? {
       brokerOrgId: "" as Id<"organizations">,
@@ -708,9 +703,9 @@ function BrandingCard({ website }: { website: string }) {
         whiteLabelingEnabled: args.whiteLabelingEnabled,
         brandingColor: args.brandingColor,
         brandingTextOnAccent: args.brandingTextOnAccent,
-      }),
+    }),
     flush: saveBranding,
-    onError: () => toast.error("Failed to save branding"),
+    errorMessage: "Brand settings could not be saved.",
   });
 
   async function handleLogoUpload(file: File) {
@@ -758,7 +753,11 @@ function BrandingCard({ website }: { website: string }) {
 
   return (
     <OperationalPanel as="div" className="mb-4">
-      <OperationalPanelHeader title="Brand" className="px-5 py-3.5" />
+      <OperationalPanelHeader
+        title="Brand"
+        action={isBroker ? <AutoSaveStatus status={brandingAutoSave.status} /> : undefined}
+        className="px-5 py-3.5"
+      />
       <OperationalPanelBody className="space-y-5 px-5 py-5">
         {isBroker && (
           <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">

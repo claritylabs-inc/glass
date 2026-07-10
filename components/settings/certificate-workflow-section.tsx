@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -14,6 +13,8 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 
 type SettingsDraft = {
   renewalReissueEnabled: boolean;
@@ -34,12 +35,6 @@ function toDraft(value?: Partial<SettingsDraft> | null): SettingsDraft {
     renewalReissueEnabled:
       value?.renewalReissueEnabled ?? DEFAULT_SETTINGS.renewalReissueEnabled,
   };
-}
-
-function signature(value: SettingsDraft) {
-  return JSON.stringify({
-    renewalReissueEnabled: value.renewalReissueEnabled,
-  });
 }
 
 function ToggleRow({
@@ -74,6 +69,7 @@ function ToggleRow({
 }
 
 export function CertificateWorkflowSection() {
+  const currentOrg = useCurrentOrg();
   const result = useQuery(api.certificateWorkflowSettings.getEffectiveForCurrentOrg, {}) as
     | SettingsResult
     | undefined;
@@ -88,7 +84,7 @@ export function CertificateWorkflowSection() {
 
   return (
     <CertificateWorkflowEditor
-      key={`${result.row?._id ?? "default"}:${result.renewalReissueEnabled}`}
+      key={currentOrg?.orgId ?? "none"}
       result={result}
     />
   );
@@ -107,43 +103,16 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
   );
   const initialDraft = toDraft(result.row ?? result);
   const [draft, setDraft] = useState<SettingsDraft>(initialDraft);
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedRef = useRef(signature(initialDraft));
   const editable = isAdmin && (isBroker || isClient);
 
-  useEffect(() => {
-    if (!editable) return;
-    const nextSignature = signature(draft);
-    if (nextSignature === lastSavedRef.current) {
-      setSaveStatus("saved");
-      return;
-    }
-    setSaveStatus("saving");
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      const payload = { ...draft };
-      try {
-        if (isBroker) {
-          await updateBrokerDefault(payload);
-        } else {
-          await updateClientOverride(payload);
-        }
-        lastSavedRef.current = signature(payload);
-        setSaveStatus("saved");
-      } catch (error) {
-        setSaveStatus("error");
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to save certificate settings",
-        );
-      }
-    }, 600);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [draft, editable, isBroker, updateBrokerDefault, updateClientOverride]);
+  const autoSave = useLocalFirstAutoSave({
+    mutationName: "settings.certificates.updateWorkflow",
+    args: draft,
+    enabled: editable,
+    flush: (args) =>
+      isBroker ? updateBrokerDefault(args) : updateClientOverride(args),
+    errorMessage: "Certificate settings could not be saved.",
+  });
 
   return (
     <div className="space-y-4">
@@ -151,15 +120,7 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
         <OperationalPanelHeader
           title="Certificates"
           description="Choose whether active certificates should be updated when a renewed policy is uploaded."
-          action={(
-            <span className="text-label text-muted-foreground">
-              {saveStatus === "saving"
-                ? "Saving"
-                : saveStatus === "error"
-                  ? "Not saved"
-                  : "Saved"}
-            </span>
-          )}
+          action={editable ? <AutoSaveStatus status={autoSave.status} /> : undefined}
         />
         <OperationalPanelBody className="space-y-0 divide-y divide-foreground/6 py-0">
           <ToggleRow

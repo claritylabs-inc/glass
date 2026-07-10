@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   Clock,
   FileUp,
-  Loader2,
   Plus,
   ShieldCheck,
   Trash2,
@@ -64,6 +63,8 @@ import { lobLabel } from "@/convex/lib/linesOfBusiness";
 import { useActiveOrgContext } from "@/lib/hooks/use-active-org-context";
 import { useCachedConnectedVendors } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 
 type RequirementScope = "vendors" | "own_org";
 type ComplianceStatus = "met" | "not_met" | "expiring_soon" | "expired" | "unverified";
@@ -911,46 +912,39 @@ function RequirementEditForm({
     provisionsForRequirement(requirement),
   );
   const [requirementText, setRequirementText] = useState(requirement.requirementText);
-  const [saving, setSaving] = useState(false);
-  const savedSnapshot = useRef<string | null>(null);
-  if (savedSnapshot.current === null) {
-    const initial = requirementEditValuesFromDrafts({
-      title,
+  const [textFieldFocused, setTextFieldFocused] = useState(false);
+  const editValues = requirementEditValuesFromDrafts({
+    title,
+    lineOfBusiness,
+    limitDrafts,
+    provisions,
+    requirementText,
+  });
+  const validEditValues = editValues === "invalid_amount" ? null : editValues;
+  const editValueKey = JSON.stringify({
+    title,
+    lineOfBusiness,
+    limitDrafts,
+    provisions,
+    requirementText,
+  });
+  const autoSave = useLocalFirstAutoSave({
+    mutationName: `compliance.updateRequirement.${requirement._id}`,
+    args: validEditValues ?? {
+      title: "",
       lineOfBusiness,
-      limitDrafts,
-      provisions,
-      requirementText,
-    });
-    savedSnapshot.current = initial === "invalid_amount" ? "" : JSON.stringify(initial);
-  }
-
-  async function commit(next: Partial<RequirementEditDrafts> = {}) {
-    const drafts: RequirementEditDrafts = {
-      title,
-      lineOfBusiness,
-      limitDrafts,
-      provisions,
-      requirementText,
-      ...next,
-    };
-    if (!drafts.title.trim() || !drafts.requirementText.trim()) return;
-    const values = requirementEditValuesFromDrafts(drafts);
-    if (values === "invalid_amount") {
-      toast.error("Enter a valid limit amount");
-      return;
-    }
-    const snapshot = JSON.stringify(values);
-    if (snapshot === savedSnapshot.current) return;
-    setSaving(true);
-    try {
-      await onSave(values);
-      savedSnapshot.current = snapshot;
-    } catch {
-      // onSave reverts the cache and reports the error; drafts stay so the user can retry
-    } finally {
-      setSaving(false);
-    }
-  }
+      requirementText: "",
+    },
+    valueKey: editValueKey,
+    resetKey: requirement._id,
+    canSave:
+      !!validEditValues?.title &&
+      !!validEditValues.requirementText,
+    autoSave: !textFieldFocused,
+    delayMs: 0,
+    flush: onSave,
+    errorMessage: "The requirement could not be saved.",
+  });
 
   return (
     <div className="space-y-3">
@@ -959,16 +953,14 @@ function RequirementEditForm({
         <Input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
+          onFocus={() => setTextFieldFocused(true)}
           onBlur={() => {
-            if (!title.trim()) {
-              setTitle(requirement.title);
-              return;
-            }
-            void commit();
+            setTextFieldFocused(false);
+            void autoSave.saveNow();
           }}
-          disabled={saving}
           required
         />
+        {!title.trim() ? <span className="text-destructive">Title is required.</span> : null}
       </label>
       <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
         Line
@@ -977,9 +969,7 @@ function RequirementEditForm({
           onValueChange={(value) => {
             if (!value || value === lineOfBusiness) return;
             setLineOfBusiness(value);
-            void commit({ lineOfBusiness: value });
           }}
-          disabled={saving}
         >
           <SelectTrigger size="sm" className="w-full bg-background">
             <SelectValue>{lobLabel(lineOfBusiness)}</SelectValue>
@@ -998,7 +988,6 @@ function RequirementEditForm({
             type="button"
             size="compact"
             variant="secondary"
-            disabled={saving}
             onClick={() =>
               setLimitDrafts((current) => [
                 ...current,
@@ -1013,6 +1002,9 @@ function RequirementEditForm({
             Add limit
           </PillButton>
         </div>
+        {editValues === "invalid_amount" ? (
+          <p className="text-label text-destructive">Enter a valid limit amount.</p>
+        ) : null}
         {limitDrafts.length === 0 ? (
           <p className="text-base text-muted-foreground">
             No explicit limits. Add one or rely on provisions.
@@ -1034,9 +1026,7 @@ function RequirementEditForm({
                         : item,
                     );
                     setLimitDrafts(next);
-                    void commit({ limitDrafts: next });
                   }}
-                  disabled={saving}
                 >
                   <SelectTrigger
                     size="sm"
@@ -1064,19 +1054,20 @@ function RequirementEditForm({
                       ),
                     )
                   }
-                  onBlur={() => void commit()}
+                  onFocus={() => setTextFieldFocused(true)}
+                  onBlur={() => {
+                    setTextFieldFocused(false);
+                    void autoSave.saveNow();
+                  }}
                   placeholder="$1,000,000"
                   aria-label="Limit amount"
-                  disabled={saving}
                 />
                 <PillButton
                   type="button"
                   variant="icon"
-                  disabled={saving}
                   onClick={() => {
                     const next = limitDrafts.filter((item) => item.id !== draft.id);
                     setLimitDrafts(next);
-                    void commit({ limitDrafts: next });
                   }}
                   aria-label="Remove limit"
                 >
@@ -1094,13 +1085,11 @@ function RequirementEditForm({
             type="button"
             size="compact"
             variant={provisions.includes(option) ? "primary" : "secondary"}
-            disabled={saving}
             onClick={() => {
               const next = provisions.includes(option)
                 ? provisions.filter((item) => item !== option)
                 : [...provisions, option];
               setProvisions(next);
-              void commit({ provisions: next });
             }}
           >
             {REQUIREMENT_PROVISION_LABELS[option]}
@@ -1114,31 +1103,23 @@ function RequirementEditForm({
           rows={5}
           value={requirementText}
           onChange={(event) => setRequirementText(event.target.value)}
+          onFocus={() => setTextFieldFocused(true)}
           onBlur={() => {
-            if (!requirementText.trim()) {
-              setRequirementText(requirement.requirementText);
-              return;
-            }
-            void commit();
+            setTextFieldFocused(false);
+            void autoSave.saveNow();
           }}
-          disabled={saving}
           required
         />
+        {!requirementText.trim() ? (
+          <span className="text-destructive">Requirement text is required.</span>
+        ) : null}
       </label>
       <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-label text-muted-foreground">
-          {saving ? (
-            <>
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Saving
-            </>
-          ) : null}
-        </span>
+        <AutoSaveStatus status={autoSave.status} />
         <PillButton
           type="button"
           size="compact"
           variant="secondary"
-          disabled={saving}
           onClick={onArchive}
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -1188,45 +1169,23 @@ function SourceDrawer({
   const [sourceTypeDraft, setSourceTypeDraft] = useState<RequirementSourceDocumentType>(
     source.sourceType,
   );
-  const [savingField, setSavingField] = useState<"title" | "sourceType" | null>(null);
+  const [titleFocused, setTitleFocused] = useState(false);
   const [expandedRequirementId, setExpandedRequirementId] =
     useState<Id<"insuranceRequirements"> | null>(null);
 
-  async function commitTitle() {
-    const title = titleDraft.trim();
-    if (title === source.title) {
-      setTitleDraft(source.title);
-      return;
-    }
-    if (!title) {
-      toast.error("Source name is required");
-      setTitleDraft(source.title);
-      return;
-    }
-    setSavingField("title");
-    try {
-      await onUpdateSource(source, { title });
-      setTitleDraft(title);
-    } catch {
-      setTitleDraft(source.title);
-    } finally {
-      setSavingField(null);
-    }
-  }
-
-  async function changeSourceType(value: string) {
-    const sourceType = value as RequirementSourceDocumentType;
-    if (sourceType === source.sourceType) return;
-    setSourceTypeDraft(sourceType);
-    setSavingField("sourceType");
-    try {
-      await onUpdateSource(source, { sourceType });
-    } catch {
-      setSourceTypeDraft(source.sourceType);
-    } finally {
-      setSavingField(null);
-    }
-  }
+  const sourceAutoSave = useLocalFirstAutoSave({
+    mutationName: `compliance.updateRequirementSource.${source._id}`,
+    args: {
+      title: titleDraft.trim(),
+      sourceType: sourceTypeDraft,
+    },
+    resetKey: source._id,
+    canSave: !!titleDraft.trim(),
+    autoSave: !titleFocused,
+    delayMs: 0,
+    flush: (args) => onUpdateSource(source, args),
+    errorMessage: "The requirement source could not be saved.",
+  });
 
   async function archiveSource() {
     const archived = await onArchiveSource(source._id);
@@ -1240,6 +1199,7 @@ function SourceDrawer({
         if (!open) onClose();
       }}
       title="Requirement source"
+      actions={<AutoSaveStatus status={sourceAutoSave.status} />}
       footer={
         <PillButton
           type="button"
@@ -1255,28 +1215,27 @@ function SourceDrawer({
       <div className="space-y-5">
         <section className="space-y-3">
           <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              Name
-              {savingField === "title" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-            </span>
+            Name
             <Input
               value={titleDraft}
               onChange={(event) => setTitleDraft(event.target.value)}
-              onBlur={() => void commitTitle()}
-              disabled={savingField !== null}
+              onFocus={() => setTitleFocused(true)}
+              onBlur={() => {
+                setTitleFocused(false);
+                void sourceAutoSave.saveNow();
+              }}
             />
+            {!titleDraft.trim() ? (
+              <span className="text-destructive">Source name is required.</span>
+            ) : null}
           </label>
           <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              Source type
-              {savingField === "sourceType" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-            </span>
+            Source type
             <Select
               value={sourceTypeDraft}
               onValueChange={(value) => {
-                if (value) void changeSourceType(value);
+                if (value) setSourceTypeDraft(value as RequirementSourceDocumentType);
               }}
-              disabled={savingField !== null}
             >
               <SelectTrigger size="sm" className="w-full bg-background">
                 <SelectValue>{REQUIREMENT_SOURCE_TYPE_LABELS[sourceTypeDraft]}</SelectValue>
@@ -1735,7 +1694,6 @@ export function CompliancePage() {
         sourceDocumentId: source._id,
         ...patch,
       });
-      toast.success("Requirement source updated");
     } catch (error) {
       await updateRequirementSources({ orgId }, (current) =>
         current.map((item) => (item._id === source._id ? source : item)),
@@ -1751,7 +1709,6 @@ export function CompliancePage() {
             : requirement,
         ),
       );
-      toast.error(error instanceof Error ? error.message : "Unable to update source");
       throw error;
     }
   }
@@ -1791,12 +1748,10 @@ export function CompliancePage() {
         sourcePageStart: requirement.sourcePageStart,
         sourcePageEnd: requirement.sourcePageEnd,
       });
-      toast.success("Requirement saved");
     } catch (error) {
       await updateRequirements({ orgId }, (current) =>
         current.map((item) => (item._id === requirement._id ? requirement : item)),
       );
-      toast.error(error instanceof Error ? error.message : "Unable to save requirement");
       throw error;
     }
   }

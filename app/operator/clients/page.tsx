@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
@@ -49,6 +49,8 @@ import {
   useOperatorClientCacheActions,
 } from "@/lib/sync/operator-cached-queries";
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 
 type ClientRow = {
   _id: Id<"organizations">;
@@ -100,19 +102,6 @@ function isValidOptionalPhone(value: string) {
   return !trimmed || isValidPhoneNumber(trimmed);
 }
 
-function saveStatusLabel(args: {
-  dirty: boolean;
-  status: "idle" | "saving" | "saved" | "error";
-  validationError: string | null;
-}) {
-  if (args.validationError) return args.validationError;
-  if (args.status === "saving") return "Saving";
-  if (args.status === "error") return "Not saved";
-  if (args.status === "saved" && !args.dirty) return "Saved";
-  if (args.dirty) return "Waiting";
-  return null;
-}
-
 function Field({
   label,
   children,
@@ -150,9 +139,9 @@ export default function OperatorClientsPage() {
   const [editPrimaryContactPhone, setEditPrimaryContactPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const [settingsSaveStatus, setSettingsSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [savingFeatureFlagId, setSavingFeatureFlagId] = useState<FeatureFlagId | null>(null);
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
+  const [debouncedEditAgentHandle, setDebouncedEditAgentHandle] = useState("");
   const [debouncedAdminPhone, setDebouncedAdminPhone] = useState("");
   const [debouncedEditPrimaryContactPhone, setDebouncedEditPrimaryContactPhone] = useState("");
 
@@ -203,22 +192,61 @@ export default function OperatorClientsPage() {
         }
       : "skip",
   );
-  const clientSettingsValidationError = !isValidOptionalEmail(editPrimaryContactEmail)
-    ? "Enter a valid email"
-    : !editPhoneValid
-      ? "Enter a valid phone number"
-      : editShouldCheckPhone &&
-          (debouncedEditPrimaryContactPhone !== editPrimaryContactPhone.trim() ||
-            editPhoneAvailability === undefined)
-        ? "Checking phone number"
-        : editShouldCheckPhone && editPhoneAvailability?.available === false
-          ? "This phone number is already used by another user"
-      : null;
+  const currentEditAgentHandle = selected?.agentHandle ?? "";
+  const editAgentHandleChanged = editAgentHandle !== currentEditAgentHandle;
+  const editHandleAvailability = useQuery(
+    api.orgs.checkHandleAvailability,
+    editAgentHandleChanged && editAgentHandle
+      ? {
+          handle: debouncedEditAgentHandle,
+          excludeOrgId: selected?._id,
+        }
+      : "skip",
+  );
+  const editHandleChecking =
+    editAgentHandleChanged &&
+    !!editAgentHandle &&
+    (debouncedEditAgentHandle !== editAgentHandle ||
+      editHandleAvailability === undefined);
+  function clientSettingsError() {
+    if (!isValidOptionalEmail(editPrimaryContactEmail)) {
+      return "Enter a valid email";
+    }
+    if (!editPhoneValid) return "Enter a valid phone number";
+    if (editHandleChecking) return "Checking agent handle";
+    if (
+      editAgentHandleChanged &&
+      editAgentHandle &&
+      editHandleAvailability?.available === false
+    ) {
+      return editHandleAvailability.reason ?? "Agent handle is not available";
+    }
+    if (
+      editShouldCheckPhone &&
+      (debouncedEditPrimaryContactPhone !== editPrimaryContactPhone.trim() ||
+        editPhoneAvailability === undefined)
+    ) {
+      return "Checking phone number";
+    }
+    if (editShouldCheckPhone && editPhoneAvailability?.available === false) {
+      return "This phone number is already used by another user";
+    }
+    return null;
+  }
+
+  const clientSettingsValidationError = clientSettingsError();
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedAgentHandle(agentHandle), 250);
     return () => window.clearTimeout(timer);
   }, [agentHandle]);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setDebouncedEditAgentHandle(editAgentHandle),
+      250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [editAgentHandle]);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedAdminPhone(adminPhone.trim()), 300);
     return () => window.clearTimeout(timer);
@@ -330,7 +358,6 @@ export default function OperatorClientsPage() {
     setEditPrimaryContactEmail(client.primaryContactEmail ?? client.adminEmail ?? "");
     setEditPrimaryContactPhone(client.primaryContactPhone ?? "");
     setSettingsDirty(false);
-    setSettingsSaveStatus("idle");
   }
 
   function openDetails(client: ClientRow) {
@@ -341,69 +368,48 @@ export default function OperatorClientsPage() {
 
   function markClientSettingsDirty() {
     setSettingsDirty(true);
-    setSettingsSaveStatus("idle");
   }
 
-  const saveClientSettings = useCallback(async (client: ClientRow) => {
-    if (clientSettingsValidationError) return;
-    setSettingsSaveStatus("saving");
-    const nextBrokerOrgId =
-      editBrokerOrgId === STANDALONE_VALUE
-        ? undefined
-        : editBrokerOrgId as Id<"organizations">;
-    try {
-      await updateClientSettings({
-        clientOrgId: client._id,
-        brokerOrgId: nextBrokerOrgId,
-        website: editWebsite || undefined,
-        agentHandle: editAgentHandle || undefined,
-        primaryContactName: editPrimaryContactName || undefined,
-        primaryContactEmail: editPrimaryContactEmail || undefined,
-        primaryContactPhone: editPrimaryContactPhone || undefined,
+  const nextBrokerOrgId =
+    editBrokerOrgId === STANDALONE_VALUE
+      ? undefined
+      : editBrokerOrgId as Id<"organizations">;
+  const clientSettingsArgs = {
+    clientOrgId: selected?._id ?? ("" as Id<"organizations">),
+    brokerOrgId: nextBrokerOrgId,
+    website: editWebsite || undefined,
+    agentHandle: editAgentHandle || undefined,
+    primaryContactName: editPrimaryContactName || undefined,
+    primaryContactEmail: editPrimaryContactEmail || undefined,
+    primaryContactPhone: editPrimaryContactPhone || undefined,
+  };
+  const clientSettingsValueKey = JSON.stringify(clientSettingsArgs);
+  const clientSettingsAutoSave = useLocalFirstAutoSave({
+    mutationName: "operator.updateClientSettings",
+    args: clientSettingsArgs,
+    valueKey: clientSettingsValueKey,
+    resetKey: selected?._id ?? "none",
+    enabled: panelMode === "details" && !!selected,
+    canSave: settingsDirty && !clientSettingsValidationError,
+    delayMs: 800,
+    flush: async (args) => {
+      await updateClientSettings(args);
+      const { clientOrgId, ...patch } = args;
+      await patchClientSettings(clientOrgId, {
+        ...patch,
+        brokerName: brokers?.find((broker) => broker._id === patch.brokerOrgId)?.name,
+        adminName: patch.primaryContactName,
+        adminPhone: patch.primaryContactPhone,
       });
-      await patchClientSettings(client._id, {
-        brokerOrgId: nextBrokerOrgId,
-        brokerName: selectedEditBroker?.name,
-        website: editWebsite || undefined,
-        agentHandle: editAgentHandle || undefined,
-        primaryContactName: editPrimaryContactName || undefined,
-        primaryContactEmail: editPrimaryContactEmail || undefined,
-        primaryContactPhone: editPrimaryContactPhone || undefined,
-        adminName: editPrimaryContactName || undefined,
-        adminPhone: editPrimaryContactPhone || undefined,
-      });
-      setSettingsDirty(false);
-      setSettingsSaveStatus("saved");
-    } catch (error) {
-      setSettingsSaveStatus("error");
-      toast.error(error instanceof Error ? error.message : "Failed to save client settings");
-    }
-  }, [
-    clientSettingsValidationError,
-    editAgentHandle,
-    editBrokerOrgId,
-    editPrimaryContactEmail,
-    editPrimaryContactName,
-    editPrimaryContactPhone,
-    editWebsite,
-    patchClientSettings,
-    selectedEditBroker,
-    updateClientSettings,
-  ]);
-
-  useEffect(() => {
-    if (panelMode !== "details" || !selected || !settingsDirty || clientSettingsValidationError) return;
-    const timer = window.setTimeout(() => {
-      void saveClientSettings(selected);
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [
-    clientSettingsValidationError,
-    panelMode,
-    saveClientSettings,
-    selected,
-    settingsDirty,
-  ]);
+    },
+    onFlushed: (_result, args) => {
+      if (clientSettingsValueKey === JSON.stringify(args)) {
+        setSettingsDirty(false);
+      }
+    },
+    errorMessage: (error) =>
+      error instanceof Error ? error.message : "Client settings could not be saved.",
+  });
 
   async function moveToOnboarding(client: ClientRow) {
     setBusy(true);
@@ -441,11 +447,6 @@ export default function OperatorClientsPage() {
       </PillButton>
     </>
   );
-  const clientSettingsSaveLabel = saveStatusLabel({
-    dirty: settingsDirty,
-    status: settingsSaveStatus,
-    validationError: clientSettingsValidationError,
-  });
   const clientBetaFlags = betaFeatureFlagsForOrgType("client");
 
   async function updateClientFeatureFlag(
@@ -472,7 +473,14 @@ export default function OperatorClientsPage() {
     <SettingsDrawer
       open={panelMode !== null}
       onOpenChange={(open) => {
-        if (!open) setPanelMode(null);
+        if (open) return;
+        if (panelMode !== "details" || !settingsDirty) {
+          setPanelMode(null);
+          return;
+        }
+        void clientSettingsAutoSave.saveNow().then((saved) => {
+          if (saved) setPanelMode(null);
+        });
       }}
       title={
         panelMode === "create" || !selected ? (
@@ -484,18 +492,7 @@ export default function OperatorClientsPage() {
               <Badge variant={selected.operatorStatus === "live" ? "default" : "secondary"}>
                 {selected.operatorStatus === "live" ? "Live" : "Onboarding"}
               </Badge>
-              {settingsSaveStatus === "saving" ? (
-                <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
-              ) : null}
-              {clientSettingsSaveLabel ? (
-                <span className={`max-w-28 truncate text-label font-normal ${
-                  clientSettingsValidationError || settingsSaveStatus === "error"
-                    ? "text-destructive"
-                    : "text-muted-foreground"
-                }`}>
-                  {clientSettingsSaveLabel}
-                </span>
-              ) : null}
+              <AutoSaveStatus status={clientSettingsAutoSave.status} />
             </span>
           </span>
         )
@@ -716,6 +713,21 @@ export default function OperatorClientsPage() {
                   @{AGENT_DOMAIN}
                 </span>
               </div>
+              <HandleAvailability
+                saving={clientSettingsAutoSave.saving}
+                checking={editHandleChecking}
+                input={editAgentHandle}
+                current={currentEditAgentHandle}
+                currentLabel="Current agent handle"
+                availability={
+                  editAgentHandle === debouncedEditAgentHandle
+                    ? editHandleAvailability
+                    : undefined
+                }
+                renderAvailablePreview={(value) =>
+                  `${value}@${AGENT_DOMAIN} is available`
+                }
+              />
             </Field>
             <Field label="Primary contact name">
               <input
