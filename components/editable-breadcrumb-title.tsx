@@ -18,6 +18,7 @@ export function EditableBreadcrumbTitle({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
   const [localTitle, setLocalTitle] = useState<string | null>(null);
+  const [renameGeneration, setRenameGeneration] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -36,11 +37,15 @@ export function EditableBreadcrumbTitle({
   const autoSave = useLocalFirstAutoSave({
     mutationName: `thread.rename.${saveKey}`,
     args: { title: draft.trim() },
-    resetKey: saveKey,
+    resetKey: `${saveKey}:${renameGeneration}`,
     autoSave: false,
     canSave: !!draft.trim(),
     flush: (args) => Promise.resolve(onSave(args.title)),
-    onError: () => setLocalTitle(null),
+    onError: () => {
+      setLocalTitle(null);
+      setDraft(title);
+      setRenameGeneration((current) => current + 1);
+    },
     errorMessage,
   });
 

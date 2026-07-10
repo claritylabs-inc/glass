@@ -418,6 +418,7 @@ function PolicyDeliveryEditor({
 
   async function resetOverride() {
     if (!clientOrgId) return;
+    await settingsAutoSave.saveNow();
     await clearOverride({ clientOrgId });
     toast.success("Client override cleared");
   }

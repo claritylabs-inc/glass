@@ -109,4 +109,33 @@ describe("auto-save surfaces", () => {
     expect(orgs).toContain("emailPattern.test(email)");
     expect(orgs).toContain("domainPattern.test(domain)");
   });
+
+  it("keeps unsaved interaction state recoverable during close, clear, and rename", () => {
+    const mailbox = read("components/settings/email-connection-drawers.tsx");
+    const mailboxClose = mailbox.slice(
+      mailbox.indexOf("async function handleDrawerOpenChange"),
+      mailbox.indexOf("async function runManualScan"),
+    );
+    const policyDelivery = read(
+      "components/settings/policy-delivery-section.tsx",
+    );
+    const resetOverride = policyDelivery.slice(
+      policyDelivery.indexOf("async function resetOverride"),
+      policyDelivery.indexOf("async function addOverride"),
+    );
+    const rename = read("components/editable-breadcrumb-title.tsx");
+
+    expect(mailboxClose).toContain(
+      "const saved = await settingsAutoSave.saveNow",
+    );
+    expect(mailboxClose).toContain("if (!saved) return");
+    expect(mailboxClose.indexOf("if (!saved) return")).toBeLessThan(
+      mailboxClose.indexOf("onOpenChange(open)"),
+    );
+    expect(resetOverride.indexOf("await settingsAutoSave.saveNow()")).toBeLessThan(
+      resetOverride.indexOf("await clearOverride"),
+    );
+    expect(rename).toContain("setRenameGeneration((current) => current + 1)");
+    expect(rename).toContain('resetKey: `${saveKey}:${renameGeneration}`');
+  });
 });
