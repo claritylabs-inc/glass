@@ -75,7 +75,7 @@ describe("auto-save sequencer", () => {
     ).toBe(false);
   });
 
-  it("forces a current-generation write when an older matching write is unsettled", () => {
+  it("does not infer current intent from requests in older generations", () => {
     const oldPending = {
       generation: 1,
       requestId: 4,
@@ -89,7 +89,13 @@ describe("auto-save sequencer", () => {
       valueKey: "A",
     };
 
-    expect(isDivergentAutoSaveRequest(oldPending, current)).toBe(true);
+    expect(isDivergentAutoSaveRequest(oldPending, current)).toBe(false);
+    expect(
+      isDivergentAutoSaveRequest(
+        { ...oldPending, valueKey: "B" },
+        current,
+      ),
+    ).toBe(false);
     expect(
       isDivergentAutoSaveRequest({ ...oldPending, settled: true }, current),
     ).toBe(false);

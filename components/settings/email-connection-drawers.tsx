@@ -442,7 +442,6 @@ export function MailboxSettingsDrawer({
     automation.requirementImports !== initialAutomation.requirementImports ||
     automation.companyMemory !== initialAutomation.companyMemory;
   const needsConfiguration = !configurationSaved;
-  const hasChanges = needsConfiguration || settingsChanged;
   const error = account.lastScanError ?? account.lastError;
   const healthy = account.status === "active" && !error;
   const scanDatesOutOfOrder =
@@ -483,14 +482,11 @@ export function MailboxSettingsDrawer({
   async function runManualScan() {
     setScanning(true);
     try {
-      if (
-        hasChanges &&
-        !(await settingsAutoSave.saveNow({
-          force: needsConfiguration && !settingsChanged,
-        }))
-      ) {
-        return;
-      }
+      const saved = await settingsAutoSave.saveNow({
+        force: needsConfiguration && !settingsChanged,
+      });
+      if (!saved) return;
+
       const result = await scanMailboxRange({
         accountId: account._id,
         dateFrom: scanFrom,
