@@ -93,6 +93,12 @@ describe("auto-save sequencer", () => {
     expect(
       isDivergentAutoSaveRequest({ ...oldPending, settled: true }, current),
     ).toBe(false);
+    expect(
+      isDivergentAutoSaveRequest(
+        { ...oldPending, settled: true, valueKey: "B" },
+        current,
+      ),
+    ).toBe(false);
   });
 
   it("persists A -> B -> A in intent order even when earlier writes are slow", async () => {

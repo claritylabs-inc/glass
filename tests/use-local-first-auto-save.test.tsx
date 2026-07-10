@@ -407,6 +407,60 @@ describe("useLocalFirstAutoSave", () => {
     expect(harness.current.status).toBe("saved");
   });
 
+  it("does not overwrite a settled entity save with stale rebased props", async () => {
+    const saved = deferred<string>();
+    let persisted = "A";
+    const flush = vi.fn(async (args: SaveArgs) => {
+      const result = await saved.promise;
+      persisted = args.payload;
+      return result;
+    });
+    const harness = createHarness({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      args: { payload: "B" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "B",
+    });
+    const entitySave = harness.startSave();
+    await act(async () => Promise.resolve());
+    await harness.render({
+      args: { payload: "C" },
+      flush,
+      resetKey: "entity-2",
+      valueKey: "C",
+    });
+
+    await act(async () => {
+      saved.resolve("B");
+      await entitySave;
+    });
+    expect(await entitySave).toBe(false);
+    expect(persisted).toBe("B");
+
+    await harness.render({
+      args: { payload: "A" },
+      flush,
+      resetKey: "entity-1",
+      valueKey: "A",
+    });
+    const rebased = harness.startSave();
+    await act(async () => {
+      await rebased;
+    });
+
+    expect(await rebased).toBe(true);
+    expect(flush).toHaveBeenCalledOnce();
+    expect(persisted).toBe("B");
+    expect(harness.current.status).toBe("saved");
+  });
+
   it("keeps a policy-style full-draft key saved after pending args clear", async () => {
     const flush = vi.fn(async () => "saved");
     const harness = createHarness({
