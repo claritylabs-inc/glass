@@ -6,7 +6,7 @@
   "packageManager": "npm@11.12.1",
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": "22.x"
   },
   "main": "dist/index.js",
   "scripts": {

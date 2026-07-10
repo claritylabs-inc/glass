@@ -5,6 +5,9 @@
   "description": "Private operator CLI for Glass broker provisioning",
   "license": "UNLICENSED",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/claritylabs-inc/glass.git",
