@@ -7,6 +7,7 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - After major architecture or data-flow changes, update `AGENTS.md`.
 - Prefer documenting current behavior over planned behavior.
 - Treat the Convex worktree as potentially dirty. Do not revert unrelated user changes.
+- Use Node 22.x everywhere in this repository. `.nvmrc`, `.node-version`, package `engines`, Node-based Dockerfiles, and `convex.json` are the runtime contract; Conductor bootstraps Homebrew `node@22` and prepends it to `PATH`.
 - Use `dayjs` for date parsing, formatting, comparisons, and timestamps in new or touched code instead of raw `Date.now()`, `Date.parse()`, or `new Date(...)`.
 - Use the shared `PillButton` primitive for pill-shaped action buttons across app surfaces, including primary, secondary, destructive, footer, and app-shell actions. When an action needs native link or download behavior, render `PillButton` with `href`, `target`, `rel`, or `download` instead of hand-rolling rounded anchor/button classes. Raw `<button>` elements are for non-pill structural controls such as row targets, tabs, menu triggers, and icon/navigation controls.
 
@@ -14,8 +15,10 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 
 - `npm install` — install dependencies
 - `npm run dev` — start the Next.js app
-- `npx convex dev` — start the Convex backend (also pushes schema + functions to dev)
-- `npx convex dev --once` — push Convex schema/functions to dev once without keeping a watcher open
+- `npm run conductor:setup` — install Node 22 and dependencies, provision/import/seed a worktree-native Convex deployment, prepare local worker env, start Apple `container`, and build worktree-tagged worker images
+- `npm run conductor:dev` — start the Conductor-port Next app, `convex dev`, local extraction container, and Spectrum terminal iMessage worker as one foreground process group
+- `npx convex dev` — start the deployment selected by this checkout; Conductor worktrees select their own native local backend
+- `npx convex dev --once` — push schema/functions to the selected deployment once without keeping a watcher open
 - `npx convex deploy --yes` — push Convex functions to production
 - `npm run build` — production build
 - `npm run lint` — repo-wide ESLint
@@ -47,7 +50,7 @@ Convex:
 - Staging deployment: `flexible-greyhound-425` (`https://flexible-greyhound-425.convex.cloud`, site `https://flexible-greyhound-425.convex.site`) configured by `CONVEX_DEPLOY_KEY_STAGING`; staging URLs are supplied to GitHub health checks through `GLASS_STAGING_CONVEX_AGENT_HEALTH_URL`, `GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL`, and `GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL`.
 - Production deployment: `merry-platypus-82` (`https://merry-platypus-82.convex.cloud`, site `https://merry-platypus-82.convex.site`).
 - Production and staging use `EXTRACTION_WORKER_MODE=external`, `EXTRACTION_WORKER_SECRET`, `EXTRACTION_WORKER_URL`, `EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION=source-tree-v1`, and `EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION` matching the deployed `extraction-worker` `@claritylabs/cl-sdk` package spec. When bumping `@claritylabs/cl-sdk`, update the Convex expected-version env for each environment as that environment's extraction worker rolls; a mismatch makes Convex reject worker claims before leasing jobs and can leave uploads sitting at "Extraction starts shortly."
-- Local/dev Convex is for local worktree testing and should be paired with local Apple `container` workers, not shared Railway workers. Dev keeps `ALLOW_DEV_CLEAR=true` and iMessage terminal testing flags in Convex. Production must not set dev-clear or terminal-iMessage flags.
+- Each Conductor worktree owns a native local Convex deployment under `.convex/local/default/`; it does not use `acoustic-caiman-755` for ordinary local testing. Setup imports cloud-dev environment variables but not cloud data, seeds a fresh local database once, and then overrides `GLASS_ENV=local`, `ALLOW_DEV_CLEAR=true`, email capture, terminal iMessage, local worker URLs, and unique worker secrets. The shared dev deployment remains an integration lane. Production must not set dev-clear or terminal-iMessage flags.
 - Set `GLASS_ENV=production`, `GLASS_ENV=staging`, or `GLASS_ENV=local` on every runtime. Health checks fail when a worker reports the wrong environment.
 
 Railway project `Glass` (`21798fb8-c164-4eed-800c-c964978a9639`):
@@ -76,12 +79,24 @@ Local email capture and OTP testing:
 - For local sign-in, invite, and auth testing, get OTP codes from the `npx convex dev` terminal log, not Gmail, Resend, or redirected staging mail. The local capture block starts with `[glass:local-email-capture]` and includes `codeCandidates: ...`.
 - For invite-link flows where the generic OTP email is suppressed because the invite token proves ownership, Glass logs a local capture block with `kind: suppressed-invite-otp`; use its `codeCandidates` value for automated or manual acceptance testing.
 - For local email-content QA, keep the dev Convex deployment and shell env on `GLASS_ENV=local` and `EMAIL_DELIVERY_MODE=capture`, trigger the email path normally, and inspect the same capture block for `from`, `to`, `cc`, `bcc`, `subject`, `text`, `html`, and attachment metadata. Attachment bodies/base64 are intentionally not logged.
-- If local OTP/content logs do not appear, verify `npx convex env get GLASS_ENV --deployment dev` returns `local`, `npx convex env get EMAIL_DELIVERY_MODE --deployment dev` returns `capture`, and restart any already-running `npx convex dev` process.
+- If local OTP/content logs do not appear, verify `npx convex env get GLASS_ENV` returns `local`, `npx convex env get EMAIL_DELIVERY_MODE` returns `capture`, and restart the worktree's `npx convex dev` process. Do not add `--deployment dev`, which would inspect the shared cloud lane.
+
+Conductor local development:
+
+- Shared new-worktree defaults live in `.conductor/settings.toml`; `.worktreeinclude` copies root and worker `.env.local` files before setup runs.
+- The default Local dev template reserves a five-port worktree namespace: `CONDUCTOR_PORT` for Next, `+1` for extraction, `+2` for Spectrum terminal, and `+3/+4` for Convex client/HTTP services.
+- Conductor run mode is concurrent. Setup and runtime pass the worktree's explicit Convex ports because Convex 1.41 automatic collision fallback can select the same port for both local services. The frontend, extraction container, and Spectrum worker wait until the current worktree's watcher has written and started that exact backend before connecting.
+- Generated worker runtime env files live under gitignored `.context/`. Setup forces terminal-mode iMessage locally, creates matching worktree-local secrets, and keeps real Photon credentials disabled. Worker images use `:conductor-<workspace>` tags so builds cannot overwrite another worktree's default image.
+- Convex binds its native backend to macOS loopback. The extraction wrapper discovers Apple's default container-network gateway and opens a TCP bridge only on that gateway/Convex port, then overrides the container's `CONVEX_URL`; do not replace this with a shared cloud URL or a LAN-wide proxy.
+- The full-stack Run terminal is reserved for Spectrum's interactive TUI. Next, Convex, and extraction logs are written to `.context/logs/`; local email and OTP capture is in `.context/logs/convex.log`.
+- Native local Convex has no public URL. Resend inbound webhooks and real Photon callbacks require shared dev/staging or an explicit tunnel; local defaults are email capture and Spectrum terminal. The mailbox-scan worker image is built but its cron is intentionally not started by the default template.
+- `convex.json` disables automatic Convex AI-file refresh so first-time local provisioning does not rewrite committed skills, guidelines, or `AGENTS.md`. Refresh those intentionally with `npx convex ai-files install` when upgrading the repo's Convex guidance.
 
 Audit commands:
 
 - `gh run list --branch main --limit 5` — latest GitHub deploy workflow status.
-- `npx convex env list --deployment dev | sed -E 's/=.*$//' | sort` — dev Convex env keys only.
+- `npx convex env list | sed -E 's/=.*$//' | sort` — current worktree-local Convex env keys only.
+- `npx convex env list --deployment dev | sed -E 's/=.*$//' | sort` — shared cloud dev Convex env keys only.
 - `npx convex env list --prod | sed -E 's/=.*$//' | sort` — production Convex env keys only.
 - `railway status --json | jq '{project:{id,name}, environments:[.environments.edges[].node | {name, services:[.serviceInstances.edges[].node | {serviceName, source, latestDeployment:(.latestDeployment | {status, meta:{repo:.meta.repo, rootDirectory:.meta.rootDirectory, branch:.meta.branch, commitHash:.meta.commitHash, configFile:.meta.configFile}})}]}]}'` — Railway source/root/deployment audit.
 - `curl -fsS https://glass-extraction-worker-dev.up.railway.app/health | jq .`, `curl -fsS https://glass-extraction-worker-staging.up.railway.app/health | jq .`, and `curl -fsS https://glass-extraction-worker-production.up.railway.app/health | jq .` — extraction worker health, protocol, SDK spec, and Convex target.
@@ -421,7 +436,7 @@ Storage and retrieval pattern:
 - `sourceNodes` stores canonical non-vector policy hierarchy; `documentChunks` is the remaining embedded policy compatibility corpus.
 - `orgMemory` stores curated company-context facts only. Policy, endorsement, COI, thread, email, and workflow facts live in their first-class tables and must be retrieved with tools.
 
-Important: local Convex changes still require `npx convex dev --once` to reach the dev deployment. Production Convex deploys through `.github/workflows/deploy-convex.yml` on relevant `main` pushes, or manually with `npx convex deploy --yes` when needed.
+Important: in a Conductor worktree, `npx convex dev` and `npx convex dev --once` update only that worktree's native local deployment. They do not update shared dev, staging, or production. Production Convex deploys through `.github/workflows/deploy-convex.yml` on relevant `main` pushes, or manually with `npx convex deploy --yes` when needed.
 
 ## Main Product Flows
 

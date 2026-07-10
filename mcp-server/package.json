@@ -4,6 +4,9 @@
   "private": true,
   "description": "Glass MCP server for AI agent integration",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

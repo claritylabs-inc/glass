@@ -5,6 +5,9 @@
   "description": "Command line interface for Glass",
   "license": "UNLICENSED",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/claritylabs-inc/glass.git",

@@ -3,8 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "npm@11.12.1",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev -p 8080",
+    "conductor:setup": "node scripts/setup-conductor-workspace.mjs",
+    "conductor:dev": "node scripts/run-conductor-dev.mjs",
     "check:cl-sdk-version": "node scripts/check-cl-sdk-version.mjs",
     "prebuild": "npm run check:cl-sdk-version",
     "build": "next build",
@@ -118,6 +123,7 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.5",
     "convex-test": "^0.0.49",
+    "concurrently": "^10.0.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "happy-dom": "^20.10.6",
