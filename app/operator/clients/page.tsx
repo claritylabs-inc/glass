@@ -390,7 +390,7 @@ export default function OperatorClientsPage() {
     valueKey: clientSettingsValueKey,
     resetKey: selected?._id ?? "none",
     enabled: panelMode === "details" && !!selected,
-    canSave: settingsDirty && !clientSettingsValidationError,
+    canSave: !clientSettingsValidationError,
     delayMs: 800,
     flush: async (args) => {
       await updateClientSettings(args);

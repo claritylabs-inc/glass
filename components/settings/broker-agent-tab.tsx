@@ -174,12 +174,12 @@ export function BrokerAgentTab() {
   const handleAutoSave = useLocalFirstAutoSave({
     mutationName: "settings.agent.claimHandle",
     args: { handle: availability?.normalized ?? debouncedHandle },
-    valueKey: debouncedHandle,
+    valueKey: agentHandle,
     enabled: settingsHydrated && !!org?._id,
     canSave:
-      shouldCheck &&
       normalizedInput === debouncedHandle &&
-      availability?.available === true,
+      ((debouncedHandle === currentHandle && !!debouncedHandle) ||
+        (shouldCheck && availability?.available === true)),
     delayMs: 0,
     flush: (args) => claimAgentHandle(args),
     onFlushed: (normalized, args) => {

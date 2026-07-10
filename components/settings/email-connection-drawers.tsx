@@ -452,7 +452,7 @@ export function MailboxSettingsDrawer({
     mutationName: `settings.email.update.${account._id}`,
     args: { accountId: account._id, scope, automation },
     enabled: canManageMailbox,
-    canSave: canManageMailbox && hasChanges,
+    canSave: canManageMailbox,
     flush: async (args) => {
       await updateSettings(args);
       await onSaved(args.accountId, args.scope, args.automation);

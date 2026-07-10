@@ -38,7 +38,7 @@ export function EditableBreadcrumbTitle({
     args: { title: draft.trim() },
     resetKey: saveKey,
     autoSave: false,
-    canSave: !!draft.trim() && draft.trim() !== display,
+    canSave: !!draft.trim(),
     flush: (args) => Promise.resolve(onSave(args.title)),
     onError: () => setLocalTitle(null),
     errorMessage,
@@ -53,8 +53,7 @@ export function EditableBreadcrumbTitle({
     }
     setLocalTitle(next);
     setEditing(false);
-    const saved = await autoSave.saveNow();
-    if (!saved) setLocalTitle(null);
+    await autoSave.saveNow();
   }
 
   if (editing) {
