@@ -201,15 +201,10 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
 
       const promise = result
         .then((flushResult) => {
-          if (
-            generation === resetGenerationRef.current &&
-            queuedResetKey === resetKeyRef.current
-          ) {
-            lastSavedKeyRef.current = queuedKey;
-            setLastSavedKey(queuedKey);
-          }
           const isCurrent = isRequestCurrent();
           if (isCurrent) {
+            lastSavedKeyRef.current = queuedKey;
+            setLastSavedKey(queuedKey);
             queuedApplyLocal?.(store, queuedArgs, clientMutationId);
             setFailedSave(null);
             onFlushedRef.current?.(flushResult, queuedArgs);

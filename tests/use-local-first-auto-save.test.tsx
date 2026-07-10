@@ -228,6 +228,68 @@ describe("useLocalFirstAutoSave", () => {
     expect(harness.store.getOutbox()).toEqual([]);
   });
 
+  it("does not adopt a stale success as the saved baseline", async () => {
+    const stale = deferred<string>();
+    const applyLocal = vi.fn();
+    const onFlushed = vi.fn();
+    const flush = vi
+      .fn<(args: SaveArgs) => Promise<string>>()
+      .mockImplementationOnce(() => stale.promise)
+      .mockResolvedValueOnce("current B");
+    const harness = createHarness({
+      applyLocal,
+      args: { payload: "A" },
+      flush,
+      onFlushed,
+      valueKey: "A",
+    });
+    await harness.start();
+    await harness.render({
+      applyLocal,
+      args: { payload: "B" },
+      flush,
+      onFlushed,
+      valueKey: "B",
+    });
+    const staleSave = harness.startSave();
+    await act(async () => Promise.resolve());
+    await harness.render({
+      applyLocal,
+      args: { payload: "C" },
+      flush,
+      onFlushed,
+      valueKey: "C",
+    });
+
+    await act(async () => {
+      stale.resolve("stale B");
+      await staleSave;
+    });
+    expect(await staleSave).toBe(false);
+    expect(applyLocal).not.toHaveBeenCalled();
+    expect(onFlushed).not.toHaveBeenCalled();
+    expect(harness.current.status).toBe("unsaved");
+
+    await harness.render({
+      applyLocal,
+      args: { payload: "B" },
+      flush,
+      onFlushed,
+      valueKey: "B",
+    });
+    const currentSave = harness.startSave();
+    await act(async () => {
+      await currentSave;
+    });
+
+    expect(await currentSave).toBe(true);
+    expect(flush).toHaveBeenCalledTimes(2);
+    expect(onFlushed).toHaveBeenCalledOnce();
+    expect(onFlushed).toHaveBeenCalledWith("current B", { payload: "B" });
+    expect(applyLocal).toHaveBeenCalledOnce();
+    expect(harness.current.status).toBe("saved");
+  });
+
   it("suppresses stale reset effects and restores the current entity value", async () => {
     const success = deferred<string>();
     const staleRestore = deferred<string>();
