@@ -908,6 +908,7 @@ export const checkBrokerSetupIdentifiers = query({
   args: {
     slug: v.optional(v.string()),
     agentHandle: v.optional(v.string()),
+    ownerOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
     await requireOperator(ctx);
@@ -929,6 +930,11 @@ export const checkBrokerSetupIdentifiers = query({
             .first();
           if (!slugOrg) return { available: true, normalized: slug, mode: "available" as const };
           slugOrgId = slugOrg._id;
+          if (args.ownerOrgId) {
+            return slugOrg._id === args.ownerOrgId
+              ? { available: true, normalized: slug, mode: "available" as const }
+              : { available: false, normalized: slug, reason: "Slug is already taken", mode: "unavailable" as const };
+          }
           if (slugOrg.type === "broker") {
             return { available: true, normalized: slug, reason: "Existing broker will be updated", mode: "updates_existing" as const };
           }
@@ -954,6 +960,11 @@ export const checkBrokerSetupIdentifiers = query({
             .first();
           if (!existingByHandle) {
             return { available: true, normalized: agentHandle, mode: "available" as const };
+          }
+          if (args.ownerOrgId) {
+            return existingByHandle._id === args.ownerOrgId
+              ? { available: true, normalized: agentHandle, mode: "available" as const }
+              : { available: false, normalized: agentHandle, reason: "Agent handle is already taken", mode: "unavailable" as const };
           }
           if (slugOrgId && existingByHandle._id === slugOrgId) {
             return { available: true, normalized: agentHandle, reason: "Existing broker will be updated", mode: "updates_existing" as const };

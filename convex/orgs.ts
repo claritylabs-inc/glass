@@ -561,12 +561,26 @@ export const updateClientEmailSettings = mutation({
       throw new Error("Only broker admins can update client email settings");
     }
     await assertImpersonatedSetupWrite(ctx, client.brokerOrgId);
-    const normEmails = args.allowedEmails
-      ?.map((e) => e.trim().toLowerCase())
-      .filter((e) => e.includes("@"));
-    const normDomains = args.allowedDomains
-      ?.map((d) => d.trim().toLowerCase().replace(/^@/, ""))
-      .filter(Boolean);
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const domainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+    const emailCandidates = args.allowedEmails?.map((email) =>
+      email.trim().toLowerCase(),
+    );
+    if (emailCandidates?.some((email) => !emailPattern.test(email))) {
+      throw new Error("Enter valid allowed email addresses");
+    }
+    const domainCandidates = args.allowedDomains?.map((domain) =>
+      domain.trim().toLowerCase().replace(/^@/, ""),
+    );
+    if (domainCandidates?.some((domain) => !domainPattern.test(domain))) {
+      throw new Error("Enter valid allowed domains");
+    }
+    const normEmails = emailCandidates
+      ? [...new Set(emailCandidates)]
+      : undefined;
+    const normDomains = domainCandidates
+      ? [...new Set(domainCandidates)]
+      : undefined;
     const patch: Record<string, unknown> = {};
     if (normEmails !== undefined) patch.allowedEmails = normEmails;
     if (normDomains !== undefined) patch.allowedDomains = normDomains;

@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  useCallback,
+  useLayoutEffect,
   useMemo,
   useState,
   type ComponentType,
@@ -50,6 +52,8 @@ import {
   OperationalPanel,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 
 type EmailProviderPreset = {
   id: string;
@@ -404,6 +408,7 @@ export function MailboxSettingsDrawer({
   onOpenChange,
   onSaved,
   onDisconnected,
+  onSaveBarrierChange,
 }: {
   account: ConnectedEmailAccountRow;
   canManageMailbox: boolean;
@@ -415,6 +420,9 @@ export function MailboxSettingsDrawer({
     automation: MailboxAutomation,
   ) => Promise<void>;
   onDisconnected: (accountId: Id<"connectedEmailAccounts">) => Promise<void>;
+  onSaveBarrierChange: (
+    barrier: (() => Promise<boolean>) | null,
+  ) => void;
 }) {
   const updateSettings = useMutation(api.connectedEmail.updateSettings);
   const revokeConnectedEmail = useMutation(api.connectedEmail.revoke);
@@ -422,7 +430,6 @@ export function MailboxSettingsDrawer({
   const initialAutomation = configuredAutomation(account);
   const [scope, setScope] = useState(account.scope);
   const [automation, setAutomation] = useState(initialAutomation);
-  const [saving, setSaving] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
@@ -431,43 +438,71 @@ export function MailboxSettingsDrawer({
   );
   const [scanTo, setScanTo] = useState(() => dayjs().format("YYYY-MM-DD"));
   const [scanning, setScanning] = useState(false);
+  const [configurationSaved, setConfigurationSaved] = useState(
+    account.automationConfigured,
+  );
 
-  const hasChanges =
-    !account.automationConfigured ||
+  const settingsChanged =
     scope !== account.scope ||
     automation.policyImports !== initialAutomation.policyImports ||
     automation.requirementImports !== initialAutomation.requirementImports ||
     automation.companyMemory !== initialAutomation.companyMemory;
+  const needsConfiguration = !configurationSaved;
   const error = account.lastScanError ?? account.lastError;
   const healthy = account.status === "active" && !error;
   const scanDatesOutOfOrder =
     Boolean(scanFrom && scanTo) &&
     dayjs(scanFrom).isAfter(dayjs(scanTo), "day");
+  const settingsAutoSave = useLocalFirstAutoSave({
+    mutationName: `settings.email.update.${account._id}`,
+    args: { accountId: account._id, scope, automation },
+    enabled: canManageMailbox,
+    canSave: canManageMailbox,
+    flush: async (args) => {
+      await updateSettings(args);
+      await onSaved(args.accountId, args.scope, args.automation);
+    },
+    onFlushed: () => setConfigurationSaved(true),
+    errorMessage: (error) =>
+      error instanceof Error
+        ? error.message
+        : "Mailbox settings could not be saved.",
+  });
+  const saveSettings = settingsAutoSave.saveNow;
+  const saveSettingsBeforeAction = useCallback(
+    () => {
+      if (!canManageMailbox) return Promise.resolve(true);
+      return saveSettings({
+        force: needsConfiguration && !settingsChanged,
+      });
+    },
+    [canManageMailbox, needsConfiguration, saveSettings, settingsChanged],
+  );
+  useLayoutEffect(() => {
+    onSaveBarrierChange(saveSettingsBeforeAction);
+    return () => onSaveBarrierChange(null);
+  }, [onSaveBarrierChange, saveSettingsBeforeAction]);
+  const savingSettings = settingsAutoSave.saving;
   const canScan =
     Boolean(scanFrom && scanTo) &&
     !scanDatesOutOfOrder &&
-    !hasChanges &&
+    !savingSettings &&
     !scanning;
 
-  async function saveSettings() {
-    setSaving(true);
-    try {
-      await updateSettings({ accountId: account._id, scope, automation });
-      await onSaved(account._id, scope, automation);
-      toast.success("Mailbox settings saved");
-      onOpenChange(false);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to save mailbox settings",
-      );
-    } finally {
-      setSaving(false);
+  async function handleDrawerOpenChange(open: boolean) {
+    if (!open && canManageMailbox) {
+      const saved = await saveSettingsBeforeAction();
+      if (!saved) return;
     }
+    onOpenChange(open);
   }
 
   async function runManualScan() {
     setScanning(true);
     try {
+      const saved = await saveSettingsBeforeAction();
+      if (!saved) return;
+
       const result = await scanMailboxRange({
         accountId: account._id,
         dateFrom: scanFrom,
@@ -505,6 +540,7 @@ export function MailboxSettingsDrawer({
   async function disconnectMailbox() {
     setDisconnecting(true);
     try {
+      if (!(await saveSettingsBeforeAction())) return;
       await revokeConnectedEmail({ accountId: account._id });
       await onDisconnected(account._id);
       toast.success("Mailbox disconnected");
@@ -521,20 +557,17 @@ export function MailboxSettingsDrawer({
   return (
     <SettingsDrawer
       open
-      onOpenChange={onOpenChange}
+      onOpenChange={handleDrawerOpenChange}
       title={account.emailAddress}
-      actions={
-        canManageMailbox && !confirmDisconnect ? (
-          <PillButton
-            size="compact"
-            variant="secondary"
-            disabled={scanning}
-            onClick={() => setScanDialogOpen(true)}
-          >
-            Scan mailbox
-          </PillButton>
-        ) : null
-      }
+      actions={canManageMailbox ? (
+        <AutoSaveStatus
+          status={
+            needsConfiguration && !settingsChanged
+              ? "unsaved"
+              : settingsAutoSave.status
+          }
+        />
+      ) : undefined}
       footer={
         confirmDisconnect ? (
           <>
@@ -558,26 +591,23 @@ export function MailboxSettingsDrawer({
               {disconnecting ? "Disconnecting…" : "Disconnect mailbox"}
             </PillButton>
           </>
-        ) : (
+        ) : canManageMailbox ? (
           <>
-            {canManageMailbox ? (
-              <PillButton
-                variant="destructive"
-                disabled={saving}
-                onClick={() => setConfirmDisconnect(true)}
-              >
-                Disconnect
-              </PillButton>
-            ) : null}
             <PillButton
-              disabled={!canManageMailbox || !hasChanges || saving}
-              onClick={() => void saveSettings()}
+              variant="secondary"
+              disabled={savingSettings || scanning}
+              onClick={() => setConfirmDisconnect(true)}
             >
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              {saving ? "Saving…" : "Save changes"}
+              Disconnect
+            </PillButton>
+            <PillButton
+              disabled={scanning}
+              onClick={() => setScanDialogOpen(true)}
+            >
+              Scan mailbox
             </PillButton>
           </>
-        )
+        ) : undefined
       }
     >
       {confirmDisconnect ? (
@@ -597,44 +627,58 @@ export function MailboxSettingsDrawer({
         </OperationalPanel>
       ) : (
         <div className="space-y-5">
-          <OperationalLabelValueList title="Connection health">
-            <OperationalLabelValueRow
-              label="Status"
-              value={healthy ? "Connected" : "Needs attention"}
-            />
-            <OperationalLabelValueRow
-              label="Last checked"
-              value={formatMailboxActivity(
-                account.lastScanAt ?? account.lastTestedAt,
-              )}
-            />
-            {error ? <OperationalLabelValueRow label="Issue" value={error} /> : null}
-          </OperationalLabelValueList>
+          <section className="space-y-2">
+            <h2 className="text-base font-medium text-foreground">
+              Connection health
+            </h2>
+            <OperationalLabelValueList>
+              <OperationalLabelValueRow
+                label="Status"
+                value={healthy ? "Connected" : "Needs attention"}
+              />
+              <OperationalLabelValueRow
+                label="Last checked"
+                value={formatMailboxActivity(
+                  account.lastScanAt ?? account.lastTestedAt,
+                )}
+              />
+              {error ? (
+                <OperationalLabelValueRow label="Issue" value={error} />
+              ) : null}
+            </OperationalLabelValueList>
+          </section>
 
-          <div className="space-y-1.5">
-            <Label>Available to</Label>
-            <EmailScopeSelect
-              value={scope}
-              onValueChange={setScope}
-              allowOrgScope={canManageOrgMailboxes}
-              disabled={!canManageMailbox}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div>
-              <p className="text-base font-medium text-foreground">
-                Proactive monitoring
-              </p>
+          <section className="space-y-2">
+            <h2 className="text-base font-medium text-foreground">
+              Organization sharing
+            </h2>
+            <OperationalPanel as="div" className="space-y-3 p-4">
+              <div className="space-y-1.5">
+                <Label>Available to</Label>
+                <EmailScopeSelect
+                  value={scope}
+                  onValueChange={setScope}
+                  allowOrgScope={canManageOrgMailboxes}
+                  disabled={!canManageMailbox}
+                />
+              </div>
               <p className="text-base text-muted-foreground">
-                Choose what Glass can import and learn from this mailbox.
+                Imported policies, requirements, and company facts become workspace
+                data visible to the organization, even when mailbox access is set to
+                Just me.
               </p>
-            </div>
+            </OperationalPanel>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-base font-medium text-foreground">
+              Proactive monitoring
+            </h2>
             {!account.automationConfigured ? (
               <p className="rounded-lg border border-foreground/6 bg-foreground/3 px-3 py-2 text-base text-muted-foreground">
                 {account.scope === "org"
-                  ? "This legacy mailbox currently sends attention alerts only. Save to configure monitoring."
-                  : "Monitoring is off for this legacy mailbox. Save to configure it."}
+                  ? "This legacy mailbox is limited to attention alerts."
+                  : "Proactive monitoring is off for this legacy mailbox."}
               </p>
             ) : null}
             <AutomationToggleRows
@@ -642,12 +686,7 @@ export function MailboxSettingsDrawer({
               onChange={setAutomation}
               disabled={!canManageMailbox}
             />
-            <p className="text-base text-muted-foreground">
-              Imported policies, requirements, and company facts become workspace
-              data visible to the organization, even when mailbox access is set to
-              Just me.
-            </p>
-          </div>
+          </section>
         </div>
       )}
 
@@ -697,10 +736,6 @@ export function MailboxSettingsDrawer({
           {scanDatesOutOfOrder ? (
             <p className="text-base text-destructive">
               The end date must be on or after the start date.
-            </p>
-          ) : hasChanges ? (
-            <p className="rounded-lg border border-foreground/6 bg-foreground/3 px-3 py-2 text-base text-muted-foreground">
-              Save your monitoring changes before running a scan.
             </p>
           ) : null}
 

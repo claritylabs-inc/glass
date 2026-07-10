@@ -36,6 +36,7 @@ import {
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useTheme } from "@/hooks/use-theme";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { useViewerCacheActions } from "@/lib/sync/glass-cached-queries";
 import {
@@ -186,7 +187,7 @@ export default function ProfilePage() {
     args: currentValues,
     valueKey: JSON.stringify(currentValues),
     enabled: persistedValues !== null,
-    canSave: hasChanges && !phoneBlocked,
+    canSave: !phoneBlocked,
     applyLocal: (store, next) => {
       const collection = cachedQueryCollectionFor<Viewer>("users.viewer");
       const argsKey = cachedQueryArgsKey({});
@@ -206,27 +207,24 @@ export default function ProfilePage() {
       ]);
     },
     flush: saveProfile,
-    onQueued: () => setPersistedValues(currentValues),
-    onError: (err) => {
+    onFlushed: (_result, next) => setPersistedValues(next),
+    errorMessage: (err) => {
       const message =
         err instanceof Error ? err.message : "Failed to save profile";
-      toast.error(
-        message.includes("This phone number is already used")
-          ? "This phone number is already used by another user."
-          : message.includes("Enter a valid phone number")
-            ? "Enter a valid phone number with country code."
-            : message,
-      );
+      return message.includes("This phone number is already used")
+        ? "This phone number is already used by another user."
+        : message.includes("Enter a valid phone number")
+          ? "Enter a valid phone number with country code."
+          : message;
     },
   });
 
   const saving = profileAutoSave.saving;
-  const savedAt = profileAutoSave.savedAt;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!hasChanges || phoneBlocked || saving) return;
-    profileAutoSave.saveNow();
+    void profileAutoSave.saveNow();
   }
 
   function openProactiveDrawer() {
@@ -277,21 +275,9 @@ export default function ProfilePage() {
   }
 
   const effectiveProactiveChoice = proactiveChannelChoice(proactivePreferences);
-  const saveStatus = (
-    <span className="text-label text-muted-foreground flex items-center gap-1.5">
-      {saving ? (
-        <>
-          <Loader2 className="w-3 h-3 animate-spin" />
-          Saving
-        </>
-      ) : savedAt ? (
-        "Saved"
-      ) : null}
-    </span>
-  );
   const headerActions = (
     <>
-      {saveStatus}
+      <AutoSaveStatus status={profileAutoSave.status} />
       <PillButton
         size="compact"
         variant="secondary"

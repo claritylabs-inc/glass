@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +30,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { useCurrentOrg } from "@/hooks/use-current-org";
 
 type Channel = "email" | "imessage";
 type DeliveryAction = "auto_send" | "broker_review" | "do_not_send";
@@ -299,6 +302,7 @@ export function PolicyDeliverySection({
   setRightPanel?: (node: ReactNode) => void;
   setActions?: (node: ReactNode) => void;
 }) {
+  const currentOrg = useCurrentOrg();
   const brokerSettings = useQuery(
     api.policyDelivery.getBrokerSettings,
     clientOrgId ? "skip" : {},
@@ -321,14 +325,15 @@ export function PolicyDeliverySection({
     );
   }
 
-  const draftKey = `${clientOrgId ?? "broker"}:${settings?._id ?? "default"}:${inheritedSettings?._id ?? "none"}`;
+  const draftKey = `${clientOrgId ?? currentOrg?.orgId ?? "broker"}:${
+    clientOrgId ? (clientOverride ? "override" : "inherited") : "direct"
+  }`;
 
   return (
     <PolicyDeliveryEditor
       key={draftKey}
       clientOrgId={clientOrgId}
       settings={toDraftSettings(settings ?? inheritedSettings)}
-      inheritedSettings={inheritedSettings ? toDraftSettings(inheritedSettings) : null}
       hasClientOverride={!clientOrgId || !!clientOverride}
       rules={rules}
       setRightPanelOverride={setRightPanelOverride}
@@ -340,7 +345,6 @@ export function PolicyDeliverySection({
 function PolicyDeliveryEditor({
   clientOrgId,
   settings,
-  inheritedSettings,
   hasClientOverride,
   rules,
   setRightPanelOverride,
@@ -348,7 +352,6 @@ function PolicyDeliveryEditor({
 }: {
   clientOrgId?: Id<"organizations">;
   settings: SettingsRow;
-  inheritedSettings?: SettingsRow | null;
   hasClientOverride: boolean;
   rules: RuleRow[];
   setRightPanelOverride?: (node: ReactNode) => void;
@@ -366,68 +369,23 @@ function PolicyDeliveryEditor({
   const deleteRule = useMutation(api.policyDelivery.deleteRule);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<RuleRow | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const [draft, setDraft] = useState<SettingsRow>(settings);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedRef = useRef(settingsSignature(settings));
+  const [copyInstructionsFocused, setCopyInstructionsFocused] = useState(false);
+  const [clearingOverride, setClearingOverride] = useState(false);
   const isInheritedClientSettings = !!clientOrgId && !hasClientOverride;
 
-  const saveSettings = useCallback(async () => {
-    setSaveStatus("saving");
-    try {
-      if (clientOrgId) {
-        await updateClientOverride({
-          clientOrgId,
-          enabled: draft.enabled,
-          channels: draft.channels,
-          defaultAction: draft.defaultAction,
-          deliverBeforeClientAcceptance: draft.deliverBeforeClientAcceptance,
-          copyInstructions: draft.copyInstructions,
-        });
-      } else {
-        await updateBrokerSettings({
-          enabled: draft.enabled,
-          channels: draft.channels,
-          defaultAction: draft.defaultAction,
-          deliverBeforeClientAcceptance: draft.deliverBeforeClientAcceptance,
-          copyInstructions: draft.copyInstructions,
-        });
-      }
-      lastSavedRef.current = settingsSignature(draft);
-      setSaveStatus("saved");
-    } catch (error) {
-      setSaveStatus("error");
-      toast.error(error instanceof Error ? error.message : "Failed to save settings");
-    }
-  }, [
-    clientOrgId,
-    draft,
-    updateBrokerSettings,
-    updateClientOverride,
-  ]);
-
-  useEffect(() => {
-    const nextSignature = settingsSignature(draft);
-    if (nextSignature === lastSavedRef.current) {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-      setSaveStatus("saved");
-      return;
-    }
-    setSaveStatus("saving");
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      void saveSettings();
-    }, 600);
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
-  }, [draft, saveSettings]);
+  const settingsAutoSave = useLocalFirstAutoSave({
+    mutationName: `settings.policyDelivery.${clientOrgId ?? "broker"}`,
+    args: draft,
+    valueKey: settingsSignature(draft),
+    enabled: !isInheritedClientSettings,
+    autoSave: !copyInstructionsFocused,
+    flush: (args) =>
+      clientOrgId
+        ? updateClientOverride({ clientOrgId, ...args })
+        : updateBrokerSettings(args),
+    errorMessage: "Policy delivery settings could not be saved.",
+  });
 
   useEffect(() => {
     setRightPanel(
@@ -460,18 +418,26 @@ function PolicyDeliveryEditor({
   }, [setActions]);
 
   async function resetOverride() {
-    if (!clientOrgId) return;
-    await clearOverride({ clientOrgId });
-    const next = inheritedSettings ?? DEFAULT_SETTINGS;
-    setDraft(next);
-    lastSavedRef.current = settingsSignature(next);
-    setSaveStatus("saved");
-    toast.success("Client override cleared");
+    if (!clientOrgId || clearingOverride) return;
+    setClearingOverride(true);
+    const saved = await settingsAutoSave.saveNow();
+    if (!saved) {
+      setClearingOverride(false);
+      return;
+    }
+    try {
+      await clearOverride({ clientOrgId });
+      toast.success("Client override cleared");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to clear client override",
+      );
+      setClearingOverride(false);
+    }
   }
 
   async function addOverride() {
     if (!clientOrgId) return;
-    setSaveStatus("saving");
     try {
       await updateClientOverride({
         clientOrgId,
@@ -481,11 +447,8 @@ function PolicyDeliveryEditor({
         deliverBeforeClientAcceptance: draft.deliverBeforeClientAcceptance,
         copyInstructions: draft.copyInstructions,
       });
-      lastSavedRef.current = settingsSignature(draft);
-      setSaveStatus("saved");
       toast.success("Client override added");
     } catch (error) {
-      setSaveStatus("error");
       toast.error(error instanceof Error ? error.message : "Failed to add override");
     }
   }
@@ -497,15 +460,11 @@ function PolicyDeliveryEditor({
           title="Policy delivery"
           className="px-5 py-3.5"
           action={(
-            <span className="text-label text-muted-foreground">
-            {isInheritedClientSettings
-              ? "Inherited"
-              : saveStatus === "saving"
-                ? "Saving"
-                : saveStatus === "error"
-                  ? "Not saved"
-                  : "Saved"}
-            </span>
+            isInheritedClientSettings ? (
+              <span className="text-label text-muted-foreground">Inherited</span>
+            ) : (
+              <AutoSaveStatus status={settingsAutoSave.status} />
+            )
           )}
         />
         {isInheritedClientSettings ? (
@@ -530,7 +489,10 @@ function PolicyDeliveryEditor({
             </PillButton>
           </div>
         ) : (
-          <div className="space-y-5 px-5 py-5">
+          <fieldset
+            disabled={clearingOverride}
+            className="space-y-5 px-5 py-5"
+          >
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-base font-medium text-foreground">Enable delivery automation</p>
@@ -560,18 +522,31 @@ function PolicyDeliveryEditor({
               <textarea
                 value={draft.copyInstructions ?? ""}
                 onChange={(event) => setDraft({ ...draft, copyInstructions: event.target.value })}
+                onFocus={() => setCopyInstructionsFocused(true)}
+                onBlur={() => {
+                  setCopyInstructionsFocused(false);
+                  void settingsAutoSave.saveNow();
+                }}
                 className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20"
                 placeholder="Use our standard policy delivery language. Mention claims contact details when available."
               />
             </label>
             <div className="flex justify-end gap-2">
               {clientOrgId ? (
-                <PillButton type="button" variant="secondary" onClick={resetOverride}>
+                <PillButton
+                  type="button"
+                  variant="secondary"
+                  onClick={resetOverride}
+                  disabled={clearingOverride}
+                >
+                  {clearingOverride ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : null}
                   Clear override
                 </PillButton>
               ) : null}
             </div>
-          </div>
+          </fieldset>
         )}
       </OperationalPanel>
 

@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { HandleAvailability } from "@/components/settings/handle-availability";
@@ -21,6 +20,10 @@ import {
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
 import { useSyncStore } from "@claritylabs/cl-sync";
+import {
+  AutoSaveStatus,
+  combineAutoSaveStatuses,
+} from "@/components/ui/auto-save-status";
 
 type AgentSettingsArgs = {
   chatEmailNotifications: boolean;
@@ -82,7 +85,6 @@ export function BrokerAgentTab() {
 
   const [agentHandle, setAgentHandle] = useState("");
   const [debouncedHandle, setDebouncedHandle] = useState("");
-  const [savingHandle, setSavingHandle] = useState(false);
   const [chatEmailNotifications, setChatEmailNotifications] = useState(false);
   const [autoSendEmails, setAutoSendEmails] = useState(false);
   const [bccRequesterOnAgentEmails, setBccRequesterOnAgentEmails] =
@@ -130,7 +132,7 @@ export function BrokerAgentTab() {
     [updateOrg],
   );
 
-  const { saving, savedAt } = useLocalFirstAutoSave({
+  const settingsAutoSave = useLocalFirstAutoSave({
     mutationName: "settings.agent.updateOrg",
     args: {
       chatEmailNotifications,
@@ -142,25 +144,8 @@ export function BrokerAgentTab() {
     enabled: settingsHydrated,
     applyLocal: (store, args) => patchCachedViewerOrg(store, args),
     flush: saveAgentSettings,
-    onError: () => toast.error("Failed to save agent settings"),
+    errorMessage: "Agent settings could not be saved.",
   });
-
-  useEffect(() => {
-    setActions(
-      <span className="text-label text-muted-foreground flex items-center gap-1.5">
-        {saving ? (
-          <>
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Saving
-          </>
-        ) : savedAt ? (
-          "Saved"
-        ) : null}
-      </span>,
-    );
-    return () => setActions(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saving, savedAt]);
 
   const currentHandle = (org?.agentHandle ?? "").trim();
   const normalizedInput = agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -186,46 +171,39 @@ export function BrokerAgentTab() {
     normalizedInput.length >= 3 &&
     (normalizedInput !== debouncedHandle || availability === undefined);
 
-  // Auto-save handle when debounced value is valid, available, and differs from current.
+  const handleAutoSave = useLocalFirstAutoSave({
+    mutationName: "settings.agent.claimHandle",
+    args: { handle: availability?.normalized ?? debouncedHandle },
+    valueKey: agentHandle,
+    enabled: settingsHydrated && !!org?._id,
+    canSave:
+      normalizedInput === debouncedHandle &&
+      ((debouncedHandle === currentHandle && !!debouncedHandle) ||
+        (shouldCheck && availability?.available === true)),
+    delayMs: 0,
+    flush: (args) => claimAgentHandle(args),
+    onFlushed: (normalized, args) => {
+      const savedHandle = normalized ?? args.handle;
+      setAgentHandle(savedHandle);
+      setDebouncedHandle(savedHandle);
+      patchCachedViewerOrg(store, { agentHandle: savedHandle });
+    },
+    errorMessage: (error) =>
+      error instanceof Error ? error.message : "The agent handle could not be saved.",
+  });
+
   useEffect(() => {
-    if (!hydratedRef.current) return;
-    if (!shouldCheck) return;
-    if (normalizedInput !== debouncedHandle) return;
-    if (availability === undefined) return;
-    if (!availability.available) return;
-    let cancelled = false;
-    (async () => {
-      setSavingHandle(true);
-      try {
-        const normalized = await claimAgentHandle({
-          handle: availability.normalized,
-        });
-        if (!cancelled) {
-          setAgentHandle(normalized);
-          setDebouncedHandle(normalized);
-          patchCachedViewerOrg(store, { agentHandle: normalized });
-          toast.success("Agent handle saved");
-        }
-      } catch (err) {
-        if (!cancelled)
-          toast.error(
-            err instanceof Error ? err.message : "Failed to update handle",
-          );
-      } finally {
-        if (!cancelled) setSavingHandle(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    shouldCheck,
-    normalizedInput,
-    debouncedHandle,
-    availability,
-    claimAgentHandle,
-    store,
-  ]);
+    setActions(
+      <AutoSaveStatus
+        status={combineAutoSaveStatuses(
+          settingsAutoSave.status,
+          handleAutoSave.status,
+        )}
+      />,
+    );
+    return () => setActions(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsAutoSave.status, handleAutoSave.status]);
 
   if (viewerOrg === undefined) {
     return (
@@ -270,7 +248,7 @@ export function BrokerAgentTab() {
               </span>
             </div>
             <HandleAvailability
-              saving={savingHandle}
+              saving={handleAutoSave.saving}
               checking={handleChecking}
               input={normalizedInput}
               current={currentHandle}

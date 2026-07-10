@@ -7,7 +7,6 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, X } from "lucide-react";
-import { toast } from "sonner";
 import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
 import { PolicyDeliverySection } from "@/components/settings/policy-delivery-section";
 import {
@@ -20,11 +19,15 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { useClientDetailActions } from "../layout";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 
 type Verification = "strict" | "domain" | "open";
 
 const INPUT_CLASSES =
   "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 
 export default function ClientSettingsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
@@ -50,6 +53,9 @@ export default function ClientSettingsPage() {
   const [domains, setDomains] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState("");
   const [domainInput, setDomainInput] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [domainError, setDomainError] = useState<string | null>(null);
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
   const hydratedRef = useRef(false);
 
   useEffect(() => {
@@ -63,38 +69,33 @@ export default function ClientSettingsPage() {
     setDomains(o.allowedDomains ?? []);
     setVerification(o.emailVerification ?? "domain");
     hydratedRef.current = true;
+    setSettingsHydrated(true);
   }, [org]);
 
-  useEffect(() => {
-    if (!hydratedRef.current || !clientOrgId) return;
-    const handle = setTimeout(() => {
-      void updateCachedOrg(
-        { orgId: clientOrgId as Id<"organizations"> },
+  const emailSettingsAutoSave = useLocalFirstAutoSave({
+    mutationName: `client.emailSettings.${clientOrgId}`,
+    args: {
+      clientOrgId: clientOrgId as Id<"organizations">,
+      allowedEmails: emails,
+      allowedDomains: domains,
+      emailVerification: verification,
+    },
+    enabled: settingsHydrated && !!clientOrgId,
+    delayMs: 400,
+    flush: async (args) => {
+      await updateSettings(args);
+      await updateCachedOrg(
+        { orgId: args.clientOrgId },
         (current) => ({
           ...current,
-          allowedEmails: emails,
-          allowedDomains: domains,
-          emailVerification: verification,
+          allowedEmails: args.allowedEmails,
+          allowedDomains: args.allowedDomains,
+          emailVerification: args.emailVerification,
         }),
       );
-      updateSettings({
-        clientOrgId: clientOrgId as Id<"organizations">,
-        allowedEmails: emails,
-        allowedDomains: domains,
-        emailVerification: verification,
-      }).catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Failed to save");
-      });
-    }, 400);
-    return () => clearTimeout(handle);
-  }, [
-    emails,
-    domains,
-    verification,
-    clientOrgId,
-    updateCachedOrg,
-    updateSettings,
-  ]);
+    },
+    errorMessage: "Client email verification settings could not be saved.",
+  });
 
   const memberDomains = useMemo(() => {
     const set = new Set<string>();
@@ -112,21 +113,33 @@ export default function ClientSettingsPage() {
 
   function addEmail() {
     const v = emailInput.trim().toLowerCase();
-    if (!v || !v.includes("@") || emails.includes(v)) {
+    if (!v) return;
+    if (!EMAIL_PATTERN.test(v)) {
+      setEmailError("Enter a valid email address.");
+      return;
+    }
+    if (emails.includes(v)) {
       setEmailInput("");
       return;
     }
     setEmails((arr) => [...arr, v]);
     setEmailInput("");
+    setEmailError(null);
   }
   function addDomain(raw?: string) {
     const v = (raw ?? domainInput).trim().toLowerCase().replace(/^@/, "");
-    if (!v || domains.includes(v)) {
+    if (!v) return;
+    if (!DOMAIN_PATTERN.test(v)) {
+      setDomainError("Enter a valid domain.");
+      return;
+    }
+    if (domains.includes(v)) {
       setDomainInput("");
       return;
     }
     setDomains((arr) => [...arr, v]);
     setDomainInput("");
+    setDomainError(null);
   }
 
   if (org === undefined || members === undefined) {
@@ -151,6 +164,7 @@ export default function ClientSettingsPage() {
         <OperationalPanelHeader
           title="Email verification"
           description="Choose which inbound senders count as this client when they email your agent handle."
+          action={<AutoSaveStatus status={emailSettingsAutoSave.status} />}
           className="px-6 py-5"
         />
 
@@ -185,20 +199,28 @@ export default function ClientSettingsPage() {
               Exact senders that should route to this client.
             </p>
           </div>
-          <input
-            type="email"
-            value={emailInput}
-            onChange={(e) => setEmailInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addEmail();
-              }
-            }}
-            onBlur={addEmail}
-            placeholder="name@company.com — press Enter to add"
-            className={INPUT_CLASSES}
-          />
+          <div className="space-y-1.5">
+            <input
+              type="email"
+              value={emailInput}
+              onChange={(e) => {
+                setEmailInput(e.target.value);
+                setEmailError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addEmail();
+                }
+              }}
+              onBlur={addEmail}
+              placeholder="name@company.com — press Enter to add"
+              className={INPUT_CLASSES}
+            />
+            {emailError ? (
+              <p className="text-label text-destructive">{emailError}</p>
+            ) : null}
+          </div>
           {emails.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {emails.map((e) => (
@@ -232,21 +254,29 @@ export default function ClientSettingsPage() {
               Anyone sending from these domains is recognized as this client.
             </p>
           </div>
-          <input
-            type="text"
-            value={domainInput}
-            onChange={(e) => setDomainInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addDomain();
-              }
-            }}
-            onBlur={() => addDomain()}
-            placeholder="company.com — press Enter to add"
-            disabled={verification === "strict"}
-            className={INPUT_CLASSES}
-          />
+          <div className="space-y-1.5">
+            <input
+              type="text"
+              value={domainInput}
+              onChange={(e) => {
+                setDomainInput(e.target.value);
+                setDomainError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addDomain();
+                }
+              }}
+              onBlur={() => addDomain()}
+              placeholder="company.com — press Enter to add"
+              disabled={verification === "strict"}
+              className={INPUT_CLASSES}
+            />
+            {domainError ? (
+              <p className="text-label text-destructive">{domainError}</p>
+            ) : null}
+          </div>
           {domains.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {domains.map((d) => (
