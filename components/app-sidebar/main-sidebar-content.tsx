@@ -458,18 +458,15 @@ function CollapsedThreadList({
           </Link>
         );
       })}
-      <div className="flex items-center justify-center mt-0.5">
-        <PillButton
-          type="button"
-          size="compact"
-          variant="icon"
-          onClick={onNewChat}
-          title="New thread"
-          aria-label="New thread"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </PillButton>
-      </div>
+      <button
+        type="button"
+        onClick={onNewChat}
+        title="New thread"
+        aria-label="New thread"
+        className={`mt-0.5 flex w-full items-center justify-center py-1.5 ${MENU_ITEM_BASE} ${MENU_ITEM_INACTIVE_SUBTLE}`}
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
     </>
   );
 }
