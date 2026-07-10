@@ -14,6 +14,7 @@ import { usePageContext } from "@/hooks/use-page-context";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { ClientDetailSidebarContent } from "@/components/app-sidebar/client-detail-sidebar-content";
 import { MainSidebarContent } from "@/components/app-sidebar/main-sidebar-content";
+import { SidebarTooltipProvider } from "@/components/app-sidebar/nav-item";
 import {
   AGENT_DOMAIN,
   ALL_NAV_ITEMS,
@@ -372,15 +373,17 @@ export function AppSidebar({
   }
 
   function renderBaseActiveContent(contentCollapsed: boolean) {
+    let content: React.ReactNode;
+
     if (isClientDetailMode) {
-      return renderClientDetailSidebarContent(contentCollapsed);
+      content = renderClientDetailSidebarContent(contentCollapsed);
+    } else if (isSettingsMode) {
+      content = renderSettingsSidebarContent(contentCollapsed);
+    } else {
+      content = renderSidebarContent(contentCollapsed);
     }
 
-    if (isSettingsMode) {
-      return renderSettingsSidebarContent(contentCollapsed);
-    }
-
-    return renderSidebarContent(contentCollapsed);
+    return <SidebarTooltipProvider>{content}</SidebarTooltipProvider>;
   }
 
   const activeContent = renderBaseActiveContent(collapsed);

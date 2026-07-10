@@ -1,7 +1,7 @@
 "use client";
 
 import { getSettingsSections } from "@/lib/settings-sections";
-import { NavItem } from "./nav-item";
+import { SidebarMenuItem } from "./nav-item";
 import { SidebarBrokerContact } from "./broker-contact-card";
 import { SidebarHeader } from "./sidebar-header";
 import type { BrokerContact } from "./types";
@@ -47,7 +47,7 @@ export function SettingsSidebarContent({
         {sections.map((item) => {
           const isItemActive = item.id === activeSettingsSection;
           return (
-            <NavItem
+            <SidebarMenuItem
               key={item.id}
               href={`/settings?section=${item.id}`}
               label={item.label}
