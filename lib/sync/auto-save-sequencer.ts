@@ -36,12 +36,9 @@ export function isDivergentAutoSaveRequest(
     "generation" | "resetKey" | "valueKey"
   >,
 ) {
-  return (
-    latest !== null &&
-    latest.resetKey === current.resetKey &&
-    (latest.valueKey !== current.valueKey ||
-      (!latest.settled && latest.generation !== current.generation))
-  );
+  if (latest === null || latest.resetKey !== current.resetKey) return false;
+  if (latest.generation !== current.generation) return !latest.settled;
+  return latest.valueKey !== current.valueKey;
 }
 
 export function createAutoSaveSequencer(): AutoSaveSequencer {
