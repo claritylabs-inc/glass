@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { stableHash, useSyncStore, type SyncStore } from "@claritylabs/cl-sync";
 import {
-  defineMutation,
-  stableHash,
-  useSyncStore,
-  type SyncStore,
-} from "@claritylabs/cl-sync";
+  createAutoSaveSequencer,
+  isCurrentAutoSaveRequest,
+  isDivergentAutoSaveRequest,
+  type AutoSaveRequestIdentity,
+  type AutoSaveRequestState,
+} from "@/lib/sync/auto-save-sequencer";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 
 type LocalFirstAutoSaveOptions<TArgs, TResult> = {
@@ -48,8 +50,13 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   errorMessage = "Check your connection and try again.",
 }: LocalFirstAutoSaveOptions<TArgs, TResult>) {
   const store = useSyncStore();
-  const [saving, setSaving] = useState(false);
-  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const [sequencer] = useState(createAutoSaveSequencer);
+  const [resetGeneration, setResetGeneration] = useState(0);
+  const [failedSave, setFailedSave] =
+    useState<AutoSaveRequestIdentity | null>(null);
+  const [latestRequests, setLatestRequests] = useState(
+    () => new Map<string, AutoSaveRequestState>(),
+  );
   const [lastSavedKey, setLastSavedKey] = useState(valueKey);
   const [settledResetKey, setSettledResetKey] = useState(resetKey);
   const [enabledBaselineKey, setEnabledBaselineKey] = useState<string | null>(
@@ -59,10 +66,19 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   const wasEnabledRef = useRef(enabled);
   const lastResetKeyRef = useRef(resetKey);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSavesRef = useRef(new Map<string, Promise<boolean>>());
-  const latestSaveSequenceRef = useRef(0);
+  const pendingSaveRef = useRef<{
+    generation: number;
+    requestId: number;
+    resetKey: string;
+    valueKey: string;
+    promise: Promise<boolean>;
+  } | null>(null);
+  const latestRequestsRef = useRef(new Map<string, AutoSaveRequestState>());
+  const resetGenerationRef = useRef(0);
+  const nextRequestIdRef = useRef(0);
   const argsRef = useRef(args);
   const valueKeyRef = useRef(valueKey);
+  const resetKeyRef = useRef(resetKey);
   const enabledRef = useRef(enabled);
   const canSaveRef = useRef(canSave);
   const applyLocalRef = useRef(applyLocal);
@@ -70,24 +86,10 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
   const onFlushedRef = useRef(onFlushed);
   const onErrorRef = useRef(onError);
   const errorMessageRef = useRef(errorMessage);
-  /* eslint-disable react-hooks/refs */
-  const mutation = useMemo(
-    () =>
-      defineMutation<TArgs, TResult>({
-        name: mutationName,
-        reducer: (syncStore, mutationArgs, clientMutationId) => {
-          applyLocalRef.current?.(syncStore, mutationArgs, clientMutationId);
-        },
-        flush: (mutationArgs, clientMutationId) =>
-          flushRef.current(mutationArgs, clientMutationId),
-      }),
-    [mutationName],
-  );
-  /* eslint-enable react-hooks/refs */
-
   useEffect(() => {
     argsRef.current = args;
     valueKeyRef.current = valueKey;
+    resetKeyRef.current = resetKey;
     enabledRef.current = enabled;
     canSaveRef.current = canSave;
     applyLocalRef.current = applyLocal;
@@ -104,122 +106,223 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
     flush,
     onError,
     onFlushed,
+    resetKey,
     valueKey,
   ]);
 
   useEffect(() => {
-    const unregister = store.registerMutation(mutation);
-    void store.flushPendingMutations({
-      predicate: (item) => item.mutation === mutation.name,
-    });
-    return unregister;
-  }, [mutation, store]);
-
-  useEffect(() => {
     if (resetKey === lastResetKeyRef.current) return;
     lastResetKeyRef.current = resetKey;
+    const nextGeneration = resetGenerationRef.current + 1;
+    resetGenerationRef.current = nextGeneration;
     lastSavedKeyRef.current = valueKey;
-    latestSaveSequenceRef.current += 1;
     wasEnabledRef.current = enabled;
     if (timerRef.current) clearTimeout(timerRef.current);
     setLastSavedKey(valueKey);
+    setResetGeneration(nextGeneration);
     setSettledResetKey(resetKey);
     setEnabledBaselineKey(enabled ? valueKey : null);
-    setFailedKey(null);
+    setFailedSave(null);
   }, [enabled, resetKey, valueKey]);
 
   const queueSave = useCallback(
     (options?: { force?: boolean }): Promise<boolean> => {
       const valueKey = valueKeyRef.current;
-      const pendingSave = pendingSavesRef.current.get(valueKey);
-      if (pendingSave) return pendingSave;
+      const resetKey = resetKeyRef.current;
+      const generation = resetGenerationRef.current;
+      const current = { generation, resetKey, valueKey };
+      const pendingSave = pendingSaveRef.current;
+      if (
+        pendingSave &&
+        isCurrentAutoSaveRequest(
+          pendingSave,
+          latestRequestsRef.current.get(resetKey) ?? null,
+          current,
+        )
+      ) {
+        return pendingSave.promise;
+      }
       if (!enabledRef.current || !canSaveRef.current) {
         return Promise.resolve(false);
       }
-      if (!options?.force && valueKey === lastSavedKeyRef.current) {
+      const divergentWritePending = isDivergentAutoSaveRequest(
+        latestRequestsRef.current.get(resetKey) ?? null,
+        current,
+      );
+      if (
+        !options?.force &&
+        valueKey === lastSavedKeyRef.current &&
+        !divergentWritePending
+      ) {
         return Promise.resolve(true);
       }
       if (timerRef.current) clearTimeout(timerRef.current);
 
       const queuedKey = valueKey;
+      const queuedResetKey = resetKey;
       const queuedArgs = argsRef.current;
-      const saveSequence = latestSaveSequenceRef.current + 1;
-      latestSaveSequenceRef.current = saveSequence;
+      const requestId = nextRequestIdRef.current + 1;
+      nextRequestIdRef.current = requestId;
       const clientMutationId = createClientMutationId(mutationName);
-      setSaving(true);
-      setFailedKey((current) => (current === queuedKey ? null : current));
-
-      const result = store.enqueueMutation(
-        mutation,
-        queuedArgs,
-        clientMutationId,
+      setFailedSave(null);
+      const request = {
+        generation,
+        requestId,
+        resetKey: queuedResetKey,
+        valueKey: queuedKey,
+      };
+      const dispatchedSave = {
+        ...request,
+        settled: false,
+      };
+      latestRequestsRef.current.set(queuedResetKey, dispatchedSave);
+      setLatestRequests((current) =>
+        new Map(current).set(queuedResetKey, dispatchedSave),
       );
+
+      const queuedApplyLocal = applyLocalRef.current;
+      const queuedFlush = flushRef.current;
+      const result = Promise.resolve().then(() => {
+        return sequencer.run(() =>
+          queuedFlush(queuedArgs, clientMutationId),
+        );
+      });
+      const isRequestCurrent = () =>
+        enabledRef.current &&
+        isCurrentAutoSaveRequest(
+          request,
+          latestRequestsRef.current.get(queuedResetKey) ?? null,
+          {
+            generation: resetGenerationRef.current,
+            resetKey: resetKeyRef.current,
+            valueKey: valueKeyRef.current,
+          },
+        );
 
       const promise = result
         .then((flushResult) => {
-          if (saveSequence === latestSaveSequenceRef.current) {
+          if (
+            generation === resetGenerationRef.current &&
+            queuedResetKey === resetKeyRef.current
+          ) {
             lastSavedKeyRef.current = queuedKey;
             setLastSavedKey(queuedKey);
           }
-          setFailedKey((current) => (current === queuedKey ? null : current));
-          onFlushedRef.current?.(flushResult, queuedArgs);
-          return true;
+          const isCurrent = isRequestCurrent();
+          if (isCurrent) {
+            queuedApplyLocal?.(store, queuedArgs, clientMutationId);
+            setFailedSave(null);
+            onFlushedRef.current?.(flushResult, queuedArgs);
+          }
+          return isCurrent;
         })
         .catch((error) => {
-          setFailedKey(queuedKey);
-          onErrorRef.current?.(error, queuedArgs);
-          const detail =
-            typeof errorMessageRef.current === "function"
-              ? errorMessageRef.current(error, queuedArgs)
-              : errorMessageRef.current;
-          toast.error("Changes weren’t saved", {
-            id: `auto-save:${mutationName}`,
-            description: detail,
-          });
+          if (isRequestCurrent()) {
+            setFailedSave(request);
+            onErrorRef.current?.(error, queuedArgs);
+            const detail =
+              typeof errorMessageRef.current === "function"
+                ? errorMessageRef.current(error, queuedArgs)
+                : errorMessageRef.current;
+            toast.error("Changes weren’t saved", {
+              id: `auto-save:${mutationName}`,
+              description: detail,
+            });
+          }
           return false;
         })
         .finally(() => {
-          pendingSavesRef.current.delete(queuedKey);
-          const hasPendingSaves = pendingSavesRef.current.size > 0;
-          setSaving(hasPendingSaves);
+          if (pendingSaveRef.current?.requestId === requestId) {
+            pendingSaveRef.current = null;
+          }
+          const latestRequest = latestRequestsRef.current.get(queuedResetKey);
+          if (latestRequest?.requestId === requestId) {
+            const settledSave = {
+              ...latestRequest,
+              settled: true,
+            };
+            latestRequestsRef.current.set(queuedResetKey, settledSave);
+            setLatestRequests((current) => {
+              if (current.get(queuedResetKey)?.requestId !== requestId) {
+                return current;
+              }
+              return new Map(current).set(queuedResetKey, settledSave);
+            });
+          }
         });
 
-      pendingSavesRef.current.set(queuedKey, promise);
+      pendingSaveRef.current = {
+        generation,
+        requestId,
+        resetKey: queuedResetKey,
+        valueKey: queuedKey,
+        promise,
+      };
       return promise;
     },
-    [mutation, mutationName, store],
+    [mutationName, sequencer, store],
   );
+
+  const latestRequest = latestRequests.get(resetKey) ?? null;
 
   useEffect(() => {
     if (!enabled) {
+      if (wasEnabledRef.current) {
+        const nextGeneration = resetGenerationRef.current + 1;
+        resetGenerationRef.current = nextGeneration;
+        setResetGeneration(nextGeneration);
+      }
       wasEnabledRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- re-enabling must adopt the hydrated value instead of saving it
       setEnabledBaselineKey(null);
       return;
     }
 
     if (!wasEnabledRef.current) {
       lastSavedKeyRef.current = valueKey;
-      latestSaveSequenceRef.current += 1;
       wasEnabledRef.current = true;
       setLastSavedKey(valueKey);
       setEnabledBaselineKey(valueKey);
-      setFailedKey(null);
+      setFailedSave(null);
       return;
     }
 
-    if (valueKey === lastSavedKeyRef.current) {
+    const divergentWritePending = isDivergentAutoSaveRequest(
+      latestRequest,
+      {
+        generation: resetGenerationRef.current,
+        resetKey,
+        valueKey,
+      },
+    );
+    const failedCurrentRequest =
+      failedSave !== null &&
+      isCurrentAutoSaveRequest(failedSave, latestRequest, {
+        generation: resetGenerationRef.current,
+        resetKey,
+        valueKey,
+      });
+
+    if (valueKey === lastSavedKeyRef.current && !divergentWritePending) {
       if (timerRef.current) clearTimeout(timerRef.current);
       return;
     }
 
-    if (!canSave || !autoSave) {
+    if (failedCurrentRequest) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      return;
+    }
+
+    if (!autoSave) {
       if (timerRef.current) clearTimeout(timerRef.current);
       return;
     }
 
     if (timerRef.current) clearTimeout(timerRef.current);
+    if (!canSave) {
+      return;
+    }
+
     timerRef.current = setTimeout(() => {
       void queueSave();
     }, delayMs);
@@ -227,19 +330,60 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [autoSave, canSave, delayMs, enabled, queueSave, valueKey]);
+  }, [
+    autoSave,
+    canSave,
+    delayMs,
+    enabled,
+    failedSave,
+    latestRequest,
+    queueSave,
+    resetKey,
+    valueKey,
+  ]);
 
   const resetting = resetKey !== settledResetKey;
   const resuming = enabled && enabledBaselineKey === null;
+  const divergentWritePending = isDivergentAutoSaveRequest(
+    latestRequest,
+    { generation: resetGeneration, resetKey, valueKey },
+  );
+  const currentRequestPending =
+    latestRequest !== null &&
+    !latestRequest.settled &&
+    isCurrentAutoSaveRequest(latestRequest, latestRequest, {
+      generation: resetGeneration,
+      resetKey,
+      valueKey,
+    });
   const dirty =
-    enabled && !resetting && !resuming && valueKey !== lastSavedKey;
-  const status: AutoSaveStatus = !dirty
-    ? "saved"
-    : failedKey === valueKey
-      ? "error"
+    enabled &&
+    !resetting &&
+    !resuming &&
+    (valueKey !== lastSavedKey ||
+      divergentWritePending ||
+      currentRequestPending);
+  const current = {
+    generation: resetGeneration,
+    resetKey,
+    valueKey,
+  };
+  const saving = currentRequestPending;
+  const failed =
+    failedSave !== null &&
+    isCurrentAutoSaveRequest(failedSave, latestRequest, current);
+  const status: AutoSaveStatus = failed
+    ? "error"
+    : !dirty
+      ? "saved"
       : saving || (autoSave && canSave)
         ? "saving"
         : "unsaved";
 
-  return { saving, status, saveNow: queueSave };
+  const saveNow = useCallback(
+    (options?: { force?: boolean }) => queueSave(options),
+    [queueSave],
+  );
+
+  return { saving, status, saveNow };
 }

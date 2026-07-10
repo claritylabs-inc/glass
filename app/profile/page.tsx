@@ -187,7 +187,7 @@ export default function ProfilePage() {
     args: currentValues,
     valueKey: JSON.stringify(currentValues),
     enabled: persistedValues !== null,
-    canSave: hasChanges && !phoneBlocked,
+    canSave: !phoneBlocked,
     applyLocal: (store, next) => {
       const collection = cachedQueryCollectionFor<Viewer>("users.viewer");
       const argsKey = cachedQueryArgsKey({});

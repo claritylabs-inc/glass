@@ -243,7 +243,7 @@ export default function OperatorPage() {
     valueKey: brokerSettingsValueKey,
     resetKey: selected?._id ?? "none",
     enabled: panelMode === "details" && !!selected,
-    canSave: settingsDirty && !brokerSettingsValidationError,
+    canSave: !brokerSettingsValidationError,
     delayMs: 800,
     flush: async (args) => {
       await updateBrokerSettings(args);

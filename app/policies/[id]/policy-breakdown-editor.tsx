@@ -234,9 +234,9 @@ export function PolicyBreakdownEditor({
       id: policy._id,
       fields: pendingFields,
     },
-    valueKey: JSON.stringify({ id: policy._id, fields: pendingFields }),
+    valueKey: JSON.stringify({ id: policy._id, draft }),
     enabled: !readOnly,
-    canSave: !readOnly && Object.keys(pendingFields).length > 0,
+    canSave: !readOnly,
     delayMs: 500,
     applyLocal: (store, args) => {
       for (const cacheName of ["policies.get", "policies.getSummary"]) {

@@ -39,11 +39,40 @@ describe("auto-save surfaces", () => {
   it("marks saves complete only after the backend flush resolves", () => {
     const hook = read("lib/sync/use-local-first-auto-save.ts");
     const flushResolution = hook.indexOf(".then((flushResult)");
-    const confirmedKey = hook.indexOf("lastSavedKeyRef.current = queuedKey");
+    const confirmedKey = hook.indexOf(
+      "lastSavedKeyRef.current = queuedKey",
+      flushResolution,
+    );
 
     expect(flushResolution).toBeGreaterThan(-1);
     expect(confirmedKey).toBeGreaterThan(flushResolution);
     expect(hook).toContain('toast.error("Changes weren’t saved"');
+  });
+
+  it("tracks raw validated inputs and the complete policy draft as intent", () => {
+    const organization = read("components/settings/organization-section.tsx");
+    const agent = read("components/settings/broker-agent-tab.tsx");
+    const policy = read("app/policies/[id]/policy-breakdown-editor.tsx");
+
+    expect(organization).toContain("valueKey: slug");
+    expect(agent).toContain("valueKey: agentHandle");
+    expect(policy).toContain(
+      "valueKey: JSON.stringify({ id: policy._id, draft })",
+    );
+  });
+
+  it("keeps dirty-state decisions in the hook and stale writes out of the durable outbox", () => {
+    const hook = read("lib/sync/use-local-first-auto-save.ts");
+    const profile = read("app/profile/page.tsx");
+    const broker = read("app/operator/page.tsx");
+    const client = read("app/operator/clients/page.tsx");
+
+    expect(hook).toContain("sequencer.run");
+    expect(hook).not.toContain("enqueueMutation");
+    expect(hook).not.toContain("flushPendingMutations");
+    expect(profile).not.toContain("canSave: hasChanges");
+    expect(broker).not.toContain("canSave: settingsDirty");
+    expect(client).not.toContain("canSave: settingsDirty");
   });
 
   it("defers long-form text until blur without blocking validated controls", () => {

@@ -136,13 +136,12 @@ export function OrganizationSection() {
       brokerOrgId: currentOrg?.orgId as Id<"organizations">,
       slug: debouncedSlug,
     },
-    valueKey: debouncedSlug,
+    valueKey: slug,
     enabled: isBroker && !!currentOrg?.orgId && settingsHydrated,
     canSave:
       debouncedSlug.length >= 3 &&
-      debouncedSlug !== currentSlug &&
       slug === debouncedSlug &&
-      slugCheck?.available === true,
+      (debouncedSlug === currentSlug || slugCheck?.available === true),
     delayMs: 0,
     flush: (args) => updateSlug(args),
     onFlushed: (normalized, args) => {
