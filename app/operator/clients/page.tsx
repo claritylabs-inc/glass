@@ -659,7 +659,7 @@ export default function OperatorClientsPage() {
           </Field>
         </form>
       ) : selected ? (
-        <div className="space-y-4">
+        <fieldset disabled={busy} className="space-y-4">
           <section className="space-y-3">
             <Field label="Broker">
               <Select
@@ -792,7 +792,7 @@ export default function OperatorClientsPage() {
               />
             ))}
           </section>
-        </div>
+        </fieldset>
       ) : null}
     </SettingsDrawer>
   );

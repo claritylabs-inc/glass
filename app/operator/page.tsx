@@ -539,7 +539,7 @@ export default function OperatorPage() {
           </Field>
         </form>
       ) : selected ? (
-        <section className="space-y-3">
+        <fieldset disabled={busy} className="space-y-3">
           <Field label="Signup slug">
             <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
               <span className="flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
@@ -632,7 +632,7 @@ export default function OperatorPage() {
               placeholder="(555) 123-4567"
             />
           </Field>
-        </section>
+        </fieldset>
       ) : null}
     </SettingsDrawer>
   );

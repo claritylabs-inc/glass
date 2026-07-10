@@ -172,6 +172,12 @@ describe("auto-save surfaces", () => {
     expect(client.indexOf("await saveClientSettingsBeforeAction()")).toBeLessThan(
       client.indexOf("await launchClient"),
     );
+    expect(broker).toContain(
+      '<fieldset disabled={busy} className="space-y-3">',
+    );
+    expect(client).toContain(
+      '<fieldset disabled={busy} className="space-y-4">',
+    );
     expect(organization.indexOf("await saveOrganizationBeforeAction()")).toBeLessThan(
       organization.indexOf("await resetAccount()"),
     );
