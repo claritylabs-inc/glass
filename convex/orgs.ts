@@ -895,7 +895,10 @@ export const updateOrg = mutation({
 
 export const setFeatureFlag = mutation({
   args: {
-    flagId: v.literal("connect_features"),
+    flagId: v.union(
+      v.literal("connect_features"),
+      v.literal("coverage_recovery_v2"),
+    ),
     enabled: v.boolean(),
   },
   handler: async (ctx, args) => {

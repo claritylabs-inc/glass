@@ -45,6 +45,7 @@ type WorkerState = {
   policyFileId?: string;
   traceId?: string;
   externalWorker?: boolean;
+  coverageRecovery?: { enabled: boolean; forcedByOperator?: boolean };
 };
 
 type ClaimedJob = {
@@ -68,7 +69,11 @@ type ModelProvider =
   | "fireworks"
   | "deepseek";
 
-type ModelTask = "extraction" | "extraction_preview" | "classification";
+type ModelTask =
+  | "extraction"
+  | "extraction_preview"
+  | "extraction_coverage_recovery"
+  | "classification";
 
 type WorkerModelRoute = {
   provider: ModelProvider;
@@ -459,6 +464,7 @@ const WORKER_STATIC_ROUTES: Record<ModelTask, WorkerModelRoute> = {
   classification: MODEL_POLICY_TASK_ROUTES.classification,
   extraction: MODEL_POLICY_TASK_ROUTES.extraction,
   extraction_preview: MODEL_POLICY_TASK_ROUTES.extraction_preview,
+  extraction_coverage_recovery: MODEL_POLICY_TASK_ROUTES.extraction_coverage_recovery,
 };
 
 const WORKER_COVERAGE_CLEANUP_ROUTE: WorkerModelRoute =
@@ -655,6 +661,7 @@ function routeToModel(route: WorkerModelRoute, apiKey?: string): LanguageModel {
 function modelTaskForTaskKind(taskKind?: string): ModelTask {
   if (taskKind === "extraction_preview") return "extraction_preview";
   if (taskKind === "extraction_classify") return "classification";
+  if (taskKind === "extraction_coverage_recovery") return "extraction_coverage_recovery";
   return "extraction";
 }
 
@@ -1460,6 +1467,7 @@ function buildWorkerExtractor(opts: {
     ([
       "extraction_source_tree",
       "extraction_operational_profile",
+      "extraction_coverage_recovery",
       "extraction_coverage_cleanup",
       "extraction_review",
       "extraction_referential_lookup",
@@ -2297,6 +2305,7 @@ async function completeJob(
     ? (result as unknown as { sourceTree: Array<Record<string, unknown>> }).sourceTree
     : [];
   const operationalProfile = (result as unknown as { operationalProfile?: unknown }).operationalProfile;
+  const coverageRecovery = result.coverageRecovery;
   const warnings = Array.isArray((result as unknown as { warnings?: unknown[] }).warnings)
     ? (result as unknown as { warnings: unknown[] }).warnings.filter((item): item is string => typeof item === "string")
     : [];
@@ -2317,6 +2326,7 @@ async function completeJob(
     sourceChunks,
     sourceTree: resultSourceTree,
     operationalProfile,
+    coverageRecovery,
     warnings,
     tokenUsage: result.tokenUsage,
     performanceReport: result.performanceReport
@@ -2427,6 +2437,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
                 sourceSpans: converted.sourceSpans as unknown as Array<Record<string, unknown>>,
               }
             : {}),
+          coverageRecovery: job.state.coverageRecovery ?? { enabled: false },
         },
       );
     } catch (error) {
@@ -2457,6 +2468,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
                 sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>>,
               }
             : {}),
+          coverageRecovery: job.state.coverageRecovery ?? { enabled: false },
         },
       );
     }

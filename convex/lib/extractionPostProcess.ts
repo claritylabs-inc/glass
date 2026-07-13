@@ -25,6 +25,7 @@ type ExtractionPostProcessOptions = {
   document: Record<string, unknown>;
   sourceSpans: SourceSpanLike[];
   runModelReview?: boolean;
+  skipDeterministicCoverageRecovery?: boolean;
   log?: (message: string, level?: "info" | "warn" | "error") => Promise<void> | void;
 };
 
@@ -570,11 +571,21 @@ export async function postProcessExtractionDocument(
   await logRemovedSourceSensitiveValues(groundedDocument.removed, options.log);
 
   const mappedFields = insuranceDocToPolicy(document as never);
-  const scopedCoverage = applyCoverageDeclarationScoping({
-    fields: mappedFields,
-    sourceSpans: options.sourceSpans,
-    nowMs: dayjs().valueOf(),
-  });
+  const scopedCoverage = options.skipDeterministicCoverageRecovery
+    ? {
+        fields: mappedFields,
+        review: {
+          strategyVersion: "coverage-declaration-scope-v1" as const,
+          generatedAt: dayjs().valueOf(),
+          questions: [],
+        },
+        changed: false,
+      }
+    : applyCoverageDeclarationScoping({
+        fields: mappedFields,
+        sourceSpans: options.sourceSpans,
+        nowMs: dayjs().valueOf(),
+      });
   if (scopedCoverage.changed && scopedCoverage.review.questions.length > 0) {
     await options.log?.(
       `Coverage scoping found ${scopedCoverage.review.questions.length} limit question${scopedCoverage.review.questions.length === 1 ? "" : "s"} for declaration review`,

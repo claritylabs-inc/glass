@@ -14,6 +14,7 @@ export type ModelTask =
   | "email_reply"
   | "extraction"
   | "extraction_preview"
+  | "extraction_coverage_recovery"
   | "classification"
   | "requirement_extraction"
   | "org_memory_extraction"
@@ -89,6 +90,7 @@ export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
   email_reply: "Inbound email replies",
   extraction: "Policy extraction",
   extraction_preview: "Fast policy extraction",
+  extraction_coverage_recovery: "Coverage recovery",
   classification: "Classification",
   requirement_extraction: "Requirement extraction",
   org_memory_extraction: "Org memory extraction",
@@ -113,6 +115,8 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
     "Standard bound-policy extraction route after LiteParse preprocessing: focused fields, source review, and post-processing.",
   extraction_preview:
     "Fast preview route for policy-list fields extracted from LiteParse text before full enrichment completes.",
+  extraction_coverage_recovery:
+    "Document-wide source-tree recovery for missing coverage terms, asset schedules, premiums, taxes, fees, and total payable.",
   classification:
     "Fast routing route for document kind, request intent, delivery rules, extraction/query classification, and other small decisions.",
   requirement_extraction:
@@ -382,6 +386,7 @@ export const MODEL_TASK_GROUPS = [
       "requirement_extraction",
       "org_memory_extraction",
       "extraction",
+      "extraction_coverage_recovery",
       "document_extraction",
       "email_extraction",
     ],
@@ -408,6 +413,7 @@ export const OPERATOR_MODEL_ROUTE_GROUPS = [
       "requirement_extraction",
       "org_memory_extraction",
       "extraction",
+      "extraction_coverage_recovery",
       "extraction_quality",
       "extraction_coverage_cleanup",
       "fallback",

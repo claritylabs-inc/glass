@@ -234,6 +234,7 @@ const LOW_COST_NO_ESCALATION_TASKS = new Set<ModelTask>([
   "classification",
   "extraction",
   "extraction_preview",
+  "extraction_coverage_recovery",
   "requirement_extraction",
   "org_memory_extraction",
   "email_extraction",
@@ -250,6 +251,7 @@ function sameRoute(left?: ModelRoute, right?: ModelRoute): boolean {
 export function modelTaskForCall(baseTask: ModelTask, taskKind?: ModelCallTaskKind): ModelTask {
   if (!taskKind) return baseTask;
   if (taskKind === "extraction_classify") return "classification";
+  if (taskKind === "extraction_coverage_recovery") return "extraction_coverage_recovery";
   if (taskKind.startsWith("extraction_")) return "extraction";
   if (taskKind === "query_classify") return "classification";
   if (taskKind.startsWith("query_")) return "chat";

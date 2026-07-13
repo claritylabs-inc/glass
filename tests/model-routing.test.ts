@@ -160,6 +160,42 @@ describe("model task routing", () => {
     expect(workerSource).toContain('"extraction_coverage_cleanup"');
   });
 
+  test("routes coverage recovery independently through GPT-5.4 Mini", () => {
+    const modelSettings = readFileSync(
+      join(__dirname, "../convex/modelSettings.ts"),
+      "utf-8",
+    );
+    const workerSource = readFileSync(
+      join(__dirname, "../extraction-worker/src/index.ts"),
+      "utf-8",
+    );
+    const routingPolicy = readFileSync(
+      join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts"),
+      "utf-8",
+    );
+
+    expect(defaultModelRouteForId("extraction_coverage_recovery")).toEqual({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+    expect(MODEL_ROUTE_LABELS.extraction_coverage_recovery).toBe(
+      "Coverage recovery",
+    );
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "extraction_coverage_recovery",
+    );
+    expect(modelSettings).toContain(
+      "extraction_coverage_recovery: v.optional(routeUpdateValidator)",
+    );
+    expect(modelTaskForCall("extraction", "extraction_coverage_recovery")).toBe(
+      "extraction_coverage_recovery",
+    );
+    expect(routingPolicy).toContain(
+      'extraction_coverage_recovery: { provider: "openai", model: "gpt-5.4-mini" }',
+    );
+    expect(workerSource).toContain('"extraction_coverage_recovery"');
+  });
+
   test("keeps embeddings on the OpenAI-compatible 1536-dimensional route during migration", () => {
     expect(MODEL_ROUTING.embeddings).toEqual({
       provider: "openai",
