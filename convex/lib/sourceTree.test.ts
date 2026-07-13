@@ -748,7 +748,7 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.policyNumber).toBeUndefined();
   });
 
-  it("keeps model-provided placeholder coverage terms without source repair", () => {
+  it("keeps policy billing out of coverage rows even when the model labels it as coverage", () => {
     const spans: SourceSpanLike[] = [
       { id: "annual-premium", text: "If paying annually, the total initial annual premium for this policy is $XXX.XX.", pageStart: 5 },
     ];
@@ -781,7 +781,7 @@ describe("normalizeOperationalProfile", () => {
       spans,
     );
 
-    expect(profile.coverages[0].limits?.[0]?.value).toBe("$XXX");
+    expect(profile.coverages).toEqual([]);
   });
 
   it("infers policy types from extracted coverage labels when the model returns other", () => {
@@ -1535,5 +1535,180 @@ describe("sourceTreePolicyFields", () => {
         label: "Commercial General Liability",
       }),
     ]);
+  });
+
+  it("preserves source-backed policy party addresses and operations descriptions", () => {
+    const spans: SourceSpanLike[] = [
+      { id: "span-insured-address", text: "Named Insured Acme LLC 1 Client St Toronto ON M5A 1A1" },
+      { id: "span-producer-address", text: "Producer Broker LLC License PR-123 2 Broker St Toronto ON M5B 1B1" },
+      { id: "span-insurer-address", text: "Insurer Fortegra Specialty Insurance Company NAIC 16823 3 Carrier St Toronto ON M5C 1C1" },
+      { id: "span-general-agent-address", text: "General Agent Diesel Insurance Solutions Inc. License 21058436 4 General Agent St Toronto ON M5D 1D1" },
+      { id: "span-operations", text: "Business operations software implementation services" },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "document",
+        documentId: "policy-parties",
+        kind: "document",
+        title: "Policy",
+        description: "Policy",
+        sourceSpanIds: spans.map((span) => String(span.id)),
+        order: 0,
+        path: "Policy",
+      },
+      {
+        id: "declarations",
+        documentId: "policy-parties",
+        parentId: "document",
+        kind: "section",
+        title: "Declarations",
+        description: "Declarations",
+        sourceSpanIds: spans.map((span) => String(span.id)),
+        order: 1,
+        path: "Policy / Declarations",
+      },
+    ];
+    const profile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+        parties: [
+          { role: "named_insured", name: "Acme LLC", address: { street1: "1 Client St", city: "Toronto", state: "ON", zip: "M5A 1A1" }, sourceNodeIds: ["declarations"], sourceSpanIds: ["span-insured-address"] },
+          { role: "producer", name: "Broker LLC", licenseNumber: "PR-123", address: { street1: "2 Broker St", city: "Toronto", state: "ON", zip: "M5B 1B1" }, sourceNodeIds: ["declarations"], sourceSpanIds: ["span-producer-address"] },
+          { role: "insurer", name: "Fortegra Specialty Insurance Company", naicNumber: "16823", address: { street1: "3 Carrier St", city: "Toronto", state: "ON", zip: "M5C 1C1" }, sourceNodeIds: ["declarations"], sourceSpanIds: ["span-insurer-address"] },
+          { role: "general_agent", name: "Diesel Insurance Solutions Inc.", licenseNumber: "21058436", address: { street1: "4 General Agent St", city: "Toronto", state: "ON", zip: "M5D 1D1" }, sourceNodeIds: ["declarations"], sourceSpanIds: ["span-general-agent-address"] },
+        ],
+        operationsDescription: {
+          value: "Software implementation services",
+          sourceNodeIds: ["declarations"],
+          sourceSpanIds: ["span-operations"],
+        },
+      },
+      nodes,
+      spans,
+    );
+
+    expect((profile as any).operationsDescription).toMatchObject({
+      value: "Software implementation services",
+      sourceSpanIds: ["span-operations"],
+    });
+    expect((profile.parties as any[]).find((party) => party.role === "general_agent")).toMatchObject({
+      name: "Diesel Insurance Solutions Inc.",
+      licenseNumber: "21058436",
+      address: { street1: "4 General Agent St" },
+    });
+
+    const fields = operationalProfilePolicyFields(profile, {
+      insurer: { legalName: "Fortegra Specialty Insurance Company" },
+      producer: { agencyName: "Broker LLC", phone: "555-0100" },
+    });
+    expect(fields.insuredAddress).toMatchObject({ street1: "1 Client St" });
+    expect(fields.insuredAddress).toMatchObject({
+      documentNodeId: "declarations",
+      sourceSpanIds: ["span-insured-address"],
+    });
+    expect(fields.producer).toMatchObject({
+      agencyName: "Broker LLC",
+      licenseNumber: "PR-123",
+      phone: "555-0100",
+      address: { street1: "2 Broker St" },
+      sourceSpanIds: ["span-producer-address"],
+    });
+    expect(fields.brokerLicenseNumber).toBe("PR-123");
+    expect(fields.insurer).toMatchObject({
+      legalName: "Fortegra Specialty Insurance Company",
+      naicNumber: "16823",
+      address: { street1: "3 Carrier St" },
+      sourceSpanIds: ["span-insurer-address"],
+    });
+    expect(fields.carrierNaicNumber).toBe("16823");
+    expect(fields.generalAgent).toMatchObject({
+      agencyName: "Diesel Insurance Solutions Inc.",
+      licenseNumber: "21058436",
+      address: { street1: "4 General Agent St" },
+    });
+  });
+
+  it("drops operations descriptions whose evidence ids are invalid", () => {
+    const profile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+        operationsDescription: {
+          value: "Invented operations description",
+          sourceNodeIds: ["missing-node"],
+          sourceSpanIds: ["missing-span"],
+        },
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    expect((profile as any).operationsDescription).toBeUndefined();
+  });
+
+  it("merges declaration recovery into the operational projection without coverage premiums", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["AUTOB"],
+        premium: {
+          value: "$5,166.32",
+          normalizedValue: "5166.32",
+          sourceNodeIds: ["period-row"],
+          sourceSpanIds: ["span-period"],
+        },
+        coverages: [{
+          name: "Commercial Auto Physical Damage",
+          lineOfBusiness: "AUTOB",
+          premium: "$1,300.00",
+          limits: [{
+            kind: "premium",
+            label: "Premium",
+            value: "$1,300.00",
+            sourceNodeIds: ["period-row"],
+            sourceSpanIds: ["span-period"],
+          }],
+          sourceNodeIds: ["period-row"],
+          sourceSpanIds: ["span-period"],
+        }],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+      existingLinesOfBusiness: ["AUTOB"],
+      existingPolicyFields: {
+        premium: "$4,572.40",
+        premiumAmount: 4572.4,
+        totalCost: "$5,166.32",
+        premiumBreakdown: [{ line: "Physical Damage", amount: "$1,300.00", sourceSpanIds: ["span-period"] }],
+        coverages: [{
+          name: "Commercial Auto Physical Damage",
+          lineOfBusiness: "AUTOB",
+          limit: "$250,000",
+          limits: [{
+            kind: "each_occurrence_limit",
+            label: "Maximum per Occurrence",
+            value: "$250,000",
+            sourceNodeIds: ["period-row"],
+            sourceSpanIds: ["span-period"],
+          }],
+          sourceNodeIds: ["period-row"],
+          sourceSpanIds: ["span-period"],
+        }],
+      },
+    });
+
+    expect(fields).toMatchObject({ premium: "$4,572.40", premiumAmount: 4572.4 });
+    expect((fields.coverages as Array<Record<string, unknown>>)[0]).toMatchObject({
+      name: "Commercial Auto Physical Damage",
+      limit: "$250,000",
+    });
+    expect((fields.coverages as Array<Record<string, unknown>>)[0]).not.toHaveProperty("premium");
+    expect(((fields.operationalProfile as PolicyOperationalProfile).coverages[0] as Record<string, unknown>)).not.toHaveProperty("premium");
   });
 });

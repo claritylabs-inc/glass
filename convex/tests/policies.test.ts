@@ -9,7 +9,7 @@ test("policies schema accepts uploadedBySide=broker", () => {
 });
 
 // Task 2: Capability helpers
-import { assertCanUploadPolicy, assertCanDeletePolicy } from "../lib/access";
+import { assertCanArchivePolicy, assertCanUploadPolicy } from "../lib/access";
 import type { OrgAccess } from "../lib/access";
 
 function makeMemberAccess(): OrgAccess {
@@ -42,14 +42,14 @@ test("assertCanUploadPolicy allows broker_of_client", () => {
   expect(() => assertCanUploadPolicy(makeBrokerAccess())).not.toThrow();
 });
 
-test("assertCanDeletePolicy blocks broker deleting client-uploaded policy", () => {
+test("assertCanArchivePolicy blocks broker archiving client-uploaded policy", () => {
   const policy = { uploadedBySide: "client" as const, uploadedByBrokerOrgId: undefined };
-  expect(() => assertCanDeletePolicy(makeBrokerAccess(), policy)).toThrow();
+  expect(() => assertCanArchivePolicy(makeBrokerAccess(), policy)).toThrow();
 });
 
-test("assertCanDeletePolicy allows broker deleting their own uploaded policy", () => {
+test("assertCanArchivePolicy allows broker archiving their own uploaded policy", () => {
   const policy = { uploadedBySide: "broker" as const, uploadedByBrokerOrgId: "b1" as any };
-  expect(() => assertCanDeletePolicy(makeBrokerAccess("b1"), policy)).not.toThrow();
+  expect(() => assertCanArchivePolicy(makeBrokerAccess("b1"), policy)).not.toThrow();
 });
 
 // Task 3: Event type helpers
@@ -90,9 +90,9 @@ test("provenance fields are accepted in schema (structural test)", () => {
   expect(policyShape.orgId).toBe("orgId");
 });
 
-test("softDelete blocks broker deleting a client-uploaded policy", () => {
+test("archive blocks a broker from archiving a client-uploaded policy", () => {
   const policy = { uploadedBySide: "client" as const, uploadedByBrokerOrgId: undefined };
-  expect(() => assertCanDeletePolicy(makeBrokerAccess(), policy)).toThrow(
-    "Not authorized to delete this policy",
+  expect(() => assertCanArchivePolicy(makeBrokerAccess(), policy)).toThrow(
+    "Not authorized to archive this policy",
   );
 });

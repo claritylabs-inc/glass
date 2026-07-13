@@ -4,10 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import type { ActionCtx } from "../_generated/server";
 import { generateCoiPdf, policyToCoiData } from "../lib/coiGenerator";
 import { logAiError } from "../lib/aiUtils";
-import { generateObjectForOrg } from "../lib/models";
 import {
   CERTIFICATE_FORM_FILE_SLUGS,
   CERTIFICATE_FORM_LABELS,
@@ -19,15 +17,9 @@ import {
   type EndorsementCitation,
 } from "../lib/certificateEndorsements";
 import {
-  CertificateDescriptionSchema,
-  buildCertificateDescriptionContext,
-  buildCertificateDescriptionFallback,
-  buildCertificateDescriptionPrompt,
-  certificateDescriptionSystemPrompt,
-  hasCertificateDescriptionContext,
-  isUsableCertificateDescription,
   normalizeCertificateDescription,
 } from "../lib/certificateDescription";
+import { effectiveOrganizationProfileFacts } from "../lib/orgProfileFacts";
 
 const holderAddressValidator = v.object({
   line1: v.optional(v.string()),
@@ -245,83 +237,18 @@ function certificatePropertyExtras(policy: Record<string, any>) {
 }
 
 type GenerateCoiDescriptionArgs = {
-  orgId: Id<"organizations">;
-  policyId: Id<"policies">;
-  certificateHolder?: string;
-  certificateHolderName?: string;
-  requestKind?: "holder" | "additional_insured";
-  additionalInsuredName?: string;
-  holderRelationship?: string;
   descriptionOfOperations?: string;
-  endorsements?: EndorsementCitation[];
 };
 
-async function fillCertificateDescription(
-  ctx: ActionCtx,
+function fillCertificateDescription(
   args: GenerateCoiDescriptionArgs,
-  policy: Record<string, any>,
   coiData: ReturnType<typeof policyToCoiData>,
 ) {
-  const context = buildCertificateDescriptionContext(policy, coiData, {
-    certificateHolder: args.certificateHolder,
-    certificateHolderName: args.certificateHolderName,
-    requestKind: args.requestKind,
-    additionalInsuredName: args.additionalInsuredName,
-    holderRelationship: args.holderRelationship,
-    descriptionOfOperations: args.descriptionOfOperations,
-    endorsements: args.endorsements,
-  });
   const requestedDescription = normalizeCertificateDescription(args.descriptionOfOperations);
-  const requestedUsableDescription =
-    requestedDescription && isUsableCertificateDescription(requestedDescription)
-      ? requestedDescription
-      : undefined;
-  const fallback = buildCertificateDescriptionFallback(
-    context,
-    requestedUsableDescription ?? coiData.description,
-  );
-  if (!hasCertificateDescriptionContext(context)) {
-    return {
-      ...coiData,
-      description: fallback || (
-        coiData.description && isUsableCertificateDescription(coiData.description)
-          ? coiData.description
-          : undefined
-      ),
-    };
-  }
-
-  try {
-    const result = await generateObjectForOrg(
-      ctx,
-      args.orgId,
-      "summary",
-      {
-        schema: CertificateDescriptionSchema,
-        system: certificateDescriptionSystemPrompt(),
-        prompt: buildCertificateDescriptionPrompt({
-          context,
-          existingDescription: requestedUsableDescription ?? coiData.description,
-        }),
-      },
-    );
-    const description = normalizeCertificateDescription(result.object.description);
-    return {
-      ...coiData,
-      description: description && isUsableCertificateDescription(description)
-        ? description
-        : ((requestedUsableDescription ?? fallback) || undefined),
-    };
-  } catch (err) {
-    logAiError("generateCoi.description", err, {
-      policyId: args.policyId,
-      orgId: args.orgId,
-    });
-    return {
-      ...coiData,
-      description: (requestedUsableDescription ?? fallback) || undefined,
-    };
-  }
+  return {
+    ...coiData,
+    description: requestedDescription || coiData.description,
+  };
 }
 
 /**
@@ -374,6 +301,7 @@ export const run = internalAction({
     certificateVersionId?: string;
     versionNumber?: number;
     formCode: CertificateFormCode;
+    descriptionOfOperations?: string;
   }> => {
     try {
       const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
@@ -386,7 +314,13 @@ export const run = internalAction({
         holderRelationship: args.holderRelationship,
         operationalProfile: (policy as Record<string, unknown>).operationalProfile,
       });
-      let coiData = policyToCoiData(policy);
+      const org = await ctx.runQuery(internal.orgs.getInternal, { id: args.orgId });
+      let coiData = policyToCoiData(policy, {
+        clientProfileFacts:
+          org && typeof org === "object"
+            ? effectiveOrganizationProfileFacts(org as Record<string, unknown>)
+            : undefined,
+      });
       coiData = {
         ...coiData,
         ...certificatePropertyExtras(policy as Record<string, any>),
@@ -399,12 +333,9 @@ export const run = internalAction({
       if (args.certificateHolder) {
         coiData.certificateHolder = args.certificateHolder;
       }
-      if (args.requestKind === "additional_insured" && args.additionalInsuredName) {
-        coiData.description = [
-          coiData.description,
-          `Additional Insured: ${args.additionalInsuredName}`,
-        ].filter(Boolean).join("\n\n");
-      }
+      coiData = fillCertificateDescription({
+        descriptionOfOperations: args.descriptionOfOperations,
+      }, coiData);
       const endorsements = args.endorsements as EndorsementCitation[] | undefined;
       coiData = applyEndorsementsToCertificateData(coiData, {
         endorsements,
@@ -422,17 +353,13 @@ export const run = internalAction({
         certificateNumber: String(lifecycle.policyCertificateId),
         revisionNumber: String(nextVersionNumber),
       };
-      coiData = await fillCertificateDescription(ctx, {
-        orgId: args.orgId,
-        policyId: args.policyId,
-        certificateHolder: args.certificateHolder,
-        certificateHolderName: args.certificateHolderName,
-        requestKind: args.requestKind,
-        additionalInsuredName: args.additionalInsuredName,
-        holderRelationship: args.holderRelationship,
-        descriptionOfOperations: args.descriptionOfOperations,
-        endorsements,
-      }, policy as Record<string, any>, coiData);
+      const finalDescriptionOfOperations = normalizeCertificateDescription(
+        coiData.description,
+      );
+      coiData = {
+        ...coiData,
+        description: finalDescriptionOfOperations,
+      };
       const pdfBuffer = await generateCoiPdf(coiData);
 
       // Store in Convex file storage
@@ -464,6 +391,7 @@ export const run = internalAction({
         additionalInsuredName: args.additionalInsuredName,
         formCode,
         requestSignature: args.requestSignature,
+        descriptionOfOperations: finalDescriptionOfOperations,
       });
       const issuedVersion = await ctx.runMutation(
         (internal as any).certificateLifecycle.recordIssuedVersionInternal,
@@ -488,6 +416,7 @@ export const run = internalAction({
           additionalInsuredName: args.additionalInsuredName,
           formCode,
           requestSignature: args.requestSignature,
+          descriptionOfOperations: finalDescriptionOfOperations,
           createdByUserId: args.createdByUserId,
         },
       );
@@ -502,6 +431,7 @@ export const run = internalAction({
         certificateVersionId: String(issuedVersion.versionId),
         versionNumber: issuedVersion.versionNumber,
         formCode,
+        descriptionOfOperations: finalDescriptionOfOperations,
       };
     } catch (err) {
       logAiError("generateCoi", err, { policyId: args.policyId });

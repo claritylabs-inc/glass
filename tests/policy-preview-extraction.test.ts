@@ -28,7 +28,9 @@ describe("policy preview extraction", () => {
     expect(routingPolicy).toContain(
       'extraction_preview: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash }',
     );
-    expect(worker).toContain('type ModelTask = "extraction" | "extraction_preview" | "classification"');
+    expect(worker).toContain("type ModelTask =");
+    expect(worker).toContain('| "extraction_preview"');
+    expect(worker).toContain('| "extraction_coverage_recovery"');
     expect(worker).toContain("POLICY_PREVIEW_VERSION");
     expect(worker).toContain("claimExternalPreviewJob");
     expect(worker).toContain('resolveFallbackModel(route.task, "extraction_preview", route.route, job.modelSettings)');
@@ -95,7 +97,9 @@ describe("policy preview extraction", () => {
     expect(policies).toContain("function isVisiblePolicyListRow");
     expect(policies).toContain("if (isPreviewReadablePolicy(policy)) return true");
     expect(policies).toContain('if (policy.pipelineStatus === "error") return true');
-    expect(policies).toContain("isVisiblePolicyListRow(p) &&");
+    expect(policies).toContain("isVisiblePolicyListRow(p)");
+    expect(policies).toContain("args.archived");
+    expect(policies).toContain("Boolean(p.deletedAt)");
   });
 
   it("uses extraction toasts instead of inline placeholder rows", () => {

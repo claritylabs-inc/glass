@@ -1,10 +1,21 @@
 "use client";
 
+import { useMemo } from "react";
+import type { Id } from "@/convex/_generated/dataModel";
+import { usePdf } from "@/components/pdf-context";
 import {
   OperationalPanel,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
+import { formatDisplayDate } from "@/lib/date-format";
+import {
+  sourceEvidenceTarget,
+  type SourceNodeEvidenceDoc,
+  type SourceSpanDoc,
+  usePolicySourceNodes,
+  usePolicySourceSpans,
+} from "./source-provenance";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -38,24 +49,134 @@ function coverageTermRows(row: CoverageBreakdownRow) {
   if (!hasLabel(/\bdeductible\b|\bretention\b/)) {
     push("Deductible", row.deductible);
   }
-  if (!hasLabel(/\bpremium\b/)) push("Premium", row.premium);
   if (!hasLabel(/\bretroactive\b/)) {
-    push("Retroactive Date", row.retroactiveDate);
+    push(
+      "Retroactive Date",
+      row.retroactiveDate
+        ? formatDisplayDate(row.retroactiveDate, row.retroactiveDate)
+        : undefined,
+    );
   }
   return terms;
 }
 
-function formLabel(row: CoverageBreakdownRow) {
-  return [row.formNumber, row.sectionRef].filter(Boolean).join(" | ");
+function CoveredAssetScheduleList({
+  schedule,
+  fileUrl,
+  sourceSpans,
+}: {
+  schedule: CoverageBreakdown["schedules"][number];
+  fileUrl?: string | null;
+  sourceSpans?: SourceSpanDoc[];
+}) {
+  const pdf = usePdf();
+  return (
+    <OperationalPanel>
+      <OperationalPanelHeader title={schedule.name} />
+      {schedule.description ? (
+        <div className="border-t border-foreground/6 px-4 py-3 text-base text-muted-foreground">
+          {schedule.description}
+        </div>
+      ) : null}
+      <div>
+        {schedule.items.map((item, index) => {
+          const target = sourceEvidenceTarget(
+            item.sourceSpanIds.length ? item.sourceSpanIds : schedule.sourceSpanIds,
+            sourceSpans,
+            schedule.pageStart,
+          );
+          const canOpenSource = Boolean(fileUrl && target);
+          const openSource = () => {
+            if (!fileUrl || !target) return;
+            pdf.openWithUrl(fileUrl, target.page, target.highlightBoxes);
+          };
+          return (
+            <section
+              key={`${item.label}:${index}`}
+              role={canOpenSource ? "button" : undefined}
+              tabIndex={canOpenSource ? 0 : undefined}
+              onClick={canOpenSource ? openSource : undefined}
+              onKeyDown={canOpenSource ? (event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                openSource();
+              } : undefined}
+              className={`border-t border-foreground/6 px-4 py-3 first:border-t-0 ${
+                canOpenSource ? "cursor-pointer transition-colors hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40" : ""
+              }`}
+            >
+              <div className="text-base font-medium text-foreground">{item.label}</div>
+              {item.description ? (
+                <div className="mt-1 text-base text-muted-foreground">{item.description}</div>
+              ) : null}
+              {item.values.length ? (
+                <dl className="mt-3 divide-y divide-foreground/6">
+                  {item.values.map((value, valueIndex) => (
+                    <div key={`${value.label}:${valueIndex}`} className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0">
+                      <dt className="text-base text-muted-foreground">{value.label}</dt>
+                      <dd className="text-right text-base font-medium text-foreground">{value.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+            </section>
+          );
+        })}
+      </div>
+    </OperationalPanel>
+  );
+}
+
+export function coverageSourceNodeIds(row: CoverageBreakdownRow) {
+  return [...new Set([
+    ...(row.sourceNodeIds ?? []),
+    ...(row.documentNodeId ? [row.documentNodeId] : []),
+    ...(row.limits ?? []).flatMap((term) => term.sourceNodeIds ?? []),
+  ])];
+}
+
+export function coverageSourceSpanIds(
+  row: CoverageBreakdownRow,
+  sourceNodes?: SourceNodeEvidenceDoc[],
+) {
+  const requestedNodeIds = new Set(coverageSourceNodeIds(row));
+  return [...new Set([
+    ...(row.sourceSpanIds ?? []),
+    ...(row.limits ?? []).flatMap((term) => term.sourceSpanIds ?? []),
+    ...(sourceNodes ?? [])
+      .filter((node) => requestedNodeIds.has(node.nodeId))
+      .flatMap((node) => node.sourceSpanIds),
+  ])];
+}
+
+export function coverageFallbackPage(
+  row: CoverageBreakdownRow,
+  sourceNodes?: SourceNodeEvidenceDoc[],
+) {
+  const requestedNodeIds = new Set(coverageSourceNodeIds(row));
+  return (
+    sourceNodes?.find(
+      (node) => requestedNodeIds.has(node.nodeId) && node.pageStart != null,
+    )?.pageStart ??
+    row.pageNumber ??
+    row.resolvedFromPage
+  );
 }
 
 function CoverageScheduleList({
   rows,
   title,
+  fileUrl,
+  sourceNodes,
+  sourceSpans,
 }: {
   rows: CoverageBreakdownRow[];
   title: string;
+  fileUrl?: string | null;
+  sourceNodes?: SourceNodeEvidenceDoc[];
+  sourceSpans?: SourceSpanDoc[];
 }) {
+  const pdf = usePdf();
   if (!rows.length) return null;
 
   return (
@@ -67,22 +188,49 @@ function CoverageScheduleList({
           const visibleTerms = terms.length
             ? terms
             : [{ label: "Limit", value: row.limit ?? "—" }];
-          const form = formLabel(row);
+          const target = sourceEvidenceTarget(
+            coverageSourceSpanIds(row, sourceNodes),
+            sourceSpans,
+            coverageFallbackPage(row, sourceNodes),
+          );
+          const canOpenSource = Boolean(fileUrl && target);
+
+          function openSource() {
+            if (!fileUrl || !target) return;
+            pdf.openWithUrl(fileUrl, target.page, target.highlightBoxes);
+          }
 
           return (
             <section
               key={`${row.name}:${row.limit ?? ""}:${rowIndex}`}
-              className="border-t border-foreground/6 px-4 py-3 first:border-t-0"
+              role={canOpenSource ? "button" : undefined}
+              tabIndex={canOpenSource ? 0 : undefined}
+              title={canOpenSource ? `Open source on page ${target?.page}` : undefined}
+              aria-label={
+                canOpenSource
+                  ? `Open source for ${row.name} on page ${target?.page}`
+                  : undefined
+              }
+              onClick={canOpenSource ? openSource : undefined}
+              onKeyDown={
+                canOpenSource
+                  ? (event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      openSource();
+                    }
+                  : undefined
+              }
+              className={`border-t border-foreground/6 px-4 py-3 first:border-t-0 ${
+                canOpenSource
+                  ? "cursor-pointer transition-colors hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+                  : ""
+              }`}
             >
               <div className="min-w-0">
                 <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
                   {row.name}
                 </div>
-                {form ? (
-                  <div className="mt-1 text-label leading-4 text-muted-foreground [overflow-wrap:anywhere]">
-                    {form}
-                  </div>
-                ) : null}
               </div>
               <dl className="mt-3 divide-y divide-foreground/6">
                 {visibleTerms.map((term, termIndex) => (
@@ -109,10 +257,33 @@ function CoverageScheduleList({
 
 export function CoverageBreakdownCards({
   breakdown,
+  policyId,
+  fileUrl,
 }: {
   breakdown: CoverageBreakdown;
+  policyId?: Id<"policies">;
+  fileUrl?: string | null;
 }) {
-  if (!breakdown.all.length) return null;
+  const allSourceNodeIds = useMemo(
+    () => [...new Set(breakdown.all.flatMap(coverageSourceNodeIds))],
+    [breakdown.all],
+  );
+  const sourceNodes = usePolicySourceNodes(policyId, allSourceNodeIds);
+  const allSourceSpanIds = useMemo(
+    () => [...new Set(
+      [
+        ...breakdown.all.flatMap((row) => coverageSourceSpanIds(row, sourceNodes)),
+        ...breakdown.schedules.flatMap((schedule) => [
+          ...schedule.sourceSpanIds,
+          ...schedule.items.flatMap((item) => item.sourceSpanIds),
+        ]),
+      ],
+    )],
+    [breakdown.all, breakdown.schedules, sourceNodes],
+  );
+  const sourceSpans = usePolicySourceSpans(policyId, allSourceSpanIds);
+
+  if (!breakdown.all.length && !breakdown.schedules.length) return null;
   const groups = [
     ...breakdown.groups.map((group) => ({
       key: group.lineOfBusiness,
@@ -134,6 +305,17 @@ export function CoverageBreakdownCards({
           key={group.key}
           rows={group.rows}
           title={group.title}
+          fileUrl={fileUrl}
+          sourceNodes={sourceNodes}
+          sourceSpans={sourceSpans}
+        />
+      ))}
+      {breakdown.schedules.map((schedule, index) => (
+        <CoveredAssetScheduleList
+          key={`${schedule.name}:${schedule.pageStart ?? index}`}
+          schedule={schedule}
+          fileUrl={fileUrl}
+          sourceSpans={sourceSpans}
         />
       ))}
     </div>

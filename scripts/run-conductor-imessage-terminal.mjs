@@ -16,22 +16,25 @@ const { site } = await waitForLocalConvex();
 const workerEnv = Object.fromEntries(
   parseEnvFile(path.join(repoRoot, ".context", "imessage-worker.env")),
 );
+const terminalEnvironment = {
+  ...process.env,
+  ...workerEnv,
+  CONVEX_SITE_URL: site,
+  GLASS_ENV: "local",
+  IMESSAGE_ENABLED: "false",
+  SPECTRUM_PROVIDER: "terminal",
+  PORT: String(imessage),
+  WORKER_HTTP_PORT: String(imessage),
+  NO_COLOR: "1",
+};
+delete terminalEnvironment.FORCE_COLOR;
 
 const child = spawn(
   "script",
   ["-q", "/dev/null", process.execPath, "imessage-worker/dist/index.js"],
   {
     cwd: repoRoot,
-    env: {
-      ...process.env,
-      ...workerEnv,
-      CONVEX_SITE_URL: site,
-      GLASS_ENV: "local",
-      IMESSAGE_ENABLED: "false",
-      SPECTRUM_PROVIDER: "terminal",
-      PORT: String(imessage),
-      WORKER_HTTP_PORT: String(imessage),
-    },
+    env: terminalEnvironment,
     stdio: "inherit",
   },
 );

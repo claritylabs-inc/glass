@@ -24,6 +24,14 @@ import {
 } from "../lib/chatTools";
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import {
+  addToolStep,
+  appendReasoningDelta,
+  beginReasoningStep,
+  completeToolStep,
+  serializeAgentSteps,
+  type AgentStep,
+} from "../lib/agentSteps";
+import {
   buildScopedDocumentContext,
   buildScopedOrgMemoryContext,
   buildScopedRequirementsContext,
@@ -70,6 +78,7 @@ import {
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 import { buildAssistantMessageContentWithArtifacts } from "../lib/agentMessageHistory";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
+import { modelSupportsImageInput } from "../lib/modelCatalog";
 import {
   loadWebChatDeterministicControlState,
   runWebChatEmailControls,
@@ -409,6 +418,14 @@ type ChatContentPart =
 
 const MAX_ATTACHMENT_TEXT_CHARS = 80_000;
 const RECENT_ATTACHMENT_MESSAGE_LIMIT = 6;
+
+export function messageHistoryHasImageInput(history: ModelMessage[]) {
+  return history.some(
+    (message) =>
+      Array.isArray(message.content) &&
+      message.content.some((part) => part.type === "image"),
+  );
+}
 
 async function buildAttachmentParts(
   ctx: ActionCtx,
@@ -955,6 +972,7 @@ export const run = internalAction({
           allMessages as Array<Record<string, unknown>>,
           latestUserMsg?._id ? String(latestUserMsg._id) : undefined,
         );
+      const hasImageInput = messageHistoryHasImageInput(messageHistory);
 
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, {
@@ -1212,6 +1230,11 @@ export const run = internalAction({
         input?: string;
         output?: string;
       }> = [];
+      // Ordered timeline of reasoning segments and tool calls, saved alongside
+      // the legacy concatenated `reasoning` string so the UI can interleave.
+      const agentSteps: AgentStep[] = [];
+      const agentStepsSnapshot = () =>
+        serializeAgentSteps(agentSteps, normalizeReasoningText);
       const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
         filename: string;
@@ -1415,7 +1438,8 @@ export const run = internalAction({
         "coordinate_mailbox_task",
       ]);
 
-      const chatModel = await getModelAndRouteForOrg(ctx, args.orgId, "chat");
+      const chatTask = hasImageInput ? "chat_vision" : "chat";
+      const chatModel = await getModelAndRouteForOrg(ctx, args.orgId, chatTask);
       const startChatStream = (
         model: typeof chatModel.model,
         route: typeof chatModel.route,
@@ -1433,6 +1457,7 @@ export const run = internalAction({
       const resetStreamStateForRetry = async () => {
         content = "";
         reasoning = "";
+        agentSteps.length = 0;
         hasStartedReasoning = false;
         lastFlush = dayjs().valueOf();
         lastReasoningFlush = dayjs().valueOf();
@@ -1443,6 +1468,7 @@ export const run = internalAction({
         await ctx.runMutation(internal.threads.streamReasoning, {
           id: agentMsgId,
           reasoning: "",
+          agentSteps: [],
         });
       };
 
@@ -1460,12 +1486,17 @@ export const run = internalAction({
           if (await isAgentResponseCancelled()) return false;
           if (part.type === "error") {
             throw part;
+          } else if (part.type === "reasoning-start") {
+            // Each provider reasoning block becomes its own timeline segment
+            beginReasoningStep(agentSteps);
           } else if (part.type === "reasoning-delta") {
             // Stream reasoning separately from content
-            reasoning +=
+            const delta =
               ((part as Record<string, unknown>).text as string) ??
               ((part as Record<string, unknown>).delta as string) ??
               "";
+            reasoning += delta;
+            appendReasoningDelta(agentSteps, delta);
             if (!hasStartedReasoning) {
               hasStartedReasoning = true;
             }
@@ -1476,6 +1507,7 @@ export const run = internalAction({
               await ctx.runMutation(internal.threads.streamReasoning, {
                 id: agentMsgId,
                 reasoning: normalizeReasoningText(reasoning),
+                agentSteps: agentStepsSnapshot(),
               });
             }
           } else if (part.type === "text-delta") {
@@ -1495,9 +1527,21 @@ export const run = internalAction({
                 | Record<string, unknown>
                 | undefined) ?? undefined;
             usedTools.push(part.toolName);
+            const serializedInput = input
+              ? JSON.stringify(input).slice(0, 500)
+              : undefined;
             toolCalls.push({
               name: part.toolName,
-              input: input ? JSON.stringify(input).slice(0, 500) : undefined,
+              input: serializedInput,
+            });
+            addToolStep(agentSteps, {
+              name: part.toolName,
+              input: serializedInput,
+            });
+            await ctx.runMutation(internal.threads.streamReasoning, {
+              id: agentMsgId,
+              reasoning: normalizeReasoningText(reasoning),
+              agentSteps: agentStepsSnapshot(),
             });
             const label =
               TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
@@ -1522,6 +1566,13 @@ export const run = internalAction({
             if (lastToolCall && SUBAGENT_TOOL_NAMES.has(lastToolName)) {
               lastToolCall.output = serializeToolOutput(output);
             }
+            completeToolStep(
+              agentSteps,
+              lastToolName,
+              SUBAGENT_TOOL_NAMES.has(lastToolName)
+                ? serializeToolOutput(output)
+                : undefined,
+            );
             if (lastToolName === "render_email_preview" && output) {
               if (
                 output &&
@@ -1606,6 +1657,11 @@ export const run = internalAction({
               id: agentMsgId,
               content: restoreSentenceBoundarySpacing(content || ""),
             });
+            await ctx.runMutation(internal.threads.streamReasoning, {
+              id: agentMsgId,
+              reasoning: normalizeReasoningText(reasoning),
+              agentSteps: agentStepsSnapshot(),
+            });
           }
         }
         return true;
@@ -1627,13 +1683,20 @@ export const run = internalAction({
         }
 
         const fallbackRoute = fallbackRouteForCall({
-          task: "chat",
+          task: chatTask,
           taskKind: "query_reason",
           primaryRoute: chatModel.route,
           fallbackRoute: chatModel.fallbackRoute,
         });
-        const retryRoute = fallbackRoute ?? chatModel.route;
-        const retryModel = fallbackRoute ? getModelForRoute(fallbackRoute) : chatModel.model;
+        const compatibleFallbackRoute =
+          fallbackRoute &&
+          (!hasImageInput || modelSupportsImageInput(fallbackRoute))
+            ? fallbackRoute
+            : null;
+        const retryRoute = compatibleFallbackRoute ?? chatModel.route;
+        const retryModel = compatibleFallbackRoute
+          ? getModelForRoute(compatibleFallbackRoute)
+          : chatModel.model;
         console.warn(
           `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
         );
@@ -1696,6 +1759,8 @@ export const run = internalAction({
           citedSourceSpanIds.size > 0 ? [...citedSourceSpanIds] : undefined,
         usedTools: usedTools.length > 0 ? usedTools : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        agentSteps:
+          agentSteps.length > 0 ? agentStepsSnapshot() : undefined,
         toolArtifacts: toolArtifacts.length > 0 ? toolArtifacts : undefined,
         attachments:
           responseAttachments.length > 0 ? responseAttachments : undefined,
@@ -1830,6 +1895,7 @@ export const run = internalAction({
         await ctx.runMutation(internal.threads.streamReasoning, {
           id: agentMsgId,
           reasoning: normalizeReasoningText(reasoning),
+          agentSteps: agentStepsSnapshot(),
         });
       }
 

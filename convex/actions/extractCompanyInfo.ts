@@ -46,6 +46,9 @@ type ExtractCompanyInfoResult = {
   industry?: string;
   industryVertical?: string;
 } & Partial<Omit<CompanyInfo, "companyContext" | "industry" | "industryVertical">>;
+type OrgLogoImportResult =
+  | { success: true; iconStorageId: Id<"_storage">; error?: undefined }
+  | { success: false; iconStorageId?: undefined; error: string };
 
 function normalizeWebsiteUrl(url: string) {
   const trimmed = url.trim();
@@ -116,6 +119,23 @@ async function storeFaviconForOrg(
     iconStorageId,
   });
   return iconStorageId;
+}
+
+async function importOrgLogoForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  rawUrl: string,
+): Promise<OrgLogoImportResult> {
+  const url = normalizeWebsiteUrl(rawUrl);
+  if (!url) return { success: false, error: "Website URL is required" } as const;
+  const iconStorageId = await storeFaviconForOrg(ctx, orgId, url);
+  if (!iconStorageId) {
+    return {
+      success: false,
+      error: "Could not find a logo for this website",
+    } as const;
+  }
+  return { success: true, iconStorageId } as const;
 }
 
 async function extractAndApplyCompanyInfo(
@@ -212,7 +232,7 @@ ${content}`,
 async function resolveTargetOrgId(
   ctx: ActionCtx,
   orgId: Id<"organizations"> | undefined,
-) {
+): Promise<Id<"organizations">> {
   const viewer = await ctx.runQuery(api.users.viewer);
   if (!viewer) throw new Error("Not authenticated");
   const viewerOrg: { org: { _id: Id<"organizations"> } } | null = await ctx.runQuery(
@@ -251,15 +271,21 @@ export const importOrgLogoFromWebsite = action({
     iconStorageId: v.optional(v.id("_storage")),
     error: v.optional(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<OrgLogoImportResult> => {
     const targetOrgId = await resolveTargetOrgId(ctx, args.orgId);
-    const url = normalizeWebsiteUrl(args.url);
-    if (!url) return { success: false, error: "Website URL is required" };
-    const iconStorageId = await storeFaviconForOrg(ctx, targetOrgId, url);
-    if (!iconStorageId) {
-      return { success: false, error: "Could not find a logo for this website" };
-    }
-    return { success: true, iconStorageId };
+    return await importOrgLogoForOrg(ctx, targetOrgId, args.url);
+  },
+});
+
+export const importOrgLogoForOrgInternal = internalAction({
+  args: { url: v.string(), orgId: v.id("organizations") },
+  returns: v.object({
+    success: v.boolean(),
+    iconStorageId: v.optional(v.id("_storage")),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args): Promise<OrgLogoImportResult> => {
+    return await importOrgLogoForOrg(ctx, args.orgId, args.url);
   },
 });
 

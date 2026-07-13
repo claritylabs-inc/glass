@@ -56,6 +56,18 @@ export const listForOrgInternal = internalQuery({
     policyId: v.optional(v.id("policies")),
   },
   handler: async (ctx, args) => {
+    const activePolicies = args.policyId
+      ? [await ctx.db.get(args.policyId)]
+      : await ctx.db
+          .query("policies")
+          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+          .collect();
+    const activePolicyIds = new Set(
+      activePolicies
+        .filter((policy) => policy?.orgId === args.orgId && !policy.deletedAt)
+        .map((policy) => String(policy!._id)),
+    );
+    if (args.policyId && !activePolicyIds.has(String(args.policyId))) return [];
     const rows = args.policyId
       ? await ctx.db
           .query("policyVersions")
@@ -67,7 +79,10 @@ export const listForOrgInternal = internalQuery({
           .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
           .collect();
     return rows
-      .filter((row) => row.orgId === args.orgId)
+      .filter(
+        (row) =>
+          row.orgId === args.orgId && activePolicyIds.has(String(row.policyId)),
+      )
       .sort((left, right) => right.createdAt - left.createdAt);
   },
 });

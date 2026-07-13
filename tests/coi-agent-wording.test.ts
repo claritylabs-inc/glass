@@ -1,5 +1,13 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import { describe, expect, it } from "vitest";
 import { buildConfidenceInstructions, buildPolicyToolInstructions } from "../convex/lib/aiUtils";
+
+const ROOT = join(__dirname, "..");
+
+function read(path: string) {
+  return readFileSync(join(ROOT, path), "utf-8");
+}
 
 describe("COI agent wording", () => {
   it("tells agents to describe COIs as generated certificates, not wording pulls", () => {
@@ -12,6 +20,44 @@ describe("COI agent wording", () => {
     expect(instructions).toContain("Never say COIs were generated, attached, sent, emailed, or are being emailed");
     expect(instructions).toContain("Treat every generated COI as informational");
     expect(instructions).not.toContain("program-administrator");
+    expect(instructions).toContain("policyParties");
+    expect(instructions).toContain("Do not use public web search");
+  });
+
+  it("keeps external insurance parties policy-scoped in agent results", () => {
+    const executors = read("convex/lib/agentToolExecutors.ts");
+    const partyContext = read("convex/lib/policyPartyContext.ts");
+    const chatTools = read("convex/lib/chatTools.ts");
+
+    expect(executors).toContain("policyParties: partyContext.parties");
+    expect(executors).toContain("carrier: partyContext.insurerName ?? policy.security");
+    expect(partyContext).toContain("options.clientProfileFacts?.operationsDescription");
+    expect(partyContext.indexOf("address(policy.insuredAddress)")).toBeLessThan(
+      partyContext.indexOf("options.clientProfileFacts?.mailingAddress"),
+    );
+    expect(partyContext).not.toContain("clientProfileFacts.insuranceParties");
+    expect(chatTools).toContain("policy-scoped Producer, insurer, carrier, and General Agent parties");
+  });
+
+  it("keeps internal certificate form codes out of agent inputs and outputs", () => {
+    const chatTools = read("convex/lib/chatTools.ts");
+    const agentToolExecutors = read("convex/lib/agentToolExecutors.ts");
+    const certificates = read("convex/certificates.ts");
+    const existingResult = certificates.slice(
+      certificates.indexOf("function existingCertificateResult"),
+      certificates.indexOf("function ambiguousHolderResult"),
+    );
+    const generatedResult = certificates.slice(
+      certificates.indexOf('status: "generated"'),
+      certificates.indexOf("export const recordGenerated"),
+    );
+
+    expect(chatTools).not.toContain("certificateForm");
+    expect(chatTools).not.toContain("ACORD-style");
+    expect(agentToolExecutors).not.toContain("params.certificateForm");
+    expect(agentToolExecutors).not.toContain("generated.formCode");
+    expect(existingResult).not.toContain("formCode:");
+    expect(generatedResult).not.toContain("formCode:");
   });
 });
 

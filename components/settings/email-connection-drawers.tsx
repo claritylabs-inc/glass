@@ -45,6 +45,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { FormSection } from "@/components/ui/form-section";
 import { Label } from "@/components/ui/label";
 import {
   OperationalLabelValueList,
@@ -627,10 +628,7 @@ export function MailboxSettingsDrawer({
         </OperationalPanel>
       ) : (
         <div className="space-y-5">
-          <section className="space-y-2">
-            <h2 className="text-base font-medium text-foreground">
-              Connection health
-            </h2>
+          <FormSection title="Connection health" divided={false}>
             <OperationalLabelValueList>
               <OperationalLabelValueRow
                 label="Status"
@@ -646,12 +644,9 @@ export function MailboxSettingsDrawer({
                 <OperationalLabelValueRow label="Issue" value={error} />
               ) : null}
             </OperationalLabelValueList>
-          </section>
+          </FormSection>
 
-          <section className="space-y-2">
-            <h2 className="text-base font-medium text-foreground">
-              Organization sharing
-            </h2>
+          <FormSection title="Organization sharing">
             <OperationalPanel as="div" className="space-y-3 p-4">
               <div className="space-y-1.5">
                 <Label>Available to</Label>
@@ -668,12 +663,9 @@ export function MailboxSettingsDrawer({
                 Just me.
               </p>
             </OperationalPanel>
-          </section>
+          </FormSection>
 
-          <section className="space-y-2">
-            <h2 className="text-base font-medium text-foreground">
-              Proactive monitoring
-            </h2>
+          <FormSection title="Proactive monitoring">
             {!account.automationConfigured ? (
               <p className="rounded-lg border border-foreground/6 bg-foreground/3 px-3 py-2 text-base text-muted-foreground">
                 {account.scope === "org"
@@ -686,7 +678,7 @@ export function MailboxSettingsDrawer({
               onChange={setAutomation}
               disabled={!canManageMailbox}
             />
-          </section>
+          </FormSection>
         </div>
       )}
 

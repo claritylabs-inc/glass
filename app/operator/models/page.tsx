@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import dayjs from "dayjs";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
@@ -30,6 +29,7 @@ import {
   useCachedOperatorGlobalModelSettings,
   useOperatorGlobalModelSettingsCacheActions,
 } from "@/lib/sync/operator-cached-queries";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type ProviderId =
   | "openai"
@@ -457,7 +457,7 @@ export default function OperatorModelsPage() {
 
   const actions = settings?.updatedAt ? (
     <span className="text-label text-muted-foreground">
-      Updated {dayjs(settings.updatedAt).format("MMM D")}
+      Updated {formatDisplayDate(settings.updatedAt)}
     </span>
   ) : null;
 

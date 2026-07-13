@@ -169,13 +169,13 @@ describe("directed email sending", () => {
     );
 
     expect(settingsPageSource).toContain("isStandaloneClient");
-    expect(settingsPageSource).toContain("getSettingsSections");
-    expect(settingsSectionsSource).toContain("CLIENT_SETTINGS_WITH_AGENT");
-    expect(settingsSectionsSource).toContain("if (isStandaloneClient) return CLIENT_SETTINGS_WITH_AGENT");
-    expect(settingsPageSource).toContain("section === \"agent\" && isStandaloneClient");
+    expect(settingsPageSource).toContain("getSettingsNavigation");
     expect(settingsSectionsSource).toContain("isStandaloneClient");
-    expect(settingsSectionsSource).toContain("CLIENT_SETTINGS_WITH_AGENT");
-    expect(settingsSectionsSource).toContain("CLIENT_SETTINGS_SECTIONS");
+    expect(settingsSectionsSource).toContain('id: "behavior"');
+    expect(settingsPageSource).toContain('section === "agent"');
+    expect(settingsSectionsSource).toContain("isBroker || isStandaloneClient");
+    expect(settingsSectionsSource).toContain('id: "agent"');
+    expect(settingsSectionsSource).toContain('id: "memory"');
     expect(sidebarSource).toContain("isStandaloneClient");
     expect(sidebarSource).toContain("isStandaloneClient={isStandaloneClient}");
     expect(agentTabSource).toContain('org?.type === "broker"');

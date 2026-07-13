@@ -18,7 +18,8 @@ export default function BrokerClientPolicyDetailPage({
       onBreadcrumb={setBreadcrumbExtra}
       onActions={setActions}
       onRightPanel={setRightPanel}
-      afterDeleteHref={`/clients/${clientOrgId}/policies`}
+      afterArchiveHref={`/clients/${clientOrgId}/policies?view=archived`}
+      afterRestoreHref={`/clients/${clientOrgId}/policies`}
     />
   );
 }

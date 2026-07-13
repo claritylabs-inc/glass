@@ -159,7 +159,7 @@ describe("connected email surfaces", () => {
     expect(mailboxTask).toContain('scope === "vendors" ? "vendor_requirements" : "other"');
   });
 
-  it("keeps connected mailboxes on a dedicated email settings section with provider presets", () => {
+  it("keeps integrations and mailboxes on separate settings pages", () => {
     const sections = read("lib/settings-sections.ts");
     const settingsPage = read("app/settings/page.tsx");
     const connections = read("components/settings/connections-section.tsx");
@@ -168,7 +168,9 @@ describe("connected email surfaces", () => {
     const emailUi = read("components/settings/email-connection-ui.tsx");
     const emailSettings = [emailList, emailDrawers, emailUi].join("\n");
 
-    expect(sections).toContain('id: "email"');
+    expect(sections).toContain('id: "integrations"');
+    expect(sections).toContain('id: "mailboxes"');
+    expect(settingsPage).toContain('<ConnectionsSection tab={tab} />');
     expect(settingsPage).toContain("<EmailConnectionsSection />");
     expect(connections).not.toContain("connectedEmailAccounts");
     expect(emailDrawers).toContain("SettingsDrawer");

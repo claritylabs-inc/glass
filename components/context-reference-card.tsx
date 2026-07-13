@@ -72,7 +72,8 @@ export function PolicyReferenceCard({
     );
   }
 
-  const administrator =
+  const generalAgent =
+    (policy as { generalAgent?: { agencyName?: string } }).generalAgent?.agencyName ||
     (policy as { mga?: string }).mga ||
     policy.carrier ||
     policy.security ||
@@ -83,7 +84,7 @@ export function PolicyReferenceCard({
     ? lobLabel(linesOfBusiness[0])
     : null;
 
-  const summaryParts = [administrator, policyNum].filter(Boolean).join(" ");
+  const summaryParts = [generalAgent, policyNum].filter(Boolean).join(" ");
   const summary = primaryLine
     ? `${summaryParts} — ${primaryLine}`
     : summaryParts;

@@ -48,6 +48,12 @@ const commands = [
   `PORT=${imessage} node scripts/run-conductor-imessage-terminal.mjs`,
 ];
 
+const runEnvironment = {
+  ...process.env,
+  CONDUCTOR_RUN_MARKER: markerPath,
+};
+delete runEnvironment.NO_COLOR;
+
 console.log(`Glass web:              http://localhost:${web}`);
 console.log(`Extraction worker:      http://localhost:${extraction}/health`);
 console.log(`Spectrum terminal HTTP: http://localhost:${imessage}/health`);
@@ -71,10 +77,7 @@ const child = spawn(
   ],
   {
     cwd: repoRoot,
-    env: {
-      ...process.env,
-      CONDUCTOR_RUN_MARKER: markerPath,
-    },
+    env: runEnvironment,
     stdio: "inherit",
   },
 );

@@ -17,6 +17,11 @@ import {
   type ImessageDeliveryFailure,
   type ImessageResponseAttachment,
 } from "./convex.js";
+import {
+  isE164Phone,
+  parseTerminalIdentityCommand,
+  terminalIdentityLabel,
+} from "./terminalIdentity.js";
 
 type MiniAppLayout = {
   caption?: string;
@@ -113,6 +118,12 @@ const TERMINAL_FROM_PHONE =
   process.env.DEV_IMESSAGE_FROM_PHONE ??
   "";
 const TERMINAL_SPACE_ID = process.env.IMESSAGE_TERMINAL_SPACE_ID ?? "chat-1";
+const TERMINAL_IDENTITIES = {
+  broker:
+    process.env.IMESSAGE_TERMINAL_BROKER_PHONE ?? TERMINAL_FROM_PHONE,
+  client: process.env.IMESSAGE_TERMINAL_CLIENT_PHONE ?? "+12025550102",
+  public: process.env.IMESSAGE_TERMINAL_PUBLIC_PHONE ?? "+12025550199",
+};
 const SEND_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 const TYPING_REFRESH_MS = 4_000;
 const RESPONSE_SEGMENT_MAX_CHARS = 520;
@@ -143,6 +154,13 @@ if (TRANSPORT === "terminal" && !TERMINAL_FROM_PHONE) {
   console.error(
     "IMESSAGE_TERMINAL_FROM_PHONE is required for terminal mode so Convex can route to a Glass user",
   );
+  process.exit(1);
+}
+if (
+  TRANSPORT === "terminal" &&
+  Object.values(TERMINAL_IDENTITIES).some((phone) => !isE164Phone(phone))
+) {
+  console.error("Spectrum terminal identities must use valid E.164 phone numbers");
   process.exit(1);
 }
 
@@ -726,6 +744,10 @@ async function startSpectrum(): Promise<SpectrumInstance> {
         terminal.config({
           commands: [
             { name: "/whoami", description: "Show the configured test phone" },
+            {
+              name: "/as",
+              description: "Switch sender: /as broker, /as client, or /as public",
+            },
           ],
         }),
       ],
@@ -745,6 +767,7 @@ async function main() {
   console.log(`[glass-imessage] Connecting to Spectrum ${TRANSPORT} provider...`);
 
   const app = await startSpectrum();
+  let terminalFromPhone = TERMINAL_FROM_PHONE;
   const activeSpacesByPhone = new Map<string, Space>();
   const activeSpacesByChatGuid = new Map<string, Space>();
 
@@ -1052,7 +1075,7 @@ async function main() {
     }
     const senderId =
       TRANSPORT === "terminal"
-        ? (TERMINAL_FROM_PHONE || rawSenderId)
+        ? (terminalFromPhone || rawSenderId)
         : rawSenderId;
     const fromPhone = normalizePhone(senderId);
     activeSpacesByPhone.set(fromPhone, space);
@@ -1099,9 +1122,32 @@ async function main() {
     // Process asynchronously so the typing indicator runs while we wait
     void (async () => {
       try {
-        if (TRANSPORT === "terminal" && messageText.trim() === "/whoami") {
-          await space.send(`Terminal messages are routed as ${fromPhone}`);
-          return;
+        if (TRANSPORT === "terminal") {
+          const identityCommand = parseTerminalIdentityCommand(
+            messageText,
+            TERMINAL_IDENTITIES,
+          );
+          if (identityCommand?.kind === "whoami") {
+            const label = terminalIdentityLabel(
+              terminalFromPhone,
+              TERMINAL_IDENTITIES,
+            );
+            await space.send(
+              `Terminal identity: ${label} (${terminalFromPhone})`,
+            );
+            return;
+          }
+          if (identityCommand?.kind === "error") {
+            await space.send(identityCommand.message);
+            return;
+          }
+          if (identityCommand?.kind === "switch") {
+            terminalFromPhone = identityCommand.phone;
+            await space.send(
+              `Switched terminal identity to ${identityCommand.label} (${identityCommand.phone}). Your next message will use this sender.`,
+            );
+            return;
+          }
         }
 
         await withTypingIndicator(space, async () => {

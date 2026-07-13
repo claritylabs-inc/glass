@@ -22,6 +22,9 @@ describe("declarationFacts org profile sync", () => {
       insuredDba: "Risk Management & AI Contact",
       insuredEntityType: "Corporation",
       insuredFein: "12-3456789",
+      declarations: {
+        businessNumber: "123456789 RC 0001",
+      },
       insuredAddress: {
         street1: "1070 Bridgeview Way",
         city: "San Francisco",
@@ -51,6 +54,11 @@ describe("declarationFacts org profile sync", () => {
         fieldPath: "insuredEntityType",
         fieldGroup: "entity_type",
         displayValue: "Corporation",
+      }),
+      expect.objectContaining({
+        fieldPath: "declarations.businessNumber",
+        fieldGroup: "business_number",
+        displayValue: "123456789 RC 0001",
       }),
       expect.objectContaining({
         fieldPath: "insuredFein",
@@ -116,6 +124,21 @@ describe("declarationFacts org profile sync", () => {
             sourceSpanIds: ["span-tax-id"],
           },
         ],
+        operationsDescription: {
+          value: "Technology consulting and software implementation services.",
+          normalizedValue: "technology consulting and software implementation services",
+          sourceSpanIds: ["span-operations"],
+          sourceNodeIds: ["node-operations"],
+        },
+        parties: [
+          {
+            role: "producer",
+            name: "Outside Broker LLC",
+            address: { street1: "10 Broker St" },
+            sourceSpanIds: ["span-producer"],
+            sourceNodeIds: ["node-producer"],
+          },
+        ],
       },
     });
 
@@ -145,6 +168,62 @@ describe("declarationFacts org profile sync", () => {
         fieldPath: "operationalProfile.declarationFacts.3",
         fieldGroup: "fein",
         displayValue: "12-3456789",
+      }),
+      expect.objectContaining({
+        fieldPath: "operationalProfile.operationsDescription",
+        fieldGroup: "operations_description",
+        displayValue: "Technology consulting and software implementation services.",
+        sourceSpanIds: ["span-operations"],
+      }),
+    ]));
+    expect(facts.some((fact) => fact.fieldGroup === "insurance_parties")).toBe(false);
+  });
+
+  test("preserves formatted-only and postalCode insured addresses", () => {
+    const formattedOnly = extractDeclarationFactsFromPolicy({
+      _id: "policy-formatted",
+      orgId: "org-1",
+      insuredAddress: { formatted: "PO Box 123, Toronto, ON M5A 1A1" },
+    });
+    expect(formattedOnly).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fieldGroup: "mailing_address",
+        displayValue: "PO Box 123, Toronto, ON M5A 1A1",
+      }),
+    ]));
+
+    const postalCode = extractDeclarationFactsFromPolicy({
+      _id: "policy-postal",
+      orgId: "org-1",
+      insuredAddress: {
+        street1: "1 Main St",
+        city: "Toronto",
+        state: "ON",
+        postalCode: "M5A 1A1",
+      },
+    });
+    expect(postalCode).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fieldGroup: "mailing_address",
+        displayValue: "1 Main St, Toronto, ON M5A 1A1",
+      }),
+    ]));
+
+    const nodeOnlyOperations = extractDeclarationFactsFromPolicy({
+      _id: "policy-node-operations",
+      orgId: "org-1",
+      operationalProfile: {
+        operationsDescription: {
+          value: "Source-node-backed consulting services.",
+          sourceNodeIds: ["node-operations"],
+        },
+      },
+    });
+    expect(nodeOnlyOperations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fieldGroup: "operations_description",
+        displayValue: "Source-node-backed consulting services.",
+        sourceNodeIds: ["node-operations"],
       }),
     ]));
   });
@@ -199,6 +278,31 @@ describe("declarationFacts org profile sync", () => {
           zip: "94121",
         },
         additionalNamedInsureds: [{ name: "Clarity Labs Holdings Inc." }],
+        insurer: {
+          legalName: "Policy Carrier Inc.",
+          address: { street1: "20 Carrier St", city: "Toronto", state: "ON" },
+        },
+        producer: {
+          agencyName: "Policy Broker LLC",
+          address: { street1: "30 Broker St", city: "Toronto", state: "ON" },
+        },
+        mga: "Policy MGA LLC",
+        operationalProfile: {
+          operationsDescription: {
+            value: "Technology consulting and software implementation services.",
+            sourceSpanIds: ["span-operations"],
+            sourceNodeIds: ["node-operations"],
+          },
+          parties: [
+            {
+              role: "mga",
+              name: "Policy MGA LLC",
+              address: { street1: "40 MGA St" },
+              sourceSpanIds: ["span-mga"],
+              sourceNodeIds: ["node-mga"],
+            },
+          ],
+        },
       });
       return { orgId, olderPolicyId, newerPolicyId };
     });
@@ -226,6 +330,9 @@ describe("declarationFacts org profile sync", () => {
           },
         },
         additionalNamedInsureds: [{ value: "Clarity Labs Holdings Inc." }],
+        operationsDescription: {
+          value: "Technology consulting and software implementation services.",
+        },
       },
       relatedLegalEntities: expect.arrayContaining([
         expect.objectContaining({ legalName: "Clarity Labs Inc.", relationship: "current" }),
@@ -233,6 +340,26 @@ describe("declarationFacts org profile sync", () => {
         expect.objectContaining({ legalName: "Clarity Labs Holdings Inc.", relationship: "other" }),
       ]),
     });
+
+    const firstFactCount = await t.run(async (ctx) =>
+      (await ctx.db
+        .query("policyDeclarationFacts")
+        .withIndex("by_policyId_active", (q) => q.eq("policyId", newerPolicyId).eq("active", true))
+        .collect()).length,
+    );
+    await t.mutation(syncPolicyInternalFn, { policyId: newerPolicyId });
+    const secondFactCount = await t.run(async (ctx) =>
+      (await ctx.db
+        .query("policyDeclarationFacts")
+        .withIndex("by_policyId_active", (q) => q.eq("policyId", newerPolicyId).eq("active", true))
+        .collect()).length,
+    );
+    expect(secondFactCount).toBe(firstFactCount);
+    const profileFacts = await t.run(async (ctx) => (await ctx.db.get(orgId))?.profileFacts as Record<string, unknown>);
+    expect(profileFacts).not.toHaveProperty("producer");
+    expect(profileFacts).not.toHaveProperty("insurer");
+    expect(profileFacts).not.toHaveProperty("mga");
+    expect(profileFacts).not.toHaveProperty("insuranceParties");
 
     await t.mutation(softDeleteInternalFn, { id: newerPolicyId });
 
@@ -278,7 +405,21 @@ describe("declarationFacts org profile sync", () => {
           state: "CA",
           zip: "94612",
         },
+        declarations: {
+          fields: [
+            {
+              field: "operationsDescription",
+              value: "Compatibility operations description.",
+              sourceSpanIds: ["span-compatibility-operations"],
+            },
+          ],
+        },
         operationalProfile: {
+          operationsDescription: {
+            value: "Canonical source-backed operations description.",
+            sourceSpanIds: ["span-operations"],
+            sourceNodeIds: ["node-operations"],
+          },
           declarationFacts: [
             {
               field: "namedInsured",
@@ -327,6 +468,13 @@ describe("declarationFacts org profile sync", () => {
           source: {
             fieldPath: "operationalProfile.declarationFacts.1",
             sourceSpanIds: ["span-mailing-address"],
+          },
+        },
+        operationsDescription: {
+          value: "Canonical source-backed operations description.",
+          source: {
+            fieldPath: "operationalProfile.operationsDescription",
+            sourceSpanIds: ["span-operations"],
           },
         },
       },

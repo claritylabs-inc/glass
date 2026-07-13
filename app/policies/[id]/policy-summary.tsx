@@ -5,10 +5,14 @@ import dayjs from "dayjs";
 import dynamic from "next/dynamic";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  OperationalLabelValueRow,
   OperationalPanel,
   OperationalPanelBody,
 } from "@/components/ui/operational-panel";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
+import { PillButton } from "@/components/ui/pill-button";
+import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
+import { formatDisplayDate } from "@/lib/date-format";
 
 const PolicyPdfThumbnail = dynamic(
   () =>
@@ -99,6 +103,26 @@ function realText(value: string | undefined) {
   return trimmed && !isPendingValue(trimmed) ? trimmed : undefined;
 }
 
+function formatPolicyDate(value: string | undefined) {
+  const text = realText(value);
+  if (!text) return undefined;
+  const normalized = normalizeExtractedDate(text);
+  return normalized ? formatDisplayDate(normalized) : text;
+}
+
+function moneyAmount(value: string | undefined) {
+  if (!value) return undefined;
+  const amount = Number(value.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+function formattedMoney(amount: number) {
+  return `$${amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 function isRealLineOfBusiness(value: string) {
   const normalized = value.trim().toLowerCase();
   return normalized && normalized !== "un" && normalized !== "other" && !isPendingValue(normalized);
@@ -115,9 +139,8 @@ function ExtractionPendingDetails() {
       </div>
       <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
         {[
+          "Policy number",
           "Lines of business",
-          "Carrier",
-          "Named insured",
           "Policy period",
           "Premium",
         ].map((label, index) => (
@@ -138,58 +161,64 @@ function ExtractionPendingDetails() {
 
 export interface PolicySummaryProps {
   policyNumber?: string;
-  carrier?: string;
-  administrator?: string;
-  broker?: string;
-  insuredName?: string;
   effectiveDate?: string;
   expirationDate?: string;
   premium?: string;
+  totalCost?: string;
+  taxesAndFees?: Array<{ amount?: string; amountValue?: number }>;
   linesOfBusiness: string[];
   policyTermType?: string;
+  operationsDescription?: string;
   summary?: string;
   isRenewal?: boolean;
   pdfUrl?: string | null;
+  onEdit?: () => void;
 }
 
 export function PolicySummary({
   policyNumber,
-  carrier,
-  administrator,
-  broker,
-  insuredName,
   effectiveDate,
   expirationDate,
   premium,
+  totalCost,
+  taxesAndFees,
   linesOfBusiness,
   policyTermType,
+  operationsDescription,
   summary: _summary,
   isRenewal,
   pdfUrl,
+  onEdit,
 }: PolicySummaryProps) {
   const realPolicyNumber = realText(policyNumber);
-  const realCarrier = realText(carrier);
-  const realAdministrator = realText(administrator);
-  const realBroker = realText(broker);
-  const realInsuredName = realText(insuredName);
   const realEffectiveDate = realText(effectiveDate);
   const realExpirationDate = realText(expirationDate);
+  const displayEffectiveDate = formatPolicyDate(realEffectiveDate);
+  const displayExpirationDate = formatPolicyDate(realExpirationDate);
   const realPremium = realText(premium);
+  const realTotalCost = realText(totalCost);
+  const taxesAndFeesAmount = taxesAndFees?.reduce((sum, row) =>
+    sum + (typeof row.amountValue === "number" ? row.amountValue : moneyAmount(row.amount) ?? 0), 0);
+  const realTaxesAndFees = taxesAndFeesAmount && taxesAndFeesAmount > 0
+    ? formattedMoney(taxesAndFeesAmount)
+    : undefined;
+  const realOperationsDescription = realText(operationsDescription);
   const realLinesOfBusiness = toLobCodes(linesOfBusiness).filter(isRealLineOfBusiness);
   const periodValue =
-    policyTermType === "continuous" && realEffectiveDate
-        ? `${realEffectiveDate} — Until Cancelled`
-        : realEffectiveDate || realExpirationDate
-          ? `${realEffectiveDate ?? "—"} – ${realExpirationDate ?? "—"}`
+    policyTermType === "continuous" && displayEffectiveDate
+        ? `${displayEffectiveDate} — Until Cancelled`
+        : displayEffectiveDate || displayExpirationDate
+          ? `${displayEffectiveDate ?? "—"} – ${displayExpirationDate ?? "—"}`
           : undefined;
 
   const hasExtractedDetails =
+    !!realPolicyNumber ||
     realLinesOfBusiness.length > 0 ||
-    !!realAdministrator ||
-    !!realCarrier ||
-    !!realInsuredName ||
     !!periodValue ||
-    !!realPremium;
+    !!realPremium ||
+    !!realTaxesAndFees ||
+    !!realTotalCost ||
+    !!realOperationsDescription;
 
   return (
     <OperationalPanel className="mb-6 @container">
@@ -208,6 +237,17 @@ export function PolicySummary({
             effectiveDate={realEffectiveDate}
             expirationDate={realExpirationDate}
           />
+          {onEdit ? (
+            <PillButton
+              type="button"
+              size="compact"
+              variant="secondary"
+              onClick={onEdit}
+            >
+              <Pencil className="size-3.5" />
+              Edit
+            </PillButton>
+          ) : null}
         </div>
       </div>
 
@@ -248,20 +288,26 @@ export function PolicySummary({
             />
           )}
 
-          {realAdministrator && (
-            <SummaryRow label="Administrator" value={realAdministrator} />
-          )}
-          {realCarrier && <SummaryRow label="Carrier" value={realCarrier} />}
-          {realBroker && <SummaryRow label="Broker" value={realBroker} />}
-          {realInsuredName && (
-            <SummaryRow label="Named insured" value={realInsuredName} />
-          )}
           {periodValue && (
             <SummaryRow label="Policy period" value={periodValue} />
           )}
           {realPremium && <SummaryRow label="Premium" value={realPremium} />}
+          {realTaxesAndFees && (
+            <SummaryRow label="Taxes & fees" value={realTaxesAndFees} />
+          )}
+          {realTotalCost && (
+            <SummaryRow label="Total payable" value={realTotalCost} />
+          )}
         </div>
       </OperationalPanelBody>
+      {realOperationsDescription ? (
+        <dl className="border-t border-foreground/6">
+          <OperationalLabelValueRow
+            label="Description of operations"
+            value={realOperationsDescription}
+          />
+        </dl>
+      ) : null}
     </OperationalPanel>
   );
 }

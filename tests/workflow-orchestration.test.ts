@@ -107,9 +107,13 @@ describe("workflow orchestration wiring", () => {
     expect(emailSubagent).toContain("addressLine1: z.string().optional()");
     expect(emailSubagent).toContain("addressLine2: z.string().optional()");
     expect(emailSubagent).toContain("postalCode: z.string().optional()");
+    expect(emailSubagent).toContain("country: z.string().optional()");
     expect(emailSubagent).toContain("addressLine1,");
     expect(read("convex/lib/coiAttachmentGuards.ts")).toContain(
       "addressLine1?: string",
+    );
+    expect(read("convex/actions/sendCertificateWorkflowJob.ts")).toContain(
+      "country: prepared.holder.address?.country",
     );
   });
 });

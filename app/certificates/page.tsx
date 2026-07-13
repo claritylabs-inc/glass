@@ -83,7 +83,7 @@ function certificatePolicyFilterValue(row: PolicyCertificateRecord): Certificate
 }
 
 function certificateCarrier(row: PolicyCertificateRecord) {
-  return row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga;
+  return row.policy?.carrier ?? row.policy?.security;
 }
 
 function certificateHolderAddressDisplay(row: PolicyCertificateRecord) {
@@ -216,7 +216,7 @@ function CertificatesPolicyFilter({
         value={value}
         onValueChange={(next) => next && onValueChange(next as CertificatePolicyFilter)}
       >
-        <SelectTrigger size="sm" className="w-full bg-background">
+        <SelectTrigger className="w-full">
           <SelectValue>{label}</SelectValue>
         </SelectTrigger>
         <SelectContent className="w-auto min-w-(--anchor-width) max-w-[36rem]">

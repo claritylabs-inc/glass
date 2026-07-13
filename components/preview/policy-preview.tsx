@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -10,13 +9,23 @@ import {
 } from "@/convex/lib/coverageBreakdown";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { PillButton } from "@/components/ui/pill-button";
+import { usePdf } from "@/components/pdf-context";
 import { useCachedPolicyDetail } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
   evidenceSpansForIds,
   highlightBoxesForSpans,
+  sourceEvidenceTarget,
+  type SourceNodeEvidenceDoc,
   type SourceSpanDoc,
+  usePolicySourceNodes,
 } from "@/app/policies/[id]/source-provenance";
+import {
+  coverageFallbackPage,
+  coverageSourceNodeIds,
+  coverageSourceSpanIds,
+} from "@/app/policies/[id]/policy-coverage-breakdown";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -71,8 +80,7 @@ function titleLabel(value: string | undefined) {
 function formatDate(value: unknown) {
   const text = realText(value);
   if (!text) return undefined;
-  const parsed = dayjs(text);
-  return parsed.isValid() ? parsed.format("MMM D, YYYY") : text;
+  return formatDisplayDate(text, text);
 }
 
 function formatPolicyPeriod(record: Record<string, unknown>) {
@@ -93,12 +101,35 @@ function carrierName(record: Record<string, unknown>) {
   );
 }
 
+function generalAgentName(record: Record<string, unknown>) {
+  const generalAgent = record.generalAgent &&
+    typeof record.generalAgent === "object" &&
+    !Array.isArray(record.generalAgent)
+    ? record.generalAgent as Record<string, unknown>
+    : {};
+  return realText(generalAgent.agencyName) ?? realText(record.mga);
+}
+
 function policyKind(record: Record<string, unknown>) {
   const parts = [
     titleLabel(realText(record.policyTermType)),
     record.isRenewal === true ? "Renewal" : undefined,
   ].filter((item): item is string => Boolean(item));
   return parts.length ? parts.join(" / ") : undefined;
+}
+
+function taxesAndFeesTotal(value: unknown) {
+  if (!Array.isArray(value)) return undefined;
+  const total = value.reduce((sum, entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return sum;
+    const row = entry as Record<string, unknown>;
+    if (typeof row.amountValue === "number") return sum + row.amountValue;
+    const amount = Number(realText(row.amount)?.replace(/[^\d.-]/g, ""));
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+  return total > 0
+    ? `$${total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : undefined;
 }
 
 function metadataRows(
@@ -108,11 +139,13 @@ function metadataRows(
   return [
     { label: "Named insured", value: realText(record.insuredName) },
     { label: "Carrier", value: carrierName(record) },
-    { label: "Administrator", value: realText(record.mga) },
+    { label: "General Agent", value: generalAgentName(record) },
     { label: "Broker", value: realText(record.broker) },
     { label: "Policy number", value: realText(record.policyNumber) },
     { label: "Policy period", value: formatPolicyPeriod(record) },
     { label: "Premium", value: realText(record.premium) },
+    { label: "Taxes & fees", value: taxesAndFeesTotal(record.taxesAndFees) },
+    { label: "Total payable", value: realText(record.totalCost) },
     { label: "Policy type", value: policyKind(record) },
     {
       label: "Files",
@@ -151,9 +184,13 @@ function coverageTermRows(row: CoverageBreakdownRow) {
   if (!hasLabel(/\bdeductible\b|\bretention\b/)) {
     push("Deductible", row.deductible);
   }
-  if (!hasLabel(/\bpremium\b/)) push("Premium", row.premium);
   if (!hasLabel(/\bretroactive\b/)) {
-    push("Retroactive Date", row.retroactiveDate);
+    push(
+      "Retroactive Date",
+      row.retroactiveDate
+        ? formatDisplayDate(row.retroactiveDate, row.retroactiveDate)
+        : undefined,
+    );
   }
   return terms;
 }
@@ -166,6 +203,10 @@ export function PolicyPreview({
   onFooterActions,
 }: PolicyPreviewProps) {
   const policy = useCachedPolicyDetail(id as Id<"policies">);
+  const coverageBreakdown = useMemo(
+    () => buildCoverageBreakdown(policy),
+    [policy],
+  );
   const previewSourceSpanIds = useMemo(
     () => [...new Set(citedSourceSpanIds ?? [])].slice(0, 64),
     [citedSourceSpanIds],
@@ -176,13 +217,30 @@ export function PolicyPreview({
     policy ? { policyId: policy._id } : "skip",
   );
   const [showAllTypes, setShowAllTypes] = useState(false);
+  const coverageSourceNodeIdList = useMemo(
+    () => [...new Set(coverageBreakdown.all.flatMap(coverageSourceNodeIds))],
+    [coverageBreakdown.all],
+  );
+  const coverageSourceNodes = usePolicySourceNodes(
+    id as Id<"policies">,
+    coverageSourceNodeIdList,
+  );
+  const requestedSourceSpanIds = useMemo(
+    () => [...new Set([
+      ...previewSourceSpanIds,
+      ...coverageBreakdown.all.flatMap((row) =>
+        coverageSourceSpanIds(row, coverageSourceNodes),
+      ),
+    ])].slice(0, 256),
+    [coverageBreakdown.all, coverageSourceNodes, previewSourceSpanIds],
+  );
   const sourceSpans = useCachedQuery(
     "sourceSpans.listSpansByPolicyAndSpanIds.preview",
     api.sourceSpans.listSpansByPolicyAndSpanIds,
-    previewSourceSpanIds.length
+    requestedSourceSpanIds.length
       ? {
           policyId: id as Id<"policies">,
-          spanIds: previewSourceSpanIds,
+          spanIds: requestedSourceSpanIds,
         }
       : "skip",
   ) as SourceSpanDoc[] | undefined;
@@ -227,7 +285,6 @@ export function PolicyPreview({
 
   const types = policyLobCodes(policy).filter((code) => code !== "UN");
   const fileCount = Array.isArray(record.files) ? record.files.length : 0;
-  const coverageBreakdown = buildCoverageBreakdown(policy);
   const rows = metadataRows(record, fileCount);
 
   return (
@@ -243,7 +300,12 @@ export function PolicyPreview({
         <ExactSourceLocations sourceSpans={citedSourceSpans} />
       )}
 
-      <CoverageListPreview breakdown={coverageBreakdown} />
+      <CoverageListPreview
+        breakdown={coverageBreakdown}
+        fileUrl={fileUrl}
+        sourceNodes={coverageSourceNodes}
+        sourceSpans={sourceSpans}
+      />
     </div>
   );
 }
@@ -389,7 +451,17 @@ function visibleCoveragePreviewGroups(
   return visible;
 }
 
-function CoverageListPreview({ breakdown }: { breakdown: CoverageBreakdown }) {
+function CoverageListPreview({
+  breakdown,
+  fileUrl,
+  sourceNodes,
+  sourceSpans,
+}: {
+  breakdown: CoverageBreakdown;
+  fileUrl?: string | null;
+  sourceNodes?: SourceNodeEvidenceDoc[];
+  sourceSpans?: SourceSpanDoc[];
+}) {
   const [showAllCoverages, setShowAllCoverages] = useState(false);
   const groups = coveragePreviewGroups(breakdown);
   const totalRows = breakdown.all.length;
@@ -419,6 +491,9 @@ function CoverageListPreview({ breakdown }: { breakdown: CoverageBreakdown }) {
                 key={group.key}
                 group={group}
                 showTitle={groups.length > 1 || group.title !== "Coverage schedules"}
+                fileUrl={fileUrl}
+                sourceNodes={sourceNodes}
+                sourceSpans={sourceSpans}
               />
             ))}
           </div>
@@ -446,9 +521,15 @@ function CoverageListPreview({ breakdown }: { breakdown: CoverageBreakdown }) {
 function CoveragePreviewGroupList({
   group,
   showTitle,
+  fileUrl,
+  sourceNodes,
+  sourceSpans,
 }: {
   group: CoveragePreviewGroup;
   showTitle: boolean;
+  fileUrl?: string | null;
+  sourceNodes?: SourceNodeEvidenceDoc[];
+  sourceSpans?: SourceSpanDoc[];
 }) {
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
@@ -462,6 +543,9 @@ function CoveragePreviewGroupList({
           <CoverageScheduleRow
             key={`${row.name}:${row.limit ?? ""}:${index}`}
             row={row}
+            fileUrl={fileUrl}
+            sourceNodes={sourceNodes}
+            sourceSpans={sourceSpans}
           />
         ))}
       </div>
@@ -469,14 +553,53 @@ function CoveragePreviewGroupList({
   );
 }
 
-function CoverageScheduleRow({ row }: { row: CoverageBreakdownRow }) {
+function CoverageScheduleRow({
+  row,
+  fileUrl,
+  sourceNodes,
+  sourceSpans,
+}: {
+  row: CoverageBreakdownRow;
+  fileUrl?: string | null;
+  sourceNodes?: SourceNodeEvidenceDoc[];
+  sourceSpans?: SourceSpanDoc[];
+}) {
+  const pdf = usePdf();
   const terms = coverageTermRows(row);
   const visibleTerms = terms.length
     ? terms
     : [{ label: "Limit", value: row.limit ?? "\u2014" }];
 
+  const target = sourceEvidenceTarget(
+    coverageSourceSpanIds(row, sourceNodes),
+    sourceSpans,
+    coverageFallbackPage(row, sourceNodes),
+  );
+  const canOpenSource = Boolean(fileUrl && target);
+
+  function openSource() {
+    if (!fileUrl || !target) return;
+    pdf.openWithUrl(fileUrl, target.page, target.highlightBoxes);
+  }
+
   return (
-    <section className="min-w-0 px-3 py-3">
+    <section
+      role={canOpenSource ? "button" : undefined}
+      tabIndex={canOpenSource ? 0 : undefined}
+      title={canOpenSource ? `Open source on page ${target!.page}` : undefined}
+      aria-label={canOpenSource ? `Open source for ${row.name} on page ${target!.page}` : undefined}
+      onClick={canOpenSource ? openSource : undefined}
+      onKeyDown={canOpenSource ? (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        openSource();
+      } : undefined}
+      className={`min-w-0 px-3 py-3 ${
+        canOpenSource
+          ? "cursor-pointer transition-colors hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+          : ""
+      }`}
+    >
       <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
         {row.name}
       </div>

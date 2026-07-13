@@ -21,6 +21,7 @@ export type RequestedEmailAttachment = {
   city?: string;
   state?: string;
   postalCode?: string;
+  country?: string;
   requestText?: string;
   requestedEndorsements?: string[];
 };

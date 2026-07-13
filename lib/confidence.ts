@@ -54,14 +54,20 @@ export const CONFIDENCE_LEVEL_META: Record<
 /** Matches `[[g:...]]` / `[[i:...]]` / `[[u:...]]`; group 1 = code, group 2 = phrase. */
 export const CONFIDENCE_MARKER_RE = /\[\[(g|i|u):([\s\S]+?)\]\]/g;
 const CONFIDENCE_MARKER_PRESENT_RE = /\[\[(?:g|i|u):[\s\S]+?\]\]/;
+const CONFIDENCE_MARKER_OPEN_RE = /\[\[(g|i|u):/;
+
+/** Repair the common malformed opener `[[g]:` before parsing or stripping. */
+export function normalizeConfidenceMarkers(text: string): string {
+  return text.replace(/\[\[(g|i|u)\]:/g, "[[$1:");
+}
 
 export function hasConfidenceMarkers(text: string): boolean {
-  return CONFIDENCE_MARKER_PRESENT_RE.test(text);
+  return CONFIDENCE_MARKER_PRESENT_RE.test(normalizeConfidenceMarkers(text));
 }
 
 /** Replace every confidence marker with just its inner phrase. */
 export function stripConfidenceMarkers(text: string): string {
-  return text.replace(CONFIDENCE_MARKER_RE, "$2");
+  return normalizeConfidenceMarkers(text).replace(CONFIDENCE_MARKER_RE, "$2");
 }
 
 /**
@@ -73,6 +79,7 @@ export function summarizeConfidence(text: string): {
   score: number;
   counts: Record<ConfidenceLevel, number>;
 } | null {
+  const normalized = normalizeConfidenceMarkers(text);
   const counts: Record<ConfidenceLevel, number> = {
     grounded: 0,
     inferred: 0,
@@ -82,7 +89,7 @@ export function summarizeConfidence(text: string): {
   let totalChars = 0;
   const re = new RegExp(CONFIDENCE_MARKER_RE.source, "g");
   let match: RegExpExecArray | null;
-  while ((match = re.exec(text)) !== null) {
+  while ((match = re.exec(normalized)) !== null) {
     const level = CONFIDENCE_LEVEL_BY_CODE[match[1]];
     if (!level) continue;
     const length = match[2].length;
@@ -104,49 +111,104 @@ type MdastNode = {
   };
 };
 
-function splitTextNode(value: string): MdastNode[] {
-  const parts: MdastNode[] = [];
-  let lastIndex = 0;
-  // Fresh regex per call so the shared global instance's lastIndex is never reused.
-  const re = new RegExp(CONFIDENCE_MARKER_RE.source, "g");
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(value)) !== null) {
-    const level = CONFIDENCE_LEVEL_BY_CODE[match[1]];
-    if (!level) continue;
-    if (match.index > lastIndex) {
-      parts.push({ type: "text", value: value.slice(lastIndex, match.index) });
-    }
-    parts.push({
-      type: "confidence",
-      data: {
-        hName: "mark",
-        hProperties: { className: "glass-confidence", "data-level": level },
-      },
-      children: [{ type: "text", value: match[2] }],
-    });
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < value.length) {
-    parts.push({ type: "text", value: value.slice(lastIndex) });
-  }
-  return parts;
+function textNode(value: string): MdastNode {
+  return { type: "text", value };
+}
+
+function confidenceNode(
+  code: string,
+  children: MdastNode[],
+): MdastNode | null {
+  const level = CONFIDENCE_LEVEL_BY_CODE[code];
+  if (!level || children.length === 0) return null;
+  return {
+    type: "confidence",
+    data: {
+      hName: "mark",
+      hProperties: { className: "glass-confidence", "data-level": level },
+    },
+    children,
+  };
 }
 
 function transformChildren(children: MdastNode[]): MdastNode[] {
-  const out: MdastNode[] = [];
-  for (const node of children) {
-    if (
-      node.type === "text" &&
-      typeof node.value === "string" &&
-      node.value.includes("[[")
-    ) {
-      out.push(...splitTextNode(node.value));
-      continue;
-    }
+  const prepared = children.map((node) => {
     if (Array.isArray(node.children)) {
       node.children = transformChildren(node.children);
     }
-    out.push(node);
+    if (node.type === "text" && typeof node.value === "string") {
+      node.value = normalizeConfidenceMarkers(node.value);
+    }
+    return node;
+  });
+  const out: MdastNode[] = [];
+  let index = 0;
+
+  while (index < prepared.length) {
+    const node = prepared[index];
+    if (node.type !== "text" || typeof node.value !== "string") {
+      out.push(node);
+      index += 1;
+      continue;
+    }
+
+    const opener = CONFIDENCE_MARKER_OPEN_RE.exec(node.value);
+    if (!opener) {
+      out.push(node);
+      index += 1;
+      continue;
+    }
+
+    const openerEnd = opener.index + opener[0].length;
+    let closingIndex = index;
+    let closingOffset = node.value.indexOf("]]", openerEnd);
+    while (closingOffset < 0 && closingIndex + 1 < prepared.length) {
+      closingIndex += 1;
+      const candidate = prepared[closingIndex];
+      if (candidate.type === "text" && typeof candidate.value === "string") {
+        closingOffset = candidate.value.indexOf("]]");
+      }
+    }
+
+    if (closingOffset < 0) {
+      out.push(node);
+      index += 1;
+      continue;
+    }
+
+    if (opener.index > 0) {
+      out.push(textNode(node.value.slice(0, opener.index)));
+    }
+
+    const markedChildren: MdastNode[] = [];
+    if (closingIndex === index) {
+      const value = node.value.slice(openerEnd, closingOffset);
+      if (value) markedChildren.push(textNode(value));
+    } else {
+      const openingRemainder = node.value.slice(openerEnd);
+      if (openingRemainder) markedChildren.push(textNode(openingRemainder));
+      markedChildren.push(...prepared.slice(index + 1, closingIndex));
+      const closingNode = prepared[closingIndex];
+      const closingPrefix = closingNode.value!.slice(0, closingOffset);
+      if (closingPrefix) markedChildren.push(textNode(closingPrefix));
+    }
+
+    const marked = confidenceNode(opener[1], markedChildren);
+    if (!marked) {
+      out.push(node);
+      index += 1;
+      continue;
+    }
+    out.push(marked);
+
+    const closingNode = prepared[closingIndex];
+    const suffix = closingNode.value!.slice(closingOffset + 2);
+    if (suffix) {
+      prepared[closingIndex] = textNode(suffix);
+      index = closingIndex;
+    } else {
+      index = closingIndex + 1;
+    }
   }
   return out;
 }
@@ -154,9 +216,9 @@ function transformChildren(children: MdastNode[]): MdastNode[] {
 /**
  * remark plugin: rewrites `[[g|i|u:...]]` markers found in text nodes into
  * `<mark data-level>` elements (via mdast `data.hName`) so react-markdown can
- * render them as tinted, hoverable spans. Markers that span multiple inline
- * nodes (e.g. with nested emphasis) are left untouched — the agent is
- * instructed to wrap only plain phrases.
+ * render them as tinted, hoverable spans. A marker can contain adjacent inline
+ * Markdown nodes, so `[[g:generated **Company**]]` preserves the nested strong
+ * node inside the confidence mark.
  */
 export function remarkConfidence() {
   return (tree: MdastNode) => {

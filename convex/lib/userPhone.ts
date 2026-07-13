@@ -40,4 +40,3 @@ export async function normalizeAvailableUserPhone(
   }
   return normalized;
 }
-

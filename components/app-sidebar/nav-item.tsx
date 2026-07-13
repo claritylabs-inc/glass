@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import type { MouseEventHandler, ReactNode } from "react";
+import {
+  useSyncExternalStore,
+  type MouseEventHandler,
+  type ReactNode,
+} from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -135,6 +139,24 @@ export function ShortcutTooltipContent({
   label: string;
   shortcut: NavShortcut;
 }) {
+  const platformModifier = useSyncExternalStore(
+    () => () => {},
+    () => platformModifierForUserAgent(navigator.userAgent),
+    () => "⌘",
+  );
+
+  if (shortcut.type === "command") {
+    return (
+      <>
+        <span className="text-label">{label}</span>
+        <span className="ml-1 inline-flex items-center gap-1 text-label leading-none text-muted-foreground">
+          <ShortcutKeycap>{platformModifier}</ShortcutKeycap>
+          <ShortcutKeycap>{shortcut.key.toUpperCase()}</ShortcutKeycap>
+        </span>
+      </>
+    );
+  }
+
   return (
     <>
       <span className="text-label">Go to {label}</span>
@@ -145,6 +167,12 @@ export function ShortcutTooltipContent({
       </span>
     </>
   );
+}
+
+export function platformModifierForUserAgent(userAgent: string) {
+  return /Macintosh|Mac OS X|iPhone|iPad|iPod/i.test(userAgent)
+    ? "⌘"
+    : "Ctrl";
 }
 
 function ShortcutKeycap({ children }: { children: React.ReactNode }) {

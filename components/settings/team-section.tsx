@@ -166,7 +166,9 @@ export function TeamSection() {
           membershipId: member.membershipId,
           name: editName,
           title: editTitle,
-          phone: editPhone,
+          ...(editPhone.trim() !== (member.phone ?? "").trim()
+            ? { phone: editPhone }
+            : {}),
         });
         if (nextRole !== member.role) {
           await updateMemberRole({
@@ -435,9 +437,7 @@ export function TeamSection() {
         viewerUserId={viewerUserId}
         canEditMembers={orgData?.membership?.role === "admin"}
         primaryContactId={primaryContactId}
-        settingPrimaryContactUserId={settingPrimaryContactUserId}
         onEditMember={openEditMember}
-        onSetPrimary={(userId) => void updatePrimaryContact(userId)}
         onCancelInvitation={(invitation) =>
           void cancelPendingInvitation(invitation)
         }

@@ -28,5 +28,9 @@ describe("COI PDF template layout", () => {
     expect(source).not.toContain("See ACORD 101 attached");
     expect(source).toContain("INSURER(S) AFFORDING COVERAGE");
     expect(source).toContain("INSURER ${letter}:");
+    expect(source).toContain("INFO_BOX_VALUE_TOP + INFO_BOX_BOTTOM_PADDING");
+    expect(source).toContain("holderRequiredH > HOLDER_BOX_MAX_HEIGHT");
+    expect(source).toContain("includeHolder: holderOverflows");
+    expect(source).not.toContain('data.certificateHolder ?? "", bottomW - 10, FS_VALUE, false) + 18');
   });
 });

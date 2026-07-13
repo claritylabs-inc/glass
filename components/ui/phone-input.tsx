@@ -150,7 +150,7 @@ export function PhoneInput({
       flags={flags}
       inputComponent={PhoneInputField}
       className={cn(
-        "PhoneInput flex h-10 items-center rounded-lg border border-foreground/8 bg-popover px-2 transition-colors focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8 [&_.PhoneInputCountry]:h-full [&_.PhoneInputCountry]:shrink-0 [&_.PhoneInputCountry]:pr-2 [&_.PhoneInputCountry]:border-r [&_.PhoneInputCountry]:border-foreground/8 [&_.PhoneInputInput]:min-w-0",
+        "PhoneInput flex h-9 items-center rounded-lg border border-foreground/8 bg-popover px-2 transition-colors focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8 [&_.PhoneInputCountry]:h-full [&_.PhoneInputCountry]:shrink-0 [&_.PhoneInputCountry]:pr-2 [&_.PhoneInputCountry]:border-r [&_.PhoneInputCountry]:border-foreground/8 [&_.PhoneInputInput]:min-w-0",
         className
       )}
       onChange={(value) => onChange?.(value)}

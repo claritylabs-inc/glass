@@ -179,6 +179,31 @@ const terminalPhone = requiredValue(
 if (!/^\+[1-9]\d{7,14}$/.test(terminalPhone)) {
   throw new Error("IMESSAGE_TERMINAL_FROM_PHONE must be an E.164 phone number");
 }
+const configuredTerminalClientPhone = imessageEnv
+  .get("IMESSAGE_TERMINAL_CLIENT_PHONE")
+  ?.trim();
+const terminalClientPhone =
+  !configuredTerminalClientPhone || configuredTerminalClientPhone === "+15555550102"
+    ? "+12025550102"
+    : configuredTerminalClientPhone;
+const configuredTerminalPublicPhone = imessageEnv
+  .get("IMESSAGE_TERMINAL_PUBLIC_PHONE")
+  ?.trim();
+const terminalPublicPhone =
+  !configuredTerminalPublicPhone || configuredTerminalPublicPhone === "+15555550999"
+    ? "+12025550199"
+    : configuredTerminalPublicPhone;
+for (const [name, value] of [
+  ["IMESSAGE_TERMINAL_CLIENT_PHONE", terminalClientPhone],
+  ["IMESSAGE_TERMINAL_PUBLIC_PHONE", terminalPublicPhone],
+]) {
+  if (!/^\+[1-9]\d{7,14}$/.test(value)) {
+    throw new Error(`${name} must be an E.164 phone number`);
+  }
+}
+if (new Set([terminalPhone, terminalClientPhone, terminalPublicPhone]).size !== 3) {
+  throw new Error("Spectrum terminal test phone numbers must be unique");
+}
 
 run("npm", ["ci"]);
 run("npm", ["--prefix", "extraction-worker", "ci"]);
@@ -264,6 +289,9 @@ try {
     EMAIL_DELIVERY_MODE: "capture",
     IMESSAGE_ENABLED: "false",
     IMESSAGE_TERMINAL_ENABLED: "true",
+    IMESSAGE_TERMINAL_BROKER_PHONE: terminalPhone,
+    IMESSAGE_TERMINAL_CLIENT_PHONE: terminalClientPhone,
+    IMESSAGE_TERMINAL_PUBLIC_PHONE: terminalPublicPhone,
     IMESSAGE_WORKER_URL: `http://127.0.0.1:${imessage}`,
     IMESSAGE_WORKER_SECRET: imessageSecret,
     EXTRACTION_WORKER_MODE: "external",
@@ -282,7 +310,14 @@ try {
 }
 
 if (createdLocalDeployment) {
-  run(convex, ["run", "seed:seed"]);
+  run(convex, [
+    "run",
+    "seed:seed",
+    JSON.stringify({
+      brokerPhone: terminalPhone,
+      clientPhone: terminalClientPhone,
+    }),
+  ]);
 }
 
 writeRuntimeEnv("extraction-worker.env", {
@@ -311,6 +346,9 @@ writeRuntimeEnv("imessage-worker.env", {
   CONVEX_SITE_URL: localUrls.site,
   IMESSAGE_WORKER_SECRET: imessageSecret,
   IMESSAGE_TERMINAL_FROM_PHONE: terminalPhone,
+  IMESSAGE_TERMINAL_BROKER_PHONE: terminalPhone,
+  IMESSAGE_TERMINAL_CLIENT_PHONE: terminalClientPhone,
+  IMESSAGE_TERMINAL_PUBLIC_PHONE: terminalPublicPhone,
   IMESSAGE_TERMINAL_SPACE_ID:
     imessageEnv.get("IMESSAGE_TERMINAL_SPACE_ID")?.trim() || "chat-1",
 });

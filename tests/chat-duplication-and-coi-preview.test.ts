@@ -88,6 +88,12 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(threadContent).toContain("function ThreadAttachmentList");
     expect(threadContent).toContain("api.threads.getAttachmentUrls");
     expect(threadContent).toContain("Download all");
+    expect(threadContent).toContain("assistantPdfAttachments");
+    expect(threadContent).toContain('message.channel === "email"');
+    expect(threadContent).toContain('attachment.contentType === "application/pdf"');
+    expect(threadContent).toContain("seenAssistantPdfKeys");
+    expect(threadContent).toContain('useMediaQuery("(min-width: 1024px)")');
+    expect(threadContent).toContain("pdf.openWithUrl(autoOpenPdfUrl)");
   });
 
   it("reads common file attachments for agent context by filename and content type", () => {

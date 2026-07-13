@@ -10,12 +10,29 @@ describe("thread title generation", () => {
   it("prefers COI intent over recipient email noise", () => {
     expect(
       fallbackTitle("Send the certificate of insurance to caitlinle2445@gmail.com"),
-    ).toBe("COI Email");
+    ).toBe("Send COI");
   });
 
-  it("strips generated titles that contain email-address noise", () => {
+  it("keeps certificate-generation titles tightly scoped", () => {
+    expect(
+      fallbackTitle(
+        "Can you generate a new certificate for Northwoods Continental Insurance Company with ReLease Coverage Company as the holder?",
+      ),
+    ).toBe("Generate COI");
+    expect(
+      fallbackTitle("Can you update this certificate with a description of operations?"),
+    ).toBe("Update COI");
+    expect(fallbackTitle("Draft a certificate for the new holder")).toBe(
+      "Draft COI",
+    );
+  });
+
+  it("rejects noisy or conversational generated titles", () => {
     expect(normalizeGeneratedTitle("Send Caitlin Caitlinle2445 Gmail")).toBeNull();
     expect(normalizeGeneratedTitle("Email caitlinle2445@gmail.com")).toBeNull();
+    expect(normalizeGeneratedTitle("Can You Generate New")).toBeNull();
+    expect(normalizeGeneratedTitle("Generate A New Certificate For Northwoods")).toBeNull();
+    expect(normalizeGeneratedTitle("Generate COI")).toBe("Generate COI");
   });
 
   it("includes initial page context in the rename prompt", () => {
@@ -38,5 +55,6 @@ describe("thread title generation", () => {
     expect(TITLE_SYSTEM_PROMPT).toContain("actual work intent");
     expect(TITLE_SYSTEM_PROMPT).toContain("Prefer the action and deliverable/topic");
     expect(TITLE_SYSTEM_PROMPT).toContain("Never include raw email addresses");
+    expect(TITLE_SYSTEM_PROMPT).toContain("Use 2-4 words");
   });
 });

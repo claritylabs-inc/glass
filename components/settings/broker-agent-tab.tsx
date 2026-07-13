@@ -241,7 +241,7 @@ export function BrokerAgentTab() {
                 spellCheck={false}
                 autoCapitalize="off"
                 autoCorrect="off"
-                className="flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="h-9 flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
               <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/3 px-3 text-base text-muted-foreground select-none whitespace-nowrap">
                 @{agentDomain}

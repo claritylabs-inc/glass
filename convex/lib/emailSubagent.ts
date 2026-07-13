@@ -179,6 +179,7 @@ export function buildEmailExpertTool(
             city: z.string().optional(),
             state: z.string().optional(),
             postalCode: z.string().optional(),
+            country: z.string().optional(),
             requestText: z.string().optional(),
             requestedEndorsements: z.array(z.string()).optional(),
           }),
@@ -337,6 +338,7 @@ async function runEmailSubagent(
     city?: string,
     state?: string,
     postalCode?: string,
+    country?: string,
     requestText?: string,
     requestedEndorsements?: string[],
     additionalInsuredName?: string,
@@ -390,6 +392,7 @@ async function runEmailSubagent(
       city,
       state,
       postalCode,
+      country,
       requestText,
       requestedEndorsements,
       additionalInsuredName,
@@ -449,6 +452,7 @@ async function runEmailSubagent(
         requested.city,
         requested.state,
         requested.postalCode,
+        requested.country,
         requested.requestText,
         requested.requestedEndorsements,
       );
@@ -756,7 +760,7 @@ You only handle Glass Agent outbound email. Your job is to draft or send polishe
 
 Be careful by default:
 - If the recipient email is missing, inferred, or not clearly the intended recipient, do not send. Produce a draft and ask for confirmation.
-- Never invent broker, carrier, underwriter, MGA, client, or vendor recipient emails. If a requested recipient is not supplied or present in known contacts/context, ask for the missing contact information instead.
+- Never invent broker, carrier, underwriter, General Agent, client, or vendor recipient emails. If a requested recipient is not supplied or present in known contacts/context, ask for the missing contact information instead.
 - If the request says "email me", "send me", or "email this to me", use the supplied default recipient as the recipient.
 - If the subject, body, or requested attachments are ambiguous, do not send.
 - If auto-send is disabled, draft first unless the caller says the user explicitly approved this exact email.
@@ -845,6 +849,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           city: z.string().optional(),
           state: z.string().optional(),
           postalCode: z.string().optional(),
+          country: z.string().optional(),
           requestText: z.string().optional(),
           requestedEndorsements: z.array(z.string()).optional(),
           additionalInsuredName: z.string().optional(),
@@ -860,6 +865,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           city,
           state,
           postalCode,
+          country,
           requestText,
           requestedEndorsements,
           additionalInsuredName,
@@ -875,6 +881,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
             city,
             state,
             postalCode,
+            country,
             requestText,
             requestedEndorsements,
             additionalInsuredName,

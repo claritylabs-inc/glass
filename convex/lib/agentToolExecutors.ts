@@ -31,6 +31,8 @@ import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
 import { buildVendorComplianceTools } from "./vendorComplianceTools";
 import type { RequirementScope } from "./complianceTypes";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
+import { resolvePolicyPartyContext } from "./policyPartyContext";
+import { effectiveOrganizationProfileFacts } from "./orgProfileFacts";
 
 type AgentToolSurface = "web" | "email" | "imessage" | "mcp";
 
@@ -59,6 +61,7 @@ type ListedPolicyForTool = Record<string, any> & {
   _id?: Id<"policies">;
   orgId?: Id<"organizations">;
   _scopeOrgName?: string;
+  _clientProfileFacts?: Record<string, any>;
 };
 
 export type BuildAgentToolExecutorsOptions = {
@@ -100,6 +103,10 @@ function typeMap(
 function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
   const extractionDataStage = effectivePolicyDataStage(policy);
   const provisional = extractionDataStage === "preview";
+  const clientProfileFacts = policy._clientProfileFacts && typeof policy._clientProfileFacts === "object"
+    ? policy._clientProfileFacts as Record<string, any>
+    : {};
+  const partyContext = resolvePolicyPartyContext(policy, { clientProfileFacts });
   return {
     id: policy._id,
     client:
@@ -107,8 +114,25 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
         ? orgLabelForScope(scope, policy.orgId)
         : policy._scopeOrgName,
     orgId: policy.orgId,
-    insured: policy.insuredName,
-    carrier: policy.security,
+    insured: partyContext.insuredName,
+    insuredAddress: partyContext.insuredAddress,
+    operationsDescription: partyContext.operationsDescription,
+    additionalNamedInsureds: partyContext.additionalNamedInsureds,
+    policyParties: partyContext.parties,
+    clientProfile: {
+      namedInsured: clientProfileFacts.namedInsured?.value,
+      mailingAddress: clientProfileFacts.mailingAddress?.value,
+      operationsDescription: clientProfileFacts.operationsDescription?.value,
+      dba: clientProfileFacts.dba?.value,
+      entityType: clientProfileFacts.entityType?.value,
+      taxId: clientProfileFacts.taxId?.value,
+      fein: clientProfileFacts.fein?.value ?? clientProfileFacts.taxId?.value,
+      businessNumber: clientProfileFacts.businessNumber?.value,
+      additionalNamedInsureds: Array.isArray(clientProfileFacts.additionalNamedInsureds)
+        ? clientProfileFacts.additionalNamedInsureds.map((fact: Record<string, any>) => fact?.value).filter(Boolean)
+        : undefined,
+    },
+    carrier: partyContext.insurerName ?? policy.security,
     linesOfBusiness: policyLobCodes(policy),
     type: policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", "),
     number: policy.policyNumber,
@@ -143,6 +167,7 @@ function effectivePolicyDataStage(policy: Record<string, any>) {
 
 function isFinalPolicy(policy: Record<string, any>) {
   return (
+    !policy.deletedAt &&
     policy.pipelineStatus === "complete" &&
     effectivePolicyDataStage(policy) === "final"
   );
@@ -197,13 +222,20 @@ async function listPoliciesForReadableOrgs(
   const readOrgIds = options.readOrgIds ?? options.scope.readOrgIds;
   const rows = await Promise.all(
     readOrgIds.map(async (orgId) => {
-      const policies = await ctx.runQuery(
-        internal.policies.listAllPreviewReadableInternal,
-        { orgId },
-      );
+      const [policies, org] = await Promise.all([
+        ctx.runQuery(
+          internal.policies.listAllPreviewReadableInternal,
+          { orgId },
+        ),
+        ctx.runQuery(internal.orgs.getInternal, { id: orgId }),
+      ]);
       return (policies as Array<Record<string, unknown>>).map((policy) => ({
         ...policy,
         _scopeOrgName: orgLabelForScope(options.scope, orgId),
+        _clientProfileFacts:
+          org && typeof org === "object"
+            ? effectiveOrganizationProfileFacts(org as Record<string, unknown>)
+            : undefined,
       }));
     }),
   );
@@ -224,8 +256,18 @@ async function resolveReadablePolicy(
   if (!policy.orgId || !canReadOrg(options, policy.orgId)) {
     return { ok: false as const, message: "Policy not found." };
   }
+  const org = await ctx.runQuery(internal.orgs.getInternal, { id: policy.orgId });
   await options.onPolicyReferenced?.(policy._id);
-  return { ok: true, policy };
+  return {
+    ok: true,
+    policy: {
+      ...policy,
+      _clientProfileFacts:
+        org && typeof org === "object"
+          ? effectiveOrganizationProfileFacts(org as Record<string, unknown>)
+          : undefined,
+    },
+  };
 }
 
 async function resolveWritablePolicy(
@@ -515,11 +557,11 @@ export function buildAgentToolExecutors(
         city?: string;
         state?: string;
         postalCode?: string;
+        country?: string;
         requestText?: string;
         descriptionOfOperations?: string;
         requestedEndorsements?: string[];
         additionalInsuredName?: string;
-        certificateForm?: "acord25" | "acord24" | "acord27" | "acord28" | "acord29" | "acord30" | "acord31";
         explicitReissue?: boolean;
       }) => {
         const resolved = await resolveFinalWritablePolicy(
@@ -541,6 +583,12 @@ export function buildAgentToolExecutors(
             holderContactName: params.holderContactName,
             holderEmail: params.holderEmail,
             holderPhone: params.holderPhone,
+            addressLine1: params.addressLine1,
+            addressLine2: params.addressLine2,
+            city: params.city,
+            state: params.state,
+            postalCode: params.postalCode,
+            country: params.country,
             requestText: params.requestText,
             descriptionOfOperations: params.descriptionOfOperations,
             requestedEndorsements: params.requestedEndorsements,
@@ -560,11 +608,11 @@ export function buildAgentToolExecutors(
               city: params.city,
               state: params.state,
               postalCode: params.postalCode,
+              country: params.country,
               requestText: params.requestText,
               descriptionOfOperations: params.descriptionOfOperations,
               requestedEndorsements: params.requestedEndorsements,
               additionalInsuredName: params.additionalInsuredName,
-              formCode: params.certificateForm,
               forceReissue: params.explicitReissue,
               source: certificateSourceForSurface(options.surface),
               createdByUserId: options.userId,
@@ -676,7 +724,6 @@ export function buildAgentToolExecutors(
               versionNumber: generated.versionNumber,
               requestKind: generated.requestKind ?? "holder",
               additionalInsuredName: generated.additionalInsuredName,
-              formCode: generated.formCode,
             };
             const output = {
               message:
@@ -710,7 +757,6 @@ export function buildAgentToolExecutors(
             versionNumber: generated.versionNumber,
             requestKind: generated.requestKind ?? "holder",
             additionalInsuredName: generated.additionalInsuredName,
-            formCode: generated.formCode,
           };
           const output = {
             message: "COI generated and attached to this response.",

@@ -1,6 +1,5 @@
 "use client";
 
-import dayjs from "dayjs";
 import { type KeyboardEvent, type ReactNode } from "react";
 import { Archive, ArchiveRestore, RefreshCw } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -16,6 +15,7 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { formatDisplayDateTime } from "@/lib/date-format";
 
 export type CertificateHolderRecord = {
   _id: Id<"certificateHolders">;
@@ -84,7 +84,7 @@ const CERTIFICATE_ROW_CLICKABLE_CLASS =
 export function certificatePolicyLabel(policy?: CertificatePolicyRecord | null) {
   return [
     policy?.policyNumber,
-    policy?.carrier ?? policy?.security ?? policy?.mga,
+    policy?.carrier ?? policy?.security,
   ].filter(Boolean).join(" · ") || "Policy";
 }
 
@@ -96,7 +96,7 @@ export function certificateHolderAddress(holder?: CertificateHolderRecord | null
     [address.state, address.postalCode].filter(Boolean).join(" "),
   ].filter(Boolean).join(", ");
   return address.formatted ||
-    [address.line1, address.line2, cityLine].filter(Boolean).join("\n") ||
+    [address.line1, address.line2, cityLine, address.country].filter(Boolean).join("\n") ||
     null;
 }
 
@@ -112,11 +112,12 @@ export function certificateHolderActionAddress(holder?: CertificateHolderRecord 
     city: address?.city,
     state: address?.state,
     postalCode: address?.postalCode,
+    country: address?.country,
   };
 }
 
 export function formatCertificateTime(value?: number) {
-  return value ? dayjs(value).format("MMM D, YYYY h:mm A") : "Not issued";
+  return formatDisplayDateTime(value, "Not issued");
 }
 
 export function certificateBadge(row: PolicyCertificateRecord) {
@@ -383,7 +384,6 @@ export function CertificateDetailPanel({
   const { openWithUrl } = usePdf();
   const versions = row ? sortedVersions(row) : [];
   const currentVersion = row?.currentVersion;
-  const badge = row ? certificateBadge(row) : null;
   const currentUrl = row?.url ?? currentVersion?.url;
   const holderName = row?.holder?.displayName ?? "Certificate holder";
   const holderAddressText = row ? certificateHolderAddress(row.holder) : null;
@@ -396,22 +396,6 @@ export function CertificateDetailPanel({
         if (!open) onClose();
       }}
       title={holderName}
-      actions={
-        row ? (
-          <div className="flex shrink-0 items-center gap-2">
-            {badge ? (
-              <Badge variant={badge.variant} className="capitalize">
-                {badge.label}
-              </Badge>
-            ) : null}
-            {currentVersion ? (
-              <Badge variant="outline">
-                Version {currentVersion.versionNumber}
-              </Badge>
-            ) : null}
-          </div>
-        ) : null
-      }
       footer={
         row ? (
           <>
@@ -487,7 +471,7 @@ export function CertificateDetailPanel({
               { label: "Policy no.", value: row.policy?.policyNumber },
               {
                 label: "Carrier",
-                value: row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga,
+                value: row.policy?.carrier ?? row.policy?.security,
               },
               { label: "Insured", value: row.policy?.insuredName },
             ]}

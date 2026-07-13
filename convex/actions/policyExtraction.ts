@@ -11,25 +11,29 @@ import {
   createConvexSchedulerAdapter,
 } from "@claritylabs/cl-pipelines/convex";
 import type { Phase, PhaseResult } from "@claritylabs/cl-pipelines";
-import { buildExtractor } from "../lib/extraction";
+import { buildExtractor, runCoverageRecovery } from "../lib/extraction";
 import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
 import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
 import type { ExtractionResult, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";
+import { modelCapabilitiesForTask } from "../lib/modelCatalog";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { isFeatureEnabled } from "../lib/featureFlags";
 
 type ExtractionState = Record<string, unknown>;
 import {
   openExtractionReviewQuestions,
   postProcessExtractionDocument,
 } from "../lib/extractionPostProcess";
+import { applyCoverageDeclarationScoping } from "../lib/coverageScoping";
 import {
   normalizeOperationalProfile,
   normalizeStoredOperationalProfile,
   normalizeSourceTree,
   operationalProfilePolicyFields,
+  sourceSpansForSdk,
   sourceTreePolicyFields,
   type DocumentSourceNode,
   type PolicyOperationalProfile,
@@ -164,6 +168,8 @@ export type PolicyExtractionState = {
   policyVersionKind?: "new_policy" | "re_extraction" | "renewal";
   traceId?: string;
   externalWorker?: boolean;
+  /** Client-owned feature snapshot. It must not be re-read during a run. */
+  coverageRecovery?: { enabled: boolean; forcedByOperator?: boolean };
   /** Deprecated inline SDK checkpoint. Kept only so legacy stored state can deserialize. */
   clSdkCheckpoint?: PipelineCheckpoint<ExtractionState>;
   /** Deprecated storage-backed SDK checkpoint. New source-span SDK runs do not write it. */
@@ -222,7 +228,57 @@ type ExternalCompletionPayload = {
   warnings?: string[];
   tokenUsage?: unknown;
   performanceReport?: unknown;
+  coverageRecovery?: unknown;
 };
+
+type CoverageRecoveryDiagnosticsLike = {
+  version?: unknown;
+  status?: unknown;
+  regionCount?: unknown;
+  modelCallCount?: unknown;
+  recoveredCoverageCount?: unknown;
+  recoveredTermCount?: unknown;
+  recoveredScheduleCount?: unknown;
+  recoveredFinancialFactCount?: unknown;
+  citationRejectionCount?: unknown;
+  warnings?: unknown;
+};
+
+function coverageRecoverySucceeded(
+  state: PolicyExtractionState,
+  diagnostics: unknown,
+): diagnostics is CoverageRecoveryDiagnosticsLike & { status: "succeeded" } {
+  if (!state.coverageRecovery?.enabled || !diagnostics || typeof diagnostics !== "object") {
+    return false;
+  }
+  const value = diagnostics as CoverageRecoveryDiagnosticsLike;
+  return value.version === "coverage-recovery-v2" && value.status === "succeeded";
+}
+
+function coverageRecoveryLogMessage(diagnostics: unknown): string | undefined {
+  if (!diagnostics || typeof diagnostics !== "object") return undefined;
+  const value = diagnostics as CoverageRecoveryDiagnosticsLike;
+  if (typeof value.status !== "string") return undefined;
+  const count = (candidate: unknown) => typeof candidate === "number" ? candidate : 0;
+  return [
+    `Coverage recovery ${value.status}`,
+    `${count(value.recoveredCoverageCount)} coverages`,
+    `${count(value.recoveredTermCount)} terms`,
+    `${count(value.recoveredScheduleCount)} schedules`,
+    `${count(value.recoveredFinancialFactCount)} financial facts`,
+    `${count(value.citationRejectionCount)} rejected citations`,
+  ].join("; ");
+}
+
+async function coverageRecoverySnapshot(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  forcedByOperator = false,
+): Promise<NonNullable<PolicyExtractionState["coverageRecovery"]>> {
+  if (forcedByOperator) return { enabled: true, forcedByOperator: true };
+  const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
+  return { enabled: isFeatureEnabled(org, "coverage_recovery_v2") };
+}
 
 type ExternalClaimResult = {
   policyId: string;
@@ -1360,6 +1416,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               sourceSpans: pdfSource.sourceSpans as Array<Record<string, any>>,
             }
           : {}),
+        coverageRecovery: state.coverageRecovery ?? { enabled: false },
       };
 
       let result: ExtractionResult;
@@ -1399,6 +1456,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         : pdfSource.sourceChunks as Array<Record<string, any>>;
       const chunks = result.chunks;
       const tokenUsage = result.tokenUsage;
+      const coverageRecovery = (result as unknown as { coverageRecovery?: unknown }).coverageRecovery;
 
       await pCtx.log(
         `Extraction complete. Type: ${(result.document as Record<string, unknown>).type}. ${chunks.length} chunks, ${sourceSpans.length} source spans. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`,
@@ -1409,12 +1467,15 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           `Extraction model calls: ${result.performanceReport.modelCalls.length}; total model time: ${totalSeconds}s`,
         );
       }
+      const recoveryLog = coverageRecoveryLogMessage(coverageRecovery);
+      if (recoveryLog) await pCtx.log(recoveryLog);
 
       const processed = await postProcessExtractionDocument({
         ctx: convexCtx,
         orgId: state.orgId as Id<"organizations">,
         document: result.document as Record<string, unknown>,
         sourceSpans: canonicalSpans as Array<Record<string, any>>,
+        skipDeterministicCoverageRecovery: coverageRecoverySucceeded(state, coverageRecovery),
         log: async (message, level) => { await pCtx.log(message, level); },
       });
       result.document = processed.document as typeof result.document;
@@ -1454,6 +1515,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
               existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
+              existingPolicyFields: fields,
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -2218,6 +2280,7 @@ async function completeExternalExtractFromPayload(
   const sourceChunks = (payload?.sourceChunks ?? args.sourceChunks ?? []) as Array<{ id?: unknown }>;
   const rawSourceTree = payload?.sourceTree ?? args.sourceTree ?? [];
   const operationalProfileInput = payload?.operationalProfile ?? args.operationalProfile;
+  const coverageRecovery = payload?.coverageRecovery;
   const performanceReport = (payload?.performanceReport ?? args.performanceReport) as
     | {
         modelCallCount?: number;
@@ -2252,12 +2315,23 @@ async function completeExternalExtractFromPayload(
       level: "info",
     });
   }
+  const recoveryLog = coverageRecoveryLogMessage(coverageRecovery);
+  if (recoveryLog) {
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+      jobId: policyId,
+      timestamp: nowMs(),
+      message: recoveryLog,
+      phase: "extract",
+      level: coverageRecoverySucceeded(state, coverageRecovery) ? "info" : "warn",
+    });
+  }
   const processed = await postProcessExtractionDocument({
     ctx,
     orgId: state.orgId as Id<"organizations">,
     document: doc,
     sourceSpans: canonicalSpans,
     runModelReview: false,
+    skipDeterministicCoverageRecovery: coverageRecoverySucceeded(state, coverageRecovery),
     log: async (message, level = "info") => {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
@@ -2303,6 +2377,7 @@ async function completeExternalExtractFromPayload(
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
         existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
+        existingPolicyFields: fields,
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),
@@ -2621,16 +2696,13 @@ export const rematerializeSourceTreeProfile = internalAction({
   handler: async (ctx, args) => {
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as {
-      document?: Record<string, unknown>;
-      operationalProfile?: unknown;
-    } | null;
+    }) as Record<string, unknown> | null;
     if (!policy) throw new Error("Policy not found");
 
     const operationalProfile = normalizeStoredOperationalProfile(policy.operationalProfile);
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
-      fields: operationalProfilePolicyFields(operationalProfile),
+      fields: operationalProfilePolicyFields(operationalProfile, policy),
     });
     return {
       ok: true,
@@ -2751,16 +2823,37 @@ export const rebuildStoredSourceNodes = internalAction({
       sourceNodes,
       canonicalSpans,
     );
+    const scoped = applyCoverageDeclarationScoping({
+      fields: policy as Record<string, unknown>,
+      sourceSpans: canonicalSpans,
+      nowMs: nowMs(),
+    });
+    const scopedFields = scoped.fields;
+    const scopedProjection = Object.fromEntries([
+      "coverageSchedules",
+      "premium",
+      "premiumAmount",
+      "premiumBreakdown",
+      "taxesAndFees",
+      "totalCost",
+      "totalCostAmount",
+    ].flatMap((key) => Object.prototype.hasOwnProperty.call(scopedFields, key)
+      ? [[key, scopedFields[key]]]
+      : []));
 
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
-      fields: sourceTreePolicyFields({
-        sourceTree: sourceNodes,
-        operationalProfile,
-        existingDocumentMetadata: policy.documentMetadata,
-        existingDeclarations: policy.declarations,
-        existingLinesOfBusiness: policy.linesOfBusiness,
-      }),
+      fields: {
+        ...scopedProjection,
+        ...sourceTreePolicyFields({
+          sourceTree: sourceNodes,
+          operationalProfile,
+          existingDocumentMetadata: policy.documentMetadata,
+          existingDeclarations: policy.declarations,
+          existingLinesOfBusiness: policy.linesOfBusiness,
+          existingPolicyFields: scopedFields,
+        }),
+      },
     });
 
     await deletePolicyRowsInBatches(ctx, (internal as any).sourceSpans.deleteByPolicy, args.policyId);
@@ -2828,10 +2921,113 @@ export const rebuildStoredSourceNodes = internalAction({
       ok: true,
       sourceSpanCount: canonicalSpans.length,
       sourceNodeCount: sourceNodes.length,
+      coverageCount: Array.isArray(scopedFields.coverages) ? scopedFields.coverages.length : 0,
+      coverageScheduleCount: Array.isArray(scopedFields.coverageSchedules) ? scopedFields.coverageSchedules.length : 0,
       topLevelCount: sourceNodes.filter((node) => {
         const root = sourceNodes.find((candidate) => candidate.kind === "document");
         return root && node.parentId === root.id;
       }).length,
+    };
+  },
+});
+
+export const backfillStoredCoverageRecovery = internalAction({
+  args: {
+    policyId: v.id("policies"),
+    force: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.runQuery(internal.policies.getInternal, {
+      id: args.policyId,
+    }) as (Record<string, unknown> & {
+      orgId?: Id<"organizations">;
+      operationalProfile?: unknown;
+    }) | null;
+    if (!policy) throw new Error("Policy not found");
+    if (!policy.orgId) throw new Error("Policy is missing orgId");
+
+    const snapshot = await coverageRecoverySnapshot(ctx, policy.orgId, args.force === true);
+    if (!snapshot.enabled) {
+      return { ok: false as const, status: "disabled" as const };
+    }
+
+    const [spanDocs, nodeDocs] = await Promise.all([
+      ctx.runQuery((internal as any).sourceSpans.listSpansByPolicyInternal, {
+        policyId: args.policyId,
+      }) as Promise<Array<Record<string, any>>>,
+      ctx.runQuery((internal as any).sourceNodes.listByPolicyInternal, {
+        policyId: args.policyId,
+      }) as Promise<Array<Record<string, any>>>,
+    ]);
+    if (spanDocs.length === 0) {
+      throw new Error("Policy is missing stored source spans");
+    }
+
+    const sourceSpans = canonicalSourceSpans(
+      spanDocs.map((span) => storedSourceSpanLike(span, args.policyId)),
+    );
+    const storedSourceTree = nodeDocs
+      .map((node) => storedSourceNodeTreeInput(node, args.policyId))
+      .filter((node): node is Record<string, unknown> => Boolean(node));
+    const sourceTree = normalizeSourceTree(storedSourceTree, sourceSpans, args.policyId);
+    const sdkSourceSpans = sourceSpansForSdk(sourceSpans, args.policyId);
+    const primaryProfile = normalizeOperationalProfile(
+      policy.operationalProfile,
+      sourceTree,
+      sourceSpans,
+    );
+
+    const recovery = await runCoverageRecovery({
+      sourceTree,
+      sourceSpans: sdkSourceSpans,
+      operationalProfile: primaryProfile,
+      generateObject: makeGenerateObject("extraction_coverage_recovery", {
+        ctx,
+        orgId: policy.orgId,
+        tracePolicyId: args.policyId,
+      }),
+      modelCapabilities: modelCapabilitiesForTask("extraction_coverage_recovery"),
+    });
+    if (recovery.diagnostics.status !== "succeeded") {
+      return {
+        ok: false as const,
+        status: "failed" as const,
+        diagnostics: recovery.diagnostics,
+      };
+    }
+
+    const operationalProfile = normalizeOperationalProfile(
+      recovery.operationalProfile,
+      sourceTree,
+      sourceSpans,
+    );
+    const recoveredFields = operationalProfilePolicyFields(operationalProfile, policy);
+    const recoveryProjection = Object.fromEntries([
+      "operationalProfile",
+      "coverages",
+      "coverageSchedules",
+      "premium",
+      "premiumAmount",
+      "premiumBreakdown",
+      "taxesAndFees",
+      "totalCost",
+      "totalCostAmount",
+      "linesOfBusiness",
+    ].flatMap((key) => Object.prototype.hasOwnProperty.call(recoveredFields, key)
+      ? [[key, recoveredFields[key]]]
+      : []));
+
+    await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
+      id: args.policyId,
+      fields: recoveryProjection,
+    });
+    return {
+      ok: true as const,
+      status: "complete" as const,
+      forced: snapshot.forcedByOperator === true,
+      diagnostics: recovery.diagnostics,
+      sourceSpanCount: sourceSpans.length,
+      sourceNodeCount: sourceTree.length,
     };
   },
 });
@@ -2853,6 +3049,7 @@ export const startPolicyExtractionFromUpload = internalAction({
     )),
   },
   handler: async (ctx, { policyId, fileId, fileName, orgId, userId, policyFileId, policyVersionKind }) => {
+    const coverageRecovery = await coverageRecoverySnapshot(ctx, orgId);
     const traceId = randomUUID();
     await startTraceSession(ctx, {
       traceId,
@@ -2878,6 +3075,7 @@ export const startPolicyExtractionFromUpload = internalAction({
           userId: String(userId),
           policyFileId: policyFileId ? String(policyFileId) : undefined,
           policyVersionKind,
+          coverageRecovery,
           traceId,
         },
       });
@@ -2911,6 +3109,7 @@ export const startPolicyExtractionFromUpload = internalAction({
         userId: String(userId),
         policyFileId: policyFileId ? String(policyFileId) : undefined,
         policyVersionKind,
+        coverageRecovery,
         traceId,
       },
     });
@@ -2956,6 +3155,10 @@ export const retryPolicyExtraction = internalAction({
     if (!policy) throw new Error("Policy not found");
 
     const existingState = policy.pipelineCheckpoint?.state;
+    if (!policy.orgId) throw new Error("Policy is missing orgId");
+    const coverageRecovery = mode === "resume" && existingState?.coverageRecovery
+      ? existingState.coverageRecovery
+      : await coverageRecoverySnapshot(ctx, policy.orgId as Id<"organizations">);
     const traceId = mode === "resume" && existingState?.traceId
       ? existingState.traceId
       : randomUUID();
@@ -2985,6 +3188,7 @@ export const retryPolicyExtraction = internalAction({
         userId: existingState?.userId ?? String(policy.userId ?? policy.uploadedByUserId ?? ""),
         policyFileId: existingState?.policyFileId,
         policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
+        coverageRecovery,
         traceId,
       };
       if (!nextState.fileId) throw new Error("Policy source file is missing");
@@ -3014,6 +3218,7 @@ export const retryPolicyExtraction = internalAction({
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? ""),
         policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
+        coverageRecovery,
         traceId,
       },
     });

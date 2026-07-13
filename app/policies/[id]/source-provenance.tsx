@@ -28,6 +28,18 @@ export type SourceSpanDoc = {
   metadata?: Record<string, unknown>;
 };
 
+export type SourceNodeEvidenceDoc = {
+  nodeId: string;
+  sourceSpanIds: string[];
+  pageStart?: number;
+  pageEnd?: number;
+};
+
+export type SourceEvidenceTarget = {
+  page: number;
+  highlightBoxes: PdfHighlightBox[];
+};
+
 export function sourceSpanIdsFrom(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
   const raw = (value as { sourceSpanIds?: unknown }).sourceSpanIds;
@@ -100,6 +112,23 @@ export function usePolicySourceSpans(
   ) as SourceSpanDoc[] | undefined;
 }
 
+export function usePolicySourceNodes(
+  policyId: Id<"policies"> | undefined,
+  sourceNodeIds: string[],
+) {
+  const uniqueIds = useMemo(
+    () => [...new Set(sourceNodeIds)].sort().slice(0, 128),
+    [sourceNodeIds],
+  );
+  return useCachedQuery(
+    "sourceNodes.listByPolicyAndNodeIds.policy-detail",
+    api.sourceNodes.listByPolicyAndNodeIds,
+    policyId && uniqueIds.length > 0
+      ? { policyId, nodeIds: uniqueIds }
+      : "skip",
+  ) as SourceNodeEvidenceDoc[] | undefined;
+}
+
 export function evidenceSpansForIds(
   spans: SourceSpanDoc[] | undefined,
   sourceSpanIds: string[],
@@ -146,6 +175,20 @@ export function firstEvidencePage(
   );
 }
 
+export function sourceEvidenceTarget(
+  sourceSpanIds: string[],
+  sourceSpans: SourceSpanDoc[] | undefined,
+  fallbackPage?: number,
+): SourceEvidenceTarget | null {
+  const evidenceSpans = evidenceSpansForIds(sourceSpans, sourceSpanIds);
+  const page = firstEvidencePage(evidenceSpans, fallbackPage);
+  if (page == null) return null;
+  return {
+    page,
+    highlightBoxes: highlightBoxesForSpans(evidenceSpans),
+  };
+}
+
 export function SourceEvidenceButton({
   sourceSpanIds,
   sourceSpans,
@@ -161,17 +204,16 @@ export function SourceEvidenceButton({
 }) {
   const pdf = usePdf();
   const activeFileUrl = fileUrl ?? pdf.fileUrl;
-  const evidenceSpans = evidenceSpansForIds(sourceSpans, sourceSpanIds ?? []);
-  const page = firstEvidencePage(evidenceSpans, fallbackPage);
-  const highlightBoxes = highlightBoxesForSpans(evidenceSpans);
+  const target = sourceEvidenceTarget(
+    sourceSpanIds ?? [],
+    sourceSpans,
+    fallbackPage,
+  );
+  const page = target?.page;
+  const highlightBoxes = target?.highlightBoxes ?? [];
   const hasExactHighlight = highlightBoxes.length > 0;
 
-  if (
-    !activeFileUrl ||
-    page == null ||
-    (!sourceSpanIds?.length && highlightBoxes.length === 0)
-  )
-    return null;
+  if (!activeFileUrl || page == null) return null;
 
   return (
     <button

@@ -107,7 +107,8 @@ export function conductorPorts() {
 
 export function workspaceSlug() {
   return (
-    (process.env.CONDUCTOR_WORKSPACE_NAME?.trim() || path.basename(repoRoot))
+    path
+      .basename(repoRoot)
       .toLowerCase()
       .replace(/[^a-z0-9_.-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "workspace"

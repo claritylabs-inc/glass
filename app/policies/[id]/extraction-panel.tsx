@@ -21,6 +21,7 @@ import {
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { formatDisplayDate } from "@/lib/date-format";
 import {
   SourceEvidenceButton,
   collectSourceSpanIds,
@@ -260,6 +261,9 @@ type PolicyDocument = {
   carrierLegalName?: string;
   security?: string;
   mga?: string;
+  generalAgent?: { agencyName?: string; licenseNumber?: string };
+  insurer?: { naicNumber?: string };
+  producer?: { agencyName?: string; licenseNumber?: string };
   policyNumber?: string;
   insuredName?: string;
   effectiveDate?: string;
@@ -335,8 +339,9 @@ function DocContent({ children }: { children: string }) {
 
 function formatStructuredLabel(value?: string | null) {
   if (!value) return null;
-  const acronyms = new Set(["dba", "fein", "vin", "naic", "mga"]);
+  const acronyms = new Set(["dba", "fein", "vin", "naic"]);
   return value
+    .replace(/\bmga\b/gi, "general agent")
     .replace(/[_-]+/g, " ")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
@@ -628,8 +633,14 @@ function ConditionBody({ c }: { c: PolicyCondition }) {
 function EndorsementBody({ e }: { e: PolicyEndorsement }) {
   const metaItems = [
     e?.formNumber && { label: "Form", value: e.formNumber },
-    e?.editionDate && { label: "Edition", value: e.editionDate },
-    e?.effectiveDate && { label: "Effective", value: e.effectiveDate },
+    e?.editionDate && {
+      label: "Edition",
+      value: formatDisplayDate(e.editionDate, e.editionDate),
+    },
+    e?.effectiveDate && {
+      label: "Effective",
+      value: formatDisplayDate(e.effectiveDate, e.effectiveDate),
+    },
     e?.premiumImpact && { label: "Premium", value: e.premiumImpact },
   ].filter(Boolean) as { label: string; value: string }[];
 
@@ -2596,9 +2607,21 @@ export function ExtractionCards({
     policyDocument?.carrier;
   const topLevelRows = compactRows([
     carrierDisplay && { label: "Carrier", value: carrierDisplay },
-    policyDocument?.mga && {
-      label: "Administrator",
-      value: policyDocument.mga,
+    (policyDocument?.generalAgent?.agencyName || policyDocument?.mga) && {
+      label: "General Agent",
+      value: policyDocument.generalAgent?.agencyName || policyDocument.mga,
+    },
+    policyDocument?.insurer?.naicNumber && {
+      label: "Insurer NAIC number",
+      value: policyDocument.insurer.naicNumber,
+    },
+    policyDocument?.producer?.licenseNumber && {
+      label: "Producer license number",
+      value: policyDocument.producer.licenseNumber,
+    },
+    policyDocument?.generalAgent?.licenseNumber && {
+      label: "General Agent license number",
+      value: policyDocument.generalAgent.licenseNumber,
     },
     policyDocument?.policyNumber && {
       label: "Policy number",
@@ -2610,7 +2633,7 @@ export function ExtractionCards({
     },
     (policyDocument?.effectiveDate || policyDocument?.expirationDate) && {
       label: "Policy period",
-      value: `${policyDocument.effectiveDate ?? "—"} – ${policyDocument.expirationDate ?? "—"}`,
+      value: `${policyDocument.effectiveDate ? formatDisplayDate(policyDocument.effectiveDate, policyDocument.effectiveDate) : "—"} – ${policyDocument.expirationDate ? formatDisplayDate(policyDocument.expirationDate, policyDocument.expirationDate) : "—"}`,
     },
     policyLobCodes(policyDocument ?? {}).filter((code) => code !== "UN").length && {
       label: "Lines of business",
@@ -2926,7 +2949,7 @@ export function ExtractionCards({
                 : undefined,
               e?.effectiveDate
                 ? {
-                    label: `Eff. ${e.effectiveDate}`,
+                    label: `Eff. ${formatDisplayDate(e.effectiveDate, e.effectiveDate)}`,
                     className: "bg-foreground/5 text-muted-foreground",
                   }
                 : undefined,

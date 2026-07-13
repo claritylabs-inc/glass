@@ -25,6 +25,7 @@ type ExtractionPostProcessOptions = {
   document: Record<string, unknown>;
   sourceSpans: SourceSpanLike[];
   runModelReview?: boolean;
+  skipDeterministicCoverageRecovery?: boolean;
   log?: (message: string, level?: "info" | "warn" | "error") => Promise<void> | void;
 };
 
@@ -38,9 +39,9 @@ export type ExtractionPostProcessResult = {
 const orgNameNormalizationSchema = z.object({
   carrier: z.string().nullable(),
   security: z.string().nullable(),
-  mga: z.string().nullable(),
   broker: z.string().nullable(),
   brokerAgency: z.string().nullable(),
+  generalAgentName: z.string().nullable(),
 });
 
 const coverageReviewCopySchema = z.object({
@@ -75,9 +76,19 @@ const SOURCE_GROUNDED_IDENTITY_FIELDS = [
 ] as const;
 
 const SOURCE_GROUNDED_PARTY_FIELDS = {
-  insurer: ["legalName", "naicNumber", "amBestRating", "amBestNumber", "admittedStatus", "stateOfDomicile"],
-  producer: ["agencyName", "contactName", "licenseNumber", "phone", "email"],
+  insurer: ["legalName", "naicNumber", "amBestRating", "amBestNumber", "admittedStatus", "stateOfDomicile", "address"],
+  producer: ["agencyName", "contactName", "licenseNumber", "phone", "email", "address"],
+  generalAgent: ["agencyName", "licenseNumber", "address"],
 } as const;
+
+const SOURCE_GROUNDED_ADDRESS_FIELDS = [
+  "street1",
+  "street2",
+  "city",
+  "state",
+  "zip",
+  "country",
+] as const;
 
 const SOURCE_PROVENANCE_FIELDS = [
   "sourceSpanIds",
@@ -236,6 +247,15 @@ function sourceSupportsScalarValue(value: unknown, corpus: string) {
   return true;
 }
 
+function sourceSupportsAddressValue(value: string, corpus: string) {
+  const normalized = normalizedSourceEvidence(value);
+  if (!normalized || isPlaceholderSourceValue(value)) return true;
+  if (normalized.length < 3) {
+    return ` ${corpus} `.includes(` ${normalized} `);
+  }
+  return sourceSupportsScalarValue(value, corpus);
+}
+
 function displayRemovedValue(value: unknown) {
   const display = typeof value === "string" || typeof value === "number"
     ? String(value).replace(/\s+/g, " ").trim()
@@ -293,6 +313,27 @@ function copySourceProvenance(record: Record<string, unknown>) {
   return provenance;
 }
 
+function sourceGroundedAddress(
+  field: string,
+  value: unknown,
+  corpus: string,
+  removed: RemovedSourceSensitiveValue[],
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const next: Record<string, string> = {};
+  for (const key of SOURCE_GROUNDED_ADDRESS_FIELDS) {
+    const raw = record[key];
+    if (raw === undefined || raw === null) continue;
+    if (typeof raw === "string" && sourceSupportsAddressValue(raw, corpus)) {
+      next[key] = raw;
+    } else {
+      removed.push({ field: `${field}.${key}`, value: displayRemovedValue(raw) });
+    }
+  }
+  return next.street1 ? next : undefined;
+}
+
 function sourceGroundedPartyObject(
   field: keyof typeof SOURCE_GROUNDED_PARTY_FIELDS,
   value: unknown,
@@ -324,6 +365,11 @@ function sourceGroundedPartyObject(
   for (const key of allowedFields) {
     const raw = record[key];
     if (raw === undefined || raw === null) continue;
+    if (key === "address") {
+      const address = sourceGroundedAddress(`${field}.address`, raw, recordCorpus, removed);
+      if (address) next.address = address;
+      continue;
+    }
     if (sourceSupportsScalarValue(raw, recordCorpus)) {
       next[key] = raw;
     } else {
@@ -485,9 +531,14 @@ async function normalizeOrgNamesWithLlm(
   const candidates = {
     carrier: typeof fields.carrier === "string" ? fields.carrier : undefined,
     security: typeof fields.security === "string" ? fields.security : undefined,
-    mga: typeof fields.mga === "string" ? fields.mga : undefined,
     broker: typeof fields.broker === "string" ? fields.broker : undefined,
     brokerAgency: typeof fields.brokerAgency === "string" ? fields.brokerAgency : undefined,
+    generalAgentName:
+      fields.generalAgent && typeof fields.generalAgent === "object" && !Array.isArray(fields.generalAgent)
+        ? typeof (fields.generalAgent as Record<string, unknown>).agencyName === "string"
+          ? (fields.generalAgent as Record<string, unknown>).agencyName as string
+          : undefined
+        : undefined,
   };
   if (!Object.values(candidates).some(Boolean)) return fields;
 
@@ -508,13 +559,23 @@ ${JSON.stringify(candidates)}`,
     });
 
     const normalized = result.object;
+    const generalAgent = fields.generalAgent && typeof fields.generalAgent === "object" && !Array.isArray(fields.generalAgent)
+      ? fields.generalAgent as Record<string, unknown>
+      : undefined;
     return {
       ...fields,
       carrier: normalized.carrier ?? fields.carrier,
       security: normalized.security ?? fields.security,
-      mga: normalized.mga ?? fields.mga,
       broker: normalized.broker ?? fields.broker,
       brokerAgency: normalized.brokerAgency ?? fields.brokerAgency,
+      ...(generalAgent
+        ? {
+            generalAgent: {
+              ...generalAgent,
+              agencyName: normalized.generalAgentName ?? generalAgent.agencyName,
+            },
+          }
+        : {}),
     };
   } catch (err) {
     console.warn(
@@ -570,11 +631,21 @@ export async function postProcessExtractionDocument(
   await logRemovedSourceSensitiveValues(groundedDocument.removed, options.log);
 
   const mappedFields = insuranceDocToPolicy(document as never);
-  const scopedCoverage = applyCoverageDeclarationScoping({
-    fields: mappedFields,
-    sourceSpans: options.sourceSpans,
-    nowMs: dayjs().valueOf(),
-  });
+  const scopedCoverage = options.skipDeterministicCoverageRecovery
+    ? {
+        fields: mappedFields,
+        review: {
+          strategyVersion: "coverage-declaration-scope-v1" as const,
+          generatedAt: dayjs().valueOf(),
+          questions: [],
+        },
+        changed: false,
+      }
+    : applyCoverageDeclarationScoping({
+        fields: mappedFields,
+        sourceSpans: options.sourceSpans,
+        nowMs: dayjs().valueOf(),
+      });
   if (scopedCoverage.changed && scopedCoverage.review.questions.length > 0) {
     await options.log?.(
       `Coverage scoping found ${scopedCoverage.review.questions.length} limit question${scopedCoverage.review.questions.length === 1 ? "" : "s"} for declaration review`,

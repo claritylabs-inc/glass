@@ -24,12 +24,16 @@ export { buildConversationMemoryContext, buildConversationMemoryFromList, buildD
 const CONFIDENCE_MARKER_RE = /\[\[(?:g|i|u):([\s\S]+?)\]\]/g;
 const CONFIDENCE_MARKER_PRESENT_RE = /\[\[(?:g|i|u):[\s\S]+?\]\]/;
 
+function normalizeConfidenceMarkers(text: string): string {
+  return text.replace(/\[\[(g|i|u)\]:/g, "[[$1:");
+}
+
 export function hasConfidenceMarkers(text: string): boolean {
-  return CONFIDENCE_MARKER_PRESENT_RE.test(text);
+  return CONFIDENCE_MARKER_PRESENT_RE.test(normalizeConfidenceMarkers(text));
 }
 
 export function stripMarkdown(text: string): string {
-  let result = text;
+  let result = normalizeConfidenceMarkers(text);
   result = result.replace(CONFIDENCE_MARKER_RE, "$1");
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
   result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
@@ -40,7 +44,7 @@ export function stripMarkdown(text: string): string {
 
 export function markdownToHtml(text: string): string {
   const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
-  let result = text;
+  let result = normalizeConfidenceMarkers(text);
   result = result.replace(CONFIDENCE_MARKER_RE, "$1");
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
   result = result.replace(
@@ -236,6 +240,8 @@ TOOLS AND ANALYSIS:
 - For requests for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document, identify the correct policy and use the attachment/delivery tool rather than only summarizing policy data. If the user asks to email it, use the email expert and attach kind original_policy.
 - If extracted policy summaries or structured fields do not answer the question, conflict, or are low-confidence, use lookup_policy_section to search the document's source-native outline and original PDF source evidence before saying the information is unavailable.
 - Treat lookup_policy_section results with evidenceSource "original_pdf" or sourceSpanIds as stronger evidence than extracted summaries for exact numeric, date, named-insured, endorsement, exclusion, condition, and definition facts.
+- Use lookup_policy structured insured address and operationsDescription before source search. Producer, insurer, carrier, and General Agent details are policy-scoped under policyParties; never treat them as client organization profile facts.
+- If a policy-party address or operations description is absent from structured policy/client facts, report it as missing or search the selected policy source. Do not use public web search, generic company context, or an improvised paraphrase to replace the missing fact.
 - If original-PDF evidence reveals a missing or corrected policy fact, use confirm_policy_fact with the supporting sourceSpanIds before relying on the corrected fact in later reasoning. Only update fields that are directly supported by the cited PDF text.
 - Answer policy questions from the current policy record/version by default. Only use policy-version or certificate-version history tools when the user explicitly asks for history, prior terms, renewals, endorsements, re-extractions, certificate issue history, or reissue history.
 - For COI/certificate requests, describe the action as generating or retrieving a COI/certificate from policy data and holder details. Do not offer to "pull COI wording" or "pull the right COI wording"; COIs are generated artifacts, not wording excerpts.
@@ -330,6 +336,7 @@ export function policySearchScore(
     policy.insuredName,
     policy.security,
     policy.carrier,
+    (policy.generalAgent as { agencyName?: string } | undefined)?.agencyName,
     policy.mga,
     policy.policyNumber,
     policy.summary,

@@ -13,6 +13,7 @@ import {
   type CoverageBreakdownRow,
 } from "./coverageBreakdown";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
+import { resolvePolicyPartyContext } from "./policyPartyContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,7 +34,15 @@ export type CoverageLine = CertificateCoverageLine;
  * Produces one CoverageLine per detected coverage type.
  */
 
-export function policyToCoiData(policy: any): CoiData {
+type ClientProfileFacts = {
+  mailingAddress?: { value?: unknown };
+  operationsDescription?: { value?: unknown };
+};
+
+export function policyToCoiData(
+  policy: any,
+  options: { clientProfileFacts?: ClientProfileFacts } = {},
+): CoiData {
   const profile = operationalProfile(policy);
   const limits: any = policy.limits ?? {};
   const profileLinesOfBusiness = Array.isArray(profile?.linesOfBusiness) && profile.linesOfBusiness.length > 0
@@ -48,28 +57,12 @@ export function policyToCoiData(policy: any): CoiData {
   const expDate = profileValue(profile?.expirationDate) ?? pickField(declarations, "policyPeriodEnd") ?? policy.expirationDate ?? "";
   const coverageForm = policy.coverageForm ?? "occurrence";
   const producer = policy.producer ?? {};
-  const producerName = joinLines(
-    profileValue(profile?.broker) ?? pickField(declarations, "producerName") ?? producer.agencyName ?? policy.brokerAgency ?? policy.broker,
-    pickField(declarations, "producerDBA"),
-  );
-  const producerAddress = joinLines(
-    pickField(declarations, "producerAddressStreetSuite"),
-    pickField(declarations, "producerAddressCityStateZip"),
-  ) || producer.address;
-  const insuranceCompanyAddress = joinLines(
-    pickField(declarations, "insurerAddress1"),
-    pickField(declarations, "insurerCityStateZip"),
-  );
-  const insuredAddress =
-    joinLines(
-      pickField(declarations, "masterPolicyHolderAndMailingAddressStreet")?.replace(/;$/, ""),
-      pickField(declarations, "masterPolicyHolderAndMailingAddressCityStateZip"),
-    ) || policy.insuredAddress;
+  const partyContext = resolvePolicyPartyContext(policy, options);
 
   // Build insurer row for Insurer A
   const insurers = [{
     letter: "A",
-    name: profileValue(profile?.insurer) ?? pickField(declarations, "insurerName") ?? policy.carrierLegalName ?? policy.insurer?.legalName ?? policy.security ?? policy.carrier ?? "N/A",
+    name: partyContext.insurerName ?? "N/A",
     naic: policy.carrierNaicNumber ?? policy.insurer?.naicNumber,
     amBest: policy.carrierAmBestRating,
     admitted: policy.carrierAdmittedStatus,
@@ -85,17 +78,17 @@ export function policyToCoiData(policy: any): CoiData {
   return {
     title: deriveCertificateTitle(),
     issuedDateLabel: "ISSUE DATE (YYYY/MM/DD)",
-    producerAgency: producerName,
-    producerContact: producer.contactName ?? policy.underwriter ?? policy.mga,
+    producerAgency: partyContext.producerName,
+    producerContact: partyContext.producerContactName ?? policy.underwriter,
     producerLicense: producer.licenseNumber ?? policy.brokerLicenseNumber,
-    producerAddress,
-    producerPhone: producer.phone,
-    producerEmail: producer.email,
-    insuranceCompanyAddress,
+    producerAddress: partyContext.producerAddress,
+    producerPhone: partyContext.producerPhone,
+    producerEmail: partyContext.producerEmail,
+    insuranceCompanyAddress: formatAddress(partyContext.insurerAddress),
     insuranceCompanyPhone: pickField(declarations, "insurerPhone"),
-    insuredName: profileValue(profile?.namedInsured) ?? pickField(declarations, "masterPolicyHolderAndMailingAddressName")?.replace(/;$/, "") ?? policy.insuredName ?? "N/A",
+    insuredName: partyContext.insuredName ?? "N/A",
     insuredDba: policy.insuredDba,
-    insuredAddress,
+    insuredAddress: partyContext.insuredAddress,
     insuredFein: policy.insuredFein,
     insurers,
     coverages: coverageLines.length ? coverageLines : buildFallbackCoverageLines(linesOfBusiness, limits, {
@@ -104,7 +97,7 @@ export function policyToCoiData(policy: any): CoiData {
       expirationDate: expDate,
       coverageForm,
     }),
-    description: buildDescription(policyWithOperationalCoverages(policy, profile)),
+    description: partyContext.operationsDescription,
   };
 }
 
@@ -311,15 +304,6 @@ function joinLines(...values: Array<string | undefined | null | false>): string 
     .map((value) => typeof value === "string" ? value.trim() : "")
     .filter(Boolean);
   return parts.length ? parts.join("\n") : undefined;
-}
-
-function buildDescription(policy: any): string | undefined {
-  const facts = Array.isArray(policy.supplementaryFacts) ? policy.supplementaryFacts : [];
-  const operations = facts
-    .map((fact: any) => typeof fact?.value === "string" ? fact.value.trim() : "")
-    .filter((value: string) => /operations|location|additional insured|certificate holder/i.test(value))
-    .slice(0, 2);
-  return operations.length ? operations.join("\n") : undefined;
 }
 
 function buildCoverageLines(
@@ -590,10 +574,11 @@ function flattenToLimitLines(limits: any): Array<{ label: string; value: string 
 }
 
 function formatAddress(
-  addr: string | { street1?: string; street2?: string; city?: string; state?: string; zip?: string; country?: string } | undefined | null,
+  addr: string | { street1?: string; street2?: string; city?: string; state?: string; zip?: string; country?: string; formatted?: string } | undefined | null,
 ): string {
   if (!addr) return "";
   if (typeof addr === "string") return addr;
+  if (addr.formatted?.trim()) return addr.formatted.trim();
   const parts = [
     addr.street1,
     addr.street2,
@@ -606,6 +591,7 @@ function formatAddress(
 // ─── PDF Generation ───────────────────────────────────────────────────────────
 
 const PAGE_W = 612;
+const PAGE_H = 792;
 const M = 30;          // left/right margin
 const W = PAGE_W - 2 * M;  // 552pt usable width
 
@@ -614,6 +600,9 @@ const FS_LABEL = 6.5;
 const FS_VALUE = 8;
 const FS_SMALL = 6;
 const FS_DISCLAIMER = 5.5;
+const INFO_BOX_VALUE_TOP = 16;
+const INFO_BOX_BOTTOM_PADDING = 4;
+const HOLDER_BOX_MAX_HEIGHT = 96;
 
 // Colors
 const C_BLACK = "#000000";
@@ -666,12 +655,18 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     );
     const topW = W * 0.52;
     const rightW = W - topW;
-    const topH = Math.max(76, textBlockHeight(doc, producerText, topW - 10, FS_LABEL, false) + 18);
+    const topH = infoBoxHeight(doc, producerText, topW, {
+      minHeight: 76,
+      fontSize: FS_VALUE,
+    });
     drawInfoBox(doc, M, y, topW, topH, "PRODUCER", producerText);
     drawInsurerLegend(doc, M + topW, y, rightW, topH, data);
     y += topH;
 
-    const insuredH = Math.max(58, textBlockHeight(doc, insuredText, W - 10, FS_VALUE, true) + 18);
+    const insuredH = infoBoxHeight(doc, insuredText, W, {
+      minHeight: 58,
+      fontSize: FS_VALUE,
+    });
     drawInfoBox(doc, M, y, W, insuredH, "INSURED'S FULL NAME AND MAILING ADDRESS", insuredText);
     y += insuredH + 10;
 
@@ -692,8 +687,9 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
 
     const descText = data.description ?? "";
     const descMaxH = 58;
-    const descOverflows =
-      textBlockHeight(doc, descText, W - 10, FS_LABEL, false) + 18 > descMaxH;
+    const descOverflows = infoBoxHeight(doc, descText, W, {
+      fontSize: FS_LABEL,
+    }) > descMaxH;
     const descH = descMaxH;
     drawInfoBox(
       doc,
@@ -703,18 +699,53 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
       descH,
       "DESCRIPTION OF OPERATIONS / LOCATIONS / SPECIAL ITEMS / ADDITIONAL INSURED",
       descOverflows ? "See additional remarks schedule attached" : descText,
+      { fontSize: FS_LABEL },
     );
     y += descH;
 
     const bottomW = W * 0.46;
     const cancelText = "Should any of the above described policies be cancelled before the expiration date thereof, notice will be delivered in accordance with the policy provisions.";
-    const bottomH = Math.max(54, textBlockHeight(doc, data.certificateHolder ?? "", bottomW - 10, FS_VALUE, false) + 18, textBlockHeight(doc, cancelText, W - bottomW - 10, FS_DISCLAIMER, false) + 18);
-    drawInfoBox(doc, M, y, bottomW, bottomH, "CERTIFICATE HOLDER", data.certificateHolder ?? "");
-    drawInfoBox(doc, M + bottomW, y, W - bottomW, bottomH, "CANCELLATION", cancelText);
+    const holderRequiredH = infoBoxHeight(doc, data.certificateHolder, bottomW, {
+      minHeight: 54,
+      fontSize: FS_VALUE,
+    });
+    const holderOverflows = holderRequiredH > HOLDER_BOX_MAX_HEIGHT;
+    const cancelRequiredH = infoBoxHeight(doc, cancelText, W - bottomW, {
+      minHeight: 54,
+      fontSize: FS_DISCLAIMER,
+    });
+    const bottomH = Math.max(
+      54,
+      Math.min(holderRequiredH, HOLDER_BOX_MAX_HEIGHT),
+      Math.min(cancelRequiredH, HOLDER_BOX_MAX_HEIGHT),
+    );
+    drawInfoBox(
+      doc,
+      M,
+      y,
+      bottomW,
+      bottomH,
+      "CERTIFICATE HOLDER",
+      holderOverflows ? "See additional remarks schedule attached" : data.certificateHolder,
+      { fontSize: FS_VALUE },
+    );
+    drawInfoBox(
+      doc,
+      M + bottomW,
+      y,
+      W - bottomW,
+      bottomH,
+      "CANCELLATION",
+      cancelText,
+      { fontSize: FS_DISCLAIMER },
+    );
     y += bottomH + 6;
 
-    if (descOverflows) {
-      drawAcord101(doc, data);
+    if (descOverflows || holderOverflows) {
+      drawAcord101(doc, data, {
+        includeDescription: descOverflows,
+        includeHolder: holderOverflows,
+      });
     }
 
     doc.end();
@@ -731,12 +762,38 @@ function drawInfoBox(
   h: number,
   label: string,
   value?: string,
+  options: { fontSize?: number; bold?: boolean } = {},
 ) {
   doc.rect(x, y, w, h).stroke();
   sectionLabel(doc, label, x + 4, y + 4);
   if (!value) return;
-  doc.font("Helvetica").fontSize(FS_VALUE).fillColor(C_BLACK);
-  doc.text(value, x + 5, y + 16, { width: w - 10, height: h - 20 });
+  doc
+    .font(options.bold ? "Helvetica-Bold" : "Helvetica")
+    .fontSize(options.fontSize ?? FS_VALUE)
+    .fillColor(C_BLACK);
+  doc.text(value, x + 5, y + INFO_BOX_VALUE_TOP, {
+    width: w - 10,
+    height: h - INFO_BOX_VALUE_TOP - INFO_BOX_BOTTOM_PADDING,
+  });
+}
+
+function infoBoxHeight(
+  doc: PDFKit.PDFDocument,
+  value: string | undefined,
+  width: number,
+  options: { minHeight?: number; fontSize?: number; bold?: boolean } = {},
+) {
+  const textHeight = textBlockHeight(
+    doc,
+    value,
+    width - 10,
+    options.fontSize ?? FS_VALUE,
+    options.bold ?? false,
+  );
+  return Math.max(
+    options.minHeight ?? 0,
+    textHeight + INFO_BOX_VALUE_TOP + INFO_BOX_BOTTOM_PADDING,
+  );
 }
 
 function drawCoverageSectionHeader(
@@ -1018,23 +1075,30 @@ function drawAcordPropertyEvidenceForm(doc: PDFKit.PDFDocument, data: CoiData) {
     data.interestHolder ?? data.certificateHolder,
     data.interestHolderRelationship && `Interest: ${data.interestHolderRelationship}`,
   );
+  const interestRequiredH = infoBoxHeight(doc, interestText, W, {
+    minHeight: 62,
+    fontSize: FS_VALUE,
+  });
+  const interestOverflows = interestRequiredH > HOLDER_BOX_MAX_HEIGHT;
+  const interestH = Math.min(interestRequiredH, HOLDER_BOX_MAX_HEIGHT);
   drawInfoBox(
     doc,
     M,
     y,
     W,
-    62,
+    interestH,
     formCode === "acord24" || formCode === "acord30" || formCode === "acord31"
       ? "CERTIFICATE HOLDER"
       : "ADDITIONAL INTEREST",
-    interestText,
+    interestOverflows ? "See additional remarks schedule attached" : interestText,
   );
-  y += 68;
+  y += interestH + 6;
 
   const remarksText = data.description ?? "";
   const remarksMaxH = 74;
-  const remarksOverflow =
-    textBlockHeight(doc, remarksText, W - 10, FS_LABEL, false) + 18 > remarksMaxH;
+  const remarksOverflow = infoBoxHeight(doc, remarksText, W, {
+    fontSize: FS_LABEL,
+  }) > remarksMaxH;
   drawInfoBox(
     doc,
     M,
@@ -1043,23 +1107,95 @@ function drawAcordPropertyEvidenceForm(doc: PDFKit.PDFDocument, data: CoiData) {
     remarksMaxH,
     "REMARKS",
     remarksOverflow ? "See additional remarks schedule attached" : remarksText,
+    { fontSize: FS_LABEL },
   );
   y += remarksMaxH + 6;
 
-  if (remarksOverflow) drawAcord101(doc, data);
+  if (remarksOverflow || interestOverflows) {
+    drawAcord101(doc, data, {
+      includeDescription: remarksOverflow,
+      includeHolder: interestOverflows,
+    });
+  }
 }
 
-function drawAcord101(doc: PDFKit.PDFDocument, data: CoiData) {
-  doc.addPage({ size: "LETTER", margin: 0 });
-  let y = 30;
-  doc.font("Helvetica-Bold").fontSize(12).fillColor(C_BLACK);
-  doc.text("ADDITIONAL REMARKS SCHEDULE", M, y, { width: W });
-  y += 24;
-  const holder = data.certificateHolder ?? "";
-  const insuredText = joinLines(data.insuredName, holder && `Certificate holder: ${holder}`);
-  drawInfoBox(doc, M, y, W, 62, "NAMED INSURED / CERTIFICATE HOLDER", insuredText);
-  y += 70;
-  drawInfoBox(doc, M, y, W, 560, "ADDITIONAL REMARKS", data.description ?? "");
+function drawAcord101(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  options: { includeDescription: boolean; includeHolder: boolean },
+) {
+  const remarks = joinLines(
+    options.includeHolder && data.certificateHolder
+      ? `CERTIFICATE HOLDER\n${data.certificateHolder}`
+      : undefined,
+    options.includeDescription && data.description
+      ? `DESCRIPTION OF OPERATIONS / LOCATIONS / SPECIAL ITEMS\n${data.description}`
+      : undefined,
+  );
+  const remarksY = 102;
+  const remarksHeight = PAGE_H - remarksY - M;
+  const chunks = paginateText(
+    doc,
+    remarks ?? "",
+    W - 10,
+    FS_VALUE,
+    false,
+    remarksHeight - INFO_BOX_VALUE_TOP - INFO_BOX_BOTTOM_PADDING,
+  );
+
+  for (const [index, chunk] of chunks.entries()) {
+    doc.addPage({ size: "LETTER", margin: 0 });
+    let y = 30;
+    doc.font("Helvetica-Bold").fontSize(12).fillColor(C_BLACK);
+    doc.text(
+      index === 0 ? "ADDITIONAL REMARKS SCHEDULE" : "ADDITIONAL REMARKS SCHEDULE — CONTINUED",
+      M,
+      y,
+      { width: W },
+    );
+    y += 24;
+    drawInfoBox(doc, M, y, W, 42, "NAMED INSURED", data.insuredName);
+    drawInfoBox(doc, M, remarksY, W, remarksHeight, "ADDITIONAL REMARKS", chunk);
+  }
+}
+
+function paginateText(
+  doc: PDFKit.PDFDocument,
+  value: string,
+  width: number,
+  fontSize: number,
+  bold: boolean,
+  maxHeight: number,
+) {
+  const pages: string[] = [];
+  let remaining = value.trim();
+  while (remaining) {
+    if (textBlockHeight(doc, remaining, width, fontSize, bold) <= maxHeight) {
+      pages.push(remaining);
+      break;
+    }
+
+    let low = 1;
+    let high = remaining.length;
+    let fit = 1;
+    while (low <= high) {
+      const midpoint = Math.floor((low + high) / 2);
+      if (textBlockHeight(doc, remaining.slice(0, midpoint), width, fontSize, bold) <= maxHeight) {
+        fit = midpoint;
+        low = midpoint + 1;
+      } else {
+        high = midpoint - 1;
+      }
+    }
+
+    const newlineBreak = remaining.lastIndexOf("\n", fit);
+    const spaceBreak = remaining.lastIndexOf(" ", fit);
+    const preferredBreak = Math.max(newlineBreak, spaceBreak);
+    const cut = preferredBreak > fit * 0.6 ? preferredBreak + 1 : fit;
+    pages.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+  return pages;
 }
 
 function textBlockHeight(

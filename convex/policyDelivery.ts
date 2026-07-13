@@ -52,6 +52,18 @@ async function requireBrokerAdmin(ctx: Parameters<typeof requireCurrentOrgAccess
   return access;
 }
 
+async function requireBrokerAdminAccessToClient(
+  ctx: Parameters<typeof requireCurrentOrgAccess>[0],
+  clientOrgId: Id<"organizations">,
+) {
+  const access = await requireBrokerAccessToClient(ctx, clientOrgId);
+  const current = await requireCurrentOrgAccess(ctx);
+  if (current.orgId !== access.brokerOrgId || current.role !== "admin") {
+    throw new Error("Broker admin access required");
+  }
+  return access;
+}
+
 export const getBrokerSettings = query({
   args: {},
   handler: async (ctx) => {
@@ -149,10 +161,7 @@ export const updateClientOverride = mutation({
     copyInstructions: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
-    if (access.role !== undefined && access.role !== "admin") {
-      throw new Error("Broker admin access required");
-    }
+    const access = await requireBrokerAdminAccessToClient(ctx, args.clientOrgId);
     const now = dayjs().valueOf();
     const patch = {
       enabled: args.enabled,
@@ -185,7 +194,7 @@ export const updateClientOverride = mutation({
 export const clearClientOverride = mutation({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
+    const access = await requireBrokerAdminAccessToClient(ctx, args.clientOrgId);
     const existing = await ctx.db
       .query("policyDeliverySettings")
       .withIndex("by_brokerOrgId_clientOrgId", (q) =>
@@ -233,7 +242,7 @@ export const upsertRule = mutation({
   },
   handler: async (ctx, args) => {
     const clientAccess = args.clientOrgId
-      ? await requireBrokerAccessToClient(ctx, args.clientOrgId)
+      ? await requireBrokerAdminAccessToClient(ctx, args.clientOrgId)
       : null;
     const brokerAccess = args.clientOrgId ? null : await requireBrokerAdmin(ctx);
     const access = clientAccess ?? brokerAccess;
@@ -302,7 +311,7 @@ export const listQueue = query({
           .order("desc")
           .take((args.limit ?? 100) * 2)).slice(0, args.limit ?? 100);
 
-    return await Promise.all(
+    const hydrated = await Promise.all(
       rows.map(async (job) => {
         const [client, policy, attempts] = await Promise.all([
           ctx.db.get(job.clientOrgId),
@@ -312,9 +321,11 @@ export const listQueue = query({
             .withIndex("by_jobId", (q) => q.eq("jobId", job._id))
             .collect(),
         ]);
+        if (!policy || policy.deletedAt) return null;
         return { ...job, clientName: client?.name, policy, attempts };
       }),
     );
+    return hydrated.filter((row) => row !== null);
   },
 });
 
@@ -325,11 +336,13 @@ export const getJob = query({
     if ((access.org.type ?? "client") !== "broker") return null;
     const job = await ctx.db.get(args.id);
     if (!job || job.brokerOrgId !== access.orgId) return null;
+    const policy = await ctx.db.get(job.policyId);
+    if (!policy || policy.deletedAt) return null;
     const attempts = await ctx.db
       .query("policyDeliveryAttempts")
       .withIndex("by_jobId", (q) => q.eq("jobId", args.id))
       .collect();
-    return { ...job, attempts };
+    return { ...job, policy, attempts };
   },
 });
 
@@ -339,6 +352,8 @@ export const sendReviewedJob = mutation({
     const access = await requireCurrentOrgAccess(ctx);
     const job = await ctx.db.get(args.id);
     if (!job || job.brokerOrgId !== access.orgId) throw new Error("Delivery job not found");
+    const policy = await ctx.db.get(job.policyId);
+    if (!policy || policy.deletedAt) throw new Error("Policy is archived");
     await ctx.db.patch(args.id, {
       status: "queued",
       action: "auto_send",
@@ -357,6 +372,8 @@ export const retryJob = mutation({
     const access = await requireCurrentOrgAccess(ctx);
     const job = await ctx.db.get(args.id);
     if (!job || job.brokerOrgId !== access.orgId) throw new Error("Delivery job not found");
+    const policy = await ctx.db.get(job.policyId);
+    if (!policy || policy.deletedAt) throw new Error("Policy is archived");
     await ctx.db.patch(args.id, {
       status: "queued",
       updatedAt: dayjs().valueOf(),
@@ -389,7 +406,9 @@ export const enqueueInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId || !policy.uploadedByBrokerOrgId) return null;
+    if (!policy?.orgId || policy.deletedAt || !policy.uploadedByBrokerOrgId) {
+      return null;
+    }
     if ((policy.documentType ?? "policy") !== "policy") return null;
     const idempotencyKey = [
       "policy-delivery",
@@ -439,6 +458,7 @@ export const getContextInternal = internalQuery({
       ctx.db.get(job.policyId),
       job.policyFileId ? ctx.db.get(job.policyFileId) : Promise.resolve(null),
     ]);
+    if (!policy || policy.deletedAt) return null;
     const brokerSettings = await ctx.db
       .query("policyDeliverySettings")
       .withIndex("by_brokerOrgId_clientOrgId", (q) =>

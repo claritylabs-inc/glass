@@ -79,7 +79,15 @@ export type CertificateData = {
   insuredDba?: string;
   insuredAddress?:
     | string
-    | { street1?: string; city?: string; state?: string; zip?: string };
+    | {
+        street1?: string;
+        street2?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
+        country?: string;
+        formatted?: string;
+      };
   insuredFein?: string;
   insurers: Array<{
     letter: string;

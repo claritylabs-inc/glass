@@ -3,19 +3,17 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useQuery, useMutation, useAction } from "convex/react";
 import type { FunctionReference } from "convex/server";
-import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -26,21 +24,23 @@ import {
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
-import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
-import { waitForStableAutoSaveBarriers } from "@/lib/sync/auto-save-sequencer";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
-import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { useSyncStore } from "@claritylabs/cl-sync";
 import {
   AutoSaveStatus,
   combineAutoSaveStatuses,
 } from "@/components/ui/auto-save-status";
+import type { AutoSaveStatus as AutoSaveStatusValue } from "@/lib/sync/use-local-first-auto-save";
+import {
+  OrganizationInsuranceProfile,
+  type OrganizationInsuranceProfileRecord,
+} from "@/components/settings/organization-insurance-profile";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
@@ -76,28 +76,42 @@ type BrandingSettingsArgs = {
 };
 
 export function OrganizationSection() {
-  const viewer = useCachedQuery("settings.organization.viewer", api.users.viewer, {});
   const orgData = useCachedViewerOrg();
   const store = useSyncStore();
   const updateOrg = useMutation(api.orgs.updateOrg);
-  const resetAccount = useMutation(api.users.resetAccount);
-  const restartOnboarding = useMutation(api.users.restartOnboarding);
   const extractCompanyInfo = useAction(
     api.actions.extractCompanyInfo.extractCompanyInfo,
   );
-  const router = useRouter();
 
   const org = orgData?.org;
 
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
-  const [context, setContext] = useState("");
   const [industry, setIndustry] = useState("");
   const [industryVertical, setIndustryVertical] = useState("");
   const [relatedLegalEntities, setRelatedLegalEntities] = useState<
     RelatedLegalEntity[]
   >([]);
   const [settingsHydrated, setSettingsHydrated] = useState(false);
+  const [profileAutoSaveStatus, setProfileAutoSaveStatus] =
+    useState<AutoSaveStatusValue>("saved");
+  const [brandingAutoSaveStatus, setBrandingAutoSaveStatus] =
+    useState<AutoSaveStatusValue>("saved");
+  const [profileCanReset, setProfileCanReset] = useState(false);
+  const [restoringProfile, setRestoringProfile] = useState(false);
+  const profileResetRef = useRef<(() => Promise<void>) | null>(null);
+  const handleProfileAutoSaveChange = useCallback((status: AutoSaveStatusValue) => {
+    setProfileAutoSaveStatus(status);
+  }, []);
+  const handleBrandingAutoSaveChange = useCallback((status: AutoSaveStatusValue) => {
+    setBrandingAutoSaveStatus(status);
+  }, []);
+  const handleProfileResetActionChange = useCallback((
+    resetToExtracted: (() => Promise<void>) | null,
+  ) => {
+    profileResetRef.current = resetToExtracted;
+    setProfileCanReset(Boolean(resetToExtracted));
+  }, []);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
   const updateSlug = useMutation(organizationsApi.organizations.updateSlug);
@@ -105,6 +119,7 @@ export function OrganizationSection() {
     (currentOrg?.org as { slug?: string } | undefined)?.slug ?? "";
   const [slug, setSlug] = useState(currentSlug);
   const [debouncedSlug, setDebouncedSlug] = useState(currentSlug);
+  const [slugFocused, setSlugFocused] = useState(false);
   const slugHydratedRef = useRef(false);
 
   useEffect(() => {
@@ -134,8 +149,6 @@ export function OrganizationSection() {
 
   const [extracting, setExtracting] = useState(false);
   const hydratedRef = useRef(false);
-  const [showResetDialog, setShowResetDialog] = useState(false);
-  const [resetting, setResetting] = useState(false);
 
   const slugAutoSave = useLocalFirstAutoSave({
     mutationName: "settings.organization.updateSlug",
@@ -150,6 +163,7 @@ export function OrganizationSection() {
       (debouncedSlug.length >= 3 &&
         slug === debouncedSlug &&
         slugCheck?.available === true),
+    autoSave: !slugFocused,
     delayMs: 0,
     flush: (args) => updateSlug(args),
     onFlushed: (normalized, args) => {
@@ -162,23 +176,12 @@ export function OrganizationSection() {
       error instanceof Error ? error.message : "The workspace link could not be saved.",
   });
 
-  const { setActions, setRightPanel } = useSettingsActions();
-
-  const contextRef = useRef<HTMLTextAreaElement>(null);
-  const [contextFocused, setContextFocused] = useState(false);
-  const autoResize = useCallback(() => {
-    const el = contextRef.current;
-    if (el) {
-      el.style.height = "auto";
-      el.style.height = el.scrollHeight + "px";
-    }
-  }, []);
+  const { setActions } = useSettingsActions();
 
   useEffect(() => {
     if (org && !hydratedRef.current) {
       setName(org.name ?? "");
       setWebsite(org.website ?? "");
-      setContext(org.context ?? "");
       setIndustry(org.industry ?? "");
       setIndustryVertical(org.industryVertical ?? "");
       setRelatedLegalEntities(org.relatedLegalEntities ?? []);
@@ -186,10 +189,6 @@ export function OrganizationSection() {
       setSettingsHydrated(true);
     }
   }, [org]);
-
-  useEffect(() => {
-    autoResize();
-  }, [context, autoResize]);
 
   const orgSettingsArgs: OrgSettingsArgs = {
     name: name || undefined,
@@ -202,20 +201,6 @@ export function OrganizationSection() {
       }))
       .filter((entity) => entity.legalName),
   };
-  const organizationActionKey = JSON.stringify({
-    orgSettingsArgs,
-    context,
-    slug,
-  });
-  const organizationActionRevisionRef = useRef(0);
-  const lastOrganizationActionKeyRef = useRef(organizationActionKey);
-  useLayoutEffect(() => {
-    if (lastOrganizationActionKeyRef.current !== organizationActionKey) {
-      organizationActionRevisionRef.current += 1;
-      lastOrganizationActionKeyRef.current = organizationActionKey;
-    }
-  }, [organizationActionKey]);
-
   const saveOrgSettings = useCallback(
     async (args: OrgSettingsArgs) => {
       await updateOrg(args);
@@ -227,45 +212,64 @@ export function OrganizationSection() {
     mutationName: "settings.organization.updateOrg",
     args: orgSettingsArgs,
     enabled: settingsHydrated,
+    autoSave: false,
     applyLocal: (store, args) => patchCachedViewerOrg(store, args),
     flush: saveOrgSettings,
     errorMessage: "Organization settings could not be saved.",
   });
+  const saveOrgSettingsNow = orgAutoSave.saveNow;
 
-  const contextAutoSave = useLocalFirstAutoSave({
-    mutationName: "settings.organization.updateContext",
-    args: { context: context || undefined },
-    enabled: settingsHydrated,
-    autoSave: !contextFocused,
-    applyLocal: (store, args) => patchCachedViewerOrg(store, args),
-    flush: saveOrgSettings,
-    errorMessage: "Company context could not be saved.",
-  });
+  const saveOrgSettingsAfterChange = useCallback(() => {
+    requestAnimationFrame(() => {
+      void saveOrgSettingsNow();
+    });
+  }, [saveOrgSettingsNow]);
 
   const organizationSaveStatus = combineAutoSaveStatuses(
     orgAutoSave.status,
-    contextAutoSave.status,
     slugAutoSave.status,
+    profileAutoSaveStatus,
+    brandingAutoSaveStatus,
   );
 
-  async function saveOrganizationBeforeAction() {
-    const barriers = [orgAutoSave.saveNow, contextAutoSave.saveNow];
-    if (isBroker) barriers.push(slugAutoSave.saveNow);
-    return waitForStableAutoSaveBarriers(
-      barriers,
-      () => organizationActionRevisionRef.current,
-    );
-  }
+  const handleUseExtracted = useCallback(async () => {
+    const resetToExtracted = profileResetRef.current;
+    if (!resetToExtracted) return;
+    setRestoringProfile(true);
+    try {
+      await resetToExtracted();
+    } catch {
+      toast.error("Extracted profile could not be restored");
+    } finally {
+      setRestoringProfile(false);
+    }
+  }, []);
 
   useEffect(() => {
     setActions(
       <div className="flex items-center gap-3">
         <AutoSaveStatus status={organizationSaveStatus} />
+        {profileCanReset ? (
+          <PillButton
+            type="button"
+            variant="secondary"
+            size="compact"
+            onClick={() => void handleUseExtracted()}
+            disabled={restoringProfile || profileAutoSaveStatus === "saving"}
+          >
+            {restoringProfile ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="size-3.5" />
+            )}
+            {restoringProfile ? "Restoring…" : "Use extracted"}
+          </PillButton>
+        ) : null}
         <PillButton
           variant="secondary"
           size="compact"
           onClick={handleExtract}
-          disabled={extracting || resetting || showResetDialog || !website}
+          disabled={extracting || !website}
         >
           {extracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
           {extracting ? "Extracting…" : "Extract from website"}
@@ -274,49 +278,18 @@ export function OrganizationSection() {
     );
     return () => setActions(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationSaveStatus, extracting, resetting, showResetDialog, website]);
-
-  useEffect(() => {
-    setRightPanel(
-      <SettingsDrawer
-        open={showResetDialog}
-        onOpenChange={(v) => setShowResetDialog(v)}
-        title="Reset organization"
-        footer={
-          <>
-            <PillButton
-              variant="secondary"
-              onClick={() => setShowResetDialog(false)}
-              disabled={resetting}
-            >
-              Cancel
-            </PillButton>
-            <PillButton
-              variant="destructive"
-              onClick={handleReset}
-              disabled={resetting || extracting}
-            >
-              {resetting ? "Resetting…" : "Yes, reset everything"}
-            </PillButton>
-          </>
-        }
-      >
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-          <p className="text-base text-muted-foreground">
-            This will permanently delete all policies (including stored files),
-            emails, connections, and conversations for your organization. This
-            action cannot be undone.
-          </p>
-        </div>
-      </SettingsDrawer>,
-    );
-    return () => setRightPanel(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showResetDialog, resetting]);
+  }, [
+    organizationSaveStatus,
+    extracting,
+    handleUseExtracted,
+    profileAutoSaveStatus,
+    profileCanReset,
+    restoringProfile,
+    website,
+  ]);
 
   async function handleExtract() {
-    if (!website || resetting || showResetDialog) return;
+    if (!website) return;
     setExtracting(true);
     try {
       let url = website;
@@ -328,7 +301,13 @@ export function OrganizationSection() {
       // Synchronous await is intentional — website scrape typically < 5s.
       // Not a long-running pipeline; cl-pipelines not required here.
       const result = await extractCompanyInfo({ url });
-      if (result.companyContext) setContext(result.companyContext);
+      const extractedFields: OrgSettingsArgs = {
+        context: result.companyContext || undefined,
+        industry: result.industry || undefined,
+        industryVertical: result.industryVertical || undefined,
+      };
+      await updateOrg(extractedFields);
+      patchCachedViewerOrg(store, extractedFields);
       if (result.industry) {
         setIndustry(result.industry);
         setIndustryVertical(result.industryVertical ?? "");
@@ -339,25 +318,6 @@ export function OrganizationSection() {
     } finally {
       setExtracting(false);
     }
-  }
-
-  async function handleReset() {
-    if (extracting) return;
-    setResetting(true);
-    if (!(await saveOrganizationBeforeAction())) {
-      setResetting(false);
-      return;
-    }
-    try {
-      await resetAccount();
-    } catch {
-      toast.error("Failed to reset account");
-      setResetting(false);
-      return;
-    }
-    setShowResetDialog(false);
-    toast.success("Account reset successfully");
-    router.replace("/onboarding");
   }
 
   function updateRelatedLegalEntity(
@@ -382,9 +342,10 @@ export function OrganizationSection() {
     setRelatedLegalEntities((current) =>
       current.filter((_, entityIndex) => entityIndex !== index),
     );
+    saveOrgSettingsAfterChange();
   }
 
-  if (viewer === undefined || orgData === undefined) {
+  if (orgData === undefined) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -396,7 +357,7 @@ export function OrganizationSection() {
     <div className="space-y-4">
       {/* Organization info */}
       <div>
-        <fieldset disabled={resetting} className="contents">
+        <>
           <OperationalPanel className="mb-4">
             <OperationalPanelHeader title="Organization" className="px-5 py-3.5" />
             <OperationalPanelBody className="space-y-4 px-5 py-5">
@@ -408,8 +369,9 @@ export function OrganizationSection() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                onBlur={() => void saveOrgSettingsNow()}
                 placeholder="Acme Corp"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
             </div>
 
@@ -430,8 +392,10 @@ export function OrganizationSection() {
                         e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
                       )
                     }
+                    onFocus={() => setSlugFocused(true)}
+                    onBlur={() => setSlugFocused(false)}
                     placeholder="my-brokerage"
-                    className="flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className="h-9 flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                   />
                 </div>
                 <HandleAvailability
@@ -456,8 +420,9 @@ export function OrganizationSection() {
                 type="text"
                 value={website}
                 onChange={(e) => setWebsite(e.target.value)}
+                onBlur={() => void saveOrgSettingsNow()}
                 placeholder="https://yourcompany.com"
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
               />
             </div>
 
@@ -467,10 +432,6 @@ export function OrganizationSection() {
                   <label className="text-label font-medium text-muted-foreground block">
                     Legal names and related entities
                   </label>
-                  <p className="mt-0.5 text-label text-muted-foreground/60">
-                    Used to match named insureds against current names, FKAs,
-                    DBAs, subsidiaries, and legal registry identifiers.
-                  </p>
                 </div>
                 <PillButton
                   type="button"
@@ -498,8 +459,9 @@ export function OrganizationSection() {
                             legalName: event.target.value,
                           })
                         }
+                        onBlur={() => void saveOrgSettingsNow()}
                         placeholder="Alternate legal name, DBA, FKA, parent, subsidiary, or affiliate"
-                        className="min-w-0 flex-1 rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className="h-9 min-w-0 flex-1 rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                       />
                       <button
                         type="button"
@@ -530,6 +492,7 @@ export function OrganizationSection() {
                     onChange={(v) => {
                       setIndustry(v);
                       setIndustryVertical("");
+                      saveOrgSettingsAfterChange();
                     }}
                     placeholder="Select industry..."
                   />
@@ -548,7 +511,10 @@ export function OrganizationSection() {
                       })) ?? []
                     }
                     value={industryVertical}
-                    onChange={setIndustryVertical}
+                    onChange={(value) => {
+                      setIndustryVertical(value);
+                      saveOrgSettingsAfterChange();
+                    }}
                     placeholder="Select vertical..."
                     disabled={!industry}
                   />
@@ -556,105 +522,26 @@ export function OrganizationSection() {
               </div>
             )}
 
-            {!isBroker && (
-              <div>
-                <label className="text-label font-medium text-muted-foreground  block mb-1.5">
-                  Company Context
-                </label>
-                <textarea
-                  ref={contextRef}
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                  onFocus={() => setContextFocused(true)}
-                  onBlur={() => {
-                    setContextFocused(false);
-                    void contextAutoSave.saveNow();
-                  }}
-                  onInput={autoResize}
-                  placeholder="Brief description of your company, industry, and insurance needs..."
-                  rows={4}
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors resize-none overflow-hidden"
-                />
-              </div>
-            )}
+            {!isBroker && org ? (
+              <OrganizationInsuranceProfile
+                key={String(org._id)}
+                org={org as unknown as OrganizationInsuranceProfileRecord}
+                disabled={orgData.membership.role !== "admin"}
+                onAutoSaveChange={handleProfileAutoSaveChange}
+                onResetActionChange={handleProfileResetActionChange}
+              />
+            ) : null}
 
             </OperationalPanelBody>
           </OperationalPanel>
 
-          <BrandingCard website={website} />
-        </fieldset>
+          <BrandingCard
+            website={website}
+            onAutoSaveChange={handleBrandingAutoSaveChange}
+          />
+        </>
 
       </div>
-
-      {/* Onboarding section */}
-      <OperationalPanel>
-        <OperationalPanelHeader title="Onboarding" className="px-5 py-3.5" />
-        <OperationalPanelBody className="px-5 py-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-base font-medium text-foreground">
-                Re-run Setup
-              </p>
-              <p className="text-label text-muted-foreground mt-0.5">
-                Walk through the onboarding steps again. Your existing data will
-                not be affected.
-              </p>
-            </div>
-            <PillButton
-              variant="secondary"
-              disabled={resetting}
-              onClick={async () => {
-                try {
-                  if (!(await saveOrganizationBeforeAction())) {
-                    return;
-                  }
-                  await restartOnboarding();
-                  toast.success("Restarting onboarding...");
-                  router.replace("/onboarding");
-                } catch {
-                  toast.error("Failed to restart onboarding");
-                }
-              }}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Re-run
-            </PillButton>
-          </div>
-        </OperationalPanelBody>
-      </OperationalPanel>
-
-      {/* Danger Zone */}
-      {viewer?.isAdmin && (
-        <div className="mt-4">
-          <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/30">
-            <div className="px-5 py-3.5 border-b border-red-200 dark:border-red-900/50">
-              <h3 className="mb-0! text-base font-medium text-red-900 dark:text-red-400">
-                Danger Zone
-              </h3>
-            </div>
-            <div className="px-5 py-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-base font-medium text-foreground">
-                    Reset Organization
-                  </p>
-                  <p className="text-label text-muted-foreground mt-0.5">
-                    Delete all policies, emails, connections, and conversations.
-                    This cannot be undone.
-                  </p>
-                </div>
-                <PillButton
-                  variant="destructive"
-                  disabled={resetting || extracting}
-                  onClick={() => setShowResetDialog(true)}
-                >
-                  Reset
-                </PillButton>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -669,7 +556,16 @@ const brandingLabelClass =
 type BrandingMode = "light" | "dark";
 type TextOnAccent = "light" | "dark" | "auto";
 
-function BrandingCard({ website }: { website: string }) {
+function BrandingCard({
+  website,
+  onAutoSaveChange,
+}: {
+  website: string;
+  onAutoSaveChange: (
+    status: AutoSaveStatusValue,
+    saveNow: (() => Promise<boolean>) | null,
+  ) => void;
+}) {
   const currentOrg = useCurrentOrg();
   const store = useSyncStore();
   const isBroker = currentOrg?.isBroker ?? false;
@@ -749,6 +645,11 @@ function BrandingCard({ website }: { website: string }) {
     errorMessage: "Brand settings could not be saved.",
   });
 
+  useEffect(() => {
+    onAutoSaveChange(brandingAutoSave.status, brandingAutoSave.saveNow);
+    return () => onAutoSaveChange("saved", null);
+  }, [brandingAutoSave.saveNow, brandingAutoSave.status, onAutoSaveChange]);
+
   async function handleLogoUpload(file: File) {
     if (!orgId) return;
     try {
@@ -796,7 +697,6 @@ function BrandingCard({ website }: { website: string }) {
     <OperationalPanel as="div" className="mb-4">
       <OperationalPanelHeader
         title="Brand"
-        action={isBroker ? <AutoSaveStatus status={brandingAutoSave.status} /> : undefined}
         className="px-5 py-3.5"
       />
       <OperationalPanelBody className="space-y-5 px-5 py-5">

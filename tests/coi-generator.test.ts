@@ -74,11 +74,11 @@ describe("policyToCoiData", () => {
     });
 
     expect(data.title).toBe("CERTIFICATE OF LIABILITY INSURANCE");
-    expect(data.insurers[0]?.name).toBe("MARKEL AMERICAN INSURANCE COMPANY");
+    expect(data.insurers[0]?.name).toBe("Markel American");
     expect(data.insuranceCompanyAddress).toContain("4521 Highwoods Parkway");
     expect(data.insuranceCompanyPhone).toBe("(800) 431-1270");
-    expect(data.producerAgency).toContain("BROWN & BROWN PROGRAM INSURANCE SERVICES");
-    expect(data.insuredName).toBe("NATIONAL LIFE HOLDING COMPANY");
+    expect(data.producerAgency).toBe("Fallback Producer");
+    expect(data.insuredName).toBe("National Life Holding Company");
     expect(data.coverages.map((coverage) => coverage.type)).toEqual([
       "Professional Liability",
       "Cyber Liability",
@@ -86,6 +86,126 @@ describe("policyToCoiData", () => {
     ]);
     expect(data.coverages[0]?.policyNumber).toBe("MKLM7PLCA00098");
     expect(data.coverages[0]?.effectiveDate).toBe("5/1/2024");
+  });
+
+  it("uses policy-scoped party addresses without promoting external parties from client profile data", () => {
+    const data = policyToCoiData(
+      {
+        linesOfBusiness: ["CGL"],
+        policyNumber: "GL-200",
+        insuredName: "Legacy Client",
+        carrier: "Legacy Carrier",
+        producer: {
+          agencyName: "Legacy Producer",
+          address: "Legacy producer address",
+        },
+        operationalProfile: {
+          namedInsured: { value: "Ozumo Concepts International LLC" },
+          operationsDescription: {
+            value: "Restaurant operations and food service.",
+          },
+          parties: [
+            {
+              role: "named_insured",
+              name: "Ozumo Concepts International LLC",
+              address: {
+                street1: "161 Steuart St",
+                city: "San Francisco",
+                state: "CA",
+                zip: "94105",
+                country: "United States",
+              },
+            },
+            {
+              role: "producer",
+              name: "Policy Producer LLC",
+              address: { street1: "20 Broker Way", city: "Oakland", state: "CA", zip: "94607" },
+            },
+            {
+              role: "carrier",
+              name: "Policy Carrier Insurance Co.",
+              address: { street1: "99 Carrier Plaza", city: "Chicago", state: "IL", zip: "60601" },
+            },
+            {
+              role: "mga",
+              name: "Policy MGA LLC",
+              address: { street1: "1 MGA Way" },
+            },
+          ],
+        },
+      },
+      {
+        clientProfileFacts: {
+          mailingAddress: {
+            value: { street1: "Client fallback should not win" },
+          },
+          operationsDescription: {
+            value: "Client profile operations fallback should not win.",
+          },
+        },
+      },
+    );
+
+    expect(data.insuredAddress).toMatchObject({ street1: "161 Steuart St" });
+    expect(data.producerAgency).toBe("Policy Producer LLC");
+    expect(data.producerAddress).toMatchObject({ street1: "20 Broker Way" });
+    expect(data.insurers[0]?.name).toBe("Policy Carrier Insurance Co.");
+    expect(data.insuranceCompanyAddress).toContain("99 Carrier Plaza");
+    expect(data.description).toBe("Restaurant operations and food service.");
+    expect(JSON.stringify(data)).not.toContain("Client fallback should not win");
+    expect(JSON.stringify(data)).not.toContain("Policy MGA LLC");
+  });
+
+  it("uses policy insured-address compatibility before the client-profile fallback", () => {
+    const data = policyToCoiData(
+      {
+        linesOfBusiness: ["CGL"],
+        insuredName: "Current Policy Client",
+        insuredAddress: "Current policy compatibility address",
+      },
+      {
+        clientProfileFacts: {
+          mailingAddress: { value: { street1: "Older client profile address" } },
+        },
+      },
+    );
+
+    expect(data.insuredAddress).toBe("Current policy compatibility address");
+  });
+
+  it("uses exact structured operations precedence and does not synthesize from supplementary facts", () => {
+    const policyValue = "Restaurant operations and food service at scheduled locations.";
+    const policyData = policyToCoiData(
+      {
+        operationalProfile: {
+          operationsDescription: { value: policyValue },
+        },
+        declarations: {
+          fields: [{ field: "operationsDescription", value: "Legacy declaration wording" }],
+        },
+        supplementaryFacts: [{ key: "operations", value: "Synthetic-looking supplementary wording" }],
+      },
+      {
+        clientProfileFacts: {
+          operationsDescription: { value: "Client profile wording" },
+        },
+      },
+    );
+    const profileData = policyToCoiData(
+      { supplementaryFacts: [{ key: "operations", value: "Do not synthesize this" }] },
+      {
+        clientProfileFacts: {
+          operationsDescription: { value: "Exact client profile wording" },
+        },
+      },
+    );
+    const absentData = policyToCoiData({
+      supplementaryFacts: [{ key: "operations", value: "Do not synthesize this" }],
+    });
+
+    expect(policyData.description).toBe(policyValue);
+    expect(profileData.description).toBe("Exact client profile wording");
+    expect(absentData.description).toBeUndefined();
   });
 
   it("uses ACORD line-of-business labels for source-backed coverage rows", () => {
@@ -219,6 +339,21 @@ describe("COI PDF template copy", () => {
 });
 
 describe("COI PDF generation", () => {
+  async function pdfText(pdf: Buffer) {
+    const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const document = await getDocument({ data: new Uint8Array(pdf) }).promise;
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(content.items
+        .map((item) => "str" in item ? item.str : "")
+        .join(" "));
+    }
+    await document.destroy();
+    return { pages, text: pages.join("\n") };
+  }
+
   it("uses the canonical holder block from certificate generation inputs", () => {
     const certificates = readFileSync(join(ROOT, "convex/certificates.ts"), "utf-8");
     const generateCoi = readFileSync(join(ROOT, "convex/actions/generateCoi.ts"), "utf-8");
@@ -232,9 +367,14 @@ describe("COI PDF generation", () => {
     expect(generateCoi).toContain("nextVersionNumberInternal");
     expect(generateCoi).toContain("certificateNumber: String(lifecycle.policyCertificateId)");
     expect(generateCoi).toContain("revisionNumber: String(nextVersionNumber)");
-    expect(generateCoi).toContain("generateObjectForOrg");
-    expect(generateCoi).toContain("buildCertificateDescriptionContext");
-    expect(generateCoi).toContain('"summary"');
+    expect(generateCoi).not.toContain("generateObjectForOrg");
+    expect(generateCoi).not.toContain("buildCertificateDescriptionContext");
+    expect(generateCoi).toContain("requestedDescription || coiData.description");
+    expect(generateCoi.indexOf("coiData = fillCertificateDescription")).toBeLessThan(
+      generateCoi.indexOf("coiData = applyEndorsementsToCertificateData"),
+    );
+    expect(certificates).toContain("country: v.optional(v.string())");
+    expect(generateCoi).toContain("descriptionOfOperations: finalDescriptionOfOperations");
   });
 
   it("renders the generated PDF successfully", async () => {
@@ -274,5 +414,72 @@ describe("COI PDF generation", () => {
 
     expect(pdf.toString("utf-8", 0, 4)).toBe("%PDF");
     expect(pdf.length).toBeGreaterThan(1000);
+  });
+
+  it("renders every Ozumo holder-address line in the measured holder box", async () => {
+    const data = policyToCoiData({
+      linesOfBusiness: ["CGL"],
+      policyNumber: "TEST-OZUMO",
+      carrier: "Test Carrier",
+      insuredName: "Test Insured",
+    });
+    const certificateHolder = [
+      "Ozumo Concepts International LLC",
+      "Attn: Certificate Compliance",
+      "161 Steuart St",
+      "Suite 200",
+      "San Francisco, CA 94105",
+      "United States",
+    ].join("\n");
+
+    const pdf = await generateCoiPdf({ ...data, certificateHolder });
+    const extracted = await pdfText(pdf);
+
+    expect(extracted.pages).toHaveLength(1);
+    expect(extracted.text).toContain("Ozumo Concepts International LLC");
+    expect(extracted.text).toContain("161 Steuart St");
+    expect(extracted.text).toContain("San Francisco, CA 94105");
+    expect(extracted.text).toContain("United States");
+  });
+
+  it("moves pathological holder blocks to the additional remarks schedule without dropping lines", async () => {
+    const data = policyToCoiData({
+      linesOfBusiness: ["CGL"],
+      policyNumber: "TEST-LONG-HOLDER",
+      carrier: "Test Carrier",
+      insuredName: "Test Insured",
+    });
+    const certificateHolder = [
+      "Very Long Certificate Holder LLC",
+      ...Array.from({ length: 20 }, (_, index) => `Address detail line ${index + 1}`),
+      "Final country line",
+    ].join("\n");
+
+    const pdf = await generateCoiPdf({ ...data, certificateHolder });
+    const extracted = await pdfText(pdf);
+
+    expect(extracted.pages).toHaveLength(2);
+    expect(extracted.pages[0]).toContain("See additional remarks schedule attached");
+    expect(extracted.pages[1]).toContain("Address detail line 20");
+    expect(extracted.pages[1]).toContain("Final country line");
+  });
+
+  it("paginates an additional remarks schedule without clipping extreme holder content", async () => {
+    const data = policyToCoiData({
+      linesOfBusiness: ["CGL"],
+      policyNumber: "TEST-MULTIPAGE-HOLDER",
+      carrier: "Test Carrier",
+      insuredName: "Test Insured",
+    });
+    const certificateHolder = [
+      "Very Long Certificate Holder LLC",
+      ...Array.from({ length: 180 }, (_, index) => `Schedule detail line ${index + 1}`),
+      "Final preserved schedule line",
+    ].join("\n");
+
+    const extracted = await pdfText(await generateCoiPdf({ ...data, certificateHolder }));
+
+    expect(extracted.pages.length).toBeGreaterThan(2);
+    expect(extracted.pages.at(-1)).toContain("Final preserved schedule line");
   });
 });

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { VendorComplianceArtifactData, VendorComplianceArtifactRef } from "../types";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type VendorComplianceCheck = {
   requirementId?: string;
@@ -199,7 +200,14 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                         {requiredLimits ? <span>Required: {requiredLimits}</span> : null}
                         {policy?.coverageLimit ? <span>Coverage: {policy.coverageLimit}</span> : null}
                         {detectedLimit ? <span>Detected: {detectedLimit}</span> : null}
-                        {policy?.expirationDate ? <span>Expires: {policy.expirationDate}</span> : null}
+                        {policy?.expirationDate ? (
+                          <span>
+                            Expires: {formatDisplayDate(
+                              policy.expirationDate,
+                              policy.expirationDate,
+                            )}
+                          </span>
+                        ) : null}
                         {policy?.insuredName ? <span>Insured: {policy.insuredName}</span> : null}
                       </div>
                       {policy?.carrier || policy?.policyNumber || policy?.coverageName ? (

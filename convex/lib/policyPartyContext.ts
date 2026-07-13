@@ -1,0 +1,424 @@
+import type {
+  OperationalAddress,
+  OperationalParty,
+  PolicyOperationalProfile,
+  SourceBackedValue,
+} from "@claritylabs/cl-sdk";
+
+export type PolicyPartyAddress = string | OperationalAddress;
+
+type ClientProfileFacts = {
+  mailingAddress?: { value?: unknown };
+  operationsDescription?: { value?: unknown };
+};
+
+type ResolvedParty = Omit<OperationalParty, "address"> & {
+  address?: PolicyPartyAddress;
+  naicNumber?: string;
+  licenseNumber?: string;
+};
+
+function text(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function sourceBackedText(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return text((value as Partial<SourceBackedValue>).value);
+}
+
+function address(value: unknown): PolicyPartyAddress | undefined {
+  const stringValue = text(value);
+  if (stringValue) return stringValue;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const result: OperationalAddress = {
+    street1: text(record.street1) ?? text(record.line1) ?? text(record.addressLine1),
+    street2: text(record.street2) ?? text(record.line2) ?? text(record.addressLine2),
+    city: text(record.city) ?? text(record.locality),
+    state: text(record.state) ?? text(record.region),
+    zip: text(record.zip) ?? text(record.postalCode) ?? text(record.postcode),
+    country: text(record.country),
+    formatted: text(record.formatted),
+  };
+  return Object.values(result).some(Boolean) ? result : undefined;
+}
+
+function joinLines(...values: Array<string | undefined>) {
+  return values.filter(Boolean).join("\n") || undefined;
+}
+
+function normalizedIdentity(value: unknown) {
+  return text(value)?.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function matchingIdentifier(
+  resolvedName: string | undefined,
+  candidates: Array<{ name?: unknown; identifier?: unknown }>,
+) {
+  const resolvedIdentity = normalizedIdentity(resolvedName);
+  if (!resolvedIdentity) return undefined;
+  const match = candidates.find((candidate) =>
+    normalizedIdentity(candidate.name) === resolvedIdentity && text(candidate.identifier)
+  );
+  return text(match?.identifier);
+}
+
+function declarationValues(policy: Record<string, any>) {
+  const fields = Array.isArray(policy.declarations?.fields)
+    ? policy.declarations.fields as Array<Record<string, unknown>>
+    : [];
+  return (...names: string[]) => {
+    const accepted = new Set(names);
+    const match = fields.find((field) => accepted.has(String(field.field ?? "")));
+    return text(match?.value);
+  };
+}
+
+function profileParty(
+  profile: Partial<PolicyOperationalProfile>,
+  roles: readonly string[],
+): ResolvedParty | undefined {
+  const accepted = new Set(roles);
+  const parties: ResolvedParty[] = Array.isArray(profile.parties)
+    ? profile.parties as ResolvedParty[]
+    : [];
+  const candidates = parties.filter((candidate) =>
+    accepted.has(String(candidate.role).toLowerCase()),
+  );
+  const party = candidates.find((candidate) => address(candidate.address)) ?? candidates[0];
+  if (!party?.name?.trim()) return undefined;
+  const sameIdentity = candidates.filter((candidate) =>
+    normalizedIdentity(candidate.name) === normalizedIdentity(party.name),
+  );
+  return {
+    role: party.role,
+    name: party.name.trim(),
+    address: address(party.address),
+    naicNumber: matchingIdentifier(party.name, sameIdentity.map((candidate) => ({
+      name: candidate.name,
+      identifier: candidate.naicNumber,
+    }))),
+    licenseNumber: matchingIdentifier(party.name, sameIdentity.map((candidate) => ({
+      name: candidate.name,
+      identifier: candidate.licenseNumber,
+    }))),
+    sourceNodeIds: [...new Set(sameIdentity.flatMap((candidate) => candidate.sourceNodeIds ?? []))],
+    sourceSpanIds: [...new Set(sameIdentity.flatMap((candidate) => candidate.sourceSpanIds ?? []))],
+  };
+}
+
+function compatibilityRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function ownedRecord(record: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key)
+    ? compatibilityRecord(record[key])
+    : undefined;
+}
+
+function upsertResolvedParty(
+  parties: ResolvedParty[],
+  roles: readonly string[],
+  fallbackRole: string,
+  name: string | undefined,
+  partyAddress: PolicyPartyAddress | undefined,
+  provenance: Record<string, unknown> = {},
+) {
+  if (!name) return;
+  const accepted = new Set(roles);
+  const existing = parties.find((party) =>
+    accepted.has(String(party.role).toLowerCase()) &&
+    party.name.trim().toLowerCase() === name.trim().toLowerCase(),
+  );
+  if (existing) {
+    existing.address ??= partyAddress;
+    existing.naicNumber ??= text(provenance.naicNumber);
+    existing.licenseNumber ??= text(provenance.licenseNumber);
+    return;
+  }
+  const documentNodeId = text(provenance.documentNodeId);
+  parties.push({
+    role: fallbackRole,
+    name,
+    address: partyAddress,
+    naicNumber: text(provenance.naicNumber),
+    licenseNumber: text(provenance.licenseNumber),
+    sourceNodeIds: Array.isArray(provenance.sourceNodeIds)
+      ? provenance.sourceNodeIds.filter((id): id is string => typeof id === "string")
+      : documentNodeId ? [documentNodeId] : [],
+    sourceSpanIds: Array.isArray(provenance.sourceSpanIds)
+      ? provenance.sourceSpanIds.filter((id): id is string => typeof id === "string")
+      : [],
+  });
+}
+
+export function resolvePolicyPartyContext(
+  policy: Record<string, any>,
+  options: { clientProfileFacts?: ClientProfileFacts } = {},
+) {
+  const profile = compatibilityRecord(policy.operationalProfile) as Partial<PolicyOperationalProfile>;
+  const declarationValue = declarationValues(policy);
+  const producer = compatibilityRecord(policy.producer);
+  const insurer = compatibilityRecord(policy.insurer);
+  const generalAgent = compatibilityRecord(policy.generalAgent);
+  const legacyMga = compatibilityRecord(policy.mga);
+  const detailOverrides = compatibilityRecord(policy.policyDetailOverrides);
+  const insuredOverride = ownedRecord(detailOverrides, "insured");
+  const producerOverride = ownedRecord(detailOverrides, "producer");
+  const insurerOverride = ownedRecord(detailOverrides, "insurer");
+  const generalAgentOverride =
+    ownedRecord(detailOverrides, "generalAgent") ??
+    ownedRecord(detailOverrides, "mga");
+
+  const insuredParty = profileParty(profile, ["named_insured", "insured", "client"]);
+  const producerParty = profileParty(profile, ["producer", "broker", "agent"]);
+  const insurerParty = profileParty(profile, ["insurer", "carrier"]);
+  const generalAgentParty = profileParty(profile, [
+    "general_agent",
+    "mga",
+    "administrator",
+  ]);
+  const declarationFacts = Array.isArray(profile.declarationFacts)
+    ? profile.declarationFacts as Array<{ field?: string; address?: unknown }>
+    : [];
+  const sourceBackedMailingAddress = declarationFacts.length > 0
+    ? address(declarationFacts.find((fact) => fact.field === "mailingAddress")?.address)
+    : undefined;
+
+  const insuredName = insuredOverride
+    ? text(insuredOverride.name)
+    : insuredParty?.name ??
+      sourceBackedText(profile.namedInsured) ??
+      text(policy.insuredName) ??
+      declarationValue("masterPolicyHolderAndMailingAddressName")?.replace(/;$/, "");
+  const insuredAddress = insuredOverride
+    ? address(insuredOverride.address)
+    : insuredParty?.address ??
+      sourceBackedMailingAddress ??
+      address(policy.insuredAddress) ??
+      address(options.clientProfileFacts?.mailingAddress?.value) ??
+      joinLines(
+        declarationValue("masterPolicyHolderAndMailingAddressStreet")?.replace(/;$/, ""),
+        declarationValue("masterPolicyHolderAndMailingAddressCityStateZip"),
+      );
+  const producerName = producerOverride
+    ? text(producerOverride.name)
+    : producerParty?.name ??
+      sourceBackedText(profile.broker) ??
+      text(producer.agencyName) ??
+      text(policy.brokerAgency) ??
+      text(policy.broker) ??
+      joinLines(declarationValue("producerName"), declarationValue("producerDBA"));
+  const producerAddress = producerOverride
+    ? address(producerOverride.address)
+    : producerParty?.address ??
+      address(producer.address) ??
+      joinLines(
+        declarationValue("producerAddressStreetSuite"),
+        declarationValue("producerAddressCityStateZip"),
+      );
+  const producerContactName = producerOverride
+    ? text(producerOverride.contactName)
+    : text(producer.contactName);
+  const producerPhone = producerOverride
+    ? text(producerOverride.phone)
+    : text(producer.phone);
+  const producerEmail = producerOverride
+    ? text(producerOverride.email)
+    : text(producer.email);
+  const producerLicenseNumber = producerOverride
+    ? text(producerOverride.licenseNumber)
+    : matchingIdentifier(producerName, [
+      { name: producerParty?.name, identifier: producerParty?.licenseNumber },
+      { name: producer.agencyName, identifier: producer.licenseNumber },
+      {
+        name: text(policy.brokerAgency) ?? text(policy.broker),
+        identifier: policy.brokerLicenseNumber,
+      },
+    ]);
+  const insurerName = insurerOverride
+    ? text(insurerOverride.name)
+    : insurerParty?.name ??
+      sourceBackedText(profile.insurer) ??
+      text(insurer.legalName) ??
+      text(policy.carrierLegalName) ??
+      text(policy.security) ??
+      text(policy.carrier) ??
+      declarationValue("insurerName");
+  const insurerAddress = insurerOverride
+    ? address(insurerOverride.address)
+    : insurerParty?.address ??
+      address(insurer.address) ??
+      joinLines(declarationValue("insurerAddress1"), declarationValue("insurerCityStateZip"));
+  const insurerNaicNumber = insurerOverride
+    ? text(insurerOverride.naicNumber)
+    : matchingIdentifier(insurerName, [
+      { name: insurerParty?.name, identifier: insurerParty?.naicNumber },
+      { name: insurer.legalName, identifier: insurer.naicNumber },
+      {
+        name: text(policy.carrierLegalName) ?? text(policy.security) ?? text(policy.carrier),
+        identifier: policy.carrierNaicNumber,
+      },
+    ]);
+  const generalAgentName = generalAgentOverride
+    ? text(generalAgentOverride.name)
+    : generalAgentParty?.name ??
+      text(generalAgent.agencyName) ??
+      text(generalAgent.name) ??
+      text(legacyMga.name) ??
+      text(legacyMga.agencyName) ??
+      text(policy.mga) ??
+      declarationValue("generalAgentName", "mgaName", "administratorName");
+  const generalAgentAddress = generalAgentOverride
+    ? address(generalAgentOverride.address)
+    : generalAgentParty?.address ??
+      address(generalAgent.address) ??
+      address(legacyMga.address);
+  const generalAgentLicenseNumber = generalAgentOverride
+    ? text(generalAgentOverride.licenseNumber)
+    : matchingIdentifier(generalAgentName, [
+      {
+        name: generalAgentParty?.name,
+        identifier: generalAgentParty?.licenseNumber,
+      },
+      {
+        name: text(generalAgent.agencyName) ?? text(generalAgent.name),
+        identifier: generalAgent.licenseNumber,
+      },
+      {
+        name: text(legacyMga.agencyName) ?? text(legacyMga.name) ?? text(policy.mga),
+        identifier: legacyMga.licenseNumber,
+      },
+    ]);
+  const operationsDescription = Object.prototype.hasOwnProperty.call(
+    detailOverrides,
+    "operationsDescription",
+  )
+    ? text(detailOverrides.operationsDescription)
+    : sourceBackedText(profile.operationsDescription) ??
+      sourceBackedText(options.clientProfileFacts?.operationsDescription) ??
+      declarationValue("descriptionOfOperations", "operationsDescription", "businessOperations");
+  const additionalNamedInsureds = insuredOverride
+    ? (Array.isArray(insuredOverride.additionalNamedInsureds)
+      ? insuredOverride.additionalNamedInsureds
+        .map(text)
+        .filter((value): value is string => Boolean(value))
+      : [])
+    : Array.isArray(policy.additionalNamedInsureds)
+      ? policy.additionalNamedInsureds
+        .map((insured: unknown) => typeof insured === "string"
+          ? text(insured)
+          : text(compatibilityRecord(insured).name))
+        .filter((value: string | undefined): value is string => Boolean(value))
+      : [];
+
+  const rawParties: unknown[] = Array.isArray(profile.parties) ? profile.parties : [];
+  const overriddenRoles = new Set<string>([
+    ...(insuredOverride ? ["named_insured", "insured", "client"] : []),
+    ...(producerOverride ? ["producer", "broker", "agent"] : []),
+    ...(insurerOverride ? ["insurer", "carrier"] : []),
+    ...(generalAgentOverride
+      ? ["general_agent", "mga", "administrator"]
+      : []),
+  ]);
+  const parties = rawParties
+    .filter((party): party is OperationalParty =>
+      Boolean(
+        party &&
+        typeof party === "object" &&
+        !Array.isArray(party) &&
+        text((party as { name?: unknown }).name) &&
+        !overriddenRoles.has(
+          String((party as { role?: unknown }).role).toLowerCase(),
+        ),
+      ),
+    )
+    .map((party: OperationalParty) => {
+      const record = party as ResolvedParty;
+      const rawRole = String(record.role).toLowerCase();
+      const role = ["mga", "administrator"].includes(rawRole)
+        ? "general_agent"
+        : ["broker", "agent"].includes(rawRole)
+          ? "producer"
+          : record.role;
+      return {
+        ...record,
+        role,
+        name: record.name.trim(),
+        address: address(record.address),
+        sourceNodeIds: record.sourceNodeIds ?? [],
+        sourceSpanIds: record.sourceSpanIds ?? [],
+      };
+    });
+  upsertResolvedParty(
+    parties,
+    ["named_insured", "insured", "client"],
+    "named_insured",
+    insuredName,
+    insuredAddress,
+    insuredOverride ? {} : compatibilityRecord(policy.insuredAddress),
+  );
+  upsertResolvedParty(
+    parties,
+    ["producer", "broker", "agent"],
+    "producer",
+    producerName,
+    producerAddress,
+    producerOverride
+      ? { ...producerOverride, licenseNumber: producerLicenseNumber }
+      : { ...producer, licenseNumber: producerLicenseNumber },
+  );
+  upsertResolvedParty(
+    parties,
+    ["insurer", "carrier"],
+    "insurer",
+    insurerName,
+    insurerAddress,
+    insurerOverride
+      ? { ...insurerOverride, naicNumber: insurerNaicNumber }
+      : { ...insurer, naicNumber: insurerNaicNumber },
+  );
+  upsertResolvedParty(
+    parties,
+    ["general_agent", "mga", "administrator"],
+    "general_agent",
+    generalAgentName,
+    generalAgentAddress,
+    generalAgentOverride
+      ? {
+          ...generalAgentOverride,
+          licenseNumber: generalAgentLicenseNumber,
+        }
+      : {
+          ...generalAgent,
+          ...legacyMga,
+          licenseNumber: generalAgentLicenseNumber,
+        },
+  );
+
+  return {
+    profile,
+    declarationValue,
+    parties,
+    insuredName,
+    insuredAddress,
+    producerName,
+    producerAddress,
+    producerContactName,
+    producerPhone,
+    producerEmail,
+    producerLicenseNumber,
+    insurerName,
+    insurerAddress,
+    insurerNaicNumber,
+    generalAgentName,
+    generalAgentAddress,
+    generalAgentLicenseNumber,
+    operationsDescription,
+    additionalNamedInsureds,
+  };
+}
