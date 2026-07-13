@@ -831,6 +831,25 @@ export const rerunExtraction = action({
   },
 });
 
+export const backfillCoverageRecovery = action({
+  args: {
+    policyId: v.id("policies"),
+    force: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
+    return await ctx.runAction(
+      internalApi.actions.policyExtraction.backfillStoredCoverageRecovery,
+      {
+        policyId: args.policyId,
+        force: args.force === true,
+      },
+    );
+  },
+});
+
 export const stopExtraction = mutation({
   args: { traceId: v.string() },
   handler: async (ctx, args) => {
@@ -1159,7 +1178,10 @@ export const setSoloClientStatus = mutation({
 export const setClientFeatureFlag = mutation({
   args: {
     clientOrgId: v.id("organizations"),
-    flagId: v.literal("connect_features"),
+    flagId: v.union(
+      v.literal("connect_features"),
+      v.literal("coverage_recovery_v2"),
+    ),
     enabled: v.boolean(),
   },
   handler: async (ctx, args) => {

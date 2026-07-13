@@ -214,7 +214,7 @@ function normalizedKind(value: unknown): SourceSpanKind {
     : "pdf_text";
 }
 
-function sourceSpansForSdk(sourceSpans: SourceSpanLike[], documentId: string): SourceSpan[] {
+export function sourceSpansForSdk(sourceSpans: SourceSpanLike[], documentId: string): SourceSpan[] {
   return sourceSpans
     .filter((span) => typeof span.text === "string")
     .map((span, index) => {
@@ -1008,6 +1008,10 @@ function cleanOperationalCoverages(
 type OperationalProfileExtensions = {
   additionalInsuredEligibility?: unknown;
   additionalInsureds?: unknown;
+  coverageSchedules?: unknown;
+  premiumBreakdown?: unknown;
+  taxesAndFees?: unknown;
+  totalCost?: unknown;
 };
 
 function storedProfileExtensions(rawProfile: unknown): OperationalProfileExtensions {
@@ -1019,6 +1023,18 @@ function storedProfileExtensions(rawProfile: unknown): OperationalProfileExtensi
       : {}),
     ...(Array.isArray(record.additionalInsureds)
       ? { additionalInsureds: record.additionalInsureds }
+      : {}),
+    ...(Array.isArray(record.coverageSchedules)
+      ? { coverageSchedules: record.coverageSchedules }
+      : {}),
+    ...(Array.isArray(record.premiumBreakdown)
+      ? { premiumBreakdown: record.premiumBreakdown }
+      : {}),
+    ...(Array.isArray(record.taxesAndFees)
+      ? { taxesAndFees: record.taxesAndFees }
+      : {}),
+    ...(record.totalCost && typeof record.totalCost === "object" && !Array.isArray(record.totalCost)
+      ? { totalCost: record.totalCost }
       : {}),
   };
 }
@@ -1644,6 +1660,12 @@ export function operationalProfilePolicyFields(
   const fields: Record<string, unknown> = {
     operationalProfile,
   };
+  const extendedProfile = operationalProfile as PolicyOperationalProfile & {
+    coverageSchedules?: unknown[];
+    premiumBreakdown?: unknown[];
+    taxesAndFees?: unknown[];
+    totalCost?: SourceBackedValue;
+  };
   const policyNumber = profileValue(operationalProfile, "policyNumber");
   const namedInsured = profileValue(operationalProfile, "namedInsured");
   const insurer = profileValue(operationalProfile, "insurer");
@@ -1673,6 +1695,21 @@ export function operationalProfilePolicyFields(
   if (retroactiveDate) fields.retroactiveDate = retroactiveDate;
   fields.premium = premium ?? undefined;
   if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
+  if (extendedProfile.coverageSchedules?.length) {
+    fields.coverageSchedules = extendedProfile.coverageSchedules;
+  }
+  if (extendedProfile.premiumBreakdown?.length) {
+    fields.premiumBreakdown = extendedProfile.premiumBreakdown;
+  }
+  if (extendedProfile.taxesAndFees?.length) {
+    fields.taxesAndFees = extendedProfile.taxesAndFees;
+  }
+  if (extendedProfile.totalCost?.value) {
+    fields.totalCost = extendedProfile.totalCost.value;
+    const totalCostAmount = moneyNumberFromString(extendedProfile.totalCost.normalizedValue)
+      ?? moneyNumberFromString(extendedProfile.totalCost.value);
+    if (totalCostAmount !== undefined) fields.totalCostAmount = totalCostAmount;
+  }
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.linesOfBusiness.length > 0) {
     fields.linesOfBusiness = operationalProfile.linesOfBusiness;

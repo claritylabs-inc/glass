@@ -9,6 +9,16 @@ export const FEATURE_FLAGS = {
     allowedOrgTypes: ["client"],
     beta: true,
   },
+  coverage_recovery_v2: {
+    id: "coverage_recovery_v2",
+    label: "AI coverage recovery",
+    description:
+      "Inspect the complete policy source tree for missing coverage terms, asset schedules, premiums, taxes, and fees.",
+    scope: "org",
+    defaultEnabled: false,
+    allowedOrgTypes: ["client"],
+    beta: true,
+  },
 } as const;
 
 export type FeatureFlagId = keyof typeof FEATURE_FLAGS;
