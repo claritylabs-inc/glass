@@ -2,24 +2,49 @@
 
 import { useEffect, useState } from "react";
 import { useAction, useMutation } from "convex/react";
-import { Ban, ClipboardList, FileText, Loader2, Paperclip, X } from "lucide-react";
+import {
+  Ban,
+  ChevronDown,
+  ClipboardList,
+  Copy,
+  FileText,
+  Loader2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { isFeatureEnabled } from "@/convex/lib/featureFlags";
+import { usePdf } from "@/components/pdf-context";
+import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import {
   OperationalLabelValueList,
   OperationalLabelValueRow,
   OperationalPanel,
+  OperationalPanelBody,
+  OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type MailboxAttachment = {
   filename: string;
   contentType?: string;
   size?: number;
+};
+
+type MailboxAddress = {
+  name?: string;
+  address: string;
 };
 
 type MailboxReviewEmail = {
@@ -35,12 +60,107 @@ type MailboxReviewEmail = {
 export type LiveMailboxEmail = {
   subject: string;
   from?: string;
+  fromAddresses?: MailboxAddress[];
   to?: string;
+  toAddresses?: MailboxAddress[];
   cc?: string;
+  ccAddresses?: MailboxAddress[];
   date?: string;
   text?: string;
   attachments: MailboxAttachment[];
 };
+
+function addressFromNotation(value?: string): MailboxAddress | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  const named = raw.match(/^(.*?)\s*<([^<>\s]+@[^<>\s]+)>$/);
+  if (named) {
+    const name = named[1].trim().replace(/^"|"$/g, "");
+    return name ? { name, address: named[2] } : { address: named[2] };
+  }
+  return /^\S+@\S+\.\S+$/.test(raw) ? { address: raw } : null;
+}
+
+function MailboxAddressDisclosure({ contact }: { contact: MailboxAddress }) {
+  const name = contact.name?.trim();
+  const address = contact.address.trim();
+
+  if (!name || name.toLowerCase() === address.toLowerCase()) {
+    return <span className="break-all">{address}</span>;
+  }
+
+  async function copyAddress() {
+    try {
+      await navigator.clipboard.writeText(address);
+      toast.success("Email address copied");
+    } catch {
+      toast.error("Couldn’t copy email address");
+    }
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <PillButton
+            type="button"
+            size="compact"
+            variant="ghost"
+            className="group/address h-6 min-w-0 max-w-full px-1.5 text-base font-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]"
+            aria-label={`Show email address for ${name}`}
+          >
+            <span className="min-w-0 truncate">{name}</span>
+            <ChevronDown className="h-3 w-3 opacity-0 transition-opacity duration-150 group-hover/address:opacity-55 group-focus-visible/address:opacity-55 group-data-[popup-open]/address:opacity-55 [@media(hover:none)]:opacity-45" />
+          </PillButton>
+        }
+      />
+      <DropdownMenuContent
+        align="start"
+        className="w-auto min-w-56 max-w-[min(24rem,calc(100vw-2rem))]"
+      >
+        <DropdownMenuLabel className="min-w-0 px-2 py-1.5 text-base font-normal text-foreground">
+          <span className="block break-all">{address}</span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => void copyAddress()}>
+          <Copy className="h-4 w-4" />
+          Copy address
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function MailboxAddressList({
+  contacts,
+  fallback,
+}: {
+  contacts?: MailboxAddress[];
+  fallback?: string;
+}) {
+  const fallbackContact = addressFromNotation(fallback);
+  const visibleContacts = contacts?.length
+    ? contacts
+    : fallbackContact
+      ? [fallbackContact]
+      : [];
+
+  if (visibleContacts.length === 0) return fallback ?? null;
+
+  return (
+    <span className="-ml-1.5 inline-flex max-w-full flex-wrap items-center">
+      {visibleContacts.map((contact, index) => (
+        <span
+          key={`${contact.address}-${index}`}
+          className="inline-flex min-w-0 max-w-full items-center"
+        >
+          {index > 0 ? <span className="mr-0.5 text-muted-foreground">,</span> : null}
+          <MailboxAddressDisclosure contact={contact} />
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export function formatAttachmentSize(size?: number) {
   if (typeof size !== "number") return undefined;
@@ -98,15 +218,18 @@ export function MailboxEmailReviewSidebar({
 }) {
   const currentOrg = useCurrentOrg();
   const readEmail = useAction(api.actions.connectedEmail.readEmail);
+  const previewAttachment = useAction(api.actions.connectedEmail.previewAttachment);
   const importPolicyAttachments = useAction(api.actions.connectedEmail.importPolicyAttachments);
   const importRequirementAttachments = useAction(api.actions.connectedEmail.importRequirementAttachments);
   const resolveReview = useMutation(api.connectedEmailAutomation.resolveReview);
+  const { openWithUrl } = usePdf();
   const [liveEmail, setLiveEmail] = useState<LiveMailboxEmail | null>(null);
   const [readError, setReadError] = useState<string | null>(
     email.emailRef ? null : "Email reference is unavailable.",
   );
   const [readAttempt, setReadAttempt] = useState(0);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [previewingFilename, setPreviewingFilename] = useState<string | null>(null);
   const showConnectFeatures = isFeatureEnabled(currentOrg?.org, "connect_features");
 
   useEffect(() => {
@@ -163,6 +286,23 @@ export function MailboxEmailReviewSidebar({
       toast.error("Failed to update email review");
     } finally {
       setBusyKey(null);
+    }
+  }
+
+  async function handleAttachmentPreview(attachment: MailboxAttachment) {
+    if (!email.emailRef || !isMailboxPdfAttachment(attachment)) return;
+    setPreviewingFilename(attachment.filename);
+    try {
+      const result = await previewAttachment({
+        orgId,
+        emailRef: email.emailRef,
+        filename: attachment.filename,
+      });
+      openWithUrl(result.url);
+    } catch {
+      toast.error("Failed to open attachment preview");
+    } finally {
+      setPreviewingFilename(null);
     }
   }
 
@@ -248,9 +388,33 @@ export function MailboxEmailReviewSidebar({
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
         <OperationalLabelValueList>
-          <OperationalLabelValueRow label="From" value={liveEmail?.from ?? email.from} />
-          <OperationalLabelValueRow label="To" value={liveEmail?.to} />
-          <OperationalLabelValueRow label="Cc" value={liveEmail?.cc} />
+          <OperationalLabelValueRow
+            label="From"
+            value={
+              liveEmail?.fromAddresses?.length || liveEmail?.from || email.from ? (
+                <MailboxAddressList
+                  contacts={liveEmail?.fromAddresses}
+                  fallback={liveEmail?.from ?? email.from}
+                />
+              ) : undefined
+            }
+          />
+          <OperationalLabelValueRow
+            label="To"
+            value={
+              liveEmail?.toAddresses?.length || liveEmail?.to ? (
+                <MailboxAddressList contacts={liveEmail?.toAddresses} fallback={liveEmail?.to} />
+              ) : undefined
+            }
+          />
+          <OperationalLabelValueRow
+            label="Cc"
+            value={
+              liveEmail?.ccAddresses?.length || liveEmail?.cc ? (
+                <MailboxAddressList contacts={liveEmail?.ccAddresses} fallback={liveEmail?.cc} />
+              ) : undefined
+            }
+          />
           <OperationalLabelValueRow
             label="Received"
             value={receivedAt ? formatDisplayDateTime(receivedAt, receivedAt) : undefined}
@@ -263,34 +427,42 @@ export function MailboxEmailReviewSidebar({
         </OperationalLabelValueList>
 
         {liveEmail ? (
-          <>
+          <OperationalPanel as="div">
+            <OperationalPanelHeader title="Message" />
             {attachments.length > 0 ? (
-              <section>
-                <h3 className="mb-2 text-label font-medium text-muted-foreground">Attachments</h3>
+              <div className="border-b border-foreground/6 px-4 py-3">
+                <p className="mb-2 text-label font-medium text-muted-foreground">
+                  Attachments
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                   {attachments.map((attachment, index) => {
-                    const size = formatAttachmentSize(attachment.size);
+                    const canPreview = isMailboxPdfAttachment(attachment);
+                    const isPreviewing = previewingFilename === attachment.filename;
                     return (
-                      <span
+                      <ThreadAttachmentChip
                         key={`${attachment.filename}-${index}`}
-                        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-foreground/8 px-2 py-1 text-tag text-muted-foreground"
-                      >
-                        <Paperclip className="h-3 w-3" />
-                        <span className="truncate">{attachment.filename}</span>
-                        {size ? <span className="text-muted-foreground/50">{size}</span> : null}
-                      </span>
+                        attachment={attachment}
+                        className="w-fit"
+                        onOpen={
+                          canPreview
+                            ? () => void handleAttachmentPreview(attachment)
+                            : undefined
+                        }
+                        isLoading={isPreviewing}
+                        disabled={canPreview && previewingFilename !== null}
+                        unavailableTitle={`${attachment.filename} cannot be previewed`}
+                      />
                     );
                   })}
                 </div>
-              </section>
+              </div>
             ) : null}
-            <section>
-              <h3 className="mb-2 text-label font-medium text-muted-foreground">Message</h3>
-              <p className="whitespace-pre-wrap text-base leading-6 text-foreground/80">
+            <OperationalPanelBody>
+              <p className="whitespace-pre-wrap break-words text-base leading-6 text-foreground/80 [overflow-wrap:anywhere]">
                 {liveEmail.text?.trim() || "This email has no plain-text message body."}
               </p>
-            </section>
-          </>
+            </OperationalPanelBody>
+          </OperationalPanel>
         ) : readError ? (
           <OperationalPanel as="div" className="p-4">
             <p className="text-base font-medium text-foreground">Couldn’t open this email</p>
@@ -317,7 +489,7 @@ export function MailboxEmailReviewSidebar({
           </div>
         )}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-foreground/8 px-4 py-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-foreground/8 px-4 py-3">
         <PillButton
           size="compact"
           variant="ghost"
@@ -332,7 +504,7 @@ export function MailboxEmailReviewSidebar({
           Not relevant
         </PillButton>
         {liveEmail ? (
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <>
             {hasPdf ? (
               <PillButton
                 size="compact"
@@ -389,10 +561,10 @@ export function MailboxEmailReviewSidebar({
                 ) : (
                   <ClipboardList className="h-3.5 w-3.5" />
                 )}
-                Import insurance requirements
+                Import requirements
               </PillButton>
             )}
-          </div>
+          </>
         ) : null}
       </div>
     </aside>
