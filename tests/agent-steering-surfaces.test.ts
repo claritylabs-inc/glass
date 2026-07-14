@@ -63,6 +63,16 @@ describe("agent steering surfaces", () => {
     expect(promptInput).not.toContain("leading-5");
   });
 
+  it("uses the shared attachment tag for stored and on-demand previews", () => {
+    const attachmentChip = read("components/agent-thread/thread-attachment-chip.tsx");
+
+    expect(attachmentChip).toContain("onOpen?: () => void");
+    expect(attachmentChip).toContain("threadId?: Id<\"threads\">");
+    expect(attachmentChip).toContain("const handleOpen = onOpen ??");
+    expect(attachmentChip).toContain('onOpen ? "Preview" : "Open"');
+    expect(attachmentChip).toContain("disabled={disabled || isLoading}");
+  });
+
   it("persists selected targets and routes them into agent context", () => {
     const schema = read("convex/schema.ts");
     const threads = read("convex/threads.ts");

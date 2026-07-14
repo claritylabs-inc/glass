@@ -32,11 +32,17 @@ import {
 const SEARCH_CANDIDATE_MULTIPLIER = 3;
 const SEARCH_MAX_CANDIDATES = 30;
 const THREAD_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+const ATTACHMENT_PREVIEW_TTL_MS = 60 * 60 * 1000;
 
 type MailboxAttachmentInfo = {
   filename?: string;
   contentType: string;
   size: number;
+};
+
+type MailboxAddressInfo = {
+  name?: string;
+  address: string;
 };
 
 type MailboxSearchRow = {
@@ -77,8 +83,11 @@ type MailboxReadRow = {
   uid: number;
   subject: string;
   from?: string;
+  fromAddresses: MailboxAddressInfo[];
   to: string;
+  toAddresses: MailboxAddressInfo[];
   cc: string;
+  ccAddresses: MailboxAddressInfo[];
   date?: string;
   text: string;
   html?: string;
@@ -315,6 +324,24 @@ function addressText(value: ParsedMail["from"] | ParsedMail["to"] | ParsedMail["
     entry.value
       .map((item) => item.address)
       .filter((address): address is string => Boolean(address)),
+  );
+}
+
+function addressDetails(
+  value: ParsedMail["from"] | ParsedMail["to"] | ParsedMail["cc"],
+): MailboxAddressInfo[] {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list.flatMap((entry) =>
+    entry.value.flatMap((item) => {
+      const addresses = item.group?.length ? item.group : [item];
+      return addresses.flatMap((address) => {
+        const email = address.address?.trim();
+        if (!email) return [];
+        const name = address.name.trim();
+        return [name ? { name, address: email } : { address: email }];
+      });
+    }),
   );
 }
 
@@ -561,8 +588,11 @@ export const readInternal = internalAction({
         uid: ref.uid,
         subject: parsed.subject ?? "(no subject)",
         from: parsed.from?.text,
+        fromAddresses: addressDetails(parsed.from),
         to: addressText(parsed.to).join(", "),
+        toAddresses: addressDetails(parsed.to),
         cc: addressText(parsed.cc).join(", "),
+        ccAddresses: addressDetails(parsed.cc),
         date: parsed.date?.toISOString(),
         text: (parsed.text ?? "").slice(0, 20_000),
         html: typeof parsed.html === "string" ? parsed.html.slice(0, 20_000) : undefined,
@@ -591,6 +621,84 @@ export const readEmail = action({
       userId: userId as Id<"users">,
       emailRef: args.emailRef,
     });
+  },
+});
+
+export const deleteAttachmentPreviewInternal = internalAction({
+  args: {
+    fileId: v.id("_storage"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.storage.delete(args.fileId);
+  },
+});
+
+export const previewAttachment = action({
+  args: {
+    orgId: v.id("organizations"),
+    emailRef: v.string(),
+    filename: v.string(),
+  },
+  returns: v.object({
+    url: v.string(),
+    filename: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
+
+    const ref = parseMessageRef(args.emailRef);
+    const account = await accessibleAccount(ctx, {
+      orgId: args.orgId,
+      userId: userId as Id<"users">,
+      accountId: ref.accountId,
+    });
+    const attachment = await withClient(account, async (client) => {
+      const parsed = await fetchParsedMessage(
+        client,
+        ref.mailbox,
+        ref.uid,
+        IMPORT_DOWNLOAD_MAX_BYTES,
+      );
+      const requested = args.filename.trim().toLowerCase();
+      return parsed.attachments.find(
+        (item) => item.filename?.toLowerCase() === requested,
+      );
+    });
+
+    if (!attachment) throw new Error("Attachment not found on this email");
+    if (!isPdfMailboxAttachment(attachment)) {
+      throw new Error("Only PDF attachments can be previewed");
+    }
+    if (attachment.size > THREAD_ATTACHMENT_MAX_BYTES) {
+      throw new Error("This attachment is too large to preview");
+    }
+
+    const copy = new Uint8Array(attachment.content.length);
+    copy.set(attachment.content);
+    const fileId = await ctx.storage.store(
+      new Blob([copy], { type: attachment.contentType }),
+    );
+    const url = await ctx.storage.getUrl(fileId);
+    if (!url) {
+      await ctx.storage.delete(fileId);
+      throw new Error("Could not create an attachment preview");
+    }
+    await ctx.scheduler.runAfter(
+      ATTACHMENT_PREVIEW_TTL_MS,
+      internal.actions.connectedEmail.deleteAttachmentPreviewInternal,
+      { fileId },
+    );
+
+    return {
+      url,
+      filename: attachment.filename ?? args.filename,
+      contentType: attachment.contentType,
+      size: attachment.size,
+    };
   },
 });
 
