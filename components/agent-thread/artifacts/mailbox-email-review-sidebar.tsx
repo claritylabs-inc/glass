@@ -19,6 +19,7 @@ import { usePdf } from "@/components/pdf-context";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { cn } from "@/lib/utils";
 import {
   OperationalLabelValueList,
   OperationalLabelValueRow,
@@ -30,6 +31,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -81,7 +83,13 @@ function addressFromNotation(value?: string): MailboxAddress | null {
   return /^\S+@\S+\.\S+$/.test(raw) ? { address: raw } : null;
 }
 
-function MailboxAddressDisclosure({ contact }: { contact: MailboxAddress }) {
+function MailboxAddressDisclosure({
+  contact,
+  alignStart = false,
+}: {
+  contact: MailboxAddress;
+  alignStart?: boolean;
+}) {
   const name = contact.name?.trim();
   const address = contact.address.trim();
 
@@ -106,7 +114,10 @@ function MailboxAddressDisclosure({ contact }: { contact: MailboxAddress }) {
             type="button"
             size="compact"
             variant="ghost"
-            className="group/address h-6 min-w-0 max-w-full px-1.5 text-base font-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]"
+            className={cn(
+              "group/address h-6 min-w-0 max-w-full px-1.5 text-base font-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]",
+              alignStart && "-ml-1.5",
+            )}
             aria-label={`Show email address for ${name}`}
           >
             <span className="min-w-0 truncate">{name}</span>
@@ -118,9 +129,11 @@ function MailboxAddressDisclosure({ contact }: { contact: MailboxAddress }) {
         align="start"
         className="w-auto min-w-56 max-w-[min(24rem,calc(100vw-2rem))]"
       >
-        <DropdownMenuLabel className="min-w-0 px-2 py-1.5 text-base font-normal text-foreground">
-          <span className="block break-all">{address}</span>
-        </DropdownMenuLabel>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="min-w-0 px-2 py-1.5 text-base font-normal text-foreground">
+            <span className="block break-all">{address}</span>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => void copyAddress()}>
           <Copy className="h-4 w-4" />
@@ -148,14 +161,14 @@ function MailboxAddressList({
   if (visibleContacts.length === 0) return fallback ?? null;
 
   return (
-    <span className="-ml-1.5 inline-flex max-w-full flex-wrap items-center">
+    <span className="inline-flex max-w-full flex-wrap items-center">
       {visibleContacts.map((contact, index) => (
         <span
           key={`${contact.address}-${index}`}
           className="inline-flex min-w-0 max-w-full items-center"
         >
           {index > 0 ? <span className="mr-0.5 text-muted-foreground">,</span> : null}
-          <MailboxAddressDisclosure contact={contact} />
+          <MailboxAddressDisclosure contact={contact} alignStart={index === 0} />
         </span>
       ))}
     </span>

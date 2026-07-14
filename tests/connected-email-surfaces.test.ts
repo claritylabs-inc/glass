@@ -142,6 +142,11 @@ describe("connected email surfaces", () => {
     expect(mailboxReview).toContain("MailboxAddressDisclosure");
     expect(mailboxReview).toContain("Show email address for");
     expect(mailboxReview).toContain("Copy address");
+    expect(mailboxReview).toContain("<DropdownMenuGroup>");
+    expect(mailboxReview).toContain("alignStart={index === 0}");
+    expect(mailboxReview).not.toContain(
+      'className="-ml-1.5 inline-flex max-w-full flex-wrap items-center"',
+    );
     expect(mailboxReview).toContain("contacts={liveEmail?.fromAddresses}");
     expect(backend).toContain("fromAddresses: addressDetails(parsed.from)");
     expect(backend).toContain("toAddresses: addressDetails(parsed.to)");
