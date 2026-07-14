@@ -42,9 +42,10 @@ describe("resolveTextChannelEmailControl", () => {
 
     expect(
       resolveTextChannelEmailControl({
-        messageText: "send it",
+        messageText: "send please",
         isCancelConfirmationContext: false,
         draftEmailIds: ["draft"],
+        draftApprovalEmailIds: ["draft"],
         pendingEmailIds: [],
         allowDraftApproval: true,
       }),
@@ -52,10 +53,35 @@ describe("resolveTextChannelEmailControl", () => {
 
     expect(
       resolveTextChannelEmailControl({
-        messageText: "send it",
+        messageText: "send please",
         isCancelConfirmationContext: false,
         draftEmailIds: ["draft"],
+        draftApprovalEmailIds: ["draft"],
         pendingEmailIds: [],
+      }),
+    ).toBeNull();
+  });
+
+  test("does not approve a draft that was not attached to the preceding response", () => {
+    expect(
+      resolveTextChannelEmailControl({
+        messageText: "send please",
+        isCancelConfirmationContext: false,
+        draftEmailIds: ["stale-draft"],
+        draftApprovalEmailIds: [],
+        pendingEmailIds: [],
+        allowDraftApproval: true,
+      }),
+    ).toBeNull();
+
+    expect(
+      resolveTextChannelEmailControl({
+        messageText: "ReLease Coverage Company, Inc. is correct. Send please",
+        isCancelConfirmationContext: false,
+        draftEmailIds: ["draft"],
+        draftApprovalEmailIds: ["draft"],
+        pendingEmailIds: [],
+        allowDraftApproval: true,
       }),
     ).toBeNull();
   });

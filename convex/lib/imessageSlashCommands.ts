@@ -111,6 +111,7 @@ async function sendDrafts(
     try {
       await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
         id: draft._id,
+        userConfirmedDraft: true,
       });
       sentCount += 1;
     } catch (err) {

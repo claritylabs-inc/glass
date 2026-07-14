@@ -54,6 +54,53 @@ export type CertificateCoverageLine = {
   description?: string;
 };
 
+export type CertificatePropertyLocation = {
+  number?: number;
+  address?:
+    | string
+    | {
+        street1?: string;
+        street2?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
+        country?: string;
+        formatted?: string;
+      };
+  description?: string;
+  buildingValue?: string;
+  contentsValue?: string;
+  businessIncomeValue?: string;
+  constructionType?: string;
+  yearBuilt?: number;
+  squareFootage?: number;
+  protectionClass?: string;
+  sprinklered?: boolean;
+  alarmType?: string;
+  occupancy?: string;
+};
+
+export type CertificatePropertyInformation = {
+  causesOfLossForm?: string;
+  coinsurancePercent?: number | string;
+  valuationMethod?: string;
+  blanketLimit?: string;
+  businessIncomeLimit?: string;
+  extraExpenseLimit?: string;
+  locations: CertificatePropertyLocation[];
+};
+
+export type CertificateCoveredAssetSchedule = {
+  name: string;
+  kind: "vehicle" | "property" | "location" | "other";
+  description?: string;
+  items: Array<{
+    label: string;
+    description?: string;
+    values: Array<{ label: string; value: string }>;
+  }>;
+};
+
 export type CertificateData = {
   formCode?: CertificateFormCode;
   title: string;
@@ -104,6 +151,8 @@ export type CertificateData = {
   description?: string;
   propertyDescription?: string;
   propertyLocation?: string;
+  propertyInformation?: CertificatePropertyInformation;
+  coveredAssetSchedules?: CertificateCoveredAssetSchedule[];
   interestHolder?: string;
   interestHolderRelationship?: string;
   floodZone?: string;

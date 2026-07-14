@@ -49,8 +49,10 @@ deployment and database that belong only to that worktree. Workspace setup:
    deployment's environment variables into a new native local deployment, and
    replaces the worktree's Convex URLs with loopback URLs.
 3. Forces local safety settings (`GLASS_ENV=local`, captured email, terminal
-   iMessage, dev clear enabled), creates worktree-local worker secrets, and
-   points Convex at the worktree's worker ports.
+   iMessage, dev clear enabled), maps the copied `NEXT_PUBLIC_MAPBOX_TOKEN` to
+   Convex `MAPBOX_ACCESS_TOKEN` for agent address validation, creates
+   worktree-local worker secrets, and points Convex at the worktree's worker
+   ports.
 4. Pushes the schema/functions and seeds the new database once with a curated,
    minimal shared-dev fixture: `terry@claritylabs.inc` as an operator,
    Montgomery Risk with `terry@montgomeryrisk.com` as its admin, Cove with

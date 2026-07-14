@@ -251,12 +251,18 @@ describe("directed email sending", () => {
     );
 
     expect(subagentSource).toContain("upsertEmailDraftArtifact");
+    expect(subagentSource).toContain("queueEmailDraftArtifact");
     expect(draftArtifactsSource).toContain("findDraftByThreadAndRecipient");
+    expect(draftArtifactsSource).toContain("scheduleDraftInternal");
     expect(draftArtifactsSource).toContain("attachPendingEmailToAgentMessage");
     expect(processSource).toContain("runWebChatEmailControls");
     expect(webChatControlsSource).toContain("executeEmailCommand");
     expect(commandExecutorSource).toContain("sendDraftInternal");
     expect(webChatControlsSource).toContain("resolveTextChannelEmailControl");
+    expect(webChatControlsSource).toContain(
+      "previousAgentMessage?.pendingEmailId",
+    );
+    expect(webChatControlsSource).toContain("draftApprovalEmailIds");
     expect(commandExecutorSource).toContain(
       "pendingEmailCancelConfirmationMessage",
     );
@@ -294,7 +300,12 @@ describe("directed email sending", () => {
     expect(pendingEmailsSource).toContain('content: "Email cancelled."');
     expect(pendingEmailsSource).toContain("pendingEmailId: args.id");
     expect(pendingEmailsSource).not.toContain("pendingEmailId: undefined");
+    expect(pendingEmailsSource).toContain("supersededDrafts");
+    expect(pendingEmailsSource).toContain("cancelDraftOrPendingEmail");
     expect(threadPageSource).toContain("UnifiedThreadContent");
+    expect(subagentSource).toContain(
+      "Call send_or_draft_email exactly once",
+    );
   });
 
   it("does not treat cancellation-related document requests as email-cancel commands", () => {

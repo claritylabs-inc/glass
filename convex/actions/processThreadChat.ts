@@ -649,8 +649,40 @@ function claimsCoiEmailCompletion(text: string): boolean {
   );
 }
 
+function hasEmailSendIntent(text: string): boolean {
+  return /\b(send|sent|email|emailed|forward|forwarded|deliver|delivered)\b/i.test(
+    text,
+  );
+}
+
+function isNegatedActionClaim(text: string, actionIndex: number): boolean {
+  const prefix = text.slice(Math.max(0, actionIndex - 60), actionIndex);
+  return /\b(?:not|never|haven['’]t|hasn['’]t|wasn['’]t|isn['’]t|didn['’]t|couldn['’]t|unable to|failed to)(?:\s+\w+){0,4}\s*$/i.test(
+    prefix,
+  );
+}
+
+function claimsEmailSendCompletion(text: string): boolean {
+  for (const match of text.matchAll(
+    /\b(sent|emailed|delivered|sending|emailing|delivering)\b/gi,
+  )) {
+    if (!isNegatedActionClaim(text, match.index)) return true;
+  }
+  return false;
+}
+
 function claimsEmailDraftCompletion(text: string): boolean {
-  return /\b(drafted|prepared)\b[\s\S]{0,80}\bemail\b/i.test(text);
+  for (const match of text.matchAll(
+    /\b(drafted|prepared|created|updated|revised)\b/gi,
+  )) {
+    if (
+      !isNegatedActionClaim(text, match.index) &&
+      /\b(email|draft)\b/i.test(text.slice(match.index, match.index + 100))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export const run = internalAction({
@@ -1415,6 +1447,7 @@ export const run = internalAction({
 
       // Tool call display names for the "thinking" UI
       const TOOL_LABELS: Record<string, string> = {
+        lookup_address: "Validating address...",
         lookup_policy: "Searching policies...",
         lookup_policy_section: "Reading policy sources...",
         attach_policy_document: "Attaching policy PDF...",
@@ -1711,12 +1744,25 @@ export const run = internalAction({
 
       // Final update — save content, reasoning, and cited sections
       content = restoreSentenceBoundarySpacing(content);
+      const emailResult = emailToolResult.current;
+      const completedEmailSend =
+        emailResult?.status === "sent" || emailResult?.status === "pending";
       const completedCoiEmailSideEffect =
         usedTools.includes("email_expert") ||
         usedTools.includes("generate_coi") ||
         responseAttachments.some((attachment) =>
           /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(attachment.filename),
         );
+      if (
+        hasEmailSendIntent(latestUserContent) &&
+        claimsEmailSendCompletion(content) &&
+        !completedEmailSend
+      ) {
+        content =
+          currentDraftEmails.length > 0
+            ? "I haven't sent the email. The draft is still open and needs a successful send action."
+            : "I haven't sent the email. I need to complete a successful email send before marking it sent.";
+      }
       if (
         hasCoiEmailIntent(latestUserContent) &&
         claimsCoiEmailCompletion(content) &&
@@ -1732,7 +1778,6 @@ export const run = internalAction({
         content =
           "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
       }
-      const emailResult = emailToolResult.current;
       if (!emailResult && !completedCoiEmailSideEffect) {
         content = await repairMissingConfidenceMarkers({
           ctx,

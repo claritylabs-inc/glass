@@ -4,8 +4,12 @@ import dayjs from "dayjs";
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import {
   CERTIFICATE_FORM_LABELS,
+  type CertificateCoveredAssetSchedule,
+  type CertificateFormCode,
   type CertificateCoverageLine,
   type CertificateData,
+  type CertificatePropertyInformation,
+  type CertificatePropertyLocation,
 } from "./acordForms/types";
 import {
   buildCoverageBreakdown,
@@ -56,14 +60,14 @@ export function policyToCoiData(
   const effDate = profileValue(profile?.effectiveDate) ?? pickField(declarations, "policyPeriodStart") ?? policy.effectiveDate ?? "";
   const expDate = profileValue(profile?.expirationDate) ?? pickField(declarations, "policyPeriodEnd") ?? policy.expirationDate ?? "";
   const coverageForm = policy.coverageForm ?? "occurrence";
-  const producer = policy.producer ?? {};
   const partyContext = resolvePolicyPartyContext(policy, options);
+  const propertyFields = certificatePropertyFields(policy, profile, declarations);
 
   // Build insurer row for Insurer A
   const insurers = [{
     letter: "A",
     name: partyContext.insurerName ?? "N/A",
-    naic: policy.carrierNaicNumber ?? policy.insurer?.naicNumber,
+    naic: partyContext.insurerNaicNumber,
     amBest: policy.carrierAmBestRating,
     admitted: policy.carrierAdmittedStatus,
   }];
@@ -80,7 +84,7 @@ export function policyToCoiData(
     issuedDateLabel: "ISSUE DATE (YYYY/MM/DD)",
     producerAgency: partyContext.producerName,
     producerContact: partyContext.producerContactName ?? policy.underwriter,
-    producerLicense: producer.licenseNumber ?? policy.brokerLicenseNumber,
+    producerLicense: partyContext.producerLicenseNumber,
     producerAddress: partyContext.producerAddress,
     producerPhone: partyContext.producerPhone,
     producerEmail: partyContext.producerEmail,
@@ -98,6 +102,7 @@ export function policyToCoiData(
       coverageForm,
     }),
     description: partyContext.operationsDescription,
+    ...propertyFields,
   };
 }
 
@@ -111,6 +116,180 @@ function profileValue(value: any): string | undefined {
   return value && typeof value === "object" && typeof value.value === "string" && value.value.trim()
     ? value.value.trim()
     : undefined;
+}
+
+function certificatePropertyFields(
+  policy: any,
+  profile: any | undefined,
+  declarationFields: Map<string, string>,
+): Pick<
+  CertificateData,
+  | "propertyDescription"
+  | "propertyLocation"
+  | "propertyInformation"
+  | "coveredAssetSchedules"
+  | "floodZone"
+  | "floodProgram"
+> {
+  const rawLocations = firstNonEmptyArray(policy?.locations, profile?.locations);
+  const locations = rawLocations.flatMap(normalizeCertificatePropertyLocation);
+  const declarations = objectValue(policy?.declarations);
+  const propertyInformation: CertificatePropertyInformation = {
+    causesOfLossForm: scalarText(
+      declarations?.causesOfLossForm,
+      declarationFields.get("causesOfLossForm"),
+    ),
+    coinsurancePercent: scalarNumberOrText(
+      declarations?.coinsurancePercent,
+      declarationFields.get("coinsurancePercent"),
+      declarationFields.get("coinsurance"),
+    ),
+    valuationMethod: scalarText(
+      declarations?.valuationMethod,
+      declarationFields.get("valuationMethod"),
+      declarationFields.get("valuation"),
+    ),
+    blanketLimit: scalarText(
+      declarations?.blanketLimit,
+      declarationFields.get("blanketLimit"),
+    ),
+    businessIncomeLimit: scalarText(
+      declarations?.businessIncomeLimit,
+      declarationFields.get("businessIncomeLimit"),
+    ),
+    extraExpenseLimit: scalarText(
+      declarations?.extraExpenseLimit,
+      declarationFields.get("extraExpenseLimit"),
+    ),
+    locations,
+  };
+  const hasPropertyInformation = locations.length > 0 || Object.entries(propertyInformation)
+    .some(([key, value]) => key !== "locations" && value !== undefined);
+  const firstLocationAddress = locations[0]?.address;
+  const coveredAssetSchedules = buildCoverageBreakdown(policy).schedules.map(
+    (schedule): CertificateCoveredAssetSchedule => ({
+      name: schedule.name,
+      kind: schedule.kind,
+      description: schedule.description,
+      items: schedule.items.map((item) => ({
+        label: item.label,
+        description: item.description,
+        values: item.values,
+      })),
+    }),
+  );
+
+  return {
+    propertyDescription: scalarText(
+      profile?.propertyDescription,
+      profile?.describedProperty,
+      declarationFields.get("describedProperty"),
+      declarationFields.get("propertyDescription"),
+    ),
+    propertyLocation: firstLocationAddress
+      ? formatAddress(firstLocationAddress).replace(/\n+/g, ", ")
+      : scalarText(
+          declarationFields.get("premisesAddress"),
+          declarationFields.get("propertyLocation"),
+          declarationFields.get("insuredLocation"),
+        ),
+    propertyInformation: hasPropertyInformation ? propertyInformation : undefined,
+    coveredAssetSchedules: coveredAssetSchedules.length ? coveredAssetSchedules : undefined,
+    floodZone: scalarText(
+      profile?.floodZone,
+      declarations?.floodZone,
+      declarationFields.get("floodZone"),
+      declarationFields.get("floodZoneDetermination"),
+    ),
+    floodProgram: scalarText(
+      profile?.floodProgram,
+      declarations?.floodProgram,
+      declarationFields.get("floodProgram"),
+      declarationFields.get("nfipProgram"),
+    ),
+  };
+}
+
+function normalizeCertificatePropertyLocation(
+  value: unknown,
+  index: number,
+): CertificatePropertyLocation[] {
+  const location = objectValue(value);
+  if (!location) return [];
+  const address = normalizeCertificateAddress(location.address ?? location.location);
+  const normalized: CertificatePropertyLocation = {
+    number: finiteNumber(location.number) ?? index + 1,
+    address,
+    description: scalarText(location.description),
+    buildingValue: scalarText(location.buildingValue),
+    contentsValue: scalarText(location.contentsValue),
+    businessIncomeValue: scalarText(location.businessIncomeValue),
+    constructionType: scalarText(location.constructionType),
+    yearBuilt: finiteNumber(location.yearBuilt),
+    squareFootage: finiteNumber(location.squareFootage),
+    protectionClass: scalarText(location.protectionClass),
+    sprinklered: booleanValue(location.sprinklered),
+    alarmType: scalarText(location.alarmType),
+    occupancy: scalarText(location.occupancy),
+  };
+  return Object.entries(normalized).some(([key, field]) => key !== "number" && field !== undefined)
+    ? [normalized]
+    : [];
+}
+
+function normalizeCertificateAddress(
+  value: unknown,
+): CertificatePropertyLocation["address"] {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  const address = objectValue(value);
+  if (!address) return undefined;
+  const normalized = {
+    street1: scalarText(address.street1, address.line1),
+    street2: scalarText(address.street2, address.line2),
+    city: scalarText(address.city),
+    state: scalarText(address.state),
+    zip: scalarText(address.zip, address.postalCode),
+    country: scalarText(address.country),
+    formatted: scalarText(address.formatted),
+  };
+  return Object.values(normalized).some((field) => field !== undefined) ? normalized : undefined;
+}
+
+function firstNonEmptyArray(...values: unknown[]): unknown[] {
+  return values.find((value): value is unknown[] => Array.isArray(value) && value.length > 0) ?? [];
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function scalarText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    const record = objectValue(value);
+    if (typeof record?.value === "string" && record.value.trim()) return record.value.trim();
+  }
+  return undefined;
+}
+
+function scalarNumberOrText(...values: unknown[]): number | string | undefined {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    const text = scalarText(value);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function policyWithOperationalCoverages(policy: any, profile: any | undefined): any {
@@ -256,6 +435,7 @@ function buildFallbackCoverageLines(
       .join(", ");
     coverageLines.push({
       type: typeLabel,
+      lineOfBusiness: otherCodes.length === 1 ? otherCodes[0] : undefined,
       insurerLetter: "A",
       coverageForm: defaults.coverageForm === "claims_made" ? "claims_made" : "occurrence",
       policyNumber: defaults.policyNumber,
@@ -323,8 +503,7 @@ function buildCoverageLines(
     ...buildUnassignedCoverageLines(breakdown.unassigned, defaults),
   ];
   return coverageLines
-    .filter((line) => line.limits.length > 0 || line.deductible || line.description || line.sectionRef)
-    .slice(0, 5);
+    .filter((line) => line.limits.length > 0 || line.deductible || line.description || line.sectionRef);
 }
 
 function buildLobCoverageLine(
@@ -344,7 +523,7 @@ function buildLobCoverageLine(
     policyNumber: defaults.policyNumber,
     effectiveDate: defaults.effectiveDate,
     expirationDate: defaults.expirationDate,
-    limits: coverageTermsForRows(group.items, group.label).slice(0, 8),
+    limits: coverageTermsForRows(group.items, group.label),
     deductible: firstFormattedValue(group.items.map((row) => row.deductible)),
     sectionRef: firstText(group.items.map((row) => row.sectionRef)),
     description: coverageRowsDescription(group.items, group.label),
@@ -399,12 +578,11 @@ function buildUnassignedCoverageLines(
       policyNumber: defaults.policyNumber,
       effectiveDate: defaults.effectiveDate,
       expirationDate: defaults.expirationDate,
-      limits: row.limits.slice(0, 8),
+      limits: row.limits,
       deductible: row.deductible,
       sectionRef: row.sectionRef,
       description: row.description,
-    }))
-    .slice(0, 5);
+    }));
 }
 
 function coverageTermsForRows(
@@ -599,7 +777,6 @@ const W = PAGE_W - 2 * M;  // 552pt usable width
 const FS_LABEL = 6.5;
 const FS_VALUE = 8;
 const FS_SMALL = 6;
-const FS_DISCLAIMER = 5.5;
 const INFO_BOX_VALUE_TOP = 16;
 const INFO_BOX_BOTTOM_PADDING = 4;
 const HOLDER_BOX_MAX_HEIGHT = 96;
@@ -628,7 +805,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
 
     let y = 24;
     if (data.formCode && data.formCode !== "acord25") {
-      drawAcordPropertyEvidenceForm(doc, data);
+      PROPERTY_FORM_RENDERERS[data.formCode](doc, data);
       doc.end();
       return;
     }
@@ -646,13 +823,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     y += drawAcord25InformationNotice(doc, M, y, W);
 
     const insuredText = joinLines(data.insuredName, data.insuredDba && `DBA: ${data.insuredDba}`, formatAddress(data.insuredAddress), data.insuredFein && `FEIN: ${data.insuredFein}`);
-    const producerText = joinLines(
-      data.producerAgency,
-      formatAddress(data.producerAddress),
-      data.producerContact && `Contact: ${data.producerContact}`,
-      data.producerPhone && `Phone: ${data.producerPhone}`,
-      data.producerEmail && `Email: ${data.producerEmail}`,
-    );
+    const producerText = producerInformationText(data);
     const topW = W * 0.52;
     const rightW = W - topW;
     const topH = infoBoxHeight(doc, producerText, topW, {
@@ -682,13 +853,13 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     });
     y += noticeH;
 
-    y = drawCoverageTable(doc, data.coverages, y);
+    y = drawCoverageTable(doc, data.coverages.slice(0, 5), y);
     doc.rect(M, coveragesTop, W, y - coveragesTop).strokeColor(C_BLACK).stroke();
 
     const descText = data.description ?? "";
     const descMaxH = 58;
     const descOverflows = infoBoxHeight(doc, descText, W, {
-      fontSize: FS_LABEL,
+      fontSize: FS_VALUE,
     }) > descMaxH;
     const descH = descMaxH;
     drawInfoBox(
@@ -699,7 +870,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
       descH,
       "DESCRIPTION OF OPERATIONS / LOCATIONS / SPECIAL ITEMS / ADDITIONAL INSURED",
       descOverflows ? "See additional remarks schedule attached" : descText,
-      { fontSize: FS_LABEL },
+      { fontSize: FS_VALUE },
     );
     y += descH;
 
@@ -712,7 +883,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
     const holderOverflows = holderRequiredH > HOLDER_BOX_MAX_HEIGHT;
     const cancelRequiredH = infoBoxHeight(doc, cancelText, W - bottomW, {
       minHeight: 54,
-      fontSize: FS_DISCLAIMER,
+      fontSize: FS_VALUE,
     });
     const bottomH = Math.max(
       54,
@@ -737,7 +908,7 @@ export async function generateCoiPdf(data: CoiData): Promise<Buffer> {
       bottomH,
       "CANCELLATION",
       cancelText,
-      { fontSize: FS_DISCLAIMER },
+      { fontSize: FS_VALUE },
     );
     y += bottomH + 6;
 
@@ -793,6 +964,25 @@ function infoBoxHeight(
   return Math.max(
     options.minHeight ?? 0,
     textHeight + INFO_BOX_VALUE_TOP + INFO_BOX_BOTTOM_PADDING,
+  );
+}
+
+function producerInformationText(data: CoiData, sanitize = false) {
+  const clean = (value: string | undefined) =>
+    sanitize ? cleanCertificateValue(value) : value;
+  const agency = clean(data.producerAgency);
+  const license = clean(data.producerLicense);
+  const address = clean(formatAddress(data.producerAddress));
+  const contact = clean(data.producerContact);
+  const phone = clean(data.producerPhone);
+  const email = clean(data.producerEmail);
+  return joinLines(
+    agency,
+    license && `License #: ${license}`,
+    address,
+    contact && `Contact: ${contact}`,
+    phone && `Phone: ${phone}`,
+    email && `Email: ${email}`,
   );
 }
 
@@ -930,7 +1120,7 @@ function drawInsurerLegend(
       doc.font("Helvetica").fontSize(FS_LABEL).fillColor(C_BLACK);
       doc.text(insurer.name, x + 56, rowTop + 2, { width: w - naicW - 62, height: rowH - 2 });
       if (insurer.naic) {
-        doc.font("Helvetica-Bold").fontSize(FS_SMALL);
+        doc.font("Helvetica-Bold").fontSize(FS_LABEL);
         doc.text(insurer.naic, x + w - naicW + 4, rowTop + 2, { width: naicW - 8, align: "center" });
       }
     }
@@ -969,7 +1159,7 @@ function drawCoverageTable(doc: PDFKit.PDFDocument, coverages: CoverageLine[], y
     const rowH = Math.max(
       34,
       textBlockHeight(doc, typeText, columns[0].w - 6, FS_LABEL, true) + 8,
-      textBlockHeight(doc, limitsText, columns[7].w - 6, FS_SMALL, false) + 8,
+      textBlockHeight(doc, limitsText, columns[7].w - 6, FS_LABEL, false) + 8,
     );
     x = M;
     for (const col of columns) {
@@ -996,7 +1186,7 @@ function drawCoverageTable(doc: PDFKit.PDFDocument, coverages: CoverageLine[], y
     x += columns[5].w;
     doc.text(coverage.expirationDate ?? "", x + 3, y + 4, { width: columns[6].w - 6, align: "center" });
     x += columns[6].w;
-    doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_BLACK);
+    doc.font("Helvetica").fontSize(FS_LABEL).fillColor(C_BLACK);
     doc.text(limitsText, x + 3, y + 4, { width: columns[7].w - 6, height: rowH - 8 });
     y += rowH;
   }
@@ -1004,125 +1194,1295 @@ function drawCoverageTable(doc: PDFKit.PDFDocument, coverages: CoverageLine[], y
   return y;
 }
 
-function drawAcordPropertyEvidenceForm(doc: PDFKit.PDFDocument, data: CoiData) {
-  const formCode = data.formCode ?? "acord24";
-  const title = CERTIFICATE_FORM_LABELS[formCode] ?? data.title;
-  let y = 24;
-  const dateStr = dayjs().format("YYYY/MM/DD");
+type PropertyFormCode = Exclude<CertificateFormCode, "acord25">;
+type PropertyCoverageSection =
+  | "property"
+  | "inland_marine"
+  | "crime"
+  | "equipment_breakdown"
+  | "other";
 
+type PropertyCoverageRow = {
+  section: PropertyCoverageSection;
+  lineOfBusiness?: string;
+  insurerLetter?: string;
+  type: string;
+  policyNumber?: string;
+  effectiveDate?: string;
+  expirationDate?: string;
+  coverage?: string;
+  limit?: string;
+  deductible?: string;
+};
+
+const PROPERTY_LOB_CODES = new Set([
+  "AGPP", "AGPR", "BOPPR", "CFIRE", "CFRM", "DFIRE", "HOME", "MHOME",
+  "PROP", "PROPC", "WIND", "EQ", "FLOOD",
+]);
+const INLAND_MARINE_LOB_CODES = new Set([
+  "CEQFL", "EDP", "EQPFL", "FINEA", "INBR", "INMAR", "INMRC", "INMRP",
+  "MTRTK", "SCHPR", "SIGNS", "TRANS",
+]);
+const CRIME_LOB_CODES = new Set(["CRIME", "FIDTY"]);
+const EQUIPMENT_BREAKDOWN_LOB_CODES = new Set(["BANDM"]);
+
+export function classifyPropertyCoverageSection(
+  coverage: Pick<CertificateCoverageLine, "lineOfBusiness" | "type" | "limits">,
+): PropertyCoverageSection {
+  const code = coverage.lineOfBusiness?.trim().toUpperCase();
+  const text = [coverage.type, ...coverage.limits.map((limit) => limit.label)]
+    .join(" ")
+    .toLowerCase();
+  if ((code && CRIME_LOB_CODES.has(code)) || /\b(?:crime|fidelity)\b/.test(text)) {
+    return "crime";
+  }
+  if (
+    (code && EQUIPMENT_BREAKDOWN_LOB_CODES.has(code)) ||
+    /\b(?:boiler|machinery|equipment breakdown)\b/.test(text)
+  ) {
+    return "equipment_breakdown";
+  }
+  if (
+    (code && INLAND_MARINE_LOB_CODES.has(code)) ||
+    /\b(?:inland marine|motor truck cargo|equipment floater|fine arts|scheduled property)\b/.test(text)
+  ) {
+    return "inland_marine";
+  }
+  if (
+    (code && PROPERTY_LOB_CODES.has(code)) ||
+    /\b(?:commercial property|property insurance|building coverage|business personal property)\b/.test(text)
+  ) {
+    return "property";
+  }
+  return "other";
+}
+
+function buildPropertyCoverageRows(data: CoiData): PropertyCoverageRow[] {
+  return data.coverages.flatMap((coverage) => {
+    const section = classifyPropertyCoverageSection(coverage);
+    const labeledDeductibles = coverage.limits
+      .filter((term) => /\bdeductible\b/i.test(term.label))
+      .map((term) => `${cleanCertificateValue(term.label) ?? "Deductible"}: ${cleanCertificateValue(term.value) ?? ""}`.trim());
+    const deductible = uniqueInline([
+      cleanCertificateValue(coverage.deductible)
+        ? `Deductible: ${cleanCertificateValue(coverage.deductible)}`
+        : undefined,
+      ...labeledDeductibles,
+    ]);
+    const limitTerms = coverage.limits.filter((term) => !/\bdeductible\b/i.test(term.label));
+    const base = {
+      section,
+      lineOfBusiness: cleanCertificateValue(coverage.lineOfBusiness),
+      insurerLetter: cleanCertificateValue(coverage.insurerLetter),
+      type: cleanCertificateValue(coverage.type) ?? "",
+      policyNumber: cleanCertificateValue(coverage.policyNumber),
+      effectiveDate: cleanCertificateValue(coverage.effectiveDate),
+      expirationDate: cleanCertificateValue(coverage.expirationDate),
+    };
+    if (!limitTerms.length) {
+      return [{
+        ...base,
+        coverage: cleanCertificateValue(coverage.description),
+        deductible,
+      }];
+    }
+    return limitTerms.map((term, index) => ({
+      ...base,
+      coverage: cleanCertificateValue(term.label),
+      limit: cleanCertificateValue(term.value),
+      deductible: index === 0 ? deductible : undefined,
+    }));
+  });
+}
+
+function cleanCertificateValue(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const text = String(value).trim();
+  if (!text || /^(?:n\/?a|unknown|see policy(?: declarations)?)$/i.test(text)) return undefined;
+  return text;
+}
+
+function uniqueInline(values: Array<string | undefined>): string | undefined {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const text = cleanCertificateValue(value);
+    if (!text || seen.has(text.toLowerCase())) continue;
+    seen.add(text.toLowerCase());
+    result.push(text);
+  }
+  return result.length ? result.join("; ") : undefined;
+}
+
+type CoveredAssetRow = {
+  scheduleName: string;
+  scheduleDescription?: string;
+  kind: CertificateCoveredAssetSchedule["kind"];
+  itemLabel: string;
+  details?: string;
+};
+
+function coveredAssetRows(data: CoiData): CoveredAssetRow[] {
+  return (data.coveredAssetSchedules ?? []).flatMap((schedule) => schedule.items.map((item) => ({
+    scheduleName: cleanCertificateValue(schedule.name) ?? "Covered asset schedule",
+    scheduleDescription: cleanCertificateValue(schedule.description),
+    kind: schedule.kind,
+    itemLabel: cleanCertificateValue(item.label) ?? "Covered item",
+    details: uniqueInline([
+      cleanCertificateValue(item.description),
+      ...item.values.map((entry) => {
+        const label = cleanCertificateValue(entry.label);
+        const value = cleanCertificateValue(entry.value);
+        return label && value ? `${label}: ${value}` : undefined;
+      }),
+    ]),
+  })));
+}
+
+function coveredAssetShortScheduleName(name: string): string {
+  return name
+    .replace(/^covered\s+auto\s+schedule\s*[-:]?\s*/i, "")
+    .replace(/^schedule\s+of\s+/i, "")
+    .trim() || name;
+}
+
+function uniqueTextLines(lines: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  return lines.flatMap((line) => {
+    const text = cleanCertificateValue(line);
+    if (!text || seen.has(text.toLowerCase())) return [];
+    seen.add(text.toLowerCase());
+    return [text];
+  });
+}
+
+function coveredSubjectMatterSummary(
+  data: CoiData,
+  formCode: PropertyFormCode,
+  maxRows = 3,
+): {
+  label: string;
+  text?: string;
+  needsCoveredAssetSchedule: boolean;
+} {
+  const locations = data.propertyInformation?.locations ?? [];
+  const locationLines = locations.map((location, index) => joinInline(
+    `Location ${location.number ?? index + 1}`,
+    uniqueInline([
+      cleanCertificateValue(formatAddress(location.address))?.replace(/\n+/g, ", "),
+      cleanCertificateValue(location.description),
+      location.occupancy ? `Occupancy: ${cleanCertificateValue(location.occupancy)}` : undefined,
+    ]) ?? "",
+  ));
+  const assets = coveredAssetRows(data);
+  const assetLines = assets.map((row) => joinInline(
+    `${coveredAssetShortScheduleName(row.scheduleName)} - ${row.itemLabel}`,
+    row.details ?? "",
+  ));
+  const vehicleSchedules = (data.coveredAssetSchedules ?? []).filter(
+    (schedule) => schedule.kind === "vehicle" && schedule.items.length > 0,
+  );
+  const vehicleCounts = [...new Set(vehicleSchedules.map((schedule) => schedule.items.length))];
+  const vehicleCountLines = vehicleCounts.length === 1
+    ? [`Scheduled vehicle count: ${vehicleCounts[0]}`]
+    : vehicleSchedules.map((schedule) =>
+        `${coveredAssetShortScheduleName(schedule.name)}: ${schedule.items.length} scheduled vehicle${schedule.items.length === 1 ? "" : "s"}`,
+      );
+  const directPropertyLines = locations.length
+    ? []
+    : uniqueTextLines([
+        data.propertyLocation && `Location: ${data.propertyLocation}`,
+        data.propertyDescription,
+      ]);
+  const vehicleFirst = formCode === "acord30";
+  const candidates = uniqueTextLines(vehicleFirst
+    ? [...vehicleCountLines, ...assetLines, ...locationLines, ...directPropertyLines]
+    : [...locationLines, ...directPropertyLines, ...vehicleCountLines, ...assetLines]);
+  const visibleCount = candidates.length > maxRows ? Math.max(1, maxRows - 1) : candidates.length;
+  const visible = candidates.slice(0, visibleCount);
+  const hidden = candidates.slice(visibleCount);
+  const visibleAssetLines = new Set(visible.filter((line) => assetLines.includes(line)));
+  const needsCoveredAssetSchedule = assets.length > visibleAssetLines.size;
+  if (hidden.length) {
+    visible.push(needsCoveredAssetSchedule
+      ? "See attached covered autos / property schedule."
+      : "See attached structured property location schedule.");
+  }
+
+  const hasVehicles = assets.some((row) => row.kind === "vehicle");
+  const hasProperty = locations.length > 0 || assets.some(
+    (row) => row.kind === "property" || row.kind === "location",
+  ) || directPropertyLines.length > 0;
+  const label = hasVehicles && hasProperty
+    ? "COVERED AUTOS / PROPERTY / LOCATIONS"
+    : hasVehicles
+      ? "COVERED AUTOS / SCHEDULED VEHICLES"
+      : "LOCATION OF PREMISES / DESCRIPTION OF PROPERTY";
+  return {
+    label,
+    text: joinLines(...visible),
+    needsCoveredAssetSchedule,
+  };
+}
+
+const PROPERTY_FORM_RENDERERS: Record<
+  PropertyFormCode,
+  (doc: PDFKit.PDFDocument, data: CoiData) => void
+> = {
+  acord24: drawAcord24Form,
+  acord27: (doc, data) => drawPropertyEvidenceForm(doc, data, "acord27"),
+  acord28: (doc, data) => drawPropertyEvidenceForm(doc, data, "acord28"),
+  acord29: (doc, data) => drawPropertyEvidenceForm(doc, data, "acord29"),
+  acord30: (doc, data) => drawPropertyEvidenceForm(doc, data, "acord30"),
+  acord31: (doc, data) => drawPropertyEvidenceForm(doc, data, "acord31"),
+};
+
+const PROPERTY_FORM_TABLE_TITLES: Record<PropertyFormCode, string> = {
+  acord24: "PROPERTY COVERAGE DETAILS",
+  acord27: "PROPERTY COVERAGES",
+  acord28: "COMMERCIAL PROPERTY COVERAGES",
+  acord29: "FLOOD COVERAGES",
+  acord30: "GARAGE / AUTOMOBILE COVERAGES",
+  acord31: "MARINE / ENERGY COVERAGES",
+};
+
+function drawPropertyFormHeader(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  formCode: PropertyFormCode,
+): number {
+  let y = 22;
+  const title = CERTIFICATE_FORM_LABELS[formCode] ?? data.title;
   doc.font("Helvetica-Bold").fontSize(12).fillColor(C_BLACK);
   doc.text(title.toUpperCase(), M, y, { width: W * 0.68 });
   doc.font("Helvetica-Bold").fontSize(FS_LABEL);
   doc.text(data.issuedDateLabel, M + W * 0.72, y, { width: W * 0.28, align: "right" });
   doc.font("Helvetica").fontSize(FS_VALUE);
-  doc.text(dateStr, M + W * 0.72, y + 10, { width: W * 0.28, align: "right" });
-  y += 30;
+  doc.text(dayjs().format("YYYY/MM/DD"), M + W * 0.72, y + 10, {
+    width: W * 0.28,
+    align: "right",
+  });
+  y += 28;
+  y += drawAcord25InformationNotice(doc, M, y, W);
 
-  y = drawCertificateNumberBand(doc, data, y) + 4;
-
-  const topW = W * 0.5;
-  const insurerAddress = joinLines(
-    data.insurers[0]?.name,
-    data.insuranceCompanyAddress,
-    data.insuranceCompanyPhone && `Phone: ${data.insuranceCompanyPhone}`,
-  );
-  const producerText = joinLines(
-    data.producerAgency,
-    formatAddress(data.producerAddress),
-    data.producerContact && `Contact: ${data.producerContact}`,
-    data.producerPhone && `Phone: ${data.producerPhone}`,
-    data.producerEmail && `Email: ${data.producerEmail}`,
-  );
-  drawInfoBox(doc, M, y, topW, 78, "PRODUCER", producerText);
-  drawInfoBox(doc, M + topW, y, W - topW, 78, "INSURER", insurerAddress);
-  y += 78;
-
-  const insuredText = joinLines(
-    data.insuredName,
-    data.insuredDba && `DBA: ${data.insuredDba}`,
-    formatAddress(data.insuredAddress),
-    data.insuredFein && `FEIN: ${data.insuredFein}`,
-  );
-  drawInfoBox(doc, M, y, W, 62, "NAMED INSURED", insuredText);
-  y += 68;
-
-  const policySummary = data.coverages
-    .slice(0, 5)
-    .map((coverage) =>
-      [
-        coverage.type,
-        coverage.policyNumber && `Policy ${coverage.policyNumber}`,
-        coverage.effectiveDate && coverage.expirationDate
-          ? `${coverage.effectiveDate} to ${coverage.expirationDate}`
-          : undefined,
-        coverage.limits.map((limit) => `${limit.label}: ${limit.value}`).join("; "),
-      ].filter(Boolean).join(" | "),
-    )
-    .join("\n");
-  drawInfoBox(doc, M, y, W, 86, "POLICY INFORMATION", policySummary);
-  y += 92;
-
-  const propertyText = joinLines(
-    data.propertyDescription,
-    data.propertyLocation && `Location: ${data.propertyLocation}`,
-    formCode === "acord29" && data.floodZone ? `Flood zone: ${data.floodZone}` : undefined,
-    formCode === "acord29" && data.floodProgram ? `Flood program: ${data.floodProgram}` : undefined,
-  ) ?? "See policy declarations.";
-  drawInfoBox(doc, M, y, W, 86, formCode === "acord29" ? "FLOOD / PROPERTY INFORMATION" : "PROPERTY INFORMATION", propertyText);
-  y += 92;
-
-  const interestText = joinLines(
-    data.interestHolder ?? data.certificateHolder,
-    data.interestHolderRelationship && `Interest: ${data.interestHolderRelationship}`,
-  );
-  const interestRequiredH = infoBoxHeight(doc, interestText, W, {
-    minHeight: 62,
+  const topW = W * 0.52;
+  const producerText = producerInformationText(data, true);
+  const headerH = infoBoxHeight(doc, producerText, topW, {
+    minHeight: 72,
     fontSize: FS_VALUE,
   });
-  const interestOverflows = interestRequiredH > HOLDER_BOX_MAX_HEIGHT;
-  const interestH = Math.min(interestRequiredH, HOLDER_BOX_MAX_HEIGHT);
+  drawInfoBox(doc, M, y, topW, headerH, "PRODUCER", producerText);
+  drawInsurerLegend(doc, M + topW, y, W - topW, headerH, {
+    ...data,
+    insurers: data.insurers.map((insurer) => ({
+      ...insurer,
+      name: cleanCertificateValue(insurer.name) ?? "",
+      naic: cleanCertificateValue(insurer.naic),
+    })),
+  });
+  y += headerH;
+
+  const insuredText = joinLines(
+    cleanCertificateValue(data.insuredName),
+    cleanCertificateValue(data.insuredDba) && `DBA: ${cleanCertificateValue(data.insuredDba)}`,
+    cleanCertificateValue(formatAddress(data.insuredAddress)),
+    cleanCertificateValue(data.insuredFein) && `FEIN: ${cleanCertificateValue(data.insuredFein)}`,
+  );
+  drawInfoBox(doc, M, y, W, 54, "NAMED INSURED", insuredText);
+  return y + 54;
+}
+
+function drawAcord24Form(doc: PDFKit.PDFDocument, data: CoiData) {
+  let y = drawPropertyFormHeader(doc, data, "acord24");
+  y = drawCoverageSectionHeader(doc, data, y);
+
+  const subjectMatter = coveredSubjectMatterSummary(data, "acord24");
+  const premisesRequiredH = infoBoxHeight(doc, subjectMatter.text, W, {
+    minHeight: 46,
+    fontSize: FS_VALUE,
+  });
+  const premisesH = Math.min(
+    64,
+    premisesRequiredH,
+  );
   drawInfoBox(
     doc,
     M,
     y,
     W,
-    interestH,
-    formCode === "acord24" || formCode === "acord30" || formCode === "acord31"
-      ? "CERTIFICATE HOLDER"
-      : "ADDITIONAL INTEREST",
-    interestOverflows ? "See additional remarks schedule attached" : interestText,
+    premisesH,
+    subjectMatter.label,
+    subjectMatter.text,
+    { fontSize: FS_VALUE },
   );
-  y += interestH + 6;
+  y += premisesH;
 
-  const remarksText = data.description ?? "";
-  const remarksMaxH = 74;
-  const remarksOverflow = infoBoxHeight(doc, remarksText, W, {
-    fontSize: FS_LABEL,
-  }) > remarksMaxH;
+  doc.font("Helvetica-Bold").fontSize(FS_SMALL).fillColor(C_BLACK);
+  const noticeH = Math.max(
+    30,
+    doc.heightOfString(ACORD_25_COVERAGE_NOTICE, { width: W - 8 }) + 8,
+  );
+  doc.rect(M, y, W, noticeH).stroke();
+  doc.text(ACORD_25_COVERAGE_NOTICE, M + 4, y + 4, {
+    width: W - 8,
+    height: noticeH - 8,
+  });
+  y += noticeH;
+
+  y = drawAcord24CoverageMatrix(doc, data, y);
+  const remarksH = 44;
+  const remarks = cleanCertificateValue(data.description);
+  const remarksOverflow = infoBoxHeight(doc, remarks, W, { fontSize: FS_VALUE }) > remarksH;
   drawInfoBox(
     doc,
     M,
     y,
     W,
-    remarksMaxH,
-    "REMARKS",
-    remarksOverflow ? "See additional remarks schedule attached" : remarksText,
-    { fontSize: FS_LABEL },
+    remarksH,
+    "SPECIAL CONDITIONS / OTHER COVERAGES",
+    remarksOverflow ? "See additional remarks schedule attached" : remarks,
+    { fontSize: FS_VALUE },
   );
-  y += remarksMaxH + 6;
+  y += remarksH;
+  const holderOverflow = drawPropertyHolderAndCancellation(doc, data, y, "CERTIFICATE HOLDER");
 
-  if (remarksOverflow || interestOverflows) {
+  const overflowCoverageRows = acord24OverflowCoverageRows(data);
+  if (overflowCoverageRows.length) {
+    drawPropertyCoverageSchedule(doc, data, "acord24", overflowCoverageRows);
+  }
+  if (
+    subjectMatter.needsCoveredAssetSchedule ||
+    (premisesRequiredH > premisesH && coveredAssetRows(data).length > 0)
+  ) {
+    drawCoveredAssetSchedule(doc, data);
+  }
+  drawPropertyLocationSchedule(doc, data);
+  if (remarksOverflow || holderOverflow) {
     drawAcord101(doc, data, {
       includeDescription: remarksOverflow,
-      includeHolder: interestOverflows,
+      includeHolder: holderOverflow,
     });
   }
+}
+
+function acord24OverflowCoverageRows(data: CoiData): PropertyCoverageRow[] {
+  const rows = buildPropertyCoverageRows(data);
+  const propertyRows = rows.filter((row) => row.section === "property");
+  const propertyOverflow = propertyLimitRows(data).length > 10 ? propertyRows : [];
+  const detailOverflow = ([
+    "inland_marine",
+    "crime",
+    "equipment_breakdown",
+    "other",
+  ] as const).flatMap((section) => rows
+    .filter((row) => row.section === section)
+    .slice(2));
+  return [...propertyOverflow, ...detailOverflow];
+}
+
+type PropertyLimitKey =
+  | "building"
+  | "personal_property"
+  | "business_income"
+  | "extra_expense"
+  | "rental_value"
+  | "blanket_building"
+  | "blanket_personal_property"
+  | "blanket_combined"
+  | "other";
+
+function propertyLimitKey(label: string): PropertyLimitKey {
+  const normalized = label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const blanket = /\bblanket\b/.test(normalized);
+  const building = /\b(?:building|real property)\b/.test(normalized);
+  const personal = /\b(?:business personal property|personal property|contents|stock)\b/.test(normalized);
+  if (blanket && building && personal) return "blanket_combined";
+  if (blanket && building) return "blanket_building";
+  if (blanket && personal) return "blanket_personal_property";
+  if (/\b(?:business income|business interruption)\b/.test(normalized)) return "business_income";
+  if (/\bextra expense\b/.test(normalized)) return "extra_expense";
+  if (/\b(?:rental value|rents)\b/.test(normalized)) return "rental_value";
+  if (personal) return "personal_property";
+  if (building) return "building";
+  return "other";
+}
+
+function propertyLimitRows(data: CoiData): Array<{ label: string; value?: string }> {
+  const rows: Array<{ key: PropertyLimitKey; label: string; value: string }> = [];
+  const canonicalLabels: Record<Exclude<PropertyLimitKey, "other">, string> = {
+    building: "BUILDING",
+    personal_property: "PERSONAL PROPERTY",
+    business_income: "BUSINESS INCOME",
+    extra_expense: "EXTRA EXPENSE",
+    rental_value: "RENTAL VALUE",
+    blanket_building: "BLANKET BUILDING",
+    blanket_personal_property: "BLANKET PERSONAL PROPERTY",
+    blanket_combined: "BLANKET BLDG & PERSONAL PROPERTY",
+  };
+  const add = (key: PropertyLimitKey, label: string, value: unknown) => {
+    const text = cleanCertificateValue(value);
+    if (!text) return;
+    const rowLabel = key === "other"
+      ? cleanCertificateValue(label)?.toUpperCase() ?? "OTHER"
+      : canonicalLabels[key];
+    if (rows.some(
+      (row) => row.label.toLowerCase() === rowLabel.toLowerCase() &&
+        row.value.toLowerCase() === text.toLowerCase(),
+    )) return;
+    rows.push({ key, label: rowLabel, value: text });
+  };
+  for (const coverage of data.coverages.filter(
+    (line) => classifyPropertyCoverageSection(line) === "property",
+  )) {
+    for (const limit of coverage.limits) {
+      if (/\bdeductible\b/i.test(limit.label)) continue;
+      add(propertyLimitKey(limit.label), limit.label, limit.value);
+    }
+  }
+  add("blanket_combined", "Blanket limit", data.propertyInformation?.blanketLimit);
+  add("business_income", "Business income limit", data.propertyInformation?.businessIncomeLimit);
+  add("extra_expense", "Extra expense limit", data.propertyInformation?.extraExpenseLimit);
+
+  const rank: Record<PropertyLimitKey, number> = {
+    building: 0,
+    personal_property: 1,
+    business_income: 2,
+    extra_expense: 3,
+    rental_value: 4,
+    blanket_building: 5,
+    blanket_personal_property: 6,
+    blanket_combined: 7,
+    other: 8,
+  };
+  return rows
+    .map((row, index) => ({ ...row, index }))
+    .sort((left, right) => rank[left.key] - rank[right.key] || left.index - right.index)
+    .map(({ label, value }) => ({ label, value }));
+}
+
+type PropertyDeductibleKey = "building" | "contents" | "earthquake" | "wind" | "flood";
+
+function propertyDeductibles(data: CoiData): {
+  values: Partial<Record<PropertyDeductibleKey, string>>;
+  other: string[];
+} {
+  const values: Partial<Record<PropertyDeductibleKey, string>> = {};
+  const other: string[] = [];
+  const addOther = (label: string, value: string) => {
+    const text = `${label}: ${value}`;
+    if (!other.some((item) => item.toLowerCase() === text.toLowerCase())) other.push(text);
+  };
+  const labeledKey = (label: string): PropertyDeductibleKey | undefined => {
+    const normalized = label.toLowerCase();
+    if (!/deductible/.test(normalized)) return undefined;
+    if (/earthquake|\beq\b/.test(normalized)) return "earthquake";
+    if (/wind|hurricane/.test(normalized)) return "wind";
+    if (/flood/.test(normalized)) return "flood";
+    if (/contents|personal property/.test(normalized)) return "contents";
+    if (/building/.test(normalized)) return "building";
+    return undefined;
+  };
+  for (const coverage of data.coverages.filter(
+    (line) => classifyPropertyCoverageSection(line) === "property",
+  )) {
+    const labeledDeductibleValues = new Set<string>();
+    for (const term of coverage.limits) {
+      const value = cleanCertificateValue(term.value);
+      if (!value || !/\bdeductible\b/i.test(term.label)) continue;
+      labeledDeductibleValues.add(value.toLowerCase());
+      const key = labeledKey(term.label);
+      if (key && !values[key]) values[key] = value;
+      else if (!key) addOther(cleanCertificateValue(term.label) ?? "Deductible", value);
+    }
+    const value = cleanCertificateValue(coverage.deductible);
+    if (!value || labeledDeductibleValues.has(value.toLowerCase())) continue;
+    const code = coverage.lineOfBusiness?.toUpperCase();
+    const type = coverage.type.toLowerCase();
+    const key = code === "EQ" || /\bearthquake\b/.test(type)
+      ? "earthquake"
+      : code === "WIND" || /\bwind\b/.test(type)
+        ? "wind"
+        : code === "FLOOD" || /\bflood\b/.test(type)
+          ? "flood"
+          : undefined;
+    if (key && !values[key]) values[key] = value;
+    else if (!key) addOther(cleanCertificateValue(coverage.type) ?? "Coverage", value);
+  }
+  return { values, other };
+}
+
+function drawAcord24CoverageMatrix(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  y: number,
+): number {
+  const widths = [24, 112, 72, 54, 54, 116, 120];
+  const headers = [
+    "INSR\nLTR",
+    "TYPE OF INSURANCE",
+    "POLICY NUMBER",
+    "EFF DATE",
+    "EXP DATE",
+    "COVERED PROPERTY",
+    "LIMITS",
+  ];
+  let x = M;
+  const headerH = 24;
+  doc.rect(M, y, W, headerH).fillAndStroke(C_LABEL_BG, C_BLACK);
+  doc.font("Helvetica-Bold").fontSize(FS_SMALL).fillColor(C_BLACK);
+  for (let index = 0; index < widths.length; index += 1) {
+    doc.rect(x, y, widths[index], headerH).stroke();
+    doc.text(headers[index], x + 2, y + 5, {
+      width: widths[index] - 4,
+      height: headerH - 6,
+      align: "center",
+    });
+    x += widths[index];
+  }
+  y += headerH;
+  y = drawAcord24PropertySection(doc, data, y, widths);
+
+  const detailRows = buildPropertyCoverageRows(data);
+  const sections: Array<{ section: PropertyCoverageSection; label: string }> = [
+    { section: "inland_marine", label: "INLAND MARINE" },
+    { section: "crime", label: "CRIME" },
+    { section: "equipment_breakdown", label: "EQUIPMENT BREAKDOWN" },
+    { section: "other", label: "OTHER POLICY" },
+  ];
+  for (const { section, label } of sections) {
+    y = drawAcord24DetailSection(
+      doc,
+      detailRows.filter((row) => row.section === section),
+      label,
+      y,
+      widths,
+    );
+  }
+  return y;
+}
+
+function drawAcord24PropertySection(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  y: number,
+  widths: number[],
+): number {
+  const propertyLines = data.coverages.filter(
+    (coverage) => classifyPropertyCoverageSection(coverage) === "property",
+  );
+  const allRows = propertyLimitRows(data);
+  const rows = allRows.slice(0, 10);
+  const policy = propertyLines[0];
+  const causes = data.propertyInformation?.causesOfLossForm?.toLowerCase() ?? "";
+  const causesOfLoss = /\bbasic\b/.test(causes)
+    ? "Basic"
+    : /\bbroad\b/.test(causes)
+      ? "Broad"
+      : /\bspecial\b/.test(causes)
+        ? "Special"
+        : undefined;
+  const hasExactCoverage = (code: string, pattern: RegExp) => data.coverages.some((coverage) =>
+    coverage.lineOfBusiness?.toUpperCase() === code || pattern.test(coverage.type),
+  );
+  const includedPerils = [
+    hasExactCoverage("EQ", /\bearthquake\b/i) ? "Earthquake" : undefined,
+    hasExactCoverage("WIND", /\bwind\b/i) ? "Wind" : undefined,
+    hasExactCoverage("FLOOD", /\bflood\b/i) ? "Flood" : undefined,
+  ].filter((value): value is string => Boolean(value));
+  const deductibles = propertyDeductibles(data);
+  const typeText = joinLines(
+    "PROPERTY",
+    causesOfLoss && `Causes of loss: ${causesOfLoss}`,
+    includedPerils.length ? `Included perils: ${includedPerils.join(", ")}` : undefined,
+    deductibles.values.building && `Building deductible: ${deductibles.values.building}`,
+    deductibles.values.contents && `Contents deductible: ${deductibles.values.contents}`,
+    deductibles.values.earthquake && `Earthquake deductible: ${deductibles.values.earthquake}`,
+    deductibles.values.wind && `Wind deductible: ${deductibles.values.wind}`,
+    deductibles.values.flood && `Flood deductible: ${deductibles.values.flood}`,
+    ...deductibles.other.slice(0, 2),
+    data.propertyInformation?.coinsurancePercent !== undefined
+      ? `Coinsurance: ${formatCoinsurance(data.propertyInformation.coinsurancePercent)}`
+      : undefined,
+    data.propertyInformation?.valuationMethod
+      ? `Valuation: ${displayPropertyValue(data.propertyInformation.valuationMethod)}`
+      : undefined,
+    allRows.length > rows.length ? "See attached coverage details schedule" : undefined,
+  );
+  const hasPropertyData = propertyLines.length > 0 || rows.length > 0 || typeText !== "PROPERTY";
+  if (!hasPropertyData) return y;
+
+  const positions = columnPositions(widths);
+  const rowCount = Math.max(rows.length, 1);
+  const typeHeight = textBlockHeight(doc, typeText, widths[1] - 6, FS_SMALL, true) + 8;
+  const detailRowRequiredH = rows.reduce(
+    (height, row) => Math.max(
+      height,
+      textBlockHeight(doc, row.label, widths[5] - 6, FS_SMALL, false) + 6,
+      textBlockHeight(doc, row.value, widths[6] - 6, FS_SMALL, true) + 6,
+    ),
+    13,
+  );
+  const sectionH = Math.max(18, rows.length * detailRowRequiredH, typeHeight);
+  const detailRowH = sectionH / rowCount;
+  doc.rect(M, y, W, sectionH).stroke();
+  for (const position of positions.slice(1, -1)) {
+    doc.moveTo(position, y).lineTo(position, y + sectionH).stroke();
+  }
+  const detailX = positions[5];
+  for (let index = 1; index < rows.length; index += 1) {
+    doc.moveTo(detailX, y + index * detailRowH).lineTo(M + W, y + index * detailRowH).stroke();
+  }
+
+  doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_BLACK);
+  doc.text(cleanCertificateValue(policy?.insurerLetter) ?? "", positions[0] + 2, y + 4, {
+    width: widths[0] - 4,
+    align: "center",
+  });
+  doc.font("Helvetica-Bold").fontSize(FS_SMALL);
+  doc.text(typeText ?? "PROPERTY", positions[1] + 3, y + 4, {
+    width: widths[1] - 6,
+    height: sectionH - 8,
+  });
+  doc.font("Helvetica").fontSize(FS_SMALL);
+  doc.text(cleanCertificateValue(policy?.policyNumber) ?? "", positions[2] + 2, y + 4, {
+    width: widths[2] - 4,
+    align: "center",
+  });
+  doc.text(cleanCertificateValue(policy?.effectiveDate) ?? "", positions[3] + 2, y + 4, {
+    width: widths[3] - 4,
+    align: "center",
+  });
+  doc.text(cleanCertificateValue(policy?.expirationDate) ?? "", positions[4] + 2, y + 4, {
+    width: widths[4] - 4,
+    align: "center",
+  });
+  rows.forEach((row, index) => {
+    const rowY = y + index * detailRowH;
+    doc.font("Helvetica").fontSize(FS_SMALL);
+    doc.text(row.label, positions[5] + 3, rowY + 3, {
+      width: widths[5] - 6,
+      height: detailRowH - 4,
+    });
+    doc.font("Helvetica-Bold").fontSize(FS_SMALL);
+    doc.text(row.value ?? "", positions[6] + 3, rowY + 3, {
+      width: widths[6] - 6,
+      height: detailRowH - 4,
+      align: "right",
+    });
+  });
+  return y + sectionH;
+}
+
+function drawAcord24DetailSection(
+  doc: PDFKit.PDFDocument,
+  rows: PropertyCoverageRow[],
+  label: string,
+  y: number,
+  widths: number[],
+): number {
+  if (!rows.length) return y;
+  const visibleRows = rows.slice(0, 2);
+  const positions = columnPositions(widths);
+  for (const [index, row] of visibleRows.entries()) {
+    const detail = index === visibleRows.length - 1 && rows.length > visibleRows.length
+      ? joinLines(row.coverage, "See attached coverage details schedule")
+      : row.coverage;
+    const type = index === 0 ? joinLines(label, row.type) ?? label : row.type;
+    const limit = joinLines(row.limit, row.deductible) ?? "";
+    const rowH = Math.max(
+      18,
+      textBlockHeight(doc, type, widths[1] - 6, FS_SMALL, true) + 6,
+      textBlockHeight(doc, detail, widths[5] - 6, FS_SMALL, false) + 6,
+      textBlockHeight(doc, limit, widths[6] - 6, FS_SMALL, true) + 6,
+    );
+    let x = M;
+    for (const width of widths) {
+      doc.rect(x, y, width, rowH).stroke();
+      x += width;
+    }
+    doc.font("Helvetica").fontSize(FS_SMALL).fillColor(C_BLACK);
+    doc.text(row.insurerLetter ?? "", positions[0] + 2, y + 4, {
+      width: widths[0] - 4,
+      align: "center",
+    });
+    doc.font("Helvetica-Bold").fontSize(FS_SMALL);
+    doc.text(type, positions[1] + 3, y + 3, {
+      width: widths[1] - 6,
+      height: rowH - 5,
+    });
+    doc.font("Helvetica").fontSize(FS_SMALL);
+    doc.text(row.policyNumber ?? "", positions[2] + 2, y + 4, {
+      width: widths[2] - 4,
+      align: "center",
+    });
+    doc.text(row.effectiveDate ?? "", positions[3] + 2, y + 4, {
+      width: widths[3] - 4,
+      align: "center",
+    });
+    doc.text(row.expirationDate ?? "", positions[4] + 2, y + 4, {
+      width: widths[4] - 4,
+      align: "center",
+    });
+    doc.text(detail ?? "", positions[5] + 3, y + 3, {
+      width: widths[5] - 6,
+      height: rowH - 5,
+    });
+    doc.font("Helvetica-Bold").fontSize(FS_SMALL);
+    doc.text(limit, positions[6] + 3, y + 3, {
+      width: widths[6] - 6,
+      height: rowH - 5,
+      align: "right",
+    });
+    y += rowH;
+  }
+  return y;
+}
+
+function columnPositions(widths: number[]): number[] {
+  const positions = [M];
+  for (const width of widths) positions.push(positions[positions.length - 1] + width);
+  return positions;
+}
+
+function drawPropertyEvidenceForm(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  formCode: Exclude<PropertyFormCode, "acord24">,
+) {
+  let y = drawPropertyFormHeader(doc, data, formCode);
+  y = drawCertificateNumberBand(doc, data, y);
+  const subjectMatter = coveredSubjectMatterSummary(data, formCode, 4);
+  const summary = propertyFormSummary(data, formCode);
+  const summaryRequiredH = infoBoxHeight(doc, summary, W, {
+    minHeight: 54,
+    fontSize: FS_VALUE,
+  });
+  const summaryOverflow = summaryRequiredH > 100;
+  const summaryH = Math.min(summaryRequiredH, 100);
+  drawInfoBox(
+    doc,
+    M,
+    y,
+    W,
+    summaryH,
+    propertySummaryLabel(formCode),
+    summaryOverflow ? "See additional property information schedule attached" : summary,
+    { fontSize: FS_VALUE },
+  );
+  y += summaryH;
+
+  const rows = orderPropertyCoverageRows(buildPropertyCoverageRows(data), formCode);
+  const firstPage = drawDetailedCoverageTable(doc, rows, formCode, y, 610);
+  y = firstPage.y + 6;
+  const remarks = cleanCertificateValue(data.description);
+  const remarksH = 48;
+  const remarksOverflow = infoBoxHeight(doc, remarks, W, { fontSize: FS_VALUE }) > remarksH;
+  drawInfoBox(
+    doc,
+    M,
+    y,
+    W,
+    remarksH,
+    "REMARKS / SPECIAL CONDITIONS",
+    remarksOverflow ? "See additional remarks schedule attached" : remarks,
+    { fontSize: FS_VALUE },
+  );
+  y += remarksH;
+  const holderLabel = formCode === "acord27" || formCode === "acord28" || formCode === "acord29"
+    ? "ADDITIONAL INTEREST"
+    : "CERTIFICATE HOLDER";
+  const holderOverflow = drawPropertyHolderAndCancellation(doc, data, y, holderLabel);
+
+  if (firstPage.consumed < rows.length) {
+    drawPropertyCoverageSchedule(doc, data, formCode, rows.slice(firstPage.consumed));
+  }
+  if (
+    subjectMatter.needsCoveredAssetSchedule ||
+    (summaryOverflow && coveredAssetRows(data).length > 0)
+  ) {
+    drawCoveredAssetSchedule(doc, data);
+  }
+  drawPropertyLocationSchedule(doc, data);
+  if (remarksOverflow || holderOverflow || summaryOverflow) {
+    drawAcord101(doc, data, {
+      includeDescription: remarksOverflow,
+      includeHolder: holderOverflow,
+      includeProperty: summaryOverflow,
+    });
+  }
+}
+
+function propertySummaryLabel(formCode: PropertyFormCode): string {
+  if (formCode === "acord29") return "FLOOD / PROPERTY INFORMATION";
+  if (formCode === "acord30") return "GARAGE LOCATION / OPERATIONS";
+  if (formCode === "acord31") return "MARINE / ENERGY SUBJECT MATTER";
+  return "PROPERTY / INTEREST INFORMATION";
+}
+
+function propertyFormSummary(data: CoiData, formCode: PropertyFormCode): string | undefined {
+  const subjectMatter = coveredSubjectMatterSummary(data, formCode, 4);
+  const property = data.propertyInformation;
+  return joinLines(
+    subjectMatter.text,
+    (formCode === "acord27" || formCode === "acord28") && property?.causesOfLossForm
+      ? `Causes of loss: ${displayPropertyValue(property.causesOfLossForm)}`
+      : undefined,
+    (formCode === "acord27" || formCode === "acord28") && property?.valuationMethod
+      ? `Valuation: ${displayPropertyValue(property.valuationMethod)}`
+      : undefined,
+    (formCode === "acord27" || formCode === "acord28") && property?.coinsurancePercent !== undefined
+      ? `Coinsurance: ${formatCoinsurance(property.coinsurancePercent)}`
+      : undefined,
+    formCode === "acord29" && data.floodZone ? `Flood zone: ${data.floodZone}` : undefined,
+    formCode === "acord29" && data.floodProgram ? `Flood program: ${data.floodProgram}` : undefined,
+  );
+}
+
+function orderPropertyCoverageRows(
+  rows: PropertyCoverageRow[],
+  formCode: PropertyFormCode,
+): PropertyCoverageRow[] {
+  const rank = (row: PropertyCoverageRow) => {
+    const code = row.lineOfBusiness?.toUpperCase();
+    if (formCode === "acord29") {
+      if (code === "FLOOD" || /\bflood\b/i.test(row.type)) return 0;
+      if (row.section === "property") return 1;
+      return 2;
+    }
+    if (formCode === "acord30") {
+      if (code === "GARAG") return 0;
+      if (["AUTO", "AUTOB", "AUTOP", "TRUCK"].includes(code ?? "")) return 1;
+      if (code === "PHYS" || /physical damage/i.test(row.type)) return 2;
+      return 3;
+    }
+    if (formCode === "acord31") {
+      if (["COMAR", "BOAT"].includes(code ?? "")) return 0;
+      if (row.section === "inland_marine") return 1;
+      return 2;
+    }
+    if (row.section === "property") return 0;
+    if (row.section === "inland_marine") return 1;
+    return 2;
+  };
+  return rows
+    .map((row, index) => ({ row, index, rank: rank(row) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map(({ row }) => row);
+}
+
+function propertySectionLabel(row: PropertyCoverageRow, formCode: PropertyFormCode): string {
+  const code = row.lineOfBusiness?.toUpperCase();
+  if (formCode === "acord30") {
+    if (code === "GARAG") return "GARAGE";
+    if (["AUTO", "AUTOB", "AUTOP", "TRUCK"].includes(code ?? "")) return "AUTOMOBILE";
+    if (code === "PHYS" || /physical damage/i.test(row.type)) return "PHYSICAL DAMAGE";
+  }
+  if (formCode === "acord29" && (code === "FLOOD" || /\bflood\b/i.test(row.type))) {
+    return "FLOOD";
+  }
+  if (formCode === "acord31") {
+    if (["COMAR", "BOAT"].includes(code ?? "")) return "MARINE / ENERGY";
+    if (row.section === "inland_marine") return "INLAND MARINE";
+  }
+  return {
+    property: "PROPERTY",
+    inland_marine: "INLAND MARINE",
+    crime: "CRIME",
+    equipment_breakdown: "EQUIPMENT BREAKDOWN",
+    other: "OTHER POLICY",
+  }[row.section];
+}
+
+function drawDetailedCoverageTable(
+  doc: PDFKit.PDFDocument,
+  rows: PropertyCoverageRow[],
+  formCode: PropertyFormCode,
+  y: number,
+  maxY: number,
+): { y: number; consumed: number } {
+  if (!rows.length) return { y, consumed: 0 };
+  const widths = [28, 95, 70, 55, 55, 132, 117];
+  const headers = ["INSR\nLTR", "TYPE / SECTION", "POLICY NUMBER", "EFF DATE", "EXP DATE", "COVERAGE", "LIMIT / DEDUCTIBLE"];
+  y = drawDetailedCoverageHeader(doc, y, widths, headers, PROPERTY_FORM_TABLE_TITLES[formCode]);
+  let consumed = 0;
+  for (const row of rows) {
+    const cells = coverageTableCells(row, formCode);
+    const rowH = detailedCoverageRowHeight(doc, cells, widths);
+    if (y + rowH > maxY) break;
+    drawDetailedCoverageRow(doc, y, rowH, widths, cells);
+    y += rowH;
+    consumed += 1;
+  }
+  return { y, consumed };
+}
+
+function drawDetailedCoverageHeader(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  widths: number[],
+  headers: string[],
+  title: string,
+): number {
+  const titleH = 15;
+  doc.rect(M, y, W, titleH).fillAndStroke(C_HEADER_BG, C_BLACK);
+  doc.font("Helvetica-Bold").fontSize(FS_LABEL).fillColor(C_BLACK);
+  doc.text(title, M + 4, y + 4, { width: W - 8, align: "left" });
+  y += titleH;
+  const headerH = 24;
+  let x = M;
+  doc.rect(M, y, W, headerH).fillAndStroke(C_LABEL_BG, C_BLACK);
+  doc.font("Helvetica-Bold").fontSize(FS_SMALL).fillColor(C_BLACK);
+  headers.forEach((header, index) => {
+    doc.rect(x, y, widths[index], headerH).stroke();
+    doc.text(header, x + 2, y + 5, {
+      width: widths[index] - 4,
+      height: headerH - 6,
+      align: "center",
+    });
+    x += widths[index];
+  });
+  return y + headerH;
+}
+
+function coverageTableCells(row: PropertyCoverageRow, formCode: PropertyFormCode): string[] {
+  return [
+    row.insurerLetter ?? "",
+    joinLines(propertySectionLabel(row, formCode), row.type) ?? "",
+    row.policyNumber ?? "",
+    row.effectiveDate ?? "",
+    row.expirationDate ?? "",
+    row.coverage ?? "",
+    joinLines(row.limit, row.deductible) ?? "",
+  ];
+}
+
+function detailedCoverageRowHeight(
+  doc: PDFKit.PDFDocument,
+  cells: string[],
+  widths: number[],
+): number {
+  return Math.max(
+    26,
+    ...cells.map((cell, index) => textBlockHeight(doc, cell, widths[index] - 6, FS_SMALL, false) + 8),
+  );
+}
+
+function drawDetailedCoverageRow(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  height: number,
+  widths: number[],
+  cells: string[],
+) {
+  let x = M;
+  cells.forEach((cell, index) => {
+    doc.rect(x, y, widths[index], height).stroke();
+    doc.font(index === 1 || index === 6 ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(FS_SMALL)
+      .fillColor(C_BLACK);
+    doc.text(cell, x + 3, y + 4, {
+      width: widths[index] - 6,
+      height: height - 8,
+      align: index === 0 || index === 3 || index === 4 ? "center" : index === 6 ? "right" : "left",
+    });
+    x += widths[index];
+  });
+}
+
+function drawPropertyHolderAndCancellation(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  y: number,
+  holderLabel: string,
+): boolean {
+  const holderText = joinLines(
+    cleanCertificateValue(data.interestHolder ?? data.certificateHolder),
+    cleanCertificateValue(data.interestHolderRelationship) && `Interest: ${cleanCertificateValue(data.interestHolderRelationship)}`,
+  );
+  const leftW = W * 0.46;
+  const height = 70;
+  const overflow = infoBoxHeight(doc, holderText, leftW, { fontSize: FS_VALUE }) > height;
+  drawInfoBox(
+    doc,
+    M,
+    y,
+    leftW,
+    height,
+    holderLabel,
+    overflow ? "See additional remarks schedule attached" : holderText,
+  );
+  drawInfoBox(
+    doc,
+    M + leftW,
+    y,
+    W - leftW,
+    height,
+    "CANCELLATION / AUTHORIZED REPRESENTATIVE",
+    "Should any policy be cancelled before its expiration date, notice will be delivered in accordance with the policy provisions.\n\nAUTHORIZED REPRESENTATIVE",
+    { fontSize: FS_VALUE },
+  );
+  return overflow;
+}
+
+function drawPropertyCoverageSchedule(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  formCode: PropertyFormCode,
+  rows: PropertyCoverageRow[],
+) {
+  let remaining = rows;
+  let page = 1;
+  while (remaining.length) {
+    const y = drawAdditionalScheduleHeader(
+      doc,
+      data,
+      page === 1 ? "PROPERTY COVERAGE DETAILS SCHEDULE" : "PROPERTY COVERAGE DETAILS SCHEDULE - CONTINUED",
+      page,
+    );
+    const result = drawDetailedCoverageTable(doc, remaining, formCode, y, PAGE_H - M);
+    if (!result.consumed) break;
+    remaining = remaining.slice(result.consumed);
+    page += 1;
+  }
+}
+
+function drawCoveredAssetSchedule(doc: PDFKit.PDFDocument, data: CoiData) {
+  let remaining = coveredAssetRows(data);
+  if (!remaining.length) return;
+  let page = 1;
+  const widths = [150, 112, 290];
+  const headers = ["SOURCE SCHEDULE", "COVERED ITEM", "DECLARATION DETAILS"];
+  while (remaining.length) {
+    let y = drawAdditionalScheduleHeader(
+      doc,
+      data,
+      page === 1
+        ? "COVERED AUTOS / PROPERTY SCHEDULE"
+        : "COVERED AUTOS / PROPERTY SCHEDULE - CONTINUED",
+      page,
+    );
+    y = drawLocationHeader(doc, y, widths, headers);
+    let consumed = 0;
+    for (const row of remaining) {
+      const cells = [
+        joinLines(row.scheduleName, row.scheduleDescription) ?? row.scheduleName,
+        row.itemLabel,
+        row.details ?? "",
+      ];
+      const rowH = Math.max(
+        28,
+        ...cells.map((cell, index) =>
+          textBlockHeight(doc, cell, widths[index] - 6, FS_SMALL, index === 1) + 12,
+        ),
+      );
+      if (y + rowH > PAGE_H - M) break;
+      drawDetailedCoverageRow(doc, y, rowH, widths, cells);
+      y += rowH;
+      consumed += 1;
+    }
+    if (!consumed) break;
+    remaining = remaining.slice(consumed);
+    page += 1;
+  }
+}
+
+function drawAdditionalScheduleHeader(
+  doc: PDFKit.PDFDocument,
+  data: CoiData,
+  title: string,
+  page: number,
+): number {
+  doc.addPage({ size: "LETTER", margin: 0 });
+  let y = 26;
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(C_BLACK);
+  doc.text(title, M, y, { width: W - 80 });
+  doc.font("Helvetica").fontSize(FS_LABEL);
+  doc.text(`PAGE ${page}`, M + W - 80, y + 2, { width: 80, align: "right" });
+  y += 24;
+  y = drawCertificateNumberBand(doc, data, y);
+  drawInfoBox(doc, M, y, W, 40, "NAMED INSURED", cleanCertificateValue(data.insuredName));
+  return y + 44;
+}
+
+function drawPropertyLocationSchedule(doc: PDFKit.PDFDocument, data: CoiData) {
+  const locations = data.propertyInformation?.locations ?? [];
+  if (!locations.length) return;
+  let remaining = locations;
+  let page = 1;
+  const widths = [28, 150, 110, 62, 54, 60, 88];
+  const headers = [
+    "LOC #",
+    "ADDRESS / DESCRIPTION",
+    "OCCUPANCY / CONSTRUCTION",
+    "SCHEDULED\nBUILDING VALUE",
+    "SCHEDULED\nCONTENTS VALUE",
+    "SCHEDULED\nBUSINESS INCOME VALUE",
+    "PROTECTION",
+  ];
+  while (remaining.length) {
+    let y = drawAdditionalScheduleHeader(
+      doc,
+      data,
+      page === 1 ? "STRUCTURED PROPERTY LOCATION SCHEDULE" : "STRUCTURED PROPERTY LOCATION SCHEDULE - CONTINUED",
+      page,
+    );
+    y = drawLocationHeader(doc, y, widths, headers);
+    let consumed = 0;
+    for (const [index, location] of remaining.entries()) {
+      const cells = propertyLocationCells(location, index);
+      const rowH = Math.max(
+        30,
+        ...cells.map((cell, cellIndex) => textBlockHeight(doc, cell, widths[cellIndex] - 6, FS_SMALL, cellIndex === 6) + 14),
+      );
+      if (y + rowH > PAGE_H - M) break;
+      drawDetailedCoverageRow(doc, y, rowH, widths, cells);
+      y += rowH;
+      consumed += 1;
+    }
+    if (!consumed) break;
+    remaining = remaining.slice(consumed);
+    page += 1;
+  }
+}
+
+function drawLocationHeader(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  widths: number[],
+  headers: string[],
+): number {
+  const headerH = 30;
+  let x = M;
+  doc.rect(M, y, W, headerH).fillAndStroke(C_LABEL_BG, C_BLACK);
+  doc.font("Helvetica-Bold").fontSize(5.25).fillColor(C_BLACK);
+  headers.forEach((header, index) => {
+    doc.rect(x, y, widths[index], headerH).stroke();
+    doc.text(header, x + 2, y + 5, {
+      width: widths[index] - 4,
+      height: headerH - 6,
+      align: "center",
+    });
+    x += widths[index];
+  });
+  return y + headerH;
+}
+
+function propertyLocationCells(location: CertificatePropertyLocation, index: number): string[] {
+  return [
+    String(location.number ?? index + 1),
+    joinLines(
+      cleanCertificateValue(formatAddress(location.address))?.replace(/\n+/g, ", "),
+      cleanCertificateValue(location.description),
+    ) ?? "",
+    joinLines(
+      location.occupancy ? `Occupancy: ${location.occupancy}` : undefined,
+      location.constructionType ? `Construction: ${location.constructionType}` : undefined,
+      location.yearBuilt !== undefined ? `Built: ${location.yearBuilt}` : undefined,
+      location.squareFootage !== undefined
+        ? `Area: ${location.squareFootage.toLocaleString("en-US")} sq ft`
+        : undefined,
+    ) ?? "",
+    cleanCertificateValue(location.buildingValue) ?? "",
+    cleanCertificateValue(location.contentsValue) ?? "",
+    cleanCertificateValue(location.businessIncomeValue) ?? "",
+    joinLines(
+      location.protectionClass ? `PC ${location.protectionClass}` : undefined,
+      location.sprinklered !== undefined ? `Sprinkler: ${location.sprinklered ? "Yes" : "No"}` : undefined,
+      location.alarmType ? `Alarm: ${location.alarmType}` : undefined,
+    ) ?? "",
+  ];
+}
+
+export function formatCertificatePropertyInformation(
+  data: CoiData,
+  formCode = data.formCode ?? "acord24",
+): string {
+  const property = data.propertyInformation;
+  const coverageTerms = [
+    property?.causesOfLossForm
+      ? `Causes of loss: ${displayPropertyValue(property.causesOfLossForm)}`
+      : undefined,
+    property?.valuationMethod
+      ? `Valuation: ${displayPropertyValue(property.valuationMethod)}`
+      : undefined,
+    property?.coinsurancePercent !== undefined
+      ? `Coinsurance: ${formatCoinsurance(property.coinsurancePercent)}`
+      : undefined,
+  ].filter(Boolean).join(" | ");
+  const declarationLimits = [
+    property?.blanketLimit ? `Blanket limit: ${property.blanketLimit}` : undefined,
+    property?.businessIncomeLimit ? `Business income limit: ${property.businessIncomeLimit}` : undefined,
+    property?.extraExpenseLimit ? `Extra expense limit: ${property.extraExpenseLimit}` : undefined,
+  ].filter(Boolean).join(" | ");
+  const locations = property?.locations.flatMap((location, index) => {
+    const address = formatAddress(location.address).replace(/\n+/g, ", ");
+    const heading = joinInline(`Location ${location.number ?? index + 1}`, address);
+    const values = [
+      location.buildingValue ? `Scheduled building value: ${location.buildingValue}` : undefined,
+      location.contentsValue ? `Scheduled contents value: ${location.contentsValue}` : undefined,
+      location.businessIncomeValue
+        ? `Scheduled business income value: ${location.businessIncomeValue}`
+        : undefined,
+    ].filter(Boolean).join(" | ");
+    const characteristics = [
+      location.occupancy ? `Occupancy: ${location.occupancy}` : undefined,
+      location.constructionType ? `Construction: ${location.constructionType}` : undefined,
+      location.yearBuilt !== undefined ? `Built: ${location.yearBuilt}` : undefined,
+      location.squareFootage !== undefined
+        ? `Area: ${location.squareFootage.toLocaleString("en-US")} sq ft`
+        : undefined,
+    ].filter(Boolean).join(" | ");
+    const protections = [
+      location.protectionClass ? `Protection class: ${location.protectionClass}` : undefined,
+      location.sprinklered !== undefined
+        ? `Sprinklered: ${location.sprinklered ? "Yes" : "No"}`
+        : undefined,
+      location.alarmType ? `Alarm: ${location.alarmType}` : undefined,
+    ].filter(Boolean).join(" | ");
+    return [heading, location.description, values, characteristics, protections].filter(
+      (line): line is string => Boolean(line),
+    );
+  }) ?? [];
+  const assets = coveredAssetRows(data).map((row) => joinInline(
+    `${row.scheduleName} - ${row.itemLabel}`,
+    row.details ?? "",
+  ));
+
+  return joinLines(
+    data.propertyDescription,
+    coverageTerms || undefined,
+    declarationLimits || undefined,
+    ...locations,
+    ...assets,
+    !locations.length && data.propertyLocation ? `Location: ${data.propertyLocation}` : undefined,
+    formCode === "acord29" && data.floodZone ? `Flood zone: ${data.floodZone}` : undefined,
+    formCode === "acord29" && data.floodProgram ? `Flood program: ${data.floodProgram}` : undefined,
+  ) ?? "";
+}
+
+function joinInline(label: string, value: string): string {
+  return value ? `${label}: ${value}` : label;
+}
+
+function displayPropertyValue(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatCoinsurance(value: number | string): string {
+  const text = String(value).trim();
+  return text.endsWith("%") ? text : `${text}%`;
 }
 
 function drawAcord101(
   doc: PDFKit.PDFDocument,
   data: CoiData,
-  options: { includeDescription: boolean; includeHolder: boolean },
+  options: {
+    includeDescription: boolean;
+    includeHolder: boolean;
+    includeProperty?: boolean;
+  },
 ) {
   const remarks = joinLines(
     options.includeHolder && data.certificateHolder
@@ -1130,6 +2490,9 @@ function drawAcord101(
       : undefined,
     options.includeDescription && data.description
       ? `DESCRIPTION OF OPERATIONS / LOCATIONS / SPECIAL ITEMS\n${data.description}`
+      : undefined,
+    options.includeProperty
+      ? `PROPERTY INFORMATION\n${formatCertificatePropertyInformation(data)}`
       : undefined,
   );
   const remarksY = 102;

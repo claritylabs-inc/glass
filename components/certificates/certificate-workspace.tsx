@@ -15,6 +15,14 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatDisplayDateTime } from "@/lib/date-format";
 
 export type CertificateHolderRecord = {
@@ -120,16 +128,6 @@ export function formatCertificateTime(value?: number) {
   return formatDisplayDateTime(value, "Not issued");
 }
 
-export function certificateBadge(row: PolicyCertificateRecord) {
-  if (row.status === "archived") return { label: "Archived", variant: "outline" as const };
-  const version = row.currentVersion;
-  if (!version) return { label: "No issued version", variant: "outline" as const };
-  if (version.status === "issued") {
-    return { label: "Issued", variant: "secondary" as const };
-  }
-  return { label: version.status.replace(/_/g, " "), variant: "outline" as const };
-}
-
 function versionBadge(version?: CertificateVersionRecord | null) {
   if (!version) return { label: "No version", variant: "outline" as const };
   if (version.status === "issued") return { label: "Issued", variant: "secondary" as const };
@@ -145,53 +143,6 @@ function sortedVersions(row: PolicyCertificateRecord) {
     .sort((left, right) => right.versionNumber - left.versionNumber);
 }
 
-function certificateLastActivity(row: PolicyCertificateRecord) {
-  return Number(row.lastIssuedAt ?? row.currentVersion?.createdAt ?? row.createdAt ?? 0);
-}
-
-export type CertificatePolicyGroup = {
-  key: string;
-  policyId: Id<"policies">;
-  policy?: CertificatePolicyRecord | null;
-  rows: PolicyCertificateRecord[];
-  latestAt: number;
-};
-
-export function groupCertificatesByPolicy(rows: PolicyCertificateRecord[]) {
-  const groups = new Map<string, CertificatePolicyGroup>();
-
-  for (const row of rows) {
-    const key = String(row.policyId);
-    const existing = groups.get(key);
-
-    if (existing) {
-      existing.rows.push(row);
-      existing.latestAt = Math.max(existing.latestAt, certificateLastActivity(row));
-      if (!existing.policy && row.policy) existing.policy = row.policy;
-      continue;
-    }
-
-    groups.set(key, {
-      key,
-      policyId: row.policyId,
-      policy: row.policy,
-      rows: [row],
-      latestAt: certificateLastActivity(row),
-    });
-  }
-
-  return Array.from(groups.values())
-    .map((group) => ({
-      ...group,
-      rows: [...group.rows].sort((left, right) =>
-        (left.holder?.displayName ?? "").localeCompare(
-          right.holder?.displayName ?? "",
-        ),
-      ),
-    }))
-    .sort((left, right) => right.latestAt - left.latestAt);
-}
-
 function openOnKeyboard(
   event: KeyboardEvent<HTMLDivElement>,
   action: () => void,
@@ -199,6 +150,176 @@ function openOnKeyboard(
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
   action();
+}
+
+function openTableRowOnKeyboard(
+  event: KeyboardEvent<HTMLTableRowElement>,
+  action: () => void,
+) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  action();
+}
+
+function certificateCarrier(row: PolicyCertificateRecord) {
+  return row.policy?.carrier ?? row.policy?.security;
+}
+
+function certificateHolderAddressDisplay(row: PolicyCertificateRecord) {
+  const address = row.holder?.address;
+  const formattedLines = certificateHolderAddress(row.holder)
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean) ?? [];
+  const street = [address?.line1, address?.line2].filter(Boolean).join(", ") ||
+    (formattedLines.length > 1
+      ? formattedLines.slice(0, -1).join(", ")
+      : formattedLines[0]);
+  const statePostal = [address?.state, address?.postalCode].filter(Boolean).join(" ");
+  const locality = [address?.city, statePostal, address?.country].filter(Boolean).join(", ") ||
+    (formattedLines.length > 1 ? formattedLines[formattedLines.length - 1] : undefined);
+  return { street, locality };
+}
+
+function certificateContactSummary(row: PolicyCertificateRecord) {
+  const contactName = row.holder?.contactName?.trim();
+  const email = row.holder?.email?.trim();
+  const phone = row.holder?.phone?.trim();
+  const primary = contactName ?? email ?? phone ?? "No contact";
+  const secondary = contactName ? email : undefined;
+  return { primary, secondary };
+}
+
+export function CertificatesTable({
+  rows,
+  selectedCertificateId,
+  onSelectCertificate,
+  showPolicyColumn = true,
+}: {
+  rows: PolicyCertificateRecord[];
+  selectedCertificateId?: Id<"policyCertificates"> | null;
+  onSelectCertificate: (row: PolicyCertificateRecord) => void;
+  showPolicyColumn?: boolean;
+}) {
+  return (
+    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
+      <Table
+        className={showPolicyColumn ? "min-w-[1040px]" : "min-w-[760px]"}
+      >
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead
+              className={`${showPolicyColumn ? "w-[22%]" : "w-[25%]"} px-4`}
+            >
+              Holder
+            </TableHead>
+            <TableHead className={showPolicyColumn ? "w-[24%]" : "w-[30%]"}>
+              Address
+            </TableHead>
+            <TableHead className={showPolicyColumn ? "w-[18%]" : "w-[25%]"}>
+              Contact
+            </TableHead>
+            {showPolicyColumn ? (
+              <TableHead className="w-[24%]">Policy</TableHead>
+            ) : null}
+            <TableHead
+              className={`${showPolicyColumn ? "w-[12%]" : "w-[20%]"} px-4`}
+            >
+              Issued
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => {
+            const contact = certificateContactSummary(row);
+            const address = certificateHolderAddressDisplay(row);
+            const currentVersion = row.currentVersion;
+            const selected = row._id === selectedCertificateId;
+            const issuedAt =
+              row.lastIssuedAt ??
+              currentVersion?.issuedAt ??
+              currentVersion?.createdAt;
+            const carrier = certificateCarrier(row);
+
+            return (
+              <TableRow
+                key={row._id}
+                aria-label={`Open certificate details for ${row.holder?.displayName ?? "certificate holder"}`}
+                aria-selected={selected}
+                className="cursor-pointer"
+                data-state={selected ? "selected" : undefined}
+                onClick={() => onSelectCertificate(row)}
+                onKeyDown={(event) =>
+                  openTableRowOnKeyboard(event, () => onSelectCertificate(row))
+                }
+                tabIndex={0}
+              >
+                <TableCell className="max-w-64 px-4">
+                  <p className="truncate font-medium text-foreground">
+                    {row.holder?.displayName ?? "Certificate holder"}
+                  </p>
+                </TableCell>
+                <TableCell className="max-w-72">
+                  {address.street ? (
+                    <>
+                      <p className="truncate text-foreground">
+                        {address.street}
+                      </p>
+                      {address.locality ? (
+                        <p className="truncate text-label text-muted-foreground">
+                          {address.locality}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">No address</span>
+                  )}
+                </TableCell>
+                <TableCell className="max-w-56">
+                  <p
+                    className={
+                      contact.primary === "No contact"
+                        ? "truncate text-muted-foreground"
+                        : "truncate text-foreground"
+                    }
+                  >
+                    {contact.primary}
+                  </p>
+                  {contact.secondary ? (
+                    <p className="truncate text-label text-muted-foreground">
+                      {contact.secondary}
+                    </p>
+                  ) : null}
+                </TableCell>
+                {showPolicyColumn ? (
+                  <TableCell className="max-w-72">
+                    <p className="truncate text-foreground">
+                      {row.policy?.policyNumber ?? "Policy"}
+                    </p>
+                    {carrier ? (
+                      <p className="truncate text-label text-muted-foreground">
+                        {carrier}
+                      </p>
+                    ) : null}
+                  </TableCell>
+                ) : null}
+                <TableCell className="px-4">
+                  <p className="text-foreground">
+                    {formatCertificateTime(issuedAt)}
+                  </p>
+                  {currentVersion ? (
+                    <p className="text-label text-muted-foreground">
+                      Version {currentVersion.versionNumber}
+                    </p>
+                  ) : null}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </OperationalPanel>
+  );
 }
 
 function CertificatePdfItem({
@@ -251,77 +372,6 @@ function CertificateDetailCard({
         />
       ))}
     </OperationalLabelValueList>
-  );
-}
-
-export function CertificateRow({
-  row,
-  selected,
-  onSelect,
-}: {
-  row: PolicyCertificateRecord;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const badge = certificateBadge(row);
-  const holderContact = [
-    row.holder?.contactName ? `Attn: ${row.holder.contactName}` : undefined,
-    row.holder?.email,
-    row.holder?.phone,
-    certificateHolderAddress(row.holder),
-  ].filter(Boolean).join("\n") || "No holder contact recorded";
-  return (
-    <OperationalItem
-      aria-label={`Open certificate details for ${row.holder?.displayName ?? "certificate holder"}`}
-      aria-pressed={selected}
-      className={`${CERTIFICATE_ROW_CLICKABLE_CLASS} ${selected ? "bg-muted/40" : ""}`}
-      onClick={onSelect}
-      onKeyDown={(event) => openOnKeyboard(event, onSelect)}
-      role="button"
-      tabIndex={0}
-    >
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="min-w-0 truncate text-base font-medium text-foreground">
-            {row.holder?.displayName ?? "Certificate holder"}
-          </p>
-          <p className="mt-1 whitespace-pre-line text-base text-muted-foreground">
-            {holderContact}
-          </p>
-        </div>
-        <Badge variant={badge.variant} className="shrink-0 self-start capitalize">
-          {badge.label}
-        </Badge>
-      </div>
-    </OperationalItem>
-  );
-}
-
-export function CertificatePolicyGroupCard({
-  group,
-  selectedCertificateId,
-  showPolicyHeader = true,
-  onSelectCertificate,
-}: {
-  group: CertificatePolicyGroup;
-  selectedCertificateId?: Id<"policyCertificates"> | null;
-  showPolicyHeader?: boolean;
-  onSelectCertificate: (row: PolicyCertificateRecord) => void;
-}) {
-  return (
-    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
-      {showPolicyHeader ? (
-        <OperationalPanelHeader title={certificatePolicyLabel(group.policy)} />
-      ) : null}
-      {group.rows.map((row) => (
-        <CertificateRow
-          key={row._id}
-          row={row}
-          selected={row._id === selectedCertificateId}
-          onSelect={() => onSelectCertificate(row)}
-        />
-      ))}
-    </OperationalPanel>
   );
 }
 

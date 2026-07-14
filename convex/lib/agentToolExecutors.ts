@@ -8,6 +8,7 @@ import {
   compareCoverages,
   confirmPolicyFact,
   generateCoi,
+  lookupAddress,
   lookupComplianceRequirements,
   lookupPolicy,
   lookupPolicySection,
@@ -33,6 +34,7 @@ import type { RequirementScope } from "./complianceTypes";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 import { resolvePolicyPartyContext } from "./policyPartyContext";
 import { effectiveOrganizationProfileFacts } from "./orgProfileFacts";
+import { lookupMapboxAddress } from "./mapboxAddress";
 
 type AgentToolSurface = "web" | "email" | "imessage" | "mcp";
 
@@ -323,6 +325,28 @@ export function buildAgentToolExecutors(
   options: BuildAgentToolExecutorsOptions,
 ) {
   return {
+    lookup_address: {
+      ...lookupAddress,
+      execute: async (params: { query: string; countryCode?: string }) => {
+        const accessToken =
+          process.env.MAPBOX_ACCESS_TOKEN?.trim() ||
+          process.env.NEXT_PUBLIC_MAPBOX_TOKEN?.trim();
+        if (!accessToken) {
+          return {
+            status: "unavailable" as const,
+            query: params.query,
+            candidates: [],
+            message:
+              "Mapbox address validation is not configured. Preserve the user's original address and do not claim it was validated.",
+          };
+        }
+        return lookupMapboxAddress({
+          query: params.query,
+          countryCode: params.countryCode,
+          accessToken,
+        });
+      },
+    },
     lookup_policy: {
       ...lookupPolicy,
       execute: async (params: {

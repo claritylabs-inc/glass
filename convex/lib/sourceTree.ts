@@ -1431,6 +1431,86 @@ function normalizeRawOperationalProfile(
   } as PolicyOperationalProfile;
 }
 
+function partyNamePattern(name: string): RegExp | undefined {
+  const tokens = name.toLowerCase().match(/[a-z0-9]+/g);
+  if (!tokens?.length) return undefined;
+  return new RegExp(tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^a-z0-9]+"), "ig");
+}
+
+function sourceBackedPartyIdentifier(
+  party: OperationalPartyWithIdentifiers,
+  sourceTree: DocumentSourceNode[],
+  sourceSpans: ReturnType<typeof sourceSpansForSdk>,
+  kind: "naic" | "license",
+): { value: string; sourceNodeIds: string[]; sourceSpanIds: string[] } | undefined {
+  const namePattern = partyNamePattern(party.name);
+  if (!namePattern) return undefined;
+  const identifierPattern = kind === "naic"
+    ? /\bNAIC(?:\s+(?:CODE|NO\.?|NUMBER))?\s*(?:#\s*)?[:\-]?\s*(\d{5})\b/i
+    : /\bLICENSE(?:\s+(?:NO\.?|NUMBER))?\s*(?:#\s*)?[:\-]?\s*([A-Z0-9][A-Z0-9.-]{2,})\b/i;
+
+  for (const span of sourceSpans) {
+    const spanText = span.text ?? "";
+    namePattern.lastIndex = 0;
+    for (let match = namePattern.exec(spanText); match; match = namePattern.exec(spanText)) {
+      const afterName = spanText.slice(
+        match.index + match[0].length,
+        match.index + match[0].length + 320,
+      );
+      const identifier = identifierPattern.exec(afterName)?.[1]?.replace(/[.,;:]+$/, "");
+      if (!identifier || (kind === "license" && !/\d/.test(identifier))) continue;
+      const spanId = String(span.id);
+      return {
+        value: identifier,
+        sourceNodeIds: sourceTree
+          .filter((node) => node.sourceSpanIds.includes(spanId))
+          .map((node) => node.id),
+        sourceSpanIds: [spanId],
+      };
+    }
+  }
+  return undefined;
+}
+
+function enrichOperationalPartyIdentifiers(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+  sourceSpans: ReturnType<typeof sourceSpansForSdk>,
+): PolicyOperationalProfile {
+  const parties: OperationalPartyWithIdentifiers[] = profile.parties.map((rawParty: OperationalParty) => {
+    const party = rawParty as OperationalPartyWithIdentifiers;
+    const role = normalizeOperationalPartyRole(String(party.role));
+    const kind = ["insurer", "carrier"].includes(role)
+      ? "naic"
+      : ["producer", "general_agent"].includes(role)
+        ? "license"
+        : undefined;
+    if (!kind || (kind === "naic" ? party.naicNumber : party.licenseNumber)) return party;
+    const evidence = sourceBackedPartyIdentifier(party, sourceTree, sourceSpans, kind);
+    if (!evidence) return party;
+    return {
+      ...party,
+      ...(kind === "naic"
+        ? { naicNumber: evidence.value }
+        : { licenseNumber: evidence.value }),
+      sourceNodeIds: [...new Set([...party.sourceNodeIds, ...evidence.sourceNodeIds])],
+      sourceSpanIds: [...new Set([...party.sourceSpanIds, ...evidence.sourceSpanIds])],
+    };
+  });
+  return {
+    ...profile,
+    parties,
+    sourceNodeIds: [...new Set([
+      ...profile.sourceNodeIds,
+      ...parties.flatMap((party) => party.sourceNodeIds),
+    ])],
+    sourceSpanIds: [...new Set([
+      ...profile.sourceSpanIds,
+      ...parties.flatMap((party) => party.sourceSpanIds),
+    ])],
+  };
+}
+
 export function normalizeOperationalProfile(
   rawProfile: unknown,
   sourceTree: DocumentSourceNode[],
@@ -1441,7 +1521,11 @@ export function normalizeOperationalProfile(
   const validSpanIds = new Set(sdkSpans.map((span) => span.id));
   const normalized = normalizeRawOperationalProfile(rawProfile, validNodeIds, validSpanIds);
   const profile = preserveOperationalProfileExtensions(
-    finalizeOperationalProfile(normalized),
+    enrichOperationalPartyIdentifiers(
+      finalizeOperationalProfile(normalized),
+      sourceTree,
+      sdkSpans,
+    ),
     rawProfile,
   );
   return normalizeExtractedDateFields(profile) as PolicyOperationalProfile;

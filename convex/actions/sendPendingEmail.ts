@@ -60,6 +60,7 @@ async function sendPendingEmailById(
     allowedStatuses: Array<Doc<"pendingEmails">["status"]>;
     updateChatMessage: boolean;
     notifyImessage: boolean;
+    userConfirmedDraft: boolean;
   },
 ): Promise<SendEmailResult> {
   const pending = (await ctx.runQuery(internal.pendingEmails.getInternal, {
@@ -70,6 +71,7 @@ async function sendPendingEmailById(
   }
   const sendability = getEmailDraftSendability(pending, {
     allowedStatuses: options.allowedStatuses,
+    confirmationGranted: options.userConfirmedDraft,
   });
   if (sendability.status === "blocked") {
     if (
@@ -224,17 +226,22 @@ export const sendPending = internalAction({
       allowedStatuses: ["pending"],
       updateChatMessage: true,
       notifyImessage: true,
+      userConfirmedDraft: false,
     });
   },
 });
 
 export const sendDraftInternal = internalAction({
-  args: { id: v.id("pendingEmails") },
+  args: {
+    id: v.id("pendingEmails"),
+    userConfirmedDraft: v.boolean(),
+  },
   handler: async (ctx, args) => {
     await sendPendingEmailById(ctx, args.id, {
       allowedStatuses: ["draft"],
       updateChatMessage: false,
       notifyImessage: false,
+      userConfirmedDraft: args.userConfirmedDraft,
     });
   },
 });
@@ -258,6 +265,7 @@ export const sendDraftNow = action({
       allowedStatuses: ["draft"],
       updateChatMessage: false,
       notifyImessage: false,
+      userConfirmedDraft: true,
     });
     return sent ?? { recipientEmail: pending.recipientEmail };
   },
@@ -299,6 +307,7 @@ export const sendDraftsNow = action({
           allowedStatuses: ["draft"],
           updateChatMessage: false,
           notifyImessage: false,
+          userConfirmedDraft: true,
         });
         result.sent.push({
           id: draft._id,

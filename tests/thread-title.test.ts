@@ -35,6 +35,23 @@ describe("thread title generation", () => {
     expect(normalizeGeneratedTitle("Generate COI")).toBe("Generate COI");
   });
 
+  it("rejects model planning output instead of storing it as the title", () => {
+    expect(normalizeGeneratedTitle("1. **Analyze the Request:**")).toBeNull();
+    expect(
+      normalizeGeneratedTitle(
+        "1. **Analyze the Request:**\n2. **Identify the Deliverable:**",
+      ),
+    ).toBeNull();
+    expect(normalizeGeneratedTitle("Analyze the user request")).toBeNull();
+
+    const fallback = fallbackTitle(
+      "Can you generate a new COI for ReLease Coverage Company and draft an email with it?",
+    );
+    expect(normalizeGeneratedTitle("1. **Analyze the Request:**") ?? fallback).toBe(
+      "Generate COI",
+    );
+  });
+
   it("includes initial page context in the rename prompt", () => {
     const prompt = buildTitlePromptContent({
       userMessage: "send this over",

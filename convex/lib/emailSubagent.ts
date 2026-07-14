@@ -10,7 +10,10 @@ import { generateTextForOrg } from "./models";
 import { buildAgentToolExecutors } from "./agentToolExecutors";
 import type { AgentScope } from "./agentScope";
 import { extractEmailAddress, normalizeEmailAddress } from "./emailAddress";
-import { upsertEmailDraftArtifact } from "./emailDraftArtifacts";
+import {
+  queueEmailDraftArtifact,
+  upsertEmailDraftArtifact,
+} from "./emailDraftArtifacts";
 import {
   buildEmailPayload,
   sendTrackedResendEmail,
@@ -42,7 +45,10 @@ export {
   resolveEmailAgentIdentity,
   type BrokerBranding,
 } from "./emailIdentity";
-export { upsertEmailDraftArtifact } from "./emailDraftArtifacts";
+export {
+  queueEmailDraftArtifact,
+  upsertEmailDraftArtifact,
+} from "./emailDraftArtifacts";
 
 export type EmailSubagentResult = {
   status: "draft" | "needs_confirmation" | "pending" | "sent" | "error";
@@ -552,6 +558,10 @@ async function runEmailSubagent(
     const approvedToSend =
       params.approvedToSend === true || input.approvedToSend === true;
     const autoSend = context.autoSendEmails === true;
+    const referencedPolicyIds =
+      sourcePolicyIds.size > 0
+        ? ([...sourcePolicyIds] as Id<"policies">[])
+        : undefined;
 
     const uncertainty: string[] = [];
     if (!to) {
@@ -589,10 +599,6 @@ async function runEmailSubagent(
       const status = uncertainty.length > 0 ? "needs_confirmation" : "draft";
       const sendBlockedReason =
         uncertainty.length > 0 ? uncertainty.join(" ") : undefined;
-      const referencedPolicyIds =
-        sourcePolicyIds.size > 0
-          ? ([...sourcePolicyIds] as Id<"policies">[])
-          : undefined;
       const draftPendingEmailId =
         to && subject && body
           ? await upsertEmailDraftArtifact(ctx, context, {
@@ -654,9 +660,20 @@ async function runEmailSubagent(
     const sendDelay = context.emailSendDelay ?? 5;
     if (sendDelay > 0 && context.threadId) {
       const scheduledSendTime = dayjs().add(sendDelay, "second").valueOf();
-      const pendingEmailId = await ctx.runMutation(
-        internal.pendingEmails.create,
-        {
+      const persistedDraftId = await queueEmailDraftArtifact(ctx, context, {
+        to: sendTo,
+        cc,
+        bcc,
+        subject,
+        body,
+        attachments,
+        allowMultipleCoiAttachments,
+        referencedPolicyIds,
+        scheduledSendTime,
+      });
+      const pendingEmailId =
+        persistedDraftId ??
+        (await ctx.runMutation(internal.pendingEmails.create, {
           orgId: context.orgId,
           threadId: context.threadId,
           emailPayload: JSON.stringify(emailPayload),
@@ -675,12 +692,8 @@ async function runEmailSubagent(
           renderedHtml: emailPayload.html,
           attachments: attachments.length > 0 ? attachments : undefined,
           allowMultipleCoiAttachments,
-          referencedPolicyIds:
-            sourcePolicyIds.size > 0
-              ? ([...sourcePolicyIds] as Id<"policies">[])
-              : undefined,
-        },
-      );
+          referencedPolicyIds,
+        }));
       await ctx.scheduler.runAfter(
         sendDelay * 1000,
         internal.actions.sendPendingEmail.sendPending,
@@ -699,6 +712,44 @@ async function runEmailSubagent(
       };
       finalResult = pendingResult;
       return pendingResult;
+    }
+
+    const persistedDraftId = await upsertEmailDraftArtifact(ctx, context, {
+      to: sendTo,
+      cc,
+      bcc,
+      subject,
+      body,
+      attachments,
+      allowMultipleCoiAttachments,
+      referencedPolicyIds,
+    });
+    if (persistedDraftId) {
+      await ctx.runAction(
+        internal.actions.sendPendingEmail.sendDraftInternal,
+        {
+          id: persistedDraftId,
+          userConfirmedDraft: true,
+        },
+      );
+      const sentDraft = (await ctx.runQuery(
+        internal.pendingEmails.getInternal,
+        { id: persistedDraftId },
+      )) as Doc<"pendingEmails"> | null;
+      const sentResult: EmailSubagentResult = {
+        status: "sent",
+        responseBody: `Email sent to ${sendTo}${cc.length > 0 ? ` (CC: ${cc.join(", ")})` : ""}.`,
+        responseTo: sendTo,
+        responseCc: cc.length > 0 ? cc : undefined,
+        responseBcc: bcc.length > 0 ? bcc : undefined,
+        subject,
+        emailBody: body,
+        responseMessageId: sentDraft?.sentMessageId,
+        pendingEmailId: persistedDraftId,
+        attachments,
+      };
+      finalResult = sentResult;
+      return sentResult;
     }
 
     if (attachments.length > 0) {
@@ -730,10 +781,7 @@ async function runEmailSubagent(
         subject,
         responseMessageId: sentMessageId,
         attachments: attachments.length > 0 ? attachments : undefined,
-        referencedPolicyIds:
-          sourcePolicyIds.size > 0
-            ? ([...sourcePolicyIds] as Id<"policies">[])
-            : undefined,
+        referencedPolicyIds,
       });
     }
 

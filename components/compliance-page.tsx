@@ -1453,6 +1453,8 @@ export function CompliancePage() {
     !hasActiveVendors;
   const activeRequirementScope: RequirementScope =
     !showConnectFeatures || isPureVendorAccount ? "own_org" : requirementScope;
+  const navigationValue =
+    view === "requirements" && showConnectFeatures ? activeRequirementScope : view;
 
   const scopedRequirements = useMemo(
     () =>
@@ -1943,10 +1945,29 @@ export function CompliancePage() {
       rightPanel={detailPanel ?? sourcePanel ?? addPanel}
     >
       <div className="flex w-full flex-col gap-4">
-        <Tabs value={view} onValueChange={(value) => setView(value as ComplianceView)}>
+        <Tabs
+          value={navigationValue}
+          onValueChange={(value) => {
+            if (value === "own_org" || value === "vendors") {
+              setRequirementScope(value);
+              setView("requirements");
+              return;
+            }
+            setView(value as ComplianceView);
+          }}
+        >
           <TabsList variant="pill">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="requirements">Requirements</TabsTrigger>
+            {showConnectFeatures ? (
+              <>
+                <TabsTrigger value="own_org">My requirements</TabsTrigger>
+                {!isPureVendorAccount ? (
+                  <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
+                ) : null}
+              </>
+            ) : (
+              <TabsTrigger value="requirements">Requirements</TabsTrigger>
+            )}
             <TabsTrigger value="sources">Sources</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -1980,14 +2001,6 @@ export function CompliancePage() {
           />
         ) : (
           <>
-            {showConnectFeatures && !isPureVendorAccount ? (
-              <Tabs value={activeRequirementScope} onValueChange={(value) => setRequirementScope(value as RequirementScope)}>
-                <TabsList variant="pill">
-                  <TabsTrigger value="own_org">My requirements</TabsTrigger>
-                  <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            ) : null}
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <RequirementsFilterSelect
                 label="Source"

@@ -125,10 +125,13 @@ describe("settings panel surfaces", () => {
     expect(summary).not.toContain('SummaryRow label="Broker"');
     expect(summary).not.toContain('SummaryRow label="Named insured"');
     expect(details).not.toContain("CoverageBreakdownCards");
+    expect(details).not.toContain("PolicyCoveredAssets");
     expect(detailBody).toContain('{ id: "coverages" as const, label: "Coverages" }');
     expect(detailBody).toContain('activeTab === "coverages"');
     expect(detailBody).toContain("<PolicyCoveragesTab");
     expect(coverages).toContain("CoverageBreakdownCards");
+    expect(coverages).toContain("PolicyCoveredAssets");
+    expect(coverages).toContain("showCoveredAssetSchedules={false}");
     expect(policy).not.toContain("useMutation");
     expect(policy).not.toContain("AutoSaveStatus");
     expect(policy).not.toContain("AddressAutofillInput");

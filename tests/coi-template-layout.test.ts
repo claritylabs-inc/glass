@@ -17,7 +17,9 @@ describe("COI PDF template layout", () => {
     );
     expect(source).toContain("CERTIFICATE NUMBER:");
     expect(source).toContain("REVISION NUMBER:");
-    expect(source).toContain("y = drawCertificateNumberBand(doc, data, y) + 4;");
+    expect(source).toContain("PROPERTY_FORM_RENDERERS[data.formCode](doc, data);");
+    expect(source).toContain("acord24: drawAcord24Form");
+    expect(source).toContain("drawPropertyEvidenceForm(doc, data, \"acord31\")");
     expect(source).toContain(
       "THIS IS TO CERTIFY THAT THE POLICIES OF INSURANCE LISTED BELOW HAVE BEEN ISSUED TO THE INSURED NAMED ABOVE FOR THE POLICY PERIOD INDICATED.",
     );
@@ -28,6 +30,11 @@ describe("COI PDF template layout", () => {
     expect(source).not.toContain("See ACORD 101 attached");
     expect(source).toContain("INSURER(S) AFFORDING COVERAGE");
     expect(source).toContain("INSURER ${letter}:");
+    expect(source).toContain("License #: ${license}");
+    expect(source).toContain("naic: partyContext.insurerNaicNumber");
+    expect(source).toContain("producerLicense: partyContext.producerLicenseNumber");
+    expect(source).not.toContain("FS_DISCLAIMER");
+    expect(source).not.toContain("fontSize(5.5)");
     expect(source).toContain("INFO_BOX_VALUE_TOP + INFO_BOX_BOTTOM_PADDING");
     expect(source).toContain("holderRequiredH > HOLDER_BOX_MAX_HEIGHT");
     expect(source).toContain("includeHolder: holderOverflows");

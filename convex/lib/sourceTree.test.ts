@@ -1630,6 +1630,67 @@ describe("sourceTreePolicyFields", () => {
     });
   });
 
+  it("recovers insurer and agency identifiers from exact-party source evidence", () => {
+    const span = {
+      id: "span-declarations",
+      text: "INSURANCE COMPANY Fortegra Specialty Insurance Company COMPANY ADDRESS 10751 Deerwood Park Blvd NAIC # 16823 GENERAL AGENT Diesel Insurance Solutions Inc. GA ADDRESS 26431 Crown Valley Pkwy LICENSE 21058436 PRODUCER Broker LLC LICENSE PR-123",
+    };
+    const profile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["INMRC"],
+        coverages: [],
+        parties: [
+          {
+            role: "insurer",
+            name: "Fortegra Specialty Insurance Company",
+            sourceNodeIds: ["declarations"],
+            sourceSpanIds: [span.id],
+          },
+          {
+            role: "general_agent",
+            name: "Diesel Insurance Solutions Inc.",
+            sourceNodeIds: ["declarations"],
+            sourceSpanIds: [span.id],
+          },
+          {
+            role: "producer",
+            name: "Broker LLC",
+            sourceNodeIds: ["declarations"],
+            sourceSpanIds: [span.id],
+          },
+        ],
+      },
+      [{
+        id: "declarations",
+        documentId: "party-identifiers",
+        kind: "section",
+        title: "Declarations",
+        description: "Declarations",
+        sourceSpanIds: [span.id],
+        order: 0,
+        path: "Declarations",
+      }],
+      [span],
+    );
+
+    const parties = profile.parties as Array<{
+      role: string;
+      naicNumber?: string;
+      licenseNumber?: string;
+      sourceSpanIds: string[];
+    }>;
+    expect(parties.find(
+      (party) => party.role === "insurer",
+    )).toMatchObject({ naicNumber: "16823", sourceSpanIds: [span.id] });
+    expect(parties.find(
+      (party) => party.role === "general_agent",
+    )).toMatchObject({ licenseNumber: "21058436", sourceSpanIds: [span.id] });
+    expect(parties.find(
+      (party) => party.role === "producer",
+    )).toMatchObject({ licenseNumber: "PR-123", sourceSpanIds: [span.id] });
+  });
+
   it("drops operations descriptions whose evidence ids are invalid", () => {
     const profile = normalizeOperationalProfile(
       {

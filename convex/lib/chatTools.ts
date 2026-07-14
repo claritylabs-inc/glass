@@ -165,6 +165,27 @@ export const lookupPolicySection = tool({
   }),
 });
 
+export const lookupAddress = tool({
+  description:
+    "Validate and standardize a user-provided postal address with Mapbox before saving it or passing it to generate_coi. Use the returned structured fields only when Mapbox validates the first candidate. If the result is ambiguous or not found, ask the user to confirm a complete address instead of guessing.",
+  inputSchema: z.object({
+    query: z
+      .string()
+      .min(3)
+      .max(256)
+      .describe(
+        "Full address exactly as the user supplied it, including city, region, postal code, and country when available.",
+      ),
+    countryCode: z
+      .string()
+      .regex(/^[A-Za-z]{2}$/)
+      .optional()
+      .describe(
+        "Optional ISO 3166-1 alpha-2 country code used only to disambiguate the lookup, such as US or CA.",
+      ),
+  }),
+});
+
 export const attachPolicyDocument = tool({
   description:
     "Attach or send the original full policy PDF document for a specific policy. Use this when the user asks for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document in chat/iMessage/SMS. For email delivery, prefer the email_expert tool so it can attach the original policy PDF to the email.",
@@ -175,7 +196,7 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate or retrieve the right insurance certificate PDF for a specific policy and attach it to the current chat/iMessage/SMS response. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
+    "Generate or retrieve the right insurance certificate PDF for a specific policy and attach it to the current chat/iMessage/SMS response. When the user supplied a holder address, call lookup_address first and pass its validated structured fields here. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     certificateHolder: z

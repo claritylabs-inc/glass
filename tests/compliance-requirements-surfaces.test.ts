@@ -22,6 +22,10 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).toContain("function latestCheckNote");
     expect(page).toContain('text-base font-medium text-muted-foreground/60');
     expect(page).toContain("TabsTrigger value=\"sources\"");
+    expect(page).toContain('TabsTrigger value="own_org">My requirements');
+    expect(page).toContain('TabsTrigger value="vendors">Vendor requirements');
+    expect(page).toContain('TabsTrigger value="requirements">Requirements');
+    expect(page).not.toContain("<Tabs value={activeRequirementScope}");
     expect(page).not.toContain("Archive selected");
     expect(page).toContain('className="h-1.5 w-full overflow-hidden rounded-full bg-muted"');
     expect(page).not.toContain("pr-32");

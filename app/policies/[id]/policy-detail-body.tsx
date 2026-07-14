@@ -388,6 +388,8 @@ export function PolicyDetailBody({
     useState<PolicyCertificateRecord | null>(null);
   const [reissuingCertificateId, setReissuingCertificateId] =
     useState<Id<"policyCertificates"> | null>(null);
+  const [archivingCertificateId, setArchivingCertificateId] =
+    useState<Id<"policyCertificates"> | null>(null);
   const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
     parsePolicyDetailTab(searchParams.get("tab")),
   );
@@ -412,6 +414,9 @@ export function PolicyDetailBody({
   const archivePolicy = useMutation(api.policies.archive);
   const restorePolicy = useMutation(api.policies.restore);
   const cancelExtraction = useMutation(api.policies.cancelExtraction);
+  const archiveCertificateMutation = useMutation(
+    api.certificateLifecycle.archive,
+  );
   const retryExtraction = useAction(
     api.actions.retryExtraction.retryExtraction,
   );
@@ -550,6 +555,26 @@ export function PolicyDetailBody({
       setReissuingCertificateId(null);
     }
   }, [generateCertificate, openWithUrl]);
+
+  const archiveCertificate = useCallback(
+    async (row: PolicyCertificateRecord) => {
+      setArchivingCertificateId(row._id);
+      try {
+        await archiveCertificateMutation({ certificateId: row._id });
+        setSelectedCertificate(null);
+        toast.success("Certificate archived");
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not archive certificate",
+        );
+      } finally {
+        setArchivingCertificateId(null);
+      }
+    },
+    [archiveCertificateMutation],
+  );
 
   useEffect(() => {
     loggedPipelineEntries.current.clear();
@@ -803,7 +828,9 @@ export function PolicyDetailBody({
           row={selectedCertificateForPanel}
           onClose={() => setSelectedCertificate(null)}
           onReissue={reissueCertificate}
+          onArchive={!readOnly ? archiveCertificate : undefined}
           reissuing={reissuingCertificateId === selectedCertificateForPanel._id}
+          archiving={archivingCertificateId === selectedCertificateForPanel._id}
         />,
       );
       return () => onRightPanel(null);
@@ -821,7 +848,9 @@ export function PolicyDetailBody({
     editingPolicyDetails,
     selectedCertificateForPanel,
     reissueCertificate,
+    archiveCertificate,
     reissuingCertificateId,
+    archivingCertificateId,
     canEditExtractedFields,
     canEditPolicyDetails,
     isArchived,

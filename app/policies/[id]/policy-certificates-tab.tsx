@@ -19,10 +19,9 @@ import { PillButton } from "@/components/ui/pill-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
-  CertificatePolicyGroupCard,
+  CertificatesTable,
   CERTIFICATE_PANEL_CONTAINER_CLASS,
   formatCertificateTime,
-  groupCertificatesByPolicy,
   type PolicyCertificateRecord,
 } from "@/components/certificates/certificate-workspace";
 import { api } from "@/convex/_generated/api";
@@ -631,12 +630,11 @@ export function CertificatesTab({
         Number(right.lastIssuedAt ?? right.currentVersion?.createdAt ?? 0) -
         Number(left.lastIssuedAt ?? left.currentVersion?.createdAt ?? 0),
     );
-  const activeCertificateGroups = groupCertificatesByPolicy(activeCertificates);
   const holds = ((activity.holds ?? []) as CertificateHoldRow[]).sort(
     (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
   );
 
-  if (activeCertificateGroups.length === 0 && holds.length === 0) {
+  if (activeCertificates.length === 0 && holds.length === 0) {
     return (
       <OperationalPanel as="div">
         <OperationalPanelBody className="px-4 py-8 text-center">
@@ -654,15 +652,14 @@ export function CertificatesTab({
 
   return (
     <div className="space-y-3">
-      {activeCertificateGroups.map((group) => (
-        <CertificatePolicyGroupCard
-          key={group.key}
-          group={group}
+      {activeCertificates.length > 0 ? (
+        <CertificatesTable
+          rows={activeCertificates}
           selectedCertificateId={selectedCertificateId}
-          showPolicyHeader={false}
+          showPolicyColumn={false}
           onSelectCertificate={(row) => onSelectCertificate?.(row)}
         />
-      ))}
+      ) : null}
       {holds.length > 0 ? (
         <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
           {holds.map((row) => (

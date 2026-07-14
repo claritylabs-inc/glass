@@ -259,10 +259,12 @@ export function CoverageBreakdownCards({
   breakdown,
   policyId,
   fileUrl,
+  showCoveredAssetSchedules = true,
 }: {
   breakdown: CoverageBreakdown;
   policyId?: Id<"policies">;
   fileUrl?: string | null;
+  showCoveredAssetSchedules?: boolean;
 }) {
   const allSourceNodeIds = useMemo(
     () => [...new Set(breakdown.all.flatMap(coverageSourceNodeIds))],
@@ -310,14 +312,16 @@ export function CoverageBreakdownCards({
           sourceSpans={sourceSpans}
         />
       ))}
-      {breakdown.schedules.map((schedule, index) => (
-        <CoveredAssetScheduleList
-          key={`${schedule.name}:${schedule.pageStart ?? index}`}
-          schedule={schedule}
-          fileUrl={fileUrl}
-          sourceSpans={sourceSpans}
-        />
-      ))}
+      {showCoveredAssetSchedules
+        ? breakdown.schedules.map((schedule, index) => (
+            <CoveredAssetScheduleList
+              key={`${schedule.name}:${schedule.pageStart ?? index}`}
+              schedule={schedule}
+              fileUrl={fileUrl}
+              sourceSpans={sourceSpans}
+            />
+          ))
+        : null}
     </div>
   );
 }

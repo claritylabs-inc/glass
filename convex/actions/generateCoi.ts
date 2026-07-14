@@ -177,65 +177,6 @@ function linesOfBusinessForCertificate(policy: Record<string, any>) {
   );
 }
 
-function firstText(...values: unknown[]) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (
-      value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      typeof (value as { value?: unknown }).value === "string" &&
-      (value as { value: string }).value.trim()
-    ) {
-      return (value as { value: string }).value.trim();
-    }
-  }
-  return undefined;
-}
-
-function certificatePropertyExtras(policy: Record<string, any>) {
-  const profile = policy.operationalProfile ?? {};
-  const locations = Array.isArray(profile.locations) ? profile.locations : [];
-  const firstLocation = locations.find((location: unknown) =>
-    location && typeof location === "object" && !Array.isArray(location),
-  ) as Record<string, unknown> | undefined;
-  const declarationFields = Array.isArray(policy.declarations?.fields)
-    ? policy.declarations.fields
-    : [];
-  const declarationMap = new Map<string, string>();
-  for (const field of declarationFields) {
-    if (typeof field?.field === "string" && typeof field?.value === "string") {
-      declarationMap.set(field.field, field.value);
-    }
-  }
-  return {
-    propertyDescription: firstText(
-      profile.propertyDescription,
-      profile.describedProperty,
-      declarationMap.get("describedProperty"),
-      declarationMap.get("propertyDescription"),
-      policy.summary,
-    ),
-    propertyLocation: firstText(
-      firstLocation?.address,
-      firstLocation?.location,
-      declarationMap.get("premisesAddress"),
-      declarationMap.get("propertyLocation"),
-      declarationMap.get("insuredLocation"),
-    ),
-    floodZone: firstText(
-      profile.floodZone,
-      declarationMap.get("floodZone"),
-      declarationMap.get("floodZoneDetermination"),
-    ),
-    floodProgram: firstText(
-      profile.floodProgram,
-      declarationMap.get("floodProgram"),
-      declarationMap.get("nfipProgram"),
-    ),
-  };
-}
-
 type GenerateCoiDescriptionArgs = {
   descriptionOfOperations?: string;
 };
@@ -323,7 +264,6 @@ export const run = internalAction({
       });
       coiData = {
         ...coiData,
-        ...certificatePropertyExtras(policy as Record<string, any>),
         formCode,
         title: CERTIFICATE_FORM_LABELS[formCode] ?? coiData.title,
         certificateHolderRelationship: args.holderRelationship,

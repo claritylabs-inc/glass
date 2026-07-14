@@ -285,6 +285,9 @@ const overridesPath = path.join(contextDirectory, "convex-local-overrides.env");
 try {
   writeRuntimeEnv("convex-local-overrides.env", {
     GLASS_ENV: "local",
+    MAPBOX_ACCESS_TOKEN:
+      initialRootEnv.get("MAPBOX_ACCESS_TOKEN")?.trim() ||
+      initialRootEnv.get("NEXT_PUBLIC_MAPBOX_TOKEN")?.trim(),
     ALLOW_DEV_CLEAR: "true",
     EMAIL_DELIVERY_MODE: "capture",
     IMESSAGE_ENABLED: "false",

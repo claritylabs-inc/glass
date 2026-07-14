@@ -12,6 +12,7 @@ Given the initial user request and any starting page context, output a short tit
 
 Rules:
 - Output ONLY the title, no quotes, no punctuation, no explanation.
+- Do not output analysis, reasoning, steps, headings, lists, or Markdown.
 - Use title case.
 - Use 2-4 words.
 - Never begin with conversational framing such as "Can you", "Could you", "I need", or "Please".
@@ -43,15 +44,23 @@ function stripEmailNoise(input: string): string {
 }
 
 export function normalizeGeneratedTitle(raw: string): string | null {
+  const trimmedRaw = raw.trim();
   if (
-    /@|https?:\/\//i.test(raw) ||
-    /\b(?:gmail|icloud|outlook|hotmail|yahoo|aol|protonmail)\b/i.test(raw) ||
-    /\b[a-z]+[a-z0-9._%+-]*\d{2,}[a-z0-9._%+-]*\b/i.test(raw)
+    !trimmedRaw ||
+    trimmedRaw.includes("\n") ||
+    /[*_`#>]/.test(trimmedRaw) ||
+    /^\s*(?:[-+]\s|\d+[.)]\s)/.test(trimmedRaw) ||
+    /\b(?:analy[sz]e|understand|identify|determine)\s+(?:the\s+)?(?:user(?:'s)?\s+)?(?:request|intent)\b/i.test(
+      trimmedRaw,
+    ) ||
+    /@|https?:\/\//i.test(trimmedRaw) ||
+    /\b(?:gmail|icloud|outlook|hotmail|yahoo|aol|protonmail)\b/i.test(trimmedRaw) ||
+    /\b[a-z]+[a-z0-9._%+-]*\d{2,}[a-z0-9._%+-]*\b/i.test(trimmedRaw)
   ) {
     return null;
   }
 
-  const cleaned = stripEmailNoise(raw)
+  const cleaned = stripEmailNoise(trimmedRaw)
     .trim()
     .replace(/^["']|["']$/g, "")
     .split("\n")[0]
@@ -74,13 +83,13 @@ function certificateTitle(seed: string): string | null {
   if (/\b(?:update|revise|reissue|correct|change|edit|modify)\b/i.test(seed)) {
     return "Update COI";
   }
+  if (/\b(?:generate|create|issue|make|produce)\b/i.test(seed)) {
+    return "Generate COI";
+  }
   if (/\b(?:send|email|forward|share|deliver)\b/i.test(seed)) {
     return "Send COI";
   }
   if (/\b(?:draft|prepare)\b/i.test(seed)) return "Draft COI";
-  if (/\b(?:generate|create|issue|make|produce)\b/i.test(seed)) {
-    return "Generate COI";
-  }
   return "COI Request";
 }
 

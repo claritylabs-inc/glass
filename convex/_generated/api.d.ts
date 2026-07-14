@@ -162,6 +162,7 @@ import type * as lib_industries from "../lib/industries.js";
 import type * as lib_linesOfBusiness from "../lib/linesOfBusiness.js";
 import type * as lib_liteparsePreprocessor from "../lib/liteparsePreprocessor.js";
 import type * as lib_mailboxAutomation from "../lib/mailboxAutomation.js";
+import type * as lib_mapboxAddress from "../lib/mapboxAddress.js";
 import type * as lib_mergePdfs from "../lib/mergePdfs.js";
 import type * as lib_modelCatalog from "../lib/modelCatalog.js";
 import type * as lib_models from "../lib/models.js";
@@ -396,6 +397,7 @@ declare const fullApi: ApiFromModules<{
   "lib/linesOfBusiness": typeof lib_linesOfBusiness;
   "lib/liteparsePreprocessor": typeof lib_liteparsePreprocessor;
   "lib/mailboxAutomation": typeof lib_mailboxAutomation;
+  "lib/mapboxAddress": typeof lib_mapboxAddress;
   "lib/mergePdfs": typeof lib_mergePdfs;
   "lib/modelCatalog": typeof lib_modelCatalog;
   "lib/models": typeof lib_models;

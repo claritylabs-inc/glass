@@ -17,6 +17,7 @@ describe("centralized agent tool execution", () => {
     const chatTools = read("convex/lib/chatTools.ts");
 
     expect(chatTools).toContain("export const generateCoi = tool");
+    expect(chatTools).toContain("export const lookupAddress = tool");
     expect(chatTools).toContain("policy reference");
     expect(chatTools).not.toContain("execute:");
     expect(chatTools).not.toContain("generateForOrg");
@@ -31,6 +32,7 @@ describe("centralized agent tool execution", () => {
     expect(executors).toContain("buildVendorComplianceTools");
     for (const toolName of [
       "lookup_policy",
+      "lookup_address",
       "compare_coverages",
       "lookup_policy_section",
       "lookup_compliance_requirements",
@@ -51,6 +53,19 @@ describe("centralized agent tool execution", () => {
       expect(executors).not.toContain(removedToolName);
       expect(chatTools).not.toContain(removedToolName);
     }
+  });
+
+  it("routes user-provided certificate addresses through Mapbox validation", () => {
+    const chatTools = read("convex/lib/chatTools.ts");
+    const executors = read("convex/lib/agentToolExecutors.ts");
+    const prompt = read("convex/lib/aiUtils.ts");
+    const setup = read("scripts/setup-conductor-workspace.mjs");
+
+    expect(chatTools).toContain("call lookup_address first");
+    expect(executors).toContain("lookupMapboxAddress");
+    expect(executors).toContain("process.env.MAPBOX_ACCESS_TOKEN");
+    expect(prompt).toContain("call lookup_address with the complete address");
+    expect(setup).toContain('initialRootEnv.get("NEXT_PUBLIC_MAPBOX_TOKEN")');
   });
 
   it("routes every shared surface through the central executor", () => {

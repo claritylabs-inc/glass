@@ -9,6 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { buildCoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 
 import { CoverageBreakdownCards } from "./policy-coverage-breakdown";
+import { PolicyCoveredAssets } from "./policy-covered-assets";
 
 export function PolicyCoveragesTab({
   policy,
@@ -22,11 +23,15 @@ export function PolicyCoveragesTab({
   return (
     <FadeIn when={true} staggerIndex={1} duration={0.5}>
       {breakdown.all.length > 0 || breakdown.schedules.length > 0 ? (
-        <CoverageBreakdownCards
-          breakdown={breakdown}
-          policyId={policy._id}
-          fileUrl={fileUrl}
-        />
+        <>
+          <PolicyCoveredAssets schedules={breakdown.schedules} />
+          <CoverageBreakdownCards
+            breakdown={breakdown}
+            policyId={policy._id}
+            fileUrl={fileUrl}
+            showCoveredAssetSchedules={false}
+          />
+        </>
       ) : (
         <OperationalPanel as="div">
           <OperationalPanelBody className="px-4 py-8 text-center text-base text-muted-foreground">

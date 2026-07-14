@@ -159,10 +159,15 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(processThreadChat).toContain("function hasCoiEmailIntent");
     expect(processThreadChat).toContain("function claimsCoiEmailCompletion");
     expect(processThreadChat).toContain("completedCoiEmailSideEffect");
+    expect(processThreadChat).toContain("function hasEmailSendIntent");
+    expect(processThreadChat).toContain("function claimsEmailSendCompletion");
+    expect(processThreadChat).toContain("completedEmailSend");
+    expect(processThreadChat).toContain("I haven't sent the email");
     expect(processThreadChat).toContain("usedTools.includes(\"email_expert\")");
     expect(processThreadChat).toContain("usedTools.includes(\"generate_coi\")");
     expect(processThreadChat).toContain("I haven't generated or emailed those COIs yet");
     expect(processThreadChat).toContain("function claimsEmailDraftCompletion");
+    expect(processThreadChat).toContain("drafted|prepared|created|updated|revised");
     expect(processThreadChat).toContain("I haven't created an email draft yet");
   });
 

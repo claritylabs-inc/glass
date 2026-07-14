@@ -17,6 +17,7 @@ export type WebChatControlMessage = {
   role: string;
   content: string;
   status?: string;
+  pendingEmailId?: Id<"pendingEmails">;
 };
 
 type WebChatEmailControlRecord = {
@@ -83,6 +84,11 @@ export async function runWebChatEmailControls(
     )
     .filter((message) => message.role === "agent" && message.content)
     .at(-1);
+  const draftApprovalEmailIds =
+    args.draftEmails.length === 1 &&
+    previousAgentMessage?.pendingEmailId === args.draftEmails[0]._id
+      ? [args.draftEmails[0]._id]
+      : [];
   const emailControl = resolveTextChannelEmailControl({
     messageText: args.messageText,
     isCancelConfirmationContext: isPendingEmailCancelConfirmationPrompt(
@@ -90,6 +96,7 @@ export async function runWebChatEmailControls(
     ),
     latestCancelledEmailId: args.latestCancelledEmail?._id,
     draftEmailIds: args.draftEmails.map((draftEmail) => draftEmail._id),
+    draftApprovalEmailIds,
     pendingEmailIds: args.pendingEmails.map((pendingEmail) => pendingEmail._id),
     allowDraftApproval: true,
   });
