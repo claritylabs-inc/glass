@@ -120,12 +120,12 @@ function MailboxAddressDisclosure({
             size="compact"
             variant="ghost"
             className={cn(
-              "group/address relative h-6 min-w-0 max-w-full shrink justify-start gap-0 px-1.5 text-left text-base font-normal whitespace-nowrap text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]",
+              "group/address relative h-auto min-h-6 min-w-0 max-w-full shrink-0 justify-start gap-0 px-1.5 py-0.5 text-left text-base font-normal leading-5 whitespace-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]",
               alignStart && "-ml-1.5",
             )}
             aria-label={`Show email address for ${name}`}
           >
-            <span className="min-w-0 truncate">{name}</span>
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{name}</span>
             <ChevronDown className="pointer-events-none absolute left-full ml-0.5 h-3 w-3 opacity-0 transition-opacity duration-150 group-hover/address:opacity-55 group-focus-visible/address:opacity-55 group-data-[popup-open]/address:opacity-55 [@media(hover:none)]:opacity-45" />
           </PillButton>
         }
