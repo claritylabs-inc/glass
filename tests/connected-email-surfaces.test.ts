@@ -1,11 +1,25 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
+import { splitMailboxMessageParagraphs } from "../components/agent-thread/artifacts/mailbox-email-review-sidebar";
 
 const ROOT = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf-8");
 
 describe("connected email surfaces", () => {
+  it("renders blank lines as paragraph breaks while preserving single line breaks", () => {
+    expect(
+      splitMailboxMessageParagraphs(
+        "Hi all,\r\n\r\nYour payment is due.\r\nPlease pay now.\r\n\r\nBest Regards,\r\nZak",
+      ),
+    ).toEqual([
+      "Hi all,",
+      "Your payment is due.\r\nPlease pay now.",
+      "Best Regards,\r\nZak",
+    ]);
+    expect(splitMailboxMessageParagraphs("  \n\n  ")).toEqual([]);
+  });
+
   it("stores only connection settings and encrypted credentials", () => {
     const schema = read("convex/schema.ts");
     const imapLib = read("convex/lib/imapMailbox.ts");
@@ -108,6 +122,10 @@ describe("connected email surfaces", () => {
     const mailboxTask = read("components/agent-thread/artifacts/mailbox-task.tsx");
     const mailboxReview = read("components/agent-thread/artifacts/mailbox-email-review-sidebar.tsx");
     const threadContent = read("components/agent-thread/thread-content.tsx");
+    const addressDisclosure = mailboxReview.slice(
+      mailboxReview.indexOf("function MailboxAddressDisclosure"),
+      mailboxReview.indexOf("function MailboxAddressList"),
+    );
 
     expect(backend).toContain("export const importPolicyAttachments = action");
     expect(backend).toContain("export const readEmail = action");
@@ -144,6 +162,9 @@ describe("connected email surfaces", () => {
     expect(mailboxReview).toContain("Copy address");
     expect(mailboxReview).toContain("<DropdownMenuGroup>");
     expect(mailboxReview).toContain("alignStart={index === 0}");
+    expect(addressDisclosure).toContain("truncate");
+    expect(addressDisclosure).toContain("whitespace-nowrap");
+    expect(addressDisclosure).toContain("absolute left-full");
     expect(mailboxReview).not.toContain(
       'className="-ml-1.5 inline-flex max-w-full flex-wrap items-center"',
     );
@@ -153,6 +174,8 @@ describe("connected email surfaces", () => {
     expect(backend).toContain("ccAddresses: addressDetails(parsed.cc)");
     expect(mailboxReview).toContain("items-center justify-end gap-2");
     expect(mailboxReview).toContain("OperationalPanelHeader title=\"Message\"");
+    expect(mailboxReview).toContain("space-y-3 break-words");
+    expect(mailboxReview).toContain("messageParagraphs.map");
     expect(mailboxReview).toContain('"connect_features"');
     expect(mailboxReview).toContain("api.connectedEmailAutomation.resolveReview");
     expect(mailboxReview).toContain("Close email review");

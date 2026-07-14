@@ -72,6 +72,11 @@ export type LiveMailboxEmail = {
   attachments: MailboxAttachment[];
 };
 
+export function splitMailboxMessageParagraphs(text?: string) {
+  const message = text?.trim();
+  return message ? message.split(/\r?\n(?:[ \t]*\r?\n)+/) : [];
+}
+
 function addressFromNotation(value?: string): MailboxAddress | null {
   const raw = value?.trim();
   if (!raw) return null;
@@ -115,13 +120,13 @@ function MailboxAddressDisclosure({
             size="compact"
             variant="ghost"
             className={cn(
-              "group/address h-6 min-w-0 max-w-full px-1.5 text-base font-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]",
+              "group/address relative h-6 min-w-0 max-w-full shrink justify-start gap-0 px-1.5 text-left text-base font-normal whitespace-nowrap text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]",
               alignStart && "-ml-1.5",
             )}
             aria-label={`Show email address for ${name}`}
           >
             <span className="min-w-0 truncate">{name}</span>
-            <ChevronDown className="h-3 w-3 opacity-0 transition-opacity duration-150 group-hover/address:opacity-55 group-focus-visible/address:opacity-55 group-data-[popup-open]/address:opacity-55 [@media(hover:none)]:opacity-45" />
+            <ChevronDown className="pointer-events-none absolute left-full ml-0.5 h-3 w-3 opacity-0 transition-opacity duration-150 group-hover/address:opacity-55 group-focus-visible/address:opacity-55 group-data-[popup-open]/address:opacity-55 [@media(hover:none)]:opacity-45" />
           </PillButton>
         }
       />
@@ -388,6 +393,7 @@ export function MailboxEmailReviewSidebar({
   const attachments = liveEmail?.attachments ?? [];
   const receivedAt = liveEmail?.date ?? email.date;
   const hasPdf = attachments.some(isMailboxPdfAttachment);
+  const messageParagraphs = splitMailboxMessageParagraphs(liveEmail?.text);
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
@@ -471,9 +477,19 @@ export function MailboxEmailReviewSidebar({
               </div>
             ) : null}
             <OperationalPanelBody>
-              <p className="whitespace-pre-wrap break-words text-base leading-6 text-foreground/80 [overflow-wrap:anywhere]">
-                {liveEmail.text?.trim() || "This email has no plain-text message body."}
-              </p>
+              {messageParagraphs.length > 0 ? (
+                <div className="space-y-3 break-words text-base leading-6 text-foreground/80 [overflow-wrap:anywhere]">
+                  {messageParagraphs.map((paragraph, index) => (
+                    <p key={index} className="whitespace-pre-wrap">
+                      {paragraph}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-base leading-6 text-foreground/80">
+                  This email has no plain-text message body.
+                </p>
+              )}
             </OperationalPanelBody>
           </OperationalPanel>
         ) : readError ? (
