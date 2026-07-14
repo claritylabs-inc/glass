@@ -24,6 +24,7 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { ActionSurface } from "@/components/ui/action-surface";
 import { Badge } from "@/components/ui/badge";
 import { FileDropZone } from "@/components/ui/file-drop";
+import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import {
   OperationalPanel,
@@ -65,6 +66,7 @@ import { useCachedConnectedVendors } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type RequirementScope = "vendors" | "own_org";
 type ComplianceStatus = "met" | "not_met" | "expiring_soon" | "expired" | "unverified";
@@ -388,12 +390,6 @@ function matchedPolicyIdsForRequirement(requirement: Requirement) {
   );
 }
 
-function matchedPolicyIdsForRequirements(requirements: Requirement[]) {
-  return Array.from(
-    new Set(requirements.flatMap((requirement) => matchedPolicyIdsForRequirement(requirement))),
-  );
-}
-
 function PolicyTagList({
   policyIds,
   emptyLabel,
@@ -487,7 +483,6 @@ function OverviewTab({
           const groupExpiring = rows.filter(
             (requirement) => requirement.complianceCheck?.status === "expiring_soon",
           ).length;
-          const policyIds = matchedPolicyIdsForRequirements(rows);
           return (
             <ActionSurface
               key={lob}
@@ -539,15 +534,6 @@ function OverviewTab({
                 <span>{groupMet} met</span>
                 <span>{rows.length} total</span>
               </div>
-              {policyIds.length > 0 ? (
-                <div
-                  className="mt-3"
-                  onClick={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => event.stopPropagation()}
-                >
-                  <PolicyTagList policyIds={policyIds} />
-                </div>
-              ) : null}
             </ActionSurface>
           );
         })}
@@ -666,7 +652,7 @@ function RequirementsFilterSelect({
     <label className="flex min-w-0 flex-col gap-1.5 text-label font-medium text-muted-foreground">
       {label}
       <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
-        <SelectTrigger size="sm" className="w-full bg-background">
+        <SelectTrigger className="w-full">
           <SelectValue>{valueLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>{children}</SelectContent>
@@ -808,7 +794,13 @@ function RequirementDrawer({
                   <DrawerDetail label="Current limit" value={detectedLimit} />
                 ) : null}
                 {policy?.expirationDate ? (
-                  <DrawerDetail label="Expires" value={policy.expirationDate} />
+                  <DrawerDetail
+                    label="Expires"
+                    value={formatDisplayDate(
+                      policy.expirationDate,
+                      policy.expirationDate,
+                    )}
+                  />
                 ) : null}
               </>
             ) : (
@@ -971,7 +963,7 @@ function RequirementEditForm({
             setLineOfBusiness(value);
           }}
         >
-          <SelectTrigger size="sm" className="w-full bg-background">
+          <SelectTrigger className="w-full">
             <SelectValue>{lobLabel(lineOfBusiness)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -981,9 +973,9 @@ function RequirementEditForm({
           </SelectContent>
         </Select>
       </label>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-label font-medium text-muted-foreground">Limits</p>
+      <FormSection
+        title="Limits"
+        action={
           <PillButton
             type="button"
             size="compact"
@@ -1001,7 +993,8 @@ function RequirementEditForm({
           >
             Add limit
           </PillButton>
-        </div>
+        }
+      >
         {editValues === "invalid_amount" ? (
           <p className="text-label text-destructive">Enter a valid limit amount.</p>
         ) : null}
@@ -1029,8 +1022,7 @@ function RequirementEditForm({
                   }}
                 >
                   <SelectTrigger
-                    size="sm"
-                    className="w-full min-w-0 bg-background"
+                    className="w-full min-w-0"
                     aria-label="Limit type"
                   >
                     <SelectValue>{REQUIREMENT_LIMIT_KIND_LABELS[draft.kind]}</SelectValue>
@@ -1077,7 +1069,7 @@ function RequirementEditForm({
             ))}
           </div>
         )}
-      </div>
+      </FormSection>
       <div className="flex flex-wrap gap-2">
         {PROVISION_OPTIONS.map((option) => (
           <PillButton
@@ -1237,7 +1229,7 @@ function SourceDrawer({
                 if (value) setSourceTypeDraft(value as RequirementSourceDocumentType);
               }}
             >
-              <SelectTrigger size="sm" className="w-full bg-background">
+              <SelectTrigger className="w-full">
                 <SelectValue>{REQUIREMENT_SOURCE_TYPE_LABELS[sourceTypeDraft]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -1254,17 +1246,14 @@ function SourceDrawer({
           {source.fileName ? <DrawerDetail label="File" value={source.fileName} /> : null}
           <DrawerDetail
             label="Added"
-            value={dayjs(source.createdAt).format("MMM D, YYYY")}
+            value={formatDisplayDate(source.createdAt)}
           />
           <DrawerDetail label="Requirements" value={source.requirementCount} />
         </section>
-        <section className="space-y-3 border-t border-foreground/6 pt-5">
-          <div>
-            <p className="text-base font-medium text-foreground">Requirements</p>
-            <p className="text-base text-muted-foreground">
-              Edit the coverage requirements extracted from this source.
-            </p>
-          </div>
+        <FormSection
+          title="Requirements"
+          description="Edit the coverage requirements extracted from this source."
+        >
           {requirements === undefined ? (
             <OperationalSkeletonList rows={3} />
           ) : requirements.length === 0 ? (
@@ -1318,7 +1307,7 @@ function SourceDrawer({
               })}
             </div>
           )}
-        </section>
+        </FormSection>
       </div>
     </SettingsDrawer>
   );
@@ -1375,7 +1364,7 @@ function RequirementSourcesTable({
                 {source.requirementCount}
               </TableCell>
               <TableCell className="px-4 text-muted-foreground">
-                {dayjs(source.createdAt).format("MMM D, YYYY")}
+                {formatDisplayDate(source.createdAt)}
               </TableCell>
             </TableRow>
           ))}
@@ -1464,6 +1453,8 @@ export function CompliancePage() {
     !hasActiveVendors;
   const activeRequirementScope: RequirementScope =
     !showConnectFeatures || isPureVendorAccount ? "own_org" : requirementScope;
+  const navigationValue =
+    view === "requirements" && showConnectFeatures ? activeRequirementScope : view;
 
   const scopedRequirements = useMemo(
     () =>
@@ -1829,7 +1820,7 @@ export function CompliancePage() {
             <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Source type
               <Select value={sourceTypeValue} onValueChange={(value) => setSourceTypeValue(value as RequirementSourceDocumentType)}>
-                <SelectTrigger size="sm" className="w-full bg-background">
+                <SelectTrigger className="w-full">
                   <SelectValue>{REQUIREMENT_SOURCE_TYPE_LABELS[sourceTypeValue]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -1874,7 +1865,7 @@ export function CompliancePage() {
             <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
               Line
               <Select value={lineOfBusiness} onValueChange={(value) => value && setLineOfBusiness(value)}>
-                <SelectTrigger size="sm" className="w-full bg-background">
+                <SelectTrigger className="w-full">
                   <SelectValue>{lobLabel(lineOfBusiness)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -1888,7 +1879,7 @@ export function CompliancePage() {
               <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
                 Limit
                 <Select value={limitKind} onValueChange={(value) => setLimitKind(value as RequirementLimitKind)}>
-                  <SelectTrigger size="sm" className="w-full bg-background">
+                  <SelectTrigger className="w-full">
                     <SelectValue>{REQUIREMENT_LIMIT_KIND_LABELS[limitKind]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -1954,10 +1945,29 @@ export function CompliancePage() {
       rightPanel={detailPanel ?? sourcePanel ?? addPanel}
     >
       <div className="flex w-full flex-col gap-4">
-        <Tabs value={view} onValueChange={(value) => setView(value as ComplianceView)}>
+        <Tabs
+          value={navigationValue}
+          onValueChange={(value) => {
+            if (value === "own_org" || value === "vendors") {
+              setRequirementScope(value);
+              setView("requirements");
+              return;
+            }
+            setView(value as ComplianceView);
+          }}
+        >
           <TabsList variant="pill">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="requirements">Requirements</TabsTrigger>
+            {showConnectFeatures ? (
+              <>
+                <TabsTrigger value="own_org">My requirements</TabsTrigger>
+                {!isPureVendorAccount ? (
+                  <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
+                ) : null}
+              </>
+            ) : (
+              <TabsTrigger value="requirements">Requirements</TabsTrigger>
+            )}
             <TabsTrigger value="sources">Sources</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -1991,14 +2001,6 @@ export function CompliancePage() {
           />
         ) : (
           <>
-            {showConnectFeatures && !isPureVendorAccount ? (
-              <Tabs value={activeRequirementScope} onValueChange={(value) => setRequirementScope(value as RequirementScope)}>
-                <TabsList variant="pill">
-                  <TabsTrigger value="own_org">My requirements</TabsTrigger>
-                  <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            ) : null}
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <RequirementsFilterSelect
                 label="Source"

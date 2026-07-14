@@ -2,10 +2,12 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
-import { softDelete } from "./policies";
+import { archive, listForBroker, restore } from "./policies";
 
 const modules = import.meta.glob("./**/*.ts");
-const softDeleteFn = softDelete as any;
+const archiveFn = archive as any;
+const restoreFn = restore as any;
+const listForBrokerFn = listForBroker as any;
 
 async function seedBrokerClientPolicy(options: {
   uploadedBySide: "broker" | "client";
@@ -47,6 +49,30 @@ async function seedBrokerClientPolicy(options: {
       uploadedByBrokerOrgId:
         options.uploadedBySide === "broker" ? brokerOrgId : undefined,
     });
+    await ctx.db.insert("policyDeclarationFacts", {
+      orgId: clientOrgId,
+      policyId,
+      fieldPath: "coverages.0.limit",
+      fieldGroup: "coverage_limit:general_liability",
+      displayValue: "General Liability: $1,000,000",
+      normalizedValue: "general liability 1000000",
+      valueKind: "money",
+      observedAt: 1,
+      active: true,
+      recordHash: "policy-fact-1",
+    });
+    await ctx.db.insert("policyDeclarationFacts", {
+      orgId: clientOrgId,
+      policyId,
+      fieldPath: "coverages.0.limit",
+      fieldGroup: "coverage_limit:general_liability",
+      displayValue: "General Liability: $500,000",
+      normalizedValue: "general liability 500000",
+      valueKind: "money",
+      observedAt: 0,
+      active: false,
+      recordHash: "policy-fact-stale",
+    });
 
     return { brokerUserId, clientOrgId, policyId };
   });
@@ -54,44 +80,77 @@ async function seedBrokerClientPolicy(options: {
   return { t, ...ids };
 }
 
-describe("policies.softDelete", () => {
-  test("allows a broker member to delete a broker-uploaded client policy", async () => {
+describe("policy archive and restore", () => {
+  test("lets the uploading broker archive, list, and restore a client policy", async () => {
     const { t, brokerUserId, clientOrgId, policyId } =
       await seedBrokerClientPolicy({ uploadedBySide: "broker" });
 
     await t.withIdentity({ subject: `${brokerUserId}|session` }).mutation(
-      softDeleteFn,
+      archiveFn,
       { id: policyId },
     );
 
-    const { policy, audit } = await t.run(async (ctx) => {
+    const { policy, audits, fact } = await t.run(async (ctx) => {
       const policy = await ctx.db.get(policyId);
-      const audit = await ctx.db
+      const audits = await ctx.db
         .query("policyAuditLog")
         .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .collect();
+      const fact = await ctx.db
+        .query("policyDeclarationFacts")
+        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
         .first();
-      return { policy, audit };
+      return { policy, audits, fact };
     });
 
     expect(policy?.deletedAt).toEqual(expect.any(Number));
-    expect(audit).toMatchObject({
+    expect(fact?.active).toBe(false);
+    expect(audits).toContainEqual(expect.objectContaining({
       policyId,
       userId: brokerUserId,
       orgId: clientOrgId,
-      action: "deleted",
-    });
+      action: "archived",
+    }));
+
+    const broker = t.withIdentity({ subject: `${brokerUserId}|session` });
+    await expect(
+      broker.query(listForBrokerFn, {
+        clientOrgId,
+        documentType: "policy",
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      broker.query(listForBrokerFn, {
+        clientOrgId,
+        documentType: "policy",
+        archived: true,
+      }),
+    ).resolves.toEqual([expect.objectContaining({ _id: policyId })]);
+
+    await broker.mutation(restoreFn, { id: policyId });
+    const restored = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(policyId),
+      facts: await ctx.db
+        .query("policyDeclarationFacts")
+        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .collect(),
+    }));
+    expect(restored.policy?.deletedAt).toBeUndefined();
+    expect(restored.facts.filter((fact) => fact.active)).toEqual([
+      expect.objectContaining({ recordHash: "policy-fact-1", observedAt: 1 }),
+    ]);
   });
 
-  test("blocks a broker member from deleting a client-uploaded policy", async () => {
+  test("blocks a broker member from archiving a client-uploaded policy", async () => {
     const { t, brokerUserId, policyId } =
       await seedBrokerClientPolicy({ uploadedBySide: "client" });
 
     await expect(
       t.withIdentity({ subject: `${brokerUserId}|session` }).mutation(
-        softDeleteFn,
+        archiveFn,
         { id: policyId },
       ),
-    ).rejects.toThrow("Not authorized to delete this policy");
+    ).rejects.toThrow("Not authorized to archive this policy");
 
     const policy = await t.run(async (ctx) => ctx.db.get(policyId));
     expect(policy?.deletedAt).toBeUndefined();

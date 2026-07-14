@@ -263,6 +263,7 @@ export interface CertificateDtoSource {
   requestKind?: string;
   additionalInsuredName?: string;
   requestSignature?: string;
+  descriptionOfOperations?: string;
   createdAt: number;
   url?: string | null;
 }
@@ -278,6 +279,7 @@ export interface CertificateDto {
   request_kind: string;
   additional_insured_name: string | null;
   request_signature: string | null;
+  description_of_operations: string | null;
   created_at: number;
   url: string | null;
 }
@@ -294,6 +296,7 @@ export function toCertificateDto(certificate: CertificateDtoSource): Certificate
     request_kind: certificate.requestKind ?? "holder",
     additional_insured_name: certificate.additionalInsuredName ?? null,
     request_signature: certificate.requestSignature ?? null,
+    description_of_operations: certificate.descriptionOfOperations ?? null,
     created_at: certificate.createdAt,
     url: certificate.url ?? null,
   };
@@ -406,6 +409,7 @@ export interface CertificateVersionDtoSource {
   requestKind?: string;
   additionalInsuredName?: string;
   requestSignature?: string;
+  descriptionOfOperations?: string;
   issuedAt?: number;
   supersededAt?: number;
   voidedAt?: number;
@@ -445,6 +449,7 @@ export function toCertificateVersionDto(version: CertificateVersionDtoSource) {
     request_kind: version.requestKind ?? "holder",
     additional_insured_name: version.additionalInsuredName ?? null,
     request_signature: version.requestSignature ?? null,
+    description_of_operations: version.descriptionOfOperations ?? null,
     issued_at: version.issuedAt ?? null,
     superseded_at: version.supersededAt ?? null,
     voided_at: version.voidedAt ?? null,

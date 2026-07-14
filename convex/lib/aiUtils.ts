@@ -24,12 +24,16 @@ export { buildConversationMemoryContext, buildConversationMemoryFromList, buildD
 const CONFIDENCE_MARKER_RE = /\[\[(?:g|i|u):([\s\S]+?)\]\]/g;
 const CONFIDENCE_MARKER_PRESENT_RE = /\[\[(?:g|i|u):[\s\S]+?\]\]/;
 
+function normalizeConfidenceMarkers(text: string): string {
+  return text.replace(/\[\[(g|i|u)\]:/g, "[[$1:");
+}
+
 export function hasConfidenceMarkers(text: string): boolean {
-  return CONFIDENCE_MARKER_PRESENT_RE.test(text);
+  return CONFIDENCE_MARKER_PRESENT_RE.test(normalizeConfidenceMarkers(text));
 }
 
 export function stripMarkdown(text: string): string {
-  let result = text;
+  let result = normalizeConfidenceMarkers(text);
   result = result.replace(CONFIDENCE_MARKER_RE, "$1");
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
   result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
@@ -40,7 +44,7 @@ export function stripMarkdown(text: string): string {
 
 export function markdownToHtml(text: string): string {
   const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
-  let result = text;
+  let result = normalizeConfidenceMarkers(text);
   result = result.replace(CONFIDENCE_MARKER_RE, "$1");
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
   result = result.replace(
@@ -227,7 +231,7 @@ export function buildPolicyToolInstructions(maxToolCalls: number): string {
   return `
 
 TOOLS AND ANALYSIS:
-  You have tools to search policies, retrieve source-native policy outline entries and original PDF evidence, compare coverages, save notes, generate COIs, attach original policy PDFs, check policy-change status, search public web sources, and, when available, extract policy attachments or send validated emails.
+  You have tools to validate and standardize postal addresses with Mapbox, search policies, retrieve source-native policy outline entries and original PDF evidence, compare coverages, save notes, generate COIs, attach original policy PDFs, check policy-change status, search public web sources, and, when available, extract policy attachments or send validated emails.
 - Use tools before answering when the request depends on policy numbers, coverage details, exclusions, endorsements, limits, deductibles, premiums, or COI generation.
 - If the user explicitly asks for unsupported market benchmarks, future outcomes, underwriter intent, renewal advice, or likely insurer payment, do not satisfy that sub-request by making unverified claims. Answer the source-backed parts and defer the unsupported sub-request.
 - For simple policy-number requests, look up the relevant policy and answer with the carrier/type/context needed to disambiguate.
@@ -236,14 +240,17 @@ TOOLS AND ANALYSIS:
 - For requests for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document, identify the correct policy and use the attachment/delivery tool rather than only summarizing policy data. If the user asks to email it, use the email expert and attach kind original_policy.
 - If extracted policy summaries or structured fields do not answer the question, conflict, or are low-confidence, use lookup_policy_section to search the document's source-native outline and original PDF source evidence before saying the information is unavailable.
 - Treat lookup_policy_section results with evidenceSource "original_pdf" or sourceSpanIds as stronger evidence than extracted summaries for exact numeric, date, named-insured, endorsement, exclusion, condition, and definition facts.
+- Use lookup_policy structured insured address and operationsDescription before source search. Producer, insurer, carrier, and General Agent details are policy-scoped under policyParties; never treat them as client organization profile facts.
+- If a policy-party address or operations description is absent from structured policy/client facts, report it as missing or search the selected policy source. Do not use public web search, generic company context, or an improvised paraphrase to replace the missing fact.
 - If original-PDF evidence reveals a missing or corrected policy fact, use confirm_policy_fact with the supporting sourceSpanIds before relying on the corrected fact in later reasoning. Only update fields that are directly supported by the cited PDF text.
 - Answer policy questions from the current policy record/version by default. Only use policy-version or certificate-version history tools when the user explicitly asks for history, prior terms, renewals, endorsements, re-extractions, certificate issue history, or reissue history.
 - For COI/certificate requests, describe the action as generating or retrieving a COI/certificate from policy data and holder details. Do not offer to "pull COI wording" or "pull the right COI wording"; COIs are generated artifacts, not wording excerpts.
 - Same-holder COI requests return the latest existing certificate for that holder and current policy version unless the user explicitly asks to reissue/regenerate a new version. If the tool returns status "existing", say you found/returned the existing certificate; do not claim a new certificate was generated. Set explicitReissue only when the user clearly asks for a reissue/new version.
+- When the user supplies a certificate-holder or other postal address that will be saved, call lookup_address with the complete address before the write tool. If lookup_address returns status "validated", pass the first candidate's addressLine1, addressLine2, city, state, postalCode, and country to generate_coi. If it returns candidates, not_found, or unavailable, do not silently replace or complete the address and do not claim it was validated; ask for confirmation when the address is required. Do not call lookup_address when the user did not provide an address, and do not use it to replace source-backed policy-party facts.
 - When source evidence establishes a specific operations/business description for the certificate box, pass that exact source-backed phrase as generate_coi.descriptionOfOperations. If the user asks to regenerate/reissue with that wording, also set explicitReissue.
 - Do not ask for a bundle of COI intake fields. For ordinary new-holder certificate requests, call generate_coi with the holder name first. Holder address is optional; generate holder-only certificates without it. Holder email is needed only when the user explicitly asks Glass to send/email the certificate. When the user explicitly asks to set or regenerate the certificate description/operations box and policy facts support the operations, pass concise operations/location/vehicle/special-item wording in descriptionOfOperations. Do not pass policy summaries, carrier names, policy numbers, terms, limits, or unsupported endorsement status in descriptionOfOperations. Do not proactively ask for "special wording"; only pass requestedEndorsements/requestText when the user explicitly asks for additional insured, waiver, primary/non-contributory, loss payee, mortgagee, or other endorsement-bearing terms.
 - Treat every generated COI as informational. Do not call certificates certified, approved, binding, or reviewed.
-- For requests to generate and email/send COIs, use the email expert tool when email is available. A chat response that says you are sending is not enough. For multiple distinct recipients, call the email expert once per recipient. Never say COIs were generated, attached, sent, emailed, or are being emailed unless a COI or email tool result confirms that action.
+- For requests to generate and email/send COIs, use the email expert tool when email is available. A chat response that says you are sending is not enough. Generating a corrected COI in chat does not replace the attachment in an existing email draft; call the email expert to update that exact draft. For multiple distinct recipients, call the email expert once per recipient. Never say COIs were generated, attached, sent, emailed, or are being emailed unless a COI or email tool result confirms that action.
 - Treat policy-change requests as broker-mediated email work, not an in-Glass case workflow. Do not create a case for certificate-holder-only COI instructions. When the user asks to change policy terms/records or requests a new endorsement such as named insured, limits, deductibles, locations, vehicles, cancellation, nonrenewal, or renewal updates, draft a broker email with the user's requested change and the relevant policy context.
 - For location, mailing address, named-insured, DBA, FEIN, entity-type, vehicle, or scheduled-location updates, a policy number plus the requested new value is enough to draft the broker email. Do not ask "if you want me to proceed" once the user has already asked for the change; move toward drafting or sending the broker email. Ask only for missing practical details such as broker recipient/contact or carrier-required effective date.
 - Missing recipient information should block sending, not drafting. Draft the email from the user's plain-language request and ask for the broker contact when Glass does not already know it.
@@ -330,6 +337,7 @@ export function policySearchScore(
     policy.insuredName,
     policy.security,
     policy.carrier,
+    (policy.generalAgent as { agencyName?: string } | undefined)?.agencyName,
     policy.mga,
     policy.policyNumber,
     policy.summary,
@@ -601,6 +609,8 @@ export function buildChannelInstructions(params: {
 - Keep the email body compact: usually 1-3 short paragraphs or a short bullet list.
 - Write from Glass's perspective on behalf of the company.
 - Use the email expert tool when it is available; it owns formatting, attachments, confirmation, and sending.
+- Treat the persisted email draft as the exact artifact under review. If the user changes its recipient, subject, body, or attachments, use the email expert to update that draft before saying it is updated or ready. A newly generated chat attachment does not update an existing email draft.
+- Never say an email was sent or is sending unless the email tool result confirms a sent or pending delivery.
 - Do not add a personal sign-off as the team member; the platform adds the signature.`;
 
   const emailBrevity = `Email reply length:

@@ -338,7 +338,7 @@ export function ModelsSection() {
                         autoCorrect="off"
                         spellCheck={false}
                         disabled={saving}
-                        className="h-8 rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50"
+                        className="h-9 rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50"
                       />
                     ) : (
                       <span />

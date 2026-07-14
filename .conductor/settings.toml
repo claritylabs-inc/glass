@@ -7,7 +7,7 @@ preview_urls = [
 
 [scripts]
 setup = "npm run conductor:setup"
-archive = "true"
+archive = "npm run conductor:archive"
 run_mode = "concurrent"
 
 [scripts.run.dev]

@@ -10,7 +10,6 @@ import {
   Archive,
   ArchiveRestore,
   Check,
-  ClipboardList,
   FileText,
   Mail as MailIcon,
   MessageCircle,
@@ -29,13 +28,13 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
+import { useMediaQuery } from "@/components/app-sidebar/utils";
 import { stripConfidenceMarkers, summarizeConfidence } from "@/lib/confidence";
 import {
   useArchivedThreadCacheActions,
   useCachedAgentTargets,
   useThreadCacheActions,
 } from "@/lib/sync/glass-cached-queries";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MessageMetaTag } from "@/components/ui/message-meta-tag";
 import { PillButton } from "@/components/ui/pill-button";
@@ -59,14 +58,17 @@ import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { BrandIcon } from "@/components/ui/brand-icon";
-import { CollapsibleReasoning } from "@/components/collapsible-reasoning";
+import { AgentActivity } from "@/components/agent-thread/agent-activity";
+import { ToolCallCard } from "@/components/agent-thread/tool-call-card";
 import {
   PromptReferenceText,
   type PromptReference,
   type PromptReferenceTagKind,
 } from "@/components/prompt-reference-tag";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
+import { usePdf } from "@/components/pdf-context";
 import { ThreadMessageBubble } from "@/components/agent-thread/message-bubble";
+import { formatDisplayDateTime } from "@/lib/date-format";
 import { scientistSurnameFor } from "@/components/agent-thread/scientist-surnames";
 import {
   optimisticPromptAttachments,
@@ -97,21 +99,28 @@ import {
    Unified Thread View (new threads table)
    ═══════════════════════════════════════════════════ */
 
-const TOOL_DISPLAY_NAMES: Record<string, string> = {
-  lookup_policy: "Searched policies",
-  lookup_policy_section: "Read policy sections",
-  compare_coverages: "Compared coverages",
-  save_note: "Saved note",
-  generate_coi: "Generated COI",
-  attach_policy_document: "Attached policy PDF",
-  send_email: "Drafted email",
-  email_expert: "Prepared email",
-  render_email_preview: "Rendered email preview",
-  lookup_connected_vendors: "Checked vendors",
-  lookup_vendor_policies: "Read vendor policies",
-  lookup_vendor_compliance: "Checked vendor compliance",
-  coordinate_mailbox_task: "Coordinated mailbox task",
+export type AssistantPdfAttachment = {
+  key: string;
+  messageId: Id<"threadMessages">;
+  fileId: Id<"_storage">;
 };
+
+export function assistantPdfAttachments(
+  messages: ThreadMessage[] | undefined,
+): AssistantPdfAttachment[] {
+  return (messages ?? []).flatMap((message) => {
+    if (message.role !== "agent" || message.channel === "email") return [];
+    return (message.attachments ?? []).flatMap((attachment) =>
+      attachment.fileId && attachment.contentType === "application/pdf"
+        ? [{
+            key: `${message._id}:${attachment.fileId}`,
+            messageId: message._id,
+            fileId: attachment.fileId,
+          }]
+        : [],
+    );
+  });
+}
 
 function uniqueZipFilename(filename: string, usedNames: Set<string>) {
   const trimmed = filename.trim() || "attachment";
@@ -510,109 +519,6 @@ function isImessageSyncMessage(message: ThreadMessage) {
   );
 }
 
-function formatToolInput(input?: string) {
-  if (!input) return "{}";
-  try {
-    return JSON.stringify(JSON.parse(input), null, 2);
-  } catch {
-    return input;
-  }
-}
-
-function ToolCallCard({
-  toolCall,
-  index,
-  showOutput = false,
-  displayName: displayNameOverride,
-}: {
-  toolCall: { name: string; input?: string; output?: string };
-  index: number;
-  showOutput?: boolean;
-  displayName?: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const displayName =
-    displayNameOverride ?? TOOL_DISPLAY_NAMES[toolCall.name] ?? toolCall.name;
-
-  return (
-    <div className="overflow-hidden rounded-md border border-foreground/6 bg-foreground/[0.015]">
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={() => setIsOpen((value) => !value)}
-        aria-expanded={isOpen}
-        className="h-7 w-full justify-between rounded-none px-2.5 py-1 text-left hover:bg-foreground/[0.03] dark:hover:bg-foreground/[0.06]"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0">
-            <span className="block truncate text-label font-medium text-muted-foreground/65">
-              {displayName}
-            </span>
-          </span>
-        </span>
-        <span className="ml-3 flex shrink-0 items-center gap-2">
-          <Badge
-            className="h-4 gap-1 border-success/20 bg-success/10 px-1.5 text-label font-medium text-success/75"
-            variant="outline"
-          >
-            Completed
-          </Badge>
-          <span className="text-label font-medium text-muted-foreground/35">
-            {isOpen ? "Hide" : "Show"}
-          </span>
-        </span>
-      </Button>
-      {isOpen && (
-        <div className="space-y-2 border-t border-foreground/6 px-2.5 pb-2.5 pt-2">
-          {showOutput && toolCall.output ? (
-            <div>
-              <p className="mb-1 text-label font-medium text-muted-foreground/40">
-                Output
-              </p>
-              <pre className="max-h-64 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-label leading-4 text-foreground/70">
-                <code className="whitespace-pre-wrap break-words">
-                  {formatToolInput(toolCall.output)}
-                </code>
-              </pre>
-            </div>
-          ) : null}
-          {!showOutput || !toolCall.output ? (
-            <div>
-              <p className="mb-1 text-label font-medium text-muted-foreground/40">
-                Parameters
-              </p>
-              <pre className="max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-label leading-4 text-foreground/70">
-                <code className="whitespace-pre-wrap break-words">
-                  {formatToolInput(toolCall.input)}
-                </code>
-              </pre>
-            </div>
-          ) : null}
-          <span className="sr-only">Tool call {index + 1}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ToolCallPanel({
-  toolCalls,
-}: {
-  toolCalls: { name: string; input?: string; output?: string }[];
-}) {
-  return (
-    <div className="mt-1.5 space-y-1.5">
-      {toolCalls.map((toolCall, index) => (
-        <ToolCallCard
-          key={`${toolCall.name}-${index}`}
-          toolCall={toolCall}
-          index={index}
-        />
-      ))}
-    </div>
-  );
-}
-
 function EmailRecipientMeta({
   toAddresses,
   ccAddresses,
@@ -641,7 +547,6 @@ function MessageFooterActions({
   citedSourceSpanIds,
   attachments,
   threadId,
-  toolCalls,
   subagentActivityCount,
   mailboxArtifacts,
   messageId,
@@ -649,8 +554,6 @@ function MessageFooterActions({
   openMailboxArtifactRef,
   copyContent,
   retryMessageId,
-  showToolCalls,
-  onToggleToolCalls,
   showSubagentActivity,
   onToggleSubagentActivity,
   confidenceContent,
@@ -664,7 +567,6 @@ function MessageFooterActions({
   citedSourceSpanIds?: string[];
   attachments?: ThreadAttachment[];
   threadId: Id<"threads">;
-  toolCalls: { name: string; input?: string; output?: string }[];
   subagentActivityCount?: number;
   mailboxArtifacts?: ToolArtifactData[];
   messageId?: Id<"threadMessages">;
@@ -672,8 +574,6 @@ function MessageFooterActions({
   openMailboxArtifactRef?: MailboxArtifactRef | null;
   copyContent?: string;
   retryMessageId?: Id<"threadMessages">;
-  showToolCalls: boolean;
-  onToggleToolCalls: () => void;
   showSubagentActivity?: boolean;
   onToggleSubagentActivity?: () => void;
   confidenceContent?: string;
@@ -723,7 +623,6 @@ function MessageFooterActions({
       : null;
   if (
     refs.length === 0 &&
-    toolCalls.length === 0 &&
     !hasSubagentActivity &&
     !hasAttachments &&
     !hasMailboxTasks &&
@@ -840,15 +739,6 @@ function MessageFooterActions({
               onClick={onToggleConfidence}
             />
           ) : null}
-          {toolCalls.length > 0 && (
-            <MessageMetaTag
-              icon={<ClipboardList />}
-              label={toolCalls.length === 1 ? "Tool" : "Tools"}
-              count={toolCalls.length}
-              isActive={showToolCalls}
-              onClick={onToggleToolCalls}
-            />
-          )}
           {attachmentList.length === 1 ? (
             <ThreadAttachmentChip
               attachment={attachmentList[0]}
@@ -996,7 +886,7 @@ function UnifiedThreadActions({
     lines.push("─".repeat(50));
     for (const msg of messages) {
       if (msg.status === "processing") continue;
-      const time = dayjs(msg._creationTime).format("MMM D, YYYY h:mm A");
+      const time = formatDisplayDateTime(msg._creationTime);
       const sender = msg.role === "agent" ? "Glass" : messageSenderName(msg);
       const channel =
         msg.channel === "email"
@@ -1065,7 +955,7 @@ function markdownStylesForChannel(channel?: ThreadMessage["channel"]) {
   return channel === "imessage" ? IMESSAGE_MARKDOWN_STYLES : MARKDOWN_STYLES;
 }
 
-type FooterPanel = "tools" | "subagents" | "confidence";
+type FooterPanel = "subagents" | "confidence";
 
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
@@ -1284,7 +1174,6 @@ export function UnifiedMessageBubble({
   const [showQuoted, setShowQuoted] = useState(false);
   const [activeFooterPanel, setActiveFooterPanel] =
     useState<FooterPanel | null>(null);
-  const showToolCalls = activeFooterPanel === "tools";
   const showSubagentActivity = activeFooterPanel === "subagents";
   const showConfidence = activeFooterPanel === "confidence";
   const toggleFooterPanel = (panel: FooterPanel) => {
@@ -1365,6 +1254,13 @@ export function UnifiedMessageBubble({
             {channelIcon}
             <CancelButton messageId={msg._id} show />
           </div>
+
+          <AgentActivity
+            reasoning={msg.reasoning ?? ""}
+            steps={msg.agentSteps}
+            isStreaming
+            className="mb-2"
+          />
 
           {displayContent ? (
             <div className="mt-1 text-foreground">
@@ -1503,7 +1399,7 @@ export function UnifiedMessageBubble({
                 {channelIcon}
                 <span className="text-muted-foreground/20">·</span>
                 <span className="text-label text-muted-foreground/25">
-                  {time.format("MMM D, h:mm A")}
+                  {formatDisplayDateTime(time)}
                 </span>
               </div>
             </div>
@@ -1515,8 +1411,10 @@ export function UnifiedMessageBubble({
               />
             ) : (
               <>
-                <CollapsibleReasoning
+                <AgentActivity
                   reasoning={msg.reasoning ?? ""}
+                  steps={msg.agentSteps}
+                  fallbackToolCalls={regularToolCalls}
                   className="mb-2"
                 />
                 <ThreadMessageBubble
@@ -1543,7 +1441,6 @@ export function UnifiedMessageBubble({
                   citedSourceSpanIds={citedSourceSpanIds}
                   attachments={msg.attachments}
                   threadId={msg.threadId}
-                  toolCalls={regularToolCalls}
                   subagentActivityCount={subagentActivityCount}
                   mailboxArtifacts={mailboxArtifacts}
                   messageId={msg._id}
@@ -1555,8 +1452,6 @@ export function UnifiedMessageBubble({
                       ? msg._id
                       : undefined
                   }
-                  showToolCalls={showToolCalls}
-                  onToggleToolCalls={() => toggleFooterPanel("tools")}
                   showSubagentActivity={showSubagentActivity}
                   onToggleSubagentActivity={() =>
                     toggleFooterPanel("subagents")
@@ -1584,9 +1479,6 @@ export function UnifiedMessageBubble({
                     />
                   </div>
                 ) : null}
-                {regularToolCalls.length > 0 && showToolCalls && (
-                  <ToolCallPanel toolCalls={regularToolCalls} />
-                )}
                 {subagentActivityCount > 0 && showSubagentActivity && (
                   <SubagentActivityPanel toolCalls={subagentToolCalls} />
                 )}
@@ -1670,7 +1562,7 @@ export function UnifiedMessageBubble({
           {channelIcon}
           <span className="text-muted-foreground/20">·</span>
           <span className="text-label text-muted-foreground/25">
-            {time.format("MMM D, h:mm A")}
+            {formatDisplayDateTime(time)}
           </span>
         </div>
         {collapseEmailMessages && isEmail ? (
@@ -1930,6 +1822,8 @@ export function UnifiedThreadContent({
     api.threads.messages,
     { threadId },
   ) as ThreadMessage[] | undefined;
+  const pdf = usePdf();
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const sendMessage = useMutation(api.threads.sendMessage);
   const { appendOptimisticSend, markOptimisticSendFailed } =
     useThreadCacheActions();
@@ -1939,6 +1833,19 @@ export function UnifiedThreadContent({
   const chatInputRef = useRef<GlassPromptInputHandle>(null);
   const prevThreadId = useRef<string | null>(null);
   const lastAutoOpenedEmailId = useRef<string | null>(null);
+  const autoOpenPdfThreadId = useRef<string | null>(null);
+  const seenAssistantPdfKeys = useRef<Set<string>>(new Set());
+  const openedAssistantPdfKey = useRef<string | null>(null);
+  const [autoOpenPdfAttachment, setAutoOpenPdfAttachment] = useState<
+    AssistantPdfAttachment | null
+  >(null);
+  const autoOpenPdfUrl = useCachedQuery(
+    "threads.getAttachmentUrl.auto-open",
+    api.threads.getAttachmentUrl,
+    autoOpenPdfAttachment
+      ? { threadId, fileId: autoOpenPdfAttachment.fileId }
+      : "skip",
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [queuedMessage, setQueuedMessage] = useState<PromptInputMessage | null>(
     null,
@@ -2085,6 +1992,35 @@ export function UnifiedThreadContent({
     setOpenMailboxArtifactRef(null);
     setOpenEmailMessageId(latestDraftEmail._id);
   }, [messages]);
+
+  useEffect(() => {
+    if (!messages) return;
+    const attachments = assistantPdfAttachments(messages);
+    if (autoOpenPdfThreadId.current !== threadId) {
+      autoOpenPdfThreadId.current = threadId;
+      seenAssistantPdfKeys.current = new Set(
+        attachments.map((attachment) => attachment.key),
+      );
+      setAutoOpenPdfAttachment(null);
+      return;
+    }
+
+    const unseen = attachments.filter(
+      (attachment) => !seenAssistantPdfKeys.current.has(attachment.key),
+    );
+    for (const attachment of unseen) {
+      seenAssistantPdfKeys.current.add(attachment.key);
+    }
+    if (!isDesktop || unseen.length === 0) return;
+    setAutoOpenPdfAttachment(unseen.at(-1) ?? null);
+  }, [isDesktop, messages, threadId]);
+
+  useEffect(() => {
+    if (!autoOpenPdfAttachment || !autoOpenPdfUrl || !isDesktop) return;
+    if (openedAssistantPdfKey.current === autoOpenPdfAttachment.key) return;
+    openedAssistantPdfKey.current = autoOpenPdfAttachment.key;
+    pdf.openWithUrl(autoOpenPdfUrl);
+  }, [autoOpenPdfAttachment, autoOpenPdfUrl, isDesktop, pdf]);
 
   // Auto-scroll when new messages arrive (agent streaming via Convex subscription)
   useEffect(() => {

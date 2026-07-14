@@ -50,6 +50,35 @@ describe("email draft sendability", () => {
     ).toContain("Confirm that erry@claritylabs.inc");
   });
 
+  test("treats an explicit send as confirmation without bypassing required fields", () => {
+    expect(
+      getEmailDraftSendability(
+        {
+          status: "draft",
+          recipientEmail: "terry@releaserent.com",
+          subject: "Policy documents",
+          emailBody: "Attached.",
+          sendBlockedReason:
+            "Confirm that terry@releaserent.com is the intended recipient.",
+        },
+        { confirmationGranted: true },
+      ),
+    ).toEqual({ status: "sendable", blockers: [] });
+
+    expect(
+      getEmailDraftBlockers(
+        {
+          status: "draft",
+          recipientEmail: "",
+          subject: "Policy documents",
+          emailBody: "Attached.",
+          sendBlockedReason: "Confirm the recipient.",
+        },
+        { confirmationGranted: true },
+      ).map((blocker) => blocker.code),
+    ).toEqual(["missing_recipient"]);
+  });
+
   test("honors send-time status allowlists", () => {
     expect(
       getEmailDraftBlockers(

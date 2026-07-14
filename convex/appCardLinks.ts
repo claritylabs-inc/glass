@@ -74,7 +74,9 @@ async function getPolicyForLink(
 ) {
   if (!policyId) return null;
   const policy = await ctx.db.get(policyId);
-  if (!policy || String(policy.orgId) !== String(orgId)) return null;
+  if (!policy || policy.deletedAt || String(policy.orgId) !== String(orgId)) {
+    return null;
+  }
   return policy;
 }
 

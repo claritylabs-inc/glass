@@ -12,13 +12,15 @@ Given the initial user request and any starting page context, output a short tit
 
 Rules:
 - Output ONLY the title, no quotes, no punctuation, no explanation.
+- Do not output analysis, reasoning, steps, headings, lists, or Markdown.
 - Use title case.
-- Use 2-5 words when possible.
+- Use 2-4 words.
+- Never begin with conversational framing such as "Can you", "Could you", "I need", or "Please".
 - Prefer the action and deliverable/topic over contact names or email addresses.
 - Use starting page context to disambiguate generic requests like "send this", "summarize this", or "what about exclusions?"
 - Never include raw email addresses, email domains, usernames, file IDs, generated IDs, or local-part fragments.
-- If the user asks to send, draft, or email a certificate of insurance / COI, title it "COI Email" or "Send COI" unless another deliverable is more specific.
-- Good examples: "COI Email", "Send COI", "GL Coverage Limits", "Cyber Liability Policy", "Endorsement Follow Up", "Renewal Timeline".`;
+- For certificate of insurance work, use a compact action title such as "Generate COI", "Update COI", "Draft COI", or "Send COI".
+- Good examples: "Generate COI", "Send COI", "GL Coverage Limits", "Cyber Liability Policy", "Endorsement Follow Up", "Renewal Timeline".`;
 
 type TitleContext = {
   userMessage: string;
@@ -42,15 +44,23 @@ function stripEmailNoise(input: string): string {
 }
 
 export function normalizeGeneratedTitle(raw: string): string | null {
+  const trimmedRaw = raw.trim();
   if (
-    /@|https?:\/\//i.test(raw) ||
-    /\b(?:gmail|icloud|outlook|hotmail|yahoo|aol|protonmail)\b/i.test(raw) ||
-    /\b[a-z]+[a-z0-9._%+-]*\d{2,}[a-z0-9._%+-]*\b/i.test(raw)
+    !trimmedRaw ||
+    trimmedRaw.includes("\n") ||
+    /[*_`#>]/.test(trimmedRaw) ||
+    /^\s*(?:[-+]\s|\d+[.)]\s)/.test(trimmedRaw) ||
+    /\b(?:analy[sz]e|understand|identify|determine)\s+(?:the\s+)?(?:user(?:'s)?\s+)?(?:request|intent)\b/i.test(
+      trimmedRaw,
+    ) ||
+    /@|https?:\/\//i.test(trimmedRaw) ||
+    /\b(?:gmail|icloud|outlook|hotmail|yahoo|aol|protonmail)\b/i.test(trimmedRaw) ||
+    /\b[a-z]+[a-z0-9._%+-]*\d{2,}[a-z0-9._%+-]*\b/i.test(trimmedRaw)
   ) {
     return null;
   }
 
-  const cleaned = stripEmailNoise(raw)
+  const cleaned = stripEmailNoise(trimmedRaw)
     .trim()
     .replace(/^["']|["']$/g, "")
     .split("\n")[0]
@@ -59,26 +69,43 @@ export function normalizeGeneratedTitle(raw: string): string | null {
     .trim();
 
   if (!cleaned) return null;
-  if (cleaned.length > 48) return null;
+  if (cleaned.length > 40) return null;
+  if (cleaned.split(/\s+/).length > 4) return null;
+  if (/^(?:can|could|would|will)\s+you\b|^(?:i|we)\s+(?:need|want)\b|^please\b/i.test(cleaned)) {
+    return null;
+  }
   if (/@|https?:\/\//i.test(cleaned)) return null;
   return cleaned;
+}
+
+function certificateTitle(seed: string): string | null {
+  if (!/\b(?:coi|certificates?)\b/i.test(seed)) return null;
+  if (/\b(?:update|revise|reissue|correct|change|edit|modify)\b/i.test(seed)) {
+    return "Update COI";
+  }
+  if (/\b(?:generate|create|issue|make|produce)\b/i.test(seed)) {
+    return "Generate COI";
+  }
+  if (/\b(?:send|email|forward|share|deliver)\b/i.test(seed)) {
+    return "Send COI";
+  }
+  if (/\b(?:draft|prepare)\b/i.test(seed)) return "Draft COI";
+  return "COI Request";
 }
 
 export function fallbackTitle(seed: string): string {
   const normalizedSeed = stripEmailNoise(seed);
   const lower = normalizedSeed.toLowerCase();
 
-  if (/(certificate\s+of\s+insurance|\bcoi\b)/i.test(normalizedSeed)) {
-    if (/\b(send|email|draft|forward)\b/i.test(normalizedSeed)) return "COI Email";
-    return "Certificate Of Insurance";
-  }
+  const certificate = certificateTitle(normalizedSeed);
+  if (certificate) return certificate;
 
   const words = normalizedSeed
     .replace(/https?:\/\/\S+/g, "")
     .replace(/[^a-zA-Z0-9\s-]/g, " ")
     .split(/\s+/)
     .filter((word) => word.length > 2)
-    .filter((word) => !/^(the|and|for|with|about|please|what|when|where|which|show|tell|need|want|does|have|email|send|draft|forward)$/i.test(word))
+    .filter((word) => !/^(a|an|the|and|for|with|about|please|can|could|would|will|you|your|we|our|what|when|where|which|show|tell|need|want|does|have|new)$/i.test(word))
     .filter((word) => !/^\d+$/.test(word))
     .slice(0, 4);
 

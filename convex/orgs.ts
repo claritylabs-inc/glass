@@ -33,6 +33,8 @@ import {
   assertFeatureFlagAllowedForOrg,
   setFeatureFlagPatch,
 } from "./lib/featureFlags";
+import { resolveEffectiveOrganizationProfile } from "./lib/orgProfileFacts";
+import { IRS_ENTITY_TYPES } from "./lib/entityTypes";
 
 const internal = _internal as any;
 
@@ -612,9 +614,20 @@ export const getBrokerIdentity = query({
     if (!org || (org.type ?? "client") !== "client") return null;
 
     const identity = await resolveBrokerIdentityForClient(ctx, org);
+    const brokerMembership =
+      identity.brokerOrgId && access.accessType === "broker_of_client"
+        ? await ctx.db
+            .query("orgMemberships")
+            .withIndex("by_orgId_userId", (q) =>
+              q
+                .eq("orgId", identity.brokerOrgId!)
+                .eq("userId", access.userId),
+            )
+            .unique()
+        : null;
     const canEdit =
       identity.brokerOrgId
-        ? access.accessType === "broker_of_client" && access.role === "admin"
+        ? brokerMembership?.role === "admin"
         : access.accessType === "member" && access.role === "admin";
 
     const assignment = identity.assignmentId
@@ -890,6 +903,127 @@ export const updateOrg = mutation({
     const { orgId } = await requireOrgAdmin(ctx);
     await assertImpersonatedSetupWrite(ctx, orgId);
     await ctx.db.patch(orgId, args);
+  },
+});
+
+const editableOrganizationAddressValidator = v.object({
+  street1: v.optional(v.string()),
+  street2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  zip: v.optional(v.string()),
+  country: v.optional(v.string()),
+  formatted: v.optional(v.string()),
+});
+
+const irsEntityTypeValueValidator = v.union(
+  v.literal("sole_proprietorship"),
+  v.literal("partnership"),
+  v.literal("corporation"),
+  v.literal("s_corporation"),
+  v.literal("limited_liability_company"),
+  v.literal("trust_estate"),
+  v.literal("tax_exempt_organization"),
+  v.literal("government_entity"),
+  v.literal("other"),
+);
+
+const editableOrganizationProfileValidator = v.object({
+  mailingAddress: editableOrganizationAddressValidator,
+  entityType: v.union(irsEntityTypeValueValidator, v.literal("")),
+  fein: v.string(),
+  businessNumber: v.string(),
+  operationsDescription: v.string(),
+});
+
+function normalizedProfileString(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizedFein(value: string) {
+  const compact = value.replace(/[^0-9]/g, "");
+  if (!compact) return "";
+  if (compact.length !== 9) throw new Error("FEIN must contain 9 digits");
+  return `${compact.slice(0, 2)}-${compact.slice(2)}`;
+}
+
+function normalizedBusinessNumber(value: string) {
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!compact) return "";
+  if (!/^\d{9}(?:[A-Z]{2}\d{4})?$/.test(compact)) {
+    throw new Error("Business number must be 9 digits, optionally followed by a program account");
+  }
+  return compact;
+}
+
+function normalizedProfileAddress(
+  address: {
+    street1?: string;
+    street2?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+    formatted?: string;
+  },
+) {
+  return Object.fromEntries(
+    Object.entries(address)
+      .map(([key, value]) => [key, normalizedProfileString(value ?? "")])
+      .filter(([, value]) => value),
+  );
+}
+
+export const updateOrganizationProfile = mutation({
+  args: {
+    profile: v.union(editableOrganizationProfileValidator, v.null()),
+  },
+  handler: async (ctx, args) => {
+    const { orgId, userId, org } = await requireOrgAdmin(ctx);
+    if ((org.type ?? "client") !== "client") {
+      throw new Error("Organization insurance profiles are available for clients only");
+    }
+    await assertImpersonatedSetupWrite(ctx, orgId);
+
+    if (args.profile === null) {
+      await ctx.db.patch(orgId, {
+        profileOverrides: undefined,
+        profileOverridesUpdatedAt: undefined,
+        profileOverridesUpdatedByUserId: undefined,
+      });
+      const refreshed = await ctx.db.get(orgId);
+      return refreshed
+        ? resolveEffectiveOrganizationProfile(refreshed as unknown as Record<string, unknown>)
+        : null;
+    }
+
+    const profileInput = args.profile;
+    if (
+      profileInput.entityType &&
+      !IRS_ENTITY_TYPES.some((option) => option.value === profileInput.entityType)
+    ) {
+      throw new Error("Select a standard IRS entity type");
+    }
+
+    const fein = normalizedFein(profileInput.fein);
+    const businessNumber = normalizedBusinessNumber(profileInput.businessNumber);
+    const operationsDescription = profileInput.operationsDescription.trim();
+    const storedProfile = {
+      mailingAddress: normalizedProfileAddress(profileInput.mailingAddress),
+      ...(profileInput.entityType ? { entityType: profileInput.entityType } : {}),
+      fein,
+      businessNumber,
+      operationsDescription,
+    };
+    await ctx.db.patch(orgId, {
+      profileOverrides: storedProfile,
+      profileOverridesUpdatedAt: dayjs().valueOf(),
+      profileOverridesUpdatedByUserId: userId,
+    });
+    return {
+      ...storedProfile,
+      entityType: profileInput.entityType,
+    };
   },
 });
 
@@ -1261,7 +1395,11 @@ export const updateMemberProfile = mutation({
     if (args.name !== undefined) patch.name = args.name.trim() || undefined;
     if (args.title !== undefined) patch.title = args.title.trim() || undefined;
     if (args.phone !== undefined) {
-      patch.phone = await normalizeAvailableUserPhone(ctx, args.phone, membership.userId);
+      patch.phone = await normalizeAvailableUserPhone(
+        ctx,
+        args.phone,
+        membership.userId,
+      );
     }
     await ctx.db.patch(membership.userId, patch);
   },
@@ -1381,10 +1519,12 @@ async function senderMatchesOrg(
   const allowed = (org.allowedEmails ?? []).map((e) => e.toLowerCase());
   if (allowed.includes(email)) return "email";
 
-  if (org.emailVerification !== "strict") {
+  if (org.emailVerification === "domain") {
     const domains = (org.allowedDomains ?? []).map((d) => d.toLowerCase());
     if (domain && domains.includes(domain)) return "domain";
+  }
 
+  if (org.emailVerification !== "strict") {
     const memberships = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
@@ -1452,9 +1592,9 @@ export const resolveClientBySender = internalQuery({
       const allowed = (client.allowedEmails ?? []).map((e) => e.toLowerCase());
       if (allowed.includes(email)) return { brokerOrg, clientOrg: client, matchedBy: "email" as const };
     }
-    // 2. Domain: allowedDomains match (skipping clients in "strict" mode)
+    // 2. Domain: allowedDomains match only for the domain access mode.
     for (const client of clientOrgs) {
-      if (client.emailVerification === "strict") continue;
+      if (client.emailVerification !== "domain") continue;
       const domains = (client.allowedDomains ?? []).map((d) => d.toLowerCase());
       if (domain && domains.includes(domain)) {
         return { brokerOrg, clientOrg: client, matchedBy: "domain" as const };

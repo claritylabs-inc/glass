@@ -27,6 +27,7 @@ import {
   openExtractionReviewQuestions,
   postProcessExtractionDocument,
 } from "../lib/extractionPostProcess";
+import { applyCoverageDeclarationScoping } from "../lib/coverageScoping";
 import {
   normalizeOperationalProfile,
   normalizeStoredOperationalProfile,
@@ -1514,6 +1515,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
               existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
+              existingPolicyFields: fields,
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -2375,6 +2377,7 @@ async function completeExternalExtractFromPayload(
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
         existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
+        existingPolicyFields: fields,
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),
@@ -2693,16 +2696,13 @@ export const rematerializeSourceTreeProfile = internalAction({
   handler: async (ctx, args) => {
     const policy = await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as {
-      document?: Record<string, unknown>;
-      operationalProfile?: unknown;
-    } | null;
+    }) as Record<string, unknown> | null;
     if (!policy) throw new Error("Policy not found");
 
     const operationalProfile = normalizeStoredOperationalProfile(policy.operationalProfile);
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
-      fields: operationalProfilePolicyFields(operationalProfile),
+      fields: operationalProfilePolicyFields(operationalProfile, policy),
     });
     return {
       ok: true,
@@ -2823,16 +2823,37 @@ export const rebuildStoredSourceNodes = internalAction({
       sourceNodes,
       canonicalSpans,
     );
+    const scoped = applyCoverageDeclarationScoping({
+      fields: policy as Record<string, unknown>,
+      sourceSpans: canonicalSpans,
+      nowMs: nowMs(),
+    });
+    const scopedFields = scoped.fields;
+    const scopedProjection = Object.fromEntries([
+      "coverageSchedules",
+      "premium",
+      "premiumAmount",
+      "premiumBreakdown",
+      "taxesAndFees",
+      "totalCost",
+      "totalCostAmount",
+    ].flatMap((key) => Object.prototype.hasOwnProperty.call(scopedFields, key)
+      ? [[key, scopedFields[key]]]
+      : []));
 
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
-      fields: sourceTreePolicyFields({
-        sourceTree: sourceNodes,
-        operationalProfile,
-        existingDocumentMetadata: policy.documentMetadata,
-        existingDeclarations: policy.declarations,
-        existingLinesOfBusiness: policy.linesOfBusiness,
-      }),
+      fields: {
+        ...scopedProjection,
+        ...sourceTreePolicyFields({
+          sourceTree: sourceNodes,
+          operationalProfile,
+          existingDocumentMetadata: policy.documentMetadata,
+          existingDeclarations: policy.declarations,
+          existingLinesOfBusiness: policy.linesOfBusiness,
+          existingPolicyFields: scopedFields,
+        }),
+      },
     });
 
     await deletePolicyRowsInBatches(ctx, (internal as any).sourceSpans.deleteByPolicy, args.policyId);
@@ -2900,6 +2921,8 @@ export const rebuildStoredSourceNodes = internalAction({
       ok: true,
       sourceSpanCount: canonicalSpans.length,
       sourceNodeCount: sourceNodes.length,
+      coverageCount: Array.isArray(scopedFields.coverages) ? scopedFields.coverages.length : 0,
+      coverageScheduleCount: Array.isArray(scopedFields.coverageSchedules) ? scopedFields.coverageSchedules.length : 0,
       topLevelCount: sourceNodes.filter((node) => {
         const root = sourceNodes.find((candidate) => candidate.kind === "document");
         return root && node.parentId === root.id;
@@ -2978,7 +3001,7 @@ export const backfillStoredCoverageRecovery = internalAction({
       sourceTree,
       sourceSpans,
     );
-    const recoveredFields = operationalProfilePolicyFields(operationalProfile);
+    const recoveredFields = operationalProfilePolicyFields(operationalProfile, policy);
     const recoveryProjection = Object.fromEntries([
       "operationalProfile",
       "coverages",

@@ -10,7 +10,7 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { PillButton } from "@/components/ui/pill-button";
 
 const inputClass =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:bg-foreground/[0.02] disabled:text-muted-foreground/60";
+  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:bg-foreground/[0.02] disabled:text-muted-foreground/60";
 const labelClass = "text-label font-medium text-muted-foreground";
 const helpClass = "text-label text-muted-foreground/60";
 const errorClass = "text-label text-red-500/80";

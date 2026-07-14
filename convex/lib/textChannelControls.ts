@@ -11,7 +11,7 @@ import { extractEmailAddress } from "./emailAddress";
 import type { EmailCommand } from "./emailWorkflow";
 
 const DRAFT_APPROVAL_PATTERN =
-  /^(yes|yep|yeah|ok|okay|approved|approve|confirmed|confirm|send|send it|looks good|this is good|go ahead|do it|please send)\.?!?$/i;
+  /^(yes|yep|yeah|ok|okay|approved|approve|confirmed|confirm|send|send it|send please|looks good|this is good|go ahead|do it|please send)\.?!?$/i;
 
 export type TextChannelEmailControl<EmailId> = EmailCommand<EmailId>;
 
@@ -27,6 +27,7 @@ export function resolveTextChannelEmailControl<EmailId>(args: {
   isCancelConfirmationContext: boolean;
   latestCancelledEmailId?: EmailId;
   draftEmailIds: EmailId[];
+  draftApprovalEmailIds?: EmailId[];
   pendingEmailIds: EmailId[];
   allowDraftApproval?: boolean;
   allowDraftList?: boolean;
@@ -67,11 +68,17 @@ export function resolveTextChannelEmailControl<EmailId>(args: {
     if (args.allowDraftList && isShowMoreEmailDraftIntent(text)) {
       return { kind: "show_draft_emails" };
     }
-    if (
-      (args.allowDraftSendAll && isSendAllEmailDraftsIntent(text)) ||
-      (args.allowDraftApproval && DRAFT_APPROVAL_PATTERN.test(text))
-    ) {
+    if (args.allowDraftSendAll && isSendAllEmailDraftsIntent(text)) {
       return { kind: "send_draft_emails", emailIds: args.draftEmailIds };
+    }
+    const draftApprovalEmailIds =
+      args.draftApprovalEmailIds ?? args.draftEmailIds;
+    if (
+      args.allowDraftApproval &&
+      draftApprovalEmailIds.length > 0 &&
+      DRAFT_APPROVAL_PATTERN.test(text)
+    ) {
+      return { kind: "send_draft_emails", emailIds: draftApprovalEmailIds };
     }
   }
 

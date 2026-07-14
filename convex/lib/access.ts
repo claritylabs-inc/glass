@@ -318,7 +318,7 @@ export function assertCanEditPolicyExtractedFields(access: OrgAccess): void {
   throw new Error("Only brokers can edit extracted policy fields");
 }
 
-export function assertCanDeletePolicy(
+export function assertCanArchivePolicy(
   access: OrgAccess,
   policy: { uploadedBySide?: string; uploadedByBrokerOrgId?: Id<"organizations"> },
 ): void {
@@ -326,15 +326,15 @@ export function assertCanDeletePolicy(
     throw new Error("Connected clients have read-only vendor access");
   }
   if (access.accessType === "broker_of_client") {
-    // Broker can only delete policies they uploaded
+    // Brokers can only archive policies they uploaded.
     if (
       policy.uploadedBySide !== "broker" ||
       policy.uploadedByBrokerOrgId !== access.brokerOrgId
     ) {
-      throw new Error("Not authorized to delete this policy");
+      throw new Error("Not authorized to archive this policy");
     }
   }
-  // members can delete any policy in their org
+  // Members can archive any policy in their org.
 }
 
 export function assertCanReadPolicy(_access: OrgAccess): void {

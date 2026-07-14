@@ -97,7 +97,9 @@ describe("policy preview extraction", () => {
     expect(policies).toContain("function isVisiblePolicyListRow");
     expect(policies).toContain("if (isPreviewReadablePolicy(policy)) return true");
     expect(policies).toContain('if (policy.pipelineStatus === "error") return true');
-    expect(policies).toContain("isVisiblePolicyListRow(p) &&");
+    expect(policies).toContain("isVisiblePolicyListRow(p)");
+    expect(policies).toContain("args.archived");
+    expect(policies).toContain("Boolean(p.deletedAt)");
   });
 
   it("uses extraction toasts instead of inline placeholder rows", () => {

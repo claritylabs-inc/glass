@@ -1,12 +1,18 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { SettingsActionsContext } from "@/components/settings/settings-actions-context";
-import { getSettingsSections, type SettingsSectionId } from "@/lib/settings-sections";
+import {
+  getSettingsNavigation,
+  resolveSettingsDestination,
+  settingsPages,
+  type SettingsPageId,
+  type SettingsTabId,
+} from "@/lib/settings-sections";
 import { OrganizationSection } from "@/components/settings/organization-section";
 import { TeamSection } from "@/components/settings/team-section";
 import { EmailConnectionsSection } from "@/components/settings/email-connections-section";
@@ -28,46 +34,65 @@ export default function SettingsPage() {
   const [rightPanel, setRightPanel] = useState<React.ReactNode>(null);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  const isStandaloneClient = currentOrg?.orgType === "client" && !currentOrg?.brokerOrg;
-
-  const SETTINGS_SECTIONS_ACTIVE = getSettingsSections({
-    isBroker,
-    isStandaloneClient,
+  const isStandaloneClient =
+    currentOrg?.orgType === "client" && !currentOrg?.brokerOrg;
+  const groups = useMemo(
+    () => getSettingsNavigation({ isBroker, isStandaloneClient }),
+    [isBroker, isStandaloneClient],
+  );
+  const pages = useMemo(() => settingsPages(groups), [groups]);
+  const destination = resolveSettingsDestination({
+    requestedSection: searchParams.get("section"),
+    requestedTab: searchParams.get("tab"),
+    groups,
   });
-  const requestedSection = searchParams.get("section") as SettingsSectionId | null;
-  const activeSection: SettingsSectionId = SETTINGS_SECTIONS_ACTIVE.some((section) => section.id === requestedSection)
-    ? requestedSection!
-    : "organization";
 
-  function handleSectionChange(id: SettingsSectionId) {
+  useEffect(() => {
+    if (
+      searchParams.get("section") === destination.section &&
+      searchParams.get("tab") === destination.tab
+    ) {
+      return;
+    }
     const params = new URLSearchParams(searchParams.toString());
-    params.set("section", id);
+    params.set("section", destination.section);
+    params.set("tab", destination.tab);
+    router.replace(`/settings?${params.toString()}`);
+  }, [destination.section, destination.tab, router, searchParams]);
+
+  function navigate(section: SettingsPageId, tab: SettingsTabId) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("section", section);
+    params.set("tab", tab);
     router.push(`/settings?${params.toString()}`);
   }
 
-  const activeLabel =
-    SETTINGS_SECTIONS_ACTIVE.find((s) => s.id === activeSection)?.label ?? "Settings";
+  function handlePageChange(section: SettingsPageId) {
+    const page = pages.find((item) => item.id === section);
+    if (page) navigate(page.id, page.tabs[0].id);
+  }
 
   return (
-    <SettingsActionsContext.Provider value={{ setActions: setHeaderActions, setRightPanel }}>
+    <SettingsActionsContext.Provider
+      value={{ setActions: setHeaderActions, setRightPanel }}
+    >
       <AppShell
-        breadcrumbDetail={activeLabel === "Settings" ? undefined : activeLabel}
+        breadcrumbDetail={destination.page.label}
         actions={headerActions}
         rightPanel={rightPanel}
       >
-        {/* Mobile: horizontal scrollable tabs */}
-        <div className="lg:hidden mb-6 -mx-6 px-6 overflow-x-auto scrollbar-hide">
+        <div className="-mx-6 mb-6 overflow-x-auto px-6 scrollbar-hide lg:hidden">
           <Tabs
-            value={activeSection}
-            onValueChange={(value) => handleSectionChange(value as SettingsSectionId)}
+            value={destination.section}
+            onValueChange={(value) => handlePageChange(value as SettingsPageId)}
           >
             <TabsList variant="pill" className="min-w-max">
-              {SETTINGS_SECTIONS_ACTIVE.map((section) => {
-                const Icon = section.icon;
+              {pages.map((page) => {
+                const Icon = page.icon;
                 return (
-                  <TabsTrigger key={section.id} value={section.id}>
-                    <Icon className="w-3.5 h-3.5 shrink-0" />
-                    {section.label}
+                  <TabsTrigger key={page.id} value={page.id}>
+                    <Icon className="size-3.5 shrink-0" />
+                    {page.label}
                   </TabsTrigger>
                 );
               })}
@@ -75,11 +100,28 @@ export default function SettingsPage() {
           </Tabs>
         </div>
 
-        {/* Section content — sidebar navigation is handled by the main app sidebar on desktop */}
+        {destination.page.tabs.length > 1 ? (
+          <Tabs
+            value={destination.tab}
+            onValueChange={(value) =>
+              navigate(destination.section, value as SettingsTabId)
+            }
+            className="mb-6"
+          >
+            <TabsList variant="pill">
+              {destination.page.tabs.map((tab) => (
+                <TabsTrigger key={tab.id} value={tab.id}>
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        ) : null}
+
         <SectionContent
-          section={activeSection}
+          section={destination.section}
+          tab={destination.tab}
           isBroker={isBroker}
-          isStandaloneClient={isStandaloneClient}
         />
       </AppShell>
     </SettingsActionsContext.Provider>
@@ -88,55 +130,42 @@ export default function SettingsPage() {
 
 function SectionContent({
   section,
+  tab,
   isBroker,
-  isStandaloneClient,
 }: {
-  section: SettingsSectionId;
+  section: SettingsPageId;
+  tab: SettingsTabId;
   isBroker: boolean;
-  isStandaloneClient: boolean;
 }) {
   const currentOrg = useCurrentOrg();
 
-  if (isBroker) {
-    return (
-      <div>
-        {section === "organization" ? <OrganizationSection /> :
-         section === "team" ? <BrokerTeamTab /> :
-         section === "agent" ? <BrokerAgentTab /> :
-         section === "models" ? <ModelsSection /> :
-         section === "delivery" ? <PolicyDeliverySection /> :
-         section === "certificates" ? <CertificateWorkflowSection /> :
-         section === "email" ? <EmailConnectionsSection /> :
-         section === "connections" ? <ConnectionsSection /> :
-         section === "notifications" && currentOrg?.orgId ? (
-           <NotificationPreferencesSection orgId={currentOrg.orgId} orgType="broker" />
-         ) : null}
-      </div>
-    );
+  if (section === "organization") {
+    if (tab === "broker" && currentOrg?.orgId) {
+      return <BrokerIdentitySection orgId={currentOrg.orgId} />;
+    }
+    return <OrganizationSection />;
   }
-  return (
-    <div>
-      {section === "organization" ? (
-        <OrganizationSection />
-      ) : section === "beta" ? (
-        <BetaFeaturesSection />
-      ) : section === "broker" && currentOrg?.orgId ? (
-        <BrokerIdentitySection orgId={currentOrg.orgId} />
-      ) : section === "team" ? (
-        <TeamSection />
-      ) : section === "agent" && isStandaloneClient ? (
-        <BrokerAgentTab />
-      ) : section === "memory" ? (
-        <MemorySection />
-      ) : section === "certificates" ? (
-        <CertificateWorkflowSection />
-      ) : section === "email" ? (
-        <EmailConnectionsSection />
-      ) : section === "connections" ? (
-        <ConnectionsSection />
-      ) : section === "notifications" && currentOrg?.orgId ? (
-        <NotificationPreferencesSection orgId={currentOrg.orgId} orgType="client" />
-      ) : null}
-    </div>
-  );
+  if (section === "team") {
+    return isBroker ? <BrokerTeamTab /> : <TeamSection />;
+  }
+  if (section === "agent") {
+    if (tab === "memory") return <MemorySection />;
+    if (tab === "models") return <ModelsSection />;
+    return <BrokerAgentTab />;
+  }
+  if (section === "workflows") {
+    if (tab === "delivery") return <PolicyDeliverySection />;
+    if (tab === "notifications" && currentOrg?.orgId) {
+      return (
+        <NotificationPreferencesSection
+          orgId={currentOrg.orgId}
+          orgType={isBroker ? "broker" : "client"}
+        />
+      );
+    }
+    return <CertificateWorkflowSection />;
+  }
+  if (section === "integrations") return <ConnectionsSection tab={tab} />;
+  if (section === "mailboxes") return <EmailConnectionsSection />;
+  return <BetaFeaturesSection />;
 }

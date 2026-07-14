@@ -28,7 +28,7 @@ import {
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
 const LABEL_CLASSES =
   "text-label font-medium text-muted-foreground block mb-1";
@@ -65,6 +65,7 @@ type DraftPolicyRow = {
   _id: Id<"policies">;
   carrier?: string;
   mga?: string;
+  generalAgent?: { agencyName?: string };
   policyNumber?: string;
   fileName?: string;
   effectiveDate?: string;
@@ -595,7 +596,7 @@ export function InviteClientDrawer({
                 <PolicyListItem
                   key={policy._id}
                   carrier={policy.carrier ?? ""}
-                  administrator={policy.mga}
+                  generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                   policyNumber={policy.policyNumber ?? ""}
                   fileName={policy.fileName}
                   effectiveDate={policy.effectiveDate}

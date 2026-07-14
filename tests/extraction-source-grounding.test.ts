@@ -7,7 +7,7 @@ const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("extraction source grounding", () => {
-  it("drops hallucinated administrator identity fields that are absent from source spans", () => {
+  it("drops hallucinated legacy General Agent identity fields that are absent from source spans", () => {
     const result = stripUngroundedSourceSensitiveValues(
       {
         carrier: "Northwoods Continental Insurance Company",
@@ -56,9 +56,16 @@ describe("extraction source grounding", () => {
         },
         producer: {
           agencyName: "Halverson Risk Advisors, LLC",
+          licenseNumber: "PR-123",
           contactName: "Invented Person",
           email: "producer@example.com",
           address: { street1: "1 Imaginary Way" },
+          sourceSpanIds: ["span-party"],
+        },
+        generalAgent: {
+          agencyName: "Diesel Insurance Solutions Inc.",
+          licenseNumber: "21058436",
+          address: { street1: "1600 Airport Freeway", city: "Bedford", state: "TX" },
           sourceSpanIds: ["span-party"],
         },
       },
@@ -67,7 +74,8 @@ describe("extraction source grounding", () => {
           id: "span-party",
           text: [
             "Insurer Northwoods Continental Insurance Company NAIC 12345 AM Best A XV",
-            "Producer Halverson Risk Advisors, LLC",
+            "Producer Halverson Risk Advisors, LLC License PR-123",
+            "General Agent Diesel Insurance Solutions Inc. License No. 21058436 1600 Airport Freeway Bedford TX",
           ].join("\n"),
         },
       ],
@@ -81,13 +89,83 @@ describe("extraction source grounding", () => {
     });
     expect(result.value.producer).toEqual({
       agencyName: "Halverson Risk Advisors, LLC",
+      licenseNumber: "PR-123",
+      sourceSpanIds: ["span-party"],
+    });
+    expect(result.value.generalAgent).toEqual({
+      agencyName: "Diesel Insurance Solutions Inc.",
+      licenseNumber: "21058436",
+      address: { street1: "1600 Airport Freeway", city: "Bedford", state: "TX" },
       sourceSpanIds: ["span-party"],
     });
     expect(result.removed.map((item) => item.field)).toEqual([
       "insurer.stateOfDomicile",
       "producer.contactName",
       "producer.email",
+      "producer.address.street1",
     ]);
+  });
+
+  it("keeps source-backed structured party addresses including short region and country codes", () => {
+    const result = stripUngroundedSourceSensitiveValues(
+      {
+        insurer: {
+          legalName: "Carrier Inc.",
+          address: {
+            street1: "500 Market Street",
+            city: "San Francisco",
+            state: "CA",
+            zip: "94105",
+            country: "US",
+          },
+          sourceSpanIds: ["span-carrier"],
+        },
+      },
+      [
+        {
+          id: "span-carrier",
+          text: "Carrier Inc. 500 Market Street San Francisco CA 94105 US",
+        },
+      ],
+    );
+
+    expect(result.value.insurer).toEqual({
+      legalName: "Carrier Inc.",
+      address: {
+        street1: "500 Market Street",
+        city: "San Francisco",
+        state: "CA",
+        zip: "94105",
+        country: "US",
+      },
+      sourceSpanIds: ["span-carrier"],
+    });
+    expect(result.removed).toEqual([]);
+  });
+
+  it("drops a compatibility address when its required street is unsupported", () => {
+    const result = stripUngroundedSourceSensitiveValues(
+      {
+        insurer: {
+          legalName: "Carrier Inc.",
+          address: {
+            street1: "1 Invented Way",
+            city: "Toronto",
+            state: "ON",
+          },
+          sourceSpanIds: ["span-carrier"],
+        },
+      },
+      [{ id: "span-carrier", text: "Carrier Inc. Toronto ON" }],
+    );
+
+    expect(result.value.insurer).toEqual({
+      legalName: "Carrier Inc.",
+      sourceSpanIds: ["span-carrier"],
+    });
+    expect(result.removed).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: "insurer.address.street1" }),
+    ]));
   });
 
   it("drops identity records without valid source spans", () => {
@@ -191,13 +269,16 @@ describe("extraction source grounding", () => {
   it("allows structured party objects to persist source provenance", () => {
     for (const path of ["convex/schema.ts", "convex/policies.ts"]) {
       const source = read(path);
-      const insurerBlock = source.slice(
-        source.indexOf("insurer: v.optional"),
-        source.indexOf("producer: v.optional"),
+      const structuredEntities = source.slice(
+        source.indexOf("// Structured entity objects"),
       );
-      const producerBlock = source.slice(
-        source.indexOf("producer: v.optional"),
-        source.indexOf("lossPayees: v.optional"),
+      const insurerBlock = structuredEntities.slice(
+        structuredEntities.indexOf("insurer: v.optional"),
+        structuredEntities.indexOf("producer: v.optional"),
+      );
+      const producerBlock = structuredEntities.slice(
+        structuredEntities.indexOf("producer: v.optional"),
+        structuredEntities.indexOf("lossPayees: v.optional"),
       );
 
       for (const block of [insurerBlock, producerBlock]) {

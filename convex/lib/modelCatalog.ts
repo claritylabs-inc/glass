@@ -10,6 +10,7 @@ import {
 
 export type ModelTask =
   | "chat"
+  | "chat_vision"
   | "email_draft"
   | "email_reply"
   | "extraction"
@@ -86,6 +87,7 @@ export const PROVIDER_LABELS: Record<ModelProvider, string> = {
 
 export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
   chat: "Chat assistant",
+  chat_vision: "Chat image understanding",
   email_draft: "Email drafting",
   email_reply: "Inbound email replies",
   extraction: "Policy extraction",
@@ -107,6 +109,8 @@ export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
 export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
   chat:
     "Interactive assistant route for web chat, MCP/CLI chat, iMessage/SMS, broker portfolio Q&A, retrieval orchestration, and tool calls.",
+  chat_vision:
+    "Image-capable web chat route for reading user image attachments while preserving normal chat tools and side effects.",
   email_draft:
     "Outbound email drafting route for chat-requested messages, delivery workflows, and email subagent drafts.",
   email_reply:
@@ -143,6 +147,10 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
 
 export const LANGUAGE_MODEL_CATALOG: Record<ModelProvider, string[]> = {
   openai: [
+    "gpt-5.6",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
     "gpt-5.5",
     "gpt-5.5-pro",
     "gpt-5.4",
@@ -367,7 +375,13 @@ export const MODEL_TASK_GROUPS = [
     label: "Agent communication",
     description:
       "Routes used when Glass is talking to users or coordinating mailbox workflows.",
-    tasks: ["chat", "email_reply", "email_draft", "mailbox_coordinator"],
+    tasks: [
+      "chat",
+      "chat_vision",
+      "email_reply",
+      "email_draft",
+      "mailbox_coordinator",
+    ],
   },
   {
     id: "reasoning_authoring",
@@ -468,6 +482,10 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   [FIREWORKS_MODEL_IDS.gptOssSafeguard20B]: "GPT-OSS Safeguard 20B",
   [FIREWORKS_MODEL_IDS.qwen3Embedding8B]: "Qwen3 Embedding 8B",
   [FIREWORKS_MODEL_IDS.nomicEmbedText15]: "Nomic Embed Text v1.5",
+  "gpt-5.6": "GPT 5.6 Sol",
+  "gpt-5.6-sol": "GPT 5.6 Sol",
+  "gpt-5.6-terra": "GPT 5.6 Terra",
+  "gpt-5.6-luna": "GPT 5.6 Luna",
   "gpt-5.5": "GPT 5.5",
   "gpt-5.5-pro": "GPT 5.5 Pro",
   "gpt-5.4": "GPT 5.4",
@@ -504,6 +522,10 @@ export function modelCapabilitiesForTask(
 
 export function modelSupportsImageInput(route: ModelRoute): boolean {
   return modelPolicySupportsImageInput(route);
+}
+
+export function modelRouteSupportsTask(task: ModelTask, route: ModelRoute) {
+  return task !== "chat_vision" || modelSupportsImageInput(route);
 }
 
 export function isRetiredModelRoute(

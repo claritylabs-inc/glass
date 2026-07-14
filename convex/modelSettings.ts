@@ -29,6 +29,7 @@ import {
   directProviderModelForRoute,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
+  modelRouteSupportsTask,
   type ModelProvider,
   type ModelRoute,
   type ModelRouteId,
@@ -77,6 +78,7 @@ const webRetrievalValidator = v.object({
 
 const modelTaskRoutesValidator = v.object({
   chat: v.optional(routeUpdateValidator),
+  chat_vision: v.optional(routeUpdateValidator),
   email_draft: v.optional(routeUpdateValidator),
   email_reply: v.optional(routeUpdateValidator),
   extraction: v.optional(routeUpdateValidator),
@@ -97,6 +99,7 @@ const modelTaskRoutesValidator = v.object({
 
 const globalRoutesValidator = v.object({
   chat: v.optional(routeUpdateValidator),
+  chat_vision: v.optional(routeUpdateValidator),
   email_draft: v.optional(routeUpdateValidator),
   email_reply: v.optional(routeUpdateValidator),
   extraction: v.optional(routeUpdateValidator),
@@ -140,6 +143,12 @@ function assertSupportedRoute(routeId: ModelRouteId, route: ModelRoute) {
     : LANGUAGE_MODEL_CATALOG[route.provider];
   if (!models?.includes(route.model)) {
     throw new Error(`Unsupported model ${route.model} for ${PROVIDER_LABELS[route.provider]}`);
+  }
+  if (
+    isModelTask(routeId) &&
+    !modelRouteSupportsTask(routeId, route)
+  ) {
+    throw new Error(`${MODEL_TASK_LABELS[routeId]} requires an image-capable model`);
   }
 }
 
@@ -597,6 +606,7 @@ export const resolveForOrg = internalQuery({
         brokerRoute.provider !== "moonshot" &&
         !isRetiredModelRoute(brokerRoute) &&
         directProviderModelForRoute(brokerRoute) &&
+        modelRouteSupportsTask(task, brokerRoute) &&
         providerKeys[brokerRoute.provider]
       ) {
         routes[task] = brokerRoute;
@@ -608,6 +618,7 @@ export const resolveForOrg = internalQuery({
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
         !isRetiredModelRoute(globalRoute) &&
+        modelRouteSupportsTask(task, globalRoute) &&
         routeDirectlyConfigured(globalRoute)
       ) {
         routes[task] = globalRoute;
@@ -662,6 +673,7 @@ export const resolvePublicDefaults = internalQuery({
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
         !isRetiredModelRoute(globalRoute) &&
+        modelRouteSupportsTask(task, globalRoute) &&
         routeDirectlyConfigured(globalRoute)
       ) {
         routes[task] = globalRoute;

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useAction } from "convex/react";
-import dayjs from "dayjs";
 import { ClipboardList, FileText, Loader2, Mail as MailIcon, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -11,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import { scientistSurnameFor } from "../scientist-surnames";
 import type { ToolArtifactData } from "../types";
+import { formatDisplayDateTime } from "@/lib/date-format";
 
 export function normalizeMailboxTask(data: unknown): {
   status?: string;
@@ -458,7 +458,13 @@ function MailboxTaskSummaryCard({
                     ) : null}
                   </div>
                   <p className="mt-1 truncate text-label text-muted-foreground/45">
-                    {[email.from, email.mailbox, email.date ? dayjs(email.date).format("MMM D, YYYY h:mm A") : undefined].filter(Boolean).join(" · ")}
+                    {[
+                      email.from,
+                      email.mailbox,
+                      email.date
+                        ? formatDisplayDateTime(email.date, email.date)
+                        : undefined,
+                    ].filter(Boolean).join(" · ")}
                   </p>
                   {email.reason ? (
                     <p className="mt-1 text-label leading-4 text-muted-foreground/65">

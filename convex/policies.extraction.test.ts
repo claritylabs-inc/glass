@@ -8,6 +8,66 @@ const modules = import.meta.glob("./**/*.ts");
 const updateExtractionInternalFn = updateExtractionInternal as any;
 
 describe("policies.updateExtractionInternal", () => {
+  test("stores SDK-formatted compatibility addresses for extracted policy parties", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Carrier",
+        policyNumber: "POL-123",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        insurer: {
+          legalName: "Carrier",
+          address: {
+            street1: "10751 Deerwood Park Blvd",
+            street2: "Suite 200",
+            city: "Jacksonville",
+            state: "FL",
+            zip: "32256",
+            country: "US",
+            formatted: "10751 Deerwood Park Blvd, Suite 200, Jacksonville, FL 32256",
+          },
+        },
+        producer: {
+          agencyName: "Producer",
+          address: {
+            street1: "100 Main Street",
+            city: "Toronto",
+            state: "ON",
+            zip: "M5V 1A1",
+            country: "CA",
+            formatted: "100 Main Street, Toronto, ON M5V 1A1",
+          },
+        },
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.insurer?.address?.formatted).toBe(
+      "10751 Deerwood Park Blvd, Suite 200, Jacksonville, FL 32256",
+    );
+    expect(policy?.producer?.address?.formatted).toBe(
+      "100 Main Street, Toronto, ON M5V 1A1",
+    );
+  });
+
   test("stores source provenance on extracted insured addresses", async () => {
     const t = convexTest(schema, modules);
     const policyId = await t.run(async (ctx) => {
@@ -59,6 +119,67 @@ describe("policies.updateExtractionInternal", () => {
       sourceSpanIds: ["policy:span:6:104"],
       sourceTextHash: "address-hash",
     });
+  });
+
+  test("drops provenance-only address shells without rejecting the extraction update", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Carrier",
+        policyNumber: "POL-123",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        insuredAddress: {
+          documentNodeId: "policy:source_node:insured",
+          sourceSpanIds: ["policy:span:insured"],
+        },
+        insurer: {
+          legalName: "Carrier",
+          address: {
+            formatted: "Address unavailable",
+            documentNodeId: "policy:source_node:insurer",
+            sourceSpanIds: ["policy:span:insurer"],
+          },
+          sourceSpanIds: ["policy:span:insurer"],
+        },
+        additionalNamedInsureds: [
+          {
+            name: "Known Subsidiary",
+            address: {
+              city: "Toronto",
+              sourceSpanIds: ["policy:span:subsidiary"],
+            },
+          },
+        ],
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.insuredAddress).toBeUndefined();
+    expect(policy?.insurer).toEqual({
+      legalName: "Carrier",
+      sourceSpanIds: ["policy:span:insurer"],
+    });
+    expect(policy?.additionalNamedInsureds).toEqual([
+      { name: "Known Subsidiary" },
+    ]);
   });
 
   test("does not let final extraction erase known identity fields with unknown values", async () => {

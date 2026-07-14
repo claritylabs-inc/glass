@@ -13,6 +13,7 @@ import {
   PoweredByGlassWordmark,
 } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
+import { completeOtpSignIn } from "@/lib/otp-auth";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 type ConnectedOrgsApi = {
@@ -35,7 +36,7 @@ type RequestData = {
 
 const connectedOrgsApi = api as unknown as ConnectedOrgsApi;
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 const LABEL_CLASSES = "text-label font-medium text-muted-foreground block mb-1.5";
 
 function isEmailLike(value: string): boolean {
@@ -103,7 +104,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
           await new Promise((resolve) => setTimeout(resolve, 400));
         }
         if (!stashed) throw new Error("Could not auto-verify. Please try again.");
-        await signIn("resend-otp", { email: stashed.email, code: stashed.code });
+        await completeOtpSignIn(stashed.email, stashed.code);
+        window.location.reload();
       } catch (err) {
         setError(
           err instanceof Error && err.message
@@ -159,7 +161,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
     setLoading(true);
     setError("");
     try {
-      await signIn("resend-otp", { email, code });
+      await completeOtpSignIn(email, code);
+      window.location.reload();
     } catch (err: unknown) {
       setError(friendlyError(err instanceof Error ? err.message : ""));
       setLoading(false);

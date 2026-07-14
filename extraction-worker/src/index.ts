@@ -35,6 +35,7 @@ import {
 } from "./fireworksStructuredOutput.js";
 import { buildPdfSourceSpans } from "./pdfSourceSpans.js";
 import { convertPdfWithLiteParse, type PageScreenshot } from "./liteparse.js";
+import { resolveConvexStorageUrl } from "./convexStorageUrl.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -1505,7 +1506,10 @@ async function logJob(
 }
 
 async function fetchPdfBytes(fileUrl: string): Promise<Uint8Array> {
-  const response = await fetch(fileUrl);
+  const response = await fetch(resolveConvexStorageUrl(fileUrl, {
+    glassEnv: GLASS_ENV,
+    convexUrl: CONVEX_URL,
+  }));
   if (!response.ok) {
     throw new Error(`Failed to fetch source PDF: ${response.status} ${response.statusText}`);
   }
@@ -1659,7 +1663,10 @@ async function uploadCompletionPayload(
       const { uploadUrl } = await convex.action(actions.createExternalCompletionUploadUrl, {
         secret: SECRET,
       });
-      const response = await fetch(uploadUrl, {
+      const response = await fetch(resolveConvexStorageUrl(uploadUrl, {
+        glassEnv: GLASS_ENV,
+        convexUrl: CONVEX_URL,
+      }), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: json,
@@ -1751,7 +1758,7 @@ const PREVIEW_TOP_LEVEL_FIELDS = [
   "carrier",
   "security",
   "underwriter",
-  "mga",
+  "generalAgentName",
   "broker",
   "policyNumber",
   "linesOfBusiness",
@@ -1804,7 +1811,7 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
     carrier: { type: ["string", "null"] },
     security: { type: ["string", "null"] },
     underwriter: { type: ["string", "null"] },
-    mga: { type: ["string", "null"] },
+    generalAgentName: { type: ["string", "null"] },
     broker: { type: ["string", "null"] },
     policyNumber: { type: ["string", "null"] },
     linesOfBusiness: {
@@ -2056,7 +2063,6 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
     "carrier",
     "security",
     "underwriter",
-    "mga",
     "broker",
     "policyNumber",
     "effectiveDate",
@@ -2067,6 +2073,10 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
   ]) {
     const cleaned = cleanPreviewString(input[key]);
     if (cleaned) fields[key] = cleaned;
+  }
+  const generalAgentName = cleanPreviewString(input.generalAgentName);
+  if (generalAgentName) {
+    fields.generalAgent = { agencyName: generalAgentName };
   }
   const summary = cleanPreviewParagraph(input.summary);
   if (summary) fields.summary = summary;
@@ -2145,6 +2155,7 @@ This output is provisional and will be overwritten by a later source-backed extr
   const prompt = `Extract a provisional policy summary from this LiteParse/PDF text.
 
 Use concise display strings for dates, money, limits, deductibles, and coverage names.
+Populate generalAgentName only when the document identifies a General Agent, including source labels such as managing general agent, MGA, program administrator, or administrator. Normalize a source-labeled Broker or Agent to Producer; do not use the Producer or insurer name as the General Agent.
 For linesOfBusiness and coverages[].lineOfBusiness, use ACORD Line of Business codes such as CGL, AUTOB, AUTOP, WORK, UMBRC, EXLIA, EO, OLIB, EPLI, DO, FIDUC, CRIME, INMRC, COMAR, PROPC, PROP, BOP, HOME, DFIRE, FLOOD, GARAG, or UN. Use UN only when no more specific policy-level ACORD code fits. Omit coverages[].lineOfBusiness when a coverage row cannot be assigned to exactly one line.
 
 Document text:

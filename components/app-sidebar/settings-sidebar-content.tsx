@@ -1,7 +1,7 @@
 "use client";
 
-import { getSettingsSections } from "@/lib/settings-sections";
-import { SidebarMenuItem } from "./nav-item";
+import { getSettingsNavigation } from "@/lib/settings-sections";
+import { SectionHeader, SidebarMenuItem } from "./nav-item";
 import { SidebarBrokerContact } from "./broker-contact-card";
 import { SidebarHeader } from "./sidebar-header";
 import type { BrokerContact } from "./types";
@@ -25,7 +25,7 @@ export function SettingsSidebarContent({
   showBrokerContact: boolean;
   onToggleCollapse: () => void;
 }) {
-  const sections = getSettingsSections({ isBroker, isStandaloneClient });
+  const groups = getSettingsNavigation({ isBroker, isStandaloneClient });
 
   return (
     <div className="flex flex-col h-full">
@@ -37,26 +37,22 @@ export function SettingsSidebarContent({
         backHref="/"
       />
 
-      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-        {!collapsed && (
-          <p className="text-label font-medium text-muted-foreground/50 px-3 pt-3 pb-1.5">
-            Settings
-          </p>
-        )}
-        {collapsed && <div className="pt-4 pb-1" />}
-        {sections.map((item) => {
-          const isItemActive = item.id === activeSettingsSection;
-          return (
-            <SidebarMenuItem
-              key={item.id}
-              href={`/settings?section=${item.id}`}
-              label={item.label}
-              icon={item.icon}
-              active={isItemActive}
-              collapsed={collapsed}
-            />
-          );
-        })}
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
+        {groups.map((group) => (
+          <div key={group.label}>
+            <SectionHeader label={group.label} collapsed={collapsed} />
+            {group.pages.map((item) => (
+              <SidebarMenuItem
+                key={item.id}
+                href={`/settings?section=${item.id}&tab=${item.tabs[0].id}`}
+                label={item.label}
+                icon={item.icon}
+                active={item.id === activeSettingsSection}
+                collapsed={collapsed}
+              />
+            ))}
+          </div>
+        ))}
       </nav>
 
       {showBrokerContact && !collapsed ? (

@@ -8,7 +8,6 @@ import {
   Mail,
   MessageCircle,
   MessageSquare,
-  MousePointer2,
   Pin,
   Plus,
   Settings,
@@ -25,9 +24,9 @@ import {
 import {
   MENU_ITEM_ACTIVE,
   MENU_ITEM_BASE,
-  MENU_ITEM_HOVER,
   MENU_ITEM_INACTIVE,
   MENU_ITEM_INACTIVE_SUBTLE,
+  commandShortcut,
   navShortcut,
   SIDEBAR_TOOLTIP_CLASS,
   SIDEBAR_TOOLTIP_SIDE_OFFSET,
@@ -74,7 +73,6 @@ export function MainSidebarContent({
   onToggleNotifications,
   onCloseNotifications,
   onAskGlass,
-  onNewChat,
   onArchiveThread,
   onSignOut,
 }: {
@@ -101,7 +99,6 @@ export function MainSidebarContent({
   onToggleNotifications: () => void;
   onCloseNotifications: () => void;
   onAskGlass?: () => void;
-  onNewChat: () => void | Promise<void>;
   onArchiveThread: (threadId: string, active: boolean) => Promise<void>;
   onSignOut: () => void;
 }) {
@@ -123,16 +120,6 @@ export function MainSidebarContent({
       />
 
       <div className="relative px-2 py-2 border-b border-foreground/6">
-        {onAskGlass ? (
-          <SidebarMenuItem
-            onClick={onAskGlass}
-            label="Ask Glass"
-            icon={MousePointer2}
-            active={false}
-            collapsed={collapsed}
-            className="mb-0.5"
-          />
-        ) : null}
         <SidebarMenuItem
           onClick={onToggleNotifications}
           label="Notifications"
@@ -200,15 +187,16 @@ export function MainSidebarContent({
             imessageConversations={imessageConversations}
             archivedThreadCount={archivedThreadCount}
             pathname={pathname}
-            onNewChat={onNewChat}
+            onAskGlass={onAskGlass}
             onArchiveThread={onArchiveThread}
           />
         ) : (
           <CollapsedThreadList
             agentConversations={agentConversations}
             imessageConversations={imessageConversations}
+            archivedThreadCount={archivedThreadCount}
             pathname={pathname}
-            onNewChat={onNewChat}
+            onAskGlass={onAskGlass}
           />
         )}
       </nav>
@@ -256,35 +244,51 @@ function ExpandedThreadList({
   imessageConversations,
   archivedThreadCount,
   pathname,
-  onNewChat,
+  onAskGlass,
   onArchiveThread,
 }: {
   agentConversations: ConversationItem[];
   imessageConversations: ConversationItem[];
   archivedThreadCount: number;
   pathname: string;
-  onNewChat: () => void | Promise<void>;
+  onAskGlass?: () => void;
   onArchiveThread: (threadId: string, active: boolean) => Promise<void>;
 }) {
   return (
     <>
-      <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
-        <span className="text-label font-medium text-muted-foreground/50 ">
+      <div className="flex items-center justify-between px-3 pb-1.5 pt-5">
+        <span className="text-label font-medium text-muted-foreground/50">
           Threads
         </span>
-        {(agentConversations.length > 0 ||
-          imessageConversations.length > 0) && (
-          <PillButton
-            type="button"
-            size="compact"
-            variant="icon"
-            onClick={onNewChat}
-            title="New thread"
-            aria-label="New thread"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </PillButton>
-        )}
+        {onAskGlass ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <PillButton
+                  type="button"
+                  size="compact"
+                  variant="icon"
+                  label="New Chat"
+                  title=""
+                  onClick={onAskGlass}
+                >
+                  <Plus className="size-3.5" />
+                </PillButton>
+              }
+            />
+            <TooltipContent
+              side="right"
+              align="center"
+              sideOffset={SIDEBAR_TOOLTIP_SIDE_OFFSET}
+              className={SIDEBAR_TOOLTIP_CLASS}
+            >
+              <ShortcutTooltipContent
+                label="New Chat"
+                shortcut={commandShortcut("k")}
+              />
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
       {imessageConversations.map((item, idx) => (
         <SidebarThreadRow
@@ -296,17 +300,6 @@ function ExpandedThreadList({
           shortcutLabel="pinned thread"
         />
       ))}
-      {agentConversations.length === 0 &&
-        imessageConversations.length === 0 && (
-          <button
-            type="button"
-            onClick={onNewChat}
-            className={`w-full flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label text-muted-foreground/60 ${MENU_ITEM_HOVER}`}
-          >
-            <Plus className="w-3 h-3 shrink-0" />
-            <span>New chat</span>
-          </button>
-        )}
       {agentConversations.map((item, idx) => (
         <SidebarThreadRow
           key={`${item.kind}-${item.id}`}
@@ -321,15 +314,15 @@ function ExpandedThreadList({
           onArchiveThread={onArchiveThread}
         />
       ))}
-      {archivedThreadCount > 0 && (
-        <Link
+      {archivedThreadCount > 0 ? (
+        <SidebarMenuItem
           href="/agent/archive"
-          className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label ${MENU_ITEM_INACTIVE_SUBTLE}`}
-        >
-          <Archive className="w-3 h-3 shrink-0" />
-          <span>Archived</span>
-        </Link>
-      )}
+          label="Archived"
+          icon={Archive}
+          active={pathname === "/agent/archive"}
+          collapsed={false}
+        />
+      ) : null}
     </>
   );
 }
@@ -408,13 +401,15 @@ function SidebarThreadRow({
 function CollapsedThreadList({
   agentConversations,
   imessageConversations,
+  archivedThreadCount,
   pathname,
-  onNewChat,
+  onAskGlass,
 }: {
   agentConversations: ConversationItem[];
   imessageConversations: ConversationItem[];
+  archivedThreadCount: number;
   pathname: string;
-  onNewChat: () => void | Promise<void>;
+  onAskGlass?: () => void;
 }) {
   return (
     <>
@@ -458,15 +453,25 @@ function CollapsedThreadList({
           </Link>
         );
       })}
-      <button
-        type="button"
-        onClick={onNewChat}
-        title="New thread"
-        aria-label="New thread"
-        className={`mt-0.5 flex w-full items-center justify-center py-1.5 ${MENU_ITEM_BASE} ${MENU_ITEM_INACTIVE_SUBTLE}`}
-      >
-        <Plus className="w-3.5 h-3.5" />
-      </button>
+      {onAskGlass ? (
+        <SidebarMenuItem
+          onClick={onAskGlass}
+          label="New Chat"
+          icon={Plus}
+          active={false}
+          collapsed
+          shortcut={commandShortcut("k")}
+        />
+      ) : null}
+      {archivedThreadCount > 0 ? (
+        <SidebarMenuItem
+          href="/agent/archive"
+          label="Archived"
+          icon={Archive}
+          active={pathname === "/agent/archive"}
+          collapsed
+        />
+      ) : null}
     </>
   );
 }

@@ -6,16 +6,19 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { Badge } from "@/components/ui/badge";
-import { buildCoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 import { policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import type { Id } from "@/convex/_generated/dataModel";
+import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
 
-import { CoverageBreakdownCards } from "./policy-coverage-breakdown";
 import { PolicySummary } from "./policy-summary";
+import { PolicyPartiesPanel } from "./policy-parties-panel";
+import type { PolicyDetailsEditSection } from "./policy-details-editor";
 
 export function PolicyDetailsTab({
   policy,
   fileUrl,
+  canEdit = false,
+  onEdit,
 }: {
   policy: Record<string, unknown> & {
     _id: Id<"policies">;
@@ -25,16 +28,20 @@ export function PolicyDetailsTab({
     effectiveDate?: string;
     expirationDate?: string;
     premium?: string;
+    totalCost?: string;
+    taxesAndFees?: Array<{ amount?: string; amountValue?: number }>;
     summary?: string;
     isRenewal?: boolean;
   };
   fileUrl?: string | null;
+  canEdit?: boolean;
+  onEdit?: (section: PolicyDetailsEditSection) => void;
   }) {
   const linesOfBusiness = policyLobCodes(policy as { linesOfBusiness?: string[] });
-  const coverageBreakdown = buildCoverageBreakdown(policy);
   const isProvisional =
     policy.extractionDataStage === "preview" &&
     policy.pipelineStatus !== "complete";
+  const partyContext = resolvePolicyPartyContext(policy);
 
   return (
     <FadeIn when={true} staggerIndex={1} duration={0.5}>
@@ -57,23 +64,24 @@ export function PolicyDetailsTab({
       ) : null}
       <PolicySummary
         policyNumber={policy.policyNumber}
-        administrator={policy.mga as string | undefined}
-        carrier={
-          (policy.carrierLegalName as string | undefined) ||
-          (policy.security as string | undefined) ||
-          policy.carrier
-        }
-        broker={policy.broker as string | undefined}
-        insuredName={policy.insuredName}
         effectiveDate={policy.effectiveDate}
         expirationDate={policy.expirationDate}
         premium={policy.premium}
+        totalCost={policy.totalCost}
+        taxesAndFees={policy.taxesAndFees}
         linesOfBusiness={linesOfBusiness}
         policyTermType={policy.policyTermType as string | undefined}
+        operationsDescription={partyContext.operationsDescription}
         isRenewal={policy.isRenewal}
         pdfUrl={fileUrl ?? undefined}
+        onEdit={canEdit && onEdit ? () => onEdit("overview") : undefined}
       />
-      <CoverageBreakdownCards breakdown={coverageBreakdown} />
+      <PolicyPartiesPanel
+        key={policy._id}
+        policy={policy}
+        canEdit={canEdit}
+        onEdit={onEdit}
+      />
     </FadeIn>
   );
 }

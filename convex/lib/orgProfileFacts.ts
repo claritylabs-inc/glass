@@ -3,6 +3,11 @@ import customParseFormat from "dayjs/plugin/customParseFormat";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { normalizeDeclarationValue } from "./declarationFacts";
+import {
+  irsEntityTypeLabel,
+  normalizeIrsEntityType,
+  type IrsEntityType,
+} from "./entityTypes";
 import { normalizeExtractedDate } from "./valueNormalization";
 
 dayjs.extend(customParseFormat);
@@ -17,6 +22,7 @@ type DeclarationFactDoc = {
   normalizedValue: string;
   structuredValue?: unknown;
   valueKind: "string" | "number" | "date" | "money" | "address" | "list" | "unknown";
+  sourceNodeIds?: string[];
   sourceSpanIds?: string[];
   effectiveDate?: string;
   expirationDate?: string;
@@ -35,6 +41,76 @@ type OrgMailingAddress = {
   formatted?: string;
 };
 
+export type EditableOrganizationProfile = {
+  mailingAddress: OrgMailingAddress;
+  entityType: IrsEntityType | "";
+  fein: string;
+  businessNumber: string;
+  operationsDescription: string;
+};
+
+function profileValue(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  return cleanText((value as { value?: unknown }).value) ?? "";
+}
+
+function profileAddress(value: unknown): OrgMailingAddress | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return compactAddress((value as { value?: unknown }).value);
+}
+
+export function resolveEffectiveOrganizationProfile(
+  org: Record<string, unknown>,
+): EditableOrganizationProfile {
+  const overrides = org.profileOverrides && typeof org.profileOverrides === "object"
+    ? org.profileOverrides as Partial<EditableOrganizationProfile> & { taxId?: string }
+    : undefined;
+  const facts = org.profileFacts && typeof org.profileFacts === "object"
+    ? org.profileFacts as Record<string, unknown>
+    : {};
+  return {
+    mailingAddress: compactAddress(overrides?.mailingAddress)
+      ?? profileAddress(facts.mailingAddress)
+      ?? compactAddress(org.mailingAddress)
+      ?? {},
+    entityType:
+      normalizeIrsEntityType(overrides?.entityType ?? profileValue(facts.entityType)),
+    fein: profileValue({ value: overrides?.fein ?? overrides?.taxId })
+      || profileValue(facts.fein)
+      || profileValue(facts.taxId),
+    businessNumber: profileValue({ value: overrides?.businessNumber })
+      || profileValue(facts.businessNumber),
+    operationsDescription:
+      overrides?.operationsDescription ?? profileValue(facts.operationsDescription),
+  };
+}
+
+export function effectiveOrganizationProfileFacts(
+  org: Record<string, unknown>,
+): Record<string, any> | undefined {
+  const facts = org.profileFacts && typeof org.profileFacts === "object"
+    ? org.profileFacts as Record<string, unknown>
+    : {};
+  const profile = resolveEffectiveOrganizationProfile(org);
+  const effective = {
+    ...facts,
+    ...(Object.keys(profile.mailingAddress).length > 0
+      ? { mailingAddress: { value: profile.mailingAddress } }
+      : {}),
+    ...(profile.entityType
+      ? { entityType: { value: irsEntityTypeLabel(profile.entityType) } }
+      : {}),
+    ...(profile.fein ? { fein: { value: profile.fein } } : {}),
+    ...(profile.businessNumber
+      ? { businessNumber: { value: profile.businessNumber } }
+      : {}),
+    ...(profile.operationsDescription
+      ? { operationsDescription: { value: profile.operationsDescription } }
+      : {}),
+  };
+  return Object.keys(effective).length > 0 ? effective : undefined;
+}
+
 type RelatedLegalEntity = {
   legalName: string;
   relationship?: "current" | "fka" | "dba" | "subsidiary" | "parent" | "affiliate" | "other";
@@ -50,6 +126,8 @@ const PROFILE_FIELD_GROUPS = [
   "dba",
   "entity_type",
   "fein",
+  "business_number",
+  "operations_description",
   "additional_named_insured",
 ] as const;
 
@@ -144,8 +222,8 @@ function policyDateRank(fact: DeclarationFactDoc): number {
 }
 
 function sourceQualityRank(fact: DeclarationFactDoc): number {
-  return (fact.fieldPath.startsWith("operationalProfile.declarationFacts.") ? 2 : 0)
-    + ((fact.sourceSpanIds?.length ?? 0) > 0 ? 1 : 0)
+  return (fact.fieldPath.startsWith("operationalProfile.") ? 2 : 0)
+    + ((fact.sourceNodeIds?.length ?? 0) > 0 || (fact.sourceSpanIds?.length ?? 0) > 0 ? 1 : 0)
     + (fact.structuredValue ? 1 : 0);
 }
 
@@ -191,6 +269,7 @@ function sourceForFact(fact: DeclarationFactDoc) {
     displayValue: fact.displayValue,
     normalizedValue: fact.normalizedValue,
     valueKind: fact.valueKind,
+    sourceNodeIds: fact.sourceNodeIds,
     sourceSpanIds: fact.sourceSpanIds,
     effectiveDate: fact.effectiveDate,
     expirationDate: fact.expirationDate,
@@ -294,6 +373,8 @@ export async function syncOrgProfileFromDeclarationFacts(
   const dba = scalarProfileFact(newestFact(facts, "dba"));
   const entityType = scalarProfileFact(newestFact(facts, "entity_type"));
   const taxId = scalarProfileFact(newestFact(facts, "fein"));
+  const businessNumber = scalarProfileFact(newestFact(facts, "business_number"));
+  const operationsDescription = scalarProfileFact(newestFact(facts, "operations_description"));
   const additionalNamedInsureds = newestFactSet(facts, "additional_named_insured")
     .map(scalarProfileFact)
     .filter((fact): fact is NonNullable<ReturnType<typeof scalarProfileFact>> => Boolean(fact));
@@ -304,6 +385,9 @@ export async function syncOrgProfileFromDeclarationFacts(
     ...(dba ? { dba } : {}),
     ...(entityType ? { entityType } : {}),
     ...(taxId ? { taxId } : {}),
+    ...(taxId ? { fein: taxId } : {}),
+    ...(businessNumber ? { businessNumber } : {}),
+    ...(operationsDescription ? { operationsDescription } : {}),
     ...(additionalNamedInsureds.length > 0 ? { additionalNamedInsureds } : {}),
   };
   const hasProfileFacts = Object.keys(profileFacts).length > 0;

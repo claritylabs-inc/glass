@@ -1,6 +1,5 @@
 "use client";
 
-import dayjs from "dayjs";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { FileText, Loader2, MessageSquare, RefreshCw, Send, X } from "lucide-react";
@@ -16,6 +15,7 @@ import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { formatDisplayDateTime } from "@/lib/date-format";
 import {
   Table,
   TableBody,
@@ -213,7 +213,7 @@ function DeliveryDrawer({
           <Detail label="Rule" value={job.ruleName ?? "Default action"} />
           <Detail label="Channels" value={channelLabel(job.channels)} />
           <Detail label="Recipient" value={[job.recipientName, job.recipientEmail, job.recipientPhone].filter(Boolean).join(" · ") || "Missing"} />
-          <Detail label="Updated" value={dayjs(job.updatedAt).format("MMM D, h:mm A")} />
+          <Detail label="Updated" value={formatDisplayDateTime(job.updatedAt)} />
           {job.lastError ? <Detail label="Error" value={job.lastError} /> : null}
           </div>
         </section>
@@ -362,7 +362,9 @@ export default function DeliveriesPage() {
                     <TableCell>
                       <Badge variant={statusVariant(job.status)}>{STATUS_LABELS[job.status]}</Badge>
                     </TableCell>
-                    <TableCell className="px-4 text-muted-foreground">{dayjs(job.updatedAt).format("MMM D")}</TableCell>
+                    <TableCell className="px-4 text-muted-foreground">
+                      {formatDisplayDateTime(job.updatedAt)}
+                    </TableCell>
                   </TableRow>
                 ))
               )}

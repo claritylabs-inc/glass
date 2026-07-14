@@ -191,12 +191,13 @@ export function useCachedViewerOrg() {
   return useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
 }
 
-export function useCachedPolicyList() {
+export function useCachedPolicyList(archived = false) {
   const policies = useCachedQuery(
     "policies.listForClient",
     api.policies.listForClient,
     {
       documentType: "policy",
+      archived,
     },
   ) as PolicyList | undefined;
   const setPolicyDetail = useSetCachedQuery<

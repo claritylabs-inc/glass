@@ -5,12 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { AnimatePresence, motion } from "framer-motion";
-import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
-import { usePageContext } from "@/hooks/use-page-context";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { ClientDetailSidebarContent } from "@/components/app-sidebar/client-detail-sidebar-content";
 import { MainSidebarContent } from "@/components/app-sidebar/main-sidebar-content";
@@ -36,6 +34,10 @@ import { useCachedQuery, useSetCachedQuery } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 import { useArchivedThreadCacheActions } from "@/lib/sync/glass-cached-queries";
 import { isFeatureEnabled } from "@/convex/lib/featureFlags";
+import {
+  getSettingsNavigation,
+  resolveSettingsDestination,
+} from "@/lib/settings-sections";
 
 function sidebarHeaderBranding({
   viewerOrg,
@@ -117,7 +119,6 @@ export function AppSidebar({
   const { archiveThreadLocally } = useArchivedThreadCacheActions();
   const { signOut } = useAuthActions();
   const { clearCache: clearOnboardingCache } = useOnboardingCache();
-  const { context: pageContext } = usePageContext();
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
   const showConnectFeatures = isFeatureEnabled(currentOrg?.org, "connect_features");
@@ -193,19 +194,6 @@ export function AppSidebar({
   useEffect(() => {
     onMobileClose?.();
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleNewChat() {
-    try {
-      const threadId = await createThread({
-        initialContext: pageContext ?? undefined,
-        agentDomain: AGENT_DOMAIN,
-        clientMutationId: createClientMutationId("thread"),
-      });
-      router.push(`/agent/thread/${threadId}`);
-    } catch {
-      toast.error("Failed to create chat");
-    }
-  }
 
   async function handleArchiveThread(threadId: string, active: boolean) {
     await archiveThreadLocally(threadId as Id<"threads">);
@@ -302,7 +290,11 @@ export function AppSidebar({
   const fallbackAgentHandle = viewerOrg?.org?.agentHandle;
 
   const clientDetailBase = clientDetailId ? `/clients/${clientDetailId}` : "";
-  const activeSettingsSection = searchParams.get("section") ?? "organization";
+  const activeSettingsSection = resolveSettingsDestination({
+    requestedSection: searchParams.get("section"),
+    requestedTab: searchParams.get("tab"),
+    groups: getSettingsNavigation({ isBroker, isStandaloneClient }),
+  }).section;
 
   function renderSettingsSidebarContent(contentCollapsed: boolean) {
     return (
@@ -345,7 +337,6 @@ export function AppSidebar({
         onToggleNotifications={() => setNotificationsPanelOpen((v) => !v)}
         onCloseNotifications={() => setNotificationsPanelOpen(false)}
         onAskGlass={onAskGlass}
-        onNewChat={handleNewChat}
         onArchiveThread={handleArchiveThread}
         onSignOut={() => {
           clearOnboardingCache();

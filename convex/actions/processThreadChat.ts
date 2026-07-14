@@ -24,6 +24,14 @@ import {
 } from "../lib/chatTools";
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import {
+  addToolStep,
+  appendReasoningDelta,
+  beginReasoningStep,
+  completeToolStep,
+  serializeAgentSteps,
+  type AgentStep,
+} from "../lib/agentSteps";
+import {
   buildScopedDocumentContext,
   buildScopedOrgMemoryContext,
   buildScopedRequirementsContext,
@@ -70,6 +78,7 @@ import {
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 import { buildAssistantMessageContentWithArtifacts } from "../lib/agentMessageHistory";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
+import { modelSupportsImageInput } from "../lib/modelCatalog";
 import {
   loadWebChatDeterministicControlState,
   runWebChatEmailControls,
@@ -410,6 +419,14 @@ type ChatContentPart =
 const MAX_ATTACHMENT_TEXT_CHARS = 80_000;
 const RECENT_ATTACHMENT_MESSAGE_LIMIT = 6;
 
+export function messageHistoryHasImageInput(history: ModelMessage[]) {
+  return history.some(
+    (message) =>
+      Array.isArray(message.content) &&
+      message.content.some((part) => part.type === "image"),
+  );
+}
+
 async function buildAttachmentParts(
   ctx: ActionCtx,
   attachments: ChatAttachment[],
@@ -632,8 +649,40 @@ function claimsCoiEmailCompletion(text: string): boolean {
   );
 }
 
+function hasEmailSendIntent(text: string): boolean {
+  return /\b(send|sent|email|emailed|forward|forwarded|deliver|delivered)\b/i.test(
+    text,
+  );
+}
+
+function isNegatedActionClaim(text: string, actionIndex: number): boolean {
+  const prefix = text.slice(Math.max(0, actionIndex - 60), actionIndex);
+  return /\b(?:not|never|haven['’]t|hasn['’]t|wasn['’]t|isn['’]t|didn['’]t|couldn['’]t|unable to|failed to)(?:\s+\w+){0,4}\s*$/i.test(
+    prefix,
+  );
+}
+
+function claimsEmailSendCompletion(text: string): boolean {
+  for (const match of text.matchAll(
+    /\b(sent|emailed|delivered|sending|emailing|delivering)\b/gi,
+  )) {
+    if (!isNegatedActionClaim(text, match.index)) return true;
+  }
+  return false;
+}
+
 function claimsEmailDraftCompletion(text: string): boolean {
-  return /\b(drafted|prepared)\b[\s\S]{0,80}\bemail\b/i.test(text);
+  for (const match of text.matchAll(
+    /\b(drafted|prepared|created|updated|revised)\b/gi,
+  )) {
+    if (
+      !isNegatedActionClaim(text, match.index) &&
+      /\b(email|draft)\b/i.test(text.slice(match.index, match.index + 100))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export const run = internalAction({
@@ -955,6 +1004,7 @@ export const run = internalAction({
           allMessages as Array<Record<string, unknown>>,
           latestUserMsg?._id ? String(latestUserMsg._id) : undefined,
         );
+      const hasImageInput = messageHistoryHasImageInput(messageHistory);
 
       // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, {
@@ -1212,6 +1262,11 @@ export const run = internalAction({
         input?: string;
         output?: string;
       }> = [];
+      // Ordered timeline of reasoning segments and tool calls, saved alongside
+      // the legacy concatenated `reasoning` string so the UI can interleave.
+      const agentSteps: AgentStep[] = [];
+      const agentStepsSnapshot = () =>
+        serializeAgentSteps(agentSteps, normalizeReasoningText);
       const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
         filename: string;
@@ -1392,6 +1447,7 @@ export const run = internalAction({
 
       // Tool call display names for the "thinking" UI
       const TOOL_LABELS: Record<string, string> = {
+        lookup_address: "Validating address...",
         lookup_policy: "Searching policies...",
         lookup_policy_section: "Reading policy sources...",
         attach_policy_document: "Attaching policy PDF...",
@@ -1415,7 +1471,8 @@ export const run = internalAction({
         "coordinate_mailbox_task",
       ]);
 
-      const chatModel = await getModelAndRouteForOrg(ctx, args.orgId, "chat");
+      const chatTask = hasImageInput ? "chat_vision" : "chat";
+      const chatModel = await getModelAndRouteForOrg(ctx, args.orgId, chatTask);
       const startChatStream = (
         model: typeof chatModel.model,
         route: typeof chatModel.route,
@@ -1433,6 +1490,7 @@ export const run = internalAction({
       const resetStreamStateForRetry = async () => {
         content = "";
         reasoning = "";
+        agentSteps.length = 0;
         hasStartedReasoning = false;
         lastFlush = dayjs().valueOf();
         lastReasoningFlush = dayjs().valueOf();
@@ -1443,6 +1501,7 @@ export const run = internalAction({
         await ctx.runMutation(internal.threads.streamReasoning, {
           id: agentMsgId,
           reasoning: "",
+          agentSteps: [],
         });
       };
 
@@ -1460,12 +1519,17 @@ export const run = internalAction({
           if (await isAgentResponseCancelled()) return false;
           if (part.type === "error") {
             throw part;
+          } else if (part.type === "reasoning-start") {
+            // Each provider reasoning block becomes its own timeline segment
+            beginReasoningStep(agentSteps);
           } else if (part.type === "reasoning-delta") {
             // Stream reasoning separately from content
-            reasoning +=
+            const delta =
               ((part as Record<string, unknown>).text as string) ??
               ((part as Record<string, unknown>).delta as string) ??
               "";
+            reasoning += delta;
+            appendReasoningDelta(agentSteps, delta);
             if (!hasStartedReasoning) {
               hasStartedReasoning = true;
             }
@@ -1476,6 +1540,7 @@ export const run = internalAction({
               await ctx.runMutation(internal.threads.streamReasoning, {
                 id: agentMsgId,
                 reasoning: normalizeReasoningText(reasoning),
+                agentSteps: agentStepsSnapshot(),
               });
             }
           } else if (part.type === "text-delta") {
@@ -1495,9 +1560,21 @@ export const run = internalAction({
                 | Record<string, unknown>
                 | undefined) ?? undefined;
             usedTools.push(part.toolName);
+            const serializedInput = input
+              ? JSON.stringify(input).slice(0, 500)
+              : undefined;
             toolCalls.push({
               name: part.toolName,
-              input: input ? JSON.stringify(input).slice(0, 500) : undefined,
+              input: serializedInput,
+            });
+            addToolStep(agentSteps, {
+              name: part.toolName,
+              input: serializedInput,
+            });
+            await ctx.runMutation(internal.threads.streamReasoning, {
+              id: agentMsgId,
+              reasoning: normalizeReasoningText(reasoning),
+              agentSteps: agentStepsSnapshot(),
             });
             const label =
               TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
@@ -1522,6 +1599,13 @@ export const run = internalAction({
             if (lastToolCall && SUBAGENT_TOOL_NAMES.has(lastToolName)) {
               lastToolCall.output = serializeToolOutput(output);
             }
+            completeToolStep(
+              agentSteps,
+              lastToolName,
+              SUBAGENT_TOOL_NAMES.has(lastToolName)
+                ? serializeToolOutput(output)
+                : undefined,
+            );
             if (lastToolName === "render_email_preview" && output) {
               if (
                 output &&
@@ -1606,6 +1690,11 @@ export const run = internalAction({
               id: agentMsgId,
               content: restoreSentenceBoundarySpacing(content || ""),
             });
+            await ctx.runMutation(internal.threads.streamReasoning, {
+              id: agentMsgId,
+              reasoning: normalizeReasoningText(reasoning),
+              agentSteps: agentStepsSnapshot(),
+            });
           }
         }
         return true;
@@ -1627,13 +1716,20 @@ export const run = internalAction({
         }
 
         const fallbackRoute = fallbackRouteForCall({
-          task: "chat",
+          task: chatTask,
           taskKind: "query_reason",
           primaryRoute: chatModel.route,
           fallbackRoute: chatModel.fallbackRoute,
         });
-        const retryRoute = fallbackRoute ?? chatModel.route;
-        const retryModel = fallbackRoute ? getModelForRoute(fallbackRoute) : chatModel.model;
+        const compatibleFallbackRoute =
+          fallbackRoute &&
+          (!hasImageInput || modelSupportsImageInput(fallbackRoute))
+            ? fallbackRoute
+            : null;
+        const retryRoute = compatibleFallbackRoute ?? chatModel.route;
+        const retryModel = compatibleFallbackRoute
+          ? getModelForRoute(compatibleFallbackRoute)
+          : chatModel.model;
         console.warn(
           `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
         );
@@ -1648,12 +1744,25 @@ export const run = internalAction({
 
       // Final update — save content, reasoning, and cited sections
       content = restoreSentenceBoundarySpacing(content);
+      const emailResult = emailToolResult.current;
+      const completedEmailSend =
+        emailResult?.status === "sent" || emailResult?.status === "pending";
       const completedCoiEmailSideEffect =
         usedTools.includes("email_expert") ||
         usedTools.includes("generate_coi") ||
         responseAttachments.some((attachment) =>
           /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(attachment.filename),
         );
+      if (
+        hasEmailSendIntent(latestUserContent) &&
+        claimsEmailSendCompletion(content) &&
+        !completedEmailSend
+      ) {
+        content =
+          currentDraftEmails.length > 0
+            ? "I haven't sent the email. The draft is still open and needs a successful send action."
+            : "I haven't sent the email. I need to complete a successful email send before marking it sent.";
+      }
       if (
         hasCoiEmailIntent(latestUserContent) &&
         claimsCoiEmailCompletion(content) &&
@@ -1669,7 +1778,6 @@ export const run = internalAction({
         content =
           "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
       }
-      const emailResult = emailToolResult.current;
       if (!emailResult && !completedCoiEmailSideEffect) {
         content = await repairMissingConfidenceMarkers({
           ctx,
@@ -1696,6 +1804,8 @@ export const run = internalAction({
           citedSourceSpanIds.size > 0 ? [...citedSourceSpanIds] : undefined,
         usedTools: usedTools.length > 0 ? usedTools : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        agentSteps:
+          agentSteps.length > 0 ? agentStepsSnapshot() : undefined,
         toolArtifacts: toolArtifacts.length > 0 ? toolArtifacts : undefined,
         attachments:
           responseAttachments.length > 0 ? responseAttachments : undefined,
@@ -1830,6 +1940,7 @@ export const run = internalAction({
         await ctx.runMutation(internal.threads.streamReasoning, {
           id: agentMsgId,
           reasoning: normalizeReasoningText(reasoning),
+          agentSteps: agentStepsSnapshot(),
         });
       }
 

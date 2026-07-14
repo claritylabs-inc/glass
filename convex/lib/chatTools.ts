@@ -9,7 +9,7 @@ import { z } from "zod";
 
 export const lookupPolicy = tool({
   description:
-    "Search for insurance policies by carrier name, policy number, ACORD line of business, or keywords. Returns matching policy summaries.",
+    "Search for insurance policies by carrier name, policy number, ACORD line of business, or keywords. Returns matching policy summaries with source-backed client facts and policy-scoped Producer, insurer, carrier, and General Agent parties when available.",
   inputSchema: z.object({
     query: z
       .string()
@@ -133,7 +133,7 @@ export const confirmPolicyFact = tool({
       .object({
         carrier: z.string().optional(),
         security: z.string().optional(),
-        mga: z.string().optional(),
+        generalAgentName: z.string().optional(),
         broker: z.string().optional(),
         policyNumber: z.string().optional(),
         effectiveDate: z.string().optional(),
@@ -165,6 +165,27 @@ export const lookupPolicySection = tool({
   }),
 });
 
+export const lookupAddress = tool({
+  description:
+    "Validate and standardize a user-provided postal address with Mapbox before saving it or passing it to generate_coi. Use the returned structured fields only when Mapbox validates the first candidate. If the result is ambiguous or not found, ask the user to confirm a complete address instead of guessing.",
+  inputSchema: z.object({
+    query: z
+      .string()
+      .min(3)
+      .max(256)
+      .describe(
+        "Full address exactly as the user supplied it, including city, region, postal code, and country when available.",
+      ),
+    countryCode: z
+      .string()
+      .regex(/^[A-Za-z]{2}$/)
+      .optional()
+      .describe(
+        "Optional ISO 3166-1 alpha-2 country code used only to disambiguate the lookup, such as US or CA.",
+      ),
+  }),
+});
+
 export const attachPolicyDocument = tool({
   description:
     "Attach or send the original full policy PDF document for a specific policy. Use this when the user asks for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document in chat/iMessage/SMS. For email delivery, prefer the email_expert tool so it can attach the original policy PDF to the email.",
@@ -175,7 +196,7 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate or retrieve the right ACORD-style insurance certificate PDF for a specific policy and attach it to the current chat/iMessage/SMS response. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
+    "Generate or retrieve the right insurance certificate PDF for a specific policy and attach it to the current chat/iMessage/SMS response. When the user supplied a holder address, call lookup_address first and pass its validated structured fields here. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
   inputSchema: z.object({
     policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
     certificateHolder: z
@@ -205,6 +226,7 @@ export const generateCoi = tool({
     city: z.string().optional().describe("Certificate holder city when provided."),
     state: z.string().optional().describe("Certificate holder state/province when provided."),
     postalCode: z.string().optional().describe("Certificate holder postal code when provided."),
+    country: z.string().optional().describe("Certificate holder country when provided."),
     requestText: z
       .string()
       .optional()
@@ -221,10 +243,6 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe("Name of the requested additional insured when the user asks to add or show one on the certificate."),
-    certificateForm: z
-      .enum(["acord25", "acord24", "acord27", "acord28", "acord29", "acord30", "acord31"])
-      .optional()
-      .describe("Optional explicit form hint. Use acord28 for evidence of commercial property insurance for a lender, acord27 for personal property evidence, acord29 for flood evidence, acord24 for plain property certificates, acord30 for garage, acord31 for marine or energy, and acord25 for liability."),
     explicitReissue: z
       .boolean()
       .optional()
@@ -239,7 +257,7 @@ export const createImessageGroupChat = tool({
     recipients: z
       .array(z.string())
       .min(1)
-      .describe("People or phone numbers to include besides the current user, such as Adyan, my broker, or +15555550123."),
+      .describe("People or phone numbers to include besides the current user, such as Adyan, my broker, or +12025550123."),
     openingMessage: z
       .string()
       .min(1)

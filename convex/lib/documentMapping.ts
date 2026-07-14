@@ -22,6 +22,7 @@ import {
 } from "./policyPeriodExtraction";
 import {
   normalizeExtractedDate,
+  normalizeExtractedDateFields,
   normalizeExtractedString,
 } from "./valueNormalization";
 import { policyLobCodes, toLobCodes } from "./linesOfBusiness";
@@ -130,7 +131,8 @@ export function insuranceDocToPolicy(
       normalizeOrgName(d.carrier) || normalizeOrgName(d.security) || "Unknown",
     security: normalizeOrgName(d.security) ?? undefined,
     underwriter: d.underwriter ?? undefined,
-    mga: normalizeOrgName(d.mga) ?? undefined,
+    // Legacy SDK compatibility. New extraction writes structured generalAgent.
+    ...(d.generalAgent ? {} : { mga: normalizeOrgName(d.mga) ?? undefined }),
     broker: normalizeOrgName(d.brokerAgency) ?? undefined,
     policyNumber: normalizeCriticalString(d.policyNumber) || declarationPolicyNumber || "Unknown",
     linesOfBusiness,
@@ -160,6 +162,7 @@ export function insuranceDocToPolicy(
   // Structured entity objects (cl-sdk 0.11+)
   if (d.insurer) fields.insurer = sanitizeNulls(d.insurer);
   if (d.producer) fields.producer = sanitizeNulls(d.producer);
+  if (d.generalAgent) fields.generalAgent = sanitizeNulls(d.generalAgent);
   if (d.lossPayees?.length) fields.lossPayees = sanitizeNulls(d.lossPayees);
   if (d.mortgageHolders?.length)
     fields.mortgageHolders = sanitizeNulls(d.mortgageHolders);
@@ -189,6 +192,8 @@ export function insuranceDocToPolicy(
   if (d.vehicles?.length) fields.vehicles = sanitizeNulls(d.vehicles);
   if (d.classifications?.length)
     fields.classifications = sanitizeNulls(d.classifications);
+  if (d.coverageSchedules?.length)
+    fields.coverageSchedules = sanitizeNulls(d.coverageSchedules);
   if (d.formInventory?.length)
     fields.formInventory = sanitizeNulls(d.formInventory);
   const taxesAndFees = normalizeMoneyRows(d.taxesAndFees, "name");
@@ -244,7 +249,7 @@ export function insuranceDocToPolicy(
   if (d.nextReviewDate)
     fields.nextReviewDate = normalizeExtractedDate(d.nextReviewDate) ?? d.nextReviewDate;
 
-  return fields;
+  return normalizeExtractedDateFields(fields) as Record<string, unknown>;
 }
 
 /**
@@ -270,6 +275,8 @@ export function policyToInsuranceDoc(p: any): InsuranceDocument {
     carrierNaicNumber: p.carrierNaicNumber,
     carrierAmBestRating: p.carrierAmBestRating,
     carrierAdmittedStatus: p.carrierAdmittedStatus,
+    generalAgent: p.generalAgent as unknown,
+    // Legacy read compatibility for policies not yet rematerialized.
     mga: p.mga,
     underwriter: p.underwriter,
     brokerAgency: p.brokerAgency,
@@ -300,6 +307,7 @@ export function policyToInsuranceDoc(p: any): InsuranceDocument {
     locations: p.locations as unknown,
     vehicles: p.vehicles as unknown,
     classifications: p.classifications as unknown,
+    coverageSchedules: p.coverageSchedules as unknown,
     formInventory: p.formInventory as unknown,
     taxesAndFees: p.taxesAndFees as unknown,
     premiumBreakdown: p.premiumBreakdown as unknown,

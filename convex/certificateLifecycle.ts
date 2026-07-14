@@ -114,7 +114,7 @@ async function collectIssuedCertificateCandidates(ctx: ReadCtx, args: {
   requestSignature?: string;
 }) {
   const policy = await ctx.db.get(args.policyId);
-  if (!policy || policy.orgId !== args.orgId) return [];
+  if (!policy || policy.orgId !== args.orgId || policy.deletedAt) return [];
   const policyVersionId = args.policyVersionId ?? await currentPolicyVersionId(ctx, args.policyId);
   const parents = await ctx.db
     .query("policyCertificates")
@@ -168,7 +168,7 @@ export const listByPolicy = query({
       .query("policyCertificates")
       .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
       .collect();
-    return await Promise.all(
+    const enriched = await Promise.all(
       certificates.map(async (certificate) => {
         const [holder, policy, currentVersion, latestIssuedVersion, versions] = await Promise.all([
           ctx.db.get(certificate.holderId),
@@ -183,6 +183,7 @@ export const listByPolicy = query({
             .order("desc")
             .collect(),
         ]);
+        if (!policy || policy.deletedAt) return null;
         const versionsWithUrls = await Promise.all(
           versions.map(async (version) => ({
             ...version,
@@ -200,6 +201,7 @@ export const listByPolicy = query({
         };
       }),
     );
+    return enriched.filter((row) => row !== null);
   },
 });
 
@@ -285,8 +287,17 @@ export const listVersionsInternal = internalQuery({
         ),
       ),
     );
-    const visible = scoped.filter((version) =>
-      parents.get(version.certificateId)?.status !== "archived",
+    const policies = new Map(
+      await Promise.all(
+        Array.from(new Set(scoped.map((row) => row.policyId))).map(
+          async (policyId) => [policyId, await ctx.db.get(policyId)] as const,
+        ),
+      ),
+    );
+    const visible = scoped.filter(
+      (version) =>
+        parents.get(version.certificateId)?.status !== "archived" &&
+        !policies.get(version.policyId)?.deletedAt,
     );
     return await Promise.all(
       visible.map(async (version) => ({
@@ -616,6 +627,7 @@ export const recordIssuedVersionInternal = internalMutation({
     additionalInsuredName: v.optional(v.string()),
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
+    descriptionOfOperations: v.optional(v.string()),
     createdByUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -661,6 +673,7 @@ export const recordIssuedVersionInternal = internalMutation({
       additionalInsuredName: args.additionalInsuredName,
       formCode: args.formCode,
       requestSignature: args.requestSignature,
+      descriptionOfOperations: args.descriptionOfOperations,
       issuedAt: now,
       createdByUserId: args.createdByUserId,
       createdAt: now,

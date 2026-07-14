@@ -2,7 +2,6 @@
 
 import { useMemo, useState, type MouseEvent } from "react";
 import { useAction, useMutation } from "convex/react";
-import dayjs from "dayjs";
 import { Loader2, Mail as MailIcon, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -15,6 +14,7 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import type { ThreadMessage } from "../types";
+import { formatDisplayDateTime } from "@/lib/date-format";
 
 type EmailPayloadPreview = {
   from?: string;
@@ -563,7 +563,7 @@ export function EmailThreadSidebar({
     formatEmailAddressList(message.bccAddresses);
   const previewBody = payloadPreview?.text ?? message.content;
   const previewHtml = payloadPreview?.html;
-  const sentAt = dayjs(message._creationTime).format("MMM D, YYYY [at] h:mm A");
+  const sentAt = formatDisplayDateTime(message._creationTime);
 
   async function handleSend() {
     if (!message?.pendingEmailId) return;

@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatDistanceToNow, format } from "date-fns";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   UserCheck,
@@ -13,6 +14,9 @@ import {
 import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { formatDisplayDate } from "@/lib/date-format";
+
+dayjs.extend(relativeTime);
 
 export type ActivityEvent = {
   _id: Id<"brokerActivity">;
@@ -48,14 +52,13 @@ const TYPE_LABELS: Record<string, string> = {
 
 function groupByDay(
   events: ActivityEvent[],
-): { date: Date; events: ActivityEvent[] }[] {
-  const groups: Map<string, { date: Date; events: ActivityEvent[] }> =
+): { date: number; events: ActivityEvent[] }[] {
+  const groups: Map<string, { date: number; events: ActivityEvent[] }> =
     new Map();
   for (const event of events) {
-    const d = new Date(event.createdAt);
-    const key = format(d, "yyyy-MM-dd");
+    const key = dayjs(event.createdAt).format("YYYY-MM-DD");
     if (!groups.has(key)) {
-      groups.set(key, { date: d, events: [] });
+      groups.set(key, { date: event.createdAt, events: [] });
     }
     groups.get(key)!.events.push(event);
   }
@@ -109,9 +112,9 @@ export function ActivityFeed({
         />
       ) : (
         grouped.map((group) => (
-          <div key={group.date.toISOString()}>
+          <div key={dayjs(group.date).format("YYYY-MM-DD")}>
             <p className="text-label font-medium text-muted-foreground uppercase tracking-wide mb-2">
-              {format(group.date, "MMMM d, yyyy")}
+              {formatDisplayDate(group.date)}
             </p>
             <div className="space-y-2">
               {group.events.map((event) => {
@@ -135,9 +138,7 @@ export function ActivityFeed({
                       )}
                     </div>
                     <span className="text-label text-muted-foreground shrink-0">
-                      {formatDistanceToNow(new Date(event.createdAt), {
-                        addSuffix: true,
-                      })}
+                      {dayjs(event.createdAt).fromNow()}
                     </span>
                   </div>
                 );

@@ -35,7 +35,7 @@ type EmailCommandMutation =
 export type EmailCommandExecutionCtx = {
   runAction(
     action: typeof internal.actions.sendPendingEmail.sendDraftInternal,
-    args: { id: Id<"pendingEmails"> },
+    args: { id: Id<"pendingEmails">; userConfirmedDraft: boolean },
   ): Promise<unknown>;
   runMutation(
     mutation: EmailCommandMutation,
@@ -134,6 +134,7 @@ export async function executeEmailCommand(
       try {
         await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
           id,
+          userConfirmedDraft: true,
         });
         sentCount += 1;
       } catch (err) {

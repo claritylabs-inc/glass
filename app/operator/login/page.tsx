@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
+import { completeOtpSignIn } from "@/lib/otp-auth";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 function friendlyError(raw: string): string {
@@ -66,7 +67,8 @@ export default function OperatorLoginPage() {
     setLoading(true);
     setError("");
     try {
-      await signIn("resend-otp", { email, code });
+      await completeOtpSignIn(email, code);
+      window.location.reload();
     } catch (err) {
       setError(friendlyError(err instanceof Error ? err.message : ""));
       setLoading(false);
@@ -93,7 +95,7 @@ export default function OperatorLoginPage() {
                 placeholder="you@claritylabs.inc"
                 required
                 autoFocus
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8"
+                className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8"
               />
             </div>
             {error ? <p className="text-base text-muted-foreground">{error}</p> : null}

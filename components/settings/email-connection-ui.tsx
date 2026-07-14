@@ -1,7 +1,6 @@
 "use client";
 
 import type { SVGProps } from "react";
-import dayjs from "dayjs";
 import { Mail } from "lucide-react";
 
 import type { Id } from "@/convex/_generated/dataModel";
@@ -14,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatDisplayDateTime } from "@/lib/date-format";
 
 export type EmailScope = "user" | "org";
 
@@ -134,7 +134,7 @@ export function automationSummary(account: ConnectedEmailAccountRow) {
 }
 
 export function formatMailboxActivity(value?: number) {
-  return value ? dayjs(value).format("MMM D, YYYY [at] h:mm A") : "Not yet";
+  return formatDisplayDateTime(value, "Not yet");
 }
 
 export function EmailScopeSelect({
@@ -158,7 +158,7 @@ export function EmailScopeSelect({
         onValueChange(nextValue);
       }}
     >
-      <SelectTrigger className="h-9 w-full border-foreground/8 bg-popover text-base">
+      <SelectTrigger className="w-full">
         <SelectValue>{EMAIL_SCOPE_LABELS[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent>

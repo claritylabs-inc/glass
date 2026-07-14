@@ -11,6 +11,7 @@ type PolicyLike = {
   carrier?: string;
   security?: string;
   mga?: string;
+  generalAgent?: { agencyName?: string };
   policyNumber?: string;
   linesOfBusiness?: string[];
 };
@@ -34,9 +35,14 @@ function escapeHtml(value: string): string {
 function sourceFromPolicy(policy: PolicyLike, siteUrl: string): EmailPolicySource {
   const href = `${siteUrl.replace(/\/$/, "")}/policies/${policy._id}`;
   const label = "Policy";
-  const administrator = policy.mga || policy.security || policy.carrier || "Unknown";
+  const generalAgent =
+    policy.generalAgent?.agencyName ||
+    policy.mga ||
+    policy.security ||
+    policy.carrier ||
+    "Unknown";
   const type = policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel)[0];
-  const detail = [administrator, policy.policyNumber, type].filter(Boolean).join(" - ");
+  const detail = [generalAgent, policy.policyNumber, type].filter(Boolean).join(" - ");
 
   return {
     id: policy._id,

@@ -6,11 +6,10 @@ import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 function policyLabel(policy: {
   carrier?: string;
   security?: string;
-  mga?: string;
   policyNumber?: string;
   insuredName?: string;
 }) {
-  const carrier = policy.mga || policy.carrier || policy.security || "Unknown carrier";
+  const carrier = policy.carrier || policy.security || "Unknown carrier";
   const number = policy.policyNumber;
   return [carrier, number ? `#${number}` : undefined].filter(Boolean).join(" ");
 }

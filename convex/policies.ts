@@ -10,7 +10,7 @@ import {
   requireCurrentOrgAccess,
   assertCanEditPolicyExtractedFields,
   assertCanUploadPolicy,
-  assertCanDeletePolicy,
+  assertCanArchivePolicy,
   assertCanReadPolicies,
   assertCanReadPolicy,
   getOrgAccess,
@@ -23,6 +23,7 @@ import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import {
   normalizeExtractedDate,
+  normalizeExtractedDateFields,
   normalizeMoneyField,
   normalizeMoneyString,
   parseExtractedNumber,
@@ -62,6 +63,29 @@ async function deactivatePolicyDeclarationFacts(
   if (orgId) {
     await syncOrgProfileFromDeclarationFacts(ctx, orgId);
   }
+}
+
+async function reactivatePolicyDeclarationFacts(
+  ctx: MutationCtx,
+  policyId: DataModelId<"policies">,
+  orgId: DataModelId<"organizations">,
+) {
+  const facts = await ctx.db
+    .query("policyDeclarationFacts")
+    .withIndex("by_policyId_active", (q) =>
+      q.eq("policyId", policyId).eq("active", false),
+    )
+    .collect();
+  const latestObservedAt = facts.reduce(
+    (latest, fact) => Math.max(latest, fact.observedAt),
+    Number.NEGATIVE_INFINITY,
+  );
+  for (const fact of facts.filter(
+    (candidate) => candidate.observedAt === latestObservedAt,
+  )) {
+    await ctx.db.patch(fact._id, { active: true });
+  }
+  await syncOrgProfileFromDeclarationFacts(ctx, orgId);
 }
 
 const PIPELINE_LOG_LIMIT = 500;
@@ -138,6 +162,7 @@ function isPreviewReadablePolicy(policy: {
 function hasExtractedPolicyIdentity(policy: {
   carrier?: string;
   security?: string;
+  generalAgent?: { agencyName?: string };
   mga?: string;
   policyNumber?: string;
   insuredName?: string;
@@ -151,6 +176,7 @@ function hasExtractedPolicyIdentity(policy: {
   return (
     clean(policy.carrier) ||
     clean(policy.security) ||
+    clean(policy.generalAgent?.agencyName) ||
     clean(policy.mga) ||
     clean(policy.policyNumber) ||
     clean(policy.insuredName) ||
@@ -165,6 +191,7 @@ function isVisiblePolicyListRow(policy: {
   deletedAt?: number;
   carrier?: string;
   security?: string;
+  generalAgent?: { agencyName?: string };
   mga?: string;
   policyNumber?: string;
   insuredName?: string;
@@ -251,7 +278,7 @@ export function normalizeEditableFields(
 ): Record<string, unknown> {
   const deriveNumericAmounts = options.deriveNumericAmounts ?? true;
   const normalizeMoneyText = options.normalizeMoneyText ?? true;
-  const next = { ...fields };
+  const next = normalizeExtractedDateFields(fields) as Record<string, unknown>;
   if (next.documentType && next.documentType !== "policy") {
     next.documentType = "policy";
   }
@@ -268,9 +295,6 @@ export function normalizeEditableFields(
     "warrantyRequirements",
   ]) {
     delete next[key];
-  }
-  for (const key of ["effectiveDate", "expirationDate", "retroactiveDate", "nextReviewDate"]) {
-    if (typeof next[key] === "string") next[key] = normalizeExtractedDate(next[key]) ?? next[key];
   }
   if (Array.isArray(next.linesOfBusiness)) {
     next.linesOfBusiness = toLobCodes(next.linesOfBusiness.filter((value): value is string => typeof value === "string"));
@@ -309,9 +333,6 @@ export function normalizeEditableFields(
       }
       if (normalizeMoneyText && row.deductible !== undefined) {
         row.deductible = normalizeMoneyString(row.deductible) ?? row.deductible;
-      }
-      if (row.retroactiveDate !== undefined) {
-        row.retroactiveDate = normalizeExtractedDate(row.retroactiveDate) ?? row.retroactiveDate;
       }
       if (limitAmount !== undefined) row.limitAmount = limitAmount;
       if (deductibleAmount !== undefined) row.deductibleAmount = deductibleAmount;
@@ -688,8 +709,20 @@ export const getSummary = query({
       policyTermType: enrichedPolicy.policyTermType,
       carrier: enrichedPolicy.carrier,
       carrierLegalName: enrichedPolicy.carrierLegalName,
+      carrierNaicNumber: enrichedPolicy.carrierNaicNumber,
       security: enrichedPolicy.security,
+      generalAgent: enrichedPolicy.generalAgent,
+      // Read compatibility for policies extracted before General Agent nomenclature.
       mga: enrichedPolicy.mga,
+      broker: enrichedPolicy.broker,
+      brokerAgency: enrichedPolicy.brokerAgency,
+      brokerContactName: enrichedPolicy.brokerContactName,
+      brokerLicenseNumber: enrichedPolicy.brokerLicenseNumber,
+      producer: enrichedPolicy.producer,
+      insurer: enrichedPolicy.insurer,
+      policyDetailOverrides: enrichedPolicy.policyDetailOverrides,
+      policyDetailOverridesUpdatedAt:
+        enrichedPolicy.policyDetailOverridesUpdatedAt,
       insuredName: enrichedPolicy.insuredName,
       effectiveDate: enrichedPolicy.effectiveDate,
       expirationDate: enrichedPolicy.expirationDate,
@@ -857,10 +890,59 @@ const addressValidator = v.object({
   state: v.optional(v.string()),
   zip: v.optional(v.string()),
   country: v.optional(v.string()),
+  formatted: v.optional(v.string()),
   documentNodeId: v.optional(v.string()),
   sourceSpanIds: v.optional(v.array(v.string())),
   sourceTextHash: v.optional(v.string()),
 });
+
+const policyDetailAddressValidator = v.object({
+  street1: v.optional(v.string()),
+  street2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  zip: v.optional(v.string()),
+  country: v.optional(v.string()),
+  formatted: v.optional(v.string()),
+});
+
+const policyDetailUpdateValidator = v.union(
+  v.object({
+    section: v.literal("overview"),
+    policyNumber: v.string(),
+    effectiveDate: v.string(),
+    expirationDate: v.string(),
+    premium: v.string(),
+    operationsDescription: v.string(),
+  }),
+  v.object({
+    section: v.literal("insured"),
+    name: v.string(),
+    address: policyDetailAddressValidator,
+    additionalNamedInsureds: v.array(v.string()),
+  }),
+  v.object({
+    section: v.literal("producer"),
+    name: v.string(),
+    address: policyDetailAddressValidator,
+    contactName: v.string(),
+    licenseNumber: v.string(),
+    phone: v.string(),
+    email: v.string(),
+  }),
+  v.object({
+    section: v.literal("insurer"),
+    name: v.string(),
+    address: policyDetailAddressValidator,
+    naicNumber: v.string(),
+  }),
+  v.object({
+    section: v.literal("generalAgent"),
+    name: v.string(),
+    address: policyDetailAddressValidator,
+    licenseNumber: v.string(),
+  }),
+);
 
 const limitsValidator = v.object({
   perOccurrence: v.optional(v.string()),
@@ -1116,6 +1198,7 @@ export const updateExtraction = mutation({
       amBestNumber: v.optional(v.string()),
       admittedStatus: v.optional(v.string()),
       stateOfDomicile: v.optional(v.string()),
+      address: v.optional(addressValidator),
       documentNodeId: v.optional(v.string()),
       sourceSpanIds: v.optional(v.array(v.string())),
       sourceTextHash: v.optional(v.string()),
@@ -1128,6 +1211,16 @@ export const updateExtraction = mutation({
       licenseNumber: v.optional(v.string()),
       phone: v.optional(v.string()),
       email: v.optional(v.string()),
+      documentNodeId: v.optional(v.string()),
+      sourceSpanIds: v.optional(v.array(v.string())),
+      sourceTextHash: v.optional(v.string()),
+      pageStart: v.optional(v.number()),
+      pageEnd: v.optional(v.number()),
+      address: v.optional(addressValidator),
+    })),
+    generalAgent: v.optional(v.object({
+      agencyName: v.string(),
+      licenseNumber: v.optional(v.string()),
       documentNodeId: v.optional(v.string()),
       sourceSpanIds: v.optional(v.array(v.string())),
       sourceTextHash: v.optional(v.string()),
@@ -1253,7 +1346,7 @@ export const updateExtractedFields = mutation({
     fields: v.object({
       carrier: v.optional(v.string()),
       security: v.optional(v.string()),
-      mga: v.optional(v.string()),
+      generalAgentName: v.optional(v.string()),
       broker: v.optional(v.string()),
       policyNumber: v.optional(v.string()),
       linesOfBusiness: v.optional(v.array(v.string())),
@@ -1304,6 +1397,166 @@ export const updateExtractedFields = mutation({
       detail: `Updated ${Object.keys(patch).join(", ")}`,
       metadata: { fields: Object.keys(patch) },
     });
+  },
+});
+
+type PolicyDetailAddress = {
+  street1?: string;
+  street2?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+  formatted?: string;
+};
+
+function cleanPolicyDetailAddress(address: PolicyDetailAddress) {
+  const cleaned: PolicyDetailAddress = {};
+  for (const key of [
+    "street1",
+    "street2",
+    "city",
+    "state",
+    "zip",
+    "country",
+    "formatted",
+  ] as const) {
+    const value = address[key]?.trim();
+    if (value) cleaned[key] = value;
+  }
+  return cleaned;
+}
+
+export const updatePolicyDetails = mutation({
+  args: {
+    id: v.id("policies"),
+    update: policyDetailUpdateValidator,
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.id);
+    if (!policy?.orgId) throw new Error("Not found");
+    const access = await getOrgAccess(ctx, policy.orgId);
+    assertCanEditPolicyExtractedFields(access);
+
+    const existingOverrides = policy.policyDetailOverrides ?? {};
+    const patch: Record<string, unknown> = {
+      policyDetailOverridesUpdatedAt: dayjs().valueOf(),
+      policyDetailOverridesUpdatedByUserId: access.userId,
+    };
+    let updatedFields: string[];
+
+    switch (args.update.section) {
+      case "overview": {
+        const normalized = normalizeEditableFields({
+          policyNumber: args.update.policyNumber.trim(),
+          effectiveDate: args.update.effectiveDate.trim(),
+          expirationDate: args.update.expirationDate.trim(),
+          premium: args.update.premium.trim(),
+        });
+        if (!args.update.premium.trim()) normalized.premiumAmount = undefined;
+        Object.assign(patch, normalized, {
+          policyDetailOverrides: {
+            ...existingOverrides,
+            operationsDescription: args.update.operationsDescription.trim(),
+          },
+        });
+        const derivedYear = policyYearFromInput(
+          normalized.effectiveDate as string | undefined,
+        );
+        if (derivedYear !== undefined) patch.policyYear = derivedYear;
+        updatedFields = [
+          "policyNumber",
+          "effectiveDate",
+          "expirationDate",
+          "premium",
+          "operationsDescription",
+        ];
+        break;
+      }
+      case "insured":
+        patch.policyDetailOverrides = {
+          ...existingOverrides,
+          insured: {
+            name: args.update.name.trim(),
+            address: cleanPolicyDetailAddress(args.update.address),
+            additionalNamedInsureds: args.update.additionalNamedInsureds
+              .map((name) => name.trim())
+              .filter(Boolean)
+              .slice(0, 100),
+          },
+        };
+        updatedFields = [
+          "insuredName",
+          "insuredAddress",
+          "additionalNamedInsureds",
+        ];
+        break;
+      case "producer":
+        patch.policyDetailOverrides = {
+          ...existingOverrides,
+          producer: {
+            name: args.update.name.trim(),
+            address: cleanPolicyDetailAddress(args.update.address),
+            contactName: args.update.contactName.trim(),
+            licenseNumber: args.update.licenseNumber.trim(),
+            phone: args.update.phone.trim(),
+            email: args.update.email.trim(),
+          },
+        };
+        updatedFields = [
+          "producerName",
+          "producerAddress",
+          "producerContactName",
+          "producerLicenseNumber",
+          "producerPhone",
+          "producerEmail",
+        ];
+        break;
+      case "insurer":
+        patch.policyDetailOverrides = {
+          ...existingOverrides,
+          insurer: {
+            name: args.update.name.trim(),
+            address: cleanPolicyDetailAddress(args.update.address),
+            naicNumber: args.update.naicNumber.trim(),
+          },
+        };
+        updatedFields = [
+          "insurerName",
+          "insurerAddress",
+          "insurerNaicNumber",
+        ];
+        break;
+      case "generalAgent":
+        patch.policyDetailOverrides = {
+          ...existingOverrides,
+          generalAgent: {
+            name: args.update.name.trim(),
+            address: cleanPolicyDetailAddress(args.update.address),
+            licenseNumber: args.update.licenseNumber.trim(),
+          },
+        };
+        updatedFields = [
+          "generalAgentName",
+          "generalAgentAddress",
+          "generalAgentLicenseNumber",
+        ];
+        break;
+    }
+
+    await ctx.db.patch(args.id, patch);
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.id,
+      userId: access.userId,
+      orgId: policy.orgId,
+      action: "manual_policy_update",
+      detail: `Updated ${args.update.section} policy details`,
+      metadata: {
+        section: args.update.section,
+        fields: updatedFields,
+      },
+    });
+    return { section: args.update.section, fields: updatedFields };
   },
 });
 
@@ -1505,6 +1758,7 @@ export const confirmPolicyFactFromSource = internalMutation({
       carrier: v.optional(v.string()),
       security: v.optional(v.string()),
       mga: v.optional(v.string()),
+      generalAgentName: v.optional(v.string()),
       broker: v.optional(v.string()),
       policyNumber: v.optional(v.string()),
       effectiveDate: v.optional(v.string()),
@@ -1537,7 +1791,15 @@ export const confirmPolicyFactFromSource = internalMutation({
 
     const patch: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(args.fieldUpdates ?? {})) {
-      if (value !== undefined) patch[key] = value;
+      if (value === undefined || key === "generalAgentName") continue;
+      patch[key] = value;
+    }
+    if (args.fieldUpdates?.generalAgentName !== undefined) {
+      patch.generalAgent = {
+        ...(policy.generalAgent ?? {}),
+        agencyName: args.fieldUpdates.generalAgentName,
+        sourceSpanIds: args.sourceSpanIds,
+      };
     }
     const derivedYear = policyYearFromInput(args.fieldUpdates?.effectiveDate);
     if (derivedYear !== undefined) patch.policyYear = derivedYear;
@@ -1694,6 +1956,7 @@ export const listForBroker = query({
   args: {
     clientOrgId: v.id("organizations"),
     documentType: v.optional(v.literal("policy")),
+    archived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const access = await getOrgAccessForQuery(ctx, args.clientOrgId);
@@ -1703,11 +1966,15 @@ export const listForBroker = query({
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.clientOrgId))
       .collect();
-    return all.filter(
-      (p) =>
-        isVisiblePolicyListRow(p) &&
-        (!args.documentType || p.documentType === args.documentType),
-    );
+    return all.filter((p) => {
+      const matchesArchive = args.archived
+        ? Boolean(p.deletedAt)
+        : isVisiblePolicyListRow(p);
+      return (
+        matchesArchive &&
+        (!args.documentType || p.documentType === args.documentType)
+      );
+    });
   },
 });
 
@@ -1715,6 +1982,7 @@ export const listForBroker = query({
 export const listForClient = query({
   args: {
     documentType: v.optional(v.literal("policy")),
+    archived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const access = await getCurrentOrgAccess(ctx);
@@ -1724,12 +1992,16 @@ export const listForClient = query({
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
       .collect();
-    const filtered = all.filter(
-      (p) =>
+    const filtered = all.filter((p) => {
+      const matchesArchive = args.archived
+        ? Boolean(p.deletedAt)
+        : isVisiblePolicyListRow(p);
+      return (
         !p.dismissed &&
-        isVisiblePolicyListRow(p) &&
-        (!args.documentType || p.documentType === args.documentType),
-    );
+        matchesArchive &&
+        (!args.documentType || p.documentType === args.documentType)
+      );
+    });
     return await Promise.all(filtered.map((p) => mergePolicyPipelineState(ctx, p)));
   },
 });
@@ -1772,20 +2044,21 @@ export const cancelExtraction = mutation({
   },
 });
 
-export const softDelete = mutation({
+export const archive = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
     const access = await getOrgAccess(ctx, policy.orgId);
-    assertCanDeletePolicy(access, policy);
+    assertCanArchivePolicy(access, policy);
+    if (policy.deletedAt) return;
     await ctx.db.patch(args.id, { deletedAt: dayjs().valueOf() });
     await deactivatePolicyDeclarationFacts(ctx, args.id, policy.orgId);
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
       userId: access.userId,
       orgId: policy.orgId,
-      action: "deleted",
+      action: "archived",
     });
   },
 });
@@ -1822,6 +2095,43 @@ export const getInternal = internalQuery({
   },
 });
 
+function hasPersistablePolicyAddress(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const street1 = (value as Record<string, unknown>).street1;
+  return typeof street1 === "string" && street1.trim().length > 0;
+}
+
+function dropUnpersistableNestedAddress(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (!("address" in record) || record.address === undefined) return value;
+  if (hasPersistablePolicyAddress(record.address)) return value;
+  const next = { ...record };
+  delete next.address;
+  return next;
+}
+
+function dropUnpersistableExtractedAddresses(fields: Record<string, unknown>): void {
+  if (
+    fields.insuredAddress !== undefined &&
+    !hasPersistablePolicyAddress(fields.insuredAddress)
+  ) {
+    delete fields.insuredAddress;
+  }
+
+  for (const key of ["insurer", "producer", "generalAgent"] as const) {
+    if (fields[key] !== undefined) {
+      fields[key] = dropUnpersistableNestedAddress(fields[key]);
+    }
+  }
+
+  for (const key of ["additionalNamedInsureds", "lossPayees", "mortgageHolders"] as const) {
+    if (Array.isArray(fields[key])) {
+      fields[key] = fields[key].map(dropUnpersistableNestedAddress);
+    }
+  }
+}
+
 // All policy rows for an org (used by DocumentStore)
 export const listByOrgInternal = internalQuery({
   args: { orgId: v.id("organizations") },
@@ -1845,6 +2155,7 @@ export const updateExtractionInternal = internalMutation({
       deriveNumericAmounts: false,
       normalizeMoneyText: false,
     });
+    dropUnpersistableExtractedAddresses(fields);
     const existingPolicy = await ctx.db.get(args.id);
     preserveKnownFinalExtractionIdentityFields(fields, existingPolicy);
     const operationalProfile = fields.operationalProfile;
@@ -1868,7 +2179,7 @@ const PREVIEW_EXTRACTION_FIELD_ALLOWLIST = new Set([
   "carrier",
   "security",
   "underwriter",
-  "mga",
+  "generalAgent",
   "broker",
   "policyNumber",
   "linesOfBusiness",
@@ -2039,14 +2350,17 @@ export const updateReconciliation = internalMutation({
 export const restore = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireCurrentOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+    if (!policy?.orgId) throw new Error("Not found");
+    const access = await getOrgAccess(ctx, policy.orgId);
+    assertCanArchivePolicy(access, policy);
+    if (!policy.deletedAt) return;
     await ctx.db.patch(args.id, { deletedAt: undefined });
+    await reactivatePolicyDeclarationFacts(ctx, args.id, policy.orgId);
     await ctx.db.insert("policyAuditLog", {
       policyId: args.id,
-      userId,
-      orgId,
+      userId: access.userId,
+      orgId: policy.orgId,
       action: "restored",
     });
   },

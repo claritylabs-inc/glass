@@ -382,7 +382,7 @@ async function buildVectorContext(
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
       const types = policyLobCodes(p).map((code) => `${code} (${lobLabel(code)})`).join(", ") || "unknown";
-      const carrier = p.mga || p.carrier || p.security;
+      const carrier = p.carrier || p.security;
       const covSummary = formatCoverageBreakdownForPrompt(p, 8).replace(/\n/g, " | ");
       const covLine = covSummary ? ` | Coverages: ${covSummary}` : "";
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | LOB: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName}${covLine}`;
@@ -410,7 +410,7 @@ async function buildVectorContext(
     const contextByNodeId = new Map(
       contextNodes.map((node) => [String(node.nodeId), node]),
     );
-    const carrier = policy.mga || policy.carrier || policy.security;
+    const carrier = policy.carrier || policy.security;
     let section = `\n--- POLICY SOURCE TREE: ${carrier} #${policy.policyNumber} (ID:${policyId}) ---`;
     const profile = policy.operationalProfile
       ? JSON.stringify(policy.operationalProfile, null, 2).slice(0, 5000)
@@ -448,7 +448,7 @@ async function buildVectorContext(
 
     relevantPolicyIdSet.add(policyId as Id<"policies">);
 
-    const carrier = policy.mga || policy.carrier || policy.security;
+    const carrier = policy.carrier || policy.security;
 
     let section = `\n--- POLICY SOURCE EVIDENCE: ${carrier} #${policy.policyNumber} (ID:${policyId}) ---`;
     const structure = formatDocumentStructureForPrompt(policy as Record<string, unknown>, {
@@ -490,7 +490,7 @@ async function buildVectorContext(
 
     relevantPolicyIdSet.add(policyId as Id<"policies">);
 
-    const carrier = policy.mga || policy.carrier || policy.security;
+    const carrier = policy.carrier || policy.security;
 
     let section = `\n--- POLICY: ${carrier} #${policy.policyNumber} (ID:${policyId}) ---`;
     if (policy.summary) section += `\nSummary: ${policy.summary}`;
@@ -647,7 +647,7 @@ function buildFallbackContext(
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
       const types = policyLobCodes(p).map((code) => `${code} (${lobLabel(code)})`).join(", ") || "unknown";
-      const carrier = p.mga || p.carrier || p.security;
+      const carrier = p.carrier || p.security;
       const coverages = formatCoverageBreakdownForPrompt(p, 8).replace(/\n/g, " | ");
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | LOB: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
     });

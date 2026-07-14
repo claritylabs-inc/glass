@@ -74,6 +74,7 @@ function structuredCertificateHolderAddress(args: {
   city?: string;
   state?: string;
   postalCode?: string;
+  country?: string;
 }) {
   const address = {
     line1: cleanOptionalText(args.addressLine1),
@@ -81,6 +82,7 @@ function structuredCertificateHolderAddress(args: {
     city: cleanOptionalText(args.city),
     state: cleanOptionalText(args.state),
     postalCode: cleanOptionalText(args.postalCode),
+    country: cleanOptionalText(args.country),
   };
   return Object.values(address).some(Boolean) ? address : undefined;
 }
@@ -255,7 +257,7 @@ export const listByPolicyInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy || policy.orgId !== args.orgId) return [];
+    if (!policy || policy.orgId !== args.orgId || policy.deletedAt) return [];
 
     const rows = await ctx.db
       .query("certificates")
@@ -306,7 +308,7 @@ export const getGenerationContext = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId) throw new Error("Policy not found");
+    if (!policy?.orgId || policy.deletedAt) throw new Error("Policy not found");
 
     const access = await getOrgAccess(ctx, policy.orgId);
     if (access.accessType === "connected_client") {
@@ -324,7 +326,7 @@ export const getGenerationContextForOrg = internalQuery({
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy || policy.orgId !== args.orgId) {
+    if (!policy || policy.orgId !== args.orgId || policy.deletedAt) {
       throw new Error("Policy not found");
     }
 
@@ -496,7 +498,7 @@ type IssuedCertificateCandidate = {
     versionNumber: number;
     requestKind?: "holder" | "additional_insured";
     additionalInsuredName?: string;
-    formCode?: "acord25" | "acord24" | "acord27" | "acord28" | "acord29" | "acord30" | "acord31";
+    descriptionOfOperations?: string;
     issuedAt?: number;
     createdAt: number;
   };
@@ -538,7 +540,7 @@ function existingCertificateResult(args: {
     versionNumber: version.versionNumber,
     requestKind: version.requestKind ?? args.requestKind,
     additionalInsuredName: version.additionalInsuredName ?? args.additionalInsuredName,
-    formCode: version.formCode,
+    descriptionOfOperations: version.descriptionOfOperations,
   };
 }
 
@@ -633,6 +635,7 @@ export const generateForPolicy = action({
     city: v.optional(v.string()),
     state: v.optional(v.string()),
     postalCode: v.optional(v.string()),
+    country: v.optional(v.string()),
     additionalInsuredName: v.optional(v.string()),
     requestText: v.optional(v.string()),
     descriptionOfOperations: v.optional(v.string()),
@@ -664,6 +667,7 @@ export const generateForPolicy = action({
       city: args.city,
       state: args.state,
       postalCode: args.postalCode,
+      country: args.country,
       additionalInsuredName: args.additionalInsuredName,
       requestText: args.requestText,
       descriptionOfOperations: args.descriptionOfOperations,
@@ -690,6 +694,7 @@ export const generateForOrg = internalAction({
     city: v.optional(v.string()),
     state: v.optional(v.string()),
     postalCode: v.optional(v.string()),
+    country: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
     createdByUserId: v.optional(v.id("users")),
     policyVersionId: v.optional(v.id("policyVersions")),
@@ -747,6 +752,7 @@ export const generateForOrg = internalAction({
       requestText: args.requestText,
       requestedEndorsements: args.requestedEndorsements,
       additionalInsuredName: args.additionalInsuredName,
+      descriptionOfOperations: args.descriptionOfOperations,
     });
     const {
       requiredChanges,
@@ -997,7 +1003,7 @@ export const generateForOrg = internalAction({
       versionNumber: generated.versionNumber,
       requestKind,
       additionalInsuredName,
-      formCode: generated.formCode,
+      descriptionOfOperations: generated.descriptionOfOperations,
       endorsements: endorsementCitations,
     };
   },
@@ -1017,6 +1023,7 @@ export const recordGenerated = internalMutation({
     additionalInsuredName: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     requestSignature: v.optional(v.string()),
+    descriptionOfOperations: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
@@ -1037,6 +1044,7 @@ export const recordGenerated = internalMutation({
       additionalInsuredName: args.additionalInsuredName,
       formCode: args.formCode,
       requestSignature: args.requestSignature,
+      descriptionOfOperations: args.descriptionOfOperations,
       createdAt: dayjs().valueOf(),
     });
   },

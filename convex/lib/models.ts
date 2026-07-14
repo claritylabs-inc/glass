@@ -26,6 +26,7 @@ import {
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   directProviderModelForRoute,
+  modelRouteSupportsTask,
   type ModelProvider,
   type ModelRoute,
   type ModelTask,
@@ -254,7 +255,9 @@ export function modelTaskForCall(baseTask: ModelTask, taskKind?: ModelCallTaskKi
   if (taskKind === "extraction_coverage_recovery") return "extraction_coverage_recovery";
   if (taskKind.startsWith("extraction_")) return "extraction";
   if (taskKind === "query_classify") return "classification";
-  if (taskKind.startsWith("query_")) return "chat";
+  if (taskKind.startsWith("query_")) {
+    return baseTask === "chat_vision" ? "chat_vision" : "chat";
+  }
   if (taskKind.startsWith("pce_")) return "analysis";
   return baseTask;
 }
@@ -483,6 +486,7 @@ export async function getModelAndRouteForOrg(
       !!configuredRoute &&
       configuredRoute.provider !== "moonshot" &&
       !!directProviderModelForRoute(configuredRoute) &&
+      modelRouteSupportsTask(task, configuredRoute) &&
       !!routeDirectApiKey(configuredRoute, configuredApiKey);
     const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
     const apiKey = canUseConfiguredRoute ? configuredApiKey : undefined;
@@ -540,6 +544,7 @@ export async function getModelAndRouteForPublicTask(
       !!configuredRoute &&
       configuredRoute.provider !== "moonshot" &&
       !!directProviderModelForRoute(configuredRoute) &&
+      modelRouteSupportsTask(task, configuredRoute) &&
       !!routeDirectApiKey(configuredRoute);
     const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
     const routeSource = canUseConfiguredRoute ? (configuredRouteSource ?? "global") : "static";

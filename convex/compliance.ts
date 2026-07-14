@@ -931,7 +931,7 @@ export const getManualComplianceReviewContextInternal = internalQuery({
       }),
       policies: activePolicies.map((policy) => ({
         _id: policy._id,
-        carrier: policy.mga || policy.carrier || policy.security,
+        carrier: policy.carrier || policy.security,
         policyNumber: policy.policyNumber,
         insuredName: policy.insuredName,
         effectiveDate: policy.effectiveDate,

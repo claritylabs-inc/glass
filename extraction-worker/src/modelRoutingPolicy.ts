@@ -25,6 +25,7 @@ export const MODEL_POLICY_FIREWORKS_MODEL_IDS = {
 
 export const MODEL_POLICY_TASK_ROUTES = {
   chat: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
+  chat_vision: { provider: "openai", model: "gpt-5.6-terra" },
   email_draft: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.glm52 },
   email_reply: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.glm52 },
   extraction: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
@@ -90,7 +91,24 @@ const OPENAI_GPT_5_4_CAPABILITIES: Omit<ModelPolicyCapabilityConfig, "modelName"
   },
 } as const;
 
+const OPENAI_GPT_5_6_CAPABILITIES: Omit<ModelPolicyCapabilityConfig, "modelName"> = {
+  maxInputTokens: 1_050_000,
+  maxOutputTokens: 128_000,
+  defaultOutputTokens: 8_192,
+  longListOutputTokens: 24_576,
+  supportsImageInput: true,
+  taskOutputTokens: {
+    query_reason: 8_192,
+    query_verify: 4_096,
+    query_respond: 8_192,
+  },
+} as const;
+
 export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConfig> = {
+  "gpt-5.6": { modelName: "gpt-5.6", ...OPENAI_GPT_5_6_CAPABILITIES },
+  "gpt-5.6-sol": { modelName: "gpt-5.6-sol", ...OPENAI_GPT_5_6_CAPABILITIES },
+  "gpt-5.6-terra": { modelName: "gpt-5.6-terra", ...OPENAI_GPT_5_6_CAPABILITIES },
+  "gpt-5.6-luna": { modelName: "gpt-5.6-luna", ...OPENAI_GPT_5_6_CAPABILITIES },
   "gpt-5.5": { modelName: "gpt-5.5", ...OPENAI_GPT_5_4_CAPABILITIES },
   "gpt-5.4": { modelName: "gpt-5.4", ...OPENAI_GPT_5_4_CAPABILITIES },
   "gpt-5.4-mini": {

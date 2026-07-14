@@ -2,11 +2,11 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import type { IconType } from "react-icons";
+import { BsOpenai } from "react-icons/bs";
 import {
   SiAnthropic,
   SiGooglegemini,
   SiMistralai,
-  SiOpenai,
   SiX,
 } from "react-icons/si";
 import { MODEL_DISPLAY_NAMES } from "@/convex/lib/modelCatalog";
@@ -128,7 +128,7 @@ function DeepSeekMark({
 }
 
 const ICONS: Partial<Record<ModelProviderId, IconType>> = {
-  openai: SiOpenai,
+  openai: BsOpenai,
   anthropic: SiAnthropic,
   google: SiGooglegemini,
   xai: SiX,

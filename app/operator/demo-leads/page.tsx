@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import dayjs from "dayjs";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { Mail, MessageCircle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -20,6 +19,7 @@ import {
   useCachedOperatorDemoSalesTranscriptDetail,
   useCachedOperatorDemoSalesTranscripts,
 } from "@/lib/sync/operator-cached-queries";
+import { formatDisplayDateTime } from "@/lib/date-format";
 
 type TranscriptRow = {
   _id: string;
@@ -45,7 +45,7 @@ function channelIcon(channel?: string) {
 }
 
 function formatShortTime(value?: number) {
-  return value ? dayjs(value).format("MMM D, h:mm A") : "Unknown time";
+  return formatDisplayDateTime(value, "Unknown time");
 }
 
 function formatContact(value?: string) {
@@ -117,7 +117,7 @@ function Timeline({
               </span>
               <span className="text-muted-foreground/20">·</span>
               <span className="text-label text-muted-foreground/25">
-                {dayjs(log.createdAt).format("MMM D, h:mm A")}
+                {formatDisplayDateTime(log.createdAt)}
               </span>
             </div>
             <ThreadMessageBubble

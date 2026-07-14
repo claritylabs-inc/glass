@@ -1,4 +1,7 @@
 import type { Id } from "@/convex/_generated/dataModel";
+import type { AgentStep } from "@/convex/lib/agentSteps";
+
+export type { AgentStep };
 
 export type ThreadMessage = {
   _id: Id<"threadMessages">;
@@ -32,6 +35,7 @@ export type ThreadMessage = {
   content: string;
   contentHtml?: string;
   reasoning?: string;
+  agentSteps?: AgentStep[];
   messageId?: string;
   responseMessageId?: string;
   attachments?: {

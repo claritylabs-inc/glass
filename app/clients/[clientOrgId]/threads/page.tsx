@@ -6,8 +6,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { ActionSurfaceButton } from "@/components/ui/action-surface";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Mail, MessageCircle } from "lucide-react";
-import dayjs from "dayjs";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { formatDisplayDateTime } from "@/lib/date-format";
 
 export default function ClientThreadsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
@@ -66,8 +66,8 @@ export default function ClientThreadsPage() {
                   {thread.title}
                 </p>
                 <p className="text-label text-muted-foreground/40">
-                  {dayjs(thread.lastMessageAt ?? thread._creationTime).format(
-                    "MMM D, YYYY · h:mm A",
+                  {formatDisplayDateTime(
+                    thread.lastMessageAt ?? thread._creationTime,
                   )}
                   {thread.originChannel === "imessage"
                     ? " · iMessage"

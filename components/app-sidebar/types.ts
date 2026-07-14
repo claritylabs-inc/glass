@@ -3,6 +3,7 @@ import type { ThreadConversationItem } from "@/lib/thread-display";
 
 export type NavShortcut = {
   key: string;
+  type?: "navigation" | "command";
 };
 
 export type NavItemConfig = {

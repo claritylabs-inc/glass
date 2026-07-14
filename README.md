@@ -10,7 +10,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 - Extracts structured bound-policy, renewal, and supporting business data
 - Builds a continuously-updated `orgMemory` layer
 - Supports agent workflows for Q&A, policy-change requests, COI generation, and follow-up analysis
-- Exposes capabilities through UI, REST API (`/api/v1/*`), and MCP (`/mcp` + local server)
+- Exposes capabilities through UI, REST API (`/api/v1/*`), and OAuth-authenticated MCP (`/mcp`)
 - Lets client/customer orgs request read-only access to vendor org policies after vendor approval
 
 ## Stack
@@ -49,16 +49,35 @@ deployment and database that belong only to that worktree. Workspace setup:
    deployment's environment variables into a new native local deployment, and
    replaces the worktree's Convex URLs with loopback URLs.
 3. Forces local safety settings (`GLASS_ENV=local`, captured email, terminal
-   iMessage, dev clear enabled), creates worktree-local worker secrets, and
-   points Convex at the worktree's worker ports.
-4. Pushes the schema/functions, seeds the new database once with the demo orgs,
-   compiles the workers, starts Apple `container`, and builds worktree-tagged
-   Linux/amd64 worker images.
+   iMessage, dev clear enabled), maps the copied `NEXT_PUBLIC_MAPBOX_TOKEN` to
+   Convex `MAPBOX_ACCESS_TOKEN` for agent address validation, creates
+   worktree-local worker secrets, and points Convex at the worktree's worker
+   ports.
+4. Pushes the schema/functions and seeds the new database once with a curated,
+   minimal shared-dev fixture: `terry@claritylabs.inc` as an operator,
+   Montgomery Risk with `terry@montgomeryrisk.com` as its admin, Cove with
+   `adyan@cove.dev` as its admin, unique phone identities for both customer
+   accounts, their broker/client relationship, and one final Cove policy.
+   Montgomery Risk starts with broker white-labeling explicitly disabled, and
+   setup fetches and saves the Montgomery Risk and Cove website favicons in the
+   worktree's Convex file storage. The configured
+   `IMESSAGE_TERMINAL_FROM_PHONE` is assigned to the Montgomery Risk admin so
+   Spectrum starts in an org-scoped broker context. Setup then compiles the
+   workers, starts Apple `container`, and builds worktree-tagged Linux/amd64
+   worker images.
 
 The imported environment includes provider/auth configuration but never cloud
 database rows or files. Local database state and secrets persist under
 gitignored `.convex/local/default/` and `.context/`. Rerunning setup preserves
-the existing local database and does not reseed it.
+the existing local database and does not reseed it. The fixture copies only a
+small allowlist of identity, organization, relationship, and policy-summary
+fields; it never copies shared-dev auth sessions, email content, documents,
+storage objects, or operational history.
+
+Conductor's archive hook deletes `.convex/local/default/`, including local data
+and auth state, before the worktree is removed. Closing a Conductor tab or the
+app does not archive the workspace and intentionally preserves its database for
+the next run.
 
 The default **Local dev** run template starts these foreground processes together:
 
@@ -71,6 +90,10 @@ The default **Local dev** run template starts these foreground processes togethe
 The Run terminal opens Spectrum's interactive TUI. Web, Convex, and extraction
 output is written to `.context/logs/{web,convex,extraction}.log` so it does not
 corrupt the TUI; local OTP/email capture remains available in `convex.log`.
+Spectrum starts as the Montgomery Risk admin. Use `/whoami` to inspect the
+current sender, `/as broker` for Montgomery Risk, `/as client` for Cove, and
+`/as public` for the unlinked public-demo path. `/as +<E.164 phone>` can test an
+explicit local identity; the following message uses the newly selected sender.
 Conductor runs are concurrent: each worktree reserves one five-port namespace
 from its unique `CONDUCTOR_PORT` (`+0` web, `+1` extraction, `+2` Spectrum,
 `+3/+4` Convex), and the app/workers wait for that exact local instance before
@@ -83,8 +106,10 @@ The checked-in `.worktreeinclude` copies `.env.local` and worker-local env files
 from the repository root. The copied root `.env.local` must initially select a
 cloud dev deployment so setup can import its environment. Keep
 `imessage-worker/.env.local` configured with a local test user's E.164
-`IMESSAGE_TERMINAL_FROM_PHONE`; generated runtime files and unique local worker
-secrets stay under gitignored `.context/` and `.convex/`.
+`IMESSAGE_TERMINAL_FROM_PHONE`; setup assigns that number to the seeded broker
+admin and generates distinct client/public terminal aliases. Generated runtime
+files and unique local worker secrets stay under gitignored `.context/` and
+`.convex/`.
 
 Native local Convex has no public URL. Real Resend inbound webhooks and real
 Photon/iMessage callbacks cannot reach it directly. The default local workflow

@@ -72,7 +72,6 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
     fields: [
       "carrier",
       "security",
-      "mga",
       "brokerAgency",
       "policyNumber",
       "insuredName",
@@ -86,14 +85,16 @@ const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
       "carrier",
       "insurer",
       "underwriter",
-      "mga",
+      "general agent",
+      "managing general agent",
+      "administrator",
       "broker",
       "effective",
       "expiration",
       "period",
     ],
     instructions:
-      "Verify carrier/security, MGA, broker, policy number, named insured, and policy period fields. Prefer declaration pages and schedule summaries over policy wording. For named insured, use rows explicitly labeled named insured/insured/applicant and do not use authorized officer contacts, notice contacts, broker/producer names, signatures, incorporation/licensing statements, or corporate-authority wording as the insured.",
+      "Verify carrier/security, General Agent, Producer, policy number, named insured, and policy period fields. General Agent may be labeled MGA, managing general agent, program administrator, or administrator in the source document. Normalize source labels such as Broker or Agent to Producer; do not conflate either party with the insurer. Prefer declaration pages and schedule summaries over policy wording. For named insured, use rows explicitly labeled named insured/insured/applicant and do not use authorized officer contacts, notice contacts, producer names, signatures, incorporation/licensing statements, or corporate-authority wording as the insured.",
   },
   {
     id: "financial_terms",

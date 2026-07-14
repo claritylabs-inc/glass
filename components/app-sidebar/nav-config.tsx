@@ -36,6 +36,10 @@ export function navShortcut(key: string): NavShortcut {
   return { key };
 }
 
+export function commandShortcut(key: string): NavShortcut {
+  return { key, type: "command" };
+}
+
 export const INSURANCE_ITEMS: NavItemConfig[] = [
   {
     href: "/policies",

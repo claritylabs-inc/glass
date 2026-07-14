@@ -75,7 +75,7 @@ const GET_STARTED_ACTIONS = [
   },
   {
     label: "Connect a mailbox",
-    href: "/settings?section=email",
+    href: "/settings?section=mailboxes&tab=mailboxes",
   },
   {
     label: "Invite a vendor",

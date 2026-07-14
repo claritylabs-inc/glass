@@ -31,6 +31,7 @@ import {
   useCachedQuery,
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type ConnectedOrgsApi = {
   connectedOrgs: {
@@ -172,9 +173,7 @@ function RelationshipStatusBadge({
 
 function formatDate(value: string | undefined) {
   if (!value) return "No expiration date";
-  const date = dayjs(value);
-  if (!date.isValid()) return value;
-  return date.format("MMM D, YYYY");
+  return formatDisplayDate(value, value);
 }
 
 function formatMoney(value: number | undefined) {

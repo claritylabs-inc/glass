@@ -39,6 +39,7 @@ export function getEmailDraftBlockers(
   draft: Partial<EmailDraftLike>,
   options?: {
     allowedStatuses?: Array<Doc<"pendingEmails">["status"]>;
+    confirmationGranted?: boolean;
   },
 ): EmailDraftBlocker[] {
   const allowedStatuses = options?.allowedStatuses ?? ["draft"];
@@ -68,7 +69,7 @@ export function getEmailDraftBlockers(
       message: "Draft is missing an email body.",
     });
   }
-  if (draft.sendBlockedReason?.trim()) {
+  if (!options?.confirmationGranted && draft.sendBlockedReason?.trim()) {
     blockers.push({
       code: "needs_confirmation",
       message: draft.sendBlockedReason.trim(),
@@ -82,6 +83,7 @@ export function getEmailDraftSendability(
   draft: Partial<EmailDraftLike>,
   options?: {
     allowedStatuses?: Array<Doc<"pendingEmails">["status"]>;
+    confirmationGranted?: boolean;
   },
 ): EmailDraftSendability {
   const blockers = getEmailDraftBlockers(draft, options);
