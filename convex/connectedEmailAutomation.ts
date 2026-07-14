@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { getCurrentOrgAccess } from "./lib/access";
@@ -19,9 +19,14 @@ const INCOMPLETE_CLASSIFICATION_REASON =
   "The mailbox classifier did not return a complete decision.";
 
 function userFacingReviewReason(reason: string) {
-  return reason === INCOMPLETE_CLASSIFICATION_REASON
-    ? "Glass could not classify this email automatically. Review the live message before choosing an action."
-    : reason;
+  const normalized = reason.trim();
+  if (
+    normalized === INCOMPLETE_CLASSIFICATION_REASON ||
+    normalized === "Glass could not classify this email automatically. Review its sender, date, and attachments before choosing an action."
+  ) {
+    return undefined;
+  }
+  return normalized || undefined;
 }
 
 function automationItemByMessageKey(
@@ -86,30 +91,13 @@ export const reviewForThread = query({
         account ? [[String(account._id), account.emailAddress] as const] : [],
       ),
     );
-    const accountEmails = [
-      ...new Set(
-        reviewItems.flatMap((item) => {
-          const email = emailByAccountId.get(String(item.accountId));
-          return email ? [email] : [];
-        }),
-      ),
-    ];
-    const title = accountEmails.length === 1
-      ? `Mailbox review - ${accountEmails[0]}`
-      : accountEmails.length > 1
-        ? `Mailbox review - ${accountEmails.length} mailboxes`
-        : "Mailbox review";
+    const title = reviewItems.length === 1
+      ? "Review email"
+      : `Review ${reviewItems.length} emails`;
 
     return {
       title,
       status: "needs_review",
-      plan: {
-        summary: `${reviewItems.length} email${reviewItems.length === 1 ? " needs" : "s need"} review. Open each live message before choosing an import action. If an email is irrelevant, no action is required.`,
-        steps: [
-          "Open the email to inspect its sender, recipients, message, and attachments.",
-          "Import only the policy or insurance requirements that belong in Glass.",
-        ],
-      },
       searches: [],
       evidence: {
         emails: reviewItems.map((item) => ({
@@ -127,6 +115,66 @@ export const reviewForThread = query({
       },
       toolCalls: [],
     };
+  },
+});
+
+export const resolveReview = mutation({
+  args: {
+    threadId: v.id("threads"),
+    emailRef: v.string(),
+    resolution: v.union(
+      v.literal("not_relevant"),
+      v.literal("policy_imported"),
+      v.literal("requirements_imported"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const access = await getCurrentOrgAccess(ctx);
+    if (!access) throw new Error("Not authenticated");
+    const thread = await ctx.db.get(args.threadId);
+    if (
+      !thread ||
+      !canAccessThread({
+        userId: access.userId,
+        userOrgId: access.orgId,
+        thread,
+        clientOrg: null,
+      })
+    ) {
+      throw new Error("Thread not found");
+    }
+    const item = await ctx.db
+      .query("connectedEmailAutomationItems")
+      .withIndex("by_threadId_and_emailRef", (q) =>
+        q.eq("threadId", args.threadId).eq("emailRef", args.emailRef),
+      )
+      .unique();
+    if (
+      !item ||
+      item.orgId !== access.orgId ||
+      !(item.needsReview ?? item.classification === "review_needed")
+    ) {
+      return { resolved: false };
+    }
+
+    const classification = args.resolution === "not_relevant"
+      ? "ignore" as const
+      : args.resolution === "policy_imported"
+        ? "policy_document" as const
+        : "insurance_requirements" as const;
+    const actionSummary = args.resolution === "not_relevant"
+      ? "Marked as not relevant."
+      : args.resolution === "policy_imported"
+        ? "Policy import started."
+        : "Insurance requirements imported.";
+    await ctx.db.patch(item._id, {
+      classification,
+      needsReview: false,
+      reviewReason: undefined,
+      actionSummary,
+      updatedAt: dayjs().valueOf(),
+    });
+    return { resolved: true };
   },
 });
 

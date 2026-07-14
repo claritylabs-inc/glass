@@ -106,6 +106,7 @@ describe("connected email surfaces", () => {
   it("lets mailbox task artifacts import policies and requirements", () => {
     const backend = read("convex/actions/connectedEmail.ts");
     const mailboxTask = read("components/agent-thread/artifacts/mailbox-task.tsx");
+    const mailboxReview = read("components/agent-thread/artifacts/mailbox-email-review-sidebar.tsx");
     const threadContent = read("components/agent-thread/thread-content.tsx");
 
     expect(backend).toContain("export const importPolicyAttachments = action");
@@ -129,11 +130,16 @@ describe("connected email surfaces", () => {
     expect(read("convex/lib/emailSubagent.ts")).toContain(".eml exports of source emails");
     expect(read("convex/actions/mailboxCoordinator.ts")).toContain("save_connected_email_attachments_to_thread");
     expect(read("convex/actions/mailboxCoordinator.ts")).toContain("save_connected_email_message_to_thread");
-    expect(mailboxTask).toContain("Import policy");
-    expect(mailboxTask).toContain("Review email");
+    expect(mailboxReview).toContain("Import policy");
+    expect(mailboxReview).toContain("Import insurance requirements");
+    expect(mailboxReview).toContain("Not relevant");
+    expect(mailboxReview).toContain('"connect_features"');
+    expect(mailboxReview).toContain("api.connectedEmailAutomation.resolveReview");
+    expect(mailboxReview).toContain("Close email review");
     expect(mailboxTask).toContain("Needs review");
-    expect(mailboxTask).toContain("api.actions.connectedEmail.readEmail");
-    expect(mailboxTask).toContain("This email has no plain-text message body.");
+    expect(mailboxReview).toContain("OperationalPanel");
+    expect(mailboxReview).toContain("api.actions.connectedEmail.readEmail");
+    expect(mailboxReview).toContain("This email has no plain-text message body.");
     expect(mailboxTask).toContain("Save to thread");
     expect(mailboxTask).toContain("Create vendor requirements");
     expect(mailboxTask).toContain("Create internal requirements");
@@ -152,21 +158,25 @@ describe("connected email surfaces", () => {
     expect(mailboxTask).toContain("Mailbox search - ${uniqueAccounts[0]}");
     expect(threadContent).toContain("setIsMailboxExpanded");
     expect(threadContent).toContain('label="Background agents"');
-    expect(threadContent).toContain("count={mailboxTasks.length}");
+    expect(threadContent).toContain("mailboxReviewEmails");
+    expect(threadContent).toContain("emailIndex");
+    expect(threadContent).toContain("renderMailboxReviewPill");
+    expect(threadContent).toContain("conciseMailboxReviewContent");
     expect(threadContent).toContain('<span className="text-muted-foreground/35">{index + 1}</span>');
     expect(threadContent).not.toContain("<MailboxTaskArtifacts\n                  artifacts={mailboxArtifacts}");
     expect(threadContent).not.toContain("AgentProcessingActivity\n            label={toolLabel}\n            isStale={isStale}\n            backgroundProcessCount={backgroundProcessCount}\n          />\n          {mailboxArtifacts.length > 0 ? (");
     expect(backend).toContain("Saved 1 document from connected email for reuse in this thread.");
+    expect(backend).toContain("ref.uid,\n        IMPORT_DOWNLOAD_MAX_BYTES");
     expect(threadContent).toContain("openMailboxArtifactRef");
     expect(threadContent).toContain("onOpenMailboxArtifact");
     expect(mailboxTask).toContain('mode="detail"');
     expect(mailboxTask).toContain("flat");
     expect(mailboxTask).toContain('className="h-3 w-3"');
     expect(threadContent).toContain("messageId={msg._id}");
-    expect(mailboxTask).toContain("api.actions.connectedEmail.importPolicyAttachments");
-    expect(mailboxTask).toContain("api.actions.connectedEmail.importRequirementAttachments");
-    expect(mailboxTask).toContain('includeEmailBody: true');
-    expect(mailboxTask).toContain('scope === "vendors" ? "vendor_requirements" : "other"');
+    expect(mailboxReview).toContain("api.actions.connectedEmail.importPolicyAttachments");
+    expect(mailboxReview).toContain("api.actions.connectedEmail.importRequirementAttachments");
+    expect(mailboxReview).toContain('includeEmailBody: true');
+    expect(mailboxReview).toContain('scope === "vendors" ? "vendor_requirements" : "other"');
   });
 
   it("keeps integrations and mailboxes on separate settings pages", () => {

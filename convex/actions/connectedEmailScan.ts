@@ -814,6 +814,12 @@ async function createMailboxActivity(
 ) {
   const successful = outcomes.filter(hasAutomationResult);
   if (successful.length === 0 && attention.length === 0) return undefined;
+  const mailboxAttention = attention.filter(
+    (item) => item.kind !== "compliance",
+  );
+  const complianceAttention = attention.filter(
+    (item) => item.kind === "compliance",
+  );
   const body = [
     successful.length > 0
       ? `Glass completed ${successful.length} connected-mailbox automation action${successful.length === 1 ? "" : "s"}.`
@@ -821,18 +827,14 @@ async function createMailboxActivity(
     ...successful.slice(0, 8).map(
       (outcome, index) => `${index + 1}. ${outcome.actionSummary ?? "Mailbox automation completed."}`,
     ),
-    successful.length > 0 && attention.length > 0 ? "" : undefined,
-    attention.length > 0
-      ? `${attention.length} item${attention.length === 1 ? "" : "s"} need attention:`
+    successful.length > 0 && mailboxAttention.length > 0 ? "" : undefined,
+    mailboxAttention.length > 0
+      ? `${mailboxAttention.length} email${mailboxAttention.length === 1 ? " needs" : "s need"} review.`
       : undefined,
-    attention.length > 0 ? "" : undefined,
-    attention.length > 0
-      ? "Open Mailbox review below to inspect each live email before choosing an import action. If an email is irrelevant, no action is required."
+    successful.length > 0 && complianceAttention.length > 0 ? "" : undefined,
+    complianceAttention.length > 0
+      ? `${complianceAttention.length} compliance item${complianceAttention.length === 1 ? " needs" : "s need"} attention.`
       : undefined,
-    attention.length > 0 ? "" : undefined,
-    ...attention.slice(0, 8).map(
-      (item, index) => `${index + 1}. ${item.subject}: ${item.reason}`,
-    ),
   ].filter((part): part is string => part !== undefined).join("\n");
   const proactive = await ctx.runMutation(internal.threads.createProactiveInternal, {
     orgId: account.orgId,
@@ -844,12 +846,6 @@ async function createMailboxActivity(
         : "Mailbox items needing attention",
     content: body,
   });
-  const mailboxAttention = attention.filter(
-    (item) => item.kind !== "compliance",
-  );
-  const complianceAttention = attention.filter(
-    (item) => item.kind === "compliance",
-  );
   if (mailboxAttention.length > 0) {
     await ctx.runMutation(internal.lib.notify.notifyInternal, {
       orgId: account.orgId,

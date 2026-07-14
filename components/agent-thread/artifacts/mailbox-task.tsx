@@ -11,6 +11,14 @@ import { PillButton } from "@/components/ui/pill-button";
 import { scientistSurnameFor } from "../scientist-surnames";
 import type { ToolArtifactData } from "../types";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import {
+  formatAttachmentSize,
+  isMailboxPdfAttachment,
+  isMailboxRequirementAttachment,
+  MailboxEmailReviewSidebar,
+  totalCreatedRequirements,
+  type LiveMailboxEmail,
+} from "./mailbox-email-review-sidebar";
 
 export function normalizeMailboxTask(data: unknown): {
   title?: string;
@@ -126,25 +134,8 @@ export function normalizeMailboxTask(data: unknown): {
   };
 }
 
-function formatAttachmentSize(size?: number) {
-  if (typeof size !== "number") return undefined;
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 type MailboxTaskEmail = ReturnType<typeof normalizeMailboxTask>["emails"][number];
 export type NormalizedMailboxTask = ReturnType<typeof normalizeMailboxTask>;
-
-type LiveMailboxEmail = {
-  subject: string;
-  from?: string;
-  to?: string;
-  cc?: string;
-  date?: string;
-  text?: string;
-  attachments: MailboxTaskEmail["attachments"];
-};
 
 export function mailboxTaskDisplayName(task: NormalizedMailboxTask) {
   if (task.title?.trim()) return task.title.trim();
@@ -156,42 +147,6 @@ export function mailboxTaskDisplayName(task: NormalizedMailboxTask) {
   if (uniqueAccounts.length === 0) return "Mailbox search";
   if (uniqueAccounts.length === 1) return `Mailbox search - ${uniqueAccounts[0]}`;
   return `Mailbox search - ${uniqueAccounts[0]} + ${uniqueAccounts.length - 1}`;
-}
-
-function isMailboxPdfAttachment(attachment: MailboxTaskEmail["attachments"][number]) {
-  const name = attachment.filename.toLowerCase();
-  const type = attachment.contentType?.toLowerCase() ?? "";
-  return type.includes("pdf") || name.endsWith(".pdf");
-}
-
-function isMailboxRequirementAttachment(attachment: MailboxTaskEmail["attachments"][number]) {
-  const name = attachment.filename.toLowerCase();
-  const type = attachment.contentType?.toLowerCase() ?? "";
-  return (
-    type.includes("pdf") ||
-    type.includes("wordprocessingml") ||
-    type.startsWith("text/") ||
-    type.includes("json") ||
-    type.includes("csv") ||
-    name.endsWith(".pdf") ||
-    name.endsWith(".docx") ||
-    name.endsWith(".txt") ||
-    name.endsWith(".md") ||
-    name.endsWith(".markdown") ||
-    name.endsWith(".csv") ||
-    name.endsWith(".json")
-  );
-}
-
-function totalCreatedRequirements(result: unknown) {
-  if (!result || typeof result !== "object" || Array.isArray(result)) return 0;
-  const imports = (result as { imports?: unknown }).imports;
-  if (!Array.isArray(imports)) return 0;
-  return imports.reduce((total, item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return total;
-    const createdCount = (item as { createdCount?: unknown }).createdCount;
-    return total + (typeof createdCount === "number" ? createdCount : 0);
-  }, 0);
 }
 
 function MailboxSearchAudit({ searches }: { searches: ReturnType<typeof normalizeMailboxTask>["searches"] }) {
@@ -428,7 +383,6 @@ function MailboxTaskSummaryCard({
     task.searches.length > 0 ? `${totalMatches} matches` : undefined,
     task.emails.length > 0 ? `${task.emails.length} emails` : undefined,
   ].filter(Boolean).join(" · ");
-
   if (mode === "summary") {
     return (
       <button
@@ -671,14 +625,29 @@ export function MailboxTaskSidebar({
   artifact,
   orgId,
   threadId,
+  emailIndex,
   onClose,
 }: {
   artifact: ToolArtifactData;
   orgId: Id<"organizations">;
   threadId: Id<"threads">;
+  emailIndex?: number;
   onClose: () => void;
 }) {
   const task = normalizeMailboxTask(artifact.data);
+  const selectedReviewEmail = task.status === "needs_review"
+    ? task.emails[emailIndex ?? 0]
+    : undefined;
+  if (selectedReviewEmail) {
+    return (
+      <MailboxEmailReviewSidebar
+        email={selectedReviewEmail}
+        orgId={orgId}
+        threadId={threadId}
+        onClose={onClose}
+      />
+    );
+  }
   const isRunning = task.status === "running";
   const statusLabel = isRunning
     ? "Running"
@@ -686,7 +655,6 @@ export function MailboxTaskSidebar({
       ? "Needs review"
       : "Background agent";
   const displayName = mailboxTaskDisplayName(task);
-
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">

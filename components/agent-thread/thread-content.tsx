@@ -347,6 +347,11 @@ function normalizeStatusContent(content: string) {
   return content.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
 }
 
+function conciseMailboxReviewContent(content: string, emailCount: number) {
+  const summary = `${emailCount} email${emailCount === 1 ? " needs" : "s need"} review.`;
+  return content.replace(/\d+ items? need attention:[\s\S]*$/i, summary);
+}
+
 function normalizeMessageForDedupe(content: string) {
   return normalizeStatusContent(content)
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
@@ -606,6 +611,19 @@ function MessageFooterActions({
   const mailboxTasks =
     mailboxArtifacts?.filter((artifact) => artifact.type === "mailbox_task") ??
     [];
+  const mailboxTaskEntries = mailboxTasks.map((artifact, index) => ({
+    artifact,
+    index,
+    task: normalizeMailboxTask(artifact.data),
+  }));
+  const mailboxReviewEmails = mailboxTaskEntries.flatMap(({ index, task }) =>
+    task.status === "needs_review"
+      ? task.emails.map((email, emailIndex) => ({ index, emailIndex, email }))
+      : [],
+  );
+  const backgroundMailboxIndexes = mailboxTaskEntries
+    .filter(({ task }) => task.status !== "needs_review")
+    .map(({ index }) => index);
   const hasMailboxTasks = mailboxTasks.length > 0;
   const confidenceSummary = useMemo(
     () => (confidenceContent ? summarizeConfidence(confidenceContent) : null),
@@ -620,6 +638,10 @@ function MessageFooterActions({
   const selectedMailboxIndex =
     openMailboxArtifactRef?.messageId === messageId
       ? (openMailboxArtifactRef?.index ?? null)
+      : null;
+  const selectedMailboxEmailIndex =
+    openMailboxArtifactRef?.messageId === messageId
+      ? (openMailboxArtifactRef?.emailIndex ?? null)
       : null;
   if (
     refs.length === 0 &&
@@ -694,6 +716,35 @@ function MessageFooterActions({
     );
   };
 
+  const renderMailboxReviewPill = ({
+    index,
+    emailIndex,
+    email,
+  }: (typeof mailboxReviewEmails)[number]) => {
+    const isSelected =
+      selectedMailboxIndex === index && selectedMailboxEmailIndex === emailIndex;
+    return (
+      <PillButton
+        size="compact"
+        variant="secondary"
+        label={`Review ${email.subject}`}
+        title={email.subject}
+        onClick={() => {
+          if (!messageId) return;
+          onOpenMailboxArtifact?.({ messageId, index, emailIndex });
+        }}
+        className={`h-6 max-w-64 px-2 ${
+          isSelected
+            ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
+            : "text-muted-foreground/60"
+        }`}
+      >
+        <MailIcon className="h-3 w-3" />
+        <span className="truncate">{email.subject}</span>
+      </PillButton>
+    );
+  };
+
   return (
     <div className="mt-1.5 min-w-0">
       <div className="flex items-start gap-2">
@@ -763,20 +814,25 @@ function MessageFooterActions({
               onClick={onToggleSubagentActivity}
             />
           )}
-          {mailboxTasks.length === 1 ? (
-            renderMailboxAgentPill(0)
-          ) : mailboxTasks.length > 1 ? (
+          {mailboxReviewEmails.map((entry) => (
+            <span key={`mailbox-review-${entry.index}-${entry.emailIndex}`}>
+              {renderMailboxReviewPill(entry)}
+            </span>
+          ))}
+          {backgroundMailboxIndexes.length === 1 ? (
+            renderMailboxAgentPill(backgroundMailboxIndexes[0])
+          ) : backgroundMailboxIndexes.length > 1 ? (
             <>
               <MessageMetaTag
                 icon={<LogoIcon size={12} static className="h-3 w-3" />}
                 label="Background agents"
-                count={mailboxTasks.length}
+                count={backgroundMailboxIndexes.length}
                 isActive={isMailboxExpanded}
                 onClick={() => setIsMailboxExpanded((value) => !value)}
               />
               {isMailboxExpanded ? (
                 <div className="flex flex-wrap items-start gap-1.5">
-                  {mailboxTasks.map((_, index) => {
+                  {backgroundMailboxIndexes.map((index) => {
                     return (
                       <span
                         key={`mailbox-footer-${index}`}
@@ -1317,7 +1373,7 @@ export function UnifiedMessageBubble({
   // Agent message
   if (msg.role === "agent") {
     const isError = msg.status === "error";
-    const fixedContent = msg.content?.trim()
+    const rawContent = msg.content?.trim()
       ? msg.content
       : isError
         ? (msg.error ?? "An error occurred processing this message.")
@@ -1340,6 +1396,13 @@ export function UnifiedMessageBubble({
       msg.toolArtifacts?.filter(
         (artifact) => artifact.type === "mailbox_task",
       ) ?? [];
+    const reviewEmailCount = mailboxArtifacts.reduce((total, artifact) => {
+      const task = normalizeMailboxTask(artifact.data);
+      return task.status === "needs_review" ? total + task.emails.length : total;
+    }, 0);
+    const fixedContent = reviewEmailCount > 0
+      ? conciseMailboxReviewContent(rawContent, reviewEmailCount)
+      : rawContent;
     const genericSubagentToolCalls = subagentToolCalls.filter(
       (toolCall) => toolCall.name !== "coordinate_mailbox_task",
     );
@@ -1905,7 +1968,12 @@ export function UnifiedThreadContent({
         : storedArtifacts;
     const artifact = artifacts[openMailboxArtifactRef.index];
     return artifact
-      ? { artifact, orgId: message?.orgId, threadId: message?.threadId }
+      ? {
+          artifact,
+          orgId: message?.orgId,
+          threadId: message?.threadId,
+          emailIndex: openMailboxArtifactRef.emailIndex,
+        }
       : null;
   }, [
     mailboxReviewArtifact,
@@ -1968,9 +2036,11 @@ export function UnifiedThreadContent({
         openMailboxArtifact.orgId &&
         openMailboxArtifact.threadId ? (
         <MailboxTaskSidebar
+          key={`${openMailboxArtifactRef?.index ?? 0}:${openMailboxArtifact.emailIndex ?? "task"}`}
           artifact={openMailboxArtifact.artifact}
           orgId={openMailboxArtifact.orgId}
           threadId={openMailboxArtifact.threadId}
+          emailIndex={openMailboxArtifact.emailIndex}
           onClose={() => setOpenMailboxArtifactRef(null)}
         />
       ) : null,
@@ -1981,6 +2051,7 @@ export function UnifiedThreadContent({
     openEmailMessage,
     openVendorComplianceArtifact,
     openMailboxArtifact,
+    openMailboxArtifactRef?.index,
   ]);
 
   // Scroll to bottom when messages change or thread switches
