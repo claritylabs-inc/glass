@@ -267,22 +267,20 @@ export const seed = action({
       internal.seed.insertLocalFixture,
       phones,
     );
-    const [brokerLogo, clientLogo] = await Promise.all([
-      ctx.runAction(
-        internal.actions.extractCompanyInfo.importOrgLogoForOrgInternal,
-        {
-          orgId: fixture.brokerOrgId,
-          url: LOCAL_FIXTURE.broker.website,
-        },
-      ),
-      ctx.runAction(
-        internal.actions.extractCompanyInfo.importOrgLogoForOrgInternal,
-        {
-          orgId: fixture.clientOrgId,
-          url: LOCAL_FIXTURE.client.website,
-        },
-      ),
-    ]);
+    const brokerLogo = await ctx.runAction(
+      internal.actions.extractCompanyInfo.importOrgLogoForOrgInternal,
+      {
+        orgId: fixture.brokerOrgId,
+        url: LOCAL_FIXTURE.broker.website,
+      },
+    );
+    const clientLogo = await ctx.runAction(
+      internal.actions.extractCompanyInfo.importOrgLogoForOrgInternal,
+      {
+        orgId: fixture.clientOrgId,
+        url: LOCAL_FIXTURE.client.website,
+      },
+    );
     const missingLogos = [
       brokerLogo.success ? null : LOCAL_FIXTURE.broker.name,
       clientLogo.success ? null : LOCAL_FIXTURE.client.name,

@@ -105,10 +105,10 @@ export function conductorPorts() {
   };
 }
 
-export function workspaceSlug() {
+export function workspaceSlug(workspacePath = repoRoot) {
   return (
     path
-      .basename(repoRoot)
+      .basename(path.resolve(workspacePath))
       .toLowerCase()
       .replace(/[^a-z0-9_.-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "workspace"

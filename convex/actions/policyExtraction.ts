@@ -1456,7 +1456,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         : pdfSource.sourceChunks as Array<Record<string, any>>;
       const chunks = result.chunks;
       const tokenUsage = result.tokenUsage;
-      const coverageRecovery = (result as unknown as { coverageRecovery?: unknown }).coverageRecovery;
+      const coverageRecovery = result.coverageRecovery;
 
       await pCtx.log(
         `Extraction complete. Type: ${(result.document as Record<string, unknown>).type}. ${chunks.length} chunks, ${sourceSpans.length} source spans. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`,

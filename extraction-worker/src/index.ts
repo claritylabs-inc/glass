@@ -2316,7 +2316,7 @@ async function completeJob(
     ? (result as unknown as { sourceTree: Array<Record<string, unknown>> }).sourceTree
     : [];
   const operationalProfile = (result as unknown as { operationalProfile?: unknown }).operationalProfile;
-  const coverageRecovery = (result as unknown as { coverageRecovery?: unknown }).coverageRecovery;
+  const coverageRecovery = result.coverageRecovery;
   const warnings = Array.isArray((result as unknown as { warnings?: unknown[] }).warnings)
     ? (result as unknown as { warnings: unknown[] }).warnings.filter((item): item is string => typeof item === "string")
     : [];
