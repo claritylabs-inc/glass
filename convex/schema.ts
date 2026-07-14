@@ -717,6 +717,8 @@ export default defineSchema({
     ),
     attempts: v.number(),
     actionSummary: v.optional(v.string()),
+    needsReview: v.optional(v.boolean()),
+    reviewReason: v.optional(v.string()),
     policyIds: v.optional(v.array(v.id("policies"))),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     memoryIds: v.optional(v.array(v.id("orgMemory"))),
@@ -726,6 +728,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_accountId_messageKey", ["accountId", "messageKey"])
+    .index("by_threadId", ["threadId"])
     .index("by_orgId_updatedAt", ["orgId", "updatedAt"])
     .index("by_status_updatedAt", ["status", "updatedAt"]),
 

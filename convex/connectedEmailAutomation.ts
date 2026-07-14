@@ -1,8 +1,10 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { getCurrentOrgAccess } from "./lib/access";
+import { canAccessThread } from "./lib/threadAccess";
 
 const classificationValidator = v.union(
   v.literal("ignore"),
@@ -12,6 +14,15 @@ const classificationValidator = v.union(
   v.literal("multiple"),
   v.literal("review_needed"),
 );
+
+const INCOMPLETE_CLASSIFICATION_REASON =
+  "The mailbox classifier did not return a complete decision.";
+
+function userFacingReviewReason(reason: string) {
+  return reason === INCOMPLETE_CLASSIFICATION_REASON
+    ? "Glass could not classify this email automatically. Review the live message before choosing an action."
+    : reason;
+}
 
 function automationItemByMessageKey(
   ctx: MutationCtx,
@@ -38,6 +49,85 @@ export const getScanStateInternal = internalQuery({
         query.eq("accountId", args.accountId).eq("mailbox", args.mailbox),
       )
       .first(),
+});
+
+export const reviewForThread = query({
+  args: { threadId: v.id("threads") },
+  handler: async (ctx, args) => {
+    const access = await getCurrentOrgAccess(ctx);
+    if (!access) return null;
+    const thread = await ctx.db.get(args.threadId);
+    if (
+      !thread ||
+      !canAccessThread({
+        userId: access.userId,
+        userOrgId: access.orgId,
+        thread,
+        clientOrg: null,
+      })
+    ) {
+      return null;
+    }
+    const items = await ctx.db
+      .query("connectedEmailAutomationItems")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .collect();
+    const reviewItems = items.filter(
+      (item) =>
+        item.orgId === access.orgId &&
+        (item.needsReview ?? item.classification === "review_needed"),
+    );
+    if (reviewItems.length === 0) return null;
+
+    const accountIds = [...new Set(reviewItems.map((item) => item.accountId))];
+    const accounts = await Promise.all(accountIds.map((accountId) => ctx.db.get(accountId)));
+    const emailByAccountId = new Map(
+      accounts.flatMap((account) =>
+        account ? [[String(account._id), account.emailAddress] as const] : [],
+      ),
+    );
+    const accountEmails = [
+      ...new Set(
+        reviewItems.flatMap((item) => {
+          const email = emailByAccountId.get(String(item.accountId));
+          return email ? [email] : [];
+        }),
+      ),
+    ];
+    const title = accountEmails.length === 1
+      ? `Mailbox review - ${accountEmails[0]}`
+      : accountEmails.length > 1
+        ? `Mailbox review - ${accountEmails.length} mailboxes`
+        : "Mailbox review";
+
+    return {
+      title,
+      status: "needs_review",
+      plan: {
+        summary: `${reviewItems.length} email${reviewItems.length === 1 ? " needs" : "s need"} review. Open each live message before choosing an import action. If an email is irrelevant, no action is required.`,
+        steps: [
+          "Open the email to inspect its sender, recipients, message, and attachments.",
+          "Import only the policy or insurance requirements that belong in Glass.",
+        ],
+      },
+      searches: [],
+      evidence: {
+        emails: reviewItems.map((item) => ({
+          emailRef: item.emailRef,
+          mailbox: item.mailbox,
+          accountEmail: emailByAccountId.get(String(item.accountId)),
+          subject: item.subject,
+          from: item.from,
+          date: item.receivedAt
+            ? dayjs(item.receivedAt).toISOString()
+            : undefined,
+          reason: userFacingReviewReason(item.reviewReason ?? item.reason),
+          attachments: [],
+        })),
+      },
+      toolCalls: [],
+    };
+  },
 });
 
 export const recordScanAttemptInternal = internalMutation({
@@ -189,6 +279,8 @@ export const claimItemInternal = internalMutation({
         reason: args.reason,
         status: "processing",
         attempts: existing.attempts + 1,
+        needsReview: undefined,
+        reviewReason: undefined,
         lastError: undefined,
         updatedAt: now,
       });
@@ -273,6 +365,8 @@ export const finishItemInternal = internalMutation({
     itemId: v.id("connectedEmailAutomationItems"),
     status: v.union(v.literal("completed"), v.literal("skipped")),
     actionSummary: v.optional(v.string()),
+    needsReview: v.optional(v.boolean()),
+    reviewReason: v.optional(v.string()),
     policyIds: v.optional(v.array(v.id("policies"))),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     memoryIds: v.optional(v.array(v.id("orgMemory"))),

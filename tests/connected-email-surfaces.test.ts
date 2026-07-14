@@ -41,6 +41,9 @@ describe("connected email surfaces", () => {
     expect(scan).toContain("AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES");
     expect(scan).toContain("Mailbox scan was incomplete");
     expect(scan).toContain("AUTOMATION_INITIAL_LOOKBACK_DAYS = 400");
+    expect(scan).toContain("AUTOMATION_CLASSIFICATION_BATCH_SIZE = 12");
+    expect(scan).toContain("emailRef: String(index + 1)");
+    expect(scan).not.toContain("The mailbox classifier did not return a complete decision.");
     expect(scan).toContain("AUTOMATION_HISTORY_SUBJECT_TERMS");
     expect(imapLib).toContain("downloaded.meta.expectedSize");
     expect(backend).toContain("args.filenames === undefined");
@@ -106,6 +109,7 @@ describe("connected email surfaces", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
 
     expect(backend).toContain("export const importPolicyAttachments = action");
+    expect(backend).toContain("export const readEmail = action");
     expect(backend).toContain("export const importRequirementAttachments = action");
     expect(backend).toContain("export const saveAttachmentsToThread = action");
     expect(backend).toContain("saveAttachmentsToThreadInternal");
@@ -126,6 +130,10 @@ describe("connected email surfaces", () => {
     expect(read("convex/actions/mailboxCoordinator.ts")).toContain("save_connected_email_attachments_to_thread");
     expect(read("convex/actions/mailboxCoordinator.ts")).toContain("save_connected_email_message_to_thread");
     expect(mailboxTask).toContain("Import policy");
+    expect(mailboxTask).toContain("Review email");
+    expect(mailboxTask).toContain("Needs review");
+    expect(mailboxTask).toContain("api.actions.connectedEmail.readEmail");
+    expect(mailboxTask).toContain("This email has no plain-text message body.");
     expect(mailboxTask).toContain("Save to thread");
     expect(mailboxTask).toContain("Create vendor requirements");
     expect(mailboxTask).toContain("Create internal requirements");
@@ -139,6 +147,8 @@ describe("connected email surfaces", () => {
     expect(threadContent).toContain("background agent");
     expect(threadContent).toContain("mailboxArtifacts={mailboxArtifacts}");
     expect(threadContent).toContain("mailboxTaskDisplayName");
+    expect(threadContent).toContain("api.connectedEmailAutomation.reviewForThread");
+    expect(threadContent).toContain('type: "mailbox_task", data: mailboxReview');
     expect(mailboxTask).toContain("Mailbox search - ${uniqueAccounts[0]}");
     expect(threadContent).toContain("setIsMailboxExpanded");
     expect(threadContent).toContain('label="Background agents"');
