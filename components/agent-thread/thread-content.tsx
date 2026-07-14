@@ -1822,6 +1822,22 @@ export function UnifiedThreadContent({
     api.threads.messages,
     { threadId },
   ) as ThreadMessage[] | undefined;
+  const mailboxReview = useCachedQuery(
+    "connectedEmailAutomation.reviewForThread.current",
+    api.connectedEmailAutomation.reviewForThread,
+    { threadId },
+  );
+  const mailboxReviewArtifact = useMemo<ToolArtifactData | null>(
+    () => mailboxReview ? { type: "mailbox_task", data: mailboxReview } : null,
+    [mailboxReview],
+  );
+  const mailboxReviewMessageId = useMemo(
+    () =>
+      mailboxReviewArtifact
+        ? messages?.find((message) => message.role === "agent")?._id
+        : undefined,
+    [mailboxReviewArtifact, messages],
+  );
   const pdf = usePdf();
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const sendMessage = useMutation(api.threads.sendMessage);
@@ -1879,15 +1895,24 @@ export function UnifiedThreadContent({
     const message = messages?.find(
       (candidate) => candidate._id === openMailboxArtifactRef.messageId,
     );
-    const artifacts =
+    const storedArtifacts =
       message?.toolArtifacts?.filter(
         (artifact) => artifact.type === "mailbox_task",
       ) ?? [];
+    const artifacts =
+      mailboxReviewArtifact && message?._id === mailboxReviewMessageId
+        ? [...storedArtifacts, mailboxReviewArtifact]
+        : storedArtifacts;
     const artifact = artifacts[openMailboxArtifactRef.index];
     return artifact
       ? { artifact, orgId: message?.orgId, threadId: message?.threadId }
       : null;
-  }, [messages, openMailboxArtifactRef]);
+  }, [
+    mailboxReviewArtifact,
+    mailboxReviewMessageId,
+    messages,
+    openMailboxArtifactRef,
+  ]);
 
   // Error state for chat — stored as { threadId, message } so switching threads auto-clears it
   const [chatErrorState, setChatErrorState] = useState<{
@@ -2230,6 +2255,16 @@ export function UnifiedThreadContent({
             return threadMessages.map((msg, idx) => {
               if (hiddenStatusMessageIds.has(msg._id)) return null;
               if (attachedEmailMessageIds.has(msg._id)) return null;
+              const renderedMessage =
+                mailboxReviewArtifact && msg._id === mailboxReviewMessageId
+                  ? {
+                      ...msg,
+                      toolArtifacts: [
+                        ...(msg.toolArtifacts ?? []),
+                        mailboxReviewArtifact,
+                      ],
+                    }
+                  : msg;
               const isFirstUser = idx === firstUserIdx;
               const firstUserIsOwn =
                 isFirstUser &&
@@ -2244,7 +2279,7 @@ export function UnifiedThreadContent({
               return (
                 <div key={msg._id}>
                   <UnifiedMessageBubble
-                    msg={msg}
+                    msg={renderedMessage}
                     relatedEmailMessages={relatedEmailMessages}
                     viewerId={viewerId}
                     viewerEmail={viewerEmail}

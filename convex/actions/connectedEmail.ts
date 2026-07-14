@@ -68,6 +68,23 @@ type MailboxSearchErrorRow = {
   hint: string;
 };
 
+type MailboxReadRow = {
+  emailRef: string;
+  accountId: Id<"connectedEmailAccounts">;
+  accountEmail: string;
+  accountHost: string;
+  mailbox: string;
+  uid: number;
+  subject: string;
+  from?: string;
+  to: string;
+  cc: string;
+  date?: string;
+  text: string;
+  html?: string;
+  attachments: MailboxAttachmentInfo[];
+};
+
 type SavedThreadAttachment = {
   filename: string;
   contentType: string;
@@ -521,7 +538,7 @@ export const readInternal = internalAction({
     userId: v.optional(v.id("users")),
     emailRef: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<MailboxReadRow> => {
     const ref = parseMessageRef(args.emailRef);
     const account = await accessibleAccount(ctx, {
       orgId: args.orgId,
@@ -550,6 +567,24 @@ export const readInternal = internalAction({
           size: attachment.size,
         })),
       };
+    });
+  },
+});
+
+export const readEmail = action({
+  args: {
+    orgId: v.id("organizations"),
+    emailRef: v.string(),
+  },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<MailboxReadRow> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
+    return await ctx.runAction(internal.actions.connectedEmail.readInternal, {
+      orgId: args.orgId,
+      userId: userId as Id<"users">,
+      emailRef: args.emailRef,
     });
   },
 });
