@@ -52,6 +52,19 @@ export function cachedQueryArgsKey(args: unknown) {
   return stableHash(args);
 }
 
+function containsProcessingRecord(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.some(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "status" in item &&
+        item.status === "processing",
+    )
+  );
+}
+
 export function useCachedQuery<TQuery extends FunctionReference<"query">>(
   cacheName: string,
   query: TQuery,
@@ -63,19 +76,19 @@ export function useCachedQuery<TQuery extends FunctionReference<"query">>(
   const argsKey = isSkipped ? "skip" : stableHash(args);
   const cached = useSyncCollection(collection, argsKey)?.[0]?.value;
   const serverValue = useQuery(query, args);
-  const serverValueHash =
-    serverValue === undefined ? undefined : stableHash(serverValue);
   const lastWrittenKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (isSkipped || serverValue === undefined) return;
+    if (store.key.includes(":anonymous:")) return;
     if (
-      isSkipped ||
-      serverValue === undefined ||
-      serverValueHash === undefined
+      cacheName === "threads.messages.current" &&
+      containsProcessingRecord(serverValue)
     ) {
       return;
     }
-    if (store.key.includes(":anonymous:")) return;
+
+    const serverValueHash = stableHash(serverValue);
 
     const writeKey = `${argsKey}:${serverValueHash}`;
     if (lastWrittenKeyRef.current === writeKey) return;
@@ -94,7 +107,7 @@ export function useCachedQuery<TQuery extends FunctionReference<"query">>(
         updatedAt: dayjs().valueOf(),
       },
     ]);
-  }, [argsKey, collection, isSkipped, serverValue, serverValueHash, store]);
+  }, [argsKey, cacheName, collection, isSkipped, serverValue, store]);
 
   return serverValue === undefined ? cached : serverValue;
 }
