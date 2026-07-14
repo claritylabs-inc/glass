@@ -12,6 +12,7 @@ import {
   BrandWordmark,
   PoweredByGlassWordmark,
 } from "@/components/auth-shell";
+import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
 import { completeOtpSignIn } from "@/lib/otp-auth";
 import { ArrowRight, Loader2 } from "lucide-react";
@@ -236,18 +237,11 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
         ) : (
           <form onSubmit={handleCodeSubmit} className="space-y-4">
             <div>
-              <label htmlFor="vendor-code" className={LABEL_CLASSES}>Verification code</label>
-              <input
-                id="vendor-code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="000000"
-                required
-                className={INPUT_CLASSES}
-              />
+              <span className={LABEL_CLASSES}>Verification code</span>
+              <OtpField value={code} onValueChange={setCode} autoFocus required />
             </div>
             {error ? <p className="px-1 py-1 text-base text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || !code.trim()} className="w-full justify-center text-base shadow-none sm:w-auto">
+            <PillButton type="submit" disabled={loading || code.length < 6} className="w-full justify-center text-base shadow-none sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Accepting..." : "Accept invite"}
             </PillButton>
