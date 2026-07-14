@@ -15,7 +15,7 @@ describe("shared dropdown portals", () => {
     expect(select).toContain("<SelectPrimitive.Portal>");
     expect(dropdownMenu).toContain("<MenuPrimitive.Portal>");
     expect(popover).toContain("<PopoverPrimitive.Portal>");
-    expect(searchableSelect).toContain("<PopoverContent");
+    expect(searchableSelect).toContain("<Combobox.Portal>");
     expect(searchableSelect).not.toContain('className="absolute z-50 top-full');
   });
 });

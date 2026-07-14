@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
 
 const inputClass =
@@ -43,19 +44,10 @@ function PendingEmailChangeBlock({
           {pending.newEmail}
         </p>
       </div>
-      <label className="block space-y-1.5">
+      <div className="space-y-1.5">
         <span className={labelClass}>Verification code</span>
-        <input
-          value={code}
-          onChange={(event) =>
-            setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-          }
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="000000"
-          className={inputClass}
-        />
-      </label>
+        <OtpField value={code} onValueChange={setCode} />
+      </div>
     </div>
   );
 }

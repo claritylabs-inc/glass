@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import type { FunctionReference } from "convex/server";
 import dayjs from "dayjs";
+import { Meter } from "@base-ui/react/meter";
 import {
   AlertCircle,
   ChevronDown,
@@ -431,21 +432,18 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
 }
 
 function ComplianceMeter({ met, total }: { met: number; total: number }) {
-  const percent = total > 0 ? Math.round((met / total) * 100) : 0;
   return (
-    <div
-      role="meter"
-      aria-valuenow={met}
-      aria-valuemin={0}
-      aria-valuemax={total}
+    <Meter.Root
+      value={met}
+      min={0}
+      max={Math.max(total, 1)}
       aria-label={`${met} of ${total} met`}
-      className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+      getAriaValueText={() => `${met} of ${total} met`}
     >
-      <div
-        className="h-full rounded-full bg-emerald-500"
-        style={{ width: `${percent}%` }}
-      />
-    </div>
+      <Meter.Track className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <Meter.Indicator className="h-full rounded-full bg-emerald-500" />
+      </Meter.Track>
+    </Meter.Root>
   );
 }
 
