@@ -55,6 +55,8 @@ export const CONFIDENCE_LEVEL_META: Record<
 export const CONFIDENCE_MARKER_RE = /\[\[(g|i|u):([\s\S]+?)\]\]/g;
 const CONFIDENCE_MARKER_PRESENT_RE = /\[\[(?:g|i|u):[\s\S]+?\]\]/;
 const CONFIDENCE_MARKER_OPEN_RE = /\[\[(g|i|u):/;
+const CONFIDENCE_OPEN_PLACEHOLDER = "\uE000";
+const CONFIDENCE_CLOSE_PLACEHOLDER = "\uE001";
 
 /** Repair the common malformed opener `[[g]:` before parsing or stripping. */
 export function normalizeConfidenceMarkers(text: string): string {
@@ -110,6 +112,28 @@ type MdastNode = {
     hProperties?: Record<string, unknown>;
   };
 };
+
+export function protectConfidenceMarkersForStreaming(text: string): string {
+  return normalizeConfidenceMarkers(text).replace(
+    CONFIDENCE_MARKER_RE,
+    (_, code: string, content: string) =>
+      `${CONFIDENCE_OPEN_PLACEHOLDER}${code}:${content}${CONFIDENCE_CLOSE_PLACEHOLDER}`,
+  );
+}
+
+export function remarkRestoreStreamingConfidenceMarkers() {
+  return (tree: MdastNode) => {
+    const visit = (node: MdastNode) => {
+      if (node.value) {
+        node.value = node.value
+          .replaceAll(CONFIDENCE_OPEN_PLACEHOLDER, "[[")
+          .replaceAll(CONFIDENCE_CLOSE_PLACEHOLDER, "]]");
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
 
 function textNode(value: string): MdastNode {
   return { type: "text", value };

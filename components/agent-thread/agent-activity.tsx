@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -76,7 +76,7 @@ interface AgentActivityProps {
   className?: string;
 }
 
-export function AgentActivity({
+export const AgentActivity = memo(function AgentActivity({
   reasoning,
   steps,
   fallbackToolCalls,
@@ -85,7 +85,10 @@ export function AgentActivity({
 }: AgentActivityProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const items = buildAgentActivityItems(steps, reasoning, fallbackToolCalls);
+  const items = useMemo(
+    () => buildAgentActivityItems(steps, reasoning, fallbackToolCalls),
+    [fallbackToolCalls, reasoning, steps],
+  );
   if (items.length === 0) return null;
 
   // While streaming, surface the latest activity; when done, lead with the
@@ -171,4 +174,4 @@ export function AgentActivity({
       </div>
     </div>
   );
-}
+});

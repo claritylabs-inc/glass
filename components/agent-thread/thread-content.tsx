@@ -1,7 +1,16 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useMutation } from "convex/react";
+import { stableHash } from "@claritylabs/cl-sync";
+import { useStickToBottom } from "use-stick-to-bottom";
 import dayjs from "dayjs";
 import JSZip from "jszip";
 import { toast } from "sonner";
@@ -54,7 +63,10 @@ import {
   type GlassPromptInputHandle,
 } from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
-import { ProseMarkdown } from "@/components/prose-markdown";
+import {
+  ProseMarkdown,
+  StreamingProseMarkdown,
+} from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { BrandIcon } from "@/components/ui/brand-icon";
@@ -104,6 +116,44 @@ export type AssistantPdfAttachment = {
   messageId: Id<"threadMessages">;
   fileId: Id<"_storage">;
 };
+
+// This cache only interns immutable query records; it never drives rendering.
+/* eslint-disable react-hooks/refs */
+function useStableMessages(messages: ThreadMessage[] | undefined) {
+  const cacheRef = useRef(
+    new Map<string, { hash: string; message: ThreadMessage }>(),
+  );
+  const stableMessagesRef = useRef<ThreadMessage[] | undefined>(undefined);
+
+  return useMemo(() => {
+    if (!messages) {
+      cacheRef.current = new Map();
+      stableMessagesRef.current = undefined;
+      return undefined;
+    }
+
+    const previousMessages = stableMessagesRef.current;
+    const nextCache = new Map<
+      string,
+      { hash: string; message: ThreadMessage }
+    >();
+    let changed = previousMessages?.length !== messages.length;
+    const nextMessages = messages.map((message, index) => {
+      const hash = stableHash(message);
+      const cached = cacheRef.current.get(message._id);
+      const stableMessage = cached?.hash === hash ? cached.message : message;
+      nextCache.set(message._id, { hash, message: stableMessage });
+      if (previousMessages?.[index] !== stableMessage) changed = true;
+      return stableMessage;
+    });
+
+    cacheRef.current = nextCache;
+    if (!changed && previousMessages) return previousMessages;
+    stableMessagesRef.current = nextMessages;
+    return nextMessages;
+  }, [messages]);
+}
+/* eslint-enable react-hooks/refs */
 
 export function assistantPdfAttachments(
   messages: ThreadMessage[] | undefined,
@@ -523,6 +573,55 @@ function isImessageSyncMessage(message: ThreadMessage) {
     /\bsent (?:a )?message from glass web chat\.?$/.test(normalized)
   );
 }
+
+type ThreadMessageRenderPlan = {
+  attachedEmailMessageIds: Set<string>;
+  firstUserMessageId?: string;
+  hiddenStatusMessageIds: Set<string>;
+  relatedEmailsByMessageId: Map<string, ThreadMessage[]>;
+};
+
+function buildThreadMessageRenderPlan(
+  messages: ThreadMessage[],
+): ThreadMessageRenderPlan {
+  const attachedEmailMessageIds = new Set<string>();
+  const hiddenStatusMessageIds = new Set<string>();
+  const relatedEmailsByMessageId = new Map<string, ThreadMessage[]>();
+
+  messages.forEach((message, index) => {
+    if (message.status === "processing") return;
+    if (
+      isImessageSyncMessage(message) ||
+      hasEarlierIdenticalAgentMessage(messages, message, index) ||
+      hasLaterEmailSendCompletion(messages, message, index)
+    ) {
+      hiddenStatusMessageIds.add(message._id);
+      return;
+    }
+
+    const relatedEmailMessages = findRelatedEmailMessages(
+      messages,
+      message,
+      index,
+      attachedEmailMessageIds,
+    );
+    if (relatedEmailMessages.length === 0) return;
+    relatedEmailsByMessageId.set(message._id, relatedEmailMessages);
+    relatedEmailMessages.forEach((emailMessage) =>
+      attachedEmailMessageIds.add(emailMessage._id),
+    );
+  });
+
+  return {
+    attachedEmailMessageIds,
+    firstUserMessageId: messages.find((message) => message.role === "user")
+      ?._id,
+    hiddenStatusMessageIds,
+    relatedEmailsByMessageId,
+  };
+}
+
+const EMPTY_RELATED_EMAIL_MESSAGES: ThreadMessage[] = [];
 
 function EmailRecipientMeta({
   toAddresses,
@@ -1190,9 +1289,9 @@ function AgentProcessingActivity({
 }
 
 /* ── Unified message bubble ── */
-export function UnifiedMessageBubble({
+export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   msg,
-  relatedEmailMessages = [],
+  relatedEmailMessages = EMPTY_RELATED_EMAIL_MESSAGES,
   viewerId,
   viewerEmail,
   isFirstUserMessage,
@@ -1320,7 +1419,7 @@ export function UnifiedMessageBubble({
 
           {displayContent ? (
             <div className="mt-1 text-foreground">
-              <ProseMarkdown
+              <StreamingProseMarkdown
                 gfm
                 breaks
                 flagConfidence
@@ -1329,7 +1428,7 @@ export function UnifiedMessageBubble({
                 components={markdownComponents}
               >
                 {displayContent}
-              </ProseMarkdown>
+              </StreamingProseMarkdown>
             </div>
           ) : null}
           <AgentProcessingActivity
@@ -1675,7 +1774,7 @@ export function UnifiedMessageBubble({
       </div>
     </div>
   );
-}
+});
 
 /* ── Cancel button for stuck processing messages ── */
 function CancelButton({
@@ -1880,11 +1979,12 @@ export function UnifiedThreadContent({
   const thread = useCachedQuery("threads.get.current", api.threads.get, {
     id: threadId,
   });
-  const messages = useCachedQuery(
+  const rawMessages = useCachedQuery(
     "threads.messages.current",
     api.threads.messages,
     { threadId },
   ) as ThreadMessage[] | undefined;
+  const messages = useStableMessages(rawMessages);
   const mailboxReview = useCachedQuery(
     "connectedEmailAutomation.reviewForThread.current",
     api.connectedEmailAutomation.reviewForThread,
@@ -1901,6 +2001,41 @@ export function UnifiedThreadContent({
         : undefined,
     [mailboxReviewArtifact, messages],
   );
+  const messageGroupingFingerprint = `${threadId}:${(messages ?? [])
+    .map((message) => `${message._id}:${message.status}`)
+    .join("|")}`;
+  const messageRenderPlan = useMemo(
+    () => buildThreadMessageRenderPlan(messages ?? []),
+    // Grouping inputs are immutable after settlement; processing content is
+    // excluded so token updates do not rerun the grouping and dedupe pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messageGroupingFingerprint],
+  );
+  const visibleMessages = useMemo(
+    () =>
+      (messages ?? []).filter(
+        (message) =>
+          !messageRenderPlan.hiddenStatusMessageIds.has(message._id) &&
+          !messageRenderPlan.attachedEmailMessageIds.has(message._id),
+      ),
+    [messageRenderPlan, messages],
+  );
+  const mailboxReviewSourceMessage = mailboxReviewArtifact
+    ? messages?.find((message) => message._id === mailboxReviewMessageId)
+    : undefined;
+  const mailboxReviewRenderedMessage = useMemo(
+    () =>
+      mailboxReviewArtifact && mailboxReviewSourceMessage
+        ? {
+            ...mailboxReviewSourceMessage,
+            toolArtifacts: [
+              ...(mailboxReviewSourceMessage.toolArtifacts ?? []),
+              mailboxReviewArtifact,
+            ],
+          }
+        : mailboxReviewSourceMessage,
+    [mailboxReviewArtifact, mailboxReviewSourceMessage],
+  );
   const pdf = usePdf();
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const sendMessage = useMutation(api.threads.sendMessage);
@@ -1908,9 +2043,11 @@ export function UnifiedThreadContent({
     useThreadCacheActions();
   const updateTitle = useMutation(api.threads.updateTitle);
   const generateUploadUrl = useMutation(api.threads.generateUploadUrl);
-  const messagesRef = useRef<HTMLDivElement>(null);
+  const { contentRef, scrollRef, scrollToBottom } = useStickToBottom({
+    initial: "instant",
+    resize: "instant",
+  });
   const chatInputRef = useRef<GlassPromptInputHandle>(null);
-  const prevThreadId = useRef<string | null>(null);
   const lastAutoOpenedEmailId = useRef<string | null>(null);
   const autoOpenPdfThreadId = useRef<string | null>(null);
   const seenAssistantPdfKeys = useRef<Set<string>>(new Set());
@@ -1936,6 +2073,24 @@ export function UnifiedThreadContent({
     useState<VendorComplianceArtifactRef | null>(null);
   const [openMailboxArtifactRef, setOpenMailboxArtifactRef] =
     useState<MailboxArtifactRef | null>(null);
+  const handleOpenEmail = useCallback((message: ThreadMessage) => {
+    setOpenVendorComplianceArtifactRef(null);
+    setOpenMailboxArtifactRef(null);
+    setOpenEmailMessageId(message._id);
+  }, []);
+  const handleOpenVendorCompliance = useCallback(
+    (ref: VendorComplianceArtifactRef) => {
+      setOpenEmailMessageId(null);
+      setOpenMailboxArtifactRef(null);
+      setOpenVendorComplianceArtifactRef(ref);
+    },
+    [],
+  );
+  const handleOpenMailboxArtifact = useCallback((ref: MailboxArtifactRef) => {
+    setOpenEmailMessageId(null);
+    setOpenVendorComplianceArtifactRef(null);
+    setOpenMailboxArtifactRef(ref);
+  }, []);
   const openEmailMessage = useMemo(
     () =>
       messages?.find((message) => message._id === openEmailMessageId) ?? null,
@@ -2054,23 +2209,17 @@ export function UnifiedThreadContent({
     openMailboxArtifactRef?.index,
   ]);
 
-  // Scroll to bottom when messages change or thread switches
+  // Reset thread-local panels and anchor the newly selected thread at bottom.
   useEffect(() => {
-    const el = messagesRef.current;
-    if (!el) return;
-    const isNew = prevThreadId.current !== threadId;
-    prevThreadId.current = threadId;
-    if (isNew) {
+    lastAutoOpenedEmailId.current = null;
+    const frame = window.requestAnimationFrame(() => {
       setOpenEmailMessageId(null);
       setOpenVendorComplianceArtifactRef(null);
       setOpenMailboxArtifactRef(null);
-      lastAutoOpenedEmailId.current = null;
-    }
-    el.scrollTo({
-      top: el.scrollHeight,
-      behavior: isNew ? "instant" : "smooth",
+      void scrollToBottom({ animation: "instant" });
     });
-  }, [threadId, messages?.length]);
+    return () => window.cancelAnimationFrame(frame);
+  }, [scrollToBottom, threadId]);
 
   useEffect(() => {
     const latestDraftEmail = messages
@@ -2117,18 +2266,6 @@ export function UnifiedThreadContent({
     openedAssistantPdfKey.current = autoOpenPdfAttachment.key;
     pdf.openWithUrl(autoOpenPdfUrl);
   }, [autoOpenPdfAttachment, autoOpenPdfUrl, isDesktop, pdf]);
-
-  // Auto-scroll when new messages arrive (agent streaming via Convex subscription)
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (!el || !messages) return;
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg || lastMsg.role !== "agent") return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
-    if (isNearBottom) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
-    }
-  }, [messages]);
 
   const isAgentProcessing = useMemo(
     () =>
@@ -2275,10 +2412,10 @@ export function UnifiedThreadContent({
     <div className="relative h-full">
       {/* Messages — full height, content scrolls under the input overlay */}
       <div
-        ref={messagesRef}
+        ref={scrollRef}
         className="absolute inset-0 overflow-y-auto scrollbar-hide p-4 pr-5"
       >
-        <div className="max-w-2xl mx-auto space-y-4">
+        <div ref={contentRef} className="max-w-2xl mx-auto space-y-4">
           {messages && messages.length === 0 && (
             <NewChatEmptyState
               orgId={thread.orgId}
@@ -2287,115 +2424,58 @@ export function UnifiedThreadContent({
               }
             />
           )}
-          {(() => {
-            const threadMessages = messages ?? [];
-            const firstUserIdx = threadMessages.findIndex(
-              (m) => m.role === "user",
-            );
-            const attachedEmailMessageIds = new Set<string>();
-            const hiddenStatusMessageIds = new Set<string>();
-            const relatedEmailsByMessageId = new Map<string, ThreadMessage[]>();
-            threadMessages.forEach((message, idx) => {
-              if (isImessageSyncMessage(message)) {
-                hiddenStatusMessageIds.add(message._id);
-                return;
-              }
-              if (
-                hasEarlierIdenticalAgentMessage(threadMessages, message, idx)
-              ) {
-                hiddenStatusMessageIds.add(message._id);
-                return;
-              }
-              if (hasLaterEmailSendCompletion(threadMessages, message, idx)) {
-                hiddenStatusMessageIds.add(message._id);
-                return;
-              }
-              const relatedEmailMessages = findRelatedEmailMessages(
-                threadMessages,
-                message,
-                idx,
-                attachedEmailMessageIds,
-              );
-              if (relatedEmailMessages.length > 0) {
-                relatedEmailsByMessageId.set(message._id, relatedEmailMessages);
-                relatedEmailMessages.forEach((emailMessage) =>
-                  attachedEmailMessageIds.add(emailMessage._id),
-                );
-              }
-            });
-            return threadMessages.map((msg, idx) => {
-              if (hiddenStatusMessageIds.has(msg._id)) return null;
-              if (attachedEmailMessageIds.has(msg._id)) return null;
-              const renderedMessage =
-                mailboxReviewArtifact && msg._id === mailboxReviewMessageId
-                  ? {
-                      ...msg,
-                      toolArtifacts: [
-                        ...(msg.toolArtifacts ?? []),
-                        mailboxReviewArtifact,
-                      ],
-                    }
-                  : msg;
-              const isFirstUser = idx === firstUserIdx;
-              const firstUserIsOwn =
-                isFirstUser &&
-                ((viewerId && msg.userId === viewerId) ||
-                  (viewerEmail &&
-                    msg.fromEmail?.toLowerCase() ===
-                      viewerEmail.toLowerCase()));
-              const relatedEmailMessages = relatedEmailsByMessageId.get(
-                msg._id,
-              );
+          {visibleMessages.map((msg) => {
+            const renderedMessage =
+              msg._id === mailboxReviewMessageId
+                ? (mailboxReviewRenderedMessage ?? msg)
+                : msg;
+            const isFirstUser =
+              msg._id === messageRenderPlan.firstUserMessageId;
+            const firstUserIsOwn =
+              isFirstUser &&
+              ((viewerId && msg.userId === viewerId) ||
+                (viewerEmail &&
+                  msg.fromEmail?.toLowerCase() ===
+                    viewerEmail.toLowerCase()));
+            const relatedEmailMessages =
+              messageRenderPlan.relatedEmailsByMessageId.get(msg._id);
 
-              return (
-                <div key={msg._id}>
-                  <UnifiedMessageBubble
-                    msg={renderedMessage}
-                    relatedEmailMessages={relatedEmailMessages}
-                    viewerId={viewerId}
-                    viewerEmail={viewerEmail}
-                    mirroredToImessage={
-                      thread.originChannel === "imessage" &&
-                      msg.channel === "chat"
-                    }
-                    isFirstUserMessage={false}
-                    threadContext={
-                      isFirstUser ? thread?.initialContext : undefined
-                    }
-                    agentBranding={agentBranding}
-                    collapseEmailMessages={collapseEmailMessages}
-                    onOpenEmail={(message) => {
-                      setOpenVendorComplianceArtifactRef(null);
-                      setOpenMailboxArtifactRef(null);
-                      setOpenEmailMessageId(message._id);
-                    }}
-                    openEmailMessageId={openEmailMessageId}
-                    onOpenVendorCompliance={(ref) => {
-                      setOpenEmailMessageId(null);
-                      setOpenMailboxArtifactRef(null);
-                      setOpenVendorComplianceArtifactRef(ref);
-                    }}
-                    openVendorComplianceArtifactRef={
-                      openVendorComplianceArtifactRef
-                    }
-                    onOpenMailboxArtifact={(ref) => {
-                      setOpenEmailMessageId(null);
-                      setOpenVendorComplianceArtifactRef(null);
-                      setOpenMailboxArtifactRef(ref);
-                    }}
-                    openMailboxArtifactRef={openMailboxArtifactRef}
-                  />
-                  {isFirstUser && thread?.initialContext && (
-                    <div
-                      className={`mt-2 flex ${firstUserIsOwn ? "justify-end mr-9.5" : "ml-9.5"}`}
-                    >
-                      <ThreadContextLink context={thread.initialContext} />
-                    </div>
-                  )}
-                </div>
-              );
-            });
-          })()}
+            return (
+              <div key={msg._id}>
+                <UnifiedMessageBubble
+                  msg={renderedMessage}
+                  relatedEmailMessages={relatedEmailMessages}
+                  viewerId={viewerId}
+                  viewerEmail={viewerEmail}
+                  mirroredToImessage={
+                    thread.originChannel === "imessage" &&
+                    msg.channel === "chat"
+                  }
+                  isFirstUserMessage={false}
+                  threadContext={
+                    isFirstUser ? thread?.initialContext : undefined
+                  }
+                  agentBranding={agentBranding}
+                  collapseEmailMessages={collapseEmailMessages}
+                  onOpenEmail={handleOpenEmail}
+                  openEmailMessageId={openEmailMessageId}
+                  onOpenVendorCompliance={handleOpenVendorCompliance}
+                  openVendorComplianceArtifactRef={
+                    openVendorComplianceArtifactRef
+                  }
+                  onOpenMailboxArtifact={handleOpenMailboxArtifact}
+                  openMailboxArtifactRef={openMailboxArtifactRef}
+                />
+                {isFirstUser && thread?.initialContext && (
+                  <div
+                    className={`mt-2 flex ${firstUserIsOwn ? "justify-end mr-9.5" : "ml-9.5"}`}
+                  >
+                    <ThreadContextLink context={thread.initialContext} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {chatError && (
             <div className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-base text-red-700">
               {chatError}
