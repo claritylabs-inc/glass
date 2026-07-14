@@ -729,6 +729,7 @@ export default defineSchema({
   })
     .index("by_accountId_messageKey", ["accountId", "messageKey"])
     .index("by_threadId", ["threadId"])
+    .index("by_threadId_and_emailRef", ["threadId", "emailRef"])
     .index("by_orgId_updatedAt", ["orgId", "updatedAt"])
     .index("by_status_updatedAt", ["status", "updatedAt"]),
 

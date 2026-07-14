@@ -546,7 +546,12 @@ export const readInternal = internalAction({
       accountId: ref.accountId,
     });
     return await withClient(account, async (client) => {
-      const parsed = await fetchParsedMessage(client, ref.mailbox, ref.uid);
+      const parsed = await fetchParsedMessage(
+        client,
+        ref.mailbox,
+        ref.uid,
+        IMPORT_DOWNLOAD_MAX_BYTES,
+      );
       return {
         emailRef: args.emailRef,
         accountId: account._id,

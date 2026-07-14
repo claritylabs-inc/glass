@@ -81,4 +81,5 @@ export type VendorComplianceArtifactRef = {
 export type MailboxArtifactRef = {
   messageId: Id<"threadMessages">;
   index: number;
+  emailIndex?: number;
 };

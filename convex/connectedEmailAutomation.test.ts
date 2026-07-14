@@ -12,6 +12,7 @@ import {
   recordScanAttemptInternal,
   recordScanSuccessInternal,
   recordUnreadableItemInternal,
+  resolveReview,
   reviewForThread,
 } from "./connectedEmailAutomation";
 
@@ -24,6 +25,7 @@ const getScanStateFn = getScanStateInternal as any;
 const recordScanAttemptFn = recordScanAttemptInternal as any;
 const recordScanSuccessFn = recordScanSuccessInternal as any;
 const recordUnreadableFn = recordUnreadableItemInternal as any;
+const resolveReviewFn = resolveReview as any;
 const reviewForThreadFn = reviewForThread as any;
 
 function sessionFor(userId: Id<"users">) {
@@ -164,7 +166,7 @@ describe("connected email automation ledger", () => {
       .query(reviewForThreadFn, { threadId });
 
     expect(review).toMatchObject({
-      title: "Mailbox review - user@example.com",
+      title: "Review email",
       status: "needs_review",
       evidence: {
         emails: [{
@@ -175,10 +177,37 @@ describe("connected email automation ledger", () => {
         }],
       },
     });
-    expect(review.evidence.emails[0].reason).toContain(
-      "Review the live message",
-    );
+    expect(review).not.toHaveProperty("plan");
+    expect(review.evidence.emails[0].reason).toBeUndefined();
     expect(review.evidence.emails[0]).not.toHaveProperty("text");
+
+    await t.withIdentity(sessionFor(userId)).mutation(resolveReviewFn, {
+      threadId,
+      emailRef: "review-ref",
+      resolution: "not_relevant",
+    });
+    expect(
+      await t.withIdentity(sessionFor(userId)).query(reviewForThreadFn, { threadId }),
+    ).toBeNull();
+    const resolvedItem = await t.run((ctx) =>
+      ctx.db.get(claim.itemId) as Promise<Doc<"connectedEmailAutomationItems"> | null>,
+    );
+    expect(resolvedItem).toMatchObject({
+      classification: "ignore",
+      needsReview: false,
+      actionSummary: "Marked as not relevant.",
+    });
+    await expect(
+      t.withIdentity(sessionFor(userId)).mutation(resolveReviewFn, {
+        threadId,
+        emailRef: "review-ref",
+        resolution: "policy_imported",
+      }),
+    ).resolves.toEqual({ resolved: false });
+    expect(await t.run((ctx) => ctx.db.get(claim.itemId))).toMatchObject({
+      classification: "ignore",
+      actionSummary: "Marked as not relevant.",
+    });
   });
 
   test("skips a permanently unreadable message after repeated attempts so the watermark can advance", async () => {
