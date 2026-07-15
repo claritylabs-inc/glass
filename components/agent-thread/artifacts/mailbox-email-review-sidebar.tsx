@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useAction, useMutation } from "convex/react";
 import {
   Ban,
@@ -99,7 +99,7 @@ function MailboxAddressDisclosure({
   const address = contact.address.trim();
 
   if (!name || name.toLowerCase() === address.toLowerCase()) {
-    return <span className="break-all">{address}</span>;
+    return <span className="min-w-0 break-all">{address}</span>;
   }
 
   async function copyAddress() {
@@ -120,7 +120,7 @@ function MailboxAddressDisclosure({
             size="compact"
             variant="ghost"
             className={cn(
-              "group/address relative h-auto min-h-6 min-w-0 max-w-full shrink-0 justify-start gap-0 px-1.5 py-0.5 text-left text-base font-normal leading-5 whitespace-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]",
+              "group/address relative h-auto min-h-6 min-w-0 max-w-[calc(100%-0.875rem)] shrink-0 justify-start gap-0 px-1.5 py-0.5 text-left text-base font-normal leading-5 whitespace-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]",
               alignStart && "-ml-1.5",
             )}
             aria-label={`Show email address for ${name}`}
@@ -166,15 +166,12 @@ function MailboxAddressList({
   if (visibleContacts.length === 0) return fallback ?? null;
 
   return (
-    <span className="inline-flex max-w-full flex-wrap items-center">
+    <span className="flex min-w-0 flex-wrap items-center">
       {visibleContacts.map((contact, index) => (
-        <span
-          key={`${contact.address}-${index}`}
-          className="inline-flex min-w-0 max-w-full items-center"
-        >
-          {index > 0 ? <span className="mr-0.5 text-muted-foreground">,</span> : null}
+        <Fragment key={`${contact.address}-${index}`}>
+          {index > 0 ? <span className="mr-0.5 shrink-0 text-muted-foreground">,</span> : null}
           <MailboxAddressDisclosure contact={contact} alignStart={index === 0} />
-        </span>
+        </Fragment>
       ))}
     </span>
   );

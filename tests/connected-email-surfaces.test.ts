@@ -167,9 +167,10 @@ describe("connected email surfaces", () => {
     expect(addressDisclosure).toContain("whitespace-normal");
     expect(addressDisclosure).toContain("[overflow-wrap:anywhere]");
     expect(addressDisclosure).toContain("absolute left-full");
-    expect(mailboxReview).not.toContain(
-      'className="-ml-1.5 inline-flex max-w-full flex-wrap items-center"',
-    );
+    expect(addressDisclosure).toContain("max-w-[calc(100%-0.875rem)]");
+    expect(addressDisclosure).not.toContain("max-w-full");
+    expect(mailboxReview).toContain('className="flex min-w-0 flex-wrap items-center"');
+    expect(mailboxReview).not.toContain("inline-flex max-w-full flex-wrap items-center");
     expect(mailboxReview).toContain("contacts={liveEmail?.fromAddresses}");
     expect(backend).toContain("fromAddresses: addressDetails(parsed.from)");
     expect(backend).toContain("toAddresses: addressDetails(parsed.to)");
