@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { useAction, useMutation } from "convex/react";
+import { ConvexError } from "convex/values";
 import {
   Ban,
   ChevronDown,
@@ -50,6 +51,7 @@ type MailboxAddress = {
 };
 
 type MailboxReviewEmail = {
+  automationItemId?: Id<"connectedEmailAutomationItems">;
   emailRef?: string;
   mailbox?: string;
   accountEmail?: string;
@@ -60,6 +62,8 @@ type MailboxReviewEmail = {
 };
 
 export type LiveMailboxEmail = {
+  emailRef: string;
+  mailbox: string;
   subject: string;
   from?: string;
   fromAddresses?: MailboxAddress[];
@@ -75,6 +79,19 @@ export type LiveMailboxEmail = {
 export function splitMailboxMessageParagraphs(text?: string) {
   const message = text?.trim();
   return message ? message.split(/\r?\n(?:[ \t]*\r?\n)+/) : [];
+}
+
+export function mailboxReadErrorMessage(error: unknown) {
+  if (
+    error instanceof ConvexError &&
+    error.data &&
+    typeof error.data === "object" &&
+    "message" in error.data &&
+    typeof error.data.message === "string"
+  ) {
+    return error.data.message;
+  }
+  return error instanceof Error ? error.message : "The live message could not be loaded.";
 }
 
 function addressFromNotation(value?: string): MailboxAddress | null {
@@ -250,7 +267,13 @@ export function MailboxEmailReviewSidebar({
   useEffect(() => {
     if (!email.emailRef) return;
     let cancelled = false;
-    void readEmail({ orgId, emailRef: email.emailRef })
+    void readEmail({
+      orgId,
+      emailRef: email.emailRef,
+      ...(email.automationItemId
+        ? { automationItemId: email.automationItemId }
+        : {}),
+    })
       .then((result) => {
         if (cancelled) return;
         const row = result as Omit<LiveMailboxEmail, "attachments"> & {
@@ -270,14 +293,12 @@ export function MailboxEmailReviewSidebar({
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        setReadError(
-          error instanceof Error ? error.message : "The live message could not be loaded.",
-        );
+        setReadError(mailboxReadErrorMessage(error));
       });
     return () => {
       cancelled = true;
     };
-  }, [email.emailRef, orgId, readAttempt, readEmail]);
+  }, [email.automationItemId, email.emailRef, orgId, readAttempt, readEmail]);
 
   async function completeReview(
     resolution: "not_relevant" | "policy_imported" | "requirements_imported",
@@ -305,12 +326,13 @@ export function MailboxEmailReviewSidebar({
   }
 
   async function handleAttachmentPreview(attachment: MailboxAttachment) {
-    if (!email.emailRef || !isMailboxPdfAttachment(attachment)) return;
+    const emailRef = liveEmail?.emailRef ?? email.emailRef;
+    if (!emailRef || !isMailboxPdfAttachment(attachment)) return;
     setPreviewingFilename(attachment.filename);
     try {
       const result = await previewAttachment({
         orgId,
-        emailRef: email.emailRef,
+        emailRef,
         filename: attachment.filename,
       });
       openWithUrl(result.url);
@@ -322,7 +344,7 @@ export function MailboxEmailReviewSidebar({
   }
 
   async function handlePolicyImport() {
-    if (!email.emailRef || !liveEmail) return;
+    if (!liveEmail) return;
     const filenames = liveEmail.attachments
       .filter(isMailboxPdfAttachment)
       .map((attachment) => attachment.filename);
@@ -330,7 +352,7 @@ export function MailboxEmailReviewSidebar({
     try {
       const result = await importPolicyAttachments({
         orgId,
-        emailRef: email.emailRef,
+        emailRef: liveEmail.emailRef,
         filenames,
       }) as { status?: string; files?: unknown[] };
       if (result.status === "no_pdf_attachments") {
@@ -355,7 +377,7 @@ export function MailboxEmailReviewSidebar({
   }
 
   async function handleRequirementImport(scope: "vendors" | "own_org") {
-    if (!email.emailRef || !liveEmail) return;
+    if (!liveEmail) return;
     const filenames = liveEmail.attachments
       .filter(isMailboxRequirementAttachment)
       .map((attachment) => attachment.filename);
@@ -363,7 +385,7 @@ export function MailboxEmailReviewSidebar({
     try {
       const result = await importRequirementAttachments({
         orgId,
-        emailRef: email.emailRef,
+        emailRef: liveEmail.emailRef,
         filenames: filenames.length > 0 ? filenames : undefined,
         includeEmailBody: true,
         sourceType: scope === "vendors" ? "vendor_requirements" : "other",
@@ -389,6 +411,7 @@ export function MailboxEmailReviewSidebar({
 
   const attachments = liveEmail?.attachments ?? [];
   const receivedAt = liveEmail?.date ?? email.date;
+  const mailbox = liveEmail?.mailbox ?? email.mailbox;
   const hasPdf = attachments.some(isMailboxPdfAttachment);
   const messageParagraphs = splitMailboxMessageParagraphs(liveEmail?.text);
 
@@ -438,7 +461,7 @@ export function MailboxEmailReviewSidebar({
           <OperationalLabelValueRow label="Mailbox" value={email.accountEmail} />
           <OperationalLabelValueRow
             label="Folder"
-            value={email.mailbox?.toUpperCase() === "INBOX" ? undefined : email.mailbox}
+            value={mailbox?.toUpperCase() === "INBOX" ? undefined : mailbox}
           />
         </OperationalLabelValueList>
 

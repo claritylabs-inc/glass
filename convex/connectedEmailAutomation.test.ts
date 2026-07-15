@@ -8,6 +8,7 @@ import {
   claimItemInternal,
   failItemInternal,
   finishItemInternal,
+  getReviewMessageLocatorInternal,
   getScanStateInternal,
   recordScanAttemptInternal,
   recordScanSuccessInternal,
@@ -21,6 +22,7 @@ const claimItemFn = claimItemInternal as any;
 const attachThreadFn = attachThreadInternal as any;
 const failItemFn = failItemInternal as any;
 const finishItemFn = finishItemInternal as any;
+const getReviewMessageLocatorFn = getReviewMessageLocatorInternal as any;
 const getScanStateFn = getScanStateInternal as any;
 const recordScanAttemptFn = recordScanAttemptInternal as any;
 const recordScanSuccessFn = recordScanSuccessInternal as any;
@@ -146,6 +148,7 @@ describe("connected email automation ledger", () => {
       uid: 42,
       messageKey: "review-key",
       emailRef: "review-ref",
+      sourceMessageId: "<review@example.com>",
       subject: "Policy documents",
       from: "broker@example.com",
       receivedAt: 1_700_000_000_000,
@@ -170,6 +173,7 @@ describe("connected email automation ledger", () => {
       status: "needs_review",
       evidence: {
         emails: [{
+          automationItemId: claim.itemId,
           emailRef: "review-ref",
           subject: "Policy documents",
           from: "broker@example.com",
@@ -180,6 +184,25 @@ describe("connected email automation ledger", () => {
     expect(review).not.toHaveProperty("plan");
     expect(review.evidence.emails[0].reason).toBeUndefined();
     expect(review.evidence.emails[0]).not.toHaveProperty("text");
+    await expect(
+      t.query(getReviewMessageLocatorFn, {
+        itemId: claim.itemId,
+        orgId,
+        emailRef: "review-ref",
+      }),
+    ).resolves.toEqual({
+      accountId,
+      mailbox: "INBOX",
+      uid: 42,
+      sourceMessageId: "<review@example.com>",
+    });
+    await expect(
+      t.query(getReviewMessageLocatorFn, {
+        itemId: claim.itemId,
+        orgId,
+        emailRef: "different-ref",
+      }),
+    ).resolves.toBeNull();
 
     await t.withIdentity(sessionFor(userId)).mutation(resolveReviewFn, {
       threadId,
@@ -197,6 +220,13 @@ describe("connected email automation ledger", () => {
       needsReview: false,
       actionSummary: "Marked as not relevant.",
     });
+    await expect(
+      t.query(getReviewMessageLocatorFn, {
+        itemId: claim.itemId,
+        orgId,
+        emailRef: "review-ref",
+      }),
+    ).resolves.toBeNull();
     await expect(
       t.withIdentity(sessionFor(userId)).mutation(resolveReviewFn, {
         threadId,
