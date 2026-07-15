@@ -397,11 +397,6 @@ function normalizeStatusContent(content: string) {
   return content.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
 }
 
-function conciseMailboxReviewContent(content: string, emailCount: number) {
-  const summary = `${emailCount} email${emailCount === 1 ? " needs" : "s need"} review.`;
-  return content.replace(/\d+ items? need attention:[\s\S]*$/i, summary);
-}
-
 function normalizeMessageForDedupe(content: string) {
   return normalizeStatusContent(content)
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
@@ -1472,7 +1467,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   // Agent message
   if (msg.role === "agent") {
     const isError = msg.status === "error";
-    const rawContent = msg.content?.trim()
+    const displayContent = msg.content?.trim()
       ? msg.content
       : isError
         ? (msg.error ?? "An error occurred processing this message.")
@@ -1495,13 +1490,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
       msg.toolArtifacts?.filter(
         (artifact) => artifact.type === "mailbox_task",
       ) ?? [];
-    const reviewEmailCount = mailboxArtifacts.reduce((total, artifact) => {
-      const task = normalizeMailboxTask(artifact.data);
-      return task.status === "needs_review" ? total + task.emails.length : total;
-    }, 0);
-    const fixedContent = reviewEmailCount > 0
-      ? conciseMailboxReviewContent(rawContent, reviewEmailCount)
-      : rawContent;
     const genericSubagentToolCalls = subagentToolCalls.filter(
       (toolCall) => toolCall.name !== "coordinate_mailbox_task",
     );
@@ -1593,7 +1581,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                     className={markdownStylesForChannel(msg.channel)}
                     components={markdownComponents}
                   >
-                    {fixedContent}
+                    {displayContent}
                   </ProseMarkdown>
                 </ThreadMessageBubble>
                 <MessageFooterActions
@@ -1608,7 +1596,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                   messageId={msg._id}
                   onOpenMailboxArtifact={onOpenMailboxArtifact}
                   openMailboxArtifactRef={openMailboxArtifactRef}
-                  copyContent={stripConfidenceMarkers(fixedContent)}
+                  copyContent={stripConfidenceMarkers(displayContent)}
                   retryMessageId={
                     msg.channel === "chat" || msg.channel === "imessage"
                       ? msg._id
@@ -1618,7 +1606,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                   onToggleSubagentActivity={() =>
                     toggleFooterPanel("subagents")
                   }
-                  confidenceContent={!isError ? fixedContent : undefined}
+                  confidenceContent={!isError ? displayContent : undefined}
                   showConfidence={showConfidence}
                   onToggleConfidence={() => toggleFooterPanel("confidence")}
                   rightAligned={brokerPerspective}
