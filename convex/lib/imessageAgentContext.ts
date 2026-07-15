@@ -10,8 +10,18 @@ import {
   buildIntelligenceContext,
 } from "./agentPrompts";
 import { buildAssistantMessageContentWithArtifacts } from "./agentMessageHistory";
-import type { StoredImessageAttachmentRecord } from "./imessageIngress";
+import {
+  MAX_IMESSAGE_AUDIO_BYTES,
+  isImessageAudioAttachment,
+  normalizeImessageAttachmentMimeType,
+  type RawImessageAttachment,
+  type StoredImessageAttachmentRecord,
+} from "./imessageIngress";
 import { tryBuildParsedPdfText } from "./liteparsePreprocessor";
+import {
+  transcribeAudioForOrg,
+  transcribeAudioForPublicTask,
+} from "./models";
 
 export type ImessageHistoryMessage = {
   status?: string;
@@ -28,6 +38,100 @@ type ImessageContentPart =
   | { type: "text"; text: string }
   | { type: "file"; data: string; mediaType: string }
   | { type: "image"; image: string; mediaType: string };
+
+const VOICE_MEMO_TRANSCRIPTION_PROMPT =
+  "This voice memo is addressed to Glass, an insurance intelligence assistant. Preserve names, email addresses, policy numbers, dates, insurance terminology, and explicit user instructions verbatim.";
+
+export type ImessageVoiceMemoInput = {
+  messageText: string;
+  hasVoiceMemos: boolean;
+  transcripts: Array<{ filename: string; text: string }>;
+  failures: Array<{ filename: string; error: string }>;
+};
+
+function explicitImessageText(messageText: string): string {
+  const trimmed = messageText.trim();
+  return trimmed === "(attachment)" ? "" : trimmed;
+}
+
+export async function transcribeImessageVoiceMemos(
+  ctx: ActionCtx,
+  args: {
+    orgId?: Id<"organizations">;
+    messageText: string;
+    attachments?: RawImessageAttachment[];
+  },
+): Promise<ImessageVoiceMemoInput> {
+  const voiceMemos = (args.attachments ?? []).filter(
+    isImessageAudioAttachment,
+  );
+  if (voiceMemos.length === 0) {
+    return {
+      messageText: args.messageText,
+      hasVoiceMemos: false,
+      transcripts: [],
+      failures: [],
+    };
+  }
+
+  const transcripts: ImessageVoiceMemoInput["transcripts"] = [];
+  const failures: ImessageVoiceMemoInput["failures"] = [];
+  for (const voiceMemo of voiceMemos) {
+    const filename = voiceMemo.name.trim() || "voice-memo.m4a";
+    const data = Buffer.from(voiceMemo.data, "base64");
+    if (data.byteLength === 0) {
+      failures.push({ filename, error: "The voice memo was empty." });
+      continue;
+    }
+    if (data.byteLength > MAX_IMESSAGE_AUDIO_BYTES) {
+      failures.push({
+        filename,
+        error: "The voice memo exceeded the 20 MB attachment limit.",
+      });
+      continue;
+    }
+
+    try {
+      const input = {
+        data,
+        filename,
+        mediaType: normalizeImessageAttachmentMimeType(voiceMemo.mimeType),
+        prompt: VOICE_MEMO_TRANSCRIPTION_PROMPT,
+      };
+      const result = args.orgId
+        ? await transcribeAudioForOrg(ctx, args.orgId, input)
+        : await transcribeAudioForPublicTask(ctx, input);
+      transcripts.push({ filename, text: result.text });
+      console.log("[imessage] Voice memo transcribed", {
+        filename,
+        model: result.route.model,
+        routeSource: result.routeSource,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[imessage] Voice memo transcription failed", {
+        filename,
+        error: message,
+      });
+      failures.push({ filename, error: message });
+    }
+  }
+
+  const messageParts = [explicitImessageText(args.messageText)];
+  messageParts.push(
+    ...transcripts.map(
+      (transcript) =>
+        `[Voice memo transcript: ${transcript.filename}]\n${transcript.text}`,
+    ),
+  );
+
+  return {
+    messageText: messageParts.filter(Boolean).join("\n\n") || args.messageText,
+    hasVoiceMemos: true,
+    transcripts,
+    failures,
+  };
+}
 
 export function isImessageStatusCue(message: {
   responseMessageId?: string;

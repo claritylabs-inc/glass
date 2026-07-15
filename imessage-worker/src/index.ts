@@ -22,6 +22,7 @@ import {
   parseTerminalIdentityCommand,
   terminalIdentityLabel,
 } from "./terminalIdentity.js";
+import { readInboundAttachment } from "./voiceAttachment.js";
 
 type MiniAppLayout = {
   caption?: string;
@@ -1154,13 +1155,7 @@ async function main() {
           // Collect attachment if present
           const attachments: ImessageAttachment[] = [];
           if (message.content.type === "attachment") {
-            const { mimeType, name } = message.content;
-            const bytes = await message.content.read();
-            attachments.push({
-              data: Buffer.from(bytes).toString("base64"),
-              mimeType,
-              name: name ?? "attachment",
-            });
+            attachments.push(await readInboundAttachment(message.content));
           }
 
           const result = await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, {

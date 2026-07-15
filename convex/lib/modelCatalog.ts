@@ -5,12 +5,14 @@ import {
   MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS,
   MODEL_POLICY_SPECIAL_ROUTES,
   MODEL_POLICY_TASK_ROUTES,
+  modelPolicySupportsAudioInput,
   modelPolicySupportsImageInput,
 } from "../../extraction-worker/src/modelRoutingPolicy";
 
 export type ModelTask =
   | "chat"
   | "chat_vision"
+  | "voice_transcription"
   | "email_draft"
   | "email_reply"
   | "extraction"
@@ -64,6 +66,7 @@ export type ModelCapabilityConfig = {
   longListOutputTokens?: number;
   taskOutputTokens?: Record<string, number>;
   supportsImageInput?: boolean;
+  supportsAudioInput?: boolean;
 };
 
 export const FIREWORKS_MODEL_IDS = MODEL_POLICY_FIREWORKS_MODEL_IDS;
@@ -88,6 +91,7 @@ export const PROVIDER_LABELS: Record<ModelProvider, string> = {
 export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
   chat: "Chat assistant",
   chat_vision: "Chat image understanding",
+  voice_transcription: "Voice memo transcription",
   email_draft: "Email drafting",
   email_reply: "Inbound email replies",
   extraction: "Policy extraction",
@@ -111,6 +115,8 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
     "Interactive assistant route for web chat, MCP/CLI chat, iMessage/SMS, broker portfolio Q&A, retrieval orchestration, and tool calls.",
   chat_vision:
     "Image-capable web chat route for reading user image attachments while preserving normal chat tools and side effects.",
+  voice_transcription:
+    "Speech-to-text route for bounded iMessage voice memos before the transcript enters the normal tool-capable chat workflow.",
   email_draft:
     "Outbound email drafting route for chat-requested messages, delivery workflows, and email subagent drafts.",
   email_reply:
@@ -280,6 +286,12 @@ export const EMBEDDING_MODEL_CATALOG: Partial<Record<ModelProvider, string[]>> =
     ],
   };
 
+export const AUDIO_TRANSCRIPTION_MODEL_CATALOG: Partial<
+  Record<ModelProvider, string[]>
+> = {
+  openai: ["gpt-4o-transcribe", "gpt-4o-mini-transcribe"],
+};
+
 export const MODEL_ROUTING =
   MODEL_POLICY_TASK_ROUTES satisfies Record<ModelTask, ModelRoute>;
 
@@ -378,6 +390,7 @@ export const MODEL_TASK_GROUPS = [
     tasks: [
       "chat",
       "chat_vision",
+      "voice_transcription",
       "email_reply",
       "email_draft",
       "mailbox_coordinator",
@@ -491,6 +504,8 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "gpt-5.4": "GPT 5.4",
   "gpt-5.4-mini": "GPT 5.4 Mini",
   "gpt-5.4-nano": "GPT 5.4 Nano",
+  "gpt-4o-transcribe": "GPT-4o Transcribe",
+  "gpt-4o-mini-transcribe": "GPT-4o Mini Transcribe",
   "text-embedding-3-small": "Text Embedding 3 Small",
   "text-embedding-3-large": "Text Embedding 3 Large",
   "claude-sonnet-4.5": "Claude Sonnet 4.5",
@@ -524,8 +539,14 @@ export function modelSupportsImageInput(route: ModelRoute): boolean {
   return modelPolicySupportsImageInput(route);
 }
 
+export function modelSupportsAudioInput(route: ModelRoute): boolean {
+  return modelPolicySupportsAudioInput(route);
+}
+
 export function modelRouteSupportsTask(task: ModelTask, route: ModelRoute) {
-  return task !== "chat_vision" || modelSupportsImageInput(route);
+  if (task === "chat_vision") return modelSupportsImageInput(route);
+  if (task === "voice_transcription") return modelSupportsAudioInput(route);
+  return true;
 }
 
 export function isRetiredModelRoute(

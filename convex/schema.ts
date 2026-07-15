@@ -588,6 +588,7 @@ export default defineSchema({
       v.object({
         chat: v.optional(modelRouteValidator),
         chat_vision: v.optional(modelRouteValidator),
+        voice_transcription: v.optional(modelRouteValidator),
         email_draft: v.optional(modelRouteValidator),
         email_reply: v.optional(modelRouteValidator),
         extraction: v.optional(modelRouteValidator),
@@ -616,6 +617,7 @@ export default defineSchema({
       v.object({
         chat: v.optional(modelRouteValidator),
         chat_vision: v.optional(modelRouteValidator),
+        voice_transcription: v.optional(modelRouteValidator),
         email_draft: v.optional(modelRouteValidator),
         email_reply: v.optional(modelRouteValidator),
         extraction: v.optional(modelRouteValidator),
