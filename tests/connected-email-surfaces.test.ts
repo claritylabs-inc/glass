@@ -1,7 +1,12 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
-import { splitMailboxMessageParagraphs } from "../components/agent-thread/artifacts/mailbox-email-review-sidebar";
+import {
+  mailboxReadErrorMessage,
+  splitMailboxMessageParagraphs,
+} from "../components/agent-thread/artifacts/mailbox-email-review-sidebar";
+import { normalizeMailboxTask } from "../components/agent-thread/artifacts/mailbox-task";
 
 const ROOT = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf-8");
@@ -18,6 +23,33 @@ describe("connected email surfaces", () => {
       "Best Regards,\r\nZak",
     ]);
     expect(splitMailboxMessageParagraphs("  \n\n  ")).toEqual([]);
+  });
+
+  it("shows explicit mailbox-unavailable errors and preserves the review item locator", () => {
+    expect(
+      mailboxReadErrorMessage(
+        new ConvexError({
+          code: "EMAIL_UNAVAILABLE",
+          message: "This email may have been moved or deleted.",
+        }),
+      ),
+    ).toBe("This email may have been moved or deleted.");
+    expect(
+      normalizeMailboxTask({
+        status: "needs_review",
+        evidence: {
+          emails: [{
+            automationItemId: "automation-item",
+            emailRef: "email-ref",
+            subject: "Policy documents",
+            attachments: [],
+          }],
+        },
+      }).emails[0],
+    ).toMatchObject({
+      automationItemId: "automation-item",
+      emailRef: "email-ref",
+    });
   });
 
   it("stores only connection settings and encrypted credentials", () => {
@@ -60,6 +92,9 @@ describe("connected email surfaces", () => {
     expect(scan).not.toContain("The mailbox classifier did not return a complete decision.");
     expect(scan).toContain("AUTOMATION_HISTORY_SUBJECT_TERMS");
     expect(imapLib).toContain("downloaded.meta.expectedSize");
+    expect(imapLib).toContain("MailboxMessageUnavailableError");
+    expect(imapLib).toContain('header: { "Message-ID": messageId }');
+    expect(imapLib).toContain('specialUse?.toLowerCase() === "\\\\all"');
     expect(backend).toContain("args.filenames === undefined");
     expect(scan).toContain("importedComplianceAttentionAfterBatch");
     expect(backend).toContain("success && files.length > 1");
@@ -185,6 +220,8 @@ describe("connected email surfaces", () => {
     expect(mailboxTask).toContain("Needs review");
     expect(mailboxReview).toContain("OperationalPanel");
     expect(mailboxReview).toContain("api.actions.connectedEmail.readEmail");
+    expect(mailboxReview).toContain("automationItemId: email.automationItemId");
+    expect(mailboxReview).toContain("emailRef: liveEmail.emailRef");
     expect(mailboxReview).toContain("This email has no plain-text message body.");
     expect(mailboxTask).toContain("Save to thread");
     expect(mailboxTask).toContain("Create vendor requirements");

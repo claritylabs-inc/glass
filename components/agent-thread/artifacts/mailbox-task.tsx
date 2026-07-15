@@ -43,6 +43,7 @@ export function normalizeMailboxTask(data: unknown): {
     }>;
   }>;
   emails: Array<{
+    automationItemId?: Id<"connectedEmailAutomationItems">;
     emailRef?: string;
     mailbox?: string;
     accountEmail?: string;
@@ -103,6 +104,9 @@ export function normalizeMailboxTask(data: unknown): {
     ? evidence.emails
         .filter((email): email is Record<string, unknown> => !!email && typeof email === "object" && !Array.isArray(email))
         .map((email) => ({
+          automationItemId: typeof email.automationItemId === "string"
+            ? email.automationItemId as Id<"connectedEmailAutomationItems">
+            : undefined,
           emailRef: typeof email.emailRef === "string" ? email.emailRef : undefined,
           mailbox: typeof email.mailbox === "string" ? email.mailbox : undefined,
           accountEmail: typeof email.accountEmail === "string" ? email.accountEmail : undefined,
@@ -641,6 +645,7 @@ export function MailboxTaskSidebar({
   if (selectedReviewEmail) {
     return (
       <MailboxEmailReviewSidebar
+        key={selectedReviewEmail.automationItemId ?? selectedReviewEmail.emailRef}
         email={selectedReviewEmail}
         orgId={orgId}
         threadId={threadId}

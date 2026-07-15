@@ -56,6 +56,31 @@ export const getScanStateInternal = internalQuery({
       .first(),
 });
 
+export const getReviewMessageLocatorInternal = internalQuery({
+  args: {
+    itemId: v.id("connectedEmailAutomationItems"),
+    orgId: v.id("organizations"),
+    emailRef: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const item = await ctx.db.get(args.itemId);
+    if (
+      !item ||
+      item.orgId !== args.orgId ||
+      item.emailRef !== args.emailRef ||
+      !(item.needsReview ?? item.classification === "review_needed")
+    ) {
+      return null;
+    }
+    return {
+      accountId: item.accountId,
+      mailbox: item.mailbox,
+      uid: item.uid,
+      sourceMessageId: item.sourceMessageId,
+    };
+  },
+});
+
 export const reviewForThread = query({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
@@ -101,6 +126,7 @@ export const reviewForThread = query({
       searches: [],
       evidence: {
         emails: reviewItems.map((item) => ({
+          automationItemId: item._id,
           emailRef: item.emailRef,
           mailbox: item.mailbox,
           accountEmail: emailByAccountId.get(String(item.accountId)),

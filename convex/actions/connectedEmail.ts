@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import { createHash } from "node:crypto";
 import mammoth from "mammoth";
 import type { ParsedMail } from "mailparser";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -17,9 +17,12 @@ import {
   encryptPassword,
   fetchParsedMessage,
   imapErrorMessage,
+  isMailboxMessageUnavailableError,
   isGlassSearchLoopEmail,
+  MailboxMessageUnavailableError,
   messageRef,
   parseMessageRef,
+  resolveParsedMessage,
   withClient,
   IMPORT_DOWNLOAD_MAX_BYTES,
   type ConnectedEmailAccount,
@@ -92,6 +95,13 @@ type MailboxReadRow = {
   text: string;
   html?: string;
   attachments: MailboxAttachmentInfo[];
+};
+
+type MailboxReadArgs = {
+  orgId: Id<"organizations">;
+  userId?: Id<"users">;
+  emailRef: string;
+  automationItemId?: Id<"connectedEmailAutomationItems">;
 };
 
 type SavedThreadAttachment = {
@@ -559,68 +569,105 @@ export const searchInternal = internalAction({
   },
 });
 
+async function readMailboxMessage(
+  ctx: ActionCtx,
+  args: MailboxReadArgs,
+): Promise<MailboxReadRow> {
+  const parsedRef = parseMessageRef(args.emailRef);
+  const reviewLocator = args.automationItemId
+    ? await ctx.runQuery(
+        internal.connectedEmailAutomation.getReviewMessageLocatorInternal,
+        {
+          itemId: args.automationItemId,
+          orgId: args.orgId,
+          emailRef: args.emailRef,
+        },
+      )
+    : null;
+  if (args.automationItemId && !reviewLocator) {
+    throw new MailboxMessageUnavailableError("Email review is no longer available.");
+  }
+  const ref = reviewLocator
+    ? {
+        accountId: reviewLocator.accountId,
+        mailbox: reviewLocator.mailbox,
+        uid: reviewLocator.uid,
+      }
+    : parsedRef;
+  const account = await accessibleAccount(ctx, {
+    orgId: args.orgId,
+    userId: args.userId,
+    accountId: ref.accountId,
+  });
+  return await withClient(account, async (client) => {
+    const resolved = await resolveParsedMessage(client, {
+      mailbox: ref.mailbox,
+      uid: ref.uid,
+      messageId: reviewLocator?.sourceMessageId,
+      maxBytes: IMPORT_DOWNLOAD_MAX_BYTES,
+    });
+    const parsed = resolved.parsed;
+    return {
+      emailRef: messageRef(account._id, resolved.mailbox, resolved.uid),
+      accountId: account._id,
+      accountEmail: account.emailAddress,
+      accountHost: account.host,
+      mailbox: resolved.mailbox,
+      uid: resolved.uid,
+      subject: parsed.subject ?? "(no subject)",
+      from: parsed.from?.text,
+      fromAddresses: addressDetails(parsed.from),
+      to: addressText(parsed.to).join(", "),
+      toAddresses: addressDetails(parsed.to),
+      cc: addressText(parsed.cc).join(", "),
+      ccAddresses: addressDetails(parsed.cc),
+      date: parsed.date?.toISOString(),
+      text: (parsed.text ?? "").slice(0, 20_000),
+      html: typeof parsed.html === "string" ? parsed.html.slice(0, 20_000) : undefined,
+      attachments: parsed.attachments.map((attachment) => ({
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        size: attachment.size,
+      })),
+    };
+  });
+}
+
 export const readInternal = internalAction({
   args: {
     orgId: v.id("organizations"),
     userId: v.optional(v.id("users")),
     emailRef: v.string(),
+    automationItemId: v.optional(v.id("connectedEmailAutomationItems")),
   },
-  handler: async (ctx, args): Promise<MailboxReadRow> => {
-    const ref = parseMessageRef(args.emailRef);
-    const account = await accessibleAccount(ctx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      accountId: ref.accountId,
-    });
-    return await withClient(account, async (client) => {
-      const parsed = await fetchParsedMessage(
-        client,
-        ref.mailbox,
-        ref.uid,
-        IMPORT_DOWNLOAD_MAX_BYTES,
-      );
-      return {
-        emailRef: args.emailRef,
-        accountId: account._id,
-        accountEmail: account.emailAddress,
-        accountHost: account.host,
-        mailbox: ref.mailbox,
-        uid: ref.uid,
-        subject: parsed.subject ?? "(no subject)",
-        from: parsed.from?.text,
-        fromAddresses: addressDetails(parsed.from),
-        to: addressText(parsed.to).join(", "),
-        toAddresses: addressDetails(parsed.to),
-        cc: addressText(parsed.cc).join(", "),
-        ccAddresses: addressDetails(parsed.cc),
-        date: parsed.date?.toISOString(),
-        text: (parsed.text ?? "").slice(0, 20_000),
-        html: typeof parsed.html === "string" ? parsed.html.slice(0, 20_000) : undefined,
-        attachments: parsed.attachments.map((attachment) => ({
-          filename: attachment.filename,
-          contentType: attachment.contentType,
-          size: attachment.size,
-        })),
-      };
-    });
-  },
+  handler: readMailboxMessage,
 });
 
 export const readEmail = action({
   args: {
     orgId: v.id("organizations"),
     emailRef: v.string(),
+    automationItemId: v.optional(v.id("connectedEmailAutomationItems")),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<MailboxReadRow> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
-    return await ctx.runAction(internal.actions.connectedEmail.readInternal, {
-      orgId: args.orgId,
-      userId: userId as Id<"users">,
-      emailRef: args.emailRef,
-    });
+    try {
+      return await readMailboxMessage(ctx, {
+        ...args,
+        userId: userId as Id<"users">,
+      });
+    } catch (error) {
+      if (isMailboxMessageUnavailableError(error)) {
+        throw new ConvexError({
+          code: "EMAIL_UNAVAILABLE",
+          message: error.message,
+        });
+      }
+      throw error;
+    }
   },
 });
 
