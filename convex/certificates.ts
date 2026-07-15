@@ -334,6 +334,30 @@ export const getGenerationContextForOrg = internalQuery({
   },
 });
 
+export const getCertificateGenerationTargetForOrg = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    policyId: v.id("policies"),
+    certificateId: v.id("policyCertificates"),
+  },
+  handler: async (ctx, args) => {
+    const certificate = await ctx.db.get(args.certificateId);
+    if (
+      !certificate ||
+      certificate.orgId !== args.orgId ||
+      certificate.policyId !== args.policyId ||
+      certificate.status !== "active"
+    ) {
+      throw new Error("Certificate not found.");
+    }
+    const holder = await ctx.db.get(certificate.holderId);
+    if (!holder || holder.orgId !== args.orgId) {
+      throw new Error("Certificate holder not found.");
+    }
+    return { certificate, holder };
+  },
+});
+
 export const getHolderPolicyRelationshipInternal = internalQuery({
   args: {
     holderId: v.id("certificateHolders"),
@@ -625,6 +649,7 @@ Return same_holder only when the requested holder is the same legal/display hold
 export const generateForPolicy = action({
   args: {
     policyId: v.id("policies"),
+    certificateId: v.optional(v.id("policyCertificates")),
     holderName: v.string(),
     certificateHolder: v.optional(v.string()),
     holderContactName: v.optional(v.string()),
@@ -642,6 +667,7 @@ export const generateForPolicy = action({
     requestedEndorsements: v.optional(requestedEndorsementValidator),
     formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
+    updateHolderDetails: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
     const userId = await getAuthUserId(ctx);
@@ -656,6 +682,7 @@ export const generateForPolicy = action({
 
     return await ctx.runAction(internal.certificates.generateForOrg, {
       policyId: args.policyId,
+      certificateId: args.certificateId,
       orgId: context.orgId,
       holderName,
       certificateHolder: args.certificateHolder,
@@ -674,6 +701,7 @@ export const generateForPolicy = action({
       requestedEndorsements: args.requestedEndorsements,
       formCode: args.formCode,
       forceReissue: args.forceReissue,
+      updateHolderDetails: args.updateHolderDetails,
       source: "policy_page",
       createdByUserId: context.userId,
     });
@@ -684,6 +712,7 @@ export const generateForOrg = internalAction({
   args: {
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
+    certificateId: v.optional(v.id("policyCertificates")),
     holderName: v.string(),
     certificateHolder: v.optional(v.string()),
     holderContactName: v.optional(v.string()),
@@ -704,6 +733,7 @@ export const generateForOrg = internalAction({
     requestedEndorsements: v.optional(requestedEndorsementValidator),
     formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
+    updateHolderDetails: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<any> => {
     const holderName = args.holderName.trim();
@@ -713,6 +743,19 @@ export const generateForOrg = internalAction({
       orgId: args.orgId,
       policyId: args.policyId,
     });
+    if (args.updateHolderDetails && !args.certificateId) {
+      throw new Error("A certificate is required when updating holder details.");
+    }
+    const generationTarget = args.certificateId
+      ? await ctx.runQuery(
+          internal.certificates.getCertificateGenerationTargetForOrg,
+          {
+            orgId: args.orgId,
+            policyId: args.policyId,
+            certificateId: args.certificateId,
+          },
+        )
+      : null;
     const parsedHolderBlock = parseCertificateHolderBlock(
       args.certificateHolder,
       holderName,
@@ -777,51 +820,53 @@ export const generateForOrg = internalAction({
       displayName: holderName,
       address: holderAddress as CertificateHolderAddressInput | undefined,
     });
-    const issuedCandidates = await ctx.runQuery(
-      (internal as any).certificateLifecycle.findIssuedCertificateHolderCandidatesInternal,
-      {
-        orgId: args.orgId,
-        policyId: args.policyId,
-        policyVersionId,
-        requestKind,
-        requestSignature: reusableRequestSignature,
-      },
-    ) as CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[];
-    const deterministicResolution = resolveDeterministicCertificateHolder(
-      requestedHolderIdentity,
-      issuedCandidates,
-    );
-    let matchedIssuedCandidate: CertificateHolderResolutionCandidate<IssuedCertificateCandidate> | null =
-      deterministicResolution.verdict === "same_holder"
+    let matchedIssuedCandidate: CertificateHolderResolutionCandidate<IssuedCertificateCandidate> | null = null;
+    if (!generationTarget) {
+      const issuedCandidates = await ctx.runQuery(
+        (internal as any).certificateLifecycle.findIssuedCertificateHolderCandidatesInternal,
+        {
+          orgId: args.orgId,
+          policyId: args.policyId,
+          policyVersionId,
+          requestKind,
+          requestSignature: reusableRequestSignature,
+        },
+      ) as CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[];
+      const deterministicResolution = resolveDeterministicCertificateHolder(
+        requestedHolderIdentity,
+        issuedCandidates,
+      );
+      matchedIssuedCandidate = deterministicResolution.verdict === "same_holder"
         ? deterministicResolution.candidate
         : null;
-    if (!matchedIssuedCandidate && deterministicResolution.verdict === "ambiguous") {
-      return ambiguousHolderResult({
-        holderName,
-        reason: deterministicResolution.reason,
-        candidates: deterministicResolution.candidates,
-      });
-    }
-    if (!matchedIssuedCandidate && deterministicResolution.verdict === "needs_model") {
-      const modelResolution = await reviewHolderIdentityWithModel({
-        ctx,
-        orgId: args.orgId,
-        policyId: args.policyId,
-        holderName,
-        requested: requestedHolderIdentity,
-        candidates: deterministicResolution.candidates,
-      });
-      if (modelResolution.verdict === "same_holder") {
-        matchedIssuedCandidate = modelResolution.candidate;
-      } else if (modelResolution.verdict === "ambiguous") {
+      if (!matchedIssuedCandidate && deterministicResolution.verdict === "ambiguous") {
         return ambiguousHolderResult({
           holderName,
-          reason: modelResolution.reason,
-          candidates: modelResolution.candidates,
+          reason: deterministicResolution.reason,
+          candidates: deterministicResolution.candidates,
         });
       }
+      if (!matchedIssuedCandidate && deterministicResolution.verdict === "needs_model") {
+        const modelResolution = await reviewHolderIdentityWithModel({
+          ctx,
+          orgId: args.orgId,
+          policyId: args.policyId,
+          holderName,
+          requested: requestedHolderIdentity,
+          candidates: deterministicResolution.candidates,
+        });
+        if (modelResolution.verdict === "same_holder") {
+          matchedIssuedCandidate = modelResolution.candidate;
+        } else if (modelResolution.verdict === "ambiguous") {
+          return ambiguousHolderResult({
+            holderName,
+            reason: modelResolution.reason,
+            candidates: modelResolution.candidates,
+          });
+        }
+      }
     }
-    if (matchedIssuedCandidate && !args.forceReissue) {
+    if (matchedIssuedCandidate && !args.forceReissue && !generationTarget) {
       return existingCertificateResult({
         candidate: matchedIssuedCandidate,
         policyVersionId,
@@ -929,8 +974,9 @@ export const generateForOrg = internalAction({
       };
     }
 
-    let holderId = matchedIssuedCandidate?.data.holderId;
-    let policyCertificateId = matchedIssuedCandidate?.data.policyCertificateId;
+    let holderId = generationTarget?.holder._id ?? matchedIssuedCandidate?.data.holderId;
+    let policyCertificateId = generationTarget?.certificate._id ??
+      matchedIssuedCandidate?.data.policyCertificateId;
     if (!holderId || !policyCertificateId) {
       holderId = await ctx.runMutation((internal as any).certificateHolders.upsertInternal, {
         orgId: args.orgId,
@@ -985,6 +1031,7 @@ export const generateForOrg = internalAction({
       descriptionOfOperations: args.descriptionOfOperations,
       endorsements: endorsementCitations,
       requestSignature,
+      updateHolderDetails: args.updateHolderDetails,
     });
     if (!generated) throw new Error("COI generation failed.");
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useAction } from "convex/react";
 import { isValidPhoneNumber } from "react-phone-number-input";
 import { BadgeCheck, Copy, Eye, Loader2, Mail } from "lucide-react";
@@ -612,6 +612,12 @@ export function CertificatesTab({
     api.certificates.listActivityByPolicy,
     { policyId },
   );
+
+  useEffect(() => {
+    if (!certificates || !selectedCertificateId) return;
+    const selected = certificates.find((row) => row._id === selectedCertificateId);
+    if (selected) onSelectCertificate?.(selected);
+  }, [certificates, onSelectCertificate, selectedCertificateId]);
 
   if (certificates === undefined || activity === undefined) {
     return (

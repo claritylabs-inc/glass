@@ -160,14 +160,14 @@ function OperationalLabelValueRow({
 }) {
   if (value === undefined || value === null || value === "") return null;
   return (
-    <div className="grid grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] gap-3 border-t border-foreground/6 px-4 py-3 first:border-t-0">
-      <dt className="min-w-0 text-base font-normal text-muted-foreground">
+    <div className="grid grid-cols-1 gap-1 border-t border-foreground/6 px-4 py-3 first:border-t-0 sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3">
+      <dt className="min-w-0 text-label font-normal text-muted-foreground sm:text-base">
         {label}
       </dt>
       <dd
         className={cn(
           "min-w-0 break-words text-base leading-5 text-foreground",
-          align === "right" && "text-right",
+          align === "right" && "sm:text-right",
         )}
       >
         {value}

@@ -11,9 +11,10 @@ import {
   CertificateDetailPanel,
   CertificatesTable,
   CERTIFICATE_PANEL_CONTAINER_CLASS,
-  certificateHolderActionAddress,
   certificatePolicyLabel,
+  certificateVersionActionInput,
   formatCertificateTime,
+  type CertificateHolderDraft,
   type CertificateHolderRecord,
   type CertificatePolicyRecord,
   type CertificateVersionRecord,
@@ -241,6 +242,7 @@ export default function CertificatesPage() {
   const [tab, setTab] = useState<CertificateWorkspaceTab>("active");
   const [selectedCertificateId, setSelectedCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [reissuingCertificateId, setReissuingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
+  const [savingCertificateId, setSavingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [archivingCertificateId, setArchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [unarchivingCertificateId, setUnarchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [policyFilter, setPolicyFilter] = useState<CertificatePolicyFilter>("all");
@@ -355,22 +357,7 @@ export default function CertificatesPage() {
     }
     setReissuingCertificateId(row._id);
     try {
-      const currentVersion = row.currentVersion ?? row.latestIssuedVersion;
-      const result = await generateCertificate({
-        policyId: row.policyId,
-        holderName: holder.displayName,
-        holderContactName: holder.contactName,
-        holderEmail: holder.email,
-        holderPhone: holder.phone,
-        ...certificateHolderActionAddress(holder),
-        additionalInsuredName: currentVersion?.requestKind === "additional_insured"
-          ? currentVersion.additionalInsuredName
-          : undefined,
-        requestedEndorsements: currentVersion?.requestKind === "additional_insured"
-          ? ["additional_insured"]
-          : undefined,
-        forceReissue: true,
-      });
+      const result = await generateCertificate(certificateVersionActionInput(row));
       if ((result as { status?: string }).status === "ambiguous_certificate_holder") {
         toast.message((result as { message?: string }).message ?? "Choose the existing certificate to reissue.");
         return;
@@ -390,6 +377,44 @@ export default function CertificatesPage() {
     }
   };
 
+  const editCertificateHolder = async (
+    row: PolicyCertificateRecord,
+    draft: CertificateHolderDraft,
+  ) => {
+    setSavingCertificateId(row._id);
+    try {
+      const result = await generateCertificate(
+        certificateVersionActionInput(row, draft),
+      );
+      if ((result as { status?: string }).status === "held_policy_change_required") {
+        toast.message(
+          (result as { message?: string }).message ??
+            "Broker review is needed before generating this version.",
+        );
+        return false;
+      }
+      const versionNumber = (result as { versionNumber?: number }).versionNumber;
+      toast.success(
+        versionNumber
+          ? `Certificate version ${versionNumber} generated`
+          : "New certificate version generated",
+      );
+      if ((result as { url?: string }).url) {
+        openWithUrl((result as { url: string }).url);
+      }
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update certificate holder",
+      );
+      return false;
+    } finally {
+      setSavingCertificateId(null);
+    }
+  };
+
   return (
     <AppShell
       rightPanel={selectedCertificate ? (
@@ -397,9 +422,11 @@ export default function CertificatesPage() {
           row={selectedCertificate}
           onClose={() => setSelectedCertificateId(null)}
           onReissue={reissueCertificate}
+          onEditHolder={editCertificateHolder}
           onArchive={archiveCertificate}
           onUnarchive={unarchiveCertificate}
           reissuing={reissuingCertificateId === selectedCertificate._id}
+          savingHolder={savingCertificateId === selectedCertificate._id}
           archiving={archivingCertificateId === selectedCertificate._id}
           unarchiving={unarchivingCertificateId === selectedCertificate._id}
         />

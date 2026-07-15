@@ -46,7 +46,8 @@ import {
 import { usePdf } from "@/components/pdf-context";
 import {
   CertificateDetailPanel,
-  certificateHolderActionAddress,
+  certificateVersionActionInput,
+  type CertificateHolderDraft,
   type PolicyCertificateRecord,
 } from "@/components/certificates/certificate-workspace";
 import { usePageContext } from "@/hooks/use-page-context";
@@ -388,6 +389,8 @@ export function PolicyDetailBody({
     useState<PolicyCertificateRecord | null>(null);
   const [reissuingCertificateId, setReissuingCertificateId] =
     useState<Id<"policyCertificates"> | null>(null);
+  const [savingCertificateId, setSavingCertificateId] =
+    useState<Id<"policyCertificates"> | null>(null);
   const [archivingCertificateId, setArchivingCertificateId] =
     useState<Id<"policyCertificates"> | null>(null);
   const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
@@ -521,22 +524,7 @@ export function PolicyDetailBody({
     }
     setReissuingCertificateId(row._id);
     try {
-      const currentVersion = row.currentVersion ?? row.latestIssuedVersion;
-      const result = await generateCertificate({
-        policyId: row.policyId,
-        holderName: holder.displayName,
-        holderContactName: holder.contactName,
-        holderEmail: holder.email,
-        holderPhone: holder.phone,
-        ...certificateHolderActionAddress(holder),
-        additionalInsuredName: currentVersion?.requestKind === "additional_insured"
-          ? currentVersion.additionalInsuredName
-          : undefined,
-        requestedEndorsements: currentVersion?.requestKind === "additional_insured"
-          ? ["additional_insured"]
-          : undefined,
-        forceReissue: true,
-      });
+      const result = await generateCertificate(certificateVersionActionInput(row));
       if ((result as { status?: string }).status === "ambiguous_certificate_holder") {
         toast.message((result as { message?: string }).message ?? "Choose the existing certificate to reissue.");
         return;
@@ -553,6 +541,44 @@ export function PolicyDetailBody({
       toast.error(error instanceof Error ? error.message : "Could not reissue certificate");
     } finally {
       setReissuingCertificateId(null);
+    }
+  }, [generateCertificate, openWithUrl]);
+
+  const editCertificateHolder = useCallback(async (
+    row: PolicyCertificateRecord,
+    draft: CertificateHolderDraft,
+  ) => {
+    setSavingCertificateId(row._id);
+    try {
+      const result = await generateCertificate(
+        certificateVersionActionInput(row, draft),
+      );
+      if ((result as { status?: string }).status === "held_policy_change_required") {
+        toast.message(
+          (result as { message?: string }).message ??
+            "Broker review is needed before generating this version.",
+        );
+        return false;
+      }
+      const versionNumber = (result as { versionNumber?: number }).versionNumber;
+      toast.success(
+        versionNumber
+          ? `Certificate version ${versionNumber} generated`
+          : "New certificate version generated",
+      );
+      if ((result as { url?: string }).url) {
+        openWithUrl((result as { url: string }).url);
+      }
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update certificate holder",
+      );
+      return false;
+    } finally {
+      setSavingCertificateId(null);
     }
   }, [generateCertificate, openWithUrl]);
 
@@ -827,9 +853,11 @@ export function PolicyDetailBody({
         <CertificateDetailPanel
           row={selectedCertificateForPanel}
           onClose={() => setSelectedCertificate(null)}
-          onReissue={reissueCertificate}
+          onReissue={!readOnly ? reissueCertificate : undefined}
+          onEditHolder={!readOnly ? editCertificateHolder : undefined}
           onArchive={!readOnly ? archiveCertificate : undefined}
           reissuing={reissuingCertificateId === selectedCertificateForPanel._id}
+          savingHolder={savingCertificateId === selectedCertificateForPanel._id}
           archiving={archivingCertificateId === selectedCertificateForPanel._id}
         />,
       );
@@ -848,8 +876,10 @@ export function PolicyDetailBody({
     editingPolicyDetails,
     selectedCertificateForPanel,
     reissueCertificate,
+    editCertificateHolder,
     archiveCertificate,
     reissuingCertificateId,
+    savingCertificateId,
     archivingCertificateId,
     canEditExtractedFields,
     canEditPolicyDetails,

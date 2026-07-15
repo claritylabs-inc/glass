@@ -65,6 +65,7 @@ describe("settings panel surfaces", () => {
 
   it("keeps organization identity compact and policy declarations policy-scoped", () => {
     const organization = read("components/settings/organization-section.tsx");
+    const operationalPanel = read("components/ui/operational-panel.tsx");
     const profile = read("components/settings/organization-insurance-profile.tsx");
     const policy = read("app/policies/[id]/policy-parties-panel.tsx");
     const policyEditor = read("app/policies/[id]/policy-details-editor.tsx");
@@ -111,7 +112,28 @@ describe("settings panel surfaces", () => {
     expect(policy).not.toContain("Description of operations");
     expect(summary).toContain('label="Description of operations"');
     expect(summary).toContain("operationsDescription");
+    expect(summary).toContain('align="right"');
     expect(summary).toContain('className="border-t border-foreground/6"');
+    expect(summary).not.toContain("function SummaryRow");
+    expect(summary).toContain('label="Policy number"');
+    expect(summary).toContain('label="Lines of business"');
+    expect(summary).toContain('label="Policy period"');
+    expect(summary).toContain('label="Premium"');
+    expect(summary).toContain('label="Taxes & fees"');
+    expect(summary).toContain('label="Total payable"');
+    expect(summary).toContain("sm:justify-end");
+    expect(summary.match(/<OperationalLabelValueRow/g)).toHaveLength(7);
+    expect(summary.match(/align="right"/g)).toHaveLength(7);
+    expect(operationalPanel).toContain("grid grid-cols-1 gap-1");
+    expect(operationalPanel).toContain(
+      "sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3",
+    );
+    expect(operationalPanel).toContain(
+      "text-label font-normal text-muted-foreground sm:text-base",
+    );
+    expect(operationalPanel).toContain(
+      'align === "right" && "sm:text-right"',
+    );
     const editActionIndex = summary.indexOf("{onEdit ?");
     const renewalStatusIndex = summary.indexOf("{isRenewal &&");
     const lifecycleStatusIndex = summary.indexOf("<StatusBadge");
@@ -120,10 +142,10 @@ describe("settings panel surfaces", () => {
     expect(lifecycleStatusIndex).toBeGreaterThan(-1);
     expect(renewalStatusIndex).toBeLessThan(editActionIndex);
     expect(lifecycleStatusIndex).toBeLessThan(editActionIndex);
-    expect(summary).not.toContain('SummaryRow label="Administrator"');
-    expect(summary).not.toContain('SummaryRow label="Carrier"');
-    expect(summary).not.toContain('SummaryRow label="Broker"');
-    expect(summary).not.toContain('SummaryRow label="Named insured"');
+    expect(summary).not.toContain('label="Administrator"');
+    expect(summary).not.toContain('label="Carrier"');
+    expect(summary).not.toContain('label="Broker"');
+    expect(summary).not.toContain('label="Named insured"');
     expect(details).not.toContain("CoverageBreakdownCards");
     expect(details).not.toContain("PolicyCoveredAssets");
     expect(detailBody).toContain('{ id: "coverages" as const, label: "Coverages" }');
