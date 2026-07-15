@@ -3,7 +3,7 @@ import {
   isVoiceMemoContent,
   readInboundAttachment,
   voiceMemoFilename,
-} from "../imessage-worker/src/voiceAttachment";
+} from "../src/voiceAttachment";
 
 describe("iMessage voice attachment normalization", () => {
   test("recognizes audio MIME types and normalizes voice memo filenames", () => {
