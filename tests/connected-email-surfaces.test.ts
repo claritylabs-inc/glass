@@ -244,7 +244,9 @@ describe("connected email surfaces", () => {
     expect(threadContent).toContain("mailboxReviewEmails");
     expect(threadContent).toContain("emailIndex");
     expect(threadContent).toContain("renderMailboxReviewPill");
-    expect(threadContent).toContain("conciseMailboxReviewContent");
+    expect(threadContent).toContain("{displayContent}");
+    expect(threadContent).not.toContain("conciseMailboxReviewContent");
+    expect(threadContent).not.toContain("reviewEmailCount");
     expect(threadContent).toContain('<span className="text-muted-foreground/35">{index + 1}</span>');
     expect(threadContent).not.toContain("<MailboxTaskArtifacts\n                  artifacts={mailboxArtifacts}");
     expect(threadContent).not.toContain("AgentProcessingActivity\n            label={toolLabel}\n            isStale={isStale}\n            backgroundProcessCount={backgroundProcessCount}\n          />\n          {mailboxArtifacts.length > 0 ? (");
