@@ -14,6 +14,7 @@ import {
   primaryRouteForCall,
 } from "../convex/lib/models";
 import {
+  AUDIO_TRANSCRIPTION_MODEL_CATALOG,
   EXTRACTION_QUALITY_MODEL,
   LANGUAGE_MODEL_CATALOG,
   MODEL_DISPLAY_NAMES,
@@ -26,6 +27,7 @@ import {
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
   modelRouteSupportsTask,
+  modelSupportsAudioInput,
   modelSupportsImageInput,
 } from "../convex/lib/modelCatalog";
 
@@ -68,6 +70,35 @@ describe("model task routing", () => {
       modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat),
     ).toBe(false);
     expect(modelRouteSupportsTask("chat", MODEL_ROUTING.chat)).toBe(true);
+  });
+
+  test("routes voice memos through a dedicated OpenAI transcription model", () => {
+    expect(MODEL_ROUTING.voice_transcription).toEqual({
+      provider: "openai",
+      model: "gpt-4o-transcribe",
+    });
+    expect(AUDIO_TRANSCRIPTION_MODEL_CATALOG.openai).toEqual([
+      "gpt-4o-transcribe",
+      "gpt-4o-mini-transcribe",
+    ]);
+    expect(LANGUAGE_MODEL_CATALOG.openai).not.toContain("gpt-4o-transcribe");
+    expect(modelSupportsAudioInput(MODEL_ROUTING.voice_transcription)).toBe(
+      true,
+    );
+    expect(modelSupportsAudioInput(MODEL_ROUTING.chat_vision)).toBe(false);
+    expect(
+      modelRouteSupportsTask(
+        "voice_transcription",
+        MODEL_ROUTING.voice_transcription,
+      ),
+    ).toBe(true);
+    expect(
+      modelRouteSupportsTask("voice_transcription", MODEL_ROUTING.chat_vision),
+    ).toBe(false);
+    expect(modelCapabilitiesForRoute(MODEL_ROUTING.voice_transcription)).toMatchObject({
+      modelName: "gpt-4o-transcribe",
+      supportsAudioInput: true,
+    });
   });
 
   test("keeps the Fireworks default model set constrained by use case", () => {
@@ -129,11 +160,20 @@ describe("model task routing", () => {
       "chat_vision: v.optional(routeUpdateValidator)",
     );
     expect(modelSettings).toContain(
+      "voice_transcription: v.optional(routeUpdateValidator)",
+    );
+    expect(modelSettings).toContain(
       "modelRouteSupportsTask(task, brokerRoute)",
     );
     expect(schema).toContain("chat_vision: v.optional(modelRouteValidator)");
+    expect(schema).toContain(
+      "voice_transcription: v.optional(modelRouteValidator)",
+    );
     expect(MODEL_TASK_GROUPS.flatMap((group) => group.tasks)).toContain(
       "chat_vision",
+    );
+    expect(MODEL_TASK_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "voice_transcription",
     );
   });
 

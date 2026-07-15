@@ -11,6 +11,7 @@ export type ModelPolicyCapabilityConfig = {
   longListOutputTokens?: number;
   taskOutputTokens?: Record<string, number>;
   supportsImageInput?: boolean;
+  supportsAudioInput?: boolean;
 };
 
 export const MODEL_POLICY_FIREWORKS_MODEL_IDS = {
@@ -26,6 +27,7 @@ export const MODEL_POLICY_FIREWORKS_MODEL_IDS = {
 export const MODEL_POLICY_TASK_ROUTES = {
   chat: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
   chat_vision: { provider: "openai", model: "gpt-5.6-terra" },
+  voice_transcription: { provider: "openai", model: "gpt-4o-transcribe" },
   email_draft: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.glm52 },
   email_reply: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.glm52 },
   extraction: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
@@ -109,6 +111,14 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
   "gpt-5.6-sol": { modelName: "gpt-5.6-sol", ...OPENAI_GPT_5_6_CAPABILITIES },
   "gpt-5.6-terra": { modelName: "gpt-5.6-terra", ...OPENAI_GPT_5_6_CAPABILITIES },
   "gpt-5.6-luna": { modelName: "gpt-5.6-luna", ...OPENAI_GPT_5_6_CAPABILITIES },
+  "gpt-4o-transcribe": {
+    modelName: "gpt-4o-transcribe",
+    supportsAudioInput: true,
+  },
+  "gpt-4o-mini-transcribe": {
+    modelName: "gpt-4o-mini-transcribe",
+    supportsAudioInput: true,
+  },
   "gpt-5.5": { modelName: "gpt-5.5", ...OPENAI_GPT_5_4_CAPABILITIES },
   "gpt-5.4": { modelName: "gpt-5.4", ...OPENAI_GPT_5_4_CAPABILITIES },
   "gpt-5.4-mini": {
@@ -248,5 +258,12 @@ export function modelPolicySupportsImageInput(route: ModelPolicyRoute): boolean 
   return (
     MODEL_POLICY_CAPABILITIES[route.model]?.supportsImageInput === true ||
     MODEL_POLICY_IMAGE_CAPABLE_PROVIDER_SET.has(route.provider)
+  );
+}
+
+export function modelPolicySupportsAudioInput(route: ModelPolicyRoute): boolean {
+  return (
+    route.provider === "openai" &&
+    MODEL_POLICY_CAPABILITIES[route.model]?.supportsAudioInput === true
   );
 }

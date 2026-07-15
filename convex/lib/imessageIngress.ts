@@ -35,7 +35,31 @@ const SUPPORTED_IMESSAGE_ATTACHMENT_MIME_TYPES = new Set([
   "image/gif",
   "image/heic",
   "image/heif",
+  "audio/mp4",
+  "audio/mp4a-latm",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/aacp",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/webm",
 ]);
+
+export const MAX_IMESSAGE_AUDIO_BYTES = 20 * 1024 * 1024;
+
+export function normalizeImessageAttachmentMimeType(mimeType: string): string {
+  return mimeType.toLowerCase().split(";", 1)[0]?.trim() || "";
+}
+
+export function isImessageAudioAttachment(
+  attachment: Pick<RawImessageAttachment, "mimeType">,
+): boolean {
+  return normalizeImessageAttachmentMimeType(attachment.mimeType).startsWith(
+    "audio/",
+  );
+}
 
 export function normalizeInboundImessageSender(raw: string): string {
   if (raw.includes("@")) return raw.trim().toLowerCase();
@@ -118,18 +142,33 @@ export async function storeImessageAttachments(
 ): Promise<StoredImessageAttachmentRecord[]> {
   const attachmentRecords: StoredImessageAttachmentRecord[] = [];
   for (const attachment of attachments ?? []) {
-    if (!SUPPORTED_IMESSAGE_ATTACHMENT_MIME_TYPES.has(attachment.mimeType)) {
+    const mimeType = normalizeImessageAttachmentMimeType(attachment.mimeType);
+    if (!SUPPORTED_IMESSAGE_ATTACHMENT_MIME_TYPES.has(mimeType)) {
+      console.warn("[imessage] Ignoring unsupported attachment type", {
+        filename: attachment.name,
+        mimeType,
+      });
       continue;
     }
     try {
       const buffer = Buffer.from(attachment.data, "base64");
+      if (
+        isImessageAudioAttachment({ mimeType }) &&
+        buffer.byteLength > MAX_IMESSAGE_AUDIO_BYTES
+      ) {
+        console.warn("[imessage] Ignoring oversized audio attachment", {
+          filename: attachment.name,
+          size: buffer.byteLength,
+        });
+        continue;
+      }
       const blob = new Blob([new Uint8Array(buffer)], {
-        type: attachment.mimeType,
+        type: mimeType,
       });
       const fileId = await ctx.storage.store(blob);
       attachmentRecords.push({
         filename: attachment.name,
-        contentType: attachment.mimeType,
+        contentType: mimeType,
         size: buffer.byteLength,
         fileId,
         buffer,

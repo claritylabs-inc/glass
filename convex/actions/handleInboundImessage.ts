@@ -44,6 +44,7 @@ import {
   buildImessageRetrievalQuery,
   buildRecentImessageTextContext,
   isImessageStatusCue,
+  transcribeImessageVoiceMemos,
   type ImessageHistoryMessage,
 } from "../lib/imessageAgentContext";
 import {
@@ -98,6 +99,9 @@ function appendAttachmentFailureNotice(responseText: string): string {
   if (trimmed.includes(notice)) return trimmed;
   return `${trimmed}\n\n${notice}`;
 }
+
+const VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE =
+  "I couldn't transcribe that voice memo. Please try sending it again or send the request as text.";
 
 export const processInbound = internalAction({
   args: {
@@ -280,13 +284,34 @@ export const processInbound = internalAction({
         })),
       });
 
+      const voiceMemoInput = await transcribeImessageVoiceMemos(ctx, {
+        orgId:
+          scope.kind === "no_linked_users" ? undefined : scope.primaryOrgId,
+        messageText: args.messageText,
+        attachments: args.attachments,
+      });
+      const inboundMessageText = enforceInputLimits(voiceMemoInput.messageText);
+
       if (scope.kind === "no_linked_users") {
+        if (
+          voiceMemoInput.hasVoiceMemos &&
+          voiceMemoInput.transcripts.length === 0
+        ) {
+          if (isGroup) {
+            await ctx.runMutation(internal.imessageChats.markLeft, { chatGuid });
+          }
+          return await finish(
+            VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
+            undefined,
+            { leaveGroup: isGroup },
+          );
+        }
         const demo = await ctx.runAction(
           internal.actions.publicDemoAgent.respond,
           {
             channel: "imessage",
             senderContact: fromPhone,
-            messageText: args.messageText,
+            messageText: inboundMessageText,
             sourceMessageId: args.sourceMessageId,
             chatGuid,
           },
@@ -311,7 +336,7 @@ export const processInbound = internalAction({
           {
             channel: "imessage",
             senderContact: fromPhone,
-            messageText: args.messageText,
+            messageText: inboundMessageText,
             sourceMessageId: args.sourceMessageId,
             chatGuid,
           },
@@ -326,8 +351,11 @@ export const processInbound = internalAction({
         currentParticipant?.userId && currentParticipant.orgId,
       );
 
-      const guardedText = enforceInputLimits(args.messageText);
-      const injectionCheck = await classifyPromptInjection(ctx, guardedText, orgId);
+      const injectionCheck = await classifyPromptInjection(
+        ctx,
+        inboundMessageText,
+        orgId,
+      );
       if (!injectionCheck.safe) {
         console.warn("[security] iMessage prompt injection blocked", {
           fromPhone,
@@ -395,7 +423,7 @@ export const processInbound = internalAction({
           currentParticipant?.userName ??
           currentParticipant?.displayName ??
           anonymousParticipantLabel(senderAddress, 1),
-        content: args.messageText,
+        content: inboundMessageText,
         messageId: args.sourceMessageId ?? eventKey,
         attachments:
           attachmentRecords.length > 0
@@ -408,6 +436,27 @@ export const processInbound = internalAction({
             : undefined,
       });
 
+      if (
+        voiceMemoInput.hasVoiceMemos &&
+        voiceMemoInput.transcripts.length === 0
+      ) {
+        const failureMessageId = await ctx.runMutation(
+          internal.threads.insertImessageMessage,
+          {
+            threadId,
+            orgId,
+            role: "agent",
+            content: VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
+            responseMessageId: `${eventKey}:voice-transcription-failed`,
+          },
+        );
+        return await finish(
+          VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
+          undefined,
+          { threadMessageId: failureMessageId },
+        );
+      }
+
       const history = await ctx.runQuery(internal.threads.getImessageHistory, {
         threadId,
         limit: 16,
@@ -415,13 +464,13 @@ export const processInbound = internalAction({
       const historyForContext = history.filter((msg) => {
         if (msg.status === "processing") return false;
         if (isImessageStatusCue(msg)) return false;
-        return !(msg.role === "user" && msg.content === args.messageText);
+        return !(msg.role === "user" && msg.content === inboundMessageText);
       });
       const recentConversationContext =
         buildRecentImessageTextContext(historyForContext);
       const retrievalQuery = buildImessageRetrievalQuery({
         recentConversationContext,
-        messageText: args.messageText,
+        messageText: inboundMessageText,
       });
 
       const draftEmails = await ctx.runQuery(
@@ -437,7 +486,7 @@ export const processInbound = internalAction({
         { threadId, orgId },
       );
       const deterministicControlResult = await runImessageDeterministicControls(ctx, {
-        messageText: args.messageText,
+        messageText: inboundMessageText,
         orgId,
         orgName: org.name,
         userName: user.name,
@@ -481,7 +530,7 @@ export const processInbound = internalAction({
         anonymousParticipantLabel(senderAddress, 1);
       const modelMessages = await buildImessageModelMessages({
         history,
-        messageText: args.messageText,
+        messageText: inboundMessageText,
         currentSpeakerLabel,
         attachmentRecords,
       });
@@ -546,7 +595,9 @@ export const processInbound = internalAction({
             .map((email) => String(email).toLowerCase()),
         ),
       ];
-      const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(args.messageText);
+      const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
+        inboundMessageText,
+      );
       const brokerRecipientEmail = brokerDirectedEmailRequest
         ? brokerIdentity?.contactEmail
         : undefined;
@@ -764,7 +815,7 @@ export const processInbound = internalAction({
       }
 
       responseText = postProcessImessageResponseText({
-        messageText: args.messageText,
+        messageText: inboundMessageText,
         recentConversationContext,
         responseText,
         usedTools,
@@ -863,7 +914,7 @@ export const processInbound = internalAction({
         threadId,
         sourceThreadMessageId: agentResponseMessageId,
         createdByUserId: user._id,
-        messageText: args.messageText,
+        messageText: inboundMessageText,
         responseText,
         relevantPolicyIds,
         artifacts: imessageToolArtifacts,

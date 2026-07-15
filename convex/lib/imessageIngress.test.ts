@@ -4,7 +4,9 @@ import {
   buildFallbackImessageChatGuid,
   buildImessageParticipantInputs,
   buildInboundImessageEventKey,
+  isImessageAudioAttachment,
   normalizeInboundImessageSender,
+  normalizeImessageAttachmentMimeType,
   storeImessageAttachments,
 } from "./imessageIngress";
 
@@ -89,6 +91,36 @@ describe("iMessage ingress helpers", () => {
         contentType: "application/pdf",
         size: 3,
         fileId: "stored-file",
+      },
+    ]);
+  });
+
+  test("normalizes and stores iMessage voice memo MIME types", async () => {
+    const store = vi.fn(async () => "stored-audio" as Id<"_storage">);
+    const records = await storeImessageAttachments(
+      { storage: { store } },
+      [
+        {
+          name: "Audio Message.m4a",
+          mimeType: "audio/x-m4a; codecs=mp4a.40.2",
+          data: Buffer.from("audio").toString("base64"),
+        },
+      ],
+    );
+
+    expect(
+      normalizeImessageAttachmentMimeType(
+        "audio/x-m4a; codecs=mp4a.40.2",
+      ),
+    ).toBe("audio/x-m4a");
+    expect(isImessageAudioAttachment({ mimeType: "audio/x-m4a" })).toBe(true);
+    expect(store).toHaveBeenCalledTimes(1);
+    expect(records).toMatchObject([
+      {
+        filename: "Audio Message.m4a",
+        contentType: "audio/x-m4a",
+        size: 5,
+        fileId: "stored-audio",
       },
     ]);
   });
