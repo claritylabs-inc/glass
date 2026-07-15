@@ -278,11 +278,10 @@ export async function resolveParsedMessage(
     const uids = Array.isArray(result) ? [...result].sort((left, right) => right - left) : [];
     for (const uid of uids) {
       try {
-        return {
-          parsed: await fetchParsedMessage(client, mailbox, uid, maxBytes),
-          mailbox,
-          uid,
-        };
+        const parsed = await fetchParsedMessage(client, mailbox, uid, maxBytes);
+        if (normalizedMessageId(parsed.messageId) === expectedMessageId) {
+          return { parsed, mailbox, uid };
+        }
       } catch (error) {
         if (!isMailboxMessageUnavailableError(error)) throw error;
       }

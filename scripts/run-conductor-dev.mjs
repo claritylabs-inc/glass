@@ -4,11 +4,11 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   conductorPorts,
-  ensureNode22,
+  ensureNode24,
   repoRoot,
 } from "./lib/conductor-workspace.mjs";
 
-ensureNode22();
+ensureNode24();
 process.chdir(repoRoot);
 
 const requiredPaths = [

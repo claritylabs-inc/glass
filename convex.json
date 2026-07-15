@@ -4,7 +4,7 @@
     "enabled": false
   },
   "node": {
-    "nodeVersion": "22",
+    "nodeVersion": "24",
     "externalPackages": ["pdfjs-dist"]
   }
 }

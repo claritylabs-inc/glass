@@ -18,6 +18,12 @@ type AuxiliaryPanel = {
   minWidth: number;
 };
 
+const EQUAL_LAYOUT_CONSTRAINTS = {
+  auxiliaryMaxSize: "60%",
+  auxiliaryMinSize: "10%",
+  mainMinSize: "20%",
+} as const;
+
 export function AppShellPanelLayout({
   entityPanel,
   main,
@@ -78,6 +84,11 @@ export function AppShellPanelLayout({
       <ResizablePanel
         id="app-shell-main"
         defaultSize={useEqualLayout ? equalSize : undefined}
+        minSize={
+          useEqualLayout
+            ? EQUAL_LAYOUT_CONSTRAINTS.mainMinSize
+            : undefined
+        }
         groupResizeBehavior="preserve-relative-size"
         className="flex h-full min-w-0 flex-col overflow-hidden max-lg:flex-1"
       >
@@ -94,8 +105,16 @@ export function AppShellPanelLayout({
           key={panel.id}
           id={`app-shell-${panel.id}`}
           defaultSize={useEqualLayout ? equalSize : panel.defaultWidth}
-          minSize={panel.minWidth}
-          maxSize={panel.maxWidth}
+          minSize={
+            useEqualLayout
+              ? EQUAL_LAYOUT_CONSTRAINTS.auxiliaryMinSize
+              : panel.minWidth
+          }
+          maxSize={
+            useEqualLayout
+              ? EQUAL_LAYOUT_CONSTRAINTS.auxiliaryMaxSize
+              : panel.maxWidth
+          }
           groupResizeBehavior={
             useEqualLayout ? "preserve-relative-size" : "preserve-pixel-size"
           }

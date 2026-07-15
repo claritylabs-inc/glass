@@ -616,6 +616,31 @@ function buildThreadMessageRenderPlan(
   };
 }
 
+export function threadMessageGroupingFingerprint(
+  threadId: Id<"threads">,
+  messages: ThreadMessage[],
+) {
+  return `${threadId}:${messages
+    .map((message) => {
+      if (message.status === "processing") {
+        return `${message._id}:processing`;
+      }
+      if (message.channel === "email") {
+        return `${message._id}:${stableHash(message)}`;
+      }
+      return `${message._id}:${stableHash({
+        channel: message.channel,
+        content: message.content,
+        creationTime: message._creationTime,
+        pendingEmailId: message.pendingEmailId,
+        role: message.role,
+        status: message.status,
+        toAddresses: message.toAddresses,
+      })}`;
+    })
+    .join("|")}`;
+}
+
 const EMPTY_RELATED_EMAIL_MESSAGES: ThreadMessage[] = [];
 
 function EmailRecipientMeta({
@@ -1989,9 +2014,10 @@ export function UnifiedThreadContent({
         : undefined,
     [mailboxReviewArtifact, messages],
   );
-  const messageGroupingFingerprint = `${threadId}:${(messages ?? [])
-    .map((message) => `${message._id}:${message.status}`)
-    .join("|")}`;
+  const messageGroupingFingerprint = threadMessageGroupingFingerprint(
+    threadId,
+    messages ?? [],
+  );
   const messageRenderPlan = useMemo(
     () => buildThreadMessageRenderPlan(messages ?? []),
     // Grouping inputs are immutable after settlement; processing content is

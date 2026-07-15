@@ -806,6 +806,42 @@ function hasAutomationResult(outcome: AutomationOutcome) {
   );
 }
 
+export function buildMailboxActivityBody(
+  outcomes: AutomationOutcome[],
+  attention: AutomationAttention[],
+) {
+  const successful = outcomes.filter(hasAutomationResult);
+  const mailboxAttention = attention.filter(
+    (item) => item.kind !== "compliance",
+  );
+  const complianceAttention = attention.filter(
+    (item) => item.kind === "compliance",
+  );
+
+  return [
+    successful.length > 0
+      ? `Glass completed ${successful.length} connected-mailbox automation action${successful.length === 1 ? "" : "s"}.`
+      : undefined,
+    ...successful.slice(0, 8).map(
+      (outcome, index) => `${index + 1}. ${outcome.actionSummary ?? "Mailbox automation completed."}`,
+    ),
+    successful.length > 0 && mailboxAttention.length > 0 ? "" : undefined,
+    mailboxAttention.length > 0
+      ? `${mailboxAttention.length} email${mailboxAttention.length === 1 ? " needs" : "s need"} review.`
+      : undefined,
+    (successful.length > 0 || mailboxAttention.length > 0) &&
+    complianceAttention.length > 0
+      ? ""
+      : undefined,
+    complianceAttention.length > 0
+      ? `${complianceAttention.length} compliance item${complianceAttention.length === 1 ? " needs" : "s need"} attention:`
+      : undefined,
+    ...complianceAttention.map(
+      (item) => `- ${item.subject}: ${item.reason}`,
+    ),
+  ].filter((part): part is string => part !== undefined).join("\n");
+}
+
 async function createMailboxActivity(
   ctx: ActionCtx,
   account: ConnectedEmailAccount,
@@ -820,22 +856,7 @@ async function createMailboxActivity(
   const complianceAttention = attention.filter(
     (item) => item.kind === "compliance",
   );
-  const body = [
-    successful.length > 0
-      ? `Glass completed ${successful.length} connected-mailbox automation action${successful.length === 1 ? "" : "s"}.`
-      : undefined,
-    ...successful.slice(0, 8).map(
-      (outcome, index) => `${index + 1}. ${outcome.actionSummary ?? "Mailbox automation completed."}`,
-    ),
-    successful.length > 0 && mailboxAttention.length > 0 ? "" : undefined,
-    mailboxAttention.length > 0
-      ? `${mailboxAttention.length} email${mailboxAttention.length === 1 ? " needs" : "s need"} review.`
-      : undefined,
-    successful.length > 0 && complianceAttention.length > 0 ? "" : undefined,
-    complianceAttention.length > 0
-      ? `${complianceAttention.length} compliance item${complianceAttention.length === 1 ? " needs" : "s need"} attention.`
-      : undefined,
-  ].filter((part): part is string => part !== undefined).join("\n");
+  const body = buildMailboxActivityBody(outcomes, attention);
   const proactive = await ctx.runMutation(internal.threads.createProactiveInternal, {
     orgId: account.orgId,
     userId: account.userId,

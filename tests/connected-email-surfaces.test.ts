@@ -190,8 +190,11 @@ describe("connected email surfaces", () => {
     expect(mailboxReview).toContain("Not relevant");
     expect(mailboxReview).toContain("api.actions.connectedEmail.previewAttachment");
     expect(mailboxReview).toContain("openWithUrl(result.url)");
+    expect(mailboxReview).toContain("attachmentIndex,");
+    expect(backend).toContain("Attachment filename is ambiguous");
+    expect(backend).toContain("Attachment identity no longer matches this email");
     expect(mailboxReview).toContain("ThreadAttachmentChip");
-    expect(mailboxReview).toContain("handleAttachmentPreview(attachment)");
+    expect(mailboxReview).toContain("handleAttachmentPreview(attachment, index)");
     expect(mailboxReview).toContain("MailboxAddressDisclosure");
     expect(mailboxReview).toContain("Show email address for");
     expect(mailboxReview).toContain("Copy address");

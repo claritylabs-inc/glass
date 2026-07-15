@@ -94,6 +94,10 @@ describe("IMAP mailbox message resolution", () => {
   test("does not accept a reused UID whose Message-ID belongs to another email", async () => {
     let currentMailbox = "";
     const wrongMessage = rawMessage("Wrong email", "<wrong@example.com>");
+    const wrongSearchMatch = rawMessage(
+      "Partial search match",
+      "<expected@example.com.invalid>",
+    );
     const expectedMessage = rawMessage("Expected email", "<expected@example.com>");
     const client = {
       mailboxOpen: async (mailbox: string) => {
@@ -104,7 +108,9 @@ describe("IMAP mailbox message resolution", () => {
         const message = currentMailbox === "INBOX" && uid === "42"
           ? wrongMessage
           : currentMailbox === "Archive" && uid === "84"
-            ? expectedMessage
+            ? wrongSearchMatch
+            : currentMailbox === "Archive" && uid === "83"
+              ? expectedMessage
             : undefined;
         return message
           ? {
@@ -121,7 +127,7 @@ describe("IMAP mailbox message resolution", () => {
           listed: true,
         },
       ],
-      search: async () => currentMailbox === "Archive" ? [84] : [],
+      search: async () => currentMailbox === "Archive" ? [83, 84] : [],
     } as unknown as ImapFlow;
 
     const result = await resolveParsedMessage(client, {
@@ -130,7 +136,7 @@ describe("IMAP mailbox message resolution", () => {
       messageId: "<expected@example.com>",
     });
 
-    expect(result).toMatchObject({ mailbox: "Archive", uid: 84 });
+    expect(result).toMatchObject({ mailbox: "Archive", uid: 83 });
     expect(result.parsed.subject).toBe("Expected email");
   });
 });

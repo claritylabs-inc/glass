@@ -211,6 +211,7 @@ import type * as lib_workflows_index from "../lib/workflows/index.js";
 import type * as lib_workflows_mailboxTasks from "../lib/workflows/mailboxTasks.js";
 import type * as lib_workflows_types from "../lib/workflows/types.js";
 import type * as memoryMaintenance from "../memoryMaintenance.js";
+import type * as migrations from "../migrations.js";
 import type * as modelConfig from "../modelConfig.js";
 import type * as modelSettings from "../modelSettings.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
@@ -446,6 +447,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workflows/mailboxTasks": typeof lib_workflows_mailboxTasks;
   "lib/workflows/types": typeof lib_workflows_types;
   memoryMaintenance: typeof memoryMaintenance;
+  migrations: typeof migrations;
   modelConfig: typeof modelConfig;
   modelSettings: typeof modelSettings;
   notificationPreferences: typeof notificationPreferences;
@@ -498,4 +500,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;
+};

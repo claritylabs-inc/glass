@@ -46,6 +46,7 @@ next-env.d.ts
 
 # worktrees
 .worktrees
+.context/
 
 # AI assistant history and local config
 .claude/

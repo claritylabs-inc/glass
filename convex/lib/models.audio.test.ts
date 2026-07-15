@@ -18,9 +18,9 @@ describe("audio transcription routing", () => {
       routeSources: { voice_transcription: "broker" },
       providerKeys: { openai: "test-openai-key" },
     }));
-    const fetchMock = vi.fn(async () => new Response("Transcribed request.", {
-      status: 200,
-    }));
+    const fetchMock = vi.fn(async () =>
+      Response.json({ text: "Transcribed request." }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await transcribeAudioForOrg(
@@ -54,8 +54,37 @@ describe("audio transcription routing", () => {
     });
     const form = init.body as FormData;
     expect(form.get("model")).toBe("gpt-4o-mini-transcribe");
-    expect(form.get("response_format")).toBe("text");
+    expect(form.get("response_format")).toBe("json");
     expect(form.get("prompt")).toBe("Preserve insurance terminology.");
     expect((form.get("file") as File).name).toBe("Audio Message.m4a");
+  });
+
+  test("rejects a successful response without a JSON transcript", async () => {
+    const runQuery = vi.fn(async () => ({
+      routes: {
+        voice_transcription: {
+          provider: "openai",
+          model: "gpt-4o-transcribe",
+        },
+      },
+      routeSources: { voice_transcription: "broker" },
+      providerKeys: { openai: "test-openai-key" },
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Transcribed request.", { status: 200 })),
+    );
+
+    await expect(
+      transcribeAudioForOrg(
+        { runQuery } as never,
+        "org-1" as Id<"organizations">,
+        {
+          data: Buffer.from("voice"),
+          filename: "Audio Message.m4a",
+          mediaType: "audio/mp4",
+        },
+      ),
+    ).rejects.toThrow("returned invalid JSON");
   });
 });

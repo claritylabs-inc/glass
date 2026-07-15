@@ -557,7 +557,7 @@ async function transcribeAudioWithResolvedRoute(
     transcriptionFilename(input.filename, input.mediaType),
   );
   form.append("model", model);
-  form.append("response_format", "text");
+  form.append("response_format", "json");
   if (input.prompt?.trim()) form.append("prompt", input.prompt.trim());
 
   const response = await fetch(OPENAI_TRANSCRIPTION_URL, {
@@ -574,7 +574,19 @@ async function transcribeAudioWithResolvedRoute(
       }`,
     );
   }
-  const text = (await response.text()).trim();
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("OpenAI audio transcription returned invalid JSON");
+  }
+  const text =
+    payload &&
+    typeof payload === "object" &&
+    "text" in payload &&
+    typeof payload.text === "string"
+      ? payload.text.trim()
+      : "";
   if (!text) throw new Error("OpenAI audio transcription returned no text");
   return {
     text,

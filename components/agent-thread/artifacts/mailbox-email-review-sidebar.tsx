@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 type MailboxAttachment = {
+  attachmentIndex?: number;
   filename: string;
   contentType?: string;
   size?: number;
@@ -261,7 +262,7 @@ export function MailboxEmailReviewSidebar({
   );
   const [readAttempt, setReadAttempt] = useState(0);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [previewingFilename, setPreviewingFilename] = useState<string | null>(null);
+  const [previewingAttachmentKey, setPreviewingAttachmentKey] = useState<string | null>(null);
   const showConnectFeatures = isFeatureEnabled(currentOrg?.org, "connect_features");
 
   useEffect(() => {
@@ -278,6 +279,7 @@ export function MailboxEmailReviewSidebar({
         if (cancelled) return;
         const row = result as Omit<LiveMailboxEmail, "attachments"> & {
           attachments?: Array<{
+            attachmentIndex?: number;
             filename?: string;
             contentType?: string;
             size?: number;
@@ -325,21 +327,27 @@ export function MailboxEmailReviewSidebar({
     }
   }
 
-  async function handleAttachmentPreview(attachment: MailboxAttachment) {
+  async function handleAttachmentPreview(
+    attachment: MailboxAttachment,
+    fallbackIndex: number,
+  ) {
     const emailRef = liveEmail?.emailRef ?? email.emailRef;
     if (!emailRef || !isMailboxPdfAttachment(attachment)) return;
-    setPreviewingFilename(attachment.filename);
+    const attachmentIndex = attachment.attachmentIndex ?? fallbackIndex;
+    const previewKey = `${attachmentIndex}:${attachment.filename}`;
+    setPreviewingAttachmentKey(previewKey);
     try {
       const result = await previewAttachment({
         orgId,
         emailRef,
         filename: attachment.filename,
+        attachmentIndex,
       });
       openWithUrl(result.url);
     } catch {
       toast.error("Failed to open attachment preview");
     } finally {
-      setPreviewingFilename(null);
+      setPreviewingAttachmentKey(null);
     }
   }
 
@@ -476,7 +484,10 @@ export function MailboxEmailReviewSidebar({
                 <div className="flex flex-wrap gap-1.5">
                   {attachments.map((attachment, index) => {
                     const canPreview = isMailboxPdfAttachment(attachment);
-                    const isPreviewing = previewingFilename === attachment.filename;
+                    const attachmentIndex = attachment.attachmentIndex ?? index;
+                    const isPreviewing =
+                      previewingAttachmentKey ===
+                      `${attachmentIndex}:${attachment.filename}`;
                     return (
                       <ThreadAttachmentChip
                         key={`${attachment.filename}-${index}`}
@@ -484,11 +495,11 @@ export function MailboxEmailReviewSidebar({
                         className="w-fit"
                         onOpen={
                           canPreview
-                            ? () => void handleAttachmentPreview(attachment)
+                            ? () => void handleAttachmentPreview(attachment, index)
                             : undefined
                         }
                         isLoading={isPreviewing}
-                        disabled={canPreview && previewingFilename !== null}
+                        disabled={canPreview && previewingAttachmentKey !== null}
                         unavailableTitle={`${attachment.filename} cannot be previewed`}
                       />
                     );
