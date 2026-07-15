@@ -6,6 +6,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess, getPolicyAccessForQuery, type OrgAccess } from "./lib/access";
 import {
   holderSnapshot,
+  normalizeCertificateHolderAddress,
+  normalizeCertificateHolderContactName,
+  normalizeCertificateHolderEmail,
+  normalizeCertificateHolderName,
   policyCertificateDedupeKey,
 } from "./lib/certificateIdentity";
 import {
@@ -58,6 +62,11 @@ function assertCanWriteCertificates(access: OrgAccess) {
   if (access.accessType === "connected_client") {
     throw new Error("Connected client access is read-only.");
   }
+}
+
+function cleanOptionalText(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
 }
 
 function isOpenWorkflowJobStatus(status: Doc<"certificateWorkflowJobs">["status"]) {
@@ -620,6 +629,7 @@ export const recordIssuedVersionInternal = internalMutation({
     holderEmail: v.optional(v.string()),
     holderPhone: v.optional(v.string()),
     holderAddress: v.optional(v.any()),
+    updateHolderDetails: v.optional(v.boolean()),
     policySnapshot: v.optional(v.any()),
     policySnapshotHash: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
@@ -632,6 +642,33 @@ export const recordIssuedVersionInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = dayjs().valueOf();
+    if (args.updateHolderDetails) {
+      const holder = await ctx.db.get(args.holderId);
+      const displayName = args.certificateHolderName?.trim();
+      if (!holder || holder.orgId !== args.orgId || !displayName) {
+        throw new Error("Certificate holder not found.");
+      }
+      const email = cleanOptionalText(args.holderEmail);
+      const phone = cleanOptionalText(args.holderPhone);
+      const normalizedAddressKey = normalizeCertificateHolderAddress(args.holderAddress);
+      const addressChanged = normalizedAddressKey !== holder.normalizedAddressKey;
+      await ctx.db.patch(args.holderId, {
+        displayName,
+        normalizedName: normalizeCertificateHolderName(displayName),
+        contactName: normalizeCertificateHolderContactName(args.holderContactName),
+        email,
+        normalizedEmail: normalizeCertificateHolderEmail(email),
+        phone,
+        address: args.holderAddress,
+        normalizedAddressKey,
+        mapboxFeatureId: addressChanged ? undefined : holder.mapboxFeatureId,
+        mapboxMetadata: addressChanged ? undefined : holder.mapboxMetadata,
+        source: "manual",
+        sourceRef: String(args.certificateId),
+        updatedByUserId: args.createdByUserId,
+        updatedAt: now,
+      });
+    }
     const existingIssued = await ctx.db
       .query("certificateVersions")
       .withIndex("by_certificateId", (q) => q.eq("certificateId", args.certificateId))

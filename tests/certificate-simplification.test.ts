@@ -103,7 +103,8 @@ describe("simplified certificate request routing", () => {
     expect(lifecycle).toContain("cleanupDuplicatePolicyCertificatesForOperator");
     expect(lifecycle).toContain("dryRun = args.dryRun ?? true");
     expect(ui).toContain("Reissue");
-    expect(policyPage).toContain("forceReissue: true");
+    expect(ui).toContain("forceReissue: true");
+    expect(policyPage).toContain("certificateVersionActionInput(row)");
   });
 });
 

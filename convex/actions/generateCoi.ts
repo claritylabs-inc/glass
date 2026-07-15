@@ -231,6 +231,7 @@ export const run = internalAction({
     holderPhone: v.optional(v.string()),
     holderContactName: v.optional(v.string()),
     holderAddress: v.optional(holderAddressValidator),
+    updateHolderDetails: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{
     storageId: string;
@@ -350,6 +351,7 @@ export const run = internalAction({
           holderPhone: args.holderPhone,
           holderContactName: args.holderContactName,
           holderAddress: args.holderAddress,
+          updateHolderDetails: args.updateHolderDetails,
           policySnapshot: lifecycle.policySnapshot,
           source: args.source,
           requestKind: args.requestKind,

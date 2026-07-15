@@ -1,11 +1,20 @@
 "use client";
 
-import { type KeyboardEvent, type ReactNode } from "react";
-import { Archive, ArchiveRestore, RefreshCw } from "lucide-react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useState,
+} from "react";
+import { isValidPhoneNumber } from "react-phone-number-input";
+import { Archive, ArchiveRestore, Loader2, Pencil, RefreshCw } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf } from "@/components/pdf-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { AddressAutofillInput } from "@/components/ui/address-autofill-input";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   OperationalItem,
   OperationalLabelValueList,
@@ -15,6 +24,7 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   Table,
   TableBody,
@@ -62,9 +72,31 @@ export type CertificateVersionRecord = {
   fileSize?: number;
   requestKind?: string;
   additionalInsuredName?: string;
+  descriptionOfOperations?: string;
+  formCode?:
+    | "acord25"
+    | "acord24"
+    | "acord27"
+    | "acord28"
+    | "acord29"
+    | "acord30"
+    | "acord31";
   issuedAt?: number;
   createdAt: number;
   url?: string | null;
+};
+
+export type CertificateHolderDraft = {
+  displayName: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
 };
 
 export type PolicyCertificateRecord = {
@@ -121,6 +153,62 @@ export function certificateHolderActionAddress(holder?: CertificateHolderRecord 
     state: address?.state,
     postalCode: address?.postalCode,
     country: address?.country,
+  };
+}
+
+export function certificateHolderDraft(
+  holder?: CertificateHolderRecord | null,
+): CertificateHolderDraft {
+  const address = certificateHolderActionAddress(holder);
+  return {
+    displayName: holder?.displayName ?? "",
+    contactName: holder?.contactName ?? "",
+    email: holder?.email ?? "",
+    phone: holder?.phone ?? "",
+    addressLine1: address.addressLine1 ?? "",
+    addressLine2: address.addressLine2 ?? "",
+    city: address.city ?? "",
+    state: address.state ?? "",
+    postalCode: address.postalCode ?? "",
+    country: address.country ?? "",
+  };
+}
+
+function optionalDraftValue(value: string) {
+  return value.trim() || undefined;
+}
+
+export function certificateVersionActionInput(
+  row: PolicyCertificateRecord,
+  draft?: CertificateHolderDraft,
+) {
+  const holder = row.holder;
+  const address = draft ?? certificateHolderDraft(holder);
+  const currentVersion = row.currentVersion ?? row.latestIssuedVersion;
+  const isAdditionalInsured = currentVersion?.requestKind === "additional_insured";
+  return {
+    policyId: row.policyId,
+    certificateId: row._id,
+    holderName: draft?.displayName.trim() || holder?.displayName || "",
+    holderContactName: optionalDraftValue(draft?.contactName ?? holder?.contactName ?? ""),
+    holderEmail: optionalDraftValue(draft?.email ?? holder?.email ?? ""),
+    holderPhone: optionalDraftValue(draft?.phone ?? holder?.phone ?? ""),
+    addressLine1: optionalDraftValue(address.addressLine1),
+    addressLine2: optionalDraftValue(address.addressLine2),
+    city: optionalDraftValue(address.city),
+    state: optionalDraftValue(address.state),
+    postalCode: optionalDraftValue(address.postalCode),
+    country: optionalDraftValue(address.country),
+    additionalInsuredName: isAdditionalInsured
+      ? currentVersion?.additionalInsuredName
+      : undefined,
+    requestedEndorsements: isAdditionalInsured
+      ? ["additional_insured"]
+      : undefined,
+    descriptionOfOperations: currentVersion?.descriptionOfOperations,
+    formCode: currentVersion?.formCode,
+    forceReissue: true,
+    updateHolderDetails: Boolean(draft),
   };
 }
 
@@ -416,38 +504,99 @@ export function CertificateDetailPanel({
   row,
   onClose,
   onReissue,
+  onEditHolder,
   onArchive,
   onUnarchive,
   reissuing,
+  savingHolder,
   archiving,
   unarchiving,
 }: {
   row: PolicyCertificateRecord | null;
   onClose: () => void;
   onReissue?: (row: PolicyCertificateRecord) => void;
+  onEditHolder?: (
+    row: PolicyCertificateRecord,
+    draft: CertificateHolderDraft,
+  ) => Promise<boolean>;
   onArchive?: (row: PolicyCertificateRecord) => void;
   onUnarchive?: (row: PolicyCertificateRecord) => void;
   reissuing?: boolean;
+  savingHolder?: boolean;
   archiving?: boolean;
   unarchiving?: boolean;
 }) {
   const { openWithUrl } = usePdf();
+  const [holderEdit, setHolderEdit] = useState<{
+    certificateId: Id<"policyCertificates">;
+    draft: CertificateHolderDraft;
+  } | null>(null);
   const versions = row ? sortedVersions(row) : [];
   const currentVersion = row?.currentVersion;
   const currentUrl = row?.url ?? currentVersion?.url;
   const holderName = row?.holder?.displayName ?? "Certificate holder";
   const holderAddressText = row ? certificateHolderAddress(row.holder) : null;
   const isArchived = row?.status === "archived";
+  const activeDraft = row && holderEdit?.certificateId === row._id
+    ? holderEdit.draft
+    : null;
+  const holderNameInvalid = Boolean(activeDraft && !activeDraft.displayName.trim());
+  const holderEmailInvalid = Boolean(
+    activeDraft?.email.trim() &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(activeDraft.email.trim()),
+  );
+  const holderPhoneInvalid = Boolean(
+    activeDraft?.phone.trim() && !isValidPhoneNumber(activeDraft.phone),
+  );
+  const holderDraftInvalid =
+    holderNameInvalid || holderEmailInvalid || holderPhoneInvalid;
+
+  const updateDraft = (patch: Partial<CertificateHolderDraft>) => {
+    setHolderEdit((current) =>
+      current ? { ...current, draft: { ...current.draft, ...patch } } : current,
+    );
+  };
+
+  const submitHolderEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!row || !activeDraft || !onEditHolder || holderDraftInvalid) return;
+    if (await onEditHolder(row, activeDraft)) {
+      setHolderEdit(null);
+    }
+  };
 
   return (
     <SettingsDrawer
       open={Boolean(row)}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !savingHolder) {
+          setHolderEdit(null);
+          onClose();
+        }
       }}
-      title={holderName}
+      title={activeDraft ? "Edit certificate" : holderName}
       footer={
-        row ? (
+        row && activeDraft ? (
+          <>
+            <PillButton
+              type="button"
+              variant="secondary"
+              onClick={() => setHolderEdit(null)}
+              disabled={savingHolder}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              type="submit"
+              form="certificate-holder-edit-form"
+              variant="primary"
+              disabled={savingHolder || holderDraftInvalid}
+            >
+              {savingHolder ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Generate new version
+            </PillButton>
+          </>
+        ) : row ? (
           <>
             {isArchived && onUnarchive ? (
               <PillButton
@@ -463,23 +612,45 @@ export function CertificateDetailPanel({
             {!isArchived && onArchive ? (
               <PillButton
                 type="button"
-                variant="secondary"
+                variant="icon"
+                size="compact"
+                label="Archive"
+                className="!h-7 !min-h-7 !w-7 !p-0"
                 onClick={() => onArchive(row)}
                 disabled={archiving}
               >
-                <Archive className="size-3.5" />
-                Archive
+                <Archive className="size-4 shrink-0" />
               </PillButton>
             ) : null}
             {!isArchived && onReissue ? (
               <PillButton
                 type="button"
-                variant="secondary"
+                variant="icon"
+                size="compact"
+                label="Reissue"
+                className="!h-7 !min-h-7 !w-7 !p-0"
                 onClick={() => onReissue(row)}
                 disabled={reissuing}
               >
-                <RefreshCw className={`size-3.5 ${reissuing ? "animate-spin" : ""}`} />
-                Reissue
+                <RefreshCw
+                  className={`size-4 shrink-0 ${reissuing ? "animate-spin" : ""}`}
+                />
+              </PillButton>
+            ) : null}
+            {!isArchived && onEditHolder ? (
+              <PillButton
+                type="button"
+                variant="icon"
+                size="compact"
+                label="Edit"
+                className="!h-7 !min-h-7 !w-7 !p-0"
+                onClick={() => setHolderEdit({
+                  certificateId: row._id,
+                  draft: certificateHolderDraft(row.holder),
+                })}
+                disabled={reissuing || archiving || unarchiving}
+              >
+                <Pencil className="size-4 shrink-0" />
               </PillButton>
             ) : null}
             {currentUrl ? (
@@ -495,7 +666,165 @@ export function CertificateDetailPanel({
         ) : null
       }
     >
-      {row ? (
+      {row && activeDraft ? (
+        <form
+          id="certificate-holder-edit-form"
+          className="space-y-4"
+          onSubmit={submitHolderEdit}
+        >
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-holder-name">Certificate holder</Label>
+              <Input
+                id="certificate-edit-holder-name"
+                value={activeDraft.displayName}
+                onChange={(event) => updateDraft({ displayName: event.target.value })}
+                placeholder="Company or individual name"
+                autoComplete="organization"
+                autoFocus
+                disabled={savingHolder}
+                aria-invalid={holderNameInvalid}
+              />
+              {holderNameInvalid ? (
+                <p className="text-label text-destructive">
+                  Enter a certificate holder name.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-contact">Holder contact</Label>
+              <Input
+                id="certificate-edit-contact"
+                value={activeDraft.contactName}
+                onChange={(event) => updateDraft({ contactName: event.target.value })}
+                placeholder="Attention contact"
+                autoComplete="name"
+                disabled={savingHolder}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-email">Holder email</Label>
+              <Input
+                id="certificate-edit-email"
+                type="email"
+                value={activeDraft.email}
+                onChange={(event) => updateDraft({ email: event.target.value })}
+                placeholder="certificates@example.com"
+                autoComplete="email"
+                disabled={savingHolder}
+                aria-invalid={holderEmailInvalid}
+              />
+              {holderEmailInvalid ? (
+                <p className="text-label text-destructive">
+                  Enter a valid email address.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-phone">Holder phone</Label>
+              <PhoneInput
+                id="certificate-edit-phone"
+                value={activeDraft.phone || undefined}
+                onChange={(phone) => updateDraft({ phone: phone ?? "" })}
+                defaultCountry="US"
+                autoComplete="tel"
+                disabled={savingHolder}
+                aria-invalid={holderPhoneInvalid}
+              />
+              {holderPhoneInvalid ? (
+                <p className="text-label text-destructive">
+                  Enter a valid phone number with country code.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-address-1">Address</Label>
+              <AddressAutofillInput
+                id="certificate-edit-address-1"
+                value={{
+                  street1: activeDraft.addressLine1,
+                  street2: activeDraft.addressLine2,
+                  city: activeDraft.city,
+                  state: activeDraft.state,
+                  zip: activeDraft.postalCode,
+                  country: activeDraft.country,
+                }}
+                onChange={(address) => updateDraft({
+                  addressLine1: address.street1 ?? "",
+                  addressLine2: address.street2 ?? "",
+                  city: address.city ?? "",
+                  state: address.state ?? "",
+                  postalCode: address.zip ?? "",
+                  country: address.country ?? "",
+                })}
+                display="street1"
+                placeholder="Search for an address"
+                autoComplete="section-certificate-edit address-line1"
+                disabled={savingHolder}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-address-2">Address line 2</Label>
+              <Input
+                id="certificate-edit-address-2"
+                value={activeDraft.addressLine2}
+                onChange={(event) => updateDraft({ addressLine2: event.target.value })}
+                placeholder="Suite, floor, attention line"
+                autoComplete="section-certificate-edit address-line2"
+                disabled={savingHolder}
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_72px_96px]">
+              <div className="space-y-2">
+                <Label htmlFor="certificate-edit-city">City</Label>
+                <Input
+                  id="certificate-edit-city"
+                  value={activeDraft.city}
+                  onChange={(event) => updateDraft({ city: event.target.value })}
+                  autoComplete="section-certificate-edit address-level2"
+                  disabled={savingHolder}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="certificate-edit-state">State</Label>
+                <Input
+                  id="certificate-edit-state"
+                  value={activeDraft.state}
+                  onChange={(event) => updateDraft({ state: event.target.value })}
+                  autoComplete="section-certificate-edit address-level1"
+                  disabled={savingHolder}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="certificate-edit-postal-code">ZIP</Label>
+                <Input
+                  id="certificate-edit-postal-code"
+                  value={activeDraft.postalCode}
+                  onChange={(event) => updateDraft({ postalCode: event.target.value })}
+                  autoComplete="section-certificate-edit postal-code"
+                  disabled={savingHolder}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-country">Country</Label>
+              <Input
+                id="certificate-edit-country"
+                value={activeDraft.country}
+                onChange={(event) => updateDraft({ country: event.target.value })}
+                placeholder="United States"
+                autoComplete="section-certificate-edit country-name"
+                disabled={savingHolder}
+              />
+            </div>
+        </form>
+      ) : row ? (
         <div className="flex flex-col gap-5">
           <CertificateDetailCard
             title="Holder"

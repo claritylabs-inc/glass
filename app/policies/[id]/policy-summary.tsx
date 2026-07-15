@@ -27,23 +27,6 @@ const PolicyPdfThumbnail = dynamic(
   },
 );
 
-function SummaryRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="text-base text-muted-foreground shrink-0">{label}</span>
-      <span className="text-base font-medium text-foreground text-right">
-        {value}
-      </span>
-    </div>
-  );
-}
-
 function StatusBadge({
   expirationDate,
 }: {
@@ -219,6 +202,13 @@ export function PolicySummary({
     !!realTaxesAndFees ||
     !!realTotalCost ||
     !!realOperationsDescription;
+  const hasOverviewRows =
+    !!realPolicyNumber ||
+    realLinesOfBusiness.length > 0 ||
+    !!periodValue ||
+    !!realPremium ||
+    !!realTaxesAndFees ||
+    !!realTotalCost;
 
   return (
     <OperationalPanel className="mb-6 @container">
@@ -251,60 +241,82 @@ export function PolicySummary({
         </div>
       </div>
 
-      {/* Body — stacks when narrow, side-by-side when wide */}
-      <OperationalPanelBody className="flex flex-col @lg:flex-row gap-5 p-5">
-        {/* PDF thumbnail */}
-        {pdfUrl && <PolicyPdfThumbnail url={pdfUrl} />}
+      {pdfUrl || hasOverviewRows || !hasExtractedDetails ? (
+        <OperationalPanelBody className="flex flex-col p-0 @lg:flex-row">
+          {pdfUrl ? (
+            <div className="shrink-0 p-5 pb-2 @lg:pb-5 @lg:pr-0">
+              <PolicyPdfThumbnail url={pdfUrl} />
+            </div>
+          ) : null}
 
-        {/* Details column */}
-        <div className="flex-1 min-w-0 space-y-2.5 self-start pt-1">
-          {!hasExtractedDetails && <ExtractionPendingDetails />}
+          <div className="min-w-0 flex-1">
+            {!hasExtractedDetails ? (
+              <div className="p-5">
+                <ExtractionPendingDetails />
+              </div>
+            ) : null}
 
-          {/* Policy number */}
-          {realPolicyNumber && (
-            <SummaryRow label="Policy number" value={realPolicyNumber} />
-          )}
-
-          {realLinesOfBusiness.length > 0 && (
-            <SummaryRow
-              label="Lines of business"
-              value={
-                <span className="flex flex-wrap justify-end gap-1">
-                  {realLinesOfBusiness.slice(0, 4).map((t) => (
-                    <span
-                      key={t}
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium ${lobBadgeClass(t)}`}
-                    >
-                      {lobLabel(t)}
-                    </span>
-                  ))}
-                  {realLinesOfBusiness.length > 4 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-foreground/5 text-muted-foreground">
-                      +{realLinesOfBusiness.length - 4} more
-                    </span>
-                  )}
-                </span>
-              }
-            />
-          )}
-
-          {periodValue && (
-            <SummaryRow label="Policy period" value={periodValue} />
-          )}
-          {realPremium && <SummaryRow label="Premium" value={realPremium} />}
-          {realTaxesAndFees && (
-            <SummaryRow label="Taxes & fees" value={realTaxesAndFees} />
-          )}
-          {realTotalCost && (
-            <SummaryRow label="Total payable" value={realTotalCost} />
-          )}
-        </div>
-      </OperationalPanelBody>
+            {hasOverviewRows ? (
+              <dl>
+                <OperationalLabelValueRow
+                  label="Policy number"
+                  value={realPolicyNumber}
+                  align="right"
+                />
+                {realLinesOfBusiness.length > 0 ? (
+                  <OperationalLabelValueRow
+                    label="Lines of business"
+                    value={
+                      <span className="flex flex-wrap justify-start gap-1 sm:justify-end">
+                        {realLinesOfBusiness.slice(0, 4).map((t) => (
+                          <span
+                            key={t}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium ${lobBadgeClass(t)}`}
+                          >
+                            {lobLabel(t)}
+                          </span>
+                        ))}
+                        {realLinesOfBusiness.length > 4 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-foreground/5 text-muted-foreground">
+                            +{realLinesOfBusiness.length - 4} more
+                          </span>
+                        ) : null}
+                      </span>
+                    }
+                    align="right"
+                  />
+                ) : null}
+                <OperationalLabelValueRow
+                  label="Policy period"
+                  value={periodValue}
+                  align="right"
+                />
+                <OperationalLabelValueRow
+                  label="Premium"
+                  value={realPremium}
+                  align="right"
+                />
+                <OperationalLabelValueRow
+                  label="Taxes & fees"
+                  value={realTaxesAndFees}
+                  align="right"
+                />
+                <OperationalLabelValueRow
+                  label="Total payable"
+                  value={realTotalCost}
+                  align="right"
+                />
+              </dl>
+            ) : null}
+          </div>
+        </OperationalPanelBody>
+      ) : null}
       {realOperationsDescription ? (
         <dl className="border-t border-foreground/6">
           <OperationalLabelValueRow
             label="Description of operations"
             value={realOperationsDescription}
+            align="right"
           />
         </dl>
       ) : null}
