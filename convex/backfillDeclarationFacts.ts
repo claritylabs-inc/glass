@@ -6,7 +6,7 @@ import { replacePolicyDeclarationFacts } from "./declarationFacts";
 import { extractDeclarationFactsFromPolicy } from "./lib/declarationFacts";
 import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
 
-function effectiveExtractionDataStage(policy: {
+export function effectiveExtractionDataStage(policy: {
   extractionDataStage?: "placeholder" | "preview" | "final";
   pipelineStatus?: string;
 }) {

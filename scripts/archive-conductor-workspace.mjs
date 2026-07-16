@@ -1,12 +1,12 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import {
-  ensureNode22,
+  ensureNode24,
   parseEnvText,
   repoRoot,
 } from "./lib/conductor-workspace.mjs";
 
-ensureNode22();
+ensureNode24();
 process.chdir(repoRoot);
 
 const localDeploymentDirectory = path.join(repoRoot, ".convex", "local", "default");

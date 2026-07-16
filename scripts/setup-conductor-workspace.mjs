@@ -12,14 +12,14 @@ import path from "node:path";
 import {
   conductorImageTag,
   conductorPorts,
-  ensureNode22,
+  ensureNode24,
   localConvexUrls,
   parseEnvFile,
   repoRoot,
   workspaceSlug,
 } from "./lib/conductor-workspace.mjs";
 
-ensureNode22();
+ensureNode24();
 process.chdir(repoRoot);
 
 const contextDirectory = path.join(repoRoot, ".context");

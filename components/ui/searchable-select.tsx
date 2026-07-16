@@ -2,6 +2,7 @@
 
 import { Combobox } from "@base-ui/react/combobox";
 import { ChevronDown, Check, Search } from "lucide-react";
+import { useState } from "react";
 
 interface SearchableSelectOption {
   value: string;
@@ -19,18 +20,42 @@ interface SearchableSelectProps {
 export function SearchableSelect({
   options,
   value,
+  ...props
+}: SearchableSelectProps) {
+  return (
+    <SearchableSelectControl
+      key={`${value}:${JSON.stringify(options)}`}
+      options={options}
+      value={value}
+      {...props}
+    />
+  );
+}
+
+function SearchableSelectControl({
+  options,
+  value,
   onChange,
   placeholder = "Select...",
   disabled = false,
 }: SearchableSelectProps) {
   const selected = options.find((o) => o.value === value) ?? null;
+  const [inputValue, setInputValue] = useState("");
 
   return (
     <Combobox.Root
       items={options}
       value={selected}
       onValueChange={(option) => {
-        if (option) onChange(option.value);
+        if (option) {
+          setInputValue("");
+          onChange(option.value);
+        }
+      }}
+      inputValue={inputValue}
+      onInputValueChange={setInputValue}
+      onOpenChange={(open) => {
+        if (!open) setInputValue("");
       }}
       itemToStringLabel={(option) => option.label}
       isItemEqualToValue={(a, b) => a.value === b.value}

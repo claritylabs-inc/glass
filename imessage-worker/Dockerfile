@@ -1,4 +1,4 @@
-FROM node:22-trixie-slim AS build
+FROM node:24-trixie-slim AS build
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:22-trixie-slim AS runtime
+FROM node:24-trixie-slim AS runtime
 
 ENV NODE_ENV=production
 WORKDIR /app

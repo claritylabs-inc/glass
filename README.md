@@ -18,14 +18,14 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 - Next.js 16 + React 19 + Tailwind 4
 - Convex (DB, actions, scheduler, storage, vector search, HTTP)
 - Vercel AI SDK (`ai`) for model execution + tool-enabled chat
-- `@claritylabs/cl-sdk@3.x` for source-tree extraction and insurance-focused primitives
+- `@claritylabs/cl-sdk@4.4.0` for source-tree extraction and insurance-focused primitives
 - Resend for email ingest and messaging workflows
 
 ## Getting Started
 
-Glass standardizes on Node 22.x for the app, Convex Node actions, CLIs, and all
+Glass standardizes on Node 24.x for the app, Convex Node actions, CLIs, and all
 workers. `.nvmrc`, `.node-version`, package `engines`, and `convex.json` encode
-that contract. On a Mac, the Conductor setup installs Homebrew `node@22` when it
+that contract. On a Mac, the Conductor setup installs Homebrew `node@24` when it
 is missing and always runs the workspace under that toolchain.
 
 For a non-Conductor checkout:
@@ -44,7 +44,7 @@ Then open `http://localhost:8080`.
 New Conductor worktrees use `.conductor/settings.toml` and get a native Convex
 deployment and database that belong only to that worktree. Workspace setup:
 
-1. Installs Node 22 and the root and worker dependencies.
+1. Installs Node 24 and the root and worker dependencies.
 2. Reads the copied cloud-dev selection from `.env.local`, imports that
    deployment's environment variables into a new native local deployment, and
    replaces the worktree's Convex URLs with loopback URLs.

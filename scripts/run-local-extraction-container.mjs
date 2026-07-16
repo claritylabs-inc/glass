@@ -3,13 +3,13 @@ import net from "node:net";
 import {
   conductorImageTag,
   containerGateway,
-  ensureNode22,
+  ensureNode24,
   repoRoot,
   waitForLocalConvex,
   workspaceSlug,
 } from "./lib/conductor-workspace.mjs";
 
-ensureNode22();
+ensureNode24();
 process.chdir(repoRoot);
 
 const port = Number.parseInt(process.env.PORT ?? "8081", 10);

@@ -2,12 +2,12 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import {
   conductorPorts,
-  ensureNode22,
+  ensureNode24,
   repoRoot,
   waitForLocalConvex,
 } from "./lib/conductor-workspace.mjs";
 
-ensureNode22();
+ensureNode24();
 process.chdir(repoRoot);
 
 const { web } = conductorPorts();

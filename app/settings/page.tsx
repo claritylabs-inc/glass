@@ -48,6 +48,7 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
+    if (!currentOrg) return;
     if (
       searchParams.get("section") === destination.section &&
       searchParams.get("tab") === destination.tab
@@ -58,7 +59,7 @@ export default function SettingsPage() {
     params.set("section", destination.section);
     params.set("tab", destination.tab);
     router.replace(`/settings?${params.toString()}`);
-  }, [destination.section, destination.tab, router, searchParams]);
+  }, [currentOrg, destination.section, destination.tab, router, searchParams]);
 
   function navigate(section: SettingsPageId, tab: SettingsTabId) {
     const params = new URLSearchParams(searchParams.toString());

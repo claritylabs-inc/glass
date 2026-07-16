@@ -7,8 +7,8 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export const repoRoot = path.resolve(scriptDirectory, "../..");
 
-export function ensureNode22() {
-  if (process.versions.node.split(".")[0] === "22") {
+export function ensureNode24() {
+  if (process.versions.node.split(".")[0] === "24") {
     const nodeBin = path.dirname(process.execPath);
     if (!process.env.PATH?.split(path.delimiter).includes(nodeBin)) {
       process.env.PATH = `${nodeBin}${path.delimiter}${process.env.PATH ?? ""}`;
@@ -16,11 +16,11 @@ export function ensureNode22() {
     return;
   }
 
-  if (process.env.GLASS_NODE_22_BOOTSTRAPPED === "1") {
-    throw new Error(`Glass requires Node 22.x; found ${process.version}`);
+  if (process.env.GLASS_NODE_24_BOOTSTRAPPED === "1") {
+    throw new Error(`Glass requires Node 24.x; found ${process.version}`);
   }
 
-  const brewPrefix = spawnSync("brew", ["--prefix", "node@22"], {
+  const brewPrefix = spawnSync("brew", ["--prefix", "node@24"], {
     encoding: "utf8",
   });
   const prefix = brewPrefix.status === 0 ? brewPrefix.stdout.trim() : "";
@@ -28,21 +28,21 @@ export function ensureNode22() {
 
   if (!nodePath || !existsSync(nodePath)) {
     console.log(
-      "Installing the repository-standard Node 22 toolchain with Homebrew...",
+      "Installing the repository-standard Node 24 toolchain with Homebrew...",
     );
-    const install = spawnSync("brew", ["install", "--yes", "node@22"], {
+    const install = spawnSync("brew", ["install", "node@24"], {
       stdio: "inherit",
     });
     if (install.error) throw install.error;
     if (install.status !== 0) {
-      throw new Error("Unable to install Homebrew node@22");
+      throw new Error("Unable to install Homebrew node@24");
     }
-    const installedPrefix = spawnSync("brew", ["--prefix", "node@22"], {
+    const installedPrefix = spawnSync("brew", ["--prefix", "node@24"], {
       encoding: "utf8",
     });
     if (installedPrefix.status !== 0) {
       throw new Error(
-        "Homebrew installed node@22 but its prefix is unavailable",
+        "Homebrew installed node@24 but its prefix is unavailable",
       );
     }
     nodePath = path.join(installedPrefix.stdout.trim(), "bin", "node");
@@ -53,7 +53,7 @@ export function ensureNode22() {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      GLASS_NODE_22_BOOTSTRAPPED: "1",
+      GLASS_NODE_24_BOOTSTRAPPED: "1",
       PATH: `${nodeBin}${path.delimiter}${process.env.PATH ?? ""}`,
     },
     stdio: "inherit",

@@ -38,6 +38,7 @@ const THREAD_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_PREVIEW_TTL_MS = 60 * 60 * 1000;
 
 type MailboxAttachmentInfo = {
+  attachmentIndex?: number;
   filename?: string;
   contentType: string;
   size: number;
@@ -624,7 +625,8 @@ async function readMailboxMessage(
       date: parsed.date?.toISOString(),
       text: (parsed.text ?? "").slice(0, 20_000),
       html: typeof parsed.html === "string" ? parsed.html.slice(0, 20_000) : undefined,
-      attachments: parsed.attachments.map((attachment) => ({
+      attachments: parsed.attachments.map((attachment, attachmentIndex) => ({
+        attachmentIndex,
         filename: attachment.filename,
         contentType: attachment.contentType,
         size: attachment.size,
@@ -685,6 +687,7 @@ export const previewAttachment = action({
     orgId: v.id("organizations"),
     emailRef: v.string(),
     filename: v.string(),
+    attachmentIndex: v.optional(v.number()),
   },
   returns: v.object({
     url: v.string(),
@@ -710,10 +713,32 @@ export const previewAttachment = action({
         ref.uid,
         IMPORT_DOWNLOAD_MAX_BYTES,
       );
+      if (args.attachmentIndex !== undefined) {
+        if (
+          !Number.isInteger(args.attachmentIndex) ||
+          args.attachmentIndex < 0
+        ) {
+          throw new Error("Attachment index is invalid");
+        }
+        const indexed = parsed.attachments[args.attachmentIndex];
+        if (
+          indexed?.filename &&
+          indexed.filename.trim().toLowerCase() !==
+            args.filename.trim().toLowerCase()
+        ) {
+          throw new Error("Attachment identity no longer matches this email");
+        }
+        return indexed;
+      }
+
       const requested = args.filename.trim().toLowerCase();
-      return parsed.attachments.find(
-        (item) => item.filename?.toLowerCase() === requested,
+      const matches = parsed.attachments.filter(
+        (item) => item.filename?.trim().toLowerCase() === requested,
       );
+      if (matches.length > 1) {
+        throw new Error("Attachment filename is ambiguous; reopen the email and try again");
+      }
+      return matches[0];
     });
 
     if (!attachment) throw new Error("Attachment not found on this email");
