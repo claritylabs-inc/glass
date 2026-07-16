@@ -842,6 +842,17 @@ export function buildMailboxActivityBody(
   ].filter((part): part is string => part !== undefined).join("\n");
 }
 
+export function buildEmailReviewNotificationCopy(emailCount: number) {
+  const isSingleEmail = emailCount === 1;
+
+  return {
+    title: `${emailCount} email${isSingleEmail ? " needs" : "s need"} your review`,
+    body: isSingleEmail
+      ? "While reviewing your emails, Glass couldn't categorize one of them. Review it in Glass and choose how it should be handled."
+      : `While reviewing your emails, Glass couldn't categorize ${emailCount} of them. Review them in Glass and choose how each email should be handled.`,
+  };
+}
+
 async function createMailboxActivity(
   ctx: ActionCtx,
   account: ConnectedEmailAccount,
@@ -863,17 +874,20 @@ async function createMailboxActivity(
     visibility: account.scope === "user" ? "user_private" : undefined,
     title:
       successful.length > 0
-        ? "Mailbox automation update"
-        : "Mailbox items needing attention",
+        ? "Email review summary"
+        : "Email review",
     content: body,
   });
   if (mailboxAttention.length > 0) {
+    const notificationCopy = buildEmailReviewNotificationCopy(
+      mailboxAttention.length,
+    );
     await ctx.runMutation(internal.lib.notify.notifyInternal, {
       orgId: account.orgId,
       userId: account.userId,
       type: "mailbox_attention",
-      title: "Mailbox items need attention",
-      body: `${mailboxAttention.length} connected-mailbox item${mailboxAttention.length === 1 ? "" : "s"} need review in Glass.`,
+      title: notificationCopy.title,
+      body: notificationCopy.body,
       severity: "warning",
       actionType: "view_thread",
       actionPayload: { threadId: proactive.threadId },
