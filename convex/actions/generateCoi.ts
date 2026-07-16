@@ -368,7 +368,7 @@ export const run = internalAction({
         size,
         fileName,
         certificateId: String(certificateId),
-        holderId: String(lifecycle.holderId),
+        holderId: String(issuedVersion.holderId),
         policyCertificateId: String(lifecycle.policyCertificateId),
         certificateVersionId: String(issuedVersion.versionId),
         versionNumber: issuedVersion.versionNumber,

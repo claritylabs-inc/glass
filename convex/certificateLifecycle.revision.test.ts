@@ -11,7 +11,7 @@ const recordIssuedVersion =
   internal.certificateLifecycle.recordIssuedVersionInternal as any;
 
 describe("certificate holder revision", () => {
-  test("updates current holder details while preserving prior version snapshots", async () => {
+  test("forks shared holder details while preserving other certificates and prior snapshots", async () => {
     const t = convexTest(schema, modules);
     const ids = await t.run(async (ctx) => {
       const now = dayjs().valueOf();
@@ -76,6 +76,47 @@ describe("certificate holder revision", () => {
         createdAt: now,
         updatedAt: now,
       });
+      const otherPolicyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Other Carrier",
+        policyNumber: "POL-2",
+        linesOfBusiness: ["CGL"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Client",
+        uploadedByUserId: userId,
+      });
+      const sharedCertificateId = await ctx.db.insert("policyCertificates", {
+        orgId,
+        policyId: otherPolicyId,
+        holderId,
+        status: "active",
+        dedupeKey: policyCertificateDedupeKey({
+          orgId: String(orgId),
+          policyId: String(otherPolicyId),
+          holderId: String(holderId),
+        }),
+        source: "policy_page",
+        createdByUserId: userId,
+        updatedByUserId: userId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("certificateHolderPolicyLinks", {
+        orgId,
+        holderId,
+        policyId,
+        relationshipKind: "allowed_holder",
+        status: "current",
+        createdByUserId: userId,
+        updatedByUserId: userId,
+        createdAt: now,
+        updatedAt: now,
+      });
       const oldFileId = await ctx.storage.store(
         new Blob(["old certificate"], { type: "application/pdf" }),
       );
@@ -118,6 +159,7 @@ describe("certificate holder revision", () => {
         policyId,
         holderId,
         certificateId,
+        sharedCertificateId,
         oldVersionId,
         newFileId,
       };
@@ -150,14 +192,33 @@ describe("certificate holder revision", () => {
     });
 
     expect(result.versionNumber).toBe(2);
-    const state = await t.run(async (ctx) => ({
-      holder: await ctx.db.get(ids.holderId),
-      certificate: await ctx.db.get(ids.certificateId),
-      oldVersion: await ctx.db.get(ids.oldVersionId),
-      newVersion: await ctx.db.get(result.versionId),
-    }));
+    const state = await t.run(async (ctx) => {
+      const certificate = await ctx.db.get(ids.certificateId);
+      return {
+        originalHolder: await ctx.db.get(ids.holderId),
+        revisedHolder: certificate ? await ctx.db.get(certificate.holderId) : null,
+        certificate,
+        sharedCertificate: await ctx.db.get(ids.sharedCertificateId),
+        revisedHolderLinks: certificate
+          ? await ctx.db
+              .query("certificateHolderPolicyLinks")
+              .withIndex("by_holderId", (q) => q.eq("holderId", certificate.holderId))
+              .collect()
+          : [],
+        oldVersion: await ctx.db.get(ids.oldVersionId),
+        newVersion: await ctx.db.get(result.versionId),
+      };
+    });
 
-    expect(state.holder).toMatchObject({
+    expect(result.holderId).not.toBe(ids.holderId);
+    expect(state.originalHolder).toMatchObject({
+      displayName: "Old Holder LLC",
+      contactName: "Old Contact",
+      email: "old@example.com",
+      phone: "+14155550100",
+      address: { line1: "100 Old Street" },
+    });
+    expect(state.revisedHolder).toMatchObject({
       displayName: "New Holder LLC",
       normalizedName: "new holder llc",
       contactName: "New Contact",
@@ -176,8 +237,18 @@ describe("certificate holder revision", () => {
       sourceRef: String(ids.certificateId),
       updatedByUserId: ids.userId,
     });
-    expect(state.holder?.mapboxFeatureId).toBeUndefined();
-    expect(state.holder?.mapboxMetadata).toBeUndefined();
+    expect(state.revisedHolder?.mapboxFeatureId).toBeUndefined();
+    expect(state.revisedHolder?.mapboxMetadata).toBeUndefined();
+    expect(state.certificate?.holderId).toBe(result.holderId);
+    expect(state.sharedCertificate?.holderId).toBe(ids.holderId);
+    expect(state.revisedHolderLinks).toEqual([
+      expect.objectContaining({
+        holderId: result.holderId,
+        policyId: ids.policyId,
+        relationshipKind: "allowed_holder",
+        status: "current",
+      }),
+    ]);
     expect(state.oldVersion).toMatchObject({
       status: "superseded",
       certificateHolderName: "Old Holder LLC",
@@ -188,6 +259,7 @@ describe("certificate holder revision", () => {
       },
     });
     expect(state.newVersion).toMatchObject({
+      holderId: result.holderId,
       status: "issued",
       versionNumber: 2,
       certificateHolderName: "New Holder LLC",
@@ -202,7 +274,7 @@ describe("certificate holder revision", () => {
     expect(state.certificate).toMatchObject({
       currentVersionId: result.versionId,
       latestIssuedVersionId: result.versionId,
-      holderId: ids.holderId,
+      holderId: result.holderId,
     });
   });
 });
