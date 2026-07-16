@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { syncPolicyInternal } from "./declarationFacts";
 import { softDeleteInternal } from "./policies";
-import { extractDeclarationFactsFromPolicy } from "./lib/declarationFacts";
+import { extractDeclarationFactsFromPolicy, normalizeDeclarationValue } from "./lib/declarationFacts";
 
 const modules = import.meta.glob("./**/*.ts");
 const syncPolicyInternalFn = syncPolicyInternal as any;
@@ -177,6 +177,56 @@ describe("declarationFacts org profile sync", () => {
       }),
     ]));
     expect(facts.some((fact) => fact.fieldGroup === "insurance_parties")).toBe(false);
+  });
+
+  test("removes addresses concatenated after legal entity names", () => {
+    for (const [index, { value, expected }] of [
+      {
+        value: "Cios Technologies Inc. 525 University Avenue, Suite 1400 Toronto, ON M5G 2L",
+        expected: "Cios Technologies Inc.",
+      },
+      {
+        value: "NextGen Venture Partners, LLC 44 Montgomer",
+        expected: "NextGen Venture Partners, LLC",
+      },
+      { value: "Studio 54 Holdings LLC", expected: "Studio 54 Holdings LLC" },
+      { value: "3M Company", expected: "3M Company" },
+    ].entries()) {
+      const facts = extractDeclarationFactsFromPolicy({
+        _id: `policy-${index}`,
+        orgId: "org-1",
+        insuredName: value,
+      });
+      expect(facts).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          fieldPath: "insuredName",
+          fieldGroup: "insured_identity",
+          displayValue: expected,
+          normalizedValue: normalizeDeclarationValue(expected),
+        }),
+      ]));
+    }
+
+    const operationalFacts = extractDeclarationFactsFromPolicy({
+      _id: "policy-operational",
+      orgId: "org-1",
+      operationalProfile: {
+        declarationFacts: [{
+          field: "namedInsured",
+          value: "Cios Technologies Inc. 525 University Avenue",
+          normalizedValue: "cios technologies inc 525 university avenue",
+          sourceSpanIds: ["span-named-insured"],
+        }],
+      },
+    });
+    expect(operationalFacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fieldPath: "operationalProfile.declarationFacts.0",
+        displayValue: "Cios Technologies Inc.",
+        normalizedValue: "cios technologies inc",
+        sourceSpanIds: ["span-named-insured"],
+      }),
+    ]));
   });
 
   test("preserves formatted-only and postalCode insured addresses", () => {

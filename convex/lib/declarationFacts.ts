@@ -118,6 +118,14 @@ function displayValueFromUnknown(value: unknown): string {
     .join(", ");
 }
 
+const LEGAL_ENTITY_ADDRESS_SUFFIX =
+  /^(.+?\b(?:incorporated|inc\.?|corporation|corp\.?|limited|ltd\.?|company|co\.?|llc|l\.l\.c\.?|llp|l\.l\.p\.?|lp|l\.p\.?))(?=\s+\d{1,6}(?:-\d{1,6})?\s+\p{L})/iu;
+
+function insuredIdentityDisplay(value: unknown): string {
+  const displayValue = displayValueFromUnknown(value).trim();
+  return displayValue.match(LEGAL_ENTITY_ADDRESS_SUFFIX)?.[1]?.trim() ?? displayValue;
+}
+
 function operationalFactValueKind(value: unknown): DeclarationFactInput["valueKind"] {
   return value === "string" ||
     value === "number" ||
@@ -186,13 +194,19 @@ function pushOperationalProfileDeclarationFacts(
       : undefined;
     const displayValue = field === "mailingAddress"
       ? addressDisplay(structuredValue ?? fact.value)
-      : displayValueFromUnknown(fact.value);
+      : field === "namedInsured"
+        ? insuredIdentityDisplay(fact.value)
+        : displayValueFromUnknown(fact.value);
     pushFact(facts, {
       ...base,
       fieldPath: `operationalProfile.declarationFacts.${index}`,
       fieldGroup: mapping.fieldGroup,
       displayValue,
-      rawValue: typeof fact.normalizedValue === "string" ? fact.normalizedValue : fact.value,
+      rawValue: field === "namedInsured"
+        ? displayValue
+        : typeof fact.normalizedValue === "string"
+          ? fact.normalizedValue
+          : fact.value,
       structuredValue,
       valueKind,
       sourceNodeIds: sourceNodeIdsFromValue(fact),
@@ -241,7 +255,7 @@ export function extractDeclarationFactsFromPolicy(policy: Record<string, unknown
     ...base,
     fieldPath: "insuredName",
     fieldGroup: "insured_identity",
-    displayValue: typeof policy.insuredName === "string" ? policy.insuredName : "",
+    displayValue: insuredIdentityDisplay(policy.insuredName),
     valueKind: "string",
   });
   pushFact(facts, {
