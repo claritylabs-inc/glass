@@ -13,11 +13,11 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/fade-in";
 import {
+  Archive,
   Clock3,
   Loader2,
   Plus,
   RotateCw,
-  Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -46,16 +46,22 @@ import {
 import { usePdf } from "@/components/pdf-context";
 import {
   CertificateDetailPanel,
-  certificateHolderActionAddress,
+  certificateVersionActionInput,
+  type CertificateHolderDraft,
   type PolicyCertificateRecord,
 } from "@/components/certificates/certificate-workspace";
 import { usePageContext } from "@/hooks/use-page-context";
 import { PolicyDetailsTab } from "./policy-details-tab";
+import { PolicyCoveragesTab } from "./policy-coverages-tab";
 import {
   extractionReviewQuestions,
   PolicyExtractionReview,
 } from "./policy-extraction-review-tab";
 import { PolicyBreakdownEditor } from "./policy-breakdown-editor";
+import {
+  PolicyDetailsEditor,
+  type PolicyDetailsEditSection,
+} from "./policy-details-editor";
 import {
   CertificateCreatePanel,
   CertificatesTab,
@@ -67,9 +73,11 @@ import {
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import { PolicyDetailSkeleton } from "./policy-detail-skeleton";
 import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
+import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
 
 type PolicyPipelineLogEntry = LogEntry & {
   timestamp: number;
@@ -80,12 +88,14 @@ type PolicyPipelineLogEntry = LogEntry & {
 
 type PolicyDetailTab =
   | "details"
+  | "coverages"
   | "review"
   | "certificates"
   | "history";
 
 function parsePolicyDetailTab(value: string | null): PolicyDetailTab {
   if (
+    value === "coverages" ||
     value === "review" ||
     value === "certificates" ||
     value === "history"
@@ -133,7 +143,8 @@ const POLICY_VERSION_LABELS: Record<PolicyVersionRow["versionKind"], string> = {
 
 const POLICY_VERSION_FIELD_LABEL_OVERRIDES: Record<string, string> = {
   insuredDba: "Insured DBA",
-  mga: "Administrator",
+  generalAgent: "General Agent",
+  mga: "General Agent",
   isRenewal: "Renewal flag",
 };
 
@@ -146,14 +157,15 @@ function changedFieldLabel(count: number) {
 }
 
 function formatVersionDate(value: number) {
-  return dayjs(value).format("MMM D, YYYY h:mm A");
+  return formatDisplayDateTime(value);
 }
 
 function formatPolicyTerm(version: PolicyVersionRow) {
   if (version.effectiveDate && version.expirationDate) {
-    return `${version.effectiveDate} - ${version.expirationDate}`;
+    return `${formatDisplayDate(version.effectiveDate, version.effectiveDate)} - ${formatDisplayDate(version.expirationDate, version.expirationDate)}`;
   }
-  return version.effectiveDate ?? version.expirationDate ?? "Not recorded";
+  const date = version.effectiveDate ?? version.expirationDate;
+  return date ? formatDisplayDate(date, date) : "Not recorded";
 }
 
 function meaningfulVersionSummary(version: PolicyVersionRow) {
@@ -350,8 +362,10 @@ export interface PolicyDetailBodyProps {
   onActions?: (node: ReactNode) => void;
   /** Called whenever the right-side panel changes. Host renders it next to the main pane. */
   onRightPanel?: (node: ReactNode) => void;
-  /** Where to navigate after a policy is deleted. Default: /policies */
-  afterDeleteHref?: string;
+  /** Where to navigate after a policy is archived. */
+  afterArchiveHref?: string;
+  /** Where to navigate after a policy is restored. */
+  afterRestoreHref?: string;
   /** Hide management actions for read-only connected-vendor policy access. */
   readOnly?: boolean;
 }
@@ -361,22 +375,33 @@ export function PolicyDetailBody({
   onBreadcrumb,
   onActions,
   onRightPanel,
-  afterDeleteHref = "/policies",
+  afterArchiveHref = "/policies?view=archived",
+  afterRestoreHref = "/policies",
   readOnly = false,
 }: PolicyDetailBodyProps) {
   const viewerOrg = useCachedViewerOrg();
   const searchParams = useSearchParams();
   const [showCertificateSheet, setShowCertificateSheet] = useState(false);
   const [showEditExtractedFields, setShowEditExtractedFields] = useState(false);
+  const [editingPolicyDetails, setEditingPolicyDetails] =
+    useState<PolicyDetailsEditSection | null>(null);
   const [selectedCertificate, setSelectedCertificate] =
     useState<PolicyCertificateRecord | null>(null);
   const [reissuingCertificateId, setReissuingCertificateId] =
+    useState<Id<"policyCertificates"> | null>(null);
+  const [savingCertificateId, setSavingCertificateId] =
+    useState<Id<"policyCertificates"> | null>(null);
+  const [archivingCertificateId, setArchivingCertificateId] =
     useState<Id<"policyCertificates"> | null>(null);
   const [activeTab, setActiveTab] = useState<PolicyDetailTab>(() =>
     parsePolicyDetailTab(searchParams.get("tab")),
   );
   const shouldLoadFullPolicy =
-    activeTab === "details" || showCertificateSheet || showEditExtractedFields;
+    activeTab === "details" ||
+    activeTab === "coverages" ||
+    showCertificateSheet ||
+    showEditExtractedFields ||
+    editingPolicyDetails !== null;
   const policySummary = useCachedPolicySummary(id as Id<"policies">);
   const fullPolicy = useCachedPolicyDetail(
     id as Id<"policies">,
@@ -389,9 +414,12 @@ export function PolicyDetailBody({
     policy ? { policyId: id as Id<"policies"> } : "skip",
   );
 
-  const softDelete = useMutation(api.policies.softDelete);
+  const archivePolicy = useMutation(api.policies.archive);
   const restorePolicy = useMutation(api.policies.restore);
   const cancelExtraction = useMutation(api.policies.cancelExtraction);
+  const archiveCertificateMutation = useMutation(
+    api.certificateLifecycle.archive,
+  );
   const retryExtraction = useAction(
     api.actions.retryExtraction.retryExtraction,
   );
@@ -401,9 +429,10 @@ export function PolicyDetailBody({
   const [cancelingExtraction, setCancelingExtraction] = useState(false);
   const router = useRouter();
   const initialPage = Number(searchParams.get("page")) || undefined;
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [showRefreshDialog, setShowRefreshDialog] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const loggedPipelineEntries = useRef<Set<string>>(new Set());
   const loggedStatus = useRef<string | null>(null);
@@ -414,10 +443,11 @@ export function PolicyDetailBody({
   useEffect(() => {
     if (policy) {
       const lines = policyLobCodes(policy).map(lobLabel);
+      const parties = resolvePolicyPartyContext(policy);
       setPageContext({
         pageType: "policy",
         entityId: policy._id,
-        summary: `${policy.mga ?? policy.carrier ?? "Unknown"} ${policy.policyNumber ?? ""} — ${lines.join(", ")}`,
+        summary: `${parties.generalAgentName ?? parties.insurerName ?? "Unknown"} ${policy.policyNumber ?? ""} — ${lines.join(", ")}`,
       });
     }
     return () => setPageContext(null);
@@ -435,19 +465,22 @@ export function PolicyDetailBody({
   }, [fileUrl, initialPage, openWithUrl, preloadPdfUrl]);
 
   const p = (policy ?? {}) as unknown as Record<string, unknown>;
-  const carrierName = (p.carrier as string | undefined) ?? "";
-  const administratorName = (p.mga as string | undefined) ?? "";
-  const displayName = administratorName || carrierName;
+  const policyParties = resolvePolicyPartyContext(p);
+  const carrierName = policyParties.insurerName ?? "";
+  const generalAgentName = policyParties.generalAgentName ?? "";
+  const displayName = generalAgentName || carrierName;
   const policyNumber = (p.policyNumber as string | undefined) ?? "";
-  const isDeleted = !!p.deletedAt;
+  const isArchived = !!p.deletedAt;
   const canEditExtractedFields =
     (viewerOrg?.org as { type?: "broker" } | undefined)?.type === "broker";
   const canRequestBrokerExtractionHelp =
-    !!viewerOrg?.brokerOrg && !readOnly && !isDeleted;
+    !!viewerOrg?.brokerOrg && !readOnly && !isArchived;
   const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
   const extractionDataStage = policyDataStage(p);
   const isPolicyFinal =
     pipelineStatus === "complete" && extractionDataStage === "final";
+  const canEditPolicyDetails =
+    canEditExtractedFields && !readOnly && !isArchived && isPolicyFinal;
   const canCancelExtraction =
     pipelineStatus === "running" || pipelineStatus === "paused";
   const isProcessingPolicy =
@@ -473,6 +506,16 @@ export function PolicyDetailBody({
       ? selectedCertificate
       : null;
 
+  const openPolicyDetailsEditor = useCallback(
+    (section: PolicyDetailsEditSection) => {
+      setShowCertificateSheet(false);
+      setShowEditExtractedFields(false);
+      setSelectedCertificate(null);
+      setEditingPolicyDetails(section);
+    },
+    [],
+  );
+
   const reissueCertificate = useCallback(async (row: PolicyCertificateRecord) => {
     const holder = row.holder;
     if (!holder?.displayName) {
@@ -481,22 +524,7 @@ export function PolicyDetailBody({
     }
     setReissuingCertificateId(row._id);
     try {
-      const currentVersion = row.currentVersion ?? row.latestIssuedVersion;
-      const result = await generateCertificate({
-        policyId: row.policyId,
-        holderName: holder.displayName,
-        holderContactName: holder.contactName,
-        holderEmail: holder.email,
-        holderPhone: holder.phone,
-        ...certificateHolderActionAddress(holder),
-        additionalInsuredName: currentVersion?.requestKind === "additional_insured"
-          ? currentVersion.additionalInsuredName
-          : undefined,
-        requestedEndorsements: currentVersion?.requestKind === "additional_insured"
-          ? ["additional_insured"]
-          : undefined,
-        forceReissue: true,
-      });
+      const result = await generateCertificate(certificateVersionActionInput(row));
       if ((result as { status?: string }).status === "ambiguous_certificate_holder") {
         toast.message((result as { message?: string }).message ?? "Choose the existing certificate to reissue.");
         return;
@@ -515,6 +543,64 @@ export function PolicyDetailBody({
       setReissuingCertificateId(null);
     }
   }, [generateCertificate, openWithUrl]);
+
+  const editCertificateHolder = useCallback(async (
+    row: PolicyCertificateRecord,
+    draft: CertificateHolderDraft,
+  ) => {
+    setSavingCertificateId(row._id);
+    try {
+      const result = await generateCertificate(
+        certificateVersionActionInput(row, draft),
+      );
+      if ((result as { status?: string }).status === "held_policy_change_required") {
+        toast.message(
+          (result as { message?: string }).message ??
+            "Broker review is needed before generating this version.",
+        );
+        return false;
+      }
+      const versionNumber = (result as { versionNumber?: number }).versionNumber;
+      toast.success(
+        versionNumber
+          ? `Certificate version ${versionNumber} generated`
+          : "New certificate version generated",
+      );
+      if ((result as { url?: string }).url) {
+        openWithUrl((result as { url: string }).url);
+      }
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update certificate holder",
+      );
+      return false;
+    } finally {
+      setSavingCertificateId(null);
+    }
+  }, [generateCertificate, openWithUrl]);
+
+  const archiveCertificate = useCallback(
+    async (row: PolicyCertificateRecord) => {
+      setArchivingCertificateId(row._id);
+      try {
+        await archiveCertificateMutation({ certificateId: row._id });
+        setSelectedCertificate(null);
+        toast.success("Certificate archived");
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not archive certificate",
+        );
+      } finally {
+        setArchivingCertificateId(null);
+      }
+    },
+    [archiveCertificateMutation],
+  );
 
   useEffect(() => {
     loggedPipelineEntries.current.clear();
@@ -574,18 +660,32 @@ export function PolicyDetailBody({
     return () => onBreadcrumb(null);
   }, [onBreadcrumb, policy, displayName, policyNumber]);
 
-  const handleDelete = async () => {
+  const handleArchive = async () => {
     if (!policy) return;
-    setDeleting(true);
+    setArchiving(true);
     try {
-      await softDelete({ id: policy._id });
-      setShowDeleteDialog(false);
-      toast.success("Policy deleted");
-      router.push(afterDeleteHref);
+      await archivePolicy({ id: policy._id });
+      setShowArchiveDialog(false);
+      toast.success("Policy archived");
+      router.push(afterArchiveHref);
     } catch {
-      toast.error("Failed to delete policy");
+      toast.error("Failed to archive policy");
     } finally {
-      setDeleting(false);
+      setArchiving(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!policy) return;
+    setRestoring(true);
+    try {
+      await restorePolicy({ id: policy._id });
+      toast.success("Policy restored");
+      router.push(afterRestoreHref);
+    } catch {
+      toast.error("Failed to restore policy");
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -630,17 +730,17 @@ export function PolicyDetailBody({
     }
     onActions(
       <>
-        {!readOnly && !isDeleted && (
+        {!readOnly && !isArchived && (
           <PillButton
             size="compact"
             variant="icon"
-            label="Delete"
-            onClick={() => setShowDeleteDialog(true)}
+            label="Archive"
+            onClick={() => setShowArchiveDialog(true)}
           >
-            <Trash2 className="size-4 shrink-0" strokeWidth={2} />
+            <Archive className="size-4 shrink-0" strokeWidth={2} />
           </PillButton>
         )}
-        {!readOnly && !isDeleted && (
+        {!readOnly && !isArchived && (
           <PillButton
             size="compact"
             variant="icon"
@@ -656,7 +756,7 @@ export function PolicyDetailBody({
           </PillButton>
         )}
         <ViewPdfButton url={fileUrl} disabled={!fileUrl} />
-        {!readOnly && !isDeleted && (
+        {!readOnly && !isArchived && (
           <PillButton
             size="compact"
             onClick={() => {
@@ -679,7 +779,7 @@ export function PolicyDetailBody({
     onActions,
     policy,
     readOnly,
-    isDeleted,
+    isArchived,
     reExtracting,
     cancelingExtraction,
     canCancelExtraction,
@@ -709,11 +809,29 @@ export function PolicyDetailBody({
       );
       return () => onRightPanel(null);
     }
+    if (editingPolicyDetails && fullPolicy && canEditPolicyDetails) {
+      onRightPanel(
+        <PolicyDetailsEditor
+          key={`${fullPolicy._id}:${editingPolicyDetails}`}
+          policy={
+            fullPolicy as unknown as Record<string, unknown> & {
+              _id: Id<"policies">;
+            }
+          }
+          section={editingPolicyDetails}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditingPolicyDetails(null);
+          }}
+        />,
+      );
+      return () => onRightPanel(null);
+    }
     if (
       showEditExtractedFields &&
       fullPolicy &&
       canEditExtractedFields &&
-      !isDeleted
+      !isArchived
     ) {
       onRightPanel(
         <PolicyBreakdownEditor
@@ -735,8 +853,12 @@ export function PolicyDetailBody({
         <CertificateDetailPanel
           row={selectedCertificateForPanel}
           onClose={() => setSelectedCertificate(null)}
-          onReissue={reissueCertificate}
+          onReissue={!readOnly ? reissueCertificate : undefined}
+          onEditHolder={!readOnly ? editCertificateHolder : undefined}
+          onArchive={!readOnly ? archiveCertificate : undefined}
           reissuing={reissuingCertificateId === selectedCertificateForPanel._id}
+          savingHolder={savingCertificateId === selectedCertificateForPanel._id}
+          archiving={archivingCertificateId === selectedCertificateForPanel._id}
         />,
       );
       return () => onRightPanel(null);
@@ -751,11 +873,17 @@ export function PolicyDetailBody({
     isPolicyFinal,
     showCertificateSheet,
     showEditExtractedFields,
+    editingPolicyDetails,
     selectedCertificateForPanel,
     reissueCertificate,
+    editCertificateHolder,
+    archiveCertificate,
     reissuingCertificateId,
+    savingCertificateId,
+    archivingCertificateId,
     canEditExtractedFields,
-    isDeleted,
+    canEditPolicyDetails,
+    isArchived,
   ]);
 
   if (policy === undefined) {
@@ -767,7 +895,7 @@ export function PolicyDetailBody({
       <div className="text-center py-12">
         <p className="text-muted-foreground mb-2">Policy not found</p>
         <Link
-          href={afterDeleteHref}
+          href={afterRestoreHref}
           className="text-primary hover:underline text-base"
         >
           Back to policies
@@ -779,18 +907,19 @@ export function PolicyDetailBody({
   return (
     <>
       <FadeIn when={true} staggerIndex={0} duration={0.6}>
-        {isDeleted && (
-          <div className="flex items-center gap-3 mb-4 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-4 py-2.5">
-            <p className="text-base text-red-700 dark:text-red-400 flex-1">
-              This policy has been deleted.
+        {isArchived && (
+          <div className="mb-4 flex items-center gap-3 rounded-lg border border-foreground/8 bg-foreground/[0.025] px-4 py-2.5">
+            <p className="flex-1 text-base text-muted-foreground">
+              This policy is archived and excluded from active Glass workflows.
             </p>
             {!readOnly ? (
               <PillButton
                 variant="secondary"
                 size="compact"
-                onClick={() => restorePolicy({ id: policy._id })}
+                onClick={handleRestore}
+                disabled={restoring}
               >
-                Restore
+                {restoring ? "Restoring..." : "Restore"}
               </PillButton>
             ) : null}
           </div>
@@ -798,31 +927,31 @@ export function PolicyDetailBody({
       </FadeIn>
 
       <Dialog
-        open={showDeleteDialog}
-        onOpenChange={(v) => !v && setShowDeleteDialog(false)}
+        open={showArchiveDialog}
+        onOpenChange={(v) => !v && setShowArchiveDialog(false)}
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Delete Policy</DialogTitle>
+            <DialogTitle>Archive policy</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete <strong>{policyNumber}</strong>?
-              The policy can be restored later.
+              Archive <strong>{policyNumber}</strong>? It will be excluded from
+              active policy lists, compliance, search, and Glass tools until restored.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <PillButton
               variant="secondary"
-              onClick={() => setShowDeleteDialog(false)}
-              disabled={deleting}
+              onClick={() => setShowArchiveDialog(false)}
+              disabled={archiving}
             >
               Cancel
             </PillButton>
             <PillButton
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
+              variant="secondary"
+              onClick={handleArchive}
+              disabled={archiving}
             >
-              {deleting ? "Deleting..." : "Delete"}
+              {archiving ? "Archiving..." : "Archive"}
             </PillButton>
           </DialogFooter>
         </DialogContent>
@@ -902,6 +1031,7 @@ export function PolicyDetailBody({
           {(
             [
               { id: "details" as const, label: "Details" },
+              { id: "coverages" as const, label: "Coverages" },
               ...(hasExtractionReviews
                 ? [{ id: "review" as const, label: "Review" }]
                 : []),
@@ -926,8 +1056,21 @@ export function PolicyDetailBody({
       </Tabs>
 
       {visibleActiveTab === "details" && (
-        <PolicyDetailsTab policy={policy} fileUrl={fileUrl} />
+        <PolicyDetailsTab
+          policy={policy}
+          fileUrl={fileUrl}
+          canEdit={canEditPolicyDetails}
+          onEdit={openPolicyDetailsEditor}
+        />
       )}
+
+      {visibleActiveTab === "coverages" && fullPolicy === undefined ? (
+        <OperationalSkeletonList rows={5} showTrailing={false} />
+      ) : null}
+
+      {visibleActiveTab === "coverages" && fullPolicy ? (
+        <PolicyCoveragesTab policy={fullPolicy} fileUrl={fileUrl} />
+      ) : null}
 
       {visibleActiveTab === "review" && hasExtractionReviews && (
         <FadeIn when={true} staggerIndex={1} duration={0.5}>
@@ -937,7 +1080,7 @@ export function PolicyDetailBody({
                 _id: Id<"policies">;
               }
             }
-            readOnly={readOnly || isDeleted}
+            readOnly={readOnly || isArchived}
             canRequestBrokerHelp={canRequestBrokerExtractionHelp}
           />
         </FadeIn>

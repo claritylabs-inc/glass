@@ -1,12 +1,20 @@
 "use client";
 
-import dayjs from "dayjs";
-import { type KeyboardEvent, type ReactNode } from "react";
-import { Archive, ArchiveRestore, RefreshCw } from "lucide-react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useState,
+} from "react";
+import { isValidPhoneNumber } from "react-phone-number-input";
+import { Archive, ArchiveRestore, Loader2, Pencil, RefreshCw } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf } from "@/components/pdf-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { AddressAutofillInput } from "@/components/ui/address-autofill-input";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   OperationalItem,
   OperationalLabelValueList,
@@ -16,6 +24,16 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { PhoneInput } from "@/components/ui/phone-input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDisplayDateTime } from "@/lib/date-format";
 
 export type CertificateHolderRecord = {
   _id: Id<"certificateHolders">;
@@ -54,9 +72,31 @@ export type CertificateVersionRecord = {
   fileSize?: number;
   requestKind?: string;
   additionalInsuredName?: string;
+  descriptionOfOperations?: string;
+  formCode?:
+    | "acord25"
+    | "acord24"
+    | "acord27"
+    | "acord28"
+    | "acord29"
+    | "acord30"
+    | "acord31";
   issuedAt?: number;
   createdAt: number;
   url?: string | null;
+};
+
+export type CertificateHolderDraft = {
+  displayName: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
 };
 
 export type PolicyCertificateRecord = {
@@ -84,7 +124,7 @@ const CERTIFICATE_ROW_CLICKABLE_CLASS =
 export function certificatePolicyLabel(policy?: CertificatePolicyRecord | null) {
   return [
     policy?.policyNumber,
-    policy?.carrier ?? policy?.security ?? policy?.mga,
+    policy?.carrier ?? policy?.security,
   ].filter(Boolean).join(" · ") || "Policy";
 }
 
@@ -96,37 +136,96 @@ export function certificateHolderAddress(holder?: CertificateHolderRecord | null
     [address.state, address.postalCode].filter(Boolean).join(" "),
   ].filter(Boolean).join(", ");
   return address.formatted ||
-    [address.line1, address.line2, cityLine].filter(Boolean).join("\n") ||
+    [address.line1, address.line2, cityLine, address.country].filter(Boolean).join("\n") ||
     null;
 }
 
-export function certificateHolderActionAddress(holder?: CertificateHolderRecord | null) {
+export function certificateHolderActionAddress(
+  holder?: Pick<CertificateHolderRecord, "address"> | null,
+) {
   const address = holder?.address;
   const formattedLines = address?.formatted
     ?.split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean) ?? [];
+  const hasStructuredAddress = Boolean(
+    address?.line1 ||
+    address?.line2 ||
+    address?.city ||
+    address?.state ||
+    address?.postalCode ||
+    address?.country,
+  );
   return {
     addressLine1: address?.line1 ?? formattedLines[0],
-    addressLine2: address?.line2 ?? formattedLines[1],
+    addressLine2: address?.line2 ?? (
+      hasStructuredAddress ? undefined : formattedLines.slice(1).join(", ") || undefined
+    ),
     city: address?.city,
     state: address?.state,
     postalCode: address?.postalCode,
+    country: address?.country,
+  };
+}
+
+export function certificateHolderDraft(
+  holder?: CertificateHolderRecord | null,
+): CertificateHolderDraft {
+  const address = certificateHolderActionAddress(holder);
+  return {
+    displayName: holder?.displayName ?? "",
+    contactName: holder?.contactName ?? "",
+    email: holder?.email ?? "",
+    phone: holder?.phone ?? "",
+    addressLine1: address.addressLine1 ?? "",
+    addressLine2: address.addressLine2 ?? "",
+    city: address.city ?? "",
+    state: address.state ?? "",
+    postalCode: address.postalCode ?? "",
+    country: address.country ?? "",
+  };
+}
+
+function optionalDraftValue(value: string) {
+  return value.trim() || undefined;
+}
+
+export function certificateVersionActionInput(
+  row: PolicyCertificateRecord,
+  draft?: CertificateHolderDraft,
+) {
+  const holder = row.holder;
+  const address = draft ?? certificateHolderDraft(holder);
+  const currentVersion = row.currentVersion ?? row.latestIssuedVersion;
+  const isAdditionalInsured = currentVersion?.requestKind === "additional_insured";
+  return {
+    policyId: row.policyId,
+    certificateId: row._id,
+    holderName: draft?.displayName.trim() || holder?.displayName || "",
+    holderContactName: optionalDraftValue(draft?.contactName ?? holder?.contactName ?? ""),
+    holderEmail: optionalDraftValue(draft?.email ?? holder?.email ?? ""),
+    holderPhone: optionalDraftValue(draft?.phone ?? holder?.phone ?? ""),
+    addressLine1: optionalDraftValue(address.addressLine1),
+    addressLine2: optionalDraftValue(address.addressLine2),
+    city: optionalDraftValue(address.city),
+    state: optionalDraftValue(address.state),
+    postalCode: optionalDraftValue(address.postalCode),
+    country: optionalDraftValue(address.country),
+    additionalInsuredName: isAdditionalInsured
+      ? currentVersion?.additionalInsuredName
+      : undefined,
+    requestedEndorsements: isAdditionalInsured
+      ? ["additional_insured"]
+      : undefined,
+    descriptionOfOperations: currentVersion?.descriptionOfOperations,
+    formCode: currentVersion?.formCode,
+    forceReissue: true,
+    updateHolderDetails: Boolean(draft),
   };
 }
 
 export function formatCertificateTime(value?: number) {
-  return value ? dayjs(value).format("MMM D, YYYY h:mm A") : "Not issued";
-}
-
-export function certificateBadge(row: PolicyCertificateRecord) {
-  if (row.status === "archived") return { label: "Archived", variant: "outline" as const };
-  const version = row.currentVersion;
-  if (!version) return { label: "No issued version", variant: "outline" as const };
-  if (version.status === "issued") {
-    return { label: "Issued", variant: "secondary" as const };
-  }
-  return { label: version.status.replace(/_/g, " "), variant: "outline" as const };
+  return formatDisplayDateTime(value, "Not issued");
 }
 
 function versionBadge(version?: CertificateVersionRecord | null) {
@@ -144,53 +243,6 @@ function sortedVersions(row: PolicyCertificateRecord) {
     .sort((left, right) => right.versionNumber - left.versionNumber);
 }
 
-function certificateLastActivity(row: PolicyCertificateRecord) {
-  return Number(row.lastIssuedAt ?? row.currentVersion?.createdAt ?? row.createdAt ?? 0);
-}
-
-export type CertificatePolicyGroup = {
-  key: string;
-  policyId: Id<"policies">;
-  policy?: CertificatePolicyRecord | null;
-  rows: PolicyCertificateRecord[];
-  latestAt: number;
-};
-
-export function groupCertificatesByPolicy(rows: PolicyCertificateRecord[]) {
-  const groups = new Map<string, CertificatePolicyGroup>();
-
-  for (const row of rows) {
-    const key = String(row.policyId);
-    const existing = groups.get(key);
-
-    if (existing) {
-      existing.rows.push(row);
-      existing.latestAt = Math.max(existing.latestAt, certificateLastActivity(row));
-      if (!existing.policy && row.policy) existing.policy = row.policy;
-      continue;
-    }
-
-    groups.set(key, {
-      key,
-      policyId: row.policyId,
-      policy: row.policy,
-      rows: [row],
-      latestAt: certificateLastActivity(row),
-    });
-  }
-
-  return Array.from(groups.values())
-    .map((group) => ({
-      ...group,
-      rows: [...group.rows].sort((left, right) =>
-        (left.holder?.displayName ?? "").localeCompare(
-          right.holder?.displayName ?? "",
-        ),
-      ),
-    }))
-    .sort((left, right) => right.latestAt - left.latestAt);
-}
-
 function openOnKeyboard(
   event: KeyboardEvent<HTMLDivElement>,
   action: () => void,
@@ -198,6 +250,176 @@ function openOnKeyboard(
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
   action();
+}
+
+function openTableRowOnKeyboard(
+  event: KeyboardEvent<HTMLTableRowElement>,
+  action: () => void,
+) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  action();
+}
+
+function certificateCarrier(row: PolicyCertificateRecord) {
+  return row.policy?.carrier ?? row.policy?.security;
+}
+
+function certificateHolderAddressDisplay(row: PolicyCertificateRecord) {
+  const address = row.holder?.address;
+  const formattedLines = certificateHolderAddress(row.holder)
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean) ?? [];
+  const street = [address?.line1, address?.line2].filter(Boolean).join(", ") ||
+    (formattedLines.length > 1
+      ? formattedLines.slice(0, -1).join(", ")
+      : formattedLines[0]);
+  const statePostal = [address?.state, address?.postalCode].filter(Boolean).join(" ");
+  const locality = [address?.city, statePostal, address?.country].filter(Boolean).join(", ") ||
+    (formattedLines.length > 1 ? formattedLines[formattedLines.length - 1] : undefined);
+  return { street, locality };
+}
+
+function certificateContactSummary(row: PolicyCertificateRecord) {
+  const contactName = row.holder?.contactName?.trim();
+  const email = row.holder?.email?.trim();
+  const phone = row.holder?.phone?.trim();
+  const primary = contactName ?? email ?? phone ?? "No contact";
+  const secondary = contactName ? email : undefined;
+  return { primary, secondary };
+}
+
+export function CertificatesTable({
+  rows,
+  selectedCertificateId,
+  onSelectCertificate,
+  showPolicyColumn = true,
+}: {
+  rows: PolicyCertificateRecord[];
+  selectedCertificateId?: Id<"policyCertificates"> | null;
+  onSelectCertificate: (row: PolicyCertificateRecord) => void;
+  showPolicyColumn?: boolean;
+}) {
+  return (
+    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
+      <Table
+        className={showPolicyColumn ? "min-w-[1040px]" : "min-w-[760px]"}
+      >
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead
+              className={`${showPolicyColumn ? "w-[22%]" : "w-[25%]"} px-4`}
+            >
+              Holder
+            </TableHead>
+            <TableHead className={showPolicyColumn ? "w-[24%]" : "w-[30%]"}>
+              Address
+            </TableHead>
+            <TableHead className={showPolicyColumn ? "w-[18%]" : "w-[25%]"}>
+              Contact
+            </TableHead>
+            {showPolicyColumn ? (
+              <TableHead className="w-[24%]">Policy</TableHead>
+            ) : null}
+            <TableHead
+              className={`${showPolicyColumn ? "w-[12%]" : "w-[20%]"} px-4`}
+            >
+              Issued
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => {
+            const contact = certificateContactSummary(row);
+            const address = certificateHolderAddressDisplay(row);
+            const currentVersion = row.currentVersion;
+            const selected = row._id === selectedCertificateId;
+            const issuedAt =
+              row.lastIssuedAt ??
+              currentVersion?.issuedAt ??
+              currentVersion?.createdAt;
+            const carrier = certificateCarrier(row);
+
+            return (
+              <TableRow
+                key={row._id}
+                aria-label={`Open certificate details for ${row.holder?.displayName ?? "certificate holder"}`}
+                aria-selected={selected}
+                className="cursor-pointer"
+                data-state={selected ? "selected" : undefined}
+                onClick={() => onSelectCertificate(row)}
+                onKeyDown={(event) =>
+                  openTableRowOnKeyboard(event, () => onSelectCertificate(row))
+                }
+                tabIndex={0}
+              >
+                <TableCell className="max-w-64 px-4">
+                  <p className="truncate font-medium text-foreground">
+                    {row.holder?.displayName ?? "Certificate holder"}
+                  </p>
+                </TableCell>
+                <TableCell className="max-w-72">
+                  {address.street ? (
+                    <>
+                      <p className="truncate text-foreground">
+                        {address.street}
+                      </p>
+                      {address.locality ? (
+                        <p className="truncate text-label text-muted-foreground">
+                          {address.locality}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">No address</span>
+                  )}
+                </TableCell>
+                <TableCell className="max-w-56">
+                  <p
+                    className={
+                      contact.primary === "No contact"
+                        ? "truncate text-muted-foreground"
+                        : "truncate text-foreground"
+                    }
+                  >
+                    {contact.primary}
+                  </p>
+                  {contact.secondary ? (
+                    <p className="truncate text-label text-muted-foreground">
+                      {contact.secondary}
+                    </p>
+                  ) : null}
+                </TableCell>
+                {showPolicyColumn ? (
+                  <TableCell className="max-w-72">
+                    <p className="truncate text-foreground">
+                      {row.policy?.policyNumber ?? "Policy"}
+                    </p>
+                    {carrier ? (
+                      <p className="truncate text-label text-muted-foreground">
+                        {carrier}
+                      </p>
+                    ) : null}
+                  </TableCell>
+                ) : null}
+                <TableCell className="px-4">
+                  <p className="text-foreground">
+                    {formatCertificateTime(issuedAt)}
+                  </p>
+                  {currentVersion ? (
+                    <p className="text-label text-muted-foreground">
+                      Version {currentVersion.versionNumber}
+                    </p>
+                  ) : null}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </OperationalPanel>
+  );
 }
 
 function CertificatePdfItem({
@@ -253,77 +475,6 @@ function CertificateDetailCard({
   );
 }
 
-export function CertificateRow({
-  row,
-  selected,
-  onSelect,
-}: {
-  row: PolicyCertificateRecord;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const badge = certificateBadge(row);
-  const holderContact = [
-    row.holder?.contactName ? `Attn: ${row.holder.contactName}` : undefined,
-    row.holder?.email,
-    row.holder?.phone,
-    certificateHolderAddress(row.holder),
-  ].filter(Boolean).join("\n") || "No holder contact recorded";
-  return (
-    <OperationalItem
-      aria-label={`Open certificate details for ${row.holder?.displayName ?? "certificate holder"}`}
-      aria-pressed={selected}
-      className={`${CERTIFICATE_ROW_CLICKABLE_CLASS} ${selected ? "bg-muted/40" : ""}`}
-      onClick={onSelect}
-      onKeyDown={(event) => openOnKeyboard(event, onSelect)}
-      role="button"
-      tabIndex={0}
-    >
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="min-w-0 truncate text-base font-medium text-foreground">
-            {row.holder?.displayName ?? "Certificate holder"}
-          </p>
-          <p className="mt-1 whitespace-pre-line text-base text-muted-foreground">
-            {holderContact}
-          </p>
-        </div>
-        <Badge variant={badge.variant} className="shrink-0 self-start capitalize">
-          {badge.label}
-        </Badge>
-      </div>
-    </OperationalItem>
-  );
-}
-
-export function CertificatePolicyGroupCard({
-  group,
-  selectedCertificateId,
-  showPolicyHeader = true,
-  onSelectCertificate,
-}: {
-  group: CertificatePolicyGroup;
-  selectedCertificateId?: Id<"policyCertificates"> | null;
-  showPolicyHeader?: boolean;
-  onSelectCertificate: (row: PolicyCertificateRecord) => void;
-}) {
-  return (
-    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
-      {showPolicyHeader ? (
-        <OperationalPanelHeader title={certificatePolicyLabel(group.policy)} />
-      ) : null}
-      {group.rows.map((row) => (
-        <CertificateRow
-          key={row._id}
-          row={row}
-          selected={row._id === selectedCertificateId}
-          onSelect={() => onSelectCertificate(row)}
-        />
-      ))}
-    </OperationalPanel>
-  );
-}
-
 function CertificateVersionRow({
   version,
   isCurrent,
@@ -365,55 +516,99 @@ export function CertificateDetailPanel({
   row,
   onClose,
   onReissue,
+  onEditHolder,
   onArchive,
   onUnarchive,
   reissuing,
+  savingHolder,
   archiving,
   unarchiving,
 }: {
   row: PolicyCertificateRecord | null;
   onClose: () => void;
   onReissue?: (row: PolicyCertificateRecord) => void;
+  onEditHolder?: (
+    row: PolicyCertificateRecord,
+    draft: CertificateHolderDraft,
+  ) => Promise<boolean>;
   onArchive?: (row: PolicyCertificateRecord) => void;
   onUnarchive?: (row: PolicyCertificateRecord) => void;
   reissuing?: boolean;
+  savingHolder?: boolean;
   archiving?: boolean;
   unarchiving?: boolean;
 }) {
   const { openWithUrl } = usePdf();
+  const [holderEdit, setHolderEdit] = useState<{
+    certificateId: Id<"policyCertificates">;
+    draft: CertificateHolderDraft;
+  } | null>(null);
   const versions = row ? sortedVersions(row) : [];
   const currentVersion = row?.currentVersion;
-  const badge = row ? certificateBadge(row) : null;
   const currentUrl = row?.url ?? currentVersion?.url;
   const holderName = row?.holder?.displayName ?? "Certificate holder";
   const holderAddressText = row ? certificateHolderAddress(row.holder) : null;
   const isArchived = row?.status === "archived";
+  const activeDraft = row && holderEdit?.certificateId === row._id
+    ? holderEdit.draft
+    : null;
+  const holderNameInvalid = Boolean(activeDraft && !activeDraft.displayName.trim());
+  const holderEmailInvalid = Boolean(
+    activeDraft?.email.trim() &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(activeDraft.email.trim()),
+  );
+  const holderPhoneInvalid = Boolean(
+    activeDraft?.phone.trim() && !isValidPhoneNumber(activeDraft.phone),
+  );
+  const holderDraftInvalid =
+    holderNameInvalid || holderEmailInvalid || holderPhoneInvalid;
+
+  const updateDraft = (patch: Partial<CertificateHolderDraft>) => {
+    setHolderEdit((current) =>
+      current ? { ...current, draft: { ...current.draft, ...patch } } : current,
+    );
+  };
+
+  const submitHolderEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!row || !activeDraft || !onEditHolder || holderDraftInvalid) return;
+    if (await onEditHolder(row, activeDraft)) {
+      setHolderEdit(null);
+    }
+  };
 
   return (
     <SettingsDrawer
       open={Boolean(row)}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !savingHolder) {
+          setHolderEdit(null);
+          onClose();
+        }
       }}
-      title={holderName}
-      actions={
-        row ? (
-          <div className="flex shrink-0 items-center gap-2">
-            {badge ? (
-              <Badge variant={badge.variant} className="capitalize">
-                {badge.label}
-              </Badge>
-            ) : null}
-            {currentVersion ? (
-              <Badge variant="outline">
-                Version {currentVersion.versionNumber}
-              </Badge>
-            ) : null}
-          </div>
-        ) : null
-      }
+      title={activeDraft ? "Edit certificate" : holderName}
       footer={
-        row ? (
+        row && activeDraft ? (
+          <>
+            <PillButton
+              type="button"
+              variant="secondary"
+              onClick={() => setHolderEdit(null)}
+              disabled={savingHolder}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              type="submit"
+              form="certificate-holder-edit-form"
+              variant="primary"
+              disabled={savingHolder || holderDraftInvalid}
+            >
+              {savingHolder ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Generate new version
+            </PillButton>
+          </>
+        ) : row ? (
           <>
             {isArchived && onUnarchive ? (
               <PillButton
@@ -429,23 +624,45 @@ export function CertificateDetailPanel({
             {!isArchived && onArchive ? (
               <PillButton
                 type="button"
-                variant="secondary"
+                variant="icon"
+                size="compact"
+                label="Archive"
+                className="!h-7 !min-h-7 !w-7 !p-0"
                 onClick={() => onArchive(row)}
                 disabled={archiving}
               >
-                <Archive className="size-3.5" />
-                Archive
+                <Archive className="size-4 shrink-0" />
               </PillButton>
             ) : null}
             {!isArchived && onReissue ? (
               <PillButton
                 type="button"
-                variant="secondary"
+                variant="icon"
+                size="compact"
+                label="Reissue"
+                className="!h-7 !min-h-7 !w-7 !p-0"
                 onClick={() => onReissue(row)}
                 disabled={reissuing}
               >
-                <RefreshCw className={`size-3.5 ${reissuing ? "animate-spin" : ""}`} />
-                Reissue
+                <RefreshCw
+                  className={`size-4 shrink-0 ${reissuing ? "animate-spin" : ""}`}
+                />
+              </PillButton>
+            ) : null}
+            {!isArchived && onEditHolder ? (
+              <PillButton
+                type="button"
+                variant="icon"
+                size="compact"
+                label="Edit"
+                className="!h-7 !min-h-7 !w-7 !p-0"
+                onClick={() => setHolderEdit({
+                  certificateId: row._id,
+                  draft: certificateHolderDraft(row.holder),
+                })}
+                disabled={reissuing || archiving || unarchiving}
+              >
+                <Pencil className="size-4 shrink-0" />
               </PillButton>
             ) : null}
             {currentUrl ? (
@@ -461,7 +678,165 @@ export function CertificateDetailPanel({
         ) : null
       }
     >
-      {row ? (
+      {row && activeDraft ? (
+        <form
+          id="certificate-holder-edit-form"
+          className="space-y-4"
+          onSubmit={submitHolderEdit}
+        >
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-holder-name">Certificate holder</Label>
+              <Input
+                id="certificate-edit-holder-name"
+                value={activeDraft.displayName}
+                onChange={(event) => updateDraft({ displayName: event.target.value })}
+                placeholder="Company or individual name"
+                autoComplete="organization"
+                autoFocus
+                disabled={savingHolder}
+                aria-invalid={holderNameInvalid}
+              />
+              {holderNameInvalid ? (
+                <p className="text-label text-destructive">
+                  Enter a certificate holder name.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-contact">Holder contact</Label>
+              <Input
+                id="certificate-edit-contact"
+                value={activeDraft.contactName}
+                onChange={(event) => updateDraft({ contactName: event.target.value })}
+                placeholder="Attention contact"
+                autoComplete="name"
+                disabled={savingHolder}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-email">Holder email</Label>
+              <Input
+                id="certificate-edit-email"
+                type="email"
+                value={activeDraft.email}
+                onChange={(event) => updateDraft({ email: event.target.value })}
+                placeholder="certificates@example.com"
+                autoComplete="email"
+                disabled={savingHolder}
+                aria-invalid={holderEmailInvalid}
+              />
+              {holderEmailInvalid ? (
+                <p className="text-label text-destructive">
+                  Enter a valid email address.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-phone">Holder phone</Label>
+              <PhoneInput
+                id="certificate-edit-phone"
+                value={activeDraft.phone || undefined}
+                onChange={(phone) => updateDraft({ phone: phone ?? "" })}
+                defaultCountry="US"
+                autoComplete="tel"
+                disabled={savingHolder}
+                aria-invalid={holderPhoneInvalid}
+              />
+              {holderPhoneInvalid ? (
+                <p className="text-label text-destructive">
+                  Enter a valid phone number with country code.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-address-1">Address</Label>
+              <AddressAutofillInput
+                id="certificate-edit-address-1"
+                value={{
+                  street1: activeDraft.addressLine1,
+                  street2: activeDraft.addressLine2,
+                  city: activeDraft.city,
+                  state: activeDraft.state,
+                  zip: activeDraft.postalCode,
+                  country: activeDraft.country,
+                }}
+                onChange={(address) => updateDraft({
+                  addressLine1: address.street1 ?? "",
+                  addressLine2: address.street2 ?? "",
+                  city: address.city ?? "",
+                  state: address.state ?? "",
+                  postalCode: address.zip ?? "",
+                  country: address.country ?? "",
+                })}
+                display="street1"
+                placeholder="Search for an address"
+                autoComplete="section-certificate-edit address-line1"
+                disabled={savingHolder}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-address-2">Address line 2</Label>
+              <Input
+                id="certificate-edit-address-2"
+                value={activeDraft.addressLine2}
+                onChange={(event) => updateDraft({ addressLine2: event.target.value })}
+                placeholder="Suite, floor, attention line"
+                autoComplete="section-certificate-edit address-line2"
+                disabled={savingHolder}
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_72px_96px]">
+              <div className="space-y-2">
+                <Label htmlFor="certificate-edit-city">City</Label>
+                <Input
+                  id="certificate-edit-city"
+                  value={activeDraft.city}
+                  onChange={(event) => updateDraft({ city: event.target.value })}
+                  autoComplete="section-certificate-edit address-level2"
+                  disabled={savingHolder}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="certificate-edit-state">State</Label>
+                <Input
+                  id="certificate-edit-state"
+                  value={activeDraft.state}
+                  onChange={(event) => updateDraft({ state: event.target.value })}
+                  autoComplete="section-certificate-edit address-level1"
+                  disabled={savingHolder}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="certificate-edit-postal-code">ZIP</Label>
+                <Input
+                  id="certificate-edit-postal-code"
+                  value={activeDraft.postalCode}
+                  onChange={(event) => updateDraft({ postalCode: event.target.value })}
+                  autoComplete="section-certificate-edit postal-code"
+                  disabled={savingHolder}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-edit-country">Country</Label>
+              <Input
+                id="certificate-edit-country"
+                value={activeDraft.country}
+                onChange={(event) => updateDraft({ country: event.target.value })}
+                placeholder="United States"
+                autoComplete="section-certificate-edit country-name"
+                disabled={savingHolder}
+              />
+            </div>
+        </form>
+      ) : row ? (
         <div className="flex flex-col gap-5">
           <CertificateDetailCard
             title="Holder"
@@ -487,7 +862,7 @@ export function CertificateDetailPanel({
               { label: "Policy no.", value: row.policy?.policyNumber },
               {
                 label: "Carrier",
-                value: row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga,
+                value: row.policy?.carrier ?? row.policy?.security,
               },
               { label: "Insured", value: row.policy?.insuredName },
             ]}

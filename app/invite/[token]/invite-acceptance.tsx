@@ -12,7 +12,9 @@ import {
   PartnerWordmark,
   PoweredByGlassWordmark,
 } from "@/components/auth-shell";
+import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
+import { completeOtpSignIn } from "@/lib/otp-auth";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 type InviteData = {
@@ -31,7 +33,7 @@ type InviteData = {
 };
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 
 const LABEL_CLASSES =
   "text-label font-medium text-muted-foreground block mb-1.5";
@@ -107,7 +109,8 @@ export default function InviteAcceptance({ token }: { token: string }) {
           await new Promise((r) => setTimeout(r, 400));
         }
         if (!stashed) throw new Error("Could not auto-verify — please try again.");
-        await signIn("resend-otp", { email: stashed.email, code: stashed.code });
+        await completeOtpSignIn(stashed.email, stashed.code);
+        window.location.reload();
       } catch (err) {
         setError(
           err instanceof Error && err.message
@@ -160,8 +163,8 @@ export default function InviteAcceptance({ token }: { token: string }) {
     setLoading(true);
     setError("");
     try {
-      await signIn("resend-otp", { email, code });
-      // isAuthenticated effect above will accept + redirect
+      await completeOtpSignIn(email, code);
+      window.location.reload();
     } catch (err: unknown) {
       setError(friendlyError(err instanceof Error ? err.message : ""));
       setLoading(false);
@@ -272,43 +275,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
               <label className="text-label font-medium text-muted-foreground block mb-2">
                 Verification Code
               </label>
-              <div
-                className="relative flex gap-2 cursor-text"
-                onClick={() => {
-                  const el = document.getElementById(
-                    "inv-otp-input",
-                  ) as HTMLInputElement | null;
-                  el?.focus();
-                }}
-              >
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 aspect-square max-h-14 rounded-lg border bg-popover flex items-center justify-center text-xl font-medium font-mono transition-colors ${
-                      code.length === i
-                        ? "border-foreground/30 ring-1 ring-foreground/10"
-                        : "border-foreground/8"
-                    }`}
-                  >
-                    {code[i] ?? ""}
-                  </div>
-                ))}
-                <input
-                  id="inv-otp-input"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={code}
-                  onChange={(e) =>
-                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                  }
-                  required
-                  autoFocus
-                  autoComplete="one-time-code"
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-text"
-                  aria-label="Verification code"
-                />
-              </div>
+              <OtpField value={code} onValueChange={setCode} autoFocus required />
               <p className="mt-2 text-base text-muted-foreground">
                 We sent a 6-digit code to{" "}
                 <span className="font-medium text-foreground">{email}</span>

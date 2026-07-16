@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction, useMutation } from "convex/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -14,7 +14,8 @@ import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { AgentContactCallout } from "@/components/agent-contact-callout";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { toast } from "sonner";
-import { Upload } from "lucide-react";
+import { ArchiveRestore, Upload } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getPublicAgentDomain } from "@/lib/domains";
 import {
   useCachedPolicyList,
@@ -45,13 +46,15 @@ type PolicyListToastRow = {
 
 export default function PoliciesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const showArchived = searchParams.get("view") === "archived";
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const pendingExtractionToastsRef = useRef<
     Record<string, { fileName?: string | null }>
   >({});
 
-  const policies = useCachedPolicyList();
+  const policies = useCachedPolicyList(showArchived);
   const viewerOrg = useCachedViewerOrg();
 
   const generateUploadUrl = useMutation(api.policies.generateUploadUrl);
@@ -61,6 +64,20 @@ export default function PoliciesPage() {
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
+  const restorePolicy = useMutation(api.policies.restore);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  async function handleRestore(policyId: string) {
+    setRestoringId(policyId);
+    try {
+      await restorePolicy({ id: policyId as Id<"policies"> });
+      toast.success("Policy restored");
+    } catch {
+      toast.error("Failed to restore policy");
+    } finally {
+      setRestoringId(null);
+    }
+  }
 
   const uploadOne = useCallback(
     async (file: File): Promise<string> => {
@@ -239,36 +256,57 @@ export default function PoliciesPage() {
   return (
     <AppShell
       actions={
-        <PillButton
-          size="compact"
-          variant="secondary"
-          onClick={() => setUploaderOpen(true)}
-        >
-          <Upload className="h-3.5 w-3.5" />
-          Upload
-        </PillButton>
+        !showArchived ? (
+          <PillButton
+            size="compact"
+            variant="secondary"
+            onClick={() => setUploaderOpen(true)}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Upload
+          </PillButton>
+        ) : null
       }
       rightPanel={
-        <PolicyUploadDrawer
-          open={uploaderOpen}
-          onClose={() => setUploaderOpen(false)}
-          onUpload={handleDrawerUpload}
-          uploading={uploading}
-        />
+        !showArchived ? (
+          <PolicyUploadDrawer
+            open={uploaderOpen}
+            onClose={() => setUploaderOpen(false)}
+            onUpload={handleDrawerUpload}
+            uploading={uploading}
+          />
+        ) : null
       }
     >
       <div className="space-y-4">
-        {isViewerOrgLoading ? (
+        <Tabs
+          value={showArchived ? "archived" : "active"}
+          onValueChange={(value) =>
+            router.push(
+              value === "archived" ? "/policies?view=archived" : "/policies",
+            )
+          }
+        >
+          <TabsList variant="pill">
+            <TabsTrigger value="active">Active</TabsTrigger>
+            <TabsTrigger value="archived">Archived</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {!showArchived && isViewerOrgLoading ? (
           <div className="mb-6 sm:min-h-56" aria-hidden="true" />
-        ) : (
+        ) : !showArchived ? (
           <AgentContactCallout
             broker={brokerForCallout}
             fallbackAgentHandle={fallbackHandle}
             dismissKey="glass:agent-contact-callout:policies"
           />
-        )}
+        ) : null}
         {isLoading ? (
           <div className="min-h-32" aria-hidden="true" />
+        ) : list.length === 0 && showArchived ? (
+          <div className="py-16 text-center text-base text-muted-foreground/50">
+            No archived policies
+          </div>
         ) : list.length === 0 ? (
           <PolicyEmptyState
             agentEmail={agentEmail}
@@ -282,7 +320,7 @@ export default function PoliciesPage() {
               <PolicyListItem
                 key={p._id}
                 carrier={p.carrier}
-                administrator={p.mga}
+                generalAgent={p.generalAgent?.agencyName ?? p.mga}
                 policyNumber={p.policyNumber}
                 fileName={p.fileName}
                 effectiveDate={p.effectiveDate}
@@ -291,6 +329,17 @@ export default function PoliciesPage() {
                 extractionDataStage={p.extractionDataStage}
                 uploadedBySide={p.uploadedBySide}
                 href={`/policies/${p._id}`}
+                trailingAction={showArchived ? (
+                  <PillButton
+                    size="compact"
+                    variant="secondary"
+                    disabled={restoringId === p._id}
+                    onClick={() => void handleRestore(p._id)}
+                  >
+                    <ArchiveRestore className="size-3.5" />
+                    {restoringId === p._id ? "Restoring..." : "Restore"}
+                  </PillButton>
+                ) : undefined}
               />
             ))}
           </OperationalPanel>

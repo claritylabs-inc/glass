@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import { createHash } from "node:crypto";
 import mammoth from "mammoth";
 import type { ParsedMail } from "mailparser";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -17,9 +17,12 @@ import {
   encryptPassword,
   fetchParsedMessage,
   imapErrorMessage,
+  isMailboxMessageUnavailableError,
   isGlassSearchLoopEmail,
+  MailboxMessageUnavailableError,
   messageRef,
   parseMessageRef,
+  resolveParsedMessage,
   withClient,
   IMPORT_DOWNLOAD_MAX_BYTES,
   type ConnectedEmailAccount,
@@ -32,11 +35,18 @@ import {
 const SEARCH_CANDIDATE_MULTIPLIER = 3;
 const SEARCH_MAX_CANDIDATES = 30;
 const THREAD_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+const ATTACHMENT_PREVIEW_TTL_MS = 60 * 60 * 1000;
 
 type MailboxAttachmentInfo = {
+  attachmentIndex?: number;
   filename?: string;
   contentType: string;
   size: number;
+};
+
+type MailboxAddressInfo = {
+  name?: string;
+  address: string;
 };
 
 type MailboxSearchRow = {
@@ -66,6 +76,33 @@ type MailboxSearchErrorRow = {
   mailbox: string;
   message: string;
   hint: string;
+};
+
+type MailboxReadRow = {
+  emailRef: string;
+  accountId: Id<"connectedEmailAccounts">;
+  accountEmail: string;
+  accountHost: string;
+  mailbox: string;
+  uid: number;
+  subject: string;
+  from?: string;
+  fromAddresses: MailboxAddressInfo[];
+  to: string;
+  toAddresses: MailboxAddressInfo[];
+  cc: string;
+  ccAddresses: MailboxAddressInfo[];
+  date?: string;
+  text: string;
+  html?: string;
+  attachments: MailboxAttachmentInfo[];
+};
+
+type MailboxReadArgs = {
+  orgId: Id<"organizations">;
+  userId?: Id<"users">;
+  emailRef: string;
+  automationItemId?: Id<"connectedEmailAutomationItems">;
 };
 
 type SavedThreadAttachment = {
@@ -301,6 +338,24 @@ function addressText(value: ParsedMail["from"] | ParsedMail["to"] | ParsedMail["
   );
 }
 
+function addressDetails(
+  value: ParsedMail["from"] | ParsedMail["to"] | ParsedMail["cc"],
+): MailboxAddressInfo[] {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list.flatMap((entry) =>
+    entry.value.flatMap((item) => {
+      const addresses = item.group?.length ? item.group : [item];
+      return addresses.flatMap((address) => {
+        const email = address.address?.trim();
+        if (!email) return [];
+        const name = address.name.trim();
+        return [name ? { name, address: email } : { address: email }];
+      });
+    }),
+  );
+}
+
 function buildEmailRequirementText(parsed: ParsedMail) {
   const body = (parsed.text ?? "").replace(/\s+\n/g, "\n").trim();
   if (!body) return "";
@@ -515,42 +570,207 @@ export const searchInternal = internalAction({
   },
 });
 
+async function readMailboxMessage(
+  ctx: ActionCtx,
+  args: MailboxReadArgs,
+): Promise<MailboxReadRow> {
+  const parsedRef = parseMessageRef(args.emailRef);
+  const reviewLocator = args.automationItemId
+    ? await ctx.runQuery(
+        internal.connectedEmailAutomation.getReviewMessageLocatorInternal,
+        {
+          itemId: args.automationItemId,
+          orgId: args.orgId,
+          emailRef: args.emailRef,
+        },
+      )
+    : null;
+  if (args.automationItemId && !reviewLocator) {
+    throw new MailboxMessageUnavailableError("Email review is no longer available.");
+  }
+  const ref = reviewLocator
+    ? {
+        accountId: reviewLocator.accountId,
+        mailbox: reviewLocator.mailbox,
+        uid: reviewLocator.uid,
+      }
+    : parsedRef;
+  const account = await accessibleAccount(ctx, {
+    orgId: args.orgId,
+    userId: args.userId,
+    accountId: ref.accountId,
+  });
+  return await withClient(account, async (client) => {
+    const resolved = await resolveParsedMessage(client, {
+      mailbox: ref.mailbox,
+      uid: ref.uid,
+      messageId: reviewLocator?.sourceMessageId,
+      maxBytes: IMPORT_DOWNLOAD_MAX_BYTES,
+    });
+    const parsed = resolved.parsed;
+    return {
+      emailRef: messageRef(account._id, resolved.mailbox, resolved.uid),
+      accountId: account._id,
+      accountEmail: account.emailAddress,
+      accountHost: account.host,
+      mailbox: resolved.mailbox,
+      uid: resolved.uid,
+      subject: parsed.subject ?? "(no subject)",
+      from: parsed.from?.text,
+      fromAddresses: addressDetails(parsed.from),
+      to: addressText(parsed.to).join(", "),
+      toAddresses: addressDetails(parsed.to),
+      cc: addressText(parsed.cc).join(", "),
+      ccAddresses: addressDetails(parsed.cc),
+      date: parsed.date?.toISOString(),
+      text: (parsed.text ?? "").slice(0, 20_000),
+      html: typeof parsed.html === "string" ? parsed.html.slice(0, 20_000) : undefined,
+      attachments: parsed.attachments.map((attachment, attachmentIndex) => ({
+        attachmentIndex,
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        size: attachment.size,
+      })),
+    };
+  });
+}
+
 export const readInternal = internalAction({
   args: {
     orgId: v.id("organizations"),
     userId: v.optional(v.id("users")),
     emailRef: v.string(),
+    automationItemId: v.optional(v.id("connectedEmailAutomationItems")),
+  },
+  handler: readMailboxMessage,
+});
+
+export const readEmail = action({
+  args: {
+    orgId: v.id("organizations"),
+    emailRef: v.string(),
+    automationItemId: v.optional(v.id("connectedEmailAutomationItems")),
+  },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<MailboxReadRow> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
+    try {
+      return await readMailboxMessage(ctx, {
+        ...args,
+        userId: userId as Id<"users">,
+      });
+    } catch (error) {
+      if (isMailboxMessageUnavailableError(error)) {
+        throw new ConvexError({
+          code: "EMAIL_UNAVAILABLE",
+          message: error.message,
+        });
+      }
+      throw error;
+    }
+  },
+});
+
+export const deleteAttachmentPreviewInternal = internalAction({
+  args: {
+    fileId: v.id("_storage"),
   },
   handler: async (ctx, args) => {
+    await ctx.storage.delete(args.fileId);
+  },
+});
+
+export const previewAttachment = action({
+  args: {
+    orgId: v.id("organizations"),
+    emailRef: v.string(),
+    filename: v.string(),
+    attachmentIndex: v.optional(v.number()),
+  },
+  returns: v.object({
+    url: v.string(),
+    filename: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
+
     const ref = parseMessageRef(args.emailRef);
     const account = await accessibleAccount(ctx, {
       orgId: args.orgId,
-      userId: args.userId,
+      userId: userId as Id<"users">,
       accountId: ref.accountId,
     });
-    return await withClient(account, async (client) => {
-      const parsed = await fetchParsedMessage(client, ref.mailbox, ref.uid);
-      return {
-        emailRef: args.emailRef,
-        accountId: account._id,
-        accountEmail: account.emailAddress,
-        accountHost: account.host,
-        mailbox: ref.mailbox,
-        uid: ref.uid,
-        subject: parsed.subject ?? "(no subject)",
-        from: parsed.from?.text,
-        to: addressText(parsed.to).join(", "),
-        cc: addressText(parsed.cc).join(", "),
-        date: parsed.date?.toISOString(),
-        text: (parsed.text ?? "").slice(0, 20_000),
-        html: typeof parsed.html === "string" ? parsed.html.slice(0, 20_000) : undefined,
-        attachments: parsed.attachments.map((attachment) => ({
-          filename: attachment.filename,
-          contentType: attachment.contentType,
-          size: attachment.size,
-        })),
-      };
+    const attachment = await withClient(account, async (client) => {
+      const parsed = await fetchParsedMessage(
+        client,
+        ref.mailbox,
+        ref.uid,
+        IMPORT_DOWNLOAD_MAX_BYTES,
+      );
+      if (args.attachmentIndex !== undefined) {
+        if (
+          !Number.isInteger(args.attachmentIndex) ||
+          args.attachmentIndex < 0
+        ) {
+          throw new Error("Attachment index is invalid");
+        }
+        const indexed = parsed.attachments[args.attachmentIndex];
+        if (
+          indexed?.filename &&
+          indexed.filename.trim().toLowerCase() !==
+            args.filename.trim().toLowerCase()
+        ) {
+          throw new Error("Attachment identity no longer matches this email");
+        }
+        return indexed;
+      }
+
+      const requested = args.filename.trim().toLowerCase();
+      const matches = parsed.attachments.filter(
+        (item) => item.filename?.trim().toLowerCase() === requested,
+      );
+      if (matches.length > 1) {
+        throw new Error("Attachment filename is ambiguous; reopen the email and try again");
+      }
+      return matches[0];
     });
+
+    if (!attachment) throw new Error("Attachment not found on this email");
+    if (!isPdfMailboxAttachment(attachment)) {
+      throw new Error("Only PDF attachments can be previewed");
+    }
+    if (attachment.size > THREAD_ATTACHMENT_MAX_BYTES) {
+      throw new Error("This attachment is too large to preview");
+    }
+
+    const copy = new Uint8Array(attachment.content.length);
+    copy.set(attachment.content);
+    const fileId = await ctx.storage.store(
+      new Blob([copy], { type: attachment.contentType }),
+    );
+    const url = await ctx.storage.getUrl(fileId);
+    if (!url) {
+      await ctx.storage.delete(fileId);
+      throw new Error("Could not create an attachment preview");
+    }
+    await ctx.scheduler.runAfter(
+      ATTACHMENT_PREVIEW_TTL_MS,
+      internal.actions.connectedEmail.deleteAttachmentPreviewInternal,
+      { fileId },
+    );
+
+    return {
+      url,
+      filename: attachment.filename ?? args.filename,
+      contentType: attachment.contentType,
+      size: attachment.size,
+    };
   },
 });
 

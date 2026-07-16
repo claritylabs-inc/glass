@@ -26,6 +26,7 @@ import {
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   directProviderModelForRoute,
+  modelRouteSupportsTask,
   type ModelProvider,
   type ModelRoute,
   type ModelTask,
@@ -231,9 +232,11 @@ function isMissingApiKeyError(err: unknown): boolean {
 }
 
 const LOW_COST_NO_ESCALATION_TASKS = new Set<ModelTask>([
+  "voice_transcription",
   "classification",
   "extraction",
   "extraction_preview",
+  "extraction_coverage_recovery",
   "requirement_extraction",
   "org_memory_extraction",
   "email_extraction",
@@ -250,9 +253,12 @@ function sameRoute(left?: ModelRoute, right?: ModelRoute): boolean {
 export function modelTaskForCall(baseTask: ModelTask, taskKind?: ModelCallTaskKind): ModelTask {
   if (!taskKind) return baseTask;
   if (taskKind === "extraction_classify") return "classification";
+  if (taskKind === "extraction_coverage_recovery") return "extraction_coverage_recovery";
   if (taskKind.startsWith("extraction_")) return "extraction";
   if (taskKind === "query_classify") return "classification";
-  if (taskKind.startsWith("query_")) return "chat";
+  if (taskKind.startsWith("query_")) {
+    return baseTask === "chat_vision" ? "chat_vision" : "chat";
+  }
   if (taskKind.startsWith("pce_")) return "analysis";
   return baseTask;
 }
@@ -377,6 +383,236 @@ function routeDirectApiKey(route: ModelRoute, apiKey?: string): string | undefin
   return cleanEnv(apiKey) ?? directProviderApiKey(route.provider);
 }
 
+type AudioTranscriptionInput = {
+  data: Buffer;
+  filename: string;
+  mediaType: string;
+  prompt?: string;
+};
+
+type AudioTranscriptionResult = {
+  text: string;
+  route: ModelRoute;
+  routeSource: ModelRouteSource;
+  transport: ModelTransport;
+};
+
+const AUDIO_TRANSCRIPTION_TASK = "voice_transcription" as const;
+const OPENAI_TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions";
+const TRANSCRIPTION_FILE_EXTENSIONS = new Set([
+  "m4a",
+  "mp3",
+  "mp4",
+  "mpeg",
+  "mpga",
+  "wav",
+  "webm",
+]);
+
+function audioExtensionForMediaType(mediaType: string): string {
+  switch (mediaType.toLowerCase().split(";", 1)[0]) {
+    case "audio/mpeg":
+    case "audio/mp3":
+      return "mp3";
+    case "audio/wav":
+    case "audio/x-wav":
+      return "wav";
+    case "audio/webm":
+      return "webm";
+    default:
+      return "m4a";
+  }
+}
+
+function transcriptionFilename(filename: string, mediaType: string): string {
+  const trimmed = filename.trim() || "voice-memo";
+  const extension = trimmed.split(".").pop()?.toLowerCase();
+  if (extension && TRANSCRIPTION_FILE_EXTENSIONS.has(extension)) return trimmed;
+  const base = trimmed.replace(/\.[^.]+$/, "") || "voice-memo";
+  return `${base}.${audioExtensionForMediaType(mediaType)}`;
+}
+
+async function resolveAudioTranscriptionRouteForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+): Promise<{ route: ModelRoute; apiKey: string; routeSource: ModelRouteSource }> {
+  const staticRoute = MODEL_ROUTING[AUDIO_TRANSCRIPTION_TASK];
+  try {
+    const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, {
+      orgId,
+    });
+    const configuredRoute = settings?.routes?.[AUDIO_TRANSCRIPTION_TASK];
+    const routeSource = settings?.routeSources?.[AUDIO_TRANSCRIPTION_TASK];
+    const configuredApiKey =
+      routeSource === "broker" && configuredRoute
+        ? settings?.providerKeys?.[configuredRoute.provider]
+        : undefined;
+    const apiKey = configuredRoute
+      ? routeDirectApiKey(configuredRoute, configuredApiKey)
+      : undefined;
+    if (
+      configuredRoute &&
+      configuredRoute.provider !== "moonshot" &&
+      directProviderModelForRoute(configuredRoute) &&
+      modelRouteSupportsTask(AUDIO_TRANSCRIPTION_TASK, configuredRoute) &&
+      apiKey
+    ) {
+      return {
+        route: configuredRoute,
+        apiKey,
+        routeSource: routeSource ?? "global",
+      };
+    }
+  } catch (error) {
+    console.warn(
+      `Configured voice transcription route unavailable: ${
+        error instanceof Error ? error.message : String(error)
+      }. Falling back to static routing.`,
+    );
+  }
+
+  const apiKey = routeDirectApiKey(staticRoute);
+  if (!apiKey) {
+    throw new Error(
+      "Direct OpenAI API key is missing for voice memo transcription. AI Gateway is not a fallback for Glass model routing.",
+    );
+  }
+  return { route: staticRoute, apiKey, routeSource: "default" };
+}
+
+async function resolveAudioTranscriptionRouteForPublicTask(
+  ctx: ActionCtx,
+): Promise<{
+  route: ModelRoute;
+  apiKey: string;
+  routeSource: Extract<ModelRouteSource, "global" | "default">;
+}> {
+  const staticRoute = MODEL_ROUTING[AUDIO_TRANSCRIPTION_TASK];
+  try {
+    const settings = await ctx.runQuery(
+      internal.modelSettings.resolvePublicDefaults,
+      {},
+    );
+    const configuredRoute = settings?.routes?.[AUDIO_TRANSCRIPTION_TASK];
+    const configuredRouteSource =
+      settings?.routeSources?.[AUDIO_TRANSCRIPTION_TASK];
+    const apiKey = configuredRoute
+      ? routeDirectApiKey(configuredRoute)
+      : undefined;
+    if (
+      configuredRoute &&
+      configuredRoute.provider !== "moonshot" &&
+      directProviderModelForRoute(configuredRoute) &&
+      modelRouteSupportsTask(AUDIO_TRANSCRIPTION_TASK, configuredRoute) &&
+      apiKey
+    ) {
+      return {
+        route: configuredRoute,
+        apiKey,
+        routeSource:
+          configuredRouteSource === "global" ? "global" : "default",
+      };
+    }
+  } catch (error) {
+    console.warn(
+      `Global voice transcription route unavailable: ${
+        error instanceof Error ? error.message : String(error)
+      }. Falling back to static routing.`,
+    );
+  }
+
+  const apiKey = routeDirectApiKey(staticRoute);
+  if (!apiKey) {
+    throw new Error(
+      "Direct OpenAI API key is missing for voice memo transcription. AI Gateway is not a fallback for Glass model routing.",
+    );
+  }
+  return { route: staticRoute, apiKey, routeSource: "default" };
+}
+
+async function transcribeAudioWithResolvedRoute(
+  resolved: {
+    route: ModelRoute;
+    apiKey: string;
+    routeSource: ModelRouteSource;
+  },
+  input: AudioTranscriptionInput,
+): Promise<AudioTranscriptionResult> {
+  if (!modelRouteSupportsTask(AUDIO_TRANSCRIPTION_TASK, resolved.route)) {
+    throw new Error(
+      `Model route ${resolved.route.provider}/${resolved.route.model} cannot transcribe audio`,
+    );
+  }
+  const model = directProviderModelForRoute(resolved.route);
+  if (!model) {
+    throw new Error(
+      `Model route ${resolved.route.provider}/${resolved.route.model} is not available through direct provider routing`,
+    );
+  }
+
+  const form = new FormData();
+  form.append(
+    "file",
+    new Blob([new Uint8Array(input.data)], { type: input.mediaType }),
+    transcriptionFilename(input.filename, input.mediaType),
+  );
+  form.append("model", model);
+  form.append("response_format", "json");
+  if (input.prompt?.trim()) form.append("prompt", input.prompt.trim());
+
+  const response = await fetch(OPENAI_TRANSCRIPTION_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${resolved.apiKey}` },
+    body: form,
+    signal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).trim();
+    throw new Error(
+      `OpenAI audio transcription failed (${response.status})${
+        detail ? `: ${detail.slice(0, 500)}` : ""
+      }`,
+    );
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("OpenAI audio transcription returned invalid JSON");
+  }
+  const text =
+    payload &&
+    typeof payload === "object" &&
+    "text" in payload &&
+    typeof payload.text === "string"
+      ? payload.text.trim()
+      : "";
+  if (!text) throw new Error("OpenAI audio transcription returned no text");
+  return {
+    text,
+    route: resolved.route,
+    routeSource: resolved.routeSource,
+    transport: "direct",
+  };
+}
+
+export async function transcribeAudioForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  input: AudioTranscriptionInput,
+): Promise<AudioTranscriptionResult> {
+  const resolved = await resolveAudioTranscriptionRouteForOrg(ctx, orgId);
+  return transcribeAudioWithResolvedRoute(resolved, input);
+}
+
+export async function transcribeAudioForPublicTask(
+  ctx: ActionCtx,
+  input: AudioTranscriptionInput,
+): Promise<AudioTranscriptionResult> {
+  const resolved = await resolveAudioTranscriptionRouteForPublicTask(ctx);
+  return transcribeAudioWithResolvedRoute(resolved, input);
+}
+
 function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
   if (!err || seen.has(err)) return "";
   seen.add(err);
@@ -435,8 +671,12 @@ export function getModelForRoute(route: ModelRoute): LanguageModel {
 }
 
 export function getModel(task: ModelTask): LanguageModel {
-  if (task === "embeddings") {
-    throw new Error("Embeddings must use makeEmbedText or makeEmbedTexts, not getModel()");
+  if (task === "embeddings" || task === "voice_transcription") {
+    throw new Error(
+      task === "embeddings"
+        ? "Embeddings must use makeEmbedText or makeEmbedTexts, not getModel()"
+        : "Voice memo transcription must use transcribeAudioForOrg or transcribeAudioForPublicTask, not getModel()",
+    );
   }
   return modelFromRoute(MODEL_ROUTING[task] ?? MODEL_ROUTING.chat);
 }
@@ -446,6 +686,11 @@ export async function getModelForOrg(
   orgId: Id<"organizations">,
   task: ModelTask,
 ): Promise<LanguageModel> {
+  if (task === "voice_transcription") {
+    throw new Error(
+      "Voice memo transcription must use transcribeAudioForOrg, not getModelForOrg()",
+    );
+  }
   return (await getModelAndRouteForOrg(ctx, orgId, task)).model;
 }
 
@@ -464,6 +709,11 @@ export async function getModelAndRouteForOrg(
   coverageCleanupRouteSource: "broker" | "global" | "static";
   fallbackRoute: ModelRoute;
 }> {
+  if (task === "voice_transcription") {
+    throw new Error(
+      "Voice memo transcription must use transcribeAudioForOrg, not getModelAndRouteForOrg()",
+    );
+  }
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
     const configuredRoute = settings?.routes?.[task];
@@ -481,6 +731,7 @@ export async function getModelAndRouteForOrg(
       !!configuredRoute &&
       configuredRoute.provider !== "moonshot" &&
       !!directProviderModelForRoute(configuredRoute) &&
+      modelRouteSupportsTask(task, configuredRoute) &&
       !!routeDirectApiKey(configuredRoute, configuredApiKey);
     const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
     const apiKey = canUseConfiguredRoute ? configuredApiKey : undefined;
@@ -530,6 +781,11 @@ export async function getModelAndRouteForPublicTask(
   coverageCleanupRouteSource: "global" | "static";
   fallbackRoute: ModelRoute;
 }> {
+  if (task === "voice_transcription") {
+    throw new Error(
+      "Voice memo transcription must use transcribeAudioForPublicTask, not getModelAndRouteForPublicTask()",
+    );
+  }
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
     const configuredRoute = settings?.routes?.[task];
@@ -538,6 +794,7 @@ export async function getModelAndRouteForPublicTask(
       !!configuredRoute &&
       configuredRoute.provider !== "moonshot" &&
       !!directProviderModelForRoute(configuredRoute) &&
+      modelRouteSupportsTask(task, configuredRoute) &&
       !!routeDirectApiKey(configuredRoute);
     const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
     const routeSource = canUseConfiguredRoute ? (configuredRouteSource ?? "global") : "static";

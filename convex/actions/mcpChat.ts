@@ -403,21 +403,30 @@ MCP MODE:
     );
     if (userMessages.length <= 1) {
       try {
-        const { text: titleText } = await generateTextForOrg(ctx, args.orgId, "summary", {
-          maxOutputTokens: 16,
-          system: TITLE_SYSTEM_PROMPT,
-          messages: [
+        let title = fallbackTitle(args.message);
+        try {
+          const { text: titleText } = await generateTextForOrg(
+            ctx,
+            args.orgId,
+            "summary",
             {
-              role: "user",
-              content: buildTitlePromptContent({
-                userMessage: args.message,
-                assistantReply: content,
-              }),
+              maxOutputTokens: 16,
+              system: TITLE_SYSTEM_PROMPT,
+              messages: [
+                {
+                  role: "user",
+                  content: buildTitlePromptContent({
+                    userMessage: args.message,
+                    assistantReply: content,
+                  }),
+                },
+              ],
             },
-          ],
-        });
-        const title =
-          normalizeGeneratedTitle(titleText) ?? fallbackTitle(args.message);
+          );
+          title = normalizeGeneratedTitle(titleText) ?? title;
+        } catch {
+          // The deterministic fallback still gives the thread a useful title.
+        }
         if (title) {
           await ctx.runMutation(internal.threads.updateTitleInternal, {
             threadId,

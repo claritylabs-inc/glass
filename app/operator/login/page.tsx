@@ -7,7 +7,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
+import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
+import { completeOtpSignIn } from "@/lib/otp-auth";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 function friendlyError(raw: string): string {
@@ -66,7 +68,8 @@ export default function OperatorLoginPage() {
     setLoading(true);
     setError("");
     try {
-      await signIn("resend-otp", { email, code });
+      await completeOtpSignIn(email, code);
+      window.location.reload();
     } catch (err) {
       setError(friendlyError(err instanceof Error ? err.message : ""));
       setLoading(false);
@@ -93,7 +96,7 @@ export default function OperatorLoginPage() {
                 placeholder="you@claritylabs.inc"
                 required
                 autoFocus
-                className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8"
+                className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8"
               />
             </div>
             {error ? <p className="text-base text-muted-foreground">{error}</p> : null}
@@ -115,39 +118,7 @@ export default function OperatorLoginPage() {
               <label className="mb-2 block text-label font-medium text-muted-foreground">
                 Verification Code
               </label>
-              <div
-                className="relative flex cursor-text gap-2"
-                onClick={() => {
-                  const input = document.getElementById("operator-otp-input") as HTMLInputElement | null;
-                  input?.focus();
-                }}
-              >
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <div
-                    key={index}
-                    className={`flex aspect-square max-h-14 flex-1 items-center justify-center rounded-lg border bg-popover font-mono text-xl font-medium transition-colors ${
-                      code.length === index
-                        ? "border-foreground/30 ring-1 ring-foreground/10"
-                        : "border-foreground/8"
-                    }`}
-                  >
-                    {code[index] ?? ""}
-                  </div>
-                ))}
-                <input
-                  id="operator-otp-input"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={code}
-                  onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  required
-                  autoFocus
-                  autoComplete="one-time-code"
-                  className="absolute inset-0 h-full w-full cursor-text opacity-0"
-                  aria-label="Verification code"
-                />
-              </div>
+              <OtpField value={code} onValueChange={setCode} autoFocus required />
               <p className="mt-2 text-base text-muted-foreground">
                 We sent a 6-digit code to <span className="font-medium text-foreground">{email}</span>
               </p>

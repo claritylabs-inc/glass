@@ -28,20 +28,22 @@ export type EmailDraftArtifactContext = {
   references?: string;
 };
 
+export type EmailDraftArtifactParams = {
+  to: string;
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  attachments: EmailAttachmentMeta[];
+  allowMultipleCoiAttachments?: boolean;
+  referencedPolicyIds?: Id<"policies">[];
+  sendBlockedReason?: string;
+};
+
 export async function upsertEmailDraftArtifact(
   ctx: ActionCtx,
   context: EmailDraftArtifactContext,
-  params: {
-    to: string;
-    cc: string[];
-    bcc: string[];
-    subject: string;
-    body: string;
-    attachments: EmailAttachmentMeta[];
-    allowMultipleCoiAttachments?: boolean;
-    referencedPolicyIds?: Id<"policies">[];
-    sendBlockedReason?: string;
-  },
+  params: EmailDraftArtifactParams,
 ): Promise<Id<"pendingEmails"> | undefined> {
   if (
     !["web", "imessage", "mcp"].includes(context.channel) ||
@@ -175,5 +177,20 @@ export async function upsertEmailDraftArtifact(
     });
   }
 
+  return pendingEmailId;
+}
+
+export async function queueEmailDraftArtifact(
+  ctx: ActionCtx,
+  context: EmailDraftArtifactContext,
+  params: EmailDraftArtifactParams & { scheduledSendTime: number },
+): Promise<Id<"pendingEmails"> | undefined> {
+  const pendingEmailId = await upsertEmailDraftArtifact(ctx, context, params);
+  if (!pendingEmailId) return undefined;
+
+  await ctx.runMutation(internal.pendingEmails.scheduleDraftInternal, {
+    id: pendingEmailId,
+    scheduledSendTime: params.scheduledSendTime,
+  });
   return pendingEmailId;
 }

@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 import { pipelineFields } from "@claritylabs/cl-pipelines/convex";
+import { agentStepsValidator } from "./lib/agentSteps";
 
 const modelProviderValidator = v.union(
   v.literal("openai"),
@@ -158,6 +159,68 @@ const orgMailingAddressValidator = v.object({
   formatted: v.optional(v.string()),
 });
 
+const policyDetailPartyValidator = v.object({
+  name: v.string(),
+  address: orgMailingAddressValidator,
+});
+
+const policyDetailOverridesValidator = v.object({
+  operationsDescription: v.optional(v.string()),
+  insured: v.optional(
+    v.object({
+      name: v.string(),
+      address: orgMailingAddressValidator,
+      additionalNamedInsureds: v.array(v.string()),
+    }),
+  ),
+  producer: v.optional(
+    v.object({
+      name: v.string(),
+      address: orgMailingAddressValidator,
+      contactName: v.string(),
+      licenseNumber: v.string(),
+      phone: v.string(),
+      email: v.string(),
+    }),
+  ),
+  insurer: v.optional(v.object({
+    name: v.string(),
+    address: orgMailingAddressValidator,
+    naicNumber: v.string(),
+  })),
+  generalAgent: v.optional(v.object({
+    name: v.string(),
+    address: orgMailingAddressValidator,
+    licenseNumber: v.string(),
+  })),
+  // Read compatibility for overrides saved before General Agent nomenclature.
+  mga: v.optional(policyDetailPartyValidator),
+});
+
+const organizationProfileOverridesValidator = v.object({
+  namedInsured: v.optional(v.string()),
+  mailingAddress: orgMailingAddressValidator,
+  dba: v.optional(v.string()),
+  entityType: v.optional(
+    v.union(
+      v.literal("sole_proprietorship"),
+      v.literal("partnership"),
+      v.literal("corporation"),
+      v.literal("s_corporation"),
+      v.literal("limited_liability_company"),
+      v.literal("trust_estate"),
+      v.literal("tax_exempt_organization"),
+      v.literal("government_entity"),
+      v.literal("other"),
+    ),
+  ),
+  taxId: v.optional(v.string()),
+  fein: v.optional(v.string()),
+  businessNumber: v.optional(v.string()),
+  operationsDescription: v.string(),
+  additionalNamedInsureds: v.optional(v.array(v.string())),
+});
+
 const orgProfileFactSourceValidator = v.object({
   policyId: v.id("policies"),
   fieldPath: v.string(),
@@ -173,6 +236,7 @@ const orgProfileFactSourceValidator = v.object({
     v.literal("list"),
     v.literal("unknown"),
   ),
+  sourceNodeIds: v.optional(v.array(v.string())),
   sourceSpanIds: v.optional(v.array(v.string())),
   effectiveDate: v.optional(v.string()),
   expirationDate: v.optional(v.string()),
@@ -339,10 +403,16 @@ export default defineSchema({
         dba: v.optional(orgProfileScalarFactValidator),
         entityType: v.optional(orgProfileScalarFactValidator),
         taxId: v.optional(orgProfileScalarFactValidator),
+        fein: v.optional(orgProfileScalarFactValidator),
+        businessNumber: v.optional(orgProfileScalarFactValidator),
+        operationsDescription: v.optional(orgProfileScalarFactValidator),
         additionalNamedInsureds: v.optional(v.array(orgProfileScalarFactValidator)),
       }),
     ),
     profileFactsUpdatedAt: v.optional(v.number()),
+    profileOverrides: v.optional(organizationProfileOverridesValidator),
+    profileOverridesUpdatedAt: v.optional(v.number()),
+    profileOverridesUpdatedByUserId: v.optional(v.id("users")),
     // Relationship context — helps categorize intelligence entries
     clientsContext: v.optional(v.string()), // who the org's clients/customers are
     vendorsContext: v.optional(v.string()), // key vendors and service providers
@@ -517,10 +587,13 @@ export default defineSchema({
     routes: v.optional(
       v.object({
         chat: v.optional(modelRouteValidator),
+        chat_vision: v.optional(modelRouteValidator),
+        voice_transcription: v.optional(modelRouteValidator),
         email_draft: v.optional(modelRouteValidator),
         email_reply: v.optional(modelRouteValidator),
         extraction: v.optional(modelRouteValidator),
         extraction_preview: v.optional(modelRouteValidator),
+        extraction_coverage_recovery: v.optional(modelRouteValidator),
         classification: v.optional(modelRouteValidator),
         requirement_extraction: v.optional(modelRouteValidator),
         org_memory_extraction: v.optional(modelRouteValidator),
@@ -543,10 +616,13 @@ export default defineSchema({
     routes: v.optional(
       v.object({
         chat: v.optional(modelRouteValidator),
+        chat_vision: v.optional(modelRouteValidator),
+        voice_transcription: v.optional(modelRouteValidator),
         email_draft: v.optional(modelRouteValidator),
         email_reply: v.optional(modelRouteValidator),
         extraction: v.optional(modelRouteValidator),
         extraction_preview: v.optional(modelRouteValidator),
+        extraction_coverage_recovery: v.optional(modelRouteValidator),
         classification: v.optional(modelRouteValidator),
         requirement_extraction: v.optional(modelRouteValidator),
         org_memory_extraction: v.optional(modelRouteValidator),
@@ -643,6 +719,8 @@ export default defineSchema({
     ),
     attempts: v.number(),
     actionSummary: v.optional(v.string()),
+    needsReview: v.optional(v.boolean()),
+    reviewReason: v.optional(v.string()),
     policyIds: v.optional(v.array(v.id("policies"))),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     memoryIds: v.optional(v.array(v.id("orgMemory"))),
@@ -652,6 +730,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_accountId_messageKey", ["accountId", "messageKey"])
+    .index("by_threadId", ["threadId"])
+    .index("by_threadId_and_emailRef", ["threadId", "emailRef"])
     .index("by_orgId_updatedAt", ["orgId", "updatedAt"])
     .index("by_status_updatedAt", ["status", "updatedAt"]),
 
@@ -1117,11 +1197,16 @@ export default defineSchema({
     ),
     uploadedByUserId: v.optional(v.id("users")),
     uploadedByBrokerOrgId: v.optional(v.id("organizations")),
+    // Broker-authored corrections remain separate from source-backed extraction.
+    policyDetailOverrides: v.optional(policyDetailOverridesValidator),
+    policyDetailOverridesUpdatedAt: v.optional(v.number()),
+    policyDetailOverridesUpdatedByUserId: v.optional(v.id("users")),
     // Entity fields
     carrier: v.string(), // backward compat — prefer security for new extractions
     security: v.optional(v.string()), // insurer/underwriter company (e.g. "Lloyd's Underwriters")
     underwriter: v.optional(v.string()), // named individual underwriter (e.g. "Libby Rudd")
-    mga: v.optional(v.string()), // policy administrator named by the source document
+    // Read compatibility for policies extracted before generalAgent.
+    mga: v.optional(v.string()),
     broker: v.optional(v.string()),
     // Enriched entity fields (cl-sdk 1.2+)
     carrierLegalName: v.optional(v.string()),
@@ -1140,6 +1225,17 @@ export default defineSchema({
         amBestNumber: v.optional(v.string()),
         admittedStatus: v.optional(v.string()),
         stateOfDomicile: v.optional(v.string()),
+        address: v.optional(
+          v.object({
+            street1: v.string(),
+            street2: v.optional(v.string()),
+            city: v.optional(v.string()),
+            state: v.optional(v.string()),
+            zip: v.optional(v.string()),
+            country: v.optional(v.string()),
+            formatted: v.optional(v.string()),
+          }),
+        ),
         documentNodeId: v.optional(v.string()),
         sourceSpanIds: v.optional(v.array(v.string())),
         sourceTextHash: v.optional(v.string()),
@@ -1167,6 +1263,29 @@ export default defineSchema({
             state: v.optional(v.string()),
             zip: v.optional(v.string()),
             country: v.optional(v.string()),
+            formatted: v.optional(v.string()),
+          }),
+        ),
+      }),
+    ),
+    generalAgent: v.optional(
+      v.object({
+        agencyName: v.string(),
+        licenseNumber: v.optional(v.string()),
+        documentNodeId: v.optional(v.string()),
+        sourceSpanIds: v.optional(v.array(v.string())),
+        sourceTextHash: v.optional(v.string()),
+        pageStart: v.optional(v.number()),
+        pageEnd: v.optional(v.number()),
+        address: v.optional(
+          v.object({
+            street1: v.string(),
+            street2: v.optional(v.string()),
+            city: v.optional(v.string()),
+            state: v.optional(v.string()),
+            zip: v.optional(v.string()),
+            country: v.optional(v.string()),
+            formatted: v.optional(v.string()),
           }),
         ),
       }),
@@ -1184,6 +1303,7 @@ export default defineSchema({
               state: v.optional(v.string()),
               zip: v.optional(v.string()),
               country: v.optional(v.string()),
+              formatted: v.optional(v.string()),
             }),
           ),
           relationship: v.optional(v.string()),
@@ -1204,6 +1324,7 @@ export default defineSchema({
               state: v.optional(v.string()),
               zip: v.optional(v.string()),
               country: v.optional(v.string()),
+              formatted: v.optional(v.string()),
             }),
           ),
           relationship: v.optional(v.string()),
@@ -1224,6 +1345,7 @@ export default defineSchema({
         state: v.optional(v.string()),
         zip: v.optional(v.string()),
         country: v.optional(v.string()),
+        formatted: v.optional(v.string()),
         documentNodeId: v.optional(v.string()),
         sourceSpanIds: v.optional(v.array(v.string())),
         sourceTextHash: v.optional(v.string()),
@@ -1244,6 +1366,7 @@ export default defineSchema({
               state: v.optional(v.string()),
               zip: v.optional(v.string()),
               country: v.optional(v.string()),
+              formatted: v.optional(v.string()),
             }),
           ),
         }),
@@ -1373,6 +1496,36 @@ export default defineSchema({
           rate: v.optional(v.string()),
           premium: v.optional(v.string()),
           locationNumber: v.optional(v.number()),
+        }),
+      ),
+    ),
+    coverageSchedules: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          kind: v.union(
+            v.literal("vehicle"),
+            v.literal("property"),
+            v.literal("location"),
+            v.literal("other"),
+          ),
+          description: v.optional(v.string()),
+          items: v.array(
+            v.object({
+              label: v.string(),
+              description: v.optional(v.string()),
+              values: v.array(
+                v.object({
+                  label: v.string(),
+                  value: v.string(),
+                }),
+              ),
+              sourceSpanIds: v.array(v.string()),
+            }),
+          ),
+          sourceSpanIds: v.array(v.string()),
+          pageStart: v.optional(v.number()),
+          pageEnd: v.optional(v.number()),
         }),
       ),
     ),
@@ -1886,6 +2039,7 @@ export default defineSchema({
     source: v.optional(certificateSourceValidator),
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
+    descriptionOfOperations: v.optional(v.string()),
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
     legacyCertificateId: v.optional(v.id("certificates")),
@@ -1981,6 +2135,7 @@ export default defineSchema({
     createdByUserId: v.optional(v.id("users")),
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
+    descriptionOfOperations: v.optional(v.string()),
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
     createdAt: v.number(),
@@ -2354,6 +2509,7 @@ export default defineSchema({
       v.literal("list"),
       v.literal("unknown"),
     ),
+    sourceNodeIds: v.optional(v.array(v.string())),
     sourceSpanIds: v.optional(v.array(v.string())),
     effectiveDate: v.optional(v.string()),
     expirationDate: v.optional(v.string()),
@@ -2631,6 +2787,8 @@ export default defineSchema({
     contentHtml: v.optional(v.string()),
     // Reasoning / thinking content (for models that support it)
     reasoning: v.optional(v.string()),
+    // Ordered activity timeline: reasoning segments interleaved with tool calls
+    agentSteps: v.optional(agentStepsValidator),
     // Attachments
     attachments: v.optional(
       v.array(
@@ -2874,20 +3032,6 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   // ── Presence ──
-
-  // API keys for MCP server authentication
-  apiKeys: defineTable({
-    orgId: v.id("organizations"),
-    userId: v.id("users"),
-    name: v.string(),
-    keyHash: v.string(),
-    keyPrefix: v.string(), // first 14 chars of key for display
-    lastUsedAt: v.optional(v.number()),
-    createdAt: v.number(),
-    revokedAt: v.optional(v.number()),
-  })
-    .index("by_keyHash", ["keyHash"])
-    .index("by_orgId", ["orgId"]),
 
   // ── OAuth (MCP remote clients) ──
 

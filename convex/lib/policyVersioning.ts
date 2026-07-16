@@ -2,6 +2,7 @@ const POLICY_VERSION_SNAPSHOT_KEYS = [
   "carrier",
   "security",
   "underwriter",
+  "generalAgent",
   "mga",
   "broker",
   "policyNumber",
@@ -49,7 +50,7 @@ export function buildPolicyVersionFieldDiffs(
 
 export function policyVersionSummary(policy: Record<string, unknown>, fallback: string) {
   const policyNumber = typeof policy.policyNumber === "string" ? policy.policyNumber.trim() : "";
-  const carrier = [policy.security, policy.carrier, policy.mga]
+  const carrier = [policy.security, policy.carrier]
     .find((value) => typeof value === "string" && value.trim().length > 0);
   return [fallback, policyNumber, carrier].filter(Boolean).join(" - ");
 }

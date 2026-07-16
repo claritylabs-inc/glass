@@ -2,17 +2,23 @@
 
 import Link from "next/link";
 import {
+  useSyncExternalStore,
+  type MouseEventHandler,
+  type ReactNode,
+} from "react";
+import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
   MENU_ITEM_ACTIVE,
   MENU_ITEM_BASE,
   MENU_ITEM_INACTIVE,
-  SHORTCUT_TOOLTIP_CLASS,
-  SHORTCUT_TOOLTIP_DELAY_MS,
-  SHORTCUT_TOOLTIP_SIDE_OFFSET,
+  SIDEBAR_TOOLTIP_CLASS,
+  SIDEBAR_TOOLTIP_DELAY_MS,
+  SIDEBAR_TOOLTIP_SIDE_OFFSET,
 } from "./nav-config";
 import type { NavShortcut } from "./types";
 
@@ -35,47 +41,92 @@ export function SectionHeader({
   );
 }
 
-export function NavItem({
-  href,
-  label,
-  icon: Icon,
-  active,
-  collapsed,
-  shortcut,
-}: {
-  href: string;
+type SidebarMenuItemProps = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   active: boolean;
   collapsed: boolean;
   shortcut?: NavShortcut;
-}) {
-  const link = (
+  trailing?: ReactNode;
+  className?: string;
+  ariaPressed?: boolean;
+} & (
+  | {
+      href: string;
+      onClick?: never;
+    }
+  | {
+      href?: never;
+      onClick: MouseEventHandler<HTMLButtonElement>;
+    }
+);
+
+export function SidebarTooltipProvider({ children }: { children: ReactNode }) {
+  return (
+    <TooltipProvider delay={SIDEBAR_TOOLTIP_DELAY_MS}>
+      {children}
+    </TooltipProvider>
+  );
+}
+
+export function SidebarMenuItem({
+  href,
+  onClick,
+  label,
+  icon: Icon,
+  active,
+  collapsed,
+  shortcut,
+  trailing,
+  className = "",
+  ariaPressed,
+}: SidebarMenuItemProps) {
+  const itemClassName = `flex w-full items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
+    collapsed ? "justify-center" : ""
+  } ${active ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE} ${className}`;
+  const contents = (
+    <>
+      <Icon className="w-4 h-4 shrink-0" />
+      {!collapsed && <span className="flex-1 text-left">{label}</span>}
+      {trailing}
+    </>
+  );
+  const item = href !== undefined ? (
     <Link
       href={href}
       id={shortcut ? stableSidebarTooltipId(href) : undefined}
-      className={`flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
-        collapsed ? "justify-center" : ""
-      } ${active ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE}`}
+      className={itemClassName}
       aria-label={collapsed ? label : undefined}
     >
-      <Icon className="w-4 h-4 shrink-0" />
-      {!collapsed && <span className="flex-1">{label}</span>}
+      {contents}
     </Link>
+  ) : (
+    <button
+      type="button"
+      onClick={onClick}
+      id={shortcut ? stableSidebarTooltipId(label) : undefined}
+      className={itemClassName}
+      aria-label={collapsed ? label : undefined}
+      aria-pressed={ariaPressed}
+    >
+      {contents}
+    </button>
   );
-
-  if (!shortcut) return link;
 
   return (
     <Tooltip>
-      <TooltipTrigger render={link} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
+      <TooltipTrigger render={item} />
       <TooltipContent
         side="right"
         align="center"
-        sideOffset={SHORTCUT_TOOLTIP_SIDE_OFFSET}
-        className={SHORTCUT_TOOLTIP_CLASS}
+        sideOffset={SIDEBAR_TOOLTIP_SIDE_OFFSET}
+        className={SIDEBAR_TOOLTIP_CLASS}
       >
-        <ShortcutTooltipContent label={label} shortcut={shortcut} />
+        {shortcut ? (
+          <ShortcutTooltipContent label={label} shortcut={shortcut} />
+        ) : (
+          <span className="text-label">{label}</span>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -88,6 +139,24 @@ export function ShortcutTooltipContent({
   label: string;
   shortcut: NavShortcut;
 }) {
+  const platformModifier = useSyncExternalStore(
+    () => () => {},
+    () => platformModifierForUserAgent(navigator.userAgent),
+    () => "⌘",
+  );
+
+  if (shortcut.type === "command") {
+    return (
+      <>
+        <span className="text-label">{label}</span>
+        <span className="ml-1 inline-flex items-center gap-1 text-label leading-none text-muted-foreground">
+          <ShortcutKeycap>{platformModifier}</ShortcutKeycap>
+          <ShortcutKeycap>{shortcut.key.toUpperCase()}</ShortcutKeycap>
+        </span>
+      </>
+    );
+  }
+
   return (
     <>
       <span className="text-label">Go to {label}</span>
@@ -98,6 +167,12 @@ export function ShortcutTooltipContent({
       </span>
     </>
   );
+}
+
+export function platformModifierForUserAgent(userAgent: string) {
+  return /Macintosh|Mac OS X|iPhone|iPad|iPod/i.test(userAgent)
+    ? "⌘"
+    : "Ctrl";
 }
 
 function ShortcutKeycap({ children }: { children: React.ReactNode }) {

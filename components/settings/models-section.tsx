@@ -49,6 +49,7 @@ type ProviderConfig = {
   id: ProviderId;
   label: string;
   languageModels: string[];
+  audioModels: string[];
   embeddingModels: string[];
 };
 type TaskConfig = {
@@ -56,6 +57,7 @@ type TaskConfig = {
   label: string;
   description: string;
   isEmbedding: boolean;
+  isAudio: boolean;
 };
 type TaskGroupConfig = {
   id: string;
@@ -201,18 +203,24 @@ export function ModelsSection() {
     }
   }
 
-  function modelsForProvider(provider: ProviderId, isEmbedding: boolean) {
+  function modelsForProvider(
+    provider: ProviderId,
+    isEmbedding: boolean,
+    isAudio: boolean,
+  ) {
     const item = providersById[provider];
     return isEmbedding
       ? (item?.embeddingModels ?? [])
-      : (item?.languageModels ?? []);
+      : isAudio
+        ? (item?.audioModels ?? [])
+        : (item?.languageModels ?? []);
   }
 
-  function configuredProviders(isEmbedding: boolean) {
+  function configuredProviders(isEmbedding: boolean, isAudio: boolean) {
     return visibleProviders.filter((provider) => {
       return (
         loadedSettings.providerKeys[provider.id].configured &&
-        modelsForProvider(provider.id, isEmbedding).length > 0
+        modelsForProvider(provider.id, isEmbedding, isAudio).length > 0
       );
     });
   }
@@ -338,7 +346,7 @@ export function ModelsSection() {
                         autoCorrect="off"
                         spellCheck={false}
                         disabled={saving}
-                        className="h-8 rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50"
+                        className="h-9 rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50"
                       />
                     ) : (
                       <span />
@@ -408,6 +416,7 @@ export function ModelsSection() {
                   {tasks.map((task: TaskConfig) => {
                     const availableProviders = configuredProviders(
                       task.isEmbedding,
+                      task.isAudio,
                     );
                     const route = settings.routes[task.id] ?? null;
                     const saving = savingTask === task.id;
@@ -498,6 +507,7 @@ export function ModelsSection() {
                                     {modelsForProvider(
                                       provider.id,
                                       task.isEmbedding,
+                                      task.isAudio,
                                     ).map((model) => (
                                       <SelectItem
                                         key={`${provider.id}:${model}`}

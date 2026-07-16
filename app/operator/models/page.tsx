@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import dayjs from "dayjs";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
@@ -30,6 +29,7 @@ import {
   useCachedOperatorGlobalModelSettings,
   useOperatorGlobalModelSettingsCacheActions,
 } from "@/lib/sync/operator-cached-queries";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type ProviderId =
   | "openai"
@@ -52,6 +52,8 @@ type ModelCapability = {
   defaultOutputTokens?: number;
   longListOutputTokens?: number;
   taskOutputTokens?: Record<string, number>;
+  supportsImageInput?: boolean;
+  supportsAudioInput?: boolean;
 };
 type ProviderConfig = {
   id: ProviderId;
@@ -59,6 +61,7 @@ type ProviderConfig = {
   configured: boolean;
   transport: "direct" | null;
   languageModels: string[];
+  audioModels: string[];
   embeddingModels: string[];
 };
 type TaskConfig = {
@@ -66,6 +69,7 @@ type TaskConfig = {
   label: string;
   description: string;
   isEmbedding: boolean;
+  isAudio: boolean;
   defaultRoute: Route;
 };
 type TaskGroupConfig = {
@@ -175,6 +179,9 @@ function capabilitySummary(
   if (!capability) return "Caps unknown";
   if (!capability.known) {
     return `${formatTokens(capability.defaultOutputTokens)} preferred / n/a`;
+  }
+  if (taskId === "voice_transcription" && capability.supportsAudioInput) {
+    return "Audio transcription";
   }
   const parts = [
     `${formatTokens(capability.maxInputTokens)} in`,
@@ -424,17 +431,27 @@ export default function OperatorModelsPage() {
     }
   }
 
-  function modelsForProvider(provider: ProviderId, isEmbedding: boolean) {
+  function modelsForProvider(
+    provider: ProviderId,
+    isEmbedding: boolean,
+    isAudio: boolean,
+  ) {
     const item = providersById[provider];
     return isEmbedding
       ? (item?.embeddingModels ?? [])
-      : (item?.languageModels ?? []);
+      : isAudio
+        ? (item?.audioModels ?? [])
+        : (item?.languageModels ?? []);
   }
 
   function providersForTask(task: TaskConfig, selectedProvider: ProviderId) {
     return [...(settings?.providers ?? [])]
       .filter((provider) => {
-        const hasModels = modelsForProvider(provider.id, task.isEmbedding).length > 0;
+        const hasModels = modelsForProvider(
+          provider.id,
+          task.isEmbedding,
+          task.isAudio,
+        ).length > 0;
         return (
           hasModels && (provider.configured || provider.id === selectedProvider)
         );
@@ -446,7 +463,11 @@ export default function OperatorModelsPage() {
   }
 
   function modelsForSelectedRoute(task: TaskConfig, route: Route) {
-    const models = modelsForProvider(route.provider, task.isEmbedding);
+    const models = modelsForProvider(
+      route.provider,
+      task.isEmbedding,
+      task.isAudio,
+    );
     return models.includes(route.model) ? models : [route.model, ...models];
   }
 
@@ -457,7 +478,7 @@ export default function OperatorModelsPage() {
 
   const actions = settings?.updatedAt ? (
     <span className="text-label text-muted-foreground">
-      Updated {dayjs(settings.updatedAt).format("MMM D")}
+      Updated {formatDisplayDate(settings.updatedAt)}
     </span>
   ) : null;
 
@@ -553,6 +574,7 @@ export default function OperatorModelsPage() {
                                 const models = modelsForProvider(
                                   provider,
                                   task.isEmbedding,
+                                  task.isAudio,
                                 );
                                 const model = models.includes(selectedRoute.model)
                                   ? selectedRoute.model

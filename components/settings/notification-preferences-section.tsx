@@ -9,6 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { FormSection } from "@/components/ui/form-section";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import {
   OperationalPanel,
@@ -149,18 +150,15 @@ function NotificationPreferenceDrawer({
         </>
       }
     >
-      <div className="space-y-4">
-        <div>
-          <p className="text-base font-medium text-foreground">
-            Delivery channels
-          </p>
-          <p className="mt-0.5 text-base text-muted-foreground">
-            {usesDefaults
-              ? "This event currently follows your default delivery settings."
-              : "This event has custom delivery settings."}
-          </p>
-        </div>
-
+      <FormSection
+        title="Delivery channels"
+        description={
+          usesDefaults
+            ? "This event currently follows your default delivery settings."
+            : "This event has custom delivery settings."
+        }
+        divided={false}
+      >
         <OperationalPanel as="div" className="divide-y divide-foreground/6">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
@@ -189,7 +187,7 @@ function NotificationPreferenceDrawer({
             />
           </div>
         </OperationalPanel>
-      </div>
+      </FormSection>
     </SettingsDrawer>
   );
 }

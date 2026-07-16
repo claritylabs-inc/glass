@@ -54,9 +54,13 @@ function buildAlreadyExtractedSummary(policy: any): string {
     lines.push(`insured_address: ${[a.street1, a.city, a.state, a.zip].filter(Boolean).join(", ")}`);
   }
 
-  // Broker / MGA
+  // Broker / General Agent
   if (policy.brokerAgency || policy.broker) lines.push(`broker: ${policy.brokerAgency || policy.broker}`);
-  if (policy.mga) lines.push(`mga: ${policy.mga}`);
+  if (policy.generalAgent?.agencyName) {
+    lines.push(`general_agent: ${policy.generalAgent.agencyName}`);
+  } else if (policy.mga) {
+    lines.push(`general_agent: ${policy.mga}`);
+  }
   if (policy.underwriter) lines.push(`underwriter: ${policy.underwriter}`);
 
   // Coverages — limits and deductibles

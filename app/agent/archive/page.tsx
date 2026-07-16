@@ -9,12 +9,12 @@ import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
 import { ArchiveRestore, Mail, MessageCircle } from "lucide-react";
 import Link from "next/link";
-import dayjs from "dayjs";
 import { Id } from "@/convex/_generated/dataModel";
 import {
   useArchivedThreadCacheActions,
   useCachedArchivedThreads,
 } from "@/lib/sync/glass-cached-queries";
+import { formatDisplayDateTime } from "@/lib/date-format";
 
 export default function ArchivePage() {
   const threads = useCachedArchivedThreads();
@@ -64,8 +64,8 @@ export default function ArchivePage() {
                     {thread.title}
                   </p>
                   <p className="text-label text-muted-foreground/40">
-                    {dayjs(thread.lastMessageAt ?? thread._creationTime).format(
-                      "MMM D, YYYY · h:mm A",
+                    {formatDisplayDateTime(
+                      thread.lastMessageAt ?? thread._creationTime,
                     )}
                     {thread.originChannel === "imessage"
                       ? " · iMessage"

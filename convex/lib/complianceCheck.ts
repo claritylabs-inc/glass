@@ -211,6 +211,7 @@ function policyText(policy: Doc<"policies">) {
       policy.summary,
       policy.carrier,
       policy.security,
+      policy.generalAgent?.agencyName,
       policy.mga,
       policy.broker,
       policy.insuredName,
@@ -329,7 +330,7 @@ function matchedPolicySummary(args: {
   const dataStage = policyDataStage(args.policy);
   return {
     _id: args.policy._id,
-    carrier: args.policy.mga || args.policy.carrier || args.policy.security,
+    carrier: args.policy.carrier || args.policy.security,
     policyNumber: args.policy.policyNumber,
     insuredName: args.policy.insuredName,
     expectedInsuredName: args.expectedInsuredName,

@@ -46,14 +46,12 @@ next-env.d.ts
 
 # worktrees
 .worktrees
+.context/
 
 # AI assistant history and local config
 .claude/
 .cursor/
 .codex/
 
-# mcp-server
-mcp-server/node_modules
-mcp-server/dist
 imessage-worker/node_modules
 imessage-worker/dist

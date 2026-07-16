@@ -81,7 +81,7 @@ ${JSON.stringify({
     security: params.policy.security,
     insurer: params.policy.insurer,
     underwriter: params.policy.underwriter,
-    mga: params.policy.mga,
+    generalAgent: params.policy.generalAgent,
     programName: params.policy.programName,
     linesOfBusiness: policyLobCodes(params.policy).map((code) => ({
       code,

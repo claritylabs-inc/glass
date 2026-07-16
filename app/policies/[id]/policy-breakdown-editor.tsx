@@ -17,6 +17,7 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { FormSection } from "@/components/ui/form-section";
 
 import {
   SourceEvidenceButton,
@@ -179,20 +180,6 @@ type EditableTaxFee = {
   description?: string;
   sourceSpanIds?: string[];
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export function PolicyBreakdownEditor({
   policy,
@@ -424,11 +411,9 @@ export function PolicyBreakdownEditor({
           ))}
         </div>
 
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <p className="text-base font-medium text-foreground flex-1">
-              Premium breakdown
-            </p>
+        <FormSection
+          title="Premium breakdown"
+          action={
             <PillButton
               size="compact"
               variant="secondary"
@@ -442,7 +427,8 @@ export function PolicyBreakdownEditor({
               <Plus className="size-3.5" />
               Add
             </PillButton>
-          </div>
+          }
+        >
           <div className="space-y-2">
             {draft.premiumBreakdown.map((row, index) => (
               <div
@@ -491,13 +477,11 @@ export function PolicyBreakdownEditor({
               </div>
             ))}
           </div>
-        </div>
+        </FormSection>
 
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <p className="text-base font-medium text-foreground flex-1">
-              Taxes and fees
-            </p>
+        <FormSection
+          title="Taxes and fees"
+          action={
             <PillButton
               size="compact"
               variant="secondary"
@@ -511,7 +495,8 @@ export function PolicyBreakdownEditor({
               <Plus className="size-3.5" />
               Add
             </PillButton>
-          </div>
+          }
+        >
           <div className="space-y-2">
             {draft.taxesAndFees.map((row, index) => (
               <div
@@ -569,13 +554,11 @@ export function PolicyBreakdownEditor({
               </div>
             ))}
           </div>
-        </div>
+        </FormSection>
 
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <p className="text-base font-medium text-foreground flex-1">
-              Coverages
-            </p>
+        <FormSection
+          title="Coverages"
+          action={
             <PillButton
               size="compact"
               variant="secondary"
@@ -589,7 +572,8 @@ export function PolicyBreakdownEditor({
               <Plus className="size-3.5" />
               Add
             </PillButton>
-          </div>
+          }
+        >
           <div className="space-y-2">
             {draft.coverages.map((row, index) => (
               <div
@@ -662,7 +646,7 @@ export function PolicyBreakdownEditor({
               </div>
             ))}
           </div>
-        </div>
+        </FormSection>
       </div>
     </SettingsDrawer>
   );

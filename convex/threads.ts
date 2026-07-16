@@ -4,6 +4,7 @@ import { query, mutation, internalQuery, internalMutation, type MutationCtx, typ
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireCurrentOrgAccess as requireOrgAccess, getCurrentOrgAccess as getOrgAccess } from "./lib/access";
+import { agentStepsValidator } from "./lib/agentSteps";
 import { getBrokerAccessToClientForQuery } from "./lib/access";
 import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
 import { getActiveOperatorImpersonation, writeOperatorAudit } from "./lib/operatorIdentity";
@@ -823,6 +824,7 @@ export const updateAgentMessage = internalMutation({
       input: v.optional(v.string()),
       output: v.optional(v.string()),
     }))),
+    agentSteps: v.optional(agentStepsValidator),
     toolArtifacts: v.optional(v.array(v.object({
       type: v.string(),
       data: v.any(),
@@ -855,6 +857,7 @@ export const updateAgentMessage = internalMutation({
       citedSourceSpanIds: args.citedSourceSpanIds,
       usedTools: args.usedTools,
       toolCalls: args.toolCalls,
+      agentSteps: args.agentSteps,
       toolArtifacts: args.toolArtifacts,
       attachments: args.attachments,
       pendingEmailId: args.pendingEmailId,
@@ -994,11 +997,18 @@ export const streamAgentProgress = internalMutation({
 
 /** Update agent reasoning while streaming (for models that support reasoning) */
 export const streamReasoning = internalMutation({
-  args: { id: v.id("threadMessages"), reasoning: v.string() },
+  args: {
+    id: v.id("threadMessages"),
+    reasoning: v.string(),
+    agentSteps: v.optional(agentStepsValidator),
+  },
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.id);
     if (existing?.status === "cancelled") return;
-    await ctx.db.patch(args.id, { reasoning: args.reasoning });
+    await ctx.db.patch(args.id, {
+      reasoning: args.reasoning,
+      ...(args.agentSteps !== undefined ? { agentSteps: args.agentSteps } : {}),
+    });
   },
 });
 

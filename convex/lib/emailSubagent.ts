@@ -10,7 +10,10 @@ import { generateTextForOrg } from "./models";
 import { buildAgentToolExecutors } from "./agentToolExecutors";
 import type { AgentScope } from "./agentScope";
 import { extractEmailAddress, normalizeEmailAddress } from "./emailAddress";
-import { upsertEmailDraftArtifact } from "./emailDraftArtifacts";
+import {
+  queueEmailDraftArtifact,
+  upsertEmailDraftArtifact,
+} from "./emailDraftArtifacts";
 import {
   buildEmailPayload,
   sendTrackedResendEmail,
@@ -42,7 +45,10 @@ export {
   resolveEmailAgentIdentity,
   type BrokerBranding,
 } from "./emailIdentity";
-export { upsertEmailDraftArtifact } from "./emailDraftArtifacts";
+export {
+  queueEmailDraftArtifact,
+  upsertEmailDraftArtifact,
+} from "./emailDraftArtifacts";
 
 export type EmailSubagentResult = {
   status: "draft" | "needs_confirmation" | "pending" | "sent" | "error";
@@ -179,6 +185,7 @@ export function buildEmailExpertTool(
             city: z.string().optional(),
             state: z.string().optional(),
             postalCode: z.string().optional(),
+            country: z.string().optional(),
             requestText: z.string().optional(),
             requestedEndorsements: z.array(z.string()).optional(),
           }),
@@ -337,6 +344,7 @@ async function runEmailSubagent(
     city?: string,
     state?: string,
     postalCode?: string,
+    country?: string,
     requestText?: string,
     requestedEndorsements?: string[],
     additionalInsuredName?: string,
@@ -390,6 +398,7 @@ async function runEmailSubagent(
       city,
       state,
       postalCode,
+      country,
       requestText,
       requestedEndorsements,
       additionalInsuredName,
@@ -449,6 +458,7 @@ async function runEmailSubagent(
         requested.city,
         requested.state,
         requested.postalCode,
+        requested.country,
         requested.requestText,
         requested.requestedEndorsements,
       );
@@ -548,6 +558,10 @@ async function runEmailSubagent(
     const approvedToSend =
       params.approvedToSend === true || input.approvedToSend === true;
     const autoSend = context.autoSendEmails === true;
+    const referencedPolicyIds =
+      sourcePolicyIds.size > 0
+        ? ([...sourcePolicyIds] as Id<"policies">[])
+        : undefined;
 
     const uncertainty: string[] = [];
     if (!to) {
@@ -585,10 +599,6 @@ async function runEmailSubagent(
       const status = uncertainty.length > 0 ? "needs_confirmation" : "draft";
       const sendBlockedReason =
         uncertainty.length > 0 ? uncertainty.join(" ") : undefined;
-      const referencedPolicyIds =
-        sourcePolicyIds.size > 0
-          ? ([...sourcePolicyIds] as Id<"policies">[])
-          : undefined;
       const draftPendingEmailId =
         to && subject && body
           ? await upsertEmailDraftArtifact(ctx, context, {
@@ -650,9 +660,20 @@ async function runEmailSubagent(
     const sendDelay = context.emailSendDelay ?? 5;
     if (sendDelay > 0 && context.threadId) {
       const scheduledSendTime = dayjs().add(sendDelay, "second").valueOf();
-      const pendingEmailId = await ctx.runMutation(
-        internal.pendingEmails.create,
-        {
+      const persistedDraftId = await queueEmailDraftArtifact(ctx, context, {
+        to: sendTo,
+        cc,
+        bcc,
+        subject,
+        body,
+        attachments,
+        allowMultipleCoiAttachments,
+        referencedPolicyIds,
+        scheduledSendTime,
+      });
+      const pendingEmailId =
+        persistedDraftId ??
+        (await ctx.runMutation(internal.pendingEmails.create, {
           orgId: context.orgId,
           threadId: context.threadId,
           emailPayload: JSON.stringify(emailPayload),
@@ -671,12 +692,8 @@ async function runEmailSubagent(
           renderedHtml: emailPayload.html,
           attachments: attachments.length > 0 ? attachments : undefined,
           allowMultipleCoiAttachments,
-          referencedPolicyIds:
-            sourcePolicyIds.size > 0
-              ? ([...sourcePolicyIds] as Id<"policies">[])
-              : undefined,
-        },
-      );
+          referencedPolicyIds,
+        }));
       await ctx.scheduler.runAfter(
         sendDelay * 1000,
         internal.actions.sendPendingEmail.sendPending,
@@ -695,6 +712,44 @@ async function runEmailSubagent(
       };
       finalResult = pendingResult;
       return pendingResult;
+    }
+
+    const persistedDraftId = await upsertEmailDraftArtifact(ctx, context, {
+      to: sendTo,
+      cc,
+      bcc,
+      subject,
+      body,
+      attachments,
+      allowMultipleCoiAttachments,
+      referencedPolicyIds,
+    });
+    if (persistedDraftId) {
+      await ctx.runAction(
+        internal.actions.sendPendingEmail.sendDraftInternal,
+        {
+          id: persistedDraftId,
+          userConfirmedDraft: true,
+        },
+      );
+      const sentDraft = (await ctx.runQuery(
+        internal.pendingEmails.getInternal,
+        { id: persistedDraftId },
+      )) as Doc<"pendingEmails"> | null;
+      const sentResult: EmailSubagentResult = {
+        status: "sent",
+        responseBody: `Email sent to ${sendTo}${cc.length > 0 ? ` (CC: ${cc.join(", ")})` : ""}.`,
+        responseTo: sendTo,
+        responseCc: cc.length > 0 ? cc : undefined,
+        responseBcc: bcc.length > 0 ? bcc : undefined,
+        subject,
+        emailBody: body,
+        responseMessageId: sentDraft?.sentMessageId,
+        pendingEmailId: persistedDraftId,
+        attachments,
+      };
+      finalResult = sentResult;
+      return sentResult;
     }
 
     if (attachments.length > 0) {
@@ -726,10 +781,7 @@ async function runEmailSubagent(
         subject,
         responseMessageId: sentMessageId,
         attachments: attachments.length > 0 ? attachments : undefined,
-        referencedPolicyIds:
-          sourcePolicyIds.size > 0
-            ? ([...sourcePolicyIds] as Id<"policies">[])
-            : undefined,
+        referencedPolicyIds,
       });
     }
 
@@ -756,7 +808,7 @@ You only handle Glass Agent outbound email. Your job is to draft or send polishe
 
 Be careful by default:
 - If the recipient email is missing, inferred, or not clearly the intended recipient, do not send. Produce a draft and ask for confirmation.
-- Never invent broker, carrier, underwriter, MGA, client, or vendor recipient emails. If a requested recipient is not supplied or present in known contacts/context, ask for the missing contact information instead.
+- Never invent broker, carrier, underwriter, General Agent, client, or vendor recipient emails. If a requested recipient is not supplied or present in known contacts/context, ask for the missing contact information instead.
 - If the request says "email me", "send me", or "email this to me", use the supplied default recipient as the recipient.
 - If the subject, body, or requested attachments are ambiguous, do not send.
 - If auto-send is disabled, draft first unless the caller says the user explicitly approved this exact email.
@@ -845,6 +897,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           city: z.string().optional(),
           state: z.string().optional(),
           postalCode: z.string().optional(),
+          country: z.string().optional(),
           requestText: z.string().optional(),
           requestedEndorsements: z.array(z.string()).optional(),
           additionalInsuredName: z.string().optional(),
@@ -860,6 +913,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           city,
           state,
           postalCode,
+          country,
           requestText,
           requestedEndorsements,
           additionalInsuredName,
@@ -875,6 +929,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
             city,
             state,
             postalCode,
+            country,
             requestText,
             requestedEndorsements,
             additionalInsuredName,

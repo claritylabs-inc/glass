@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
+import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type UploadedBySide =
   | "broker"
@@ -12,7 +15,7 @@ type UploadedBySide =
 
 interface PolicyListItemProps {
   carrier: string;
-  administrator?: string;
+  generalAgent?: string;
   policyNumber: string;
   fileName?: string | null;
   effectiveDate?: string;
@@ -22,6 +25,7 @@ interface PolicyListItemProps {
   uploadedBySide?: UploadedBySide;
   href?: string;
   onClick?: () => void;
+  trailingAction?: ReactNode;
 }
 
 function ProvenanceBadge({ side }: { side: UploadedBySide }) {
@@ -50,9 +54,16 @@ function cleanField(value: string | undefined): string | undefined {
   return trimmed;
 }
 
+function formatPolicyDate(value: string | undefined): string | undefined {
+  const cleaned = cleanField(value);
+  if (!cleaned) return undefined;
+  const normalized = normalizeExtractedDate(cleaned);
+  return normalized ? formatDisplayDate(normalized) : cleaned;
+}
+
 export function PolicyListItem({
   carrier,
-  administrator,
+  generalAgent,
   policyNumber,
   fileName,
   effectiveDate,
@@ -62,20 +73,21 @@ export function PolicyListItem({
   uploadedBySide,
   href,
   onClick,
+  trailingAction,
 }: PolicyListItemProps) {
   const isProvisional =
     extractionDataStage === "preview" && pipelineStatus !== "complete";
   const isProcessing =
     !isProvisional && (pipelineStatus === "running" || !pipelineStatus);
   const carrierClean = cleanField(carrier);
-  const administratorClean = cleanField(administrator);
+  const generalAgentClean = cleanField(generalAgent);
   const policyNumberClean = cleanField(policyNumber);
   const fileNameClean = cleanField(fileName ?? undefined);
-  const effectiveClean = cleanField(effectiveDate);
-  const expirationClean = cleanField(expirationDate);
+  const effectiveClean = formatPolicyDate(effectiveDate);
+  const expirationClean = formatPolicyDate(expirationDate);
 
   const title =
-    administratorClean ??
+    generalAgentClean ??
     carrierClean ??
     (isProcessing ? (fileNameClean ?? "New upload") : "Untitled policy");
   const hasDates = effectiveClean && expirationClean;
@@ -121,6 +133,20 @@ export function PolicyListItem({
   );
 
   if (href) {
+    if (trailingAction) {
+      return (
+        <div className={rowClass}>
+          <Link
+            href={href}
+            prefetch
+            className="flex min-w-0 flex-1 items-center justify-between"
+          >
+            {content}
+          </Link>
+          <div className="ml-4 shrink-0">{trailingAction}</div>
+        </div>
+      );
+    }
     return (
       <Link href={href} prefetch className={rowClass}>
         {content}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import dayjs from "dayjs";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { isValidPhoneNumber } from "react-phone-number-input";
@@ -51,6 +50,7 @@ import {
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type ClientRow = {
   _id: Id<"organizations">;
@@ -81,9 +81,9 @@ type BrokerOption = {
 };
 
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 const AFFIXED_INPUT_CLASSES =
-  "min-w-0 flex-1 bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none";
+  "h-full min-w-0 flex-1 bg-transparent px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none";
 const STANDALONE_VALUE = "__standalone__";
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -608,7 +608,7 @@ export default function OperatorClientsPage() {
             />
           </Field>
           <Field label="Agent handle">
-            <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+            <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
               <input
                 className={AFFIXED_INPUT_CLASSES}
                 value={agentHandle}
@@ -712,7 +712,7 @@ export default function OperatorClientsPage() {
               />
             </Field>
             <Field label="Agent handle">
-              <div className="flex overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+              <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
                 <input
                   className={AFFIXED_INPUT_CLASSES}
                   value={editAgentHandle}
@@ -888,7 +888,7 @@ export default function OperatorClientsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="px-4 text-muted-foreground">
-                      {dayjs(client.createdAt).format("MMM D")}
+                      {formatDisplayDate(client.createdAt)}
                     </TableCell>
                   </TableRow>
                 ))

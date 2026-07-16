@@ -25,6 +25,25 @@ export const IMAP_GREETING_TIMEOUT_MS = 10_000;
 export const IMAP_SOCKET_TIMEOUT_MS = 18_000;
 export const SEARCH_DOWNLOAD_MAX_BYTES = 5 * 1024 * 1024;
 export const IMPORT_DOWNLOAD_MAX_BYTES = 30 * 1024 * 1024;
+export const MAILBOX_MESSAGE_UNAVAILABLE_MESSAGE =
+  "This email is no longer available in the connected mailbox. It may have been moved or deleted.";
+
+const MAX_MESSAGE_ID_SEARCH_MAILBOXES = 8;
+const MESSAGE_ID_SEARCH_SPECIAL_USES = new Set(["\\all", "\\archive"]);
+const MESSAGE_ID_SEARCH_FOLDER_NAMES = new Set(["all mail", "archive", "archives"]);
+
+export class MailboxMessageUnavailableError extends Error {
+  constructor(message = MAILBOX_MESSAGE_UNAVAILABLE_MESSAGE) {
+    super(message);
+    this.name = "MailboxMessageUnavailableError";
+  }
+}
+
+export function isMailboxMessageUnavailableError(
+  error: unknown,
+): error is MailboxMessageUnavailableError {
+  return error instanceof MailboxMessageUnavailableError;
+}
 
 function encryptionKey() {
   const secret = process.env.EMAIL_CONNECTIONS_ENCRYPTION_KEY;
@@ -162,6 +181,9 @@ export async function fetchParsedMessage(
     uid: true,
     maxBytes,
   });
+  if (!downloaded?.content || !downloaded.meta) {
+    throw new MailboxMessageUnavailableError();
+  }
   const raw = await streamToBuffer(downloaded.content);
   if (
     downloaded.meta.expectedSize > 0 &&
@@ -172,6 +194,102 @@ export async function fetchParsedMessage(
     );
   }
   return await simpleParser(raw);
+}
+
+function searchableMailboxPaths(
+  originalMailbox: string,
+  mailboxes: Awaited<ReturnType<ImapFlow["list"]>>,
+) {
+  const candidates = mailboxes
+    .filter((mailbox) => {
+      const flags = [...mailbox.flags].map((flag) => flag.toLowerCase());
+      const specialUse = mailbox.specialUse?.toLowerCase();
+      return (
+        mailbox.listed &&
+        !flags.includes("\\noselect") &&
+        (
+          (specialUse && MESSAGE_ID_SEARCH_SPECIAL_USES.has(specialUse)) ||
+          MESSAGE_ID_SEARCH_FOLDER_NAMES.has(mailbox.name.toLowerCase())
+        )
+      );
+    })
+    .sort((left, right) => {
+      const priority = (specialUse?: string) => {
+        if (specialUse?.toLowerCase() === "\\all") return 0;
+        if (specialUse?.toLowerCase() === "\\archive") return 1;
+        return 2;
+      };
+      return priority(left.specialUse) - priority(right.specialUse);
+    });
+
+  return [originalMailbox, ...candidates.map((mailbox) => mailbox.path)]
+    .filter((path, index, paths) =>
+      paths.findIndex((candidate) => candidate.toLowerCase() === path.toLowerCase()) === index
+    )
+    .slice(0, MAX_MESSAGE_ID_SEARCH_MAILBOXES);
+}
+
+function normalizedMessageId(messageId?: string) {
+  return messageId?.trim().replace(/^<|>$/g, "").trim().toLowerCase();
+}
+
+export async function resolveParsedMessage(
+  client: ImapFlow,
+  args: {
+    mailbox: string;
+    uid: number;
+    messageId?: string;
+    maxBytes?: number;
+  },
+): Promise<{ parsed: ParsedMail; mailbox: string; uid: number }> {
+  const maxBytes = args.maxBytes ?? SEARCH_DOWNLOAD_MAX_BYTES;
+  const messageId = args.messageId?.trim();
+  const expectedMessageId = normalizedMessageId(messageId);
+  try {
+    const parsed = await fetchParsedMessage(client, args.mailbox, args.uid, maxBytes);
+    if (!expectedMessageId || normalizedMessageId(parsed.messageId) === expectedMessageId) {
+      return { parsed, mailbox: args.mailbox, uid: args.uid };
+    }
+  } catch (error) {
+    if (!isMailboxMessageUnavailableError(error) || !messageId) {
+      throw error;
+    }
+  }
+
+  if (!messageId) throw new MailboxMessageUnavailableError();
+  const paths = searchableMailboxPaths(args.mailbox, await client.list());
+  let searchedMailbox = false;
+  let firstSearchError: unknown;
+
+  for (const mailbox of paths) {
+    let result: Awaited<ReturnType<ImapFlow["search"]>>;
+    try {
+      await client.mailboxOpen(mailbox);
+      result = await client.search(
+        { header: { "Message-ID": messageId } },
+        { uid: true },
+      );
+      searchedMailbox = true;
+    } catch (error) {
+      firstSearchError ??= error;
+      continue;
+    }
+
+    const uids = Array.isArray(result) ? [...result].sort((left, right) => right - left) : [];
+    for (const uid of uids) {
+      try {
+        const parsed = await fetchParsedMessage(client, mailbox, uid, maxBytes);
+        if (normalizedMessageId(parsed.messageId) === expectedMessageId) {
+          return { parsed, mailbox, uid };
+        }
+      } catch (error) {
+        if (!isMailboxMessageUnavailableError(error)) throw error;
+      }
+    }
+  }
+
+  if (!searchedMailbox && firstSearchError) throw firstSearchError;
+  throw new MailboxMessageUnavailableError();
 }
 
 export async function accessibleAccount(ctx: ActionCtx, args: {

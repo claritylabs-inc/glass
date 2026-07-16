@@ -103,7 +103,8 @@ describe("simplified certificate request routing", () => {
     expect(lifecycle).toContain("cleanupDuplicatePolicyCertificatesForOperator");
     expect(lifecycle).toContain("dryRun = args.dryRun ?? true");
     expect(ui).toContain("Reissue");
-    expect(policyPage).toContain("forceReissue: true");
+    expect(ui).toContain("forceReissue: true");
+    expect(policyPage).toContain("certificateVersionActionInput(row)");
   });
 });
 
@@ -149,7 +150,6 @@ describe("removed program-admin surfaces", () => {
   it("removes program IDs and certificate authority fields from tool-facing schemas", () => {
     const chatTools = readFileSync(join(ROOT, "convex/lib/chatTools.ts"), "utf-8");
     const http = readFileSync(join(ROOT, "convex/http.ts"), "utf-8");
-    const mcpTools = readFileSync(join(ROOT, "mcp-server/src/tools/policies.ts"), "utf-8");
     const notificationTypes = readFileSync(
       join(ROOT, "convex/lib/notificationTypes.ts"),
       "utf-8",
@@ -167,7 +167,6 @@ describe("removed program-admin surfaces", () => {
     for (const term of forbidden) {
       expect(chatTools).not.toContain(term);
       expect(http).not.toContain(term);
-      expect(mcpTools).not.toContain(term);
       expect(notificationTypes).not.toContain(term);
     }
     expect(notificationTypes).not.toContain("program_admin_certificate_request");

@@ -11,6 +11,7 @@ export type ModelPolicyCapabilityConfig = {
   longListOutputTokens?: number;
   taskOutputTokens?: Record<string, number>;
   supportsImageInput?: boolean;
+  supportsAudioInput?: boolean;
 };
 
 export const MODEL_POLICY_FIREWORKS_MODEL_IDS = {
@@ -25,10 +26,13 @@ export const MODEL_POLICY_FIREWORKS_MODEL_IDS = {
 
 export const MODEL_POLICY_TASK_ROUTES = {
   chat: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
+  chat_vision: { provider: "openai", model: "gpt-5.6-terra" },
+  voice_transcription: { provider: "openai", model: "gpt-4o-transcribe" },
   email_draft: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.glm52 },
   email_reply: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.glm52 },
   extraction: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
   extraction_preview: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
+  extraction_coverage_recovery: { provider: "openai", model: "gpt-5.4-mini" },
   classification: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
   requirement_extraction: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
   org_memory_extraction: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash },
@@ -83,12 +87,38 @@ const OPENAI_GPT_5_4_CAPABILITIES: Omit<ModelPolicyCapabilityConfig, "modelName"
     extraction_focused: 16_384,
     extraction_long_list: 24_576,
     extraction_operational_profile: 32_768,
+    extraction_coverage_recovery: 16_384,
     extraction_coverage_cleanup: 4_096,
     extraction_review: 12_288,
   },
 } as const;
 
+const OPENAI_GPT_5_6_CAPABILITIES: Omit<ModelPolicyCapabilityConfig, "modelName"> = {
+  maxInputTokens: 1_050_000,
+  maxOutputTokens: 128_000,
+  defaultOutputTokens: 8_192,
+  longListOutputTokens: 24_576,
+  supportsImageInput: true,
+  taskOutputTokens: {
+    query_reason: 8_192,
+    query_verify: 4_096,
+    query_respond: 8_192,
+  },
+} as const;
+
 export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConfig> = {
+  "gpt-5.6": { modelName: "gpt-5.6", ...OPENAI_GPT_5_6_CAPABILITIES },
+  "gpt-5.6-sol": { modelName: "gpt-5.6-sol", ...OPENAI_GPT_5_6_CAPABILITIES },
+  "gpt-5.6-terra": { modelName: "gpt-5.6-terra", ...OPENAI_GPT_5_6_CAPABILITIES },
+  "gpt-5.6-luna": { modelName: "gpt-5.6-luna", ...OPENAI_GPT_5_6_CAPABILITIES },
+  "gpt-4o-transcribe": {
+    modelName: "gpt-4o-transcribe",
+    supportsAudioInput: true,
+  },
+  "gpt-4o-mini-transcribe": {
+    modelName: "gpt-4o-mini-transcribe",
+    supportsAudioInput: true,
+  },
   "gpt-5.5": { modelName: "gpt-5.5", ...OPENAI_GPT_5_4_CAPABILITIES },
   "gpt-5.4": { modelName: "gpt-5.4", ...OPENAI_GPT_5_4_CAPABILITIES },
   "gpt-5.4-mini": {
@@ -133,6 +163,7 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
       extraction_classify: 2_048,
       extraction_source_tree: 4_096,
       extraction_preview: 4_096,
+      extraction_coverage_recovery: 16_384,
       extraction_coverage_cleanup: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
@@ -151,6 +182,7 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
       extraction_classify: 2_048,
       extraction_source_tree: 4_096,
       extraction_preview: 4_096,
+      extraction_coverage_recovery: 16_384,
       extraction_coverage_cleanup: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
@@ -175,6 +207,7 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
     supportsImageInput: true,
     taskOutputTokens: {
       extraction_source_tree: 2_400,
+      extraction_coverage_recovery: 16_384,
       extraction_coverage_cleanup: 8_192,
       extraction_operational_profile: 32_768,
       extraction_review: 8_192,
@@ -192,6 +225,7 @@ export const MODEL_POLICY_CAPABILITIES: Record<string, ModelPolicyCapabilityConf
       extraction_classify: 2_048,
       extraction_source_tree: 4_096,
       extraction_preview: 4_096,
+      extraction_coverage_recovery: 16_384,
       extraction_coverage_cleanup: 8_192,
       extraction_page_map: 8_192,
       extraction_focused: 16_384,
@@ -224,5 +258,12 @@ export function modelPolicySupportsImageInput(route: ModelPolicyRoute): boolean 
   return (
     MODEL_POLICY_CAPABILITIES[route.model]?.supportsImageInput === true ||
     MODEL_POLICY_IMAGE_CAPABLE_PROVIDER_SET.has(route.provider)
+  );
+}
+
+export function modelPolicySupportsAudioInput(route: ModelPolicyRoute): boolean {
+  return (
+    route.provider === "openai" &&
+    MODEL_POLICY_CAPABILITIES[route.model]?.supportsAudioInput === true
   );
 }

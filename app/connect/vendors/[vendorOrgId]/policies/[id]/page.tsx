@@ -40,7 +40,7 @@ export default function ConnectedVendorPolicyDetailPage({
         onBreadcrumb={setBreadcrumb}
         onActions={setActions}
         onRightPanel={setRightPanel}
-        afterDeleteHref={`/connect/vendors/${vendorOrgId}/policies`}
+        afterArchiveHref={`/connect/vendors/${vendorOrgId}/policies`}
         readOnly
       />
     </AppShell>

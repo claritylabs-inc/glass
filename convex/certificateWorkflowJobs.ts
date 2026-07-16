@@ -200,20 +200,25 @@ export const listForOrg = query({
           .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
           .order("desc")
           .collect();
-    return await Promise.all(
+    const enriched = await Promise.all(
       rows
         .filter((row) =>
           row.orgId === args.orgId &&
           (!args.status || row.status === args.status) &&
           (!args.kind || row.kind === args.kind),
         )
-        .map(async (row) => ({
-          ...row,
-          holder: await ctx.db.get(row.holderId),
-          policy: await ctx.db.get(row.policyId),
-          certificateVersion: row.certificateVersionId ? await ctx.db.get(row.certificateVersionId) : null,
-        })),
+        .map(async (row) => {
+          const policy = await ctx.db.get(row.policyId);
+          if (!policy || policy.deletedAt) return null;
+          return {
+            ...row,
+            holder: await ctx.db.get(row.holderId),
+            policy,
+            certificateVersion: row.certificateVersionId ? await ctx.db.get(row.certificateVersionId) : null,
+          };
+        }),
     );
+    return enriched.filter((row) => row !== null);
   },
 });
 
@@ -234,7 +239,7 @@ export const listForOrgInternal = internalQuery({
           .query("certificateWorkflowJobs")
           .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
           .collect();
-    return await Promise.all(
+    const enriched = await Promise.all(
       rows
         .filter((row) =>
           row.orgId === args.orgId &&
@@ -242,13 +247,18 @@ export const listForOrgInternal = internalQuery({
           (!args.kind || row.kind === args.kind),
         )
         .sort((left, right) => right.createdAt - left.createdAt)
-        .map(async (row) => ({
-          ...row,
-          holder: await ctx.db.get(row.holderId),
-          policy: await ctx.db.get(row.policyId),
-          certificateVersion: row.certificateVersionId ? await ctx.db.get(row.certificateVersionId) : null,
-        })),
+        .map(async (row) => {
+          const policy = await ctx.db.get(row.policyId);
+          if (!policy || policy.deletedAt) return null;
+          return {
+            ...row,
+            holder: await ctx.db.get(row.holderId),
+            policy,
+            certificateVersion: row.certificateVersionId ? await ctx.db.get(row.certificateVersionId) : null,
+          };
+        }),
     );
+    return enriched.filter((row) => row !== null);
   },
 });
 

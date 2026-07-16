@@ -12,7 +12,9 @@ import {
   BrandWordmark,
   PoweredByGlassWordmark,
 } from "@/components/auth-shell";
+import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
+import { completeOtpSignIn } from "@/lib/otp-auth";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 type ConnectedOrgsApi = {
@@ -35,7 +37,7 @@ type RequestData = {
 
 const connectedOrgsApi = api as unknown as ConnectedOrgsApi;
 const INPUT_CLASSES =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 const LABEL_CLASSES = "text-label font-medium text-muted-foreground block mb-1.5";
 
 function isEmailLike(value: string): boolean {
@@ -103,7 +105,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
           await new Promise((resolve) => setTimeout(resolve, 400));
         }
         if (!stashed) throw new Error("Could not auto-verify. Please try again.");
-        await signIn("resend-otp", { email: stashed.email, code: stashed.code });
+        await completeOtpSignIn(stashed.email, stashed.code);
+        window.location.reload();
       } catch (err) {
         setError(
           err instanceof Error && err.message
@@ -159,7 +162,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
     setLoading(true);
     setError("");
     try {
-      await signIn("resend-otp", { email, code });
+      await completeOtpSignIn(email, code);
+      window.location.reload();
     } catch (err: unknown) {
       setError(friendlyError(err instanceof Error ? err.message : ""));
       setLoading(false);
@@ -233,18 +237,11 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
         ) : (
           <form onSubmit={handleCodeSubmit} className="space-y-4">
             <div>
-              <label htmlFor="vendor-code" className={LABEL_CLASSES}>Verification code</label>
-              <input
-                id="vendor-code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="000000"
-                required
-                className={INPUT_CLASSES}
-              />
+              <span className={LABEL_CLASSES}>Verification code</span>
+              <OtpField value={code} onValueChange={setCode} autoFocus required />
             </div>
             {error ? <p className="px-1 py-1 text-base text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || !code.trim()} className="w-full justify-center text-base shadow-none sm:w-auto">
+            <PillButton type="submit" disabled={loading || code.length < 6} className="w-full justify-center text-base shadow-none sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Accepting..." : "Accept invite"}
             </PillButton>

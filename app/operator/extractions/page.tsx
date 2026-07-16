@@ -52,6 +52,10 @@ import {
   useCachedOperatorExtractionTraceDetail,
   useCachedOperatorExtractionTraces,
 } from "@/lib/sync/operator-cached-queries";
+import {
+  formatDisplayDateTime,
+  formatDisplayDateTimeWithSeconds,
+} from "@/lib/date-format";
 
 type TraceStatus = "running" | "complete" | "error" | "cancelled";
 type TraceRow = {
@@ -1542,7 +1546,10 @@ export default function OperatorExtractionsPage() {
                   <OperationalLabelValueRow label="Org" value={selected.orgName} />
                   <OperationalLabelValueRow label="File" value={traceDisplayFile(selected)} />
                   <OperationalLabelValueRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
-                  <OperationalLabelValueRow label="Started" value={dayjs(selected.startedAt).format("MMM D, h:mm:ss A")} />
+                  <OperationalLabelValueRow
+                    label="Started"
+                    value={formatDisplayDateTimeWithSeconds(selected.startedAt)}
+                  />
                   <OperationalLabelValueRow label="Duration" value={formatDuration(selected.totalDurationMs ?? (selected.lastEventAt ? selected.lastEventAt - selected.startedAt : undefined))} />
                   <OperationalLabelValueRow label="Model time" value={formatDuration(selected.modelDurationMs)} />
                   <OperationalLabelValueRow label="Tokens" value={formatTokens(selected.inputTokens, selected.outputTokens)} />
@@ -1687,7 +1694,7 @@ export default function OperatorExtractionsPage() {
                     }`}
                   >
                     <TableCell className="px-4 text-muted-foreground">
-                      {dayjs(trace.startedAt).format("MMM D, h:mm A")}
+                      {formatDisplayDateTime(trace.startedAt)}
                     </TableCell>
                     <TableCell className="max-w-48 truncate text-foreground">{trace.orgName}</TableCell>
                     <TableCell className="max-w-64">

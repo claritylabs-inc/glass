@@ -1,0 +1,53 @@
+#:schema https://conductor.build/schemas/settings.repo.schema.json
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+preview_urls = [
+  { name = "Glass", url = "http://localhost:$CONDUCTOR_PORT" },
+]
+
+[scripts]
+setup = "npm run conductor:setup"
+archive = "npm run conductor:archive"
+run_mode = "concurrent"
+
+[scripts.run.dev]
+available_in = [ "local" ]
+command = "npm run conductor:dev"
+default = true
+icon = "rocket"
+
+[scripts.run.web]
+available_in = [ "local" ]
+command = "PATH=\"$(brew --prefix node@24)/bin:$PATH\" node scripts/run-conductor-web.mjs"
+icon = "globe"
+
+[scripts.run.convex]
+available_in = [ "local" ]
+command = "PATH=\"$(brew --prefix node@24)/bin:$PATH\" CONVEX_AGENT_MODE=anonymous ./node_modules/.bin/convex dev --local-cloud-port $((CONDUCTOR_PORT + 3)) --local-site-port $((CONDUCTOR_PORT + 4))"
+icon = "database"
+
+[scripts.run.imessage-terminal]
+available_in = [ "local" ]
+command = "PATH=\"$(brew --prefix node@24)/bin:$PATH\" PORT=$((CONDUCTOR_PORT + 2)) node scripts/run-conductor-imessage-terminal.mjs"
+icon = "message-circle"
+
+[scripts.run.extraction-worker]
+available_in = [ "local" ]
+command = "PATH=\"$(brew --prefix node@24)/bin:$PATH\" PORT=$((CONDUCTOR_PORT + 1)) node scripts/run-local-extraction-container.mjs"
+icon = "server"
+
+[scripts.run.test]
+command = "PATH=\"$(brew --prefix node@24)/bin:$PATH\" npm test"
+icon = "test-tube"
+
+[scripts.run.lint]
+command = "PATH=\"$(brew --prefix node@24)/bin:$PATH\" npm run lint"
+icon = "check"
+
+[scripts.run.typecheck]
+command = "PATH=\"$(brew --prefix node@24)/bin:$PATH\" npx tsc --noEmit"
+icon = "braces"
+
+[scripts.run.convex-typecheck]
+command = "PATH=\"$(brew --prefix node@24)/bin:$PATH\" npx convex typecheck"
+icon = "database"

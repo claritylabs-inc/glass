@@ -2,6 +2,7 @@
 
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
+import { normalizeExtractedDate } from "./valueNormalization";
 
 dayjs.extend(customParseFormat);
 
@@ -55,19 +56,7 @@ export function normalizePolicyDate(value: unknown): string | undefined {
   if (!normalized) return undefined;
   const explicitDate = parseExplicitDates(normalized)[0];
   if (explicitDate) return explicitDate;
-  const parsed = dayjs(
-    normalized,
-    [
-      "MM/DD/YYYY",
-      "M/D/YYYY",
-      "YYYY-MM-DD",
-      "YYYY/M/D",
-      "MMM D, YYYY",
-      "MMMM D, YYYY",
-    ],
-    true,
-  );
-  return parsed.isValid() ? parsed.format("MM/DD/YYYY") : normalized;
+  return normalizeExtractedDate(normalized) ?? normalized;
 }
 
 function validDate(month: number, day: number, year: number) {
@@ -126,12 +115,8 @@ function parseNamedDates(text: string): string[] {
     /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+[0-9]{1,2},?\s+(?:19|20)[0-9]{2}\b/gi;
   for (const match of text.matchAll(regex)) {
     const raw = match[0]?.replace(/\./g, "");
-    const parsed = dayjs(
-      raw,
-      ["MMM D, YYYY", "MMMM D, YYYY", "MMM D YYYY", "MMMM D YYYY"],
-      true,
-    );
-    if (parsed.isValid()) dates.push(formatDate(parsed));
+    const normalized = normalizeExtractedDate(raw);
+    if (normalized) dates.push(normalized);
   }
   return dates;
 }

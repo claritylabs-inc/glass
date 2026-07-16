@@ -1,25 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useMutation } from "convex/react";
-import dayjs from "dayjs";
-import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+import { SiClaude } from "react-icons/si";
 import {
-  AlertTriangle,
   Check,
-  ChevronDown,
-  ChevronRight,
   Copy,
+  ExternalLink,
   Globe,
-  Key,
   Loader2,
   Network,
   Plug,
-  Plus,
   Trash2,
 } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import {
+  OperationalItem,
   OperationalPanel,
   OperationalPanelBody,
   OperationalPanelHeader,
@@ -27,12 +25,13 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
-import { Id } from "@/convex/_generated/dataModel";
-import { useCurrentOrg } from "@/hooks/use-current-org";
+import { ModelProviderLogo } from "@/components/model-provider-logo";
+import type { SettingsTabId } from "@/lib/settings-sections";
 import {
   useCachedQuery,
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type ConnectedAppRow = {
   tokenId: Id<"oauthTokens">;
@@ -41,20 +40,56 @@ type ConnectedAppRow = {
   connectedAt: number;
   [key: string]: unknown;
 };
-type ApiKeyRow = {
-  _id: Id<"apiKeys">;
-  name: string;
-  keyPrefix: string;
-  createdAt: number;
-  lastUsedAt?: number;
-  revokedAt?: number;
-  [key: string]: unknown;
-};
 
-export function ConnectionsSection() {
-  const currentOrg = useCurrentOrg();
-  const canManageApiKeys = currentOrg?.role === "admin";
-  const apiKeyRoleKnown = currentOrg !== null;
+function useMcpUrl() {
+  return useSyncExternalStore(
+    () => () => undefined,
+    () => `${window.location.origin}/mcp`,
+    () => "/mcp",
+  );
+}
+
+function CopyIconButton({
+  copied,
+  label,
+  onClick,
+}: {
+  copied: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 rounded p-1.5 transition-colors hover:bg-foreground/5"
+      aria-label={label}
+    >
+      {copied ? (
+        <Check className="size-4 text-green-500" />
+      ) : (
+        <Copy className="size-4 text-muted-foreground" />
+      )}
+    </button>
+  );
+}
+
+export function ConnectionsSection({ tab }: { tab: SettingsTabId }) {
+  const { setActions } = useSettingsActions();
+
+  useEffect(() => {
+    setActions(null);
+    return () => setActions(null);
+  }, [setActions]);
+
+  if (tab === "cli") return <CliSection />;
+  if (tab === "advanced") return <AdvancedSection />;
+  return <McpSection />;
+}
+
+function McpSection() {
+  const { setRightPanel } = useSettingsActions();
+  const mcpUrl = useMcpUrl();
   const connectedApps = useCachedQuery(
     "oauth.listConnectedApps",
     api.oauth.listConnectedApps,
@@ -65,228 +100,56 @@ export function ConnectionsSection() {
     Record<string, never>
   >("oauth.listConnectedApps");
   const revokeApp = useMutation(api.oauth.revokeApp);
-
-  const apiKeys = useCachedQuery(
-    "apiKeys.list",
-    api.apiKeys.list,
-    canManageApiKeys ? {} : "skip",
-  ) as ApiKeyRow[] | undefined;
-  const updateApiKeys = useUpdateCachedQuery<ApiKeyRow[], Record<string, never>>(
-    "apiKeys.list",
-  );
-  const generateApiKey = useMutation(api.apiKeys.generate);
-  const revokeApiKey = useMutation(api.apiKeys.revoke);
-  const removeApiKey = useMutation(api.apiKeys.remove);
-
+  const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<{
-    tokenId: Id<"oauthTokens">;
     clientName: string;
     clientId: string;
   } | null>(null);
   const [revoking, setRevoking] = useState(false);
-  const [copiedLocal, setCopiedLocal] = useState(false);
-  const [copiedRemote, setCopiedRemote] = useState(false);
-  const [copiedCli, setCopiedCli] = useState(false);
-
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showGenerateKeyDialog, setShowGenerateKeyDialog] = useState(false);
-  const [newKeyName, setNewKeyName] = useState("");
-  const [generatingKey, setGeneratingKey] = useState(false);
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
-  const [copiedKey, setCopiedKey] = useState(false);
-  const [showRevokeKeyDialog, setShowRevokeKeyDialog] = useState<string | null>(null);
-  const { setActions, setRightPanel } = useSettingsActions();
-  useEffect(() => {
-    setActions(null);
-    return () => setActions(null);
-  }, [setActions]);
 
   useEffect(() => {
     setRightPanel(
-      <>
-        <SettingsDrawer
-          open={showGenerateKeyDialog}
-          onOpenChange={(v) => !v && closeGenerateDialog()}
-          title={generatedKey ? "API key generated" : "Generate API key"}
-          footer={
-            <>
-              <PillButton
-                variant="secondary"
-                onClick={closeGenerateDialog}
-                disabled={generatingKey}
-              >
-                {generatedKey ? "Done" : "Cancel"}
-              </PillButton>
-              {!generatedKey && (
-                <PillButton onClick={handleGenerate} disabled={generatingKey || !newKeyName}>
-                  {generatingKey ? "Generating…" : "Generate"}
-                </PillButton>
-              )}
-            </>
-          }
-        >
-          {generatedKey ? (
-            <>
-              <p className="text-base text-muted-foreground">
-                Copy this key now. You won&apos;t be able to see it again.
-              </p>
-              <div className="flex items-center gap-2 bg-foreground/3 border border-foreground/6 rounded-lg p-3">
-                <code className="text-label font-mono text-foreground flex-1 break-all select-all">
-                  {generatedKey}
-                </code>
-                <button
-                  type="button"
-                  onClick={handleCopyKey}
-                  className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors"
-                >
-                  {copiedKey ? (
-                    <Check className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-base text-muted-foreground">
-                Create a new API key for programmatic MCP access.
-              </p>
-              <div>
-                <label className="text-label font-medium text-muted-foreground block mb-1.5">
-                  Key name
-                </label>
-                <input
-                  type="text"
-                  value={newKeyName}
-                  onChange={(e) => setNewKeyName(e.target.value)}
-                  placeholder="e.g. CI pipeline, ingestion script"
-                  className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-                />
-              </div>
-            </>
-          )}
-        </SettingsDrawer>
-
-        <SettingsDrawer
-          open={!!revokeTarget}
-          onOpenChange={(v) => !v && setRevokeTarget(null)}
-          title="Revoke connection"
-          footer={
-            <>
-              <PillButton
-                variant="secondary"
-                onClick={() => setRevokeTarget(null)}
-                disabled={revoking}
-              >
-                Cancel
-              </PillButton>
-              <PillButton variant="destructive" onClick={handleRevokeApp} disabled={revoking}>
-                {revoking ? "Revoking…" : "Revoke"}
-              </PillButton>
-            </>
-          }
-        >
-          <div className="flex items-start gap-3">
-            <Trash2 className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-            <p className="text-base text-muted-foreground">
-              This will disconnect <strong>{revokeTarget?.clientName}</strong> and revoke its
-              access to your Glass data.
-            </p>
-          </div>
-        </SettingsDrawer>
-
-        <SettingsDrawer
-          open={!!showRevokeKeyDialog}
-          onOpenChange={(v) => !v && setShowRevokeKeyDialog(null)}
-          title="Revoke API key"
-          footer={
-            <>
-              <PillButton variant="secondary" onClick={() => setShowRevokeKeyDialog(null)}>
-                Cancel
-              </PillButton>
-              <PillButton
-                variant="destructive"
-                onClick={async () => {
-                  if (!showRevokeKeyDialog) return;
-                  try {
-                    await revokeApiKey({ id: showRevokeKeyDialog as Id<"apiKeys"> });
-                    await updateApiKeys({}, (current) =>
-                      current.map((key) =>
-                        key._id === showRevokeKeyDialog
-                          ? { ...key, revokedAt: dayjs().valueOf() }
-                          : key,
-                      ),
-                    );
-                    setShowRevokeKeyDialog(null);
-                    toast.success("API key revoked");
-                  } catch {
-                    toast.error("Failed to revoke key");
-                  }
-                }}
-              >
-                Yes, revoke
-              </PillButton>
-            </>
-          }
-        >
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-            <p className="text-base text-muted-foreground">
-              This key will immediately stop working. Any integrations using it will lose access.
-            </p>
-          </div>
-        </SettingsDrawer>
-      </>,
+      <SettingsDrawer
+        open={!!revokeTarget}
+        onOpenChange={(open) => !open && setRevokeTarget(null)}
+        title="Revoke connection"
+        footer={
+          <>
+            <PillButton
+              variant="secondary"
+              onClick={() => setRevokeTarget(null)}
+              disabled={revoking}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              variant="destructive"
+              onClick={handleRevokeApp}
+              disabled={revoking}
+            >
+              {revoking ? "Revoking…" : "Revoke"}
+            </PillButton>
+          </>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <Trash2 className="mt-0.5 size-5 shrink-0 text-red-500" />
+          <p className="text-base text-muted-foreground">
+            This will disconnect <strong>{revokeTarget?.clientName}</strong> and
+            revoke its access to your Glass data.
+          </p>
+        </div>
+      </SettingsDrawer>,
     );
     return () => setRightPanel(null);
+    // The drawer must be rebuilt as its local mutation state changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    showGenerateKeyDialog,
-    revokeTarget,
-    showRevokeKeyDialog,
-    generatedKey,
-    generatingKey,
-    newKeyName,
-    copiedKey,
-    revoking,
-  ]);
+  }, [revokeTarget, revoking]);
 
-  const siteUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const mcpUrl = `${siteUrl}/mcp`;
-
-  const localSnippet = JSON.stringify(
-    {
-      mcpServers: {
-        glass: {
-          command: "npx",
-          args: ["-y", "mcp-remote", mcpUrl],
-        },
-      },
-    },
-    null,
-    2,
-  );
-  const cliSnippet = [
-    "npm install -g @claritylabs/glass-cli",
-    "glass auth:login",
-    "glass auth:whoami",
-    "glass auth:whoami --set-org <orgId>",
-    "glass policies:list",
-  ].join("\n");
-
-  function copyTo(text: string, which: "local" | "remote" | "cli") {
-    navigator.clipboard.writeText(text);
-    if (which === "local") {
-      setCopiedLocal(true);
-      setTimeout(() => setCopiedLocal(false), 2000);
-    } else if (which === "remote") {
-      setCopiedRemote(true);
-      setTimeout(() => setCopiedRemote(false), 2000);
-    } else {
-      setCopiedCli(true);
-      setTimeout(() => setCopiedCli(false), 2000);
-    }
+  function copyMcpUrl() {
+    void navigator.clipboard.writeText(mcpUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   async function handleRevokeApp() {
@@ -306,119 +169,109 @@ export function ConnectionsSection() {
     }
   }
 
-  function openGenerateDialog() {
-    if (!canManageApiKeys) return;
-    setShowGenerateKeyDialog(true);
-    setGeneratedKey(null);
-    setNewKeyName("");
-  }
-
-  function closeGenerateDialog() {
-    setShowGenerateKeyDialog(false);
-    setGeneratedKey(null);
-  }
-
-  async function handleGenerate() {
-    if (!newKeyName || !canManageApiKeys) return;
-    setGeneratingKey(true);
-    try {
-      const key = await generateApiKey({ name: newKeyName });
-      setGeneratedKey(key);
-      toast.success("API key generated");
-    } catch {
-      toast.error("Failed to generate key");
-    } finally {
-      setGeneratingKey(false);
-    }
-  }
-
-  function handleCopyKey() {
-    if (!generatedKey) return;
-    navigator.clipboard.writeText(generatedKey);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
-  }
-
   return (
     <div className="space-y-4">
-      {/* MCP connections */}
       <OperationalPanel>
-        <OperationalPanelHeader title="MCP connections" className="px-5 py-3.5" />
-        <OperationalPanelBody className="space-y-4 px-5 py-5">
-          <p className="text-base text-muted-foreground">
-            Connect Glass to Claude.ai, ChatGPT, or another AI assistant. In your assistant&apos;s
-            connector or integration settings, add a new MCP connection and paste the URL below.
-            You&apos;ll be asked to sign in to Glass the first time you use it.
-          </p>
-          <div className="flex items-center gap-2 bg-foreground/3 border border-foreground/6 rounded-lg p-3">
-            <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
-            <code className="text-label font-mono text-foreground flex-1 break-all">{mcpUrl}</code>
-            <button
-              type="button"
-              onClick={() => copyTo(mcpUrl, "remote")}
-              className="shrink-0 p-1.5 rounded hover:bg-foreground/5 transition-colors"
-            >
-              {copiedRemote ? (
-                <Check className="w-4 h-4 text-green-500" />
-              ) : (
-                <Copy className="w-4 h-4 text-muted-foreground" />
-              )}
-            </button>
+        <OperationalPanelHeader
+          title="MCP endpoint"
+          description="Connect Glass to an AI assistant with your existing Glass account."
+          className="px-5 py-3.5"
+        />
+        <OperationalPanelBody className="px-5 py-5">
+          <div className="flex items-center gap-2 rounded-lg border border-foreground/6 bg-foreground/3 p-3">
+            <Globe className="size-4 shrink-0 text-muted-foreground" />
+            <code className="flex-1 break-all font-mono text-label text-foreground">
+              {mcpUrl}
+            </code>
+            <CopyIconButton copied={copied} label="Copy MCP endpoint" onClick={copyMcpUrl} />
           </div>
         </OperationalPanelBody>
-      </OperationalPanel>
 
-      {/* Glass CLI */}
-      <OperationalPanel>
-        <OperationalPanelHeader title="Glass CLI" className="px-5 py-3.5" />
-        <OperationalPanelBody className="space-y-4 px-5 py-5">
-          <p className="text-base text-muted-foreground">
-            Install the command line interface for terminal workflows, scripts, and local
-            automation. It uses the same OAuth sign-in as connected apps.
-          </p>
-          <div className="relative">
-            <pre className="text-label bg-foreground/3 border border-foreground/6 rounded-lg p-4 pr-11 overflow-x-auto text-muted-foreground">
-              {cliSnippet}
-            </pre>
-            <button
-              type="button"
-              onClick={() => copyTo(cliSnippet, "cli")}
-              className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors"
-              aria-label="Copy CLI install commands"
+        <OperationalItem className="grid gap-3 px-5 py-4 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-6">
+          <div className="flex items-center justify-between gap-3 md:block">
+            <div className="flex items-center gap-2">
+              <SiClaude aria-hidden="true" className="size-[17px] text-[#D97757]" />
+              <h3 className="text-base font-medium text-foreground">Claude</h3>
+            </div>
+            <PillButton
+              href="https://claude.ai/new#settings/customize-connectors"
+              target="_blank"
+              rel="noreferrer"
+              variant="secondary"
+              size="compact"
+              className="md:mt-3"
             >
-              {copiedCli ? (
-                <Check className="w-4 h-4 text-green-500" />
-              ) : (
-                <Copy className="w-4 h-4 text-muted-foreground" />
-              )}
-            </button>
+              Open Claude
+              <ExternalLink className="size-3.5" />
+            </PillButton>
           </div>
-        </OperationalPanelBody>
+          <ol className="list-decimal space-y-1.5 pl-5 text-base text-muted-foreground marker:text-muted-foreground/60">
+            <li>
+              Open <span className="font-medium text-foreground">Settings → Connectors</span>.
+              Team and Enterprise owners should first choose Organization connectors.
+            </li>
+            <li>
+              Select <span className="font-medium text-foreground">Add custom connector</span>,
+              name it Glass, and paste the endpoint above.
+            </li>
+            <li>Add the connector, select Connect, and sign in to Glass.</li>
+          </ol>
+        </OperationalItem>
+
+        <OperationalItem className="grid gap-3 px-5 py-4 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-6">
+          <div className="flex items-center justify-between gap-3 md:block">
+            <div className="flex items-center gap-2">
+              <ModelProviderLogo provider="openai" size={17} className="dark:invert" />
+              <h3 className="text-base font-medium text-foreground">ChatGPT</h3>
+            </div>
+            <PillButton
+              href="https://chatgpt.com/#settings/Connectors"
+              target="_blank"
+              rel="noreferrer"
+              variant="secondary"
+              size="compact"
+              className="md:mt-3"
+            >
+              Open ChatGPT
+              <ExternalLink className="size-3.5" />
+            </PillButton>
+          </div>
+          <ol className="list-decimal space-y-1.5 pl-5 text-base text-muted-foreground marker:text-muted-foreground/60">
+            <li>
+              Open <span className="font-medium text-foreground">Settings → Apps → Advanced settings</span>
+              {" "}and enable Developer mode. Your workspace may require admin access.
+            </li>
+            <li>
+              Return to Apps, select <span className="font-medium text-foreground">Create</span>,
+              name the app Glass, and paste the endpoint above.
+            </li>
+            <li>Choose OAuth when prompted, scan the tools, create the app, and sign in to Glass.</li>
+          </ol>
+        </OperationalItem>
       </OperationalPanel>
 
-      {/* Connected apps */}
       <OperationalPanel>
         <OperationalPanelHeader title="Connected apps" className="px-5 py-3.5" />
         {connectedApps === undefined ? (
           <div className="px-5 py-8 text-center">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mx-auto" />
+            <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
           </div>
         ) : connectedApps.length === 0 ? (
           <div className="px-5 py-8 text-center">
-            <Plug className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
+            <Plug className="mx-auto mb-2 size-6 text-muted-foreground/20" />
             <p className="text-base text-muted-foreground">No connected apps yet</p>
-            <p className="text-label text-muted-foreground/50 mt-0.5">
+            <p className="mt-0.5 text-label text-muted-foreground/50">
               Apps appear here after they complete the OAuth sign-in.
             </p>
           </div>
         ) : (
           <div className="divide-y divide-foreground/6">
             {connectedApps.map((app) => (
-              <div key={app.tokenId} className="px-5 py-3.5 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
+              <div key={app.tokenId} className="flex items-center gap-3 px-5 py-3.5">
+                <div className="min-w-0 flex-1">
                   <p className="text-base font-medium text-foreground">{app.clientName}</p>
-                  <p className="text-label text-muted-foreground/50 mt-0.5">
-                    Connected {dayjs(app.connectedAt).format("M/D/YYYY")}
+                  <p className="mt-0.5 text-label text-muted-foreground/50">
+                    Connected {formatDisplayDate(app.connectedAt)}
                   </p>
                 </div>
                 <PillButton
@@ -426,13 +279,12 @@ export function ConnectionsSection() {
                   size="compact"
                   onClick={() =>
                     setRevokeTarget({
-                      tokenId: app.tokenId,
                       clientName: app.clientName,
                       clientId: app.clientId,
                     })
                   }
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="size-3.5" />
                   Revoke
                 </PillButton>
               </div>
@@ -440,152 +292,99 @@ export function ConnectionsSection() {
           </div>
         )}
       </OperationalPanel>
-
-      {/* Advanced — API keys */}
-      <OperationalPanel>
-        <button
-          type="button"
-          onClick={() => setShowAdvanced((v) => !v)}
-          className="w-full px-5 py-3.5 border-b border-foreground/6 flex items-center justify-between hover:bg-foreground/2 transition-colors"
-          style={{ borderBottomWidth: showAdvanced ? 1 : 0 }}
-        >
-          <span className="text-base font-medium text-foreground flex items-center gap-2">
-            {showAdvanced ? (
-              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-            )}
-            Advanced
-          </span>
-          <span className="text-label text-muted-foreground/60">
-            For developers
-          </span>
-        </button>
-        {showAdvanced && (
-          <div>
-            <div className="px-5 py-5 border-b border-foreground/6 space-y-3">
-              <div>
-                <h4 className="text-base font-medium text-foreground mb-1">Local MCP</h4>
-                <p className="text-base text-muted-foreground">
-                  For Claude Code, Cursor, Codex, and other local MCP clients. Paste this into your MCP
-                  config (e.g. <code className="text-label bg-foreground/5 px-1 py-0.5 rounded">~/.claude/mcp.json</code> or
-                  <code className="text-label bg-foreground/5 px-1 py-0.5 rounded ml-1">~/.cursor/mcp.json</code>).
-                  On first run, a browser window will open to sign in.
-                </p>
-              </div>
-              <div className="relative">
-                <pre className="text-label bg-foreground/3 border border-foreground/6 rounded-lg p-4 overflow-x-auto text-muted-foreground">
-                  {localSnippet}
-                </pre>
-                <button
-                  type="button"
-                  onClick={() => copyTo(localSnippet, "local")}
-                  className="absolute top-2 right-2 p-1.5 rounded hover:bg-foreground/5 transition-colors"
-                >
-                  {copiedLocal ? (
-                    <Check className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </button>
-              </div>
-            </div>
-            <div className="px-5 py-4 border-b border-foreground/6 flex items-start justify-between gap-3">
-              <div>
-                <h4 className="text-base font-medium text-foreground mb-1">API keys</h4>
-                <p className="text-base text-muted-foreground">
-                  Long-lived bearer tokens for programmatic access. Prefer the OAuth flow above for
-                  interactive tools.
-                </p>
-              </div>
-              {canManageApiKeys && (
-                <PillButton size="compact" variant="secondary" onClick={openGenerateDialog}>
-                  <Plus className="w-3.5 h-3.5" />
-                  Generate key
-                </PillButton>
-              )}
-            </div>
-            {!apiKeyRoleKnown ? (
-              <div className="px-5 py-8 text-center">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mx-auto" />
-              </div>
-            ) : !canManageApiKeys ? (
-              <div className="px-5 py-8 text-center">
-                <Key className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
-                <p className="text-base text-muted-foreground">
-                  API keys are managed by organization admins.
-                </p>
-              </div>
-            ) : apiKeys === undefined ? (
-              <div className="px-5 py-8 text-center">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mx-auto" />
-              </div>
-            ) : apiKeys.length === 0 ? (
-              <div className="px-5 py-8 text-center">
-                <Key className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
-                <p className="text-base text-muted-foreground">No API keys yet</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-foreground/6">
-                {apiKeys.map((key) => (
-                  <div key={key._id} className="px-5 py-3.5 flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-base font-medium text-foreground">
-                        {key.name}
-                        {key.revokedAt && (
-                          <span className="text-label text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded ml-2">
-                            Revoked
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-label text-muted-foreground font-mono mt-0.5">
-                        {key.keyPrefix}
-                        {"••••••••"}
-                      </p>
-                      {key.lastUsedAt && (
-                        <p className="text-label text-muted-foreground/50 mt-0.5">
-                          Last used {dayjs(key.lastUsedAt).format("M/D/YYYY")}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {!key.revokedAt ? (
-                        <PillButton
-                          variant="destructive"
-                          size="compact"
-                          onClick={() => setShowRevokeKeyDialog(key._id)}
-                        >
-                          Revoke
-                        </PillButton>
-                      ) : (
-                        <PillButton
-                          variant="ghost"
-                          size="compact"
-                          onClick={async () => {
-                            try {
-                              await removeApiKey({ id: key._id as Id<"apiKeys"> });
-                              await updateApiKeys({}, (current) =>
-                                current.filter((row) => row._id !== key._id),
-                              );
-                              toast.success("Key removed");
-                            } catch {
-                              toast.error("Failed to remove key");
-                            }
-                          }}
-                        >
-                          Delete
-                        </PillButton>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </OperationalPanel>
-
     </div>
+  );
+}
+
+function CliSection() {
+  const [copied, setCopied] = useState(false);
+  const cliSnippet = [
+    "npm install -g @claritylabs/glass-cli",
+    "glass auth:login",
+    "glass auth:whoami",
+    "glass auth:whoami --set-org <orgId>",
+    "glass policies:list",
+  ].join("\n");
+
+  function copyCliSnippet() {
+    void navigator.clipboard.writeText(cliSnippet);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <OperationalPanel>
+      <OperationalPanelHeader
+        title="Install and sign in"
+        description="Use the Glass CLI for terminal workflows, scripts, and local automation."
+        className="px-5 py-3.5"
+      />
+      <OperationalPanelBody className="px-5 py-5">
+        <div className="relative">
+          <pre className="overflow-x-auto rounded-lg border border-foreground/6 bg-foreground/3 p-4 pr-11 text-label text-muted-foreground">
+            {cliSnippet}
+          </pre>
+          <div className="absolute right-2 top-2">
+            <CopyIconButton
+              copied={copied}
+              label="Copy CLI install commands"
+              onClick={copyCliSnippet}
+            />
+          </div>
+        </div>
+      </OperationalPanelBody>
+    </OperationalPanel>
+  );
+}
+
+function AdvancedSection() {
+  const mcpUrl = useMcpUrl();
+  const [copiedLocal, setCopiedLocal] = useState(false);
+  const localSnippet = JSON.stringify(
+    {
+      mcpServers: {
+        glass: {
+          command: "npx",
+          args: ["-y", "mcp-remote", mcpUrl],
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  function copyLocalSnippet() {
+    void navigator.clipboard.writeText(localSnippet);
+    setCopiedLocal(true);
+    setTimeout(() => setCopiedLocal(false), 2000);
+  }
+
+  return (
+    <OperationalPanel>
+      <OperationalPanelHeader
+        title="Local MCP clients"
+        description="Use Glass from Claude Code, Cursor, Codex, or another local MCP client."
+        className="px-5 py-3.5"
+      />
+      <OperationalPanelBody className="space-y-3 px-5 py-5">
+        <p className="text-base text-muted-foreground">
+          Add this server to your client&apos;s MCP configuration. A browser window opens for
+          Glass sign-in on first use.
+        </p>
+        <div className="relative">
+          <pre className="overflow-x-auto rounded-lg border border-foreground/6 bg-foreground/3 p-4 pr-11 text-label text-muted-foreground">
+            {localSnippet}
+          </pre>
+          <div className="absolute right-2 top-2">
+            <CopyIconButton
+              copied={copiedLocal}
+              label="Copy local MCP configuration"
+              onClick={copyLocalSnippet}
+            />
+          </div>
+        </div>
+      </OperationalPanelBody>
+    </OperationalPanel>
   );
 }
 

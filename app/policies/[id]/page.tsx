@@ -21,7 +21,8 @@ export default function PolicyDetailPage({
         onBreadcrumb={setBreadcrumb}
         onActions={setActions}
         onRightPanel={setRightPanel}
-        afterDeleteHref="/policies"
+        afterArchiveHref="/policies?view=archived"
+        afterRestoreHref="/policies"
       />
     </AppShell>
   );

@@ -8,6 +8,7 @@ export type DeclarationFactInput = {
   normalizedValue: string;
   structuredValue?: unknown;
   valueKind: "string" | "number" | "date" | "money" | "address" | "list" | "unknown";
+  sourceNodeIds?: string[];
   sourceSpanIds?: string[];
   effectiveDate?: string;
   expirationDate?: string;
@@ -76,7 +77,10 @@ function addressDisplay(value: unknown): string {
   const address = value as Record<string, unknown>;
   const cityStateZip = [
     stringValue(address.city),
-    [stringValue(address.state), stringValue(address.zip)]
+    [
+      stringValue(address.state),
+      stringValue(address.zip) ?? stringValue(address.postalCode) ?? stringValue(address.postcode),
+    ]
       .filter(Boolean)
       .join(" "),
   ].filter(Boolean).join(", ");
@@ -85,7 +89,7 @@ function addressDisplay(value: unknown): string {
     stringValue(address.street2) ?? stringValue(address.line2) ?? stringValue(address.addressLine2),
     cityStateZip,
     stringValue(address.country),
-  ].filter(Boolean).join(", ");
+  ].filter(Boolean).join(", ") || stringValue(address.formatted) || "";
 }
 
 function sourceSpanIdsFromValue(value: unknown): string[] | undefined {
@@ -93,6 +97,14 @@ function sourceSpanIdsFromValue(value: unknown): string[] | undefined {
   const sourceSpanIds = (value as Record<string, unknown>).sourceSpanIds;
   if (!Array.isArray(sourceSpanIds)) return undefined;
   const ids = sourceSpanIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return ids.length > 0 ? ids : undefined;
+}
+
+function sourceNodeIdsFromValue(value: unknown): string[] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const sourceNodeIds = (value as Record<string, unknown>).sourceNodeIds;
+  if (!Array.isArray(sourceNodeIds)) return undefined;
+  const ids = sourceNodeIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
   return ids.length > 0 ? ids : undefined;
 }
 
@@ -127,7 +139,9 @@ const OPERATIONAL_FACT_GROUPS: Record<string, {
   dba: { fieldGroup: "dba", valueKind: "string" },
   entityType: { fieldGroup: "entity_type", valueKind: "string" },
   taxId: { fieldGroup: "fein", valueKind: "string" },
+  businessNumber: { fieldGroup: "business_number", valueKind: "string" },
   additionalNamedInsured: { fieldGroup: "additional_named_insured", valueKind: "string" },
+  operationsDescription: { fieldGroup: "operations_description", valueKind: "string" },
   policyNumber: { fieldGroup: "policy_number", valueKind: "string" },
   insurer: { fieldGroup: "insurer", valueKind: "string" },
   broker: { fieldGroup: "producer", valueKind: "string" },
@@ -145,6 +159,24 @@ function pushOperationalProfileDeclarationFacts(
   const profile = policy.operationalProfile && typeof policy.operationalProfile === "object"
     ? policy.operationalProfile as Record<string, unknown>
     : {};
+  const operationsDescription = profile.operationsDescription;
+  if (operationsDescription && typeof operationsDescription === "object" && !Array.isArray(operationsDescription)) {
+    const sourceBacked = operationsDescription as Record<string, unknown>;
+    const sourceNodeIds = sourceNodeIdsFromValue(sourceBacked);
+    const sourceSpanIds = sourceSpanIdsFromValue(sourceBacked);
+    if (sourceNodeIds || sourceSpanIds) {
+      pushFact(facts, {
+        ...base,
+        fieldPath: "operationalProfile.operationsDescription",
+        fieldGroup: "operations_description",
+        displayValue: displayValueFromUnknown(sourceBacked.value),
+        rawValue: sourceBacked.normalizedValue ?? sourceBacked.value,
+        valueKind: "string",
+        sourceNodeIds,
+        sourceSpanIds,
+      });
+    }
+  }
   for (const [index, fact] of arrayRecords(profile.declarationFacts).entries()) {
     const field = typeof fact.field === "string" ? fact.field : "other";
     const mapping = OPERATIONAL_FACT_GROUPS[field] ?? OPERATIONAL_FACT_GROUPS.other;
@@ -163,6 +195,7 @@ function pushOperationalProfileDeclarationFacts(
       rawValue: typeof fact.normalizedValue === "string" ? fact.normalizedValue : fact.value,
       structuredValue,
       valueKind,
+      sourceNodeIds: sourceNodeIdsFromValue(fact),
       sourceSpanIds: sourceSpanIdsFromValue(fact),
     });
   }
@@ -177,8 +210,8 @@ function dedupeFacts(facts: DeclarationFactInput[]) {
       byValue.set(key, fact);
       continue;
     }
-    const existingSourceCount = existing.sourceSpanIds?.length ?? 0;
-    const sourceCount = fact.sourceSpanIds?.length ?? 0;
+    const existingSourceCount = (existing.sourceNodeIds?.length ?? 0) + (existing.sourceSpanIds?.length ?? 0);
+    const sourceCount = (fact.sourceNodeIds?.length ?? 0) + (fact.sourceSpanIds?.length ?? 0);
     if (
       sourceCount > existingSourceCount ||
       (!existing.structuredValue && fact.structuredValue)
@@ -241,6 +274,7 @@ export function extractDeclarationFactsFromPolicy(policy: Record<string, unknown
     rawValue: policy.insuredAddress ?? insuredAddressDisplay,
     structuredValue: policy.insuredAddress,
     valueKind: "address",
+    sourceNodeIds: sourceNodeIdsFromValue(policy.insuredAddress),
     sourceSpanIds: sourceSpanIdsFromValue(policy.insuredAddress),
   });
   pushFact(facts, {
@@ -275,11 +309,34 @@ export function extractDeclarationFactsFromPolicy(policy: Record<string, unknown
   const declarations = policy.declarations && typeof policy.declarations === "object"
     ? policy.declarations as Record<string, unknown>
     : {};
+  for (const [index, fact] of arrayRecords(declarations.fields).entries()) {
+    const field = stringValue(fact.field)?.replace(/[\s_-]+/g, "").toLowerCase();
+    if (!field || !["operationsdescription", "descriptionofoperations", "businessdescription"].includes(field)) {
+      continue;
+    }
+    const sourceNodeIds = sourceNodeIdsFromValue(fact);
+    const sourceSpanIds = sourceSpanIdsFromValue(fact);
+    if (!sourceNodeIds && !sourceSpanIds) continue;
+    pushFact(facts, {
+      ...base,
+      fieldPath: `declarations.fields.${index}`,
+      fieldGroup: "operations_description",
+      displayValue: displayValueFromUnknown(fact.value),
+      rawValue: fact.normalizedValue ?? fact.value,
+      valueKind: "string",
+      sourceNodeIds,
+      sourceSpanIds,
+    });
+  }
   for (const [path, group, kind] of [
     ["dba", "dba", "string"],
     ["doingBusinessAs", "dba", "string"],
     ["entityType", "entity_type", "string"],
     ["fein", "fein", "string"],
+    ["taxId", "fein", "string"],
+    ["businessNumber", "business_number", "string"],
+    ["craBusinessNumber", "business_number", "string"],
+    ["bn", "business_number", "string"],
     ["mailingAddress", "mailing_address", "address"],
     ["address", "mailing_address", "address"],
   ] as const) {

@@ -2,25 +2,37 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import {
+  attachThreadInternal,
   claimItemInternal,
   failItemInternal,
   finishItemInternal,
+  getReviewMessageLocatorInternal,
   getScanStateInternal,
   recordScanAttemptInternal,
   recordScanSuccessInternal,
   recordUnreadableItemInternal,
+  resolveReview,
+  reviewForThread,
 } from "./connectedEmailAutomation";
 
 const modules = import.meta.glob("./**/*.ts");
 const claimItemFn = claimItemInternal as any;
+const attachThreadFn = attachThreadInternal as any;
 const failItemFn = failItemInternal as any;
 const finishItemFn = finishItemInternal as any;
+const getReviewMessageLocatorFn = getReviewMessageLocatorInternal as any;
 const getScanStateFn = getScanStateInternal as any;
 const recordScanAttemptFn = recordScanAttemptInternal as any;
 const recordScanSuccessFn = recordScanSuccessInternal as any;
 const recordUnreadableFn = recordUnreadableItemInternal as any;
+const resolveReviewFn = resolveReview as any;
+const reviewForThreadFn = reviewForThread as any;
+
+function sessionFor(userId: Id<"users">) {
+  return { subject: `${userId}|session` };
+}
 
 async function seed() {
   const t = convexTest(schema, modules);
@@ -30,6 +42,11 @@ async function seed() {
       type: "client",
     });
     const userId = await ctx.db.insert("users", { email: "user@example.com" });
+    await ctx.db.insert("orgMemberships", {
+      orgId,
+      userId,
+      role: "admin",
+    });
     const accountId = await ctx.db.insert("connectedEmailAccounts", {
       orgId,
       userId,
@@ -109,6 +126,118 @@ describe("connected email automation ledger", () => {
     );
     expect(item?.status).toBe("completed");
     expect(item?.lastError).toBeUndefined();
+  });
+
+  test("surfaces thread-linked review context without persisting the email body", async () => {
+    const { t, orgId, userId, accountId } = await seed();
+    const threadId = await t.run((ctx) =>
+      ctx.db.insert("threads", {
+        orgId,
+        title: "Mailbox items needing attention",
+        createdBy: userId,
+        visibility: "user_private",
+        lastMessageAt: 1,
+        originChannel: "chat",
+      }),
+    );
+    const claim = await t.mutation(claimItemFn, {
+      accountId,
+      orgId,
+      userId,
+      mailbox: "INBOX",
+      uid: 42,
+      messageKey: "review-key",
+      emailRef: "review-ref",
+      sourceMessageId: "<review@example.com>",
+      subject: "Policy documents",
+      from: "broker@example.com",
+      receivedAt: 1_700_000_000_000,
+      classification: "review_needed",
+      confidence: 0,
+      reason: "The mailbox classifier did not return a complete decision.",
+    });
+    await t.mutation(finishItemFn, {
+      itemId: claim.itemId,
+      status: "completed",
+      needsReview: true,
+      reviewReason: "The mailbox classifier did not return a complete decision.",
+    });
+    await t.mutation(attachThreadFn, { itemId: claim.itemId, threadId });
+
+    const review = await t
+      .withIdentity(sessionFor(userId))
+      .query(reviewForThreadFn, { threadId });
+
+    expect(review).toMatchObject({
+      title: "Review email",
+      status: "needs_review",
+      evidence: {
+        emails: [{
+          automationItemId: claim.itemId,
+          emailRef: "review-ref",
+          subject: "Policy documents",
+          from: "broker@example.com",
+          attachments: [],
+        }],
+      },
+    });
+    expect(review).not.toHaveProperty("plan");
+    expect(review.evidence.emails[0].reason).toBeUndefined();
+    expect(review.evidence.emails[0]).not.toHaveProperty("text");
+    await expect(
+      t.query(getReviewMessageLocatorFn, {
+        itemId: claim.itemId,
+        orgId,
+        emailRef: "review-ref",
+      }),
+    ).resolves.toEqual({
+      accountId,
+      mailbox: "INBOX",
+      uid: 42,
+      sourceMessageId: "<review@example.com>",
+    });
+    await expect(
+      t.query(getReviewMessageLocatorFn, {
+        itemId: claim.itemId,
+        orgId,
+        emailRef: "different-ref",
+      }),
+    ).resolves.toBeNull();
+
+    await t.withIdentity(sessionFor(userId)).mutation(resolveReviewFn, {
+      threadId,
+      emailRef: "review-ref",
+      resolution: "not_relevant",
+    });
+    expect(
+      await t.withIdentity(sessionFor(userId)).query(reviewForThreadFn, { threadId }),
+    ).toBeNull();
+    const resolvedItem = await t.run((ctx) =>
+      ctx.db.get(claim.itemId) as Promise<Doc<"connectedEmailAutomationItems"> | null>,
+    );
+    expect(resolvedItem).toMatchObject({
+      classification: "ignore",
+      needsReview: false,
+      actionSummary: "Marked as not relevant.",
+    });
+    await expect(
+      t.query(getReviewMessageLocatorFn, {
+        itemId: claim.itemId,
+        orgId,
+        emailRef: "review-ref",
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      t.withIdentity(sessionFor(userId)).mutation(resolveReviewFn, {
+        threadId,
+        emailRef: "review-ref",
+        resolution: "policy_imported",
+      }),
+    ).resolves.toEqual({ resolved: false });
+    expect(await t.run((ctx) => ctx.db.get(claim.itemId))).toMatchObject({
+      classification: "ignore",
+      actionSummary: "Marked as not relevant.",
+    });
   });
 
   test("skips a permanently unreadable message after repeated attempts so the watermark can advance", async () => {

@@ -3,6 +3,7 @@
 import { Loader2, Mail } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
+import { FormSection } from "@/components/ui/form-section";
 import { PillButton } from "@/components/ui/pill-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import {
@@ -122,7 +123,7 @@ export function TeamMemberEditDrawer({
           <input
             value={name}
             onChange={(event) => onNameChange(event.target.value)}
-            className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+            className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
             placeholder="Name"
           />
         </label>
@@ -133,7 +134,7 @@ export function TeamMemberEditDrawer({
           <input
             value={title}
             onChange={(event) => onTitleChange(event.target.value)}
-            className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+            className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
             placeholder="Title"
           />
         </label>
@@ -159,7 +160,7 @@ export function TeamMemberEditDrawer({
             }}
           >
             <SelectTrigger
-              className="w-full border-foreground/8 bg-popover"
+              className="w-full"
               disabled={roleLocked}
               title={roleSelectTitle}
             >
@@ -201,10 +202,7 @@ export function TeamMemberEditDrawer({
             )}
           </div>
         </div>
-        <div className="space-y-3 border-t border-foreground/6 pt-4">
-          <p className="text-base font-medium text-foreground">
-            Account email
-          </p>
+        <FormSection title="Account email">
           <div className="rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2">
             <p className="text-label text-muted-foreground">Current email</p>
             <p className="truncate text-base font-medium text-foreground">
@@ -249,7 +247,7 @@ export function TeamMemberEditDrawer({
                     type="email"
                     value={email}
                     onChange={(event) => onEmailChange(event.target.value)}
-                    className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
                     placeholder="new@example.com"
                   />
                   <PillButton
@@ -276,7 +274,7 @@ export function TeamMemberEditDrawer({
           {emailChangeError ? (
             <p className="text-base text-red-500/80">{emailChangeError}</p>
           ) : null}
-        </div>
+        </FormSection>
       </div>
     </SettingsDrawer>
   );

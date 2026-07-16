@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAction, useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -9,11 +9,12 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import {
   CertificateDetailPanel,
+  CertificatesTable,
   CERTIFICATE_PANEL_CONTAINER_CLASS,
-  certificateHolderActionAddress,
-  certificateHolderAddress,
   certificatePolicyLabel,
+  certificateVersionActionInput,
   formatCertificateTime,
+  type CertificateHolderDraft,
   type CertificateHolderRecord,
   type CertificatePolicyRecord,
   type CertificateVersionRecord,
@@ -35,14 +36,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -82,35 +75,6 @@ function certificatePolicyFilterValue(row: PolicyCertificateRecord): Certificate
   return `policy:${String(row.policyId)}`;
 }
 
-function certificateCarrier(row: PolicyCertificateRecord) {
-  return row.policy?.carrier ?? row.policy?.security ?? row.policy?.mga;
-}
-
-function certificateHolderAddressDisplay(row: PolicyCertificateRecord) {
-  const address = row.holder?.address;
-  const formattedLines = certificateHolderAddress(row.holder)
-    ?.split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean) ?? [];
-  const street = [address?.line1, address?.line2].filter(Boolean).join(", ") ||
-    (formattedLines.length > 1
-      ? formattedLines.slice(0, -1).join(", ")
-      : formattedLines[0]);
-  const statePostal = [address?.state, address?.postalCode].filter(Boolean).join(" ");
-  const locality = [address?.city, statePostal, address?.country].filter(Boolean).join(", ") ||
-    (formattedLines.length > 1 ? formattedLines[formattedLines.length - 1] : undefined);
-  return { street, locality };
-}
-
-function certificateContactSummary(row: PolicyCertificateRecord) {
-  const contactName = row.holder?.contactName?.trim();
-  const email = row.holder?.email?.trim();
-  const phone = row.holder?.phone?.trim();
-  const primary = contactName ?? email ?? phone ?? "No contact";
-  const secondary = contactName ? email : undefined;
-  return { primary, secondary };
-}
-
 function certificatePolicyFilterOptions(rows: PolicyCertificateRecord[]) {
   const byValue = new Map<CertificatePolicyFilter, string>();
   for (const row of rows) {
@@ -133,15 +97,6 @@ function filterCertificates({
   return rows.filter((row) =>
     policyFilter === "all" || certificatePolicyFilterValue(row) === policyFilter,
   );
-}
-
-function openTableRowOnKeyboard(
-  event: KeyboardEvent<HTMLTableRowElement>,
-  action: () => void,
-) {
-  if (event.key !== "Enter" && event.key !== " ") return;
-  event.preventDefault();
-  action();
 }
 
 function jobBadge(status: string) {
@@ -216,7 +171,7 @@ function CertificatesPolicyFilter({
         value={value}
         onValueChange={(next) => next && onValueChange(next as CertificatePolicyFilter)}
       >
-        <SelectTrigger size="sm" className="w-full bg-background">
+        <SelectTrigger className="w-full">
           <SelectValue>{label}</SelectValue>
         </SelectTrigger>
         <SelectContent className="w-auto min-w-(--anchor-width) max-w-[36rem]">
@@ -230,108 +185,6 @@ function CertificatesPolicyFilter({
         </SelectContent>
       </Select>
     </label>
-  );
-}
-
-function CertificatesTable({
-  rows,
-  selectedCertificateId,
-  onSelectCertificate,
-}: {
-  rows: PolicyCertificateRecord[];
-  selectedCertificateId?: Id<"policyCertificates"> | null;
-  onSelectCertificate: (row: PolicyCertificateRecord) => void;
-}) {
-  return (
-    <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
-      <Table className="min-w-[1040px]">
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[22%] px-4">Holder</TableHead>
-            <TableHead className="w-[24%]">Address</TableHead>
-            <TableHead className="w-[18%]">Contact</TableHead>
-            <TableHead className="w-[24%]">Policy</TableHead>
-            <TableHead className="w-[12%] px-4">Issued</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => {
-            const contact = certificateContactSummary(row);
-            const address = certificateHolderAddressDisplay(row);
-            const currentVersion = row.currentVersion;
-            const selected = row._id === selectedCertificateId;
-            const issuedAt = row.lastIssuedAt ?? currentVersion?.issuedAt ?? currentVersion?.createdAt;
-            const carrier = certificateCarrier(row);
-
-            return (
-              <TableRow
-                key={row._id}
-                aria-selected={selected}
-                className="cursor-pointer"
-                data-state={selected ? "selected" : undefined}
-                onClick={() => onSelectCertificate(row)}
-                onKeyDown={(event) =>
-                  openTableRowOnKeyboard(event, () => onSelectCertificate(row))
-                }
-                tabIndex={0}
-              >
-                <TableCell className="max-w-64 px-4">
-                  <p className="truncate font-medium text-foreground">
-                    {row.holder?.displayName ?? "Certificate holder"}
-                  </p>
-                </TableCell>
-                <TableCell className="max-w-72">
-                  {address.street ? (
-                    <>
-                      <p className="truncate text-foreground">
-                        {address.street}
-                      </p>
-                      {address.locality ? (
-                        <p className="truncate text-label text-muted-foreground">
-                          {address.locality}
-                        </p>
-                      ) : null}
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">No address</span>
-                  )}
-                </TableCell>
-                <TableCell className="max-w-56">
-                  <p className={contact.primary === "No contact" ? "truncate text-muted-foreground" : "truncate text-foreground"}>
-                    {contact.primary}
-                  </p>
-                  {contact.secondary ? (
-                    <p className="truncate text-label text-muted-foreground">
-                      {contact.secondary}
-                    </p>
-                  ) : null}
-                </TableCell>
-                <TableCell className="max-w-72">
-                  <p className="truncate font-medium text-foreground">
-                    {row.policy?.policyNumber ?? "Policy"}
-                  </p>
-                  {carrier ? (
-                    <p className="truncate text-label text-muted-foreground">
-                      {carrier}
-                    </p>
-                  ) : null}
-                </TableCell>
-                <TableCell className="px-4">
-                  <p className="text-foreground">
-                    {formatCertificateTime(issuedAt)}
-                  </p>
-                  {currentVersion ? (
-                    <p className="text-label text-muted-foreground">
-                      Version {currentVersion.versionNumber}
-                    </p>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </OperationalPanel>
   );
 }
 
@@ -389,6 +242,7 @@ export default function CertificatesPage() {
   const [tab, setTab] = useState<CertificateWorkspaceTab>("active");
   const [selectedCertificateId, setSelectedCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [reissuingCertificateId, setReissuingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
+  const [savingCertificateId, setSavingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [archivingCertificateId, setArchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [unarchivingCertificateId, setUnarchivingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [policyFilter, setPolicyFilter] = useState<CertificatePolicyFilter>("all");
@@ -503,22 +357,7 @@ export default function CertificatesPage() {
     }
     setReissuingCertificateId(row._id);
     try {
-      const currentVersion = row.currentVersion ?? row.latestIssuedVersion;
-      const result = await generateCertificate({
-        policyId: row.policyId,
-        holderName: holder.displayName,
-        holderContactName: holder.contactName,
-        holderEmail: holder.email,
-        holderPhone: holder.phone,
-        ...certificateHolderActionAddress(holder),
-        additionalInsuredName: currentVersion?.requestKind === "additional_insured"
-          ? currentVersion.additionalInsuredName
-          : undefined,
-        requestedEndorsements: currentVersion?.requestKind === "additional_insured"
-          ? ["additional_insured"]
-          : undefined,
-        forceReissue: true,
-      });
+      const result = await generateCertificate(certificateVersionActionInput(row));
       if ((result as { status?: string }).status === "ambiguous_certificate_holder") {
         toast.message((result as { message?: string }).message ?? "Choose the existing certificate to reissue.");
         return;
@@ -538,6 +377,44 @@ export default function CertificatesPage() {
     }
   };
 
+  const editCertificateHolder = async (
+    row: PolicyCertificateRecord,
+    draft: CertificateHolderDraft,
+  ) => {
+    setSavingCertificateId(row._id);
+    try {
+      const result = await generateCertificate(
+        certificateVersionActionInput(row, draft),
+      );
+      if ((result as { status?: string }).status === "held_policy_change_required") {
+        toast.message(
+          (result as { message?: string }).message ??
+            "Broker review is needed before generating this version.",
+        );
+        return false;
+      }
+      const versionNumber = (result as { versionNumber?: number }).versionNumber;
+      toast.success(
+        versionNumber
+          ? `Certificate version ${versionNumber} generated`
+          : "New certificate version generated",
+      );
+      if ((result as { url?: string }).url) {
+        openWithUrl((result as { url: string }).url);
+      }
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update certificate holder",
+      );
+      return false;
+    } finally {
+      setSavingCertificateId(null);
+    }
+  };
+
   return (
     <AppShell
       rightPanel={selectedCertificate ? (
@@ -545,9 +422,11 @@ export default function CertificatesPage() {
           row={selectedCertificate}
           onClose={() => setSelectedCertificateId(null)}
           onReissue={reissueCertificate}
+          onEditHolder={editCertificateHolder}
           onArchive={archiveCertificate}
           onUnarchive={unarchiveCertificate}
           reissuing={reissuingCertificateId === selectedCertificate._id}
+          savingHolder={savingCertificateId === selectedCertificate._id}
           archiving={archivingCertificateId === selectedCertificate._id}
           unarchiving={unarchivingCertificateId === selectedCertificate._id}
         />

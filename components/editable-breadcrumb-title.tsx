@@ -48,6 +48,7 @@ export function EditableBreadcrumbTitle({
     },
     errorMessage,
   });
+  const showSaveStatus = autoSave.status !== "saved";
 
   async function commit() {
     const next = draft.trim();
@@ -101,7 +102,9 @@ export function EditableBreadcrumbTitle({
             className="absolute inset-0 w-full rounded-md border-0 bg-foreground/4 px-1.5 py-0.5 text-foreground outline-none transition-colors focus:bg-foreground/6"
           />
         </span>
-        <AutoSaveStatus status={autoSave.status} className="min-w-0" />
+        {showSaveStatus ? (
+          <AutoSaveStatus status={autoSave.status} className="min-w-0" />
+        ) : null}
       </span>
     );
   }
@@ -119,7 +122,9 @@ export function EditableBreadcrumbTitle({
       >
         {display}
       </button>
-      <AutoSaveStatus status={autoSave.status} className="min-w-0" />
+      {showSaveStatus ? (
+        <AutoSaveStatus status={autoSave.status} className="min-w-0" />
+      ) : null}
     </span>
   );
 }

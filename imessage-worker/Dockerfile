@@ -1,4 +1,4 @@
-FROM node:22-trixie-slim AS build
+FROM node:24-trixie-slim AS build
 
 WORKDIR /app
 
@@ -9,10 +9,14 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:22-trixie-slim AS runtime
+FROM node:24-trixie-slim AS runtime
 
 ENV NODE_ENV=production
 WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm ci --omit=dev --no-audit --no-fund --loglevel=error \

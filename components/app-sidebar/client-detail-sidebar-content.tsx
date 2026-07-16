@@ -10,7 +10,7 @@ import {
   MENU_ITEM_INACTIVE,
   MENU_ITEM_INACTIVE_SUBTLE,
 } from "./nav-config";
-import { NavItem } from "./nav-item";
+import { SidebarMenuItem } from "./nav-item";
 import { SidebarHeader } from "./sidebar-header";
 import type { ClientThreadItem } from "./types";
 import { splitThreadConversations } from "@/lib/thread-display";
@@ -67,7 +67,7 @@ export function ClientDetailSidebarContent({
           </p>
         )}
         {collapsed && <div className="pt-4 pb-1" />}
-        <NavItem
+        <SidebarMenuItem
           href={CLIENT_LIST_NAV_ITEM.href}
           label={CLIENT_LIST_NAV_ITEM.label}
           icon={CLIENT_LIST_NAV_ITEM.icon}
@@ -75,7 +75,7 @@ export function ClientDetailSidebarContent({
           collapsed={collapsed}
         />
         {CLIENT_DETAIL_NAV.map((item) => (
-          <NavItem
+          <SidebarMenuItem
             key={item.href || "details"}
             href={`${clientDetailBase}${item.href}`}
             label={item.label}

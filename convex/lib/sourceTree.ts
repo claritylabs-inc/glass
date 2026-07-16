@@ -10,6 +10,7 @@ import {
   stableHash,
   type DocumentSourceNode,
   type OperationalCoverageLine,
+  type OperationalAddress,
   type OperationalParty,
   type PolicyOperationalProfile,
   type SourceBackedValue,
@@ -18,8 +19,10 @@ import {
   type SourceSpanUnit,
 } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
+import { mergeCoverageRows } from "./coverageScoping";
 import { normalizeCoverageName, normalizeText } from "./coverageNames";
 import { lobLabel } from "./linesOfBusiness";
+import { normalizeExtractedDateFields } from "./valueNormalization";
 
 export type {
   DocumentSourceNode,
@@ -41,6 +44,11 @@ export type DocumentSourceNodeKind =
   | "table_row"
   | "table_cell"
   | "text";
+
+type OperationalPartyWithIdentifiers = OperationalParty & {
+  naicNumber?: string;
+  licenseNumber?: string;
+};
 
 export type SourceSpanLike = {
   id?: string;
@@ -214,7 +222,7 @@ function normalizedKind(value: unknown): SourceSpanKind {
     : "pdf_text";
 }
 
-function sourceSpansForSdk(sourceSpans: SourceSpanLike[], documentId: string): SourceSpan[] {
+export function sourceSpansForSdk(sourceSpans: SourceSpanLike[], documentId: string): SourceSpan[] {
   return sourceSpans
     .filter((span) => typeof span.text === "string")
     .map((span, index) => {
@@ -846,7 +854,6 @@ const COVERAGE_TERM_KINDS = new Set([
   "retention",
   "deductible",
   "retroactive_date",
-  "premium",
   "other",
 ]);
 
@@ -916,6 +923,8 @@ function cleanCoverageTerms(value: unknown): Array<{
     const label = typeof record.label === "string" ? normalizeWhitespace(record.label) : "";
     const termValue = cleanCoverageScalar(record.value) ?? "";
     if (!label || !termValue) continue;
+    if (record.kind === "premium" || /\bpremium\b/i.test(label)) continue;
+    if (/\b(?:exposure|reporting values?|premium basis|rate|vehicle pd values?)\b/i.test(label)) continue;
     const sourceNodeIds = stringValues(record.sourceNodeIds);
     const sourceSpanIds = stringValues(record.sourceSpanIds);
     const kind = typeof record.kind === "string" && COVERAGE_TERM_KINDS.has(record.kind)
@@ -954,11 +963,9 @@ function cleanOperationalCoverages(
       .filter((term) => !isCoverageNameEcho(term.value, name));
     const limit = preferredCoverageLimit(cleanCoverageScalar(coverage.limit), name, limits);
     const deductible = cleanCoverageScalar(coverage.deductible);
-    const premium = cleanCoverageScalar(coverage.premium);
     if (
       !limit &&
       !deductible &&
-      !premium &&
       !record.retroactiveDate &&
       limits.length === 0 &&
       !coverage.formNumber &&
@@ -976,7 +983,6 @@ function cleanOperationalCoverages(
       name,
       ...(limit ? { limit } : {}),
       ...(deductible ? { deductible } : {}),
-      ...(premium ? { premium } : {}),
       ...(limits.length ? { limits } : {}),
       ...(typeof record.retroactiveDate === "string" && record.retroactiveDate.trim()
         ? { retroactiveDate: record.retroactiveDate.trim() }
@@ -991,7 +997,6 @@ function cleanOperationalCoverages(
       normalized.name.toLowerCase(),
       limit ?? "",
       deductible ?? "",
-      premium ?? "",
       (normalized as OperationalCoverageLine & { retroactiveDate?: string }).retroactiveDate ?? "",
       JSON.stringify((normalized as OperationalCoverageLine & { limits?: unknown[] }).limits ?? []),
       (normalized as OperationalCoverageLine & { lineOfBusiness?: string }).lineOfBusiness ?? "",
@@ -1008,6 +1013,10 @@ function cleanOperationalCoverages(
 type OperationalProfileExtensions = {
   additionalInsuredEligibility?: unknown;
   additionalInsureds?: unknown;
+  coverageSchedules?: unknown;
+  premiumBreakdown?: unknown;
+  taxesAndFees?: unknown;
+  totalCost?: unknown;
 };
 
 function storedProfileExtensions(rawProfile: unknown): OperationalProfileExtensions {
@@ -1019,6 +1028,18 @@ function storedProfileExtensions(rawProfile: unknown): OperationalProfileExtensi
       : {}),
     ...(Array.isArray(record.additionalInsureds)
       ? { additionalInsureds: record.additionalInsureds }
+      : {}),
+    ...(Array.isArray(record.coverageSchedules)
+      ? { coverageSchedules: record.coverageSchedules }
+      : {}),
+    ...(Array.isArray(record.premiumBreakdown)
+      ? { premiumBreakdown: record.premiumBreakdown }
+      : {}),
+    ...(Array.isArray(record.taxesAndFees)
+      ? { taxesAndFees: record.taxesAndFees }
+      : {}),
+    ...(record.totalCost && typeof record.totalCost === "object" && !Array.isArray(record.totalCost)
+      ? { totalCost: record.totalCost }
       : {}),
   };
 }
@@ -1035,11 +1056,23 @@ function preserveOperationalProfileExtensions(
 
 function partiesFromProfile(profile: PolicyOperationalProfile): OperationalParty[] {
   const parties: OperationalParty[] = [];
+  const seen = new Set<string>();
+  for (const party of profile.parties) {
+    const name = normalizeWhitespace(party.name);
+    if (!name) continue;
+    const key = `${party.role.toLowerCase()}|${name.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parties.push({ ...party, name });
+  }
   const push = (role: OperationalParty["role"], value: SourceBackedValue | undefined) => {
     if (!value) return;
     if (role === "broker" ? isBadBrokerValue(value.value) : isBadOperationalIdentityValue(value.value)) {
       return;
     }
+    const key = `${String(role).toLowerCase()}|${value.value.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
     parties.push({
       role,
       name: value.value,
@@ -1101,7 +1134,7 @@ function finalizeOperationalProfile(profile: PolicyOperationalProfile): PolicyOp
     insurer: finalizeSourceBackedIdentity(profile.insurer, "insurer"),
     broker: finalizeSourceBackedIdentity(profile.broker, "broker"),
     premium: finalizeSourceBackedPremium(profile.premium),
-    parties: [],
+    parties: profile.parties,
   };
   finalized.parties = partiesFromProfile(finalized);
   finalized.sourceNodeIds = [...new Set([
@@ -1161,6 +1194,63 @@ function normalizeRawSourceBackedValue(
       : { confidence: "low" as const }),
     sourceNodeIds,
     sourceSpanIds,
+  };
+}
+
+function normalizeRawOperationalAddress(value: unknown): OperationalAddress | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const address = Object.fromEntries(
+    ["street1", "street2", "city", "state", "zip", "country", "formatted"]
+      .map((key) => [key, cleanCoverageScalar(record[key])])
+      .filter((entry): entry is [string, string] => Boolean(entry[1])),
+  ) as OperationalAddress;
+  return Object.keys(address).length > 0 ? address : undefined;
+}
+
+function normalizeOperationalPartyRole(value: string) {
+  const normalized = value.toLowerCase().replace(/[\s-]+/g, "_");
+  if (["producer", "broker", "agent"].includes(normalized)) return "producer";
+  if ([
+    "general_agent",
+    "managing_general_agent",
+    "managing_general_underwriter",
+    "program_administrator",
+    "mga",
+    "administrator",
+  ].includes(normalized)) return "general_agent";
+  if (normalized === "namedinsured" || normalized === "insured") return "named_insured";
+  return normalized;
+}
+
+function normalizeRawOperationalParty(
+  value: unknown,
+  validNodeIds: Set<string>,
+  validSpanIds: Set<string>,
+): OperationalPartyWithIdentifiers | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const name = cleanCoverageScalar(record.name);
+  const rawRole = cleanCoverageScalar(record.role);
+  const sourceNodeIds = validSourceIds(record.sourceNodeIds, validNodeIds);
+  const sourceSpanIds = validSourceIds(record.sourceSpanIds, validSpanIds);
+  if (!name || !rawRole || (sourceNodeIds.length === 0 && sourceSpanIds.length === 0)) return undefined;
+  const role = normalizeOperationalPartyRole(rawRole);
+  const address = normalizeRawOperationalAddress(record.address);
+  const naicNumber = ["insurer", "carrier"].includes(role)
+    ? cleanCoverageScalar(record.naicNumber)
+    : undefined;
+  const licenseNumber = ["producer", "general_agent"].includes(role)
+    ? cleanCoverageScalar(record.licenseNumber)
+    : undefined;
+  return {
+    role,
+    name,
+    sourceNodeIds,
+    sourceSpanIds,
+    ...(address ? { address } : {}),
+    ...(naicNumber ? { naicNumber } : {}),
+    ...(licenseNumber ? { licenseNumber } : {}),
   };
 }
 
@@ -1278,15 +1368,37 @@ function normalizeRawOperationalProfile(
     candidate.retroactiveDate,
     candidate.premium,
   ].map((value) => normalizeRawSourceBackedValue(value, validNodeIds, validSpanIds));
+  const candidateRecord = candidate as Record<string, unknown>;
+  const normalizedOperationsDescription = normalizeRawSourceBackedValue(
+    candidateRecord.operationsDescription,
+    validNodeIds,
+    validSpanIds,
+  );
+  const operationsDescription = normalizedOperationsDescription && (
+    normalizedOperationsDescription.sourceNodeIds.length > 0 ||
+    normalizedOperationsDescription.sourceSpanIds.length > 0
+  )
+    ? normalizedOperationsDescription
+    : undefined;
+  const rawParties: unknown[] = Array.isArray(candidate.parties)
+    ? candidate.parties as unknown[]
+    : [];
+  const parties: OperationalPartyWithIdentifiers[] = rawParties
+    .map((party) => normalizeRawOperationalParty(party, validNodeIds, validSpanIds))
+    .filter((party): party is OperationalPartyWithIdentifiers => Boolean(party));
   const sourceNodeIds = [...new Set([
     ...values.flatMap((value) => value?.sourceNodeIds ?? []),
+    ...(operationsDescription?.sourceNodeIds ?? []),
+    ...parties.flatMap((party) => party.sourceNodeIds),
     ...coverages.flatMap((coverage) => coverage.sourceNodeIds),
   ])];
   const sourceSpanIds = [...new Set([
     ...values.flatMap((value) => value?.sourceSpanIds ?? []),
+    ...(operationsDescription?.sourceSpanIds ?? []),
+    ...parties.flatMap((party) => party.sourceSpanIds),
     ...coverages.flatMap((coverage) => coverage.sourceSpanIds),
   ])];
-  return PolicyOperationalProfileSchema.parse({
+  const parsed = PolicyOperationalProfileSchema.parse({
     documentType: candidate.documentType === "quote" ? "quote" : "policy",
     linesOfBusiness: normalizeOperationalLinesOfBusiness(
       candidate.linesOfBusiness,
@@ -1300,7 +1412,7 @@ function normalizeRawOperationalProfile(
     retroactiveDate: values[6],
     premium: values[7],
     coverages,
-    parties: [],
+    parties,
     endorsementSupport: normalizeRawEndorsementSupport(
       (candidate as { endorsementSupport?: unknown }).endorsementSupport,
       validNodeIds,
@@ -1312,6 +1424,91 @@ function normalizeRawOperationalProfile(
       ? (candidate.warnings as unknown[]).filter((warning): warning is string => typeof warning === "string")
       : [],
   });
+  return {
+    ...parsed,
+    ...(operationsDescription ? { operationsDescription } : {}),
+    parties,
+  } as PolicyOperationalProfile;
+}
+
+function partyNamePattern(name: string): RegExp | undefined {
+  const tokens = name.toLowerCase().match(/[a-z0-9]+/g);
+  if (!tokens?.length) return undefined;
+  return new RegExp(tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^a-z0-9]+"), "ig");
+}
+
+function sourceBackedPartyIdentifier(
+  party: OperationalPartyWithIdentifiers,
+  sourceTree: DocumentSourceNode[],
+  sourceSpans: ReturnType<typeof sourceSpansForSdk>,
+  kind: "naic" | "license",
+): { value: string; sourceNodeIds: string[]; sourceSpanIds: string[] } | undefined {
+  const namePattern = partyNamePattern(party.name);
+  if (!namePattern) return undefined;
+  const identifierPattern = kind === "naic"
+    ? /\bNAIC(?:\s+(?:CODE|NO\.?|NUMBER))?\s*(?:#\s*)?[:\-]?\s*(\d{5})\b/i
+    : /\bLICENSE(?:\s+(?:NO\.?|NUMBER))?\s*(?:#\s*)?[:\-]?\s*([A-Z0-9][A-Z0-9.-]{2,})\b/i;
+
+  for (const span of sourceSpans) {
+    const spanText = span.text ?? "";
+    namePattern.lastIndex = 0;
+    for (let match = namePattern.exec(spanText); match; match = namePattern.exec(spanText)) {
+      const afterName = spanText.slice(
+        match.index + match[0].length,
+        match.index + match[0].length + 320,
+      );
+      const identifier = identifierPattern.exec(afterName)?.[1]?.replace(/[.,;:]+$/, "");
+      if (!identifier || (kind === "license" && !/\d/.test(identifier))) continue;
+      const spanId = String(span.id);
+      return {
+        value: identifier,
+        sourceNodeIds: sourceTree
+          .filter((node) => node.sourceSpanIds.includes(spanId))
+          .map((node) => node.id),
+        sourceSpanIds: [spanId],
+      };
+    }
+  }
+  return undefined;
+}
+
+function enrichOperationalPartyIdentifiers(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+  sourceSpans: ReturnType<typeof sourceSpansForSdk>,
+): PolicyOperationalProfile {
+  const parties: OperationalPartyWithIdentifiers[] = profile.parties.map((rawParty: OperationalParty) => {
+    const party = rawParty as OperationalPartyWithIdentifiers;
+    const role = normalizeOperationalPartyRole(String(party.role));
+    const kind = ["insurer", "carrier"].includes(role)
+      ? "naic"
+      : ["producer", "general_agent"].includes(role)
+        ? "license"
+        : undefined;
+    if (!kind || (kind === "naic" ? party.naicNumber : party.licenseNumber)) return party;
+    const evidence = sourceBackedPartyIdentifier(party, sourceTree, sourceSpans, kind);
+    if (!evidence) return party;
+    return {
+      ...party,
+      ...(kind === "naic"
+        ? { naicNumber: evidence.value }
+        : { licenseNumber: evidence.value }),
+      sourceNodeIds: [...new Set([...party.sourceNodeIds, ...evidence.sourceNodeIds])],
+      sourceSpanIds: [...new Set([...party.sourceSpanIds, ...evidence.sourceSpanIds])],
+    };
+  });
+  return {
+    ...profile,
+    parties,
+    sourceNodeIds: [...new Set([
+      ...profile.sourceNodeIds,
+      ...parties.flatMap((party) => party.sourceNodeIds),
+    ])],
+    sourceSpanIds: [...new Set([
+      ...profile.sourceSpanIds,
+      ...parties.flatMap((party) => party.sourceSpanIds),
+    ])],
+  };
 }
 
 export function normalizeOperationalProfile(
@@ -1323,10 +1520,15 @@ export function normalizeOperationalProfile(
   const validNodeIds = new Set(sourceTree.map((node) => node.id));
   const validSpanIds = new Set(sdkSpans.map((span) => span.id));
   const normalized = normalizeRawOperationalProfile(rawProfile, validNodeIds, validSpanIds);
-  return preserveOperationalProfileExtensions(
-    finalizeOperationalProfile(normalized),
+  const profile = preserveOperationalProfileExtensions(
+    enrichOperationalPartyIdentifiers(
+      finalizeOperationalProfile(normalized),
+      sourceTree,
+      sdkSpans,
+    ),
     rawProfile,
   );
+  return normalizeExtractedDateFields(profile) as PolicyOperationalProfile;
 }
 
 export function normalizeStoredOperationalProfile(
@@ -1576,12 +1778,33 @@ export function sourceTreePolicyFields(params: {
   existingDocumentMetadata?: unknown;
   existingDeclarations?: unknown;
   existingLinesOfBusiness?: unknown;
+  existingPolicyFields?: unknown;
 }): Record<string, unknown> {
   const { sourceTree } = params;
+  const existingPolicy = params.existingPolicyFields && typeof params.existingPolicyFields === "object" && !Array.isArray(params.existingPolicyFields)
+    ? params.existingPolicyFields as Record<string, unknown>
+    : {};
+  const mergedCoverages = cleanOperationalCoverages(
+    mergeCoverageRows(params.operationalProfile.coverages, existingPolicy.coverages) as OperationalCoverageLine[],
+  );
+  const separatedPremium = typeof existingPolicy.premium === "string" && (
+    Array.isArray(existingPolicy.premiumBreakdown) || typeof existingPolicy.totalCost === "string"
+  )
+    ? existingPolicy.premium.trim()
+    : undefined;
+  const separatedPremiumAmount = typeof existingPolicy.premiumAmount === "number"
+    ? existingPolicy.premiumAmount
+    : moneyNumberFromString(separatedPremium);
+  const separatedPremiumSourceSpanIds = Array.isArray(existingPolicy.premiumBreakdown)
+    ? [...new Set(existingPolicy.premiumBreakdown.flatMap((row) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+      return stringValues((row as Record<string, unknown>).sourceSpanIds);
+    }))]
+    : [];
   const resolvedLines = resolveOperationalProfileLinesOfBusiness({
     profileLinesOfBusiness: params.operationalProfile.linesOfBusiness,
     existingLinesOfBusiness: params.existingLinesOfBusiness,
-    coverages: params.operationalProfile.coverages,
+    coverages: mergedCoverages,
   });
   const currentLinesOfBusiness = normalizeOperationalLinesOfBusiness(params.operationalProfile.linesOfBusiness);
   const linesOfBusinessChanged = !sameStringArray(
@@ -1594,9 +1817,27 @@ export function sourceTreePolicyFields(params: {
       ? resolvedLines.linesOfBusiness
       : currentLinesOfBusiness,
     coverages: annotateOperationalCoverageLinesOfBusiness(
-      params.operationalProfile.coverages,
+      mergedCoverages,
       resolvedLines.linesOfBusiness,
     ),
+    ...(separatedPremium
+      ? {
+        premium: {
+          value: separatedPremium,
+          ...(separatedPremiumAmount !== undefined
+            ? { normalizedValue: String(separatedPremiumAmount) }
+            : {}),
+          confidence: "high",
+          sourceNodeIds: [],
+          sourceSpanIds: separatedPremiumSourceSpanIds,
+        },
+      }
+      : {}),
+    sourceSpanIds: [...new Set([
+      ...params.operationalProfile.sourceSpanIds,
+      ...mergedCoverages.flatMap((coverage) => coverage.sourceSpanIds),
+      ...separatedPremiumSourceSpanIds,
+    ])],
   };
   const documentOutline = sourceTreeToCompactDocumentOutline(sourceTree);
   const hasEvidenceNodes = sourceTree.some((node) => node.kind !== "document");
@@ -1634,20 +1875,35 @@ export function sourceTreePolicyFields(params: {
   if (declarations) fields.declarations = declarations;
   return {
     ...fields,
-    ...operationalProfilePolicyFields(operationalProfile),
+    ...operationalProfilePolicyFields(operationalProfile, params.existingPolicyFields),
   };
 }
 
 export function operationalProfilePolicyFields(
   operationalProfile: PolicyOperationalProfile,
+  existingPolicyFields?: unknown,
 ): Record<string, unknown> {
+  const partyIdentity = (value: unknown) =>
+    typeof value === "string"
+      ? value.toLowerCase().replace(/[^a-z0-9]+/g, "")
+      : "";
+  const sameParty = (left: unknown, right: unknown) => {
+    const leftIdentity = partyIdentity(left);
+    return Boolean(leftIdentity && leftIdentity === partyIdentity(right));
+  };
   const fields: Record<string, unknown> = {
     operationalProfile,
   };
+  const extendedProfile = operationalProfile as PolicyOperationalProfile & {
+    coverageSchedules?: unknown[];
+    premiumBreakdown?: unknown[];
+    taxesAndFees?: unknown[];
+    totalCost?: SourceBackedValue;
+  };
   const policyNumber = profileValue(operationalProfile, "policyNumber");
   const namedInsured = profileValue(operationalProfile, "namedInsured");
-  const insurer = profileValue(operationalProfile, "insurer");
-  const broker = profileValue(operationalProfile, "broker");
+  const profileInsurer = profileValue(operationalProfile, "insurer");
+  const profileBroker = profileValue(operationalProfile, "broker");
   const effectiveDate = profileValue(operationalProfile, "effectiveDate");
   const expirationDate = profileValue(operationalProfile, "expirationDate");
   const retroactiveDate = profileValue(operationalProfile, "retroactiveDate");
@@ -1658,6 +1914,32 @@ export function operationalProfilePolicyFields(
     : undefined;
   const premiumAmount = moneyNumberFromString(premiumNormalizedValue)
     ?? moneyNumberFromString(premium);
+  const parties = operationalProfile.parties as OperationalPartyWithIdentifiers[];
+  const partyForRoles = (...roles: string[]) => {
+    const candidates = parties.filter((party) =>
+      roles.includes(String(party.role).toLowerCase()),
+    );
+    return candidates.find((party) => party.address?.street1) ?? candidates[0];
+  };
+  const insuredParty = partyForRoles("named_insured", "insured");
+  const producerParty = partyForRoles("producer", "broker");
+  const insurerParty = partyForRoles("insurer", "carrier");
+  const generalAgentParty = partyForRoles("general_agent", "mga", "administrator");
+  const insurer = profileInsurer ?? insurerParty?.name;
+  const broker = profileBroker ?? producerParty?.name;
+  const policyAddress = (party: OperationalParty) => ({ ...party.address });
+  const existing = existingPolicyFields && typeof existingPolicyFields === "object" && !Array.isArray(existingPolicyFields)
+    ? existingPolicyFields as Record<string, unknown>
+    : {};
+  const existingProducer = existing.producer && typeof existing.producer === "object" && !Array.isArray(existing.producer)
+    ? existing.producer as Record<string, unknown>
+    : {};
+  const existingInsurer = existing.insurer && typeof existing.insurer === "object" && !Array.isArray(existing.insurer)
+    ? existing.insurer as Record<string, unknown>
+    : {};
+  const existingGeneralAgent = existing.generalAgent && typeof existing.generalAgent === "object" && !Array.isArray(existing.generalAgent)
+    ? existing.generalAgent as Record<string, unknown>
+    : {};
   fields.policyNumber = policyNumber ?? "Unknown";
   fields.insuredName = namedInsured ?? "Unknown";
   if (insurer) {
@@ -1668,11 +1950,91 @@ export function operationalProfilePolicyFields(
     fields.carrier = "Unknown";
   }
   if (broker) fields.broker = broker;
+  if (insuredParty?.address?.street1) {
+    fields.insuredAddress = {
+      ...policyAddress(insuredParty),
+      documentNodeId: insuredParty.sourceNodeIds[0],
+      sourceSpanIds: insuredParty.sourceSpanIds,
+    };
+  }
+  if (producerParty) {
+    const matchingExistingProducer = sameParty(existingProducer.agencyName, producerParty.name)
+      ? existingProducer
+      : {};
+    fields.producer = {
+      ...matchingExistingProducer,
+      agencyName: producerParty.name,
+      ...(producerParty.licenseNumber
+        ? { licenseNumber: producerParty.licenseNumber }
+        : {}),
+      ...(producerParty.address?.street1
+        ? { address: policyAddress(producerParty) }
+        : {}),
+      documentNodeId: producerParty.sourceNodeIds[0],
+      sourceSpanIds: producerParty.sourceSpanIds,
+    };
+    fields.brokerLicenseNumber = broker && sameParty(broker, producerParty.name)
+      ? producerParty.licenseNumber
+      : undefined;
+  }
+  if (insurerParty) {
+    const matchingExistingInsurer = sameParty(existingInsurer.legalName, insurerParty.name)
+      ? existingInsurer
+      : {};
+    fields.insurer = {
+      ...matchingExistingInsurer,
+      legalName: insurerParty.name,
+      ...(insurerParty.naicNumber ? { naicNumber: insurerParty.naicNumber } : {}),
+      ...(insurerParty.address?.street1
+        ? { address: policyAddress(insurerParty) }
+        : {}),
+      documentNodeId: insurerParty.sourceNodeIds[0],
+      sourceSpanIds: insurerParty.sourceSpanIds,
+    };
+    fields.carrierNaicNumber = insurer && sameParty(insurer, insurerParty.name)
+      ? insurerParty.naicNumber
+      : undefined;
+  }
+  if (generalAgentParty) {
+    const matchingExistingGeneralAgent = sameParty(
+      existingGeneralAgent.agencyName,
+      generalAgentParty.name,
+    )
+      ? existingGeneralAgent
+      : {};
+    fields.generalAgent = {
+      ...matchingExistingGeneralAgent,
+      agencyName: generalAgentParty.name,
+      ...(generalAgentParty.licenseNumber
+        ? { licenseNumber: generalAgentParty.licenseNumber }
+        : {}),
+      ...(generalAgentParty.address
+        ? { address: policyAddress(generalAgentParty) }
+        : {}),
+      documentNodeId: generalAgentParty.sourceNodeIds[0],
+      sourceSpanIds: generalAgentParty.sourceSpanIds,
+    };
+  }
   if (effectiveDate) fields.effectiveDate = effectiveDate;
   if (expirationDate) fields.expirationDate = expirationDate;
   if (retroactiveDate) fields.retroactiveDate = retroactiveDate;
   fields.premium = premium ?? undefined;
   if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
+  if (extendedProfile.coverageSchedules?.length) {
+    fields.coverageSchedules = extendedProfile.coverageSchedules;
+  }
+  if (extendedProfile.premiumBreakdown?.length) {
+    fields.premiumBreakdown = extendedProfile.premiumBreakdown;
+  }
+  if (extendedProfile.taxesAndFees?.length) {
+    fields.taxesAndFees = extendedProfile.taxesAndFees;
+  }
+  if (extendedProfile.totalCost?.value) {
+    fields.totalCost = extendedProfile.totalCost.value;
+    const totalCostAmount = moneyNumberFromString(extendedProfile.totalCost.normalizedValue)
+      ?? moneyNumberFromString(extendedProfile.totalCost.value);
+    if (totalCostAmount !== undefined) fields.totalCostAmount = totalCostAmount;
+  }
   if (operationalProfile.documentType) fields.documentType = operationalProfile.documentType;
   if (operationalProfile.linesOfBusiness.length > 0) {
     fields.linesOfBusiness = operationalProfile.linesOfBusiness;
@@ -1699,7 +2061,6 @@ export function operationalProfilePolicyFields(
         coverageCode: coverage.coverageCode,
         limit: coverage.limit,
         deductible: coverage.deductible,
-        premium: coverage.premium,
         retroactiveDate: coverageRecord.retroactiveDate,
         formNumber: coverage.formNumber,
         sectionRef: coverage.sectionRef,
@@ -1716,7 +2077,7 @@ export function operationalProfilePolicyFields(
                 : {};
               return [record.label, record.value].filter((part) => typeof part === "string" && part.trim()).join(": ");
             })
-            : [coverage.limit, coverage.deductible, coverage.premium]),
+            : [coverage.limit, coverage.deductible]),
         ].filter(Boolean).join(" | "),
       };
     });

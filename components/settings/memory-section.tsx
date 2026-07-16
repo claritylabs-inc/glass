@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
-import dayjs from "dayjs";
 import { AlertTriangle, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -24,6 +23,7 @@ import {
   useCachedQuery,
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type MemoryItem = {
   _id: Id<"orgMemory">;
@@ -194,7 +194,7 @@ function MemoryEditDrawer({
             />
             <OperationalLabelValueRow
               label="Last updated"
-              value={dayjs(memory.updatedAt).format("MMM D, YYYY")}
+              value={formatDisplayDate(memory.updatedAt)}
             />
           </OperationalLabelValueList>
         </div>
@@ -314,7 +314,7 @@ export function MemorySection() {
                   </span>
                   <span className="mt-1 block text-base text-muted-foreground">
                     {SOURCE_LABELS[memory.source] ?? memory.source} ·{" "}
-                    {dayjs(memory.updatedAt).format("MMM D, YYYY")}
+                    {formatDisplayDate(memory.updatedAt)}
                   </span>
                 </span>
                 <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground/50" />

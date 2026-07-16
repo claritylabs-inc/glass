@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import { requireOperator } from "./lib/operatorIdentity";
 import {
+  AUDIO_TRANSCRIPTION_MODEL_CATALOG,
   CONFIGURABLE_MODEL_PROVIDERS,
   EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
   EMBEDDING_MODEL_CATALOG,
@@ -29,6 +30,7 @@ import {
   directProviderModelForRoute,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
+  modelRouteSupportsTask,
   type ModelProvider,
   type ModelRoute,
   type ModelRouteId,
@@ -77,10 +79,13 @@ const webRetrievalValidator = v.object({
 
 const modelTaskRoutesValidator = v.object({
   chat: v.optional(routeUpdateValidator),
+  chat_vision: v.optional(routeUpdateValidator),
+  voice_transcription: v.optional(routeUpdateValidator),
   email_draft: v.optional(routeUpdateValidator),
   email_reply: v.optional(routeUpdateValidator),
   extraction: v.optional(routeUpdateValidator),
   extraction_preview: v.optional(routeUpdateValidator),
+  extraction_coverage_recovery: v.optional(routeUpdateValidator),
   classification: v.optional(routeUpdateValidator),
   requirement_extraction: v.optional(routeUpdateValidator),
   org_memory_extraction: v.optional(routeUpdateValidator),
@@ -96,10 +101,13 @@ const modelTaskRoutesValidator = v.object({
 
 const globalRoutesValidator = v.object({
   chat: v.optional(routeUpdateValidator),
+  chat_vision: v.optional(routeUpdateValidator),
+  voice_transcription: v.optional(routeUpdateValidator),
   email_draft: v.optional(routeUpdateValidator),
   email_reply: v.optional(routeUpdateValidator),
   extraction: v.optional(routeUpdateValidator),
   extraction_preview: v.optional(routeUpdateValidator),
+  extraction_coverage_recovery: v.optional(routeUpdateValidator),
   classification: v.optional(routeUpdateValidator),
   requirement_extraction: v.optional(routeUpdateValidator),
   org_memory_extraction: v.optional(routeUpdateValidator),
@@ -135,9 +143,21 @@ function assertSupportedRoute(routeId: ModelRouteId, route: ModelRoute) {
   }
   const models = routeId === "embeddings"
     ? EMBEDDING_MODEL_CATALOG[route.provider]
-    : LANGUAGE_MODEL_CATALOG[route.provider];
+    : routeId === "voice_transcription"
+      ? AUDIO_TRANSCRIPTION_MODEL_CATALOG[route.provider]
+      : LANGUAGE_MODEL_CATALOG[route.provider];
   if (!models?.includes(route.model)) {
     throw new Error(`Unsupported model ${route.model} for ${PROVIDER_LABELS[route.provider]}`);
+  }
+  if (
+    isModelTask(routeId) &&
+    !modelRouteSupportsTask(routeId, route)
+  ) {
+    throw new Error(
+      routeId === "voice_transcription"
+        ? `${MODEL_TASK_LABELS[routeId]} requires an audio transcription model`
+        : `${MODEL_TASK_LABELS[routeId]} requires an image-capable model`,
+    );
   }
 }
 
@@ -215,6 +235,7 @@ function providerTransport(provider: ModelProvider) {
   if (!languageProviderEnvConfigured(provider)) return null;
   const routes = [
     ...(LANGUAGE_MODEL_CATALOG[provider] ?? []),
+    ...(AUDIO_TRANSCRIPTION_MODEL_CATALOG[provider] ?? []),
     ...(EMBEDDING_MODEL_CATALOG[provider] ?? []),
   ];
   return routes.some((model) => directProviderModelForRoute({ provider, model }))
@@ -266,6 +287,12 @@ function availableLanguageModels(provider: ModelProvider) {
 
 function availableEmbeddingModels(provider: ModelProvider) {
   return (EMBEDDING_MODEL_CATALOG[provider] ?? []).filter((model) =>
+    directProviderModelForRoute({ provider, model }),
+  );
+}
+
+function availableAudioModels(provider: ModelProvider) {
+  return (AUDIO_TRANSCRIPTION_MODEL_CATALOG[provider] ?? []).filter((model) =>
     directProviderModelForRoute({ provider, model }),
   );
 }
@@ -326,6 +353,7 @@ function modelCapabilityCatalog() {
     CONFIGURABLE_MODEL_PROVIDERS.flatMap((provider) =>
       [
         ...(LANGUAGE_MODEL_CATALOG[provider] ?? []),
+        ...(AUDIO_TRANSCRIPTION_MODEL_CATALOG[provider] ?? []),
         ...(EMBEDDING_MODEL_CATALOG[provider] ?? []),
       ].map((model) => {
         const capabilities = modelCapabilitiesForRoute({ provider, model });
@@ -355,6 +383,7 @@ export const get = query({
         id,
         label: PROVIDER_LABELS[id],
         languageModels: availableLanguageModels(id),
+        audioModels: availableAudioModels(id),
         embeddingModels: availableEmbeddingModels(id),
       })),
       tasks: MODEL_TASKS.map((id) => ({
@@ -362,6 +391,7 @@ export const get = query({
         label: MODEL_TASK_LABELS[id],
         description: MODEL_TASK_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
+        isAudio: id === "voice_transcription",
       })),
       groups: MODEL_TASK_GROUPS,
       routes: visibleRoutes(settings?.routes, settings?.providerKeys),
@@ -464,6 +494,7 @@ export const getGlobal = query({
         configured: globalProviderConfigured(id),
         transport: providerTransport(id),
         languageModels: availableLanguageModels(id),
+        audioModels: availableAudioModels(id),
         embeddingModels: availableEmbeddingModels(id),
       })),
       tasks: MODEL_ROUTE_IDS.map((id) => ({
@@ -471,6 +502,7 @@ export const getGlobal = query({
         label: MODEL_ROUTE_LABELS[id],
         description: MODEL_ROUTE_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
+        isAudio: id === "voice_transcription",
         defaultRoute: defaultModelRouteForId(id),
       })),
       groups: OPERATOR_MODEL_ROUTE_GROUPS,
@@ -595,6 +627,7 @@ export const resolveForOrg = internalQuery({
         brokerRoute.provider !== "moonshot" &&
         !isRetiredModelRoute(brokerRoute) &&
         directProviderModelForRoute(brokerRoute) &&
+        modelRouteSupportsTask(task, brokerRoute) &&
         providerKeys[brokerRoute.provider]
       ) {
         routes[task] = brokerRoute;
@@ -606,6 +639,7 @@ export const resolveForOrg = internalQuery({
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
         !isRetiredModelRoute(globalRoute) &&
+        modelRouteSupportsTask(task, globalRoute) &&
         routeDirectlyConfigured(globalRoute)
       ) {
         routes[task] = globalRoute;
@@ -660,6 +694,7 @@ export const resolvePublicDefaults = internalQuery({
         globalRoute &&
         globalRoute.provider !== "moonshot" &&
         !isRetiredModelRoute(globalRoute) &&
+        modelRouteSupportsTask(task, globalRoute) &&
         routeDirectlyConfigured(globalRoute)
       ) {
         routes[task] = globalRoute;

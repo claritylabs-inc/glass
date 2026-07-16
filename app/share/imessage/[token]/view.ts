@@ -1,8 +1,8 @@
-import dayjs from "dayjs";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
+import { formatDisplayDate } from "@/lib/date-format";
 
 export type Policy = {
   id: string;
@@ -46,8 +46,7 @@ export async function loadAppCardView(token: string): Promise<AppCardView | null
 
 export function formatDate(value?: string | number) {
   if (!value) return "Not listed";
-  const parsed = dayjs(value);
-  return parsed.isValid() ? parsed.format("MMM D, YYYY") : String(value);
+  return formatDisplayDate(value, String(value));
 }
 
 export function labelForStatus(status?: string) {

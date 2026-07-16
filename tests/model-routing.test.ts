@@ -14,6 +14,7 @@ import {
   primaryRouteForCall,
 } from "../convex/lib/models";
 import {
+  AUDIO_TRANSCRIPTION_MODEL_CATALOG,
   EXTRACTION_QUALITY_MODEL,
   LANGUAGE_MODEL_CATALOG,
   MODEL_DISPLAY_NAMES,
@@ -25,6 +26,9 @@ import {
   directProviderModelForRoute,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
+  modelRouteSupportsTask,
+  modelSupportsAudioInput,
+  modelSupportsImageInput,
 } from "../convex/lib/modelCatalog";
 
 describe("model task routing", () => {
@@ -32,6 +36,68 @@ describe("model task routing", () => {
     expect(MODEL_ROUTING.chat).toEqual({
       provider: "fireworks",
       model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    });
+  });
+
+  test("routes image-bearing chat to GPT-5.6 Terra", () => {
+    expect(MODEL_ROUTING.chat_vision).toEqual({
+      provider: "openai",
+      model: "gpt-5.6-terra",
+    });
+    expect(LANGUAGE_MODEL_CATALOG.openai).toEqual(
+      expect.arrayContaining([
+        "gpt-5.6",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+      ]),
+    );
+    expect(MODEL_DISPLAY_NAMES["gpt-5.6-terra"]).toBe("GPT 5.6 Terra");
+    expect(modelSupportsImageInput(MODEL_ROUTING.chat_vision)).toBe(true);
+    expect(modelCapabilitiesForRoute(MODEL_ROUTING.chat_vision)).toMatchObject({
+      modelName: "gpt-5.6-terra",
+      supportsImageInput: true,
+      maxInputTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    });
+  });
+
+  test("requires vision-chat overrides to accept image input", () => {
+    expect(
+      modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat_vision),
+    ).toBe(true);
+    expect(
+      modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat),
+    ).toBe(false);
+    expect(modelRouteSupportsTask("chat", MODEL_ROUTING.chat)).toBe(true);
+  });
+
+  test("routes voice memos through a dedicated OpenAI transcription model", () => {
+    expect(MODEL_ROUTING.voice_transcription).toEqual({
+      provider: "openai",
+      model: "gpt-4o-transcribe",
+    });
+    expect(AUDIO_TRANSCRIPTION_MODEL_CATALOG.openai).toEqual([
+      "gpt-4o-transcribe",
+      "gpt-4o-mini-transcribe",
+    ]);
+    expect(LANGUAGE_MODEL_CATALOG.openai).not.toContain("gpt-4o-transcribe");
+    expect(modelSupportsAudioInput(MODEL_ROUTING.voice_transcription)).toBe(
+      true,
+    );
+    expect(modelSupportsAudioInput(MODEL_ROUTING.chat_vision)).toBe(false);
+    expect(
+      modelRouteSupportsTask(
+        "voice_transcription",
+        MODEL_ROUTING.voice_transcription,
+      ),
+    ).toBe(true);
+    expect(
+      modelRouteSupportsTask("voice_transcription", MODEL_ROUTING.chat_vision),
+    ).toBe(false);
+    expect(modelCapabilitiesForRoute(MODEL_ROUTING.voice_transcription)).toMatchObject({
+      modelName: "gpt-4o-transcribe",
+      supportsAudioInput: true,
     });
   });
 
@@ -69,6 +135,46 @@ describe("model task routing", () => {
       provider: "fireworks",
       model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
     });
+  });
+
+  test("switches web chat to the vision route only when image parts exist", () => {
+    const source = readFileSync(
+      join(__dirname, "../convex/actions/processThreadChat.ts"),
+      "utf-8",
+    );
+    const modelSettings = readFileSync(
+      join(__dirname, "../convex/modelSettings.ts"),
+      "utf-8",
+    );
+    const schema = readFileSync(
+      join(__dirname, "../convex/schema.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("messageHistoryHasImageInput(messageHistory)");
+    expect(source).toContain(
+      'const chatTask = hasImageInput ? "chat_vision" : "chat"',
+    );
+    expect(source).toContain("modelSupportsImageInput(fallbackRoute)");
+    expect(modelSettings).toContain(
+      "chat_vision: v.optional(routeUpdateValidator)",
+    );
+    expect(modelSettings).toContain(
+      "voice_transcription: v.optional(routeUpdateValidator)",
+    );
+    expect(modelSettings).toContain(
+      "modelRouteSupportsTask(task, brokerRoute)",
+    );
+    expect(schema).toContain("chat_vision: v.optional(modelRouteValidator)");
+    expect(schema).toContain(
+      "voice_transcription: v.optional(modelRouteValidator)",
+    );
+    expect(MODEL_TASK_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "chat_vision",
+    );
+    expect(MODEL_TASK_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "voice_transcription",
+    );
   });
 
   test("keeps provisional policy extraction on direct Fireworks DeepSeek Flash", () => {
@@ -160,6 +266,42 @@ describe("model task routing", () => {
     expect(workerSource).toContain('"extraction_coverage_cleanup"');
   });
 
+  test("routes coverage recovery independently through GPT-5.4 Mini", () => {
+    const modelSettings = readFileSync(
+      join(__dirname, "../convex/modelSettings.ts"),
+      "utf-8",
+    );
+    const workerSource = readFileSync(
+      join(__dirname, "../extraction-worker/src/index.ts"),
+      "utf-8",
+    );
+    const routingPolicy = readFileSync(
+      join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts"),
+      "utf-8",
+    );
+
+    expect(defaultModelRouteForId("extraction_coverage_recovery")).toEqual({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+    expect(MODEL_ROUTE_LABELS.extraction_coverage_recovery).toBe(
+      "Coverage recovery",
+    );
+    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
+      "extraction_coverage_recovery",
+    );
+    expect(modelSettings).toContain(
+      "extraction_coverage_recovery: v.optional(routeUpdateValidator)",
+    );
+    expect(modelTaskForCall("extraction", "extraction_coverage_recovery")).toBe(
+      "extraction_coverage_recovery",
+    );
+    expect(routingPolicy).toContain(
+      'extraction_coverage_recovery: { provider: "openai", model: "gpt-5.4-mini" }',
+    );
+    expect(workerSource).toContain('"extraction_coverage_recovery"');
+  });
+
   test("keeps embeddings on the OpenAI-compatible 1536-dimensional route during migration", () => {
     expect(MODEL_ROUTING.embeddings).toEqual({
       provider: "openai",
@@ -171,6 +313,9 @@ describe("model task routing", () => {
     expect(modelTaskForCall("extraction", "extraction_classify")).toBe("classification");
     expect(modelTaskForCall("extraction", "extraction_long_list")).toBe("extraction");
     expect(modelTaskForCall("chat", "query_reason")).toBe("chat");
+    expect(modelTaskForCall("chat_vision", "query_reason")).toBe(
+      "chat_vision",
+    );
     expect(modelTaskForCall("extraction", "pce_impact_analysis")).toBe("analysis");
   });
 

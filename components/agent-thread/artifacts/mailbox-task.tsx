@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useAction } from "convex/react";
-import dayjs from "dayjs";
 import { ClipboardList, FileText, Loader2, Mail as MailIcon, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -11,8 +10,18 @@ import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import { scientistSurnameFor } from "../scientist-surnames";
 import type { ToolArtifactData } from "../types";
+import { formatDisplayDateTime } from "@/lib/date-format";
+import {
+  formatAttachmentSize,
+  isMailboxPdfAttachment,
+  isMailboxRequirementAttachment,
+  MailboxEmailReviewSidebar,
+  totalCreatedRequirements,
+  type LiveMailboxEmail,
+} from "./mailbox-email-review-sidebar";
 
 export function normalizeMailboxTask(data: unknown): {
+  title?: string;
   status?: string;
   summary?: string;
   steps: string[];
@@ -34,6 +43,7 @@ export function normalizeMailboxTask(data: unknown): {
     }>;
   }>;
   emails: Array<{
+    automationItemId?: Id<"connectedEmailAutomationItems">;
     emailRef?: string;
     mailbox?: string;
     accountEmail?: string;
@@ -94,6 +104,9 @@ export function normalizeMailboxTask(data: unknown): {
     ? evidence.emails
         .filter((email): email is Record<string, unknown> => !!email && typeof email === "object" && !Array.isArray(email))
         .map((email) => ({
+          automationItemId: typeof email.automationItemId === "string"
+            ? email.automationItemId as Id<"connectedEmailAutomationItems">
+            : undefined,
           emailRef: typeof email.emailRef === "string" ? email.emailRef : undefined,
           mailbox: typeof email.mailbox === "string" ? email.mailbox : undefined,
           accountEmail: typeof email.accountEmail === "string" ? email.accountEmail : undefined,
@@ -114,6 +127,7 @@ export function normalizeMailboxTask(data: unknown): {
         }))
     : [];
   return {
+    title: typeof record.title === "string" ? record.title : undefined,
     status: typeof record.status === "string" ? record.status : undefined,
     summary: typeof plan?.summary === "string" ? plan.summary : undefined,
     steps,
@@ -124,17 +138,11 @@ export function normalizeMailboxTask(data: unknown): {
   };
 }
 
-function formatAttachmentSize(size?: number) {
-  if (typeof size !== "number") return undefined;
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 type MailboxTaskEmail = ReturnType<typeof normalizeMailboxTask>["emails"][number];
 export type NormalizedMailboxTask = ReturnType<typeof normalizeMailboxTask>;
 
 export function mailboxTaskDisplayName(task: NormalizedMailboxTask) {
+  if (task.title?.trim()) return task.title.trim();
   const accountEmails = [
     ...task.searches.map((search) => search.accountEmail),
     ...task.emails.map((email) => email.accountEmail),
@@ -143,42 +151,6 @@ export function mailboxTaskDisplayName(task: NormalizedMailboxTask) {
   if (uniqueAccounts.length === 0) return "Mailbox search";
   if (uniqueAccounts.length === 1) return `Mailbox search - ${uniqueAccounts[0]}`;
   return `Mailbox search - ${uniqueAccounts[0]} + ${uniqueAccounts.length - 1}`;
-}
-
-function isMailboxPdfAttachment(attachment: MailboxTaskEmail["attachments"][number]) {
-  const name = attachment.filename.toLowerCase();
-  const type = attachment.contentType?.toLowerCase() ?? "";
-  return type.includes("pdf") || name.endsWith(".pdf");
-}
-
-function isMailboxRequirementAttachment(attachment: MailboxTaskEmail["attachments"][number]) {
-  const name = attachment.filename.toLowerCase();
-  const type = attachment.contentType?.toLowerCase() ?? "";
-  return (
-    type.includes("pdf") ||
-    type.includes("wordprocessingml") ||
-    type.startsWith("text/") ||
-    type.includes("json") ||
-    type.includes("csv") ||
-    name.endsWith(".pdf") ||
-    name.endsWith(".docx") ||
-    name.endsWith(".txt") ||
-    name.endsWith(".md") ||
-    name.endsWith(".markdown") ||
-    name.endsWith(".csv") ||
-    name.endsWith(".json")
-  );
-}
-
-function totalCreatedRequirements(result: unknown) {
-  if (!result || typeof result !== "object" || Array.isArray(result)) return 0;
-  const imports = (result as { imports?: unknown }).imports;
-  if (!Array.isArray(imports)) return 0;
-  return imports.reduce((total, item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return total;
-    const createdCount = (item as { createdCount?: unknown }).createdCount;
-    return total + (typeof createdCount === "number" ? createdCount : 0);
-  }, 0);
 }
 
 function MailboxSearchAudit({ searches }: { searches: ReturnType<typeof normalizeMailboxTask>["searches"] }) {
@@ -259,12 +231,22 @@ function MailboxTaskSummaryCard({
   const importPolicyAttachments = useAction(api.actions.connectedEmail.importPolicyAttachments);
   const importRequirementAttachments = useAction(api.actions.connectedEmail.importRequirementAttachments);
   const saveAttachmentsToThread = useAction(api.actions.connectedEmail.saveAttachmentsToThread);
+  const readEmail = useAction(api.actions.connectedEmail.readEmail);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [readingKey, setReadingKey] = useState<string | null>(null);
+  const [openEmailKey, setOpenEmailKey] = useState<string | null>(null);
+  const [liveEmails, setLiveEmails] = useState<Record<string, LiveMailboxEmail>>({});
 
   if (artifact.type !== "mailbox_task") return null;
   const task = normalizeMailboxTask(artifact.data);
   if (!task.summary && task.steps.length === 0 && task.toolCalls.length === 0 && task.searches.length === 0) return null;
   const isRunning = task.status === "running";
+  const needsReview = task.status === "needs_review";
+  const statusLabel = isRunning
+    ? "Running"
+    : needsReview
+      ? "Needs review"
+      : "Background agent";
 
   async function handlePolicyImport(email: MailboxTaskEmail, index: number) {
     if (!email.emailRef) return;
@@ -360,13 +342,51 @@ function MailboxTaskSummaryCard({
     }
   }
 
+  async function handleReadEmail(email: MailboxTaskEmail, index: number) {
+    if (!email.emailRef) return;
+    const key = email.emailRef || String(index);
+    if (openEmailKey === key) {
+      setOpenEmailKey(null);
+      return;
+    }
+    if (liveEmails[key]) {
+      setOpenEmailKey(key);
+      return;
+    }
+    setReadingKey(key);
+    try {
+      const result = await readEmail({
+        orgId,
+        emailRef: email.emailRef,
+      }) as Omit<LiveMailboxEmail, "attachments"> & {
+        attachments?: Array<{
+          filename?: string;
+          contentType?: string;
+          size?: number;
+        }>;
+      };
+      const normalized: LiveMailboxEmail = {
+        ...result,
+        attachments: (result.attachments ?? []).map((attachment) => ({
+          ...attachment,
+          filename: attachment.filename?.trim() || "Attachment",
+        })),
+      };
+      setLiveEmails((current) => ({ ...current, [key]: normalized }));
+      setOpenEmailKey(key);
+    } catch {
+      toast.error("Failed to open email");
+    } finally {
+      setReadingKey(null);
+    }
+  }
+
   const totalMatches = task.searches.reduce((total, search) => total + search.resultCount, 0);
   const meta = [
     task.searches.length > 0 ? `${task.searches.length} searches` : undefined,
     task.searches.length > 0 ? `${totalMatches} matches` : undefined,
     task.emails.length > 0 ? `${task.emails.length} emails` : undefined,
   ].filter(Boolean).join(" · ");
-
   if (mode === "summary") {
     return (
       <button
@@ -402,7 +422,7 @@ function MailboxTaskSummaryCard({
         </div>
         <span className="flex shrink-0 items-center gap-2">
           <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
-            {isRunning ? "Running" : "Background agent"}
+            {statusLabel}
           </Badge>
         </span>
       </div>
@@ -445,105 +465,158 @@ function MailboxTaskSummaryCard({
               Email context
             </p>
             <div className="space-y-2">
-              {task.emails.map((email, index) => (
-                <div key={`${email.emailRef ?? email.subject}-${index}`} className="rounded-md border border-foreground/6 bg-background px-3 py-2.5">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="min-w-0 flex-1 truncate text-label font-medium text-foreground/85">
-                      {email.subject}
-                    </span>
-                    {email.accountEmail ? (
-                      <Badge variant="outline" className="h-5 border-foreground/8 px-1.5 font-medium text-muted-foreground/50">
-                        {email.accountEmail}
-                      </Badge>
+              {task.emails.map((email, index) => {
+                const emailKey = email.emailRef ?? String(index);
+                const liveEmail = liveEmails[emailKey];
+                const attachments = liveEmail?.attachments ?? email.attachments;
+                const emailWithAttachments = { ...email, attachments };
+                const isOpen = openEmailKey === emailKey;
+                return (
+                  <div key={`${email.emailRef ?? email.subject}-${index}`} className="rounded-md border border-foreground/6 bg-background px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="min-w-0 flex-1 truncate text-label font-medium text-foreground/85">
+                        {email.subject}
+                      </span>
+                      {email.accountEmail ? (
+                        <Badge variant="outline" className="h-5 border-foreground/8 px-1.5 font-medium text-muted-foreground/50">
+                          {email.accountEmail}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 truncate text-label text-muted-foreground/45">
+                      {[
+                        email.from,
+                        email.mailbox,
+                        email.date
+                          ? formatDisplayDateTime(email.date, email.date)
+                          : undefined,
+                      ].filter(Boolean).join(" · ")}
+                    </p>
+                    {email.reason ? (
+                      <p className="mt-1 text-label leading-4 text-muted-foreground/65">
+                        {email.reason}
+                      </p>
+                    ) : null}
+                    {attachments.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {attachments.map((attachment, attachmentIndex) => {
+                          const size = formatAttachmentSize(attachment.size);
+                          return (
+                            <span
+                              key={`${attachment.filename}-${attachmentIndex}`}
+                              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.02] px-2 py-1 text-tag text-muted-foreground/65"
+                            >
+                              <Paperclip className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{attachment.filename}</span>
+                              {size ? <span className="text-muted-foreground/35">{size}</span> : null}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {email.emailRef ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5 border-t border-foreground/6 pt-2">
+                        <PillButton
+                          size="compact"
+                          variant="iconLabel"
+                          label={isOpen ? "Hide email" : "Review email"}
+                          disabled={readingKey !== null}
+                          onClick={() => void handleReadEmail(email, index)}
+                        >
+                          {readingKey === emailKey ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <MailIcon className="h-3 w-3" />
+                          )}
+                        </PillButton>
+                        {(!needsReview || liveEmail) && threadId && attachments.length > 0 ? (
+                          <PillButton
+                            size="compact"
+                            variant="iconLabel"
+                            label="Save to thread"
+                            disabled={busyKey !== null}
+                            onClick={() => void handleSaveToThread(emailWithAttachments, index)}
+                          >
+                            {busyKey === `save-${index}` ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Paperclip className="h-3 w-3" />
+                            )}
+                          </PillButton>
+                        ) : null}
+                        {(!needsReview || liveEmail) && attachments.some(isMailboxPdfAttachment) ? (
+                          <PillButton
+                            size="compact"
+                            variant="iconLabel"
+                            label="Import policy"
+                            disabled={busyKey !== null}
+                            onClick={() => void handlePolicyImport(emailWithAttachments, index)}
+                          >
+                            {busyKey === `policy-${index}` ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <FileText className="h-3 w-3" />
+                            )}
+                          </PillButton>
+                        ) : null}
+                        {!needsReview || liveEmail ? (
+                          <>
+                            <PillButton
+                              size="compact"
+                              variant="iconLabel"
+                              label="Create vendor requirements"
+                              disabled={busyKey !== null}
+                              onClick={() => void handleRequirementImport(emailWithAttachments, index, "vendors")}
+                            >
+                              {busyKey === `vendors-${index}` ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <ClipboardList className="h-3 w-3" />
+                              )}
+                            </PillButton>
+                            <PillButton
+                              size="compact"
+                              variant="iconLabel"
+                              label="Create internal requirements"
+                              disabled={busyKey !== null}
+                              onClick={() => void handleRequirementImport(emailWithAttachments, index, "own_org")}
+                            >
+                              {busyKey === `own_org-${index}` ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <ClipboardList className="h-3 w-3" />
+                              )}
+                            </PillButton>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {isOpen && liveEmail ? (
+                      <div className="mt-2 border-t border-foreground/6 pt-2">
+                        <dl className="space-y-1 text-label leading-4 text-muted-foreground/55">
+                          {liveEmail.to ? (
+                            <div className="flex gap-2">
+                              <dt className="w-6 shrink-0 text-muted-foreground/35">To</dt>
+                              <dd className="min-w-0 break-words">{liveEmail.to}</dd>
+                            </div>
+                          ) : null}
+                          {liveEmail.cc ? (
+                            <div className="flex gap-2">
+                              <dt className="w-6 shrink-0 text-muted-foreground/35">Cc</dt>
+                              <dd className="min-w-0 break-words">{liveEmail.cc}</dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                        <div className="mt-2 max-h-72 overflow-y-auto rounded-md bg-foreground/[0.025] px-3 py-2.5">
+                          <p className="whitespace-pre-wrap text-label leading-5 text-foreground/75">
+                            {liveEmail.text?.trim() || "This email has no plain-text message body."}
+                          </p>
+                        </div>
+                      </div>
                     ) : null}
                   </div>
-                  <p className="mt-1 truncate text-label text-muted-foreground/45">
-                    {[email.from, email.mailbox, email.date ? dayjs(email.date).format("MMM D, YYYY h:mm A") : undefined].filter(Boolean).join(" · ")}
-                  </p>
-                  {email.reason ? (
-                    <p className="mt-1 text-label leading-4 text-muted-foreground/65">
-                      {email.reason}
-                    </p>
-                  ) : null}
-                  {email.attachments.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {email.attachments.map((attachment, attachmentIndex) => {
-                        const size = formatAttachmentSize(attachment.size);
-                        return (
-                          <span
-                            key={`${attachment.filename}-${attachmentIndex}`}
-                            className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.02] px-2 py-1 text-tag text-muted-foreground/65"
-                          >
-                            <Paperclip className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{attachment.filename}</span>
-                            {size ? <span className="text-muted-foreground/35">{size}</span> : null}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                  {email.emailRef ? (
-                    <div className="mt-2 flex flex-wrap gap-1.5 border-t border-foreground/6 pt-2">
-                      {threadId && email.attachments.length > 0 ? (
-                        <PillButton
-                          size="compact"
-                          variant="iconLabel"
-                          label="Save to thread"
-                          disabled={busyKey !== null}
-                          onClick={() => void handleSaveToThread(email, index)}
-                        >
-                          {busyKey === `save-${index}` ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Paperclip className="h-3 w-3" />
-                          )}
-                        </PillButton>
-                      ) : null}
-                      {email.attachments.some(isMailboxPdfAttachment) ? (
-                        <PillButton
-                          size="compact"
-                          variant="iconLabel"
-                          label="Import policy"
-                          disabled={busyKey !== null}
-                          onClick={() => void handlePolicyImport(email, index)}
-                        >
-                          {busyKey === `policy-${index}` ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <FileText className="h-3 w-3" />
-                          )}
-                        </PillButton>
-                      ) : null}
-                      <PillButton
-                        size="compact"
-                        variant="iconLabel"
-                        label="Create vendor requirements"
-                        disabled={busyKey !== null}
-                        onClick={() => void handleRequirementImport(email, index, "vendors")}
-                      >
-                        {busyKey === `vendors-${index}` ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <ClipboardList className="h-3 w-3" />
-                        )}
-                      </PillButton>
-                      <PillButton
-                        size="compact"
-                        variant="iconLabel"
-                        label="Create internal requirements"
-                        disabled={busyKey !== null}
-                        onClick={() => void handleRequirementImport(email, index, "own_org")}
-                      >
-                        {busyKey === `own_org-${index}` ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <ClipboardList className="h-3 w-3" />
-                        )}
-                      </PillButton>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : null}
@@ -556,24 +629,44 @@ export function MailboxTaskSidebar({
   artifact,
   orgId,
   threadId,
+  emailIndex,
   onClose,
 }: {
   artifact: ToolArtifactData;
   orgId: Id<"organizations">;
   threadId: Id<"threads">;
+  emailIndex?: number;
   onClose: () => void;
 }) {
   const task = normalizeMailboxTask(artifact.data);
+  const selectedReviewEmail = task.status === "needs_review"
+    ? task.emails[emailIndex ?? 0]
+    : undefined;
+  if (selectedReviewEmail) {
+    return (
+      <MailboxEmailReviewSidebar
+        key={selectedReviewEmail.automationItemId ?? selectedReviewEmail.emailRef}
+        email={selectedReviewEmail}
+        orgId={orgId}
+        threadId={threadId}
+        onClose={onClose}
+      />
+    );
+  }
   const isRunning = task.status === "running";
+  const statusLabel = isRunning
+    ? "Running"
+    : task.status === "needs_review"
+      ? "Needs review"
+      : "Background agent";
   const displayName = mailboxTaskDisplayName(task);
-
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="truncate text-base font-semibold text-foreground">{displayName}</h2>
           <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
-            {isRunning ? "Running" : "Background agent"}
+            {statusLabel}
           </Badge>
         </div>
         <PillButton size="compact" variant="icon" onClick={onClose} label="Close mailbox search">

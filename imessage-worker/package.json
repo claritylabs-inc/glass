@@ -5,6 +5,9 @@
   "description": "Glass iMessage worker — bridges Photon Spectrum to Convex",
   "packageManager": "npm@11.12.1",
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -14,6 +17,7 @@
     "dev:terminal": "npm run build && npm run start:terminal"
   },
   "dependencies": {
+    "@spectrum-ts/core": "^5.0.0",
     "@spectrum-ts/imessage": "^5.0.0",
     "@spectrum-ts/terminal": "^5.0.0",
     "spectrum-ts": "^5.0.0"
@@ -32,7 +36,7 @@
     "@opentelemetry/sdk-trace-base": "2.8.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.0.0",
     "typescript": "^5.7.0"
   }
 }

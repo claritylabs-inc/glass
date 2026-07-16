@@ -39,6 +39,28 @@ describe("policy delivery automation surfaces", () => {
     expect(read("components/app-sidebar/nav-config.tsx")).toContain('href: "/deliveries"');
   });
 
+  it("separates client contact, agent email, and delivery settings", () => {
+    const clientSettings = read("app/clients/[clientOrgId]/settings/page.tsx");
+    const emailRouting = read(
+      "components/settings/client-email-routing-section.tsx",
+    );
+    const delivery = read("components/settings/policy-delivery-section.tsx");
+
+    expect(clientSettings).toContain('id: "broker", label: "Broker contact"');
+    expect(clientSettings).toContain('id: "agent-email", label: "Agent email"');
+    expect(clientSettings).toContain(
+      'id: "policy-delivery", label: "Policy delivery"',
+    );
+    expect(clientSettings).toContain('searchParams.get("tab")');
+    expect(emailRouting).toContain('title="Inbound email access"');
+    expect(emailRouting).toContain('label: "Approved addresses"');
+    expect(emailRouting).toContain('label: "Client team"');
+    expect(emailRouting).toContain('label: "Client team and domains"');
+    expect(delivery).toContain('title="Automatic policy delivery"');
+    expect(delivery).toContain("Customize for this client");
+    expect(delivery).toContain("Rules are checked in order");
+  });
+
   it("keeps thread aliases internal for email delivery replies", () => {
     const delivery = read("convex/actions/policyDelivery.ts");
     const pending = read("convex/actions/sendPendingEmail.ts");

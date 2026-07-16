@@ -10,7 +10,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 - Extracts structured bound-policy, renewal, and supporting business data
 - Builds a continuously-updated `orgMemory` layer
 - Supports agent workflows for Q&A, policy-change requests, COI generation, and follow-up analysis
-- Exposes capabilities through UI, REST API (`/api/v1/*`), and MCP (`/mcp` + local server)
+- Exposes capabilities through UI, REST API (`/api/v1/*`), and OAuth-authenticated MCP (`/mcp`)
 - Lets client/customer orgs request read-only access to vendor org policies after vendor approval
 
 ## Stack
@@ -18,22 +18,114 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 - Next.js 16 + React 19 + Tailwind 4
 - Convex (DB, actions, scheduler, storage, vector search, HTTP)
 - Vercel AI SDK (`ai`) for model execution + tool-enabled chat
-- `@claritylabs/cl-sdk@3.x` for source-tree extraction and insurance-focused primitives
+- `@claritylabs/cl-sdk@4.4.0` for source-tree extraction and insurance-focused primitives
 - Resend for email ingest and messaging workflows
 
 ## Getting Started
 
+Glass standardizes on Node 24.x for the app, Convex Node actions, CLIs, and all
+workers. `.nvmrc`, `.node-version`, package `engines`, and `convex.json` encode
+that contract. On a Mac, the Conductor setup installs Homebrew `node@24` when it
+is missing and always runs the workspace under that toolchain.
+
+For a non-Conductor checkout:
+
 ```bash
+nvm use
 npm install
+CONVEX_AGENT_MODE=anonymous npx convex dev
 npm run dev
-npx convex dev
 ```
 
-Then open `http://localhost:3000`.
+Then open `http://localhost:8080`.
+
+### Conductor workspaces
+
+New Conductor worktrees use `.conductor/settings.toml` and get a native Convex
+deployment and database that belong only to that worktree. Workspace setup:
+
+1. Installs Node 24 and the root and worker dependencies.
+2. Reads the copied cloud-dev selection from `.env.local`, imports that
+   deployment's environment variables into a new native local deployment, and
+   replaces the worktree's Convex URLs with loopback URLs.
+3. Forces local safety settings (`GLASS_ENV=local`, captured email, terminal
+   iMessage, dev clear enabled), maps the copied `NEXT_PUBLIC_MAPBOX_TOKEN` to
+   Convex `MAPBOX_ACCESS_TOKEN` for agent address validation, creates
+   worktree-local worker secrets, and points Convex at the worktree's worker
+   ports.
+4. Pushes the schema/functions and seeds the new database once with a curated,
+   minimal shared-dev fixture: `terry@claritylabs.inc` as an operator,
+   Montgomery Risk with `terry@montgomeryrisk.com` as its admin, Cove with
+   `adyan@cove.dev` as its admin, unique phone identities for both customer
+   accounts, their broker/client relationship, and one final Cove policy.
+   Montgomery Risk starts with broker white-labeling explicitly disabled, and
+   setup fetches and saves the Montgomery Risk and Cove website favicons in the
+   worktree's Convex file storage. The configured
+   `IMESSAGE_TERMINAL_FROM_PHONE` is assigned to the Montgomery Risk admin so
+   Spectrum starts in an org-scoped broker context. Setup then compiles the
+   workers, starts Apple `container`, and builds worktree-tagged Linux/amd64
+   worker images.
+
+The imported environment includes provider/auth configuration but never cloud
+database rows or files. Local database state and secrets persist under
+gitignored `.convex/local/default/` and `.context/`. Rerunning setup preserves
+the existing local database and does not reseed it. The fixture copies only a
+small allowlist of identity, organization, relationship, and policy-summary
+fields; it never copies shared-dev auth sessions, email content, documents,
+storage objects, or operational history.
+
+Conductor's archive hook deletes `.convex/local/default/`, including local data
+and auth state, before the worktree is removed. Closing a Conductor tab or the
+app does not archive the workspace and intentionally preserves its database for
+the next run.
+
+The default **Local dev** run template starts these foreground processes together:
+
+- Glass on `http://localhost:$CONDUCTOR_PORT`
+- `convex dev` with the worktree's native local database, including local
+  email/OTP capture logs, on `$CONDUCTOR_PORT + 3` (client) and `+ 4` (HTTP actions)
+- the Linux/amd64 extraction-worker container on `$CONDUCTOR_PORT + 1`
+- the Spectrum terminal iMessage worker on `$CONDUCTOR_PORT + 2`
+
+The Run terminal opens Spectrum's interactive TUI. Web, Convex, and extraction
+output is written to `.context/logs/{web,convex,extraction}.log` so it does not
+corrupt the TUI; local OTP/email capture remains available in `convex.log`.
+Spectrum starts as the Montgomery Risk admin. Use `/whoami` to inspect the
+current sender, `/as broker` for Montgomery Risk, `/as client` for Cove, and
+`/as public` for the unlinked public-demo path. `/as +<E.164 phone>` can test an
+explicit local identity; the following message uses the newly selected sender.
+Conductor runs are concurrent: each worktree reserves one five-port namespace
+from its unique `CONDUCTOR_PORT` (`+0` web, `+1` extraction, `+2` Spectrum,
+`+3/+4` Convex), and the app/workers wait for that exact local instance before
+starting. Explicit Convex ports avoid a Convex CLI collision edge case where
+automatic fallback can select the same port for its client and HTTP services.
+The extraction container uses a worktree-tagged image and a narrow bridge from
+Apple's container network to that loopback-only Convex port.
+
+The checked-in `.worktreeinclude` copies `.env.local` and worker-local env files
+from the repository root. The copied root `.env.local` must initially select a
+cloud dev deployment so setup can import its environment. Keep
+`imessage-worker/.env.local` configured with a local test user's E.164
+`IMESSAGE_TERMINAL_FROM_PHONE`; setup assigns that number to the seeded broker
+admin and generates distinct client/public terminal aliases. Generated runtime
+files and unique local worker secrets stay under gitignored `.context/` and
+`.convex/`.
+
+Native local Convex has no public URL. Real Resend inbound webhooks and real
+Photon/iMessage callbacks cannot reach it directly. The default local workflow
+therefore uses Convex email capture and Spectrum's terminal transport. Use the
+shared cloud dev or staging lane when testing an integration that requires a
+stable public callback URL. The mailbox cron image is built for parity but is
+not started by default, because running it would scan connected mailboxes.
+Automatic Convex AI-file refresh is also disabled so initial provisioning does
+not rewrite committed agent skills and guidance; refresh those explicitly with
+`npx convex ai-files install` when upgrading the repo's Convex guidance.
 
 ## Useful Commands
 
 - `npm run build` - production build
+- `npm run conductor:setup` - prepare a fresh Conductor worktree end to end
+- `npm run conductor:dev` - start Glass, Convex, extraction, and Spectrum terminal
 - `npm run lint` - ESLint
 - `npm test` - run tests
 - `npx tsc --noEmit` - Next.js TypeScript check

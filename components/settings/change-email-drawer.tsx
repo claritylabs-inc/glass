@@ -7,10 +7,11 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
 
 const inputClass =
-  "w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:bg-foreground/[0.02] disabled:text-muted-foreground/60";
+  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:bg-foreground/[0.02] disabled:text-muted-foreground/60";
 const labelClass = "text-label font-medium text-muted-foreground";
 const helpClass = "text-label text-muted-foreground/60";
 const errorClass = "text-label text-red-500/80";
@@ -43,19 +44,10 @@ function PendingEmailChangeBlock({
           {pending.newEmail}
         </p>
       </div>
-      <label className="block space-y-1.5">
+      <div className="space-y-1.5">
         <span className={labelClass}>Verification code</span>
-        <input
-          value={code}
-          onChange={(event) =>
-            setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-          }
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="000000"
-          className={inputClass}
-        />
-      </label>
+        <OtpField value={code} onValueChange={setCode} />
+      </div>
     </div>
   );
 }

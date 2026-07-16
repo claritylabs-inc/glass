@@ -11,7 +11,6 @@ function read(path: string) {
 const AUTO_SAVE_SURFACES = [
   "app/operator/page.tsx",
   "app/operator/clients/page.tsx",
-  "app/clients/[clientOrgId]/settings/page.tsx",
   "app/policies/[id]/policy-breakdown-editor.tsx",
   "app/profile/page.tsx",
   "components/compliance-page.tsx",
@@ -19,6 +18,7 @@ const AUTO_SAVE_SURFACES = [
   "components/settings/broker-agent-tab.tsx",
   "components/settings/broker-identity-section.tsx",
   "components/settings/certificate-workflow-section.tsx",
+  "components/settings/client-email-routing-section.tsx",
   "components/settings/email-connection-drawers.tsx",
   "components/settings/organization-section.tsx",
   "components/settings/policy-delivery-section.tsx",
@@ -75,17 +75,34 @@ describe("auto-save surfaces", () => {
     expect(client).not.toContain("canSave: settingsDirty");
   });
 
-  it("defers long-form text until blur without blocking validated controls", () => {
+  it("defers organization text and address writes until focus leaves the field", () => {
     const organization = read("components/settings/organization-section.tsx");
+    const organizationProfile = read(
+      "components/settings/organization-insurance-profile.tsx",
+    );
+    const addressAutofill = read("components/ui/address-autofill-input.tsx");
     const policyDelivery = read("components/settings/policy-delivery-section.tsx");
     const compliance = read("components/compliance-page.tsx");
 
-    expect(organization).toContain("autoSave: !contextFocused");
-    expect(organization).toContain("void contextAutoSave.saveNow()");
+    expect(organization).toContain("autoSave: !slugFocused");
+    expect(organization).toContain("autoSave: false");
+    expect(organization).toContain("onBlur={() => void saveOrgSettingsNow()}");
+    expect(organizationProfile).toContain("autoSave: false");
+    expect(organizationProfile).toContain("void saveProfileNow()");
+    expect(organizationProfile).toContain("onRetrieve={saveAfterChange}");
+    expect(addressAutofill).toContain("onBlur={onBlur}");
+    expect(addressAutofill).toContain("onRetrieve?.(address)");
     expect(policyDelivery).toContain("autoSave: !copyInstructionsFocused");
     expect(policyDelivery).toContain("void settingsAutoSave.saveNow()");
     expect(compliance).toContain("autoSave: !textFieldFocused");
     expect(compliance).toContain("void autoSave.saveNow()");
+  });
+
+  it("renders one aggregate save status on the organization settings page", () => {
+    const organization = read("components/settings/organization-section.tsx");
+    expect(organization.match(/<AutoSaveStatus\s+status=/g)).toHaveLength(1);
+    expect(organization).toContain("profileAutoSaveStatus");
+    expect(organization).toContain("brandingAutoSaveStatus");
   });
 
   it("checks operator identifiers before edit auto-save", () => {
@@ -101,11 +118,13 @@ describe("auto-save surfaces", () => {
   });
 
   it("keeps client sender validation aligned with backend writes", () => {
-    const clientSettings = read("app/clients/[clientOrgId]/settings/page.tsx");
+    const clientSettings = read(
+      "components/settings/client-email-routing-section.tsx",
+    );
     const orgs = read("convex/orgs.ts");
 
-    expect(clientSettings).toContain("EMAIL_PATTERN.test(v)");
-    expect(clientSettings).toContain("DOMAIN_PATTERN.test(v)");
+    expect(clientSettings).toContain("EMAIL_PATTERN.test(value)");
+    expect(clientSettings).toContain("DOMAIN_PATTERN.test(value)");
     expect(orgs).toContain("emailPattern.test(email)");
     expect(orgs).toContain("domainPattern.test(domain)");
   });
@@ -153,9 +172,13 @@ describe("auto-save surfaces", () => {
     expect(policyDelivery).toContain("disabled={clearingOverride}");
     expect(rename).toContain("setRenameGeneration((current) => current + 1)");
     expect(rename).toContain('resetKey: `${saveKey}:${renameGeneration}`');
+    expect(rename).toContain(
+      'const showSaveStatus = autoSave.status !== "saved"',
+    );
+    expect(rename).toContain("showSaveStatus ? (");
   });
 
-  it("drains operator and organization saves before dependent actions", () => {
+  it("drains operator saves before dependent actions", () => {
     const broker = read("app/operator/page.tsx");
     const client = read("app/operator/clients/page.tsx");
     const organization = read(
@@ -189,27 +212,6 @@ describe("auto-save surfaces", () => {
     expect(client).toContain(
       '<fieldset disabled={busy} className="space-y-4">',
     );
-    expect(organization.indexOf("await saveOrganizationBeforeAction()")).toBeLessThan(
-      organization.indexOf("await resetAccount()"),
-    );
-    expect(organization).toContain(
-      "if (isBroker) barriers.push(slugAutoSave.saveNow)",
-    );
-    expect(organization).toContain("waitForStableAutoSaveBarriers(");
     expect(organization).toContain("slug === currentSlug ||");
-    expect(organization).toContain(
-      '<fieldset disabled={resetting} className="contents">',
-    );
-    expect(organization).toContain("if (extracting) return");
-    expect(organization).toContain("disabled={resetting || extracting}");
-
-    const resetHandler = organization.slice(
-      organization.indexOf("async function handleReset()"),
-      organization.indexOf("function updateRelatedLegalEntity"),
-    );
-    expect(resetHandler).not.toContain("finally");
-    expect(resetHandler.lastIndexOf("setResetting(false)")).toBeLessThan(
-      resetHandler.indexOf('router.replace("/onboarding")'),
-    );
   });
 });

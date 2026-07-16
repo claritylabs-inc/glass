@@ -1,11 +1,57 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { ConvexError } from "convex/values";
 import { describe, expect, it } from "vitest";
+import {
+  mailboxReadErrorMessage,
+  splitMailboxMessageParagraphs,
+} from "../components/agent-thread/artifacts/mailbox-email-review-sidebar";
+import { normalizeMailboxTask } from "../components/agent-thread/artifacts/mailbox-task";
 
 const ROOT = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf-8");
 
 describe("connected email surfaces", () => {
+  it("renders blank lines as paragraph breaks while preserving single line breaks", () => {
+    expect(
+      splitMailboxMessageParagraphs(
+        "Hi all,\r\n\r\nYour payment is due.\r\nPlease pay now.\r\n\r\nBest Regards,\r\nZak",
+      ),
+    ).toEqual([
+      "Hi all,",
+      "Your payment is due.\r\nPlease pay now.",
+      "Best Regards,\r\nZak",
+    ]);
+    expect(splitMailboxMessageParagraphs("  \n\n  ")).toEqual([]);
+  });
+
+  it("shows explicit mailbox-unavailable errors and preserves the review item locator", () => {
+    expect(
+      mailboxReadErrorMessage(
+        new ConvexError({
+          code: "EMAIL_UNAVAILABLE",
+          message: "This email may have been moved or deleted.",
+        }),
+      ),
+    ).toBe("This email may have been moved or deleted.");
+    expect(
+      normalizeMailboxTask({
+        status: "needs_review",
+        evidence: {
+          emails: [{
+            automationItemId: "automation-item",
+            emailRef: "email-ref",
+            subject: "Policy documents",
+            attachments: [],
+          }],
+        },
+      }).emails[0],
+    ).toMatchObject({
+      automationItemId: "automation-item",
+      emailRef: "email-ref",
+    });
+  });
+
   it("stores only connection settings and encrypted credentials", () => {
     const schema = read("convex/schema.ts");
     const imapLib = read("convex/lib/imapMailbox.ts");
@@ -41,8 +87,14 @@ describe("connected email surfaces", () => {
     expect(scan).toContain("AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES");
     expect(scan).toContain("Mailbox scan was incomplete");
     expect(scan).toContain("AUTOMATION_INITIAL_LOOKBACK_DAYS = 400");
+    expect(scan).toContain("AUTOMATION_CLASSIFICATION_BATCH_SIZE = 12");
+    expect(scan).toContain("emailRef: String(index + 1)");
+    expect(scan).not.toContain("The mailbox classifier did not return a complete decision.");
     expect(scan).toContain("AUTOMATION_HISTORY_SUBJECT_TERMS");
     expect(imapLib).toContain("downloaded.meta.expectedSize");
+    expect(imapLib).toContain("MailboxMessageUnavailableError");
+    expect(imapLib).toContain('header: { "Message-ID": messageId }');
+    expect(imapLib).toContain('specialUse?.toLowerCase() === "\\\\all"');
     expect(backend).toContain("args.filenames === undefined");
     expect(scan).toContain("importedComplianceAttentionAfterBatch");
     expect(backend).toContain("success && files.length > 1");
@@ -103,10 +155,18 @@ describe("connected email surfaces", () => {
   it("lets mailbox task artifacts import policies and requirements", () => {
     const backend = read("convex/actions/connectedEmail.ts");
     const mailboxTask = read("components/agent-thread/artifacts/mailbox-task.tsx");
+    const mailboxReview = read("components/agent-thread/artifacts/mailbox-email-review-sidebar.tsx");
     const threadContent = read("components/agent-thread/thread-content.tsx");
+    const addressDisclosure = mailboxReview.slice(
+      mailboxReview.indexOf("function MailboxAddressDisclosure"),
+      mailboxReview.indexOf("function MailboxAddressList"),
+    );
 
     expect(backend).toContain("export const importPolicyAttachments = action");
+    expect(backend).toContain("export const readEmail = action");
     expect(backend).toContain("export const importRequirementAttachments = action");
+    expect(backend).toContain("export const previewAttachment = action");
+    expect(backend).toContain("deleteAttachmentPreviewInternal");
     expect(backend).toContain("export const saveAttachmentsToThread = action");
     expect(backend).toContain("saveAttachmentsToThreadInternal");
     expect(backend).toContain("saveMessageToThreadInternal");
@@ -125,7 +185,47 @@ describe("connected email surfaces", () => {
     expect(read("convex/lib/emailSubagent.ts")).toContain(".eml exports of source emails");
     expect(read("convex/actions/mailboxCoordinator.ts")).toContain("save_connected_email_attachments_to_thread");
     expect(read("convex/actions/mailboxCoordinator.ts")).toContain("save_connected_email_message_to_thread");
-    expect(mailboxTask).toContain("Import policy");
+    expect(mailboxReview).toContain("Import policy");
+    expect(mailboxReview).toContain("Import requirements");
+    expect(mailboxReview).toContain("Not relevant");
+    expect(mailboxReview).toContain("api.actions.connectedEmail.previewAttachment");
+    expect(mailboxReview).toContain("openWithUrl(result.url)");
+    expect(mailboxReview).toContain("attachmentIndex,");
+    expect(backend).toContain("Attachment filename is ambiguous");
+    expect(backend).toContain("Attachment identity no longer matches this email");
+    expect(mailboxReview).toContain("ThreadAttachmentChip");
+    expect(mailboxReview).toContain("handleAttachmentPreview(attachment, index)");
+    expect(mailboxReview).toContain("MailboxAddressDisclosure");
+    expect(mailboxReview).toContain("Show email address for");
+    expect(mailboxReview).toContain("Copy address");
+    expect(mailboxReview).toContain("<DropdownMenuGroup>");
+    expect(mailboxReview).toContain("alignStart={index === 0}");
+    expect(addressDisclosure).not.toContain("truncate");
+    expect(addressDisclosure).not.toContain("whitespace-nowrap");
+    expect(addressDisclosure).toContain("whitespace-normal");
+    expect(addressDisclosure).toContain("[overflow-wrap:anywhere]");
+    expect(addressDisclosure).toContain("absolute left-full");
+    expect(addressDisclosure).toContain("max-w-[calc(100%-0.875rem)]");
+    expect(addressDisclosure).not.toContain("max-w-full");
+    expect(mailboxReview).toContain('className="flex min-w-0 flex-wrap items-center"');
+    expect(mailboxReview).not.toContain("inline-flex max-w-full flex-wrap items-center");
+    expect(mailboxReview).toContain("contacts={liveEmail?.fromAddresses}");
+    expect(backend).toContain("fromAddresses: addressDetails(parsed.from)");
+    expect(backend).toContain("toAddresses: addressDetails(parsed.to)");
+    expect(backend).toContain("ccAddresses: addressDetails(parsed.cc)");
+    expect(mailboxReview).toContain("items-center justify-end gap-2");
+    expect(mailboxReview).toContain("OperationalPanelHeader title=\"Message\"");
+    expect(mailboxReview).toContain("space-y-3 break-words");
+    expect(mailboxReview).toContain("messageParagraphs.map");
+    expect(mailboxReview).toContain('"connect_features"');
+    expect(mailboxReview).toContain("api.connectedEmailAutomation.resolveReview");
+    expect(mailboxReview).toContain("Close email review");
+    expect(mailboxTask).toContain("Needs review");
+    expect(mailboxReview).toContain("OperationalPanel");
+    expect(mailboxReview).toContain("api.actions.connectedEmail.readEmail");
+    expect(mailboxReview).toContain("automationItemId: email.automationItemId");
+    expect(mailboxReview).toContain("emailRef: liveEmail.emailRef");
+    expect(mailboxReview).toContain("This email has no plain-text message body.");
     expect(mailboxTask).toContain("Save to thread");
     expect(mailboxTask).toContain("Create vendor requirements");
     expect(mailboxTask).toContain("Create internal requirements");
@@ -139,27 +239,35 @@ describe("connected email surfaces", () => {
     expect(threadContent).toContain("background agent");
     expect(threadContent).toContain("mailboxArtifacts={mailboxArtifacts}");
     expect(threadContent).toContain("mailboxTaskDisplayName");
+    expect(threadContent).toContain("api.connectedEmailAutomation.reviewForThread");
+    expect(threadContent).toContain('type: "mailbox_task", data: mailboxReview');
     expect(mailboxTask).toContain("Mailbox search - ${uniqueAccounts[0]}");
     expect(threadContent).toContain("setIsMailboxExpanded");
     expect(threadContent).toContain('label="Background agents"');
-    expect(threadContent).toContain("count={mailboxTasks.length}");
+    expect(threadContent).toContain("mailboxReviewEmails");
+    expect(threadContent).toContain("emailIndex");
+    expect(threadContent).toContain("renderMailboxReviewPill");
+    expect(threadContent).toContain("{displayContent}");
+    expect(threadContent).not.toContain("conciseMailboxReviewContent");
+    expect(threadContent).not.toContain("reviewEmailCount");
     expect(threadContent).toContain('<span className="text-muted-foreground/35">{index + 1}</span>');
     expect(threadContent).not.toContain("<MailboxTaskArtifacts\n                  artifacts={mailboxArtifacts}");
     expect(threadContent).not.toContain("AgentProcessingActivity\n            label={toolLabel}\n            isStale={isStale}\n            backgroundProcessCount={backgroundProcessCount}\n          />\n          {mailboxArtifacts.length > 0 ? (");
     expect(backend).toContain("Saved 1 document from connected email for reuse in this thread.");
+    expect(backend).toContain("ref.uid,\n        IMPORT_DOWNLOAD_MAX_BYTES");
     expect(threadContent).toContain("openMailboxArtifactRef");
     expect(threadContent).toContain("onOpenMailboxArtifact");
     expect(mailboxTask).toContain('mode="detail"');
     expect(mailboxTask).toContain("flat");
     expect(mailboxTask).toContain('className="h-3 w-3"');
     expect(threadContent).toContain("messageId={msg._id}");
-    expect(mailboxTask).toContain("api.actions.connectedEmail.importPolicyAttachments");
-    expect(mailboxTask).toContain("api.actions.connectedEmail.importRequirementAttachments");
-    expect(mailboxTask).toContain('includeEmailBody: true');
-    expect(mailboxTask).toContain('scope === "vendors" ? "vendor_requirements" : "other"');
+    expect(mailboxReview).toContain("api.actions.connectedEmail.importPolicyAttachments");
+    expect(mailboxReview).toContain("api.actions.connectedEmail.importRequirementAttachments");
+    expect(mailboxReview).toContain('includeEmailBody: true');
+    expect(mailboxReview).toContain('scope === "vendors" ? "vendor_requirements" : "other"');
   });
 
-  it("keeps connected mailboxes on a dedicated email settings section with provider presets", () => {
+  it("keeps integrations and mailboxes on separate settings pages", () => {
     const sections = read("lib/settings-sections.ts");
     const settingsPage = read("app/settings/page.tsx");
     const connections = read("components/settings/connections-section.tsx");
@@ -168,7 +276,9 @@ describe("connected email surfaces", () => {
     const emailUi = read("components/settings/email-connection-ui.tsx");
     const emailSettings = [emailList, emailDrawers, emailUi].join("\n");
 
-    expect(sections).toContain('id: "email"');
+    expect(sections).toContain('id: "integrations"');
+    expect(sections).toContain('id: "mailboxes"');
+    expect(settingsPage).toContain('<ConnectionsSection tab={tab} />');
     expect(settingsPage).toContain("<EmailConnectionsSection />");
     expect(connections).not.toContain("connectedEmailAccounts");
     expect(emailDrawers).toContain("SettingsDrawer");

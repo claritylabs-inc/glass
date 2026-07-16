@@ -22,6 +22,10 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).toContain("function latestCheckNote");
     expect(page).toContain('text-base font-medium text-muted-foreground/60');
     expect(page).toContain("TabsTrigger value=\"sources\"");
+    expect(page).toContain('TabsTrigger value="own_org">My requirements');
+    expect(page).toContain('TabsTrigger value="vendors">Vendor requirements');
+    expect(page).toContain('TabsTrigger value="requirements">Requirements');
+    expect(page).not.toContain("<Tabs value={activeRequirementScope}");
     expect(page).not.toContain("Archive selected");
     expect(page).toContain('className="h-1.5 w-full overflow-hidden rounded-full bg-muted"');
     expect(page).not.toContain("pr-32");
@@ -47,14 +51,16 @@ describe("coverage-only compliance requirement surfaces", () => {
 
   it("uses coverage-only REST and MCP creation payloads", () => {
     const http = read("convex/http.ts");
-    const mcpClient = read("mcp-server/src/tools/client.ts");
 
     expect(http).toContain("line_of_business");
     expect(http).not.toContain("min_am_best_rating");
     expect(http).not.toContain('appliesTo: "vendors"');
-    expect(mcpClient).toContain('kind: z.literal("coverage")');
-    expect(mcpClient).not.toContain("conditionType");
-    expect(mcpClient).toContain("line_of_business: lineOfBusiness");
+    expect(http).toContain('name: "create_insurance_requirement"');
+    expect(http).toContain('description: \'Always "coverage"\'');
+    expect(http).not.toContain("conditionType");
+    expect(http).toContain(
+      'required: ["kind", "scope", "title", "requirement_text", "line_of_business"]',
+    );
   });
 
   it("enforces coverage-only writes and archives non-coverage rows", () => {

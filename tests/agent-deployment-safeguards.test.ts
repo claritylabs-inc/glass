@@ -131,7 +131,6 @@ describe("agent deployment safeguards", () => {
       "npm run build",
       "working-directory: extraction-worker",
       "working-directory: imessage-worker",
-      "working-directory: mcp-server",
       "node --check mailbox-scan-worker/src/index.js",
       "package:\n          - cli\n          - operator-cli",
     ]) {

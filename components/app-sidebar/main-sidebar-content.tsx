@@ -8,7 +8,6 @@ import {
   Mail,
   MessageCircle,
   MessageSquare,
-  MousePointer2,
   Pin,
   Plus,
   Settings,
@@ -25,16 +24,15 @@ import {
 import {
   MENU_ITEM_ACTIVE,
   MENU_ITEM_BASE,
-  MENU_ITEM_HOVER,
   MENU_ITEM_INACTIVE,
   MENU_ITEM_INACTIVE_SUBTLE,
+  commandShortcut,
   navShortcut,
-  SHORTCUT_TOOLTIP_CLASS,
-  SHORTCUT_TOOLTIP_DELAY_MS,
-  SHORTCUT_TOOLTIP_SIDE_OFFSET,
+  SIDEBAR_TOOLTIP_CLASS,
+  SIDEBAR_TOOLTIP_SIDE_OFFSET,
 } from "./nav-config";
 import {
-  NavItem,
+  SidebarMenuItem,
   SectionHeader,
   ShortcutTooltipContent,
   stableSidebarTooltipId,
@@ -75,7 +73,6 @@ export function MainSidebarContent({
   onToggleNotifications,
   onCloseNotifications,
   onAskGlass,
-  onNewChat,
   onArchiveThread,
   onSignOut,
 }: {
@@ -102,7 +99,6 @@ export function MainSidebarContent({
   onToggleNotifications: () => void;
   onCloseNotifications: () => void;
   onAskGlass?: () => void;
-  onNewChat: () => void | Promise<void>;
   onArchiveThread: (threadId: string, active: boolean) => Promise<void>;
   onSignOut: () => void;
 }) {
@@ -124,45 +120,25 @@ export function MainSidebarContent({
       />
 
       <div className="relative px-2 py-2 border-b border-foreground/6">
-        {onAskGlass ? (
-          <button
-            type="button"
-            onClick={onAskGlass}
-            className={`mb-0.5 w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} ${MENU_ITEM_INACTIVE} text-base ${
-              collapsed ? "justify-center" : ""
-            }`}
-            title={collapsed ? "Ask Glass" : undefined}
-          >
-            <MousePointer2 className="w-4 h-4 shrink-0" />
-            {!collapsed && <span className="flex-1 text-left">Ask Glass</span>}
-          </button>
-        ) : null}
-        <button
-          type="button"
+        <SidebarMenuItem
           onClick={onToggleNotifications}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
-            collapsed ? "justify-center" : ""
-          } ${notificationsPanelOpen ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE}`}
-          title={collapsed ? "Notifications" : undefined}
-        >
-          {collapsed ? (
-            <Bell className="w-4 h-4 shrink-0" />
-          ) : (
-            <>
-              <Bell className="w-4 h-4 shrink-0" />
-              <span className="flex-1 text-left">Notifications</span>
-            </>
-          )}
-          {(unreadCount ?? 0) > 0 && (
-            <span
-              className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-label font-medium leading-none shrink-0 ${
-                collapsed ? "w-4 h-4" : "min-w-4.5 h-4 px-1"
-              }`}
-            >
-              {unreadCount! > 99 ? "99+" : unreadCount}
-            </span>
-          )}
-        </button>
+          label="Notifications"
+          icon={Bell}
+          active={notificationsPanelOpen}
+          collapsed={collapsed}
+          ariaPressed={notificationsPanelOpen}
+          trailing={
+            (unreadCount ?? 0) > 0 ? (
+              <span
+                className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-label font-medium leading-none shrink-0 ${
+                  collapsed ? "w-4 h-4" : "min-w-4.5 h-4 px-1"
+                }`}
+              >
+                {unreadCount! > 99 ? "99+" : unreadCount}
+              </span>
+            ) : null
+          }
+        />
         {notificationsPanelOpen && !isDesktop && orgId && (
           <NotificationsPanel
             orgId={orgId}
@@ -177,7 +153,7 @@ export function MainSidebarContent({
           collapsed={collapsed}
         />
         {navItems.map((item) => (
-          <NavItem
+          <SidebarMenuItem
             key={item.href}
             href={item.href}
             label={item.label}
@@ -192,7 +168,7 @@ export function MainSidebarContent({
           <>
             <SectionHeader label="Connect" collapsed={collapsed} />
             {connectItems.map((item) => (
-              <NavItem
+              <SidebarMenuItem
                 key={item.href}
                 href={item.href}
                 label={item.label}
@@ -211,15 +187,16 @@ export function MainSidebarContent({
             imessageConversations={imessageConversations}
             archivedThreadCount={archivedThreadCount}
             pathname={pathname}
-            onNewChat={onNewChat}
+            onAskGlass={onAskGlass}
             onArchiveThread={onArchiveThread}
           />
         ) : (
           <CollapsedThreadList
             agentConversations={agentConversations}
             imessageConversations={imessageConversations}
+            archivedThreadCount={archivedThreadCount}
             pathname={pathname}
-            onNewChat={onNewChat}
+            onAskGlass={onAskGlass}
           />
         )}
       </nav>
@@ -233,7 +210,7 @@ export function MainSidebarContent({
 
       <div className="border-t border-foreground/6 px-2 py-2 space-y-0.5">
         {canManageSettings ? (
-          <NavItem
+          <SidebarMenuItem
             href="/settings"
             label="Settings"
             icon={Settings}
@@ -242,7 +219,7 @@ export function MainSidebarContent({
             shortcut={navShortcut("s")}
           />
         ) : null}
-        <NavItem
+        <SidebarMenuItem
           href="/profile"
           label="Profile"
           icon={User}
@@ -250,16 +227,13 @@ export function MainSidebarContent({
           collapsed={collapsed}
           shortcut={navShortcut("u")}
         />
-        <button
-          type="button"
+        <SidebarMenuItem
           onClick={onSignOut}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${MENU_ITEM_INACTIVE} ${
-            collapsed ? "justify-center" : ""
-          }`}
-        >
-          <LogOut className="w-4 h-4 shrink-0" />
-          {!collapsed && <span>Sign out</span>}
-        </button>
+          label="Sign out"
+          icon={LogOut}
+          active={false}
+          collapsed={collapsed}
+        />
       </div>
     </div>
   );
@@ -270,35 +244,51 @@ function ExpandedThreadList({
   imessageConversations,
   archivedThreadCount,
   pathname,
-  onNewChat,
+  onAskGlass,
   onArchiveThread,
 }: {
   agentConversations: ConversationItem[];
   imessageConversations: ConversationItem[];
   archivedThreadCount: number;
   pathname: string;
-  onNewChat: () => void | Promise<void>;
+  onAskGlass?: () => void;
   onArchiveThread: (threadId: string, active: boolean) => Promise<void>;
 }) {
   return (
     <>
-      <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
-        <span className="text-label font-medium text-muted-foreground/50 ">
+      <div className="flex items-center justify-between px-3 pb-1.5 pt-5">
+        <span className="text-label font-medium text-muted-foreground/50">
           Threads
         </span>
-        {(agentConversations.length > 0 ||
-          imessageConversations.length > 0) && (
-          <PillButton
-            type="button"
-            size="compact"
-            variant="icon"
-            onClick={onNewChat}
-            title="New thread"
-            aria-label="New thread"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </PillButton>
-        )}
+        {onAskGlass ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <PillButton
+                  type="button"
+                  size="compact"
+                  variant="icon"
+                  label="New Chat"
+                  title=""
+                  onClick={onAskGlass}
+                >
+                  <Plus className="size-3.5" />
+                </PillButton>
+              }
+            />
+            <TooltipContent
+              side="right"
+              align="center"
+              sideOffset={SIDEBAR_TOOLTIP_SIDE_OFFSET}
+              className={SIDEBAR_TOOLTIP_CLASS}
+            >
+              <ShortcutTooltipContent
+                label="New Chat"
+                shortcut={commandShortcut("k")}
+              />
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
       {imessageConversations.map((item, idx) => (
         <SidebarThreadRow
@@ -310,17 +300,6 @@ function ExpandedThreadList({
           shortcutLabel="pinned thread"
         />
       ))}
-      {agentConversations.length === 0 &&
-        imessageConversations.length === 0 && (
-          <button
-            type="button"
-            onClick={onNewChat}
-            className={`w-full flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label text-muted-foreground/60 ${MENU_ITEM_HOVER}`}
-          >
-            <Plus className="w-3 h-3 shrink-0" />
-            <span>New chat</span>
-          </button>
-        )}
       {agentConversations.map((item, idx) => (
         <SidebarThreadRow
           key={`${item.kind}-${item.id}`}
@@ -335,15 +314,15 @@ function ExpandedThreadList({
           onArchiveThread={onArchiveThread}
         />
       ))}
-      {archivedThreadCount > 0 && (
-        <Link
+      {archivedThreadCount > 0 ? (
+        <SidebarMenuItem
           href="/agent/archive"
-          className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label ${MENU_ITEM_INACTIVE_SUBTLE}`}
-        >
-          <Archive className="w-3 h-3 shrink-0" />
-          <span>Archived</span>
-        </Link>
-      )}
+          label="Archived"
+          icon={Archive}
+          active={pathname === "/agent/archive"}
+          collapsed={false}
+        />
+      ) : null}
     </>
   );
 }
@@ -406,12 +385,12 @@ function SidebarThreadRow({
 
   return (
     <Tooltip>
-      <TooltipTrigger render={threadLink} delay={SHORTCUT_TOOLTIP_DELAY_MS} />
+      <TooltipTrigger render={threadLink} />
       <TooltipContent
         side="right"
         align="center"
-        sideOffset={SHORTCUT_TOOLTIP_SIDE_OFFSET}
-        className={SHORTCUT_TOOLTIP_CLASS}
+        sideOffset={SIDEBAR_TOOLTIP_SIDE_OFFSET}
+        className={SIDEBAR_TOOLTIP_CLASS}
       >
         <ShortcutTooltipContent label={shortcutLabel} shortcut={shortcut} />
       </TooltipContent>
@@ -422,13 +401,15 @@ function SidebarThreadRow({
 function CollapsedThreadList({
   agentConversations,
   imessageConversations,
+  archivedThreadCount,
   pathname,
-  onNewChat,
+  onAskGlass,
 }: {
   agentConversations: ConversationItem[];
   imessageConversations: ConversationItem[];
+  archivedThreadCount: number;
   pathname: string;
-  onNewChat: () => void | Promise<void>;
+  onAskGlass?: () => void;
 }) {
   return (
     <>
@@ -472,18 +453,25 @@ function CollapsedThreadList({
           </Link>
         );
       })}
-      <div className="flex items-center justify-center mt-0.5">
-        <PillButton
-          type="button"
-          size="compact"
-          variant="icon"
-          onClick={onNewChat}
-          title="New thread"
-          aria-label="New thread"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </PillButton>
-      </div>
+      {onAskGlass ? (
+        <SidebarMenuItem
+          onClick={onAskGlass}
+          label="New Chat"
+          icon={Plus}
+          active={false}
+          collapsed
+          shortcut={commandShortcut("k")}
+        />
+      ) : null}
+      {archivedThreadCount > 0 ? (
+        <SidebarMenuItem
+          href="/agent/archive"
+          label="Archived"
+          icon={Archive}
+          active={pathname === "/agent/archive"}
+          collapsed
+        />
+      ) : null}
     </>
   );
 }

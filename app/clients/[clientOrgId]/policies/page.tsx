@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useAction } from "convex/react";
-import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PillButton } from "@/components/ui/pill-button";
@@ -20,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Upload } from "lucide-react";
+import { ArchiveRestore, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useClientDetailActions } from "../layout";
 import { getPublicAgentDomain } from "@/lib/domains";
@@ -30,6 +29,9 @@ import {
   showPolicyExtractionReadyToast,
 } from "@/components/shared/extraction-banner";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
+import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatDisplayDate } from "@/lib/date-format";
 
 type BrokerPolicyRow = {
   _id: Id<"policies">;
@@ -59,8 +61,8 @@ function cleanField(value?: string | null): string | undefined {
 function formatDate(value?: string | null) {
   const cleaned = cleanField(value);
   if (!cleaned) return "No date";
-  const parsed = dayjs(cleaned, ["MM/DD/YYYY", "M/D/YYYY", "YYYY-MM-DD"], true);
-  return parsed.isValid() ? parsed.format("MMM D, YYYY") : cleaned;
+  const normalized = normalizeExtractedDate(cleaned);
+  return normalized ? formatDisplayDate(normalized) : cleaned;
 }
 
 function displayStatus(
@@ -85,6 +87,8 @@ function displayUploadedBy(side?: BrokerPolicyRow["uploadedBySide"]) {
 export default function ClientPoliciesPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const showArchived = searchParams.get("view") === "archived";
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const pendingExtractionToastsRef = useRef<
@@ -99,7 +103,7 @@ export default function ClientPoliciesPage() {
   const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
 
   useEffect(() => {
-    setActions(
+    setActions(showArchived ? null : (
       <PillButton
         type="button"
         size="compact"
@@ -108,10 +112,10 @@ export default function ClientPoliciesPage() {
       >
         <Upload className="h-3.5 w-3.5" />
         Upload policy
-      </PillButton>,
-    );
+      </PillButton>
+    ));
     return () => setActions(null);
-  }, [setActions]);
+  }, [setActions, showArchived]);
 
   const policies = useCachedQuery(
     "policies.listForBroker",
@@ -120,6 +124,7 @@ export default function ClientPoliciesPage() {
       ? {
           clientOrgId: clientOrgId as Id<"organizations">,
           documentType: "policy",
+          archived: showArchived,
         }
       : "skip",
   );
@@ -129,9 +134,23 @@ export default function ClientPoliciesPage() {
     api.policies.checkDuplicateUploadByHash,
   );
   const createBrokerUpload = useMutation(api.policies.createBrokerUpload);
+  const restorePolicy = useMutation(api.policies.restore);
+  const [restoringId, setRestoringId] = useState<Id<"policies"> | null>(null);
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
+
+  async function handleRestore(policyId: Id<"policies">) {
+    setRestoringId(policyId);
+    try {
+      await restorePolicy({ id: policyId });
+      toast.success("Policy restored");
+    } catch {
+      toast.error("Failed to restore policy");
+    } finally {
+      setRestoringId(null);
+    }
+  }
 
   const uploadStorage = useCallback(
     async (file: File): Promise<string> => {
@@ -300,16 +319,16 @@ export default function ClientPoliciesPage() {
   );
 
   useEffect(() => {
-    setRightPanel(
+    setRightPanel(showArchived ? null : (
       <PolicyUploadDrawer
         open={uploaderOpen}
         onClose={() => setUploaderOpen(false)}
         onUpload={handleUpload}
         uploading={uploading}
-      />,
-    );
+      />
+    ));
     return () => setRightPanel(null);
-  }, [setRightPanel, uploaderOpen, uploading, handleUpload]);
+  }, [setRightPanel, uploaderOpen, uploading, handleUpload, showArchived]);
 
   const isLoading = policies === undefined;
   const rows = (policies ?? []) as BrokerPolicyRow[];
@@ -320,8 +339,27 @@ export default function ClientPoliciesPage() {
 
   return (
     <div className="space-y-4">
+      <Tabs
+        value={showArchived ? "archived" : "active"}
+        onValueChange={(value) =>
+          router.push(
+            value === "archived"
+              ? `/clients/${clientOrgId}/policies?view=archived`
+              : `/clients/${clientOrgId}/policies`,
+          )
+        }
+      >
+        <TabsList variant="pill">
+          <TabsTrigger value="active">Active</TabsTrigger>
+          <TabsTrigger value="archived">Archived</TabsTrigger>
+        </TabsList>
+      </Tabs>
       {isLoading ? (
         <div className="min-h-32" aria-hidden="true" />
+      ) : rows.length === 0 && showArchived ? (
+        <div className="py-16 text-center text-base text-muted-foreground/50">
+          No archived policies
+        </div>
       ) : rows.length === 0 ? (
         <PolicyEmptyState
           agentEmail={agentEmail}
@@ -354,14 +392,16 @@ export default function ClientPoliciesPage() {
                 <TableHead className="w-[18%] px-4 text-label text-muted-foreground">
                   File
                 </TableHead>
+                {showArchived ? (
+                  <TableHead className="w-28 px-4 text-right text-label text-muted-foreground">
+                    Action
+                  </TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((policy) => {
-                const carrier =
-                  cleanField(policy.mga) ??
-                  cleanField(policy.carrier) ??
-                  "Untitled policy";
+                const carrier = cleanField(policy.carrier) ?? "Untitled policy";
                 const policyNumber =
                   cleanField(policy.policyNumber) ?? "No policy number";
                 return (
@@ -414,6 +454,22 @@ export default function ClientPoliciesPage() {
                     <TableCell className="max-w-60 px-4 truncate text-muted-foreground">
                       {cleanField(policy.fileName) ?? "-"}
                     </TableCell>
+                    {showArchived ? (
+                      <TableCell className="px-4 text-right">
+                        <PillButton
+                          size="compact"
+                          variant="secondary"
+                          disabled={restoringId === policy._id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleRestore(policy._id);
+                          }}
+                        >
+                          <ArchiveRestore className="size-3.5" />
+                          {restoringId === policy._id ? "Restoring..." : "Restore"}
+                        </PillButton>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 );
               })}

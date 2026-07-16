@@ -181,6 +181,7 @@ async function createFollowUpDraft(
     try {
       await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
         id: draftId,
+        userConfirmedDraft: false,
       });
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: contextMessageId,

@@ -1,9 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-export function ThreadMessageBubble({
+export const ThreadMessageBubble = memo(function ThreadMessageBubble({
   role,
   channel,
   isOwnMessage,
@@ -60,4 +60,4 @@ export function ThreadMessageBubble({
       {children}
     </div>
   );
-}
+});

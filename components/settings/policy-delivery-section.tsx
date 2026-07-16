@@ -31,6 +31,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 
@@ -70,8 +72,8 @@ const DEFAULT_SETTINGS: SettingsRow = {
 };
 
 const ACTION_LABELS: Record<DeliveryAction, string> = {
-  auto_send: "Auto-send",
-  broker_review: "Broker review",
+  auto_send: "Send automatically",
+  broker_review: "Hold for broker review",
   do_not_send: "Do not send",
 };
 
@@ -79,10 +81,6 @@ function channelsLabel(channels: Channel[] | undefined) {
   if (!channels?.length) return "Inherit";
   if (channels.length === 2) return "Email + iMessage";
   return channels[0] === "email" ? "Email" : "iMessage";
-}
-
-function onOffLabel(enabled: boolean) {
-  return enabled ? "On" : "Off";
 }
 
 function parseList(value: string) {
@@ -120,9 +118,11 @@ function settingsSignature(settings: SettingsRow) {
 function ChannelToggles({
   value,
   onChange,
+  disabled = false,
 }: {
   value: Channel[];
   onChange: (value: Channel[]) => void;
+  disabled?: boolean;
 }) {
   function toggle(channel: Channel) {
     const next = value.includes(channel)
@@ -137,11 +137,12 @@ function ChannelToggles({
           key={channel}
           type="button"
           onClick={() => toggle(channel)}
+          disabled={disabled}
           className={`h-8 rounded-lg border px-3 text-base transition-colors ${
             value.includes(channel)
               ? "border-foreground/20 bg-foreground/8 text-foreground"
               : "border-foreground/8 text-muted-foreground hover:bg-foreground/4"
-          }`}
+          } disabled:cursor-not-allowed disabled:opacity-50`}
         >
           {channel === "email" ? "Email" : "iMessage"}
         </button>
@@ -153,18 +154,26 @@ function ChannelToggles({
 function ActionSelect({
   value,
   onChange,
+  disabled = false,
 }: {
   value: DeliveryAction;
   onChange: (value: DeliveryAction) => void;
+  disabled?: boolean;
 }) {
   return (
-    <Select value={value} onValueChange={(next) => onChange((next ?? "broker_review") as DeliveryAction)}>
-      <SelectTrigger className="w-44">
+    <Select
+      value={value}
+      onValueChange={(next) =>
+        onChange((next ?? "broker_review") as DeliveryAction)
+      }
+      disabled={disabled}
+    >
+      <SelectTrigger className="w-52">
         <SelectValue>{ACTION_LABELS[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="auto_send">Auto-send</SelectItem>
-        <SelectItem value="broker_review">Broker review</SelectItem>
+        <SelectItem value="auto_send">Send automatically</SelectItem>
+        <SelectItem value="broker_review">Hold for broker review</SelectItem>
         <SelectItem value="do_not_send">Do not send</SelectItem>
       </SelectContent>
     </Select>
@@ -250,12 +259,12 @@ function RuleDrawer({
       <div className="space-y-4">
         <label className="space-y-1.5">
           <span className="text-label text-muted-foreground">Name</span>
-          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={name} onChange={(event) => setName(event.target.value)} placeholder="Cyber renewals from Coalition" />
+          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Cyber renewals from Coalition" />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="space-y-1.5">
-            <span className="text-label text-muted-foreground">Priority</span>
-            <input type="number" className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={priority} onChange={(event) => setPriority(Number(event.target.value) || 100)} placeholder="100" />
+            <span className="text-label text-muted-foreground">Order</span>
+            <Input type="number" value={priority} onChange={(event) => setPriority(Number(event.target.value) || 100)} placeholder="100" />
           </label>
           <div className="space-y-1.5">
             <span className="text-label text-muted-foreground">Enabled</span>
@@ -265,28 +274,28 @@ function RuleDrawer({
           </div>
         </div>
         <div className="space-y-1.5">
-          <span className="text-label text-muted-foreground">Action</span>
+          <span className="text-label text-muted-foreground">When matched</span>
           <ActionSelect value={action} onChange={setAction} />
         </div>
         <div className="space-y-1.5">
-          <span className="text-label text-muted-foreground">Channel override</span>
+          <span className="text-label text-muted-foreground">Send by</span>
           <ChannelToggles value={channels} onChange={setChannels} />
         </div>
         <label className="space-y-1.5">
           <span className="text-label text-muted-foreground">Insurers or markets</span>
-          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={insurers} onChange={(event) => setInsurers(event.target.value)} placeholder="Coalition, CNA, Lloyd's" />
+          <Input value={insurers} onChange={(event) => setInsurers(event.target.value)} placeholder="Coalition, CNA, Lloyd's" />
         </label>
         <label className="space-y-1.5">
           <span className="text-label text-muted-foreground">Lines of business</span>
-          <input className="w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={lines} onChange={(event) => setLines(event.target.value)} placeholder="General liability, Workers comp, Flood" />
+          <Input value={lines} onChange={(event) => setLines(event.target.value)} placeholder="General liability, Workers comp, Flood" />
         </label>
         <label className="space-y-1.5">
-          <span className="text-label text-muted-foreground">LLM rule</span>
-          <textarea className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={llmRuleText} onChange={(event) => setLlmRuleText(event.target.value)} placeholder="Only auto-send if the policy is a renewal and the named insured matches the client legal name." />
+          <span className="text-label text-muted-foreground">Additional condition</span>
+          <Textarea className="min-h-24" value={llmRuleText} onChange={(event) => setLlmRuleText(event.target.value)} placeholder="Only send automatically if the policy is a renewal and the named insured matches the client legal name." />
         </label>
         <label className="space-y-1.5">
-          <span className="text-label text-muted-foreground">Copy instructions</span>
-          <textarea className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20" value={copyInstructions} onChange={(event) => setCopyInstructions(event.target.value)} placeholder="Mention that this replaces the expiring policy and ask the client to reply with any questions." />
+          <span className="text-label text-muted-foreground">Message instructions</span>
+          <Textarea className="min-h-24" value={copyInstructions} onChange={(event) => setCopyInstructions(event.target.value)} placeholder="Mention that this replaces the expiring policy and ask the client to reply with any questions." />
         </label>
       </div>
     </SettingsDrawer>
@@ -296,11 +305,9 @@ function RuleDrawer({
 export function PolicyDeliverySection({
   clientOrgId,
   setRightPanel: setRightPanelOverride,
-  setActions: setActionsOverride,
 }: {
   clientOrgId?: Id<"organizations">;
   setRightPanel?: (node: ReactNode) => void;
-  setActions?: (node: ReactNode) => void;
 }) {
   const currentOrg = useCurrentOrg();
   const brokerSettings = useQuery(
@@ -335,9 +342,9 @@ export function PolicyDeliverySection({
       clientOrgId={clientOrgId}
       settings={toDraftSettings(settings ?? inheritedSettings)}
       hasClientOverride={!clientOrgId || !!clientOverride}
+      canEdit={currentOrg?.role === "admin"}
       rules={rules}
       setRightPanelOverride={setRightPanelOverride}
-      setActionsOverride={setActionsOverride}
     />
   );
 }
@@ -346,22 +353,18 @@ function PolicyDeliveryEditor({
   clientOrgId,
   settings,
   hasClientOverride,
+  canEdit,
   rules,
   setRightPanelOverride,
-  setActionsOverride,
 }: {
   clientOrgId?: Id<"organizations">;
   settings: SettingsRow;
   hasClientOverride: boolean;
+  canEdit: boolean;
   rules: RuleRow[];
   setRightPanelOverride?: (node: ReactNode) => void;
-  setActionsOverride?: (node: ReactNode) => void;
 }) {
-  const {
-    setActions: setSettingsActions,
-    setRightPanel: setSettingsRightPanel,
-  } = useSettingsActions();
-  const setActions = setActionsOverride ?? setSettingsActions;
+  const { setRightPanel: setSettingsRightPanel } = useSettingsActions();
   const setRightPanel = setRightPanelOverride ?? setSettingsRightPanel;
   const updateBrokerSettings = useMutation(api.policyDelivery.updateBrokerSettings);
   const updateClientOverride = useMutation(api.policyDelivery.updateClientOverride);
@@ -378,7 +381,7 @@ function PolicyDeliveryEditor({
     mutationName: `settings.policyDelivery.${clientOrgId ?? "broker"}`,
     args: draft,
     valueKey: settingsSignature(draft),
-    enabled: !isInheritedClientSettings,
+    enabled: canEdit && !isInheritedClientSettings,
     autoSave: !copyInstructionsFocused,
     flush: (args) =>
       clientOrgId
@@ -398,24 +401,6 @@ function PolicyDeliveryEditor({
     );
     return () => setRightPanel(null);
   }, [clientOrgId, drawerOpen, editingRule, setRightPanel]);
-
-  useEffect(() => {
-    setActions(
-      <PillButton
-        type="button"
-        size="compact"
-        variant="secondary"
-        onClick={() => {
-          setEditingRule(null);
-          setDrawerOpen(true);
-        }}
-      >
-        <Plus className="h-3.5 w-3.5" />
-        New rule
-      </PillButton>,
-    );
-    return () => setActions(null);
-  }, [setActions]);
 
   async function resetOverride() {
     if (!clientOrgId || clearingOverride) return;
@@ -457,69 +442,113 @@ function PolicyDeliveryEditor({
     <div className="space-y-4">
       <OperationalPanel>
         <OperationalPanelHeader
-          title="Policy delivery"
-          className="px-5 py-3.5"
+          title="Automatic policy delivery"
+          description="After a bound policy or endorsement finishes processing, Glass can send the PDF to the client's primary contact."
+          className="px-5 py-4"
           action={(
             isInheritedClientSettings ? (
-              <span className="text-label text-muted-foreground">Inherited</span>
-            ) : (
+              <Badge variant="outline">Broker defaults</Badge>
+            ) : canEdit ? (
               <AutoSaveStatus status={settingsAutoSave.status} />
+            ) : (
+              <span className="text-label text-muted-foreground">
+                Broker admins can edit
+              </span>
             )
           )}
         />
         {isInheritedClientSettings ? (
-          <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-base">
-              <Badge variant={draft.enabled ? "secondary" : "outline"}>
-                Delivery {onOffLabel(draft.enabled)}
-              </Badge>
-              <span className="text-muted-foreground">{channelsLabel(draft.channels)}</span>
-              <span className="text-muted-foreground">{ACTION_LABELS[draft.defaultAction]}</span>
-              <span className="text-muted-foreground">
-                Pre-invite {onOffLabel(draft.deliverBeforeClientAcceptance)}
-              </span>
+          <div className="space-y-5 px-5 py-5">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <p className="text-label text-muted-foreground">Automation</p>
+                <p className="mt-1 text-base font-medium text-foreground">
+                  {draft.enabled ? "On" : "Off"}
+                </p>
+              </div>
+              <div>
+                <p className="text-label text-muted-foreground">
+                  Default outcome
+                </p>
+                <p className="mt-1 text-base text-foreground">
+                  {ACTION_LABELS[draft.defaultAction]}
+                </p>
+              </div>
+              <div>
+                <p className="text-label text-muted-foreground">Send by</p>
+                <p className="mt-1 text-base text-foreground">
+                  {channelsLabel(draft.channels)}
+                </p>
+              </div>
+              <div>
+                <p className="text-label text-muted-foreground">
+                  Before invite acceptance
+                </p>
+                <p className="mt-1 text-base text-foreground">
+                  {draft.deliverBeforeClientAcceptance
+                    ? "Allowed"
+                    : "Wait for acceptance"}
+                </p>
+              </div>
             </div>
-            <PillButton
-              type="button"
-              size="compact"
-              variant="secondary"
-              onClick={() => void addOverride()}
-            >
-              Add override
-            </PillButton>
+            <div className="flex flex-col gap-3 border-t border-foreground/6 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-base text-muted-foreground">
+                {draft.enabled
+                  ? "This client currently follows the broker-wide delivery behavior."
+                  : "Documents are not sent automatically under the broker-wide settings."}
+              </p>
+              {canEdit ? (
+                <PillButton
+                  type="button"
+                  size="compact"
+                  variant="secondary"
+                  onClick={() => void addOverride()}
+                >
+                  Customize for this client
+                </PillButton>
+              ) : null}
+            </div>
           </div>
         ) : (
           <fieldset
-            disabled={clearingOverride}
+            disabled={clearingOverride || !canEdit}
             className="space-y-5 px-5 py-5"
           >
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-base font-medium text-foreground">Enable delivery automation</p>
-                <p className="text-base text-muted-foreground">Deliver bound policy documents and endorsements after processing.</p>
+                <p className="text-base font-medium text-foreground">
+                  Deliver processed documents
+                </p>
+                <p className="text-base text-muted-foreground">
+                  Apply the outcome and rules below when processing finishes.
+                </p>
               </div>
               <SettingsSwitch checked={draft.enabled} onCheckedChange={() => setDraft({ ...draft, enabled: !draft.enabled })} label="Enable policy delivery" />
             </div>
             <div className="grid gap-5 lg:grid-cols-2">
               <div className="space-y-2">
-                <p className="text-label text-muted-foreground">Channels</p>
-                <ChannelToggles value={draft.channels} onChange={(channels) => setDraft({ ...draft, channels })} />
+                <p className="text-label text-muted-foreground">Send by</p>
+                <ChannelToggles value={draft.channels} onChange={(channels) => setDraft({ ...draft, channels })} disabled={!canEdit} />
               </div>
               <div className="space-y-2">
-                <p className="text-label text-muted-foreground">Default action</p>
-                <ActionSelect value={draft.defaultAction} onChange={(defaultAction) => setDraft({ ...draft, defaultAction })} />
+                <p className="text-label text-muted-foreground">Default outcome</p>
+                <ActionSelect value={draft.defaultAction} onChange={(defaultAction) => setDraft({ ...draft, defaultAction })} disabled={!canEdit} />
               </div>
             </div>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-base font-medium text-foreground">Deliver before invite acceptance</p>
-                <p className="text-base text-muted-foreground">Use captured primary contact details before the client logs in.</p>
+                <p className="text-base font-medium text-foreground">
+                  Allow before invite acceptance
+                </p>
+                <p className="text-base text-muted-foreground">
+                  Use the saved primary contact before the client finishes onboarding.
+                </p>
               </div>
               <SettingsSwitch checked={draft.deliverBeforeClientAcceptance} onCheckedChange={() => setDraft({ ...draft, deliverBeforeClientAcceptance: !draft.deliverBeforeClientAcceptance })} label="Deliver before invite acceptance" />
             </div>
             <label className="block space-y-2">
-              <span className="text-label text-muted-foreground">Broker copy instructions</span>
-              <textarea
+              <span className="text-label text-muted-foreground">Message instructions</span>
+              <Textarea
                 value={draft.copyInstructions ?? ""}
                 onChange={(event) => setDraft({ ...draft, copyInstructions: event.target.value })}
                 onFocus={() => setCopyInstructionsFocused(true)}
@@ -527,7 +556,7 @@ function PolicyDeliveryEditor({
                   setCopyInstructionsFocused(false);
                   void settingsAutoSave.saveNow();
                 }}
-                className="min-h-24 w-full rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base outline-none focus:border-foreground/20"
+                className="min-h-24"
                 placeholder="Use our standard policy delivery language. Mention claims contact details when available."
               />
             </label>
@@ -551,9 +580,33 @@ function PolicyDeliveryEditor({
       </OperationalPanel>
 
       <OperationalPanel>
-        <OperationalPanelHeader title="Conditional rules" className="px-5 py-3.5" />
+        <OperationalPanelHeader
+          title={clientOrgId ? "Client-specific rules" : "Delivery rules"}
+          description="Rules are checked in order before the default outcome."
+          className="px-5 py-4"
+          action={
+            canEdit ? (
+              <PillButton
+                type="button"
+                size="compact"
+                variant="secondary"
+                onClick={() => {
+                  setEditingRule(null);
+                  setDrawerOpen(true);
+                }}
+              >
+                <Plus className="size-3.5" />
+                New rule
+              </PillButton>
+            ) : null
+          }
+        />
         {rules.length === 0 ? (
-          <div className="px-5 py-8 text-base text-muted-foreground">No rules yet.</div>
+          <div className="px-5 py-8 text-base text-muted-foreground">
+            {clientOrgId
+              ? "No client-specific rules. The default outcome applies."
+              : "No delivery rules. The default outcome applies."}
+          </div>
         ) : (
           <Table>
             <TableHeader>
@@ -561,7 +614,7 @@ function PolicyDeliveryEditor({
                 <TableHead className="px-4 text-label text-muted-foreground">Rule</TableHead>
                 <TableHead className="text-label text-muted-foreground">Action</TableHead>
                 <TableHead className="text-label text-muted-foreground">Channels</TableHead>
-                <TableHead className="text-label text-muted-foreground">Priority</TableHead>
+                <TableHead className="text-label text-muted-foreground">Order</TableHead>
                 <TableHead className="px-4 text-right text-label text-muted-foreground">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -569,8 +622,9 @@ function PolicyDeliveryEditor({
               {rules.map((rule) => (
                 <TableRow
                   key={rule._id}
-                  className="cursor-pointer"
+                  className={canEdit ? "cursor-pointer" : undefined}
                   onClick={() => {
+                    if (!canEdit) return;
                     setEditingRule(rule);
                     setDrawerOpen(true);
                   }}
@@ -587,7 +641,8 @@ function PolicyDeliveryEditor({
                   <TableCell className="px-4 text-right">
                     <button
                       type="button"
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                      disabled={!canEdit}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                       onClick={(event) => {
                         event.stopPropagation();
                         void deleteRule({ id: rule._id });

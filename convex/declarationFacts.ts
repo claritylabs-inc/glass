@@ -1,61 +1,112 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import {
   declarationFactHash,
   extractDeclarationFactsFromPolicy,
 } from "./lib/declarationFacts";
 import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
 
-export const syncPolicyInternal = internalMutation({
-  args: { policyId: v.id("policies") },
-  handler: async (ctx, args) => {
-    const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId) return { inserted: 0 };
+type PersistedFactValue = {
+  fieldPath: string;
+  fieldGroup: string;
+  displayValue: string;
+  normalizedValue: string;
+  structuredValue?: unknown;
+  valueKind: string;
+  sourceNodeIds?: string[];
+  sourceSpanIds?: string[];
+  effectiveDate?: string;
+  expirationDate?: string;
+  policyYear?: number;
+  recordHash: string;
+};
 
-    const now = dayjs().valueOf();
-    const existingActive = await ctx.db
-      .query("policyDeclarationFacts")
-      .withIndex("by_policyId_active", (q) => q.eq("policyId", args.policyId).eq("active", true))
-      .collect();
-    for (const fact of existingActive) {
-      await ctx.db.patch(fact._id, { active: false });
-    }
+function persistedFactValue(fact: PersistedFactValue): PersistedFactValue {
+  return {
+    fieldPath: fact.fieldPath,
+    fieldGroup: fact.fieldGroup,
+    displayValue: fact.displayValue,
+    normalizedValue: fact.normalizedValue,
+    valueKind: fact.valueKind,
+    recordHash: fact.recordHash,
+    ...(fact.structuredValue !== undefined ? { structuredValue: fact.structuredValue } : {}),
+    ...(fact.sourceNodeIds !== undefined ? { sourceNodeIds: fact.sourceNodeIds } : {}),
+    ...(fact.sourceSpanIds !== undefined ? { sourceSpanIds: fact.sourceSpanIds } : {}),
+    ...(fact.effectiveDate !== undefined ? { effectiveDate: fact.effectiveDate } : {}),
+    ...(fact.expirationDate !== undefined ? { expirationDate: fact.expirationDate } : {}),
+    ...(fact.policyYear !== undefined ? { policyYear: fact.policyYear } : {}),
+  };
+}
 
-    if (policy.deletedAt) {
-      const profile = await syncOrgProfileFromDeclarationFacts(ctx, policy.orgId);
-      return { inserted: 0, profile };
-    }
+function factSetSignature(facts: PersistedFactValue[]) {
+  return JSON.stringify(
+    facts
+      .map(persistedFactValue)
+      .sort((left, right) => left.recordHash.localeCompare(right.recordHash)),
+  );
+}
 
-    const facts = extractDeclarationFactsFromPolicy(policy as unknown as Record<string, unknown>);
-    let inserted = 0;
-    for (const fact of facts) {
-      await ctx.db.insert("policyDeclarationFacts", {
-        orgId: policy.orgId,
-        policyId: args.policyId,
-        policyFileId: fact.policyFileId as never,
-        fieldPath: fact.fieldPath,
-        fieldGroup: fact.fieldGroup,
-        displayValue: fact.displayValue,
-        normalizedValue: fact.normalizedValue,
-        structuredValue: fact.structuredValue,
-        valueKind: fact.valueKind,
-        sourceSpanIds: fact.sourceSpanIds,
-        effectiveDate: fact.effectiveDate,
-        expirationDate: fact.expirationDate,
-        policyYear: fact.policyYear,
-        observedAt: now,
-        active: true,
+export async function replacePolicyDeclarationFacts(
+  ctx: MutationCtx,
+  policyId: Id<"policies">,
+  observedAt = dayjs().valueOf(),
+  syncProfile = true,
+) {
+  const policy = await ctx.db.get(policyId);
+  if (!policy?.orgId) {
+    return { inserted: 0, deactivated: 0, unchanged: true, profile: undefined };
+  }
+
+  const existingActive = await ctx.db
+    .query("policyDeclarationFacts")
+    .withIndex("by_policyId_active", (q) => q.eq("policyId", policyId).eq("active", true))
+    .collect();
+  const facts = policy.deletedAt
+    ? []
+    : extractDeclarationFactsFromPolicy(policy as unknown as Record<string, unknown>)
+      .map((fact) => ({
+        ...fact,
         recordHash: declarationFactHash({
-          policyId: String(args.policyId),
+          policyId: String(policyId),
           fieldPath: fact.fieldPath,
           normalizedValue: fact.normalizedValue,
         }),
+      }));
+
+  const unchanged = factSetSignature(existingActive) === factSetSignature(facts);
+  let deactivated = 0;
+  let inserted = 0;
+  if (!unchanged) {
+    for (const fact of existingActive) {
+      await ctx.db.patch(fact._id, { active: false });
+      deactivated += 1;
+    }
+    for (const fact of facts) {
+      await ctx.db.insert("policyDeclarationFacts", {
+        orgId: policy.orgId,
+        policyId,
+        policyFileId: fact.policyFileId as Id<"policyFiles"> | undefined,
+        ...persistedFactValue(fact),
+        valueKind: fact.valueKind,
+        observedAt,
+        active: true,
       });
       inserted += 1;
     }
+  }
 
-    const profile = await syncOrgProfileFromDeclarationFacts(ctx, policy.orgId);
-    return { inserted, profile };
+  const profile = syncProfile
+    ? await syncOrgProfileFromDeclarationFacts(ctx, policy.orgId)
+    : undefined;
+  return { inserted, deactivated, unchanged, profile };
+}
+
+export const syncPolicyInternal = internalMutation({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    return await replacePolicyDeclarationFacts(ctx, args.policyId);
   },
 });

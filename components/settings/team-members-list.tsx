@@ -1,14 +1,18 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
-import {
-  OperationalItem,
-  OperationalPanel,
-  OperationalPanelHeader,
-} from "@/components/ui/operational-panel";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type {
   TeamInvitation,
   TeamMember,
@@ -20,9 +24,7 @@ type TeamMembersListProps = {
   viewerUserId?: Id<"users">;
   canEditMembers: boolean;
   primaryContactId?: Id<"users">;
-  settingPrimaryContactUserId: Id<"users"> | null;
   onEditMember: (member: TeamMember) => void;
-  onSetPrimary: (userId: Id<"users">) => void;
   onCancelInvitation: (invitation: TeamInvitation) => void;
 };
 
@@ -32,9 +34,7 @@ export function TeamMembersList({
   viewerUserId,
   canEditMembers,
   primaryContactId,
-  settingPrimaryContactUserId,
   onEditMember,
-  onSetPrimary,
   onCancelInvitation,
 }: TeamMembersListProps) {
   const pendingInvitations =
@@ -42,102 +42,127 @@ export function TeamMembersList({
 
   return (
     <OperationalPanel>
-      <OperationalPanelHeader title="Team Members" className="px-5 py-3.5" />
-      <div className="divide-y divide-foreground/6">
-        {members.map((member) => (
-          <OperationalItem
-            key={member.membershipId}
-            className="flex items-center gap-3 border-0 px-5 py-3.5"
-          >
-            <div className="w-8 h-8 rounded-full bg-foreground/8 flex items-center justify-center text-label font-medium text-foreground shrink-0">
-              {getMemberInitials(member)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex gap-3">
-                <p className="text-base font-medium text-foreground truncate">
-                  {member.name || member.email}
-                  {member.userId === viewerUserId ? (
-                    <span className="text-label text-muted-foreground/40 ml-1">
-                      (you)
-                    </span>
-                  ) : null}
-                </p>
-                <div className="flex gap-1">
-                  {member.userId === primaryContactId ? (
-                    <Badge variant="secondary">Primary Contact</Badge>
-                  ) : null}
+      <Table className="min-w-[760px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[30%] px-5">Member</TableHead>
+            <TableHead className="w-[28%]">Email</TableHead>
+            <TableHead className="w-[20%]">Phone</TableHead>
+            <TableHead className="w-[22%] px-5">Access</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {members.map((member) => (
+            <TableRow
+              key={member.membershipId}
+              aria-label={
+                canEditMembers
+                  ? `Edit ${member.name || member.email || "team member"}`
+                  : undefined
+              }
+              className={
+                canEditMembers
+                  ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  : undefined
+              }
+              onClick={
+                canEditMembers ? () => onEditMember(member) : undefined
+              }
+              onKeyDown={
+                canEditMembers
+                  ? (event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      onEditMember(member);
+                    }
+                  : undefined
+              }
+              tabIndex={canEditMembers ? 0 : undefined}
+            >
+              <TableCell className="px-5 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-label font-medium text-foreground">
+                    {getMemberInitials(member)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-foreground">
+                      {member.name || member.email}
+                      {member.userId === viewerUserId ? (
+                        <span className="ml-1 text-label font-normal text-muted-foreground/50">
+                          (you)
+                        </span>
+                      ) : null}
+                    </p>
+                    {member.title ? (
+                      <p className="truncate text-label text-muted-foreground">
+                        {member.title}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </TableCell>
+              <TableCell className="max-w-64 truncate py-3 text-muted-foreground">
+                {member.email || "-"}
+              </TableCell>
+              <TableCell className="py-3 text-muted-foreground">
+                {formatTeamMemberPhone(member.phone)}
+              </TableCell>
+              <TableCell className="px-5 py-3">
+                <div className="flex flex-wrap items-center gap-1">
                   <Badge variant="outline">
                     {member.role === "admin" ? "Admin" : "Member"}
                   </Badge>
-                </div>
-              </div>
-              <p className="text-label text-muted-foreground truncate">
-                {[
-                  member.name ? member.email : null,
-                  member.title,
-                  member.phone,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || member.email}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {canEditMembers ? (
-                <PillButton
-                  variant="secondary"
-                  size="compact"
-                  onClick={() => onEditMember(member)}
-                >
-                  Edit Team Member
-                </PillButton>
-              ) : null}
-              {member.userId !== viewerUserId &&
-              member.userId !== primaryContactId ? (
-                <PillButton
-                  variant="ghost"
-                  size="compact"
-                  disabled={settingPrimaryContactUserId === member.userId}
-                  onClick={() => onSetPrimary(member.userId)}
-                  title="Set as primary insurance contact"
-                >
-                  {settingPrimaryContactUserId === member.userId ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {member.userId === primaryContactId ? (
+                    <Badge variant="secondary">Primary Contact</Badge>
                   ) : null}
-                  Set Primary
-                </PillButton>
-              ) : null}
-            </div>
-          </OperationalItem>
-        ))}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
 
-        {pendingInvitations.map((invitation) => (
-          <OperationalItem
-            key={invitation._id}
-            className="flex items-center gap-3 border-0 px-5 py-3.5 opacity-60"
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-base text-muted-foreground truncate">
+          {pendingInvitations.map((invitation) => (
+            <TableRow key={invitation._id} className="opacity-60">
+              <TableCell className="px-5 py-3">
+                <p className="font-medium text-foreground">
+                  Pending invitation
+                </p>
+              </TableCell>
+              <TableCell className="py-3 text-muted-foreground">
                 {invitation.email}
-              </p>
-              <p className="text-label text-muted-foreground/40">
-                Invitation pending
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Badge variant="outline">{invitation.role}</Badge>
-              <PillButton
-                variant="destructive"
-                size="compact"
-                onClick={() => onCancelInvitation(invitation)}
-              >
-                Cancel
-              </PillButton>
-            </div>
-          </OperationalItem>
-        ))}
-      </div>
+              </TableCell>
+              <TableCell className="py-3 text-muted-foreground">-</TableCell>
+              <TableCell className="px-5 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Badge variant="outline" className="capitalize">
+                    {invitation.role}
+                  </Badge>
+                  <PillButton
+                    variant="destructive"
+                    size="compact"
+                    onClick={() => onCancelInvitation(invitation)}
+                  >
+                    Cancel
+                  </PillButton>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </OperationalPanel>
   );
+}
+
+export function formatTeamMemberPhone(value?: string) {
+  const phone = value?.trim();
+  if (!phone) return "-";
+
+  const parsed = parsePhoneNumberFromString(phone, "US");
+  if (!parsed) return phone;
+
+  return parsed.countryCallingCode === "1"
+    ? parsed.formatNational()
+    : parsed.formatInternational();
 }
 
 function getMemberInitials(member: TeamMember) {

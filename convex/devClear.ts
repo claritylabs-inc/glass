@@ -46,7 +46,6 @@ const TABLES: TableNames[] = [
   "threads",
   "threadMessages",
   "pendingEmails",
-  "apiKeys",
   "oauthClients",
   "oauthAuthCodes",
   "oauthTokens",

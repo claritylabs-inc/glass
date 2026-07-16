@@ -163,7 +163,7 @@ describe("public demo agent", () => {
     expect(page).toContain("splitQuotedReply");
     expect(page).not.toContain("bg-foreground text-background");
     expect(threadContent).toContain("ThreadMessageBubble");
-    expect(bubble).toContain("export function ThreadMessageBubble");
+    expect(bubble).toContain("export const ThreadMessageBubble = memo(");
     expect(page).not.toContain("Tabs");
     expect(page).not.toContain("Table");
     expect(page).not.toContain("OperationalLabelValue");

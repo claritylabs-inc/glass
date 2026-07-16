@@ -1,11 +1,68 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import type { Id } from "../_generated/dataModel";
+
+const { transcribeAudioForOrgMock, transcribeAudioForPublicTaskMock } =
+  vi.hoisted(() => ({
+    transcribeAudioForOrgMock: vi.fn(),
+    transcribeAudioForPublicTaskMock: vi.fn(),
+  }));
+
+vi.mock("./models", () => ({
+  transcribeAudioForOrg: transcribeAudioForOrgMock,
+  transcribeAudioForPublicTask: transcribeAudioForPublicTaskMock,
+}));
+
 import {
   buildImessageModelMessages,
   buildImessageRetrievalQuery,
   buildRecentImessageTextContext,
+  transcribeImessageVoiceMemos,
 } from "./imessageAgentContext";
 
 describe("iMessage agent context helpers", () => {
+  test("turns a voice memo into labeled text for the existing chat pipeline", async () => {
+    transcribeAudioForOrgMock.mockResolvedValueOnce({
+      text: "Please compare my current liability limits.",
+      route: { provider: "openai", model: "gpt-4o-transcribe" },
+      routeSource: "default",
+      transport: "direct",
+    });
+
+    const input = await transcribeImessageVoiceMemos({} as never, {
+      orgId: "org-1" as Id<"organizations">,
+      messageText: "(attachment)",
+      attachments: [
+        {
+          name: "voice-memo.m4a",
+          mimeType: "audio/mp4",
+          data: Buffer.from("audio").toString("base64"),
+        },
+      ],
+    });
+
+    expect(input).toMatchObject({
+      hasVoiceMemos: true,
+      messageText:
+        "[Voice memo transcript: voice-memo.m4a]\nPlease compare my current liability limits.",
+      transcripts: [
+        {
+          filename: "voice-memo.m4a",
+          text: "Please compare my current liability limits.",
+        },
+      ],
+      failures: [],
+    });
+    expect(transcribeAudioForOrgMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "org-1",
+      expect.objectContaining({
+        filename: "voice-memo.m4a",
+        mediaType: "audio/mp4",
+      }),
+    );
+    expect(transcribeAudioForPublicTaskMock).not.toHaveBeenCalled();
+  });
+
   test("builds recent text context without status cue messages", () => {
     expect(
       buildRecentImessageTextContext([

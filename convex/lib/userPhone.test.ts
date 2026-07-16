@@ -36,5 +36,10 @@ describe("user phone helpers", () => {
 
     expect(message).toBe(PHONE_IN_USE_MESSAGE);
   });
-});
 
+  test("rejects numbers that only match the E.164 shape", () => {
+    expect(() => normalizeUserPhone("+15555550103")).toThrow(
+      "Enter a valid phone number with country code.",
+    );
+  });
+});

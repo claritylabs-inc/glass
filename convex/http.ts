@@ -551,8 +551,6 @@ http.route({
 type McpIdentity = {
   userId: string;
   orgId: string;
-  source: "api_key" | "oauth";
-  keyId?: string;
   scopes?: ("read" | "write")[];
 };
 
@@ -571,8 +569,8 @@ function mcpResourceMetadataAuthenticateHeader(request: Request): string {
 }
 
 /**
- * Authenticate MCP requests. Tries API key first (glass_ prefix), then OAuth token (prsm_at_ prefix).
- * Returns 401 with WWW-Authenticate: Bearer when no auth (triggers OAuth flow in MCP clients).
+ * Authenticate MCP requests with an OAuth access token.
+ * Returns 401 with WWW-Authenticate: Bearer when no auth so MCP clients start OAuth.
  */
 async function requireMcpAuth(
   ctx: {
@@ -594,23 +592,6 @@ async function requireMcpAuth(
 
   const rawToken = authHeader.slice(7);
 
-  // Try API key auth (glass_ prefix)
-  if (rawToken.startsWith("glass_")) {
-    const keyHash = await sha256Hex(rawToken);
-    const result = await ctx.runQuery(internal.apiKeys.validateKey, {
-      keyHash,
-    });
-    if (!result) {
-      throw new Response("Invalid or revoked API key", {
-        status: 403,
-        headers: JSON_HEADERS,
-      });
-    }
-    await ctx.runMutation(internal.apiKeys.touchLastUsed, { id: result.keyId });
-    return { ...result, source: "api_key" };
-  }
-
-  // Try OAuth token auth (prsm_at_ prefix)
   if (rawToken.startsWith("prsm_at_")) {
     const tokenHash = await sha256Hex(rawToken);
     const result = await ctx.runQuery(
@@ -630,7 +611,6 @@ async function requireMcpAuth(
       userId: result.userId,
       orgId: result.orgId,
       scopes: result.scopes ?? ["read"],
-      source: "oauth",
     };
   }
 
@@ -649,14 +629,13 @@ function getQueryParam(request: Request, name: string): string | null {
 }
 
 function requireMcpWriteScope(identity: McpIdentity): void {
-  if (identity.source === "api_key") return;
   if (!(identity.scopes ?? ["read"]).includes("write")) {
     throw new Error("insufficient_scope: this tool requires write scope");
   }
 }
 
 function mcpCanWrite(identity: McpIdentity): boolean {
-  return identity.source === "api_key" || (identity.scopes ?? ["read"]).includes("write");
+  return (identity.scopes ?? ["read"]).includes("write");
 }
 
 function normalizeCertificateRequest(body: Record<string, unknown>) {
@@ -724,6 +703,12 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
     postalCode:
       (typeof body.postalCode === "string" && body.postalCode.trim()) ||
       (typeof body.postal_code === "string" && body.postal_code.trim()) ||
+      undefined,
+    country:
+      (typeof body.country === "string" && body.country.trim()) ||
+      (typeof body.country_code === "string" && body.country_code.trim()) ||
+      (typeof body.certificate_holder_country === "string" &&
+        body.certificate_holder_country.trim()) ||
       undefined,
     requestText:
       (typeof body.requestText === "string" && body.requestText.trim()) ||
@@ -1349,6 +1334,10 @@ const MCP_TOOLS = [
         postalCode: {
           type: "string",
           description: "Certificate holder ZIP or postal code",
+        },
+        country: {
+          type: "string",
+          description: "Certificate holder country",
         },
         requestText: {
           type: "string",
@@ -2794,38 +2783,6 @@ async function requireApiAuth(
     }
   }
 
-  // API key path
-  if (rawToken.startsWith("glass_")) {
-    const keyHash = await sha256Hex(rawToken);
-    const result = await ctx.runQuery(internal.apiKeys.validateKey, {
-      keyHash,
-    });
-    if (!result) {
-      throw jsonResponse(
-        {
-          error: {
-            code: "unauthorized",
-            message: "Invalid or revoked API key",
-            request_id: requestId,
-          },
-        },
-        401,
-      );
-    }
-    await ctx.runMutation(internal.apiKeys.touchLastUsed, { id: result.keyId });
-    // Find a token record for audit log — skip rate limit for API keys, use a sentinel
-    const resolvedOrgId = (orgIdHeader || result.orgId) as Id<"organizations">;
-    await assertMembership(result.userId as Id<"users">, resolvedOrgId);
-    return {
-      userId: result.userId as Id<"users">,
-      orgId: resolvedOrgId,
-      scopes: ["read", "write"],
-      tokenId: "sentinel" as Id<"oauthTokens">,
-      requestId,
-    };
-  }
-
-  // OAuth path
   const tokenHash = await sha256Hex(rawToken);
   const tokenData = await ctx.runQuery(
     (internal as any).oauth.validateAccessTokenWithScopes,

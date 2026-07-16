@@ -3,6 +3,7 @@ import {
   certificateHolderDisplayBlock,
   holderSnapshot,
 } from "../convex/lib/certificateIdentity";
+import { certificateHolderActionAddress } from "../components/certificates/certificate-workspace";
 
 describe("certificate holder consistency helpers", () => {
   it("builds one canonical holder block for storage and PDF rendering", () => {
@@ -44,6 +45,21 @@ describe("certificate holder consistency helpers", () => {
       email: "adyan@claritylabs.inc",
       phone: "+1 415 555 0134",
       address: { formatted: "123 Market Street\nSan Francisco, CA 94105" },
+    });
+  });
+
+  it("preserves every line of a formatted-only address in an edit draft", () => {
+    expect(certificateHolderActionAddress({
+      address: {
+        formatted: "123 Market Street\nSuite 400\nSan Francisco, CA 94105\nUnited States",
+      },
+    })).toEqual({
+      addressLine1: "123 Market Street",
+      addressLine2: "Suite 400, San Francisco, CA 94105, United States",
+      city: undefined,
+      state: undefined,
+      postalCode: undefined,
+      country: undefined,
     });
   });
 });

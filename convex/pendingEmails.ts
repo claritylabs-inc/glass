@@ -211,6 +211,43 @@ export const updateDraftRecipientInternal = internalMutation({
   },
 });
 
+export const scheduleDraftInternal = internalMutation({
+  args: {
+    id: v.id("pendingEmails"),
+    scheduledSendTime: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const pending = await ctx.db.get(args.id);
+    if (!pending || pending.status !== "draft") {
+      throw new Error("Only draft emails can be scheduled");
+    }
+
+    if (pending.threadId) {
+      const recipientEmail = pending.recipientEmail.trim().toLowerCase();
+      const threadEmails = await ctx.db
+        .query("pendingEmails")
+        .withIndex("by_threadId", (q) => q.eq("threadId", pending.threadId!))
+        .collect();
+      const supersededDrafts = threadEmails.filter(
+        (candidate) =>
+          candidate._id !== pending._id &&
+          candidate.status === "draft" &&
+          candidate.recipientEmail.trim().toLowerCase() === recipientEmail,
+      );
+      for (const superseded of supersededDrafts) {
+        await cancelDraftOrPendingEmail(ctx, superseded._id);
+      }
+    }
+
+    await ctx.db.patch(args.id, {
+      status: "pending",
+      scheduledSendTime: args.scheduledSendTime,
+      sendBlockedReason: undefined,
+    });
+    return args.id;
+  },
+});
+
 export const markSent = internalMutation({
   args: {
     id: v.id("pendingEmails"),
