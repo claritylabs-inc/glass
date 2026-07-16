@@ -41,6 +41,23 @@ type OrgMailingAddress = {
   formatted?: string;
 };
 
+function stableValueString(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableValueString(item)).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableValueString(entry)}`).join(",")}}`;
+}
+
+function valuesEqual(left: unknown, right: unknown): boolean {
+  return stableValueString(left) === stableValueString(right);
+}
+
 export type EditableOrganizationProfile = {
   mailingAddress: OrgMailingAddress;
   entityType: IrsEntityType | "";
@@ -342,7 +359,7 @@ function mergeRelatedLegalEntities(
     addEntity(insured.value, "other");
   }
 
-  return JSON.stringify(existing) === JSON.stringify(next) ? undefined : next;
+  return valuesEqual(existing, next) ? undefined : next;
 }
 
 async function activeOrgProfileFacts(
@@ -395,7 +412,7 @@ export async function syncOrgProfileFromDeclarationFacts(
   const patch: Record<string, unknown> = {};
 
   if (hasProfileFacts) {
-    if (JSON.stringify(orgRecord.profileFacts ?? null) !== JSON.stringify(profileFacts)) {
+    if (!valuesEqual(orgRecord.profileFacts ?? null, profileFacts)) {
       patch.profileFacts = profileFacts;
     }
   } else if (orgRecord.profileFacts !== undefined) {
@@ -403,7 +420,7 @@ export async function syncOrgProfileFromDeclarationFacts(
   }
 
   if (mailingAddress) {
-    if (JSON.stringify(orgRecord.mailingAddress ?? null) !== JSON.stringify(mailingAddress.value)) {
+    if (!valuesEqual(orgRecord.mailingAddress ?? null, mailingAddress.value)) {
       patch.mailingAddress = mailingAddress.value;
     }
   } else if (

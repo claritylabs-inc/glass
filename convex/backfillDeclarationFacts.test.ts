@@ -1,11 +1,16 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import schema from "./schema";
 import { backfillBatchInternal } from "./backfillDeclarationFacts";
+import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
 
 const modules = import.meta.glob("./**/*.ts");
 const backfillBatchInternalFn = backfillBatchInternal as any;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("declaration fact backfill", () => {
   test("rebuilds stored final policies without extraction and is idempotent", async () => {
@@ -70,7 +75,8 @@ describe("declaration fact backfill", () => {
     const first = await t.mutation(backfillBatchInternalFn, { dryRun: false, batchSize: 10 });
     expect(first).toMatchObject({ eligible: 2, unchanged: 0, isDone: true });
     expect(first.inserted).toBeGreaterThan(0);
-    await expect(t.run(async (ctx) => ctx.db.get(orgId))).resolves.toMatchObject({
+    const profileAfterFirstRun = await t.run(async (ctx) => ctx.db.get(orgId));
+    expect(profileAfterFirstRun).toMatchObject({
       profileFacts: {
         namedInsured: { value: "Acme Incorporated" },
         mailingAddress: { value: { street1: "1 Main St" } },
@@ -79,6 +85,11 @@ describe("declaration fact backfill", () => {
     });
 
     const factCount = (await t.run(async (ctx) => ctx.db.query("policyDeclarationFacts").collect())).length;
+    vi.useFakeTimers();
+    vi.setSystemTime((profileAfterFirstRun?.profileFactsUpdatedAt ?? 0) + 1_000);
+    await expect(
+      t.run(async (ctx) => syncOrgProfileFromDeclarationFacts(ctx, orgId)),
+    ).resolves.toEqual({ updated: false, reason: "unchanged" });
     await expect(t.mutation(backfillBatchInternalFn, { dryRun: false, batchSize: 10 })).resolves.toMatchObject({
       eligible: 2,
       inserted: 0,
@@ -86,5 +97,6 @@ describe("declaration fact backfill", () => {
       unchanged: 2,
     });
     expect(await t.run(async (ctx) => ctx.db.query("policyDeclarationFacts").collect())).toHaveLength(factCount);
+    await expect(t.run(async (ctx) => ctx.db.get(orgId))).resolves.toEqual(profileAfterFirstRun);
   });
 });
