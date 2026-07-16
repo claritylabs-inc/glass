@@ -146,9 +146,19 @@ export function certificateHolderActionAddress(holder?: CertificateHolderRecord 
     ?.split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean) ?? [];
+  const hasStructuredAddress = Boolean(
+    address?.line1 ||
+    address?.line2 ||
+    address?.city ||
+    address?.state ||
+    address?.postalCode ||
+    address?.country,
+  );
   return {
     addressLine1: address?.line1 ?? formattedLines[0],
-    addressLine2: address?.line2 ?? formattedLines[1],
+    addressLine2: address?.line2 ?? (
+      hasStructuredAddress ? undefined : formattedLines.slice(1).join(", ") || undefined
+    ),
     city: address?.city,
     state: address?.state,
     postalCode: address?.postalCode,

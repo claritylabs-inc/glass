@@ -642,17 +642,37 @@ export const recordIssuedVersionInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = dayjs().valueOf();
+    let holderId = args.holderId;
     if (args.updateHolderDetails) {
-      const holder = await ctx.db.get(args.holderId);
+      const [certificate, holder, holderReferences, holderPolicyLinks] = await Promise.all([
+        ctx.db.get(args.certificateId),
+        ctx.db.get(args.holderId),
+        ctx.db
+          .query("policyCertificates")
+          .withIndex("by_holderId", (q) => q.eq("holderId", args.holderId))
+          .collect(),
+        ctx.db
+          .query("certificateHolderPolicyLinks")
+          .withIndex("by_holderId", (q) => q.eq("holderId", args.holderId))
+          .collect(),
+      ]);
       const displayName = args.certificateHolderName?.trim();
-      if (!holder || holder.orgId !== args.orgId || !displayName) {
+      if (
+        !certificate ||
+        certificate.orgId !== args.orgId ||
+        certificate.policyId !== args.policyId ||
+        certificate.holderId !== args.holderId ||
+        !holder ||
+        holder.orgId !== args.orgId ||
+        !displayName
+      ) {
         throw new Error("Certificate holder not found.");
       }
       const email = cleanOptionalText(args.holderEmail);
       const phone = cleanOptionalText(args.holderPhone);
       const normalizedAddressKey = normalizeCertificateHolderAddress(args.holderAddress);
       const addressChanged = normalizedAddressKey !== holder.normalizedAddressKey;
-      await ctx.db.patch(args.holderId, {
+      const holderDetails = {
         displayName,
         normalizedName: normalizeCertificateHolderName(displayName),
         contactName: normalizeCertificateHolderContactName(args.holderContactName),
@@ -667,7 +687,49 @@ export const recordIssuedVersionInternal = internalMutation({
         sourceRef: String(args.certificateId),
         updatedByUserId: args.createdByUserId,
         updatedAt: now,
-      });
+      } as const;
+      const holderIsShared = holderReferences.some(
+        (reference) => reference._id !== args.certificateId,
+      );
+      if (holderIsShared) {
+        holderId = await ctx.db.insert("certificateHolders", {
+          orgId: args.orgId,
+          ...holderDetails,
+          notes: holder.notes,
+          createdByUserId: args.createdByUserId ?? holder.createdByUserId,
+          createdAt: now,
+        });
+        await ctx.db.patch(args.certificateId, {
+          holderId,
+          dedupeKey: policyCertificateDedupeKey({
+            orgId: String(args.orgId),
+            policyId: String(args.policyId),
+            holderId: String(holderId),
+          }),
+          updatedByUserId: args.createdByUserId,
+          updatedAt: now,
+        });
+        for (const link of holderPolicyLinks) {
+          if (link.policyId !== args.policyId) continue;
+          await ctx.db.insert("certificateHolderPolicyLinks", {
+            orgId: args.orgId,
+            holderId,
+            policyId: args.policyId,
+            policyVersionId: link.policyVersionId,
+            relationshipKind: link.relationshipKind,
+            status: link.status,
+            sourceNodeIds: link.sourceNodeIds,
+            sourceSpanIds: link.sourceSpanIds,
+            sourceSummary: link.sourceSummary,
+            createdByUserId: args.createdByUserId ?? link.createdByUserId,
+            updatedByUserId: args.createdByUserId,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      } else {
+        await ctx.db.patch(args.holderId, holderDetails);
+      }
     }
     const existingIssued = await ctx.db
       .query("certificateVersions")
@@ -686,7 +748,7 @@ export const recordIssuedVersionInternal = internalMutation({
     const versionId = await ctx.db.insert("certificateVersions", {
       orgId: args.orgId,
       certificateId: args.certificateId,
-      holderId: args.holderId,
+      holderId,
       policyId: args.policyId,
       policyVersionId: args.policyVersionId,
       versionNumber,
@@ -725,6 +787,7 @@ export const recordIssuedVersionInternal = internalMutation({
       updatedAt: now,
     });
     return {
+      holderId,
       versionId,
       versionNumber,
     };
