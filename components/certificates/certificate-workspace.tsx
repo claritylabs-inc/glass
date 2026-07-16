@@ -140,7 +140,9 @@ export function certificateHolderAddress(holder?: CertificateHolderRecord | null
     null;
 }
 
-export function certificateHolderActionAddress(holder?: CertificateHolderRecord | null) {
+export function certificateHolderActionAddress(
+  holder?: Pick<CertificateHolderRecord, "address"> | null,
+) {
   const address = holder?.address;
   const formattedLines = address?.formatted
     ?.split(/\r?\n/)

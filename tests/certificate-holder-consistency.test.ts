@@ -50,7 +50,6 @@ describe("certificate holder consistency helpers", () => {
 
   it("preserves every line of a formatted-only address in an edit draft", () => {
     expect(certificateHolderActionAddress({
-      displayName: "Deeptrust Inc.",
       address: {
         formatted: "123 Market Street\nSuite 400\nSan Francisco, CA 94105\nUnited States",
       },
