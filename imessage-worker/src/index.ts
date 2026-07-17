@@ -3,11 +3,12 @@ import {
   Spectrum,
   app as appCard,
   attachment,
+  contact,
   type Message,
   type Space,
   type SpectrumInstance,
 } from "spectrum-ts";
-import { imessage } from "@spectrum-ts/imessage";
+import { imessage, nativeContactCard } from "@spectrum-ts/imessage";
 import { terminal } from "@spectrum-ts/terminal";
 import {
   reportImessageDeliveryEvent,
@@ -128,6 +129,15 @@ const TERMINAL_IDENTITIES = {
 const SEND_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 const TYPING_REFRESH_MS = 4_000;
 const RESPONSE_SEGMENT_MAX_CHARS = 520;
+const CONTACT_CARD_NAME = "Glass from Clarity Labs";
+const CONTACT_CARD_EMAIL = process.env.GLASS_AGENT_EMAIL ?? "agent@glass.insure";
+const CONTACT_CARD_PHONE =
+  process.env.GLASS_IMESSAGE_CONTACT_PHONE ??
+  process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER ??
+  "";
+const CONTACT_CARD_URL = "https://glass.insure";
+const CONTACT_CARD_NOTE =
+  "Glass is an insurance intelligence assistant from Clarity Labs for policies, certificates, renewals, and broker follow-ups.";
 const SPECTRUM_MINI_APP = {
   appName: "Spectrum",
   extensionBundleId: "codes.photon.Spectrum.MessagesExtension",
@@ -486,6 +496,34 @@ async function sendResponseText(
       await space.send(segment);
     }
   }
+}
+
+async function sendGlassContactCard(space: Space): Promise<void> {
+  if (TRANSPORT === "imessage") {
+    try {
+      await space.send(nativeContactCard());
+      return;
+    } catch (err) {
+      console.warn(
+        "[glass-imessage] Native contact card send failed; falling back to vCard:",
+        err,
+      );
+    }
+  }
+
+  const phones = CONTACT_CARD_PHONE
+    ? [{ value: CONTACT_CARD_PHONE, type: "mobile" as const }]
+    : undefined;
+  await space.send(
+    contact({
+      name: { formatted: CONTACT_CARD_NAME },
+      org: { name: "Clarity Labs", title: "Insurance intelligence assistant" },
+      phones,
+      emails: [{ value: CONTACT_CARD_EMAIL, type: "work" }],
+      urls: [CONTACT_CARD_URL],
+      note: CONTACT_CARD_NOTE,
+    }),
+  );
 }
 
 async function withTypingIndicator<T>(
@@ -1175,6 +1213,10 @@ async function main() {
             receivedAt,
             attachments: attachments.length > 0 ? attachments : undefined,
           });
+
+          if (result.sendContactCard) {
+            await sendGlassContactCard(space);
+          }
 
           // Send the text response
           if (result.response) {

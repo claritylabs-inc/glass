@@ -2927,6 +2927,7 @@ export default defineSchema({
     primaryOrgId: v.optional(v.id("organizations")),
     title: v.optional(v.string()),
     participantCount: v.number(),
+    contactCardSentAt: v.optional(v.number()),
     lastParticipantSyncAt: v.number(),
     lastMessageAt: v.number(),
     createdAt: v.number(),
