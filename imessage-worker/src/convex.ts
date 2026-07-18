@@ -39,6 +39,7 @@ export interface ImessageResponse {
   leaveGroup?: boolean;
   chatGuid?: string;
   threadMessageId?: string;
+  sendContactCard?: boolean;
 }
 
 export async function sendToConvex(

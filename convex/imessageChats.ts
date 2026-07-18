@@ -23,6 +23,7 @@ export const syncChat = internalMutation({
       .query("imessageChats")
       .withIndex("by_chatGuid", (q) => q.eq("chatGuid", args.chatGuid))
       .first();
+    const shouldSendContactCard = !args.isGroup && !existing?.contactCardSentAt;
 
     if (existing) {
       const status =
@@ -35,6 +36,7 @@ export const syncChat = internalMutation({
         primaryOrgId: args.primaryOrgId,
         title: args.title,
         participantCount: args.participants.length,
+        ...(shouldSendContactCard ? { contactCardSentAt: now } : {}),
         lastParticipantSyncAt: now,
         lastMessageAt: now,
         updatedAt: now,
@@ -47,6 +49,7 @@ export const syncChat = internalMutation({
         primaryOrgId: args.primaryOrgId,
         title: args.title,
         participantCount: args.participants.length,
+        contactCardSentAt: shouldSendContactCard ? now : undefined,
         lastParticipantSyncAt: now,
         lastMessageAt: now,
         createdAt: now,
@@ -83,6 +86,8 @@ export const syncChat = internalMutation({
         });
       }
     }
+
+    return { shouldSendContactCard };
   },
 });
 
