@@ -1,50 +1,26 @@
 import {
-  MODEL_POLICY_CAPABILITIES,
-  MODEL_POLICY_FIREWORKS_MODEL_IDS,
-  MODEL_POLICY_QUALITY_ESCALATION_TASK_KINDS,
-  MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS,
-  MODEL_POLICY_SPECIAL_ROUTES,
-  MODEL_POLICY_TASK_ROUTES,
-  modelPolicySupportsAudioInput,
-  modelPolicySupportsImageInput,
-} from "../../extraction-worker/src/modelRoutingPolicy";
+  COVERAGE_CLEANUP_MODEL as POLICY_COVERAGE_CLEANUP_MODEL,
+  EXTRACTION_QUALITY_MODEL as POLICY_EXTRACTION_QUALITY_MODEL,
+  FALLBACK_MODEL as POLICY_FALLBACK_MODEL,
+  FIREWORKS_MODEL_IDS as POLICY_FIREWORKS_MODEL_IDS,
+  MODEL_CAPABILITIES as POLICY_MODEL_CAPABILITIES,
+  MODEL_ROUTING as POLICY_MODEL_ROUTING,
+  MODEL_TASKS as POLICY_MODEL_TASKS,
+  QUALITY_ESCALATION_TASK_KINDS as POLICY_QUALITY_ESCALATION_TASK_KINDS,
+  QUALITY_PRIMARY_TASK_KINDS as POLICY_QUALITY_PRIMARY_TASK_KINDS,
+  defaultModelRouteForId as policyDefaultModelRouteForId,
+  directProviderModelForRoute as policyDirectProviderModelForRoute,
+  modelCapabilitiesForRoute as policyModelCapabilitiesForRoute,
+  modelRouteSupportsTask as policyModelRouteSupportsTask,
+  modelSupportsAudioInput as policyModelSupportsAudioInput,
+  modelSupportsImageInput as policyModelSupportsImageInput,
+  type ModelCapabilityConfig,
+  type ModelProvider,
+  type ModelRoute,
+  type ModelTask,
+} from "@claritylabs/cl-router-policy";
 
-export type ModelTask =
-  | "chat"
-  | "chat_vision"
-  | "voice_transcription"
-  | "email_draft"
-  | "email_reply"
-  | "extraction"
-  | "extraction_preview"
-  | "extraction_coverage_recovery"
-  | "classification"
-  | "requirement_extraction"
-  | "org_memory_extraction"
-  | "analysis"
-  | "summary"
-  | "triage"
-  | "email_extraction"
-  | "document_extraction"
-  | "security"
-  | "mailbox_coordinator"
-  | "embeddings";
-
-export type ModelProvider =
-  | "openai"
-  | "anthropic"
-  | "google"
-  | "xai"
-  | "mistral"
-  | "cohere"
-  | "fireworks"
-  | "moonshot"
-  | "deepseek";
-
-export type ModelRoute = {
-  provider: ModelProvider;
-  model: string;
-};
+export type { ModelCapabilityConfig, ModelProvider, ModelRoute, ModelTask };
 
 export type WebRetrievalProvider =
   | "exa"
@@ -58,18 +34,7 @@ export type WebRetrievalRoute = {
   route?: ModelRoute;
 };
 
-export type ModelCapabilityConfig = {
-  modelName: string;
-  maxInputTokens?: number;
-  maxOutputTokens?: number;
-  defaultOutputTokens?: number;
-  longListOutputTokens?: number;
-  taskOutputTokens?: Record<string, number>;
-  supportsImageInput?: boolean;
-  supportsAudioInput?: boolean;
-};
-
-export const FIREWORKS_MODEL_IDS = MODEL_POLICY_FIREWORKS_MODEL_IDS;
+export const FIREWORKS_MODEL_IDS = POLICY_FIREWORKS_MODEL_IDS;
 
 const RETIRED_MODEL_IDS = new Set<string>([
   "accounts/fireworks/models/kimi-k2p6",
@@ -293,24 +258,24 @@ export const AUDIO_TRANSCRIPTION_MODEL_CATALOG: Partial<
 };
 
 export const MODEL_ROUTING =
-  MODEL_POLICY_TASK_ROUTES satisfies Record<ModelTask, ModelRoute>;
+  POLICY_MODEL_ROUTING satisfies Record<ModelTask, ModelRoute>;
 
 export const FALLBACK_MODEL =
-  MODEL_POLICY_SPECIAL_ROUTES.fallback satisfies ModelRoute;
+  POLICY_FALLBACK_MODEL satisfies ModelRoute;
 
 export const EXTRACTION_QUALITY_MODEL =
-  MODEL_POLICY_SPECIAL_ROUTES.extraction_quality satisfies ModelRoute;
+  POLICY_EXTRACTION_QUALITY_MODEL satisfies ModelRoute;
 
 export const COVERAGE_CLEANUP_MODEL =
-  MODEL_POLICY_SPECIAL_ROUTES.extraction_coverage_cleanup satisfies ModelRoute;
+  POLICY_COVERAGE_CLEANUP_MODEL satisfies ModelRoute;
 
 export const QUALITY_PRIMARY_TASK_KINDS =
-  MODEL_POLICY_QUALITY_PRIMARY_TASK_KINDS;
+  POLICY_QUALITY_PRIMARY_TASK_KINDS;
 
 export const QUALITY_ESCALATION_TASK_KINDS =
-  MODEL_POLICY_QUALITY_ESCALATION_TASK_KINDS;
+  POLICY_QUALITY_ESCALATION_TASK_KINDS;
 
-export const MODEL_TASKS = Object.keys(MODEL_ROUTING) as ModelTask[];
+export const MODEL_TASKS = [...POLICY_MODEL_TASKS];
 export const EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality" as const;
 export const EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =
   "extraction_coverage_cleanup" as const;
@@ -345,33 +310,11 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
 };
 
 export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
-  if (id === FALLBACK_MODEL_ROUTE_ID) return FALLBACK_MODEL;
-  if (id === EXTRACTION_QUALITY_MODEL_ROUTE_ID) return EXTRACTION_QUALITY_MODEL;
-  if (id === EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID) {
-    return COVERAGE_CLEANUP_MODEL;
-  }
-  return MODEL_ROUTING[id];
+  return policyDefaultModelRouteForId(id);
 }
 
 export function directProviderModelForRoute(route: ModelRoute): string | null {
-  switch (route.provider) {
-    case "anthropic":
-      if (route.model === "claude-haiku-4.5") {
-        return "claude-haiku-4-5-20251001";
-      }
-      if (route.model === "claude-3-haiku") {
-        return "claude-3-haiku-20240307";
-      }
-      return route.model.replace(/\.(\d+)/g, "-$1");
-    case "deepseek":
-      return route.model === "deepseek-chat" || route.model === "deepseek-reasoner"
-        ? route.model
-        : null;
-    case "moonshot":
-      return null;
-    default:
-      return route.model;
-  }
+  return policyDirectProviderModelForRoute(route);
 }
 
 export type ModelRouteGroup<RouteId extends string = string> = {
@@ -516,37 +459,35 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export const MODEL_CAPABILITIES =
-  MODEL_POLICY_CAPABILITIES satisfies Record<string, ModelCapabilityConfig>;
+  POLICY_MODEL_CAPABILITIES satisfies Readonly<
+    Record<string, ModelCapabilityConfig>
+  >;
 
 export function modelCapabilitiesForRoute(
   route: ModelRoute,
-): ModelCapabilityConfig | undefined {
-  return (
-    MODEL_CAPABILITIES[route.model] ?? {
-      modelName: route.model,
-      defaultOutputTokens: 4_096,
-    }
-  );
+): ModelCapabilityConfig {
+  const capabilities = policyModelCapabilitiesForRoute(route);
+  return capabilities.defaultOutputTokens === undefined
+    ? { ...capabilities, defaultOutputTokens: 4_096 }
+    : capabilities;
 }
 
 export function modelCapabilitiesForTask(
   task: ModelTask,
-): ModelCapabilityConfig | undefined {
+): ModelCapabilityConfig {
   return modelCapabilitiesForRoute(MODEL_ROUTING[task]);
 }
 
 export function modelSupportsImageInput(route: ModelRoute): boolean {
-  return modelPolicySupportsImageInput(route);
+  return policyModelSupportsImageInput(route);
 }
 
 export function modelSupportsAudioInput(route: ModelRoute): boolean {
-  return modelPolicySupportsAudioInput(route);
+  return policyModelSupportsAudioInput(route);
 }
 
 export function modelRouteSupportsTask(task: ModelTask, route: ModelRoute) {
-  if (task === "chat_vision") return modelSupportsImageInput(route);
-  if (task === "voice_transcription") return modelSupportsAudioInput(route);
-  return true;
+  return policyModelRouteSupportsTask(task, route);
 }
 
 export function isRetiredModelRoute(

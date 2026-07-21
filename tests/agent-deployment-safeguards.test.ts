@@ -65,7 +65,17 @@ function extractionWorkerHealth(clSdkVersion: string) {
   };
 }
 
-async function runAgentHealth(convexPath: string) {
+function clRouterHealth() {
+  return {
+    status: "ok",
+    environment: "staging",
+    database: true,
+    frozen: true,
+    policyVersion: "policy-v1",
+  };
+}
+
+async function runAgentHealth(convexPath: string, clRouterPath = "/cl-router") {
   return execFileAsync(
     process.execPath,
     ["scripts/check-agent-deployment-health.mjs", "--env=staging"],
@@ -78,6 +88,7 @@ async function runAgentHealth(convexPath: string) {
         GLASS_CONVEX_AGENT_HEALTH_URL: `${healthBaseUrl}${convexPath}`,
         GLASS_IMESSAGE_WORKER_HEALTH_URL: `${healthBaseUrl}/imessage`,
         GLASS_EXTRACTION_WORKER_HEALTH_URL: `${healthBaseUrl}/extraction-worker`,
+        GLASS_STAGING_CL_ROUTER_HEALTH_URL: `${healthBaseUrl}${clRouterPath}`,
       },
       timeout: 10_000,
     },
@@ -90,6 +101,10 @@ beforeAll(async () => {
     if (req.url === "/convex-stale-sdk") return writeJson(res, convexHealth("^0.0.0"));
     if (req.url === "/imessage") return writeJson(res, imessageHealth());
     if (req.url === "/extraction-worker") return writeJson(res, extractionWorkerHealth(expectedClSdkSpec));
+    if (req.url === "/cl-router") return writeJson(res, clRouterHealth());
+    if (req.url === "/cl-router-unfrozen") {
+      return writeJson(res, { ...clRouterHealth(), frozen: false });
+    }
     res.writeHead(404);
     res.end();
   });
@@ -123,7 +138,7 @@ describe("agent deployment safeguards", () => {
     const deploy = read(".github/workflows/deploy-convex.yml");
 
     for (const gate of [
-      "npm run check:cl-sdk-version",
+      "npm run check:shared-package-versions",
       "npm run lint",
       "npm test",
       "npx tsc --noEmit --incremental false",
@@ -162,6 +177,12 @@ describe("agent deployment safeguards", () => {
     expect(workflow).toContain('cron: "*/15 * * * *"');
     expect(workflow).toContain("node scripts/check-agent-deployment-health.mjs");
     expect(workflow).toContain("AGENT_HEALTH_ATTEMPTS: 30");
+    expect(workflow).toContain(
+      "GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL }}",
+    );
+    expect(workflow).toContain(
+      "GLASS_STAGING_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_STAGING_CL_ROUTER_HEALTH_URL }}",
+    );
     expect(deployments).toContain("https://merry-platypus-82.convex.site/agent-health");
     expect(deployments).toContain("https://glass-production-4618.up.railway.app/health");
     expect(deployments).toContain("GLASS_STAGING_CONVEX_AGENT_HEALTH_URL");
@@ -169,6 +190,7 @@ describe("agent deployment safeguards", () => {
     expect(deployments).toContain("GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL");
     expect(script).toContain("config/deployments.json");
     expect(script).toContain("AGENT_HEALTH_RETRY_DELAY_MS");
+    expect(script).toContain("deployment.clRouter?.expectedFrozen");
     expect(script).toContain("worker is not listening on required port");
     expect(http).toContain('path: "/agent-health"');
     expect(http).toContain("emailInboundWebhookSecretConfigured");
@@ -176,9 +198,27 @@ describe("agent deployment safeguards", () => {
     expect(http).toContain("emailOutboundConfigured");
   });
 
+  it("keeps extraction prompts owned by cl-sdk without Glass-side mutation", () => {
+    const convexCallbacks = read("convex/lib/sdkCallbacks.ts");
+    const extractionWorker = read("extraction-worker/src/index.ts");
+
+    expect(convexCallbacks).not.toContain("addPolicyPeriodGuidance");
+    expect(extractionWorker).not.toContain("addPolicyPeriodGuidance");
+    expect(convexCallbacks).not.toContain("Critical policy period rule:");
+    expect(extractionWorker).not.toContain("Critical policy period rule:");
+  });
+
   it("fails deployment health when Convex expects a stale cl-sdk worker version", async () => {
     await expect(runAgentHealth("/convex-stale-sdk")).rejects.toMatchObject({
       stderr: expect.stringContaining("extractionWorker.expectedClSdkVersion"),
+    });
+  });
+
+  it("fails deployment health when cl-router is unexpectedly unfrozen", async () => {
+    await expect(
+      runAgentHealth("/convex-aligned", "/cl-router-unfrozen"),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("frozen expected true got false"),
     });
   });
 

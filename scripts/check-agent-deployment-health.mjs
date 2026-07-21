@@ -47,6 +47,19 @@ function envOrDefault(envName, defaultValue, label) {
   return resolved;
 }
 
+function optionalClRouterHealthUrl() {
+  const explicit = process.env.GLASS_CL_ROUTER_HEALTH_URL?.trim();
+  if (explicit) return explicit;
+  if (deployment.clRouterHealthUrlEnv || deployment.clRouterHealthUrl) {
+    return envOrDefault(
+      deployment.clRouterHealthUrlEnv,
+      deployment.clRouterHealthUrl,
+      "cl-router health URL",
+    );
+  }
+  return undefined;
+}
+
 const urls = {
   convexAgentHealth:
     process.env.GLASS_CONVEX_AGENT_HEALTH_URL ??
@@ -69,6 +82,7 @@ const urls = {
       deployment.extractionWorkerHealthUrl,
       "extraction worker health URL",
     ),
+  clRouterHealth: optionalClRouterHealthUrl(),
 };
 
 function validateGlassEnv(payload) {
@@ -102,6 +116,33 @@ function assertSameVersion(label, actual, expected) {
 let convexAgentPayload;
 
 const checks = [
+  ...(urls.clRouterHealth ? [{
+    name: "cl-router",
+    url: urls.clRouterHealth,
+    validate(payload) {
+      if (payload.status !== "ok" || payload.database !== true) {
+        throw new Error(
+          `reported status=${String(payload.status)} database=${String(payload.database)}`,
+        );
+      }
+      if (payload.environment !== deployment.glassEnv) {
+        throw new Error(
+          `environment expected ${deployment.glassEnv} got ${String(payload.environment)}`,
+        );
+      }
+      if (!(typeof payload.policyVersion === "string" || payload.policyVersion === null)) {
+        throw new Error("policyVersion is invalid");
+      }
+      if (
+        typeof deployment.clRouter?.expectedFrozen === "boolean"
+        && payload.frozen !== deployment.clRouter.expectedFrozen
+      ) {
+        throw new Error(
+          `frozen expected ${String(deployment.clRouter.expectedFrozen)} got ${String(payload.frozen)}`,
+        );
+      }
+    },
+  }] : []),
   {
     name: "Convex agent configuration",
     url: urls.convexAgentHealth,

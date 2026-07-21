@@ -3,6 +3,10 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import {
+  latestCompletedRouterRequest,
+  normalizeExtractionTraceRouterFields,
+} from "./lib/extractionTraceRouterFields";
 
 const TRACE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const PIPELINE_LOG_LIMIT = 500;
@@ -37,6 +41,25 @@ const modelProviderValidator = v.union(
   v.literal("moonshot"),
   v.literal("deepseek"),
 );
+
+const extractionTraceRoutingValidator = v.object({
+  decision: v.string(),
+  candidatesConsidered: v.array(v.object({
+    provider: modelProviderValidator,
+    model: v.string(),
+  })),
+  policyVersion: v.union(v.string(), v.null()),
+  cacheStickinessApplied: v.boolean(),
+  routeSource: v.optional(v.string()),
+  attemptCount: v.optional(v.number()),
+  shadowMode: v.optional(v.boolean()),
+  wouldHaveChosen: v.optional(v.object({
+    provider: modelProviderValidator,
+    model: v.string(),
+    decision: v.string(),
+  })),
+  wouldHaveMatched: v.optional(v.boolean()),
+});
 
 function nowMs() {
   return dayjs().valueOf();
@@ -285,6 +308,12 @@ export const recordEvent = internalMutation({
     durationMs: v.optional(v.number()),
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
+    cachedInputTokens: v.optional(v.number()),
+    routerRequestId: v.optional(v.string()),
+    costUsd: v.optional(v.union(v.number(), v.null())),
+    costStatus: v.optional(v.union(v.literal("priced"), v.literal("unpriced"))),
+    routingDecision: v.optional(v.string()),
+    routing: v.optional(extractionTraceRoutingValidator),
     error: v.optional(v.string()),
     details: v.optional(v.any()),
   },
@@ -297,6 +326,15 @@ export const recordEvent = internalMutation({
     if (!session) return false;
 
     const timestamp = args.timestamp ?? nowMs();
+    const routerFields = normalizeExtractionTraceRouterFields({
+      routerRequestId: args.routerRequestId,
+      cachedInputTokens: args.cachedInputTokens,
+      costUsd: args.costUsd,
+      costStatus: args.costStatus,
+      routingDecision: args.routingDecision,
+      routing: args.routing,
+      details: args.details,
+    });
     await ctx.db.insert("policyExtractionTraceEvents", defined({
       traceId: args.traceId,
       policyId: session.policyId,
@@ -318,8 +356,14 @@ export const recordEvent = internalMutation({
       durationMs: args.durationMs,
       inputTokens: args.inputTokens,
       outputTokens: args.outputTokens,
+      cachedInputTokens: routerFields.cachedInputTokens,
+      routerRequestId: routerFields.routerRequestId,
+      costUsd: routerFields.costUsd,
+      costStatus: routerFields.costStatus,
+      routingDecision: routerFields.routingDecision,
+      routing: routerFields.routing,
       error: args.error,
-      details: args.details,
+      details: routerFields.details,
       expiresAt: session.expiresAt,
     }) as any);
 
@@ -401,6 +445,24 @@ export const getSessionCounters = internalQuery({
       inputTokens: session.inputTokens ?? 0,
       outputTokens: session.outputTokens ?? 0,
     };
+  },
+});
+
+export const getLatestRouterRequestForTaskKind = internalQuery({
+  args: {
+    traceId: v.string(),
+    taskKind: v.string(),
+    beforeTimestamp: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const events = await ctx.db
+      .query("policyExtractionTraceEvents")
+      .withIndex("by_traceId_timestamp", (q) => q
+        .eq("traceId", args.traceId)
+        .lte("timestamp", args.beforeTimestamp))
+      .order("desc")
+      .take(500);
+    return latestCompletedRouterRequest(events, args.taskKind, args.beforeTimestamp);
   },
 });
 

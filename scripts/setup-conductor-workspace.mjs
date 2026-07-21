@@ -263,6 +263,19 @@ if (cloudEnvironment) {
   }
 }
 
+// A native-local worktree does not start the separate cl-router repository.
+// Never inherit shared-dev routing flags or credentials into local Convex.
+for (const name of [
+  "CL_ROUTER_TASKS",
+  "CL_ROUTER_URL",
+  "CL_ROUTER_SECRET",
+  "CL_ROUTER_TIMEOUT_MS",
+]) {
+  if (optionalConvexEnv(convex, name)) {
+    run(convex, ["env", "remove", name]);
+  }
+}
+
 const extractionPackage = JSON.parse(
   readFileSync(
     path.join(repoRoot, "extraction-worker", "package.json"),

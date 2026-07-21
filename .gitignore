@@ -24,7 +24,10 @@
 .DS_Store
 *.pem
 /tmp
-/docs
+/docs/*
+!/docs/deployment/
+/docs/deployment/*
+!/docs/deployment/environments.md
 
 # debug
 npm-debug.log*

@@ -4,11 +4,13 @@ import { z } from "zod";
 import dayjs from "dayjs";
 import type { ActionCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import { applyCoverageDeclarationScoping } from "./coverageScoping";
 import { insuranceDocToPolicy } from "./documentMapping";
 import { reviewExtractionFields, type FieldReviewApplication } from "./extractionFieldReview";
 import { generateObjectForOrg } from "./models";
 import { applyPolicyPeriodFallback } from "./policyPeriodExtraction";
+import { sendClRouterFeedback, type ClRouterFeedbackRequest } from "./clRouterClient";
 
 type SourceSpanLike = {
   text?: string;
@@ -24,6 +26,8 @@ type ExtractionPostProcessOptions = {
   orgId: Id<"organizations">;
   document: Record<string, unknown>;
   sourceSpans: SourceSpanLike[];
+  traceId?: string;
+  policyId?: Id<"policies"> | string;
   runModelReview?: boolean;
   skipDeterministicCoverageRecovery?: boolean;
   log?: (message: string, level?: "info" | "warn" | "error") => Promise<void> | void;
@@ -115,6 +119,10 @@ const LOW_VALUE_IDENTITY_FIELD_SET = new Set(["role", "relationship", "type", "k
 type RemovedSourceSensitiveValue = {
   field: string;
   value: string;
+};
+
+type SourceGroundingStats = {
+  sensitiveFieldCount: number;
 };
 
 function compactCoverageReviewForPrompt(fields: Record<string, unknown>) {
@@ -318,13 +326,19 @@ function sourceGroundedAddress(
   value: unknown,
   corpus: string,
   removed: RemovedSourceSensitiveValue[],
+  stats: SourceGroundingStats,
 ) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    stats.sensitiveFieldCount += 1;
+    removed.push({ field, value: displayRemovedValue(value) });
+    return undefined;
+  }
   const record = value as Record<string, unknown>;
   const next: Record<string, string> = {};
   for (const key of SOURCE_GROUNDED_ADDRESS_FIELDS) {
     const raw = record[key];
     if (raw === undefined || raw === null) continue;
+    stats.sensitiveFieldCount += 1;
     if (typeof raw === "string" && sourceSupportsAddressValue(raw, corpus)) {
       next[key] = raw;
     } else {
@@ -341,10 +355,16 @@ function sourceGroundedPartyObject(
   sourceSpanIds: Set<string>,
   sourceTextById: Map<string, string>,
   removed: RemovedSourceSensitiveValue[],
+  stats: SourceGroundingStats,
 ): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    stats.sensitiveFieldCount += 1;
+    removed.push({ field, value: displayRemovedValue(value) });
+    return undefined;
+  }
   const record = value as Record<string, unknown>;
   if (!hasValidSourceProvenance(record, sourceSpanIds)) {
+    stats.sensitiveFieldCount += 1;
     removed.push({ field, value: "missing or invalid source spans" });
     return undefined;
   }
@@ -357,6 +377,7 @@ function sourceGroundedPartyObject(
     !primaryValue.trim() ||
     !sourceSupportsScalarValue(primaryValue, recordCorpus)
   ) {
+    stats.sensitiveFieldCount += 1;
     removed.push({ field, value: displayRemovedValue(record[primaryField] ?? value) });
     return undefined;
   }
@@ -366,10 +387,11 @@ function sourceGroundedPartyObject(
     const raw = record[key];
     if (raw === undefined || raw === null) continue;
     if (key === "address") {
-      const address = sourceGroundedAddress(`${field}.address`, raw, recordCorpus, removed);
+      const address = sourceGroundedAddress(`${field}.address`, raw, recordCorpus, removed, stats);
       if (address) next.address = address;
       continue;
     }
+    stats.sensitiveFieldCount += 1;
     if (sourceSupportsScalarValue(raw, recordCorpus)) {
       next[key] = raw;
     } else {
@@ -385,9 +407,11 @@ function sourceBackedIdentityValue(
   sourceSpanIds: Set<string>,
   sourceTextById: Map<string, string>,
   removed: RemovedSourceSensitiveValue[],
+  stats: SourceGroundingStats,
 ) {
   if (Array.isArray(value)) {
     const kept = value.filter((item, index) => {
+      stats.sensitiveFieldCount += 1;
       if (
         hasValidSourceProvenance(item, sourceSpanIds) &&
         hasSourceSupportedClaim(item, sourceTextById)
@@ -403,6 +427,7 @@ function sourceBackedIdentityValue(
     return kept.length > 0 || value.length === 0 ? kept : undefined;
   }
 
+  stats.sensitiveFieldCount += 1;
   if (hasValidSourceProvenance(value, sourceSpanIds) && hasSourceSupportedClaim(value, sourceTextById)) {
     return value;
   }
@@ -416,23 +441,26 @@ function sourceBackedIdentityValue(
 export function stripUngroundedSourceSensitiveValues<T extends Record<string, unknown>>(
   value: T,
   sourceSpans: SourceSpanLike[],
-): { value: T; removed: RemovedSourceSensitiveValue[] } {
+): { value: T; removed: RemovedSourceSensitiveValue[]; sensitiveFieldCount: number } {
   const corpus = sourceTextCorpus(sourceSpans);
   const sourceSpanIds = knownSourceSpanIds(sourceSpans);
   const sourceTextById = sourceSpanTextById(sourceSpans);
   const next: Record<string, unknown> = { ...value };
   const removed: RemovedSourceSensitiveValue[] = [];
+  const stats: SourceGroundingStats = { sensitiveFieldCount: 0 };
 
   for (const field of SOURCE_GROUNDED_IDENTITY_FIELDS) {
     const raw = next[field];
-    if (raw === undefined || raw === null || sourceSupportsScalarValue(raw, corpus)) continue;
+    if (raw === undefined || raw === null) continue;
+    stats.sensitiveFieldCount += 1;
+    if (sourceSupportsScalarValue(raw, corpus)) continue;
     removed.push({ field, value: displayRemovedValue(raw) });
     delete next[field];
   }
 
   for (const field of SOURCE_BACKED_IDENTITY_FIELDS) {
     if (next[field] === undefined || next[field] === null) continue;
-    const grounded = sourceBackedIdentityValue(field, next[field], sourceSpanIds, sourceTextById, removed);
+    const grounded = sourceBackedIdentityValue(field, next[field], sourceSpanIds, sourceTextById, removed, stats);
     if (grounded !== undefined) {
       next[field] = grounded;
     } else {
@@ -442,7 +470,7 @@ export function stripUngroundedSourceSensitiveValues<T extends Record<string, un
 
   for (const field of Object.keys(SOURCE_GROUNDED_PARTY_FIELDS) as Array<keyof typeof SOURCE_GROUNDED_PARTY_FIELDS>) {
     if (next[field] === undefined || next[field] === null) continue;
-    const party = sourceGroundedPartyObject(field, next[field], corpus, sourceSpanIds, sourceTextById, removed);
+    const party = sourceGroundedPartyObject(field, next[field], corpus, sourceSpanIds, sourceTextById, removed, stats);
     if (party) {
       next[field] = party;
     } else {
@@ -450,7 +478,7 @@ export function stripUngroundedSourceSensitiveValues<T extends Record<string, un
     }
   }
 
-  return { value: next as T, removed };
+  return { value: next as T, removed, sensitiveFieldCount: stats.sensitiveFieldCount };
 }
 
 async function logRemovedSourceSensitiveValues(
@@ -595,11 +623,97 @@ function openReviewQuestionCount(fields: Record<string, unknown>) {
   ).length;
 }
 
+async function findOperationalProfileFeedbackOrigin(
+  options: ExtractionPostProcessOptions,
+  beforeTimestamp: number,
+) {
+  if (!options.traceId) return null;
+  try {
+    return await options.ctx.runQuery(
+      internal.extractionTraces.getLatestRouterRequestForTaskKind,
+      {
+        traceId: options.traceId,
+        taskKind: "extraction_operational_profile",
+        beforeTimestamp,
+      },
+    ) as { requestId: string; timestamp: number } | null;
+  } catch {
+    return null;
+  }
+}
+
+export function postProcessFeedbackRequest(args: {
+  originRequestId: string;
+  fieldReview: FieldReviewApplication;
+  ungroundedStripCount: number;
+  sensitiveFieldCount: number;
+  escalationCount: number;
+  traceId?: string;
+  policyId?: string;
+}): ClRouterFeedbackRequest | null {
+  const hasReviewSignal = args.fieldReview.reviewedFieldCount > 0;
+  const hasGroundingSignal = args.sensitiveFieldCount > 0;
+  const correctedFieldCount = Math.min(
+    new Set(args.fieldReview.applied.map((correction) => correction.field)).size,
+    args.fieldReview.reviewedFieldCount,
+  );
+  if (!hasReviewSignal && !hasGroundingSignal && args.escalationCount === 0) return null;
+  return {
+    requestId: args.originRequestId,
+    idempotencyKey: "extraction-postprocess-v1",
+    signals: {
+      ...(hasReviewSignal
+        ? {
+            reviewCorrectionCount: correctedFieldCount,
+            reviewedFieldCount: args.fieldReview.reviewedFieldCount,
+          }
+        : {}),
+      ...(hasGroundingSignal
+        ? {
+            ungroundedStripCount: args.ungroundedStripCount,
+            sensitiveFieldCount: args.sensitiveFieldCount,
+          }
+        : {}),
+      ...(args.escalationCount > 0 ? { escalationCount: args.escalationCount } : {}),
+    },
+    trace: {
+      ...(args.traceId ? { traceId: args.traceId } : {}),
+      ...(args.policyId ? { policyId: args.policyId } : {}),
+      phase: "post_process",
+      originTaskKind: "extraction_operational_profile",
+    },
+  };
+}
+
+function sendPostProcessFeedback(args: {
+  options: ExtractionPostProcessOptions;
+  originRequestId: string;
+  fieldReview: FieldReviewApplication;
+  ungroundedStripCount: number;
+  sensitiveFieldCount: number;
+  escalationCount: number;
+}) {
+  const request = postProcessFeedbackRequest({
+    originRequestId: args.originRequestId,
+    fieldReview: args.fieldReview,
+    ungroundedStripCount: args.ungroundedStripCount,
+    sensitiveFieldCount: args.sensitiveFieldCount,
+    escalationCount: args.escalationCount,
+    traceId: args.options.traceId,
+    policyId: args.options.policyId ? String(args.options.policyId) : undefined,
+  });
+  if (!request) return;
+  void sendClRouterFeedback(request).catch(() => {
+    // Feedback is best-effort and must never fail extraction.
+  });
+}
+
 export async function postProcessExtractionDocument(
   options: ExtractionPostProcessOptions,
 ): Promise<ExtractionPostProcessResult> {
   let document = options.document;
   const runModelReview = options.runModelReview ?? true;
+  const feedbackOrigin = await findOperationalProfileFeedbackOrigin(options, dayjs().valueOf());
 
   const periodFallback = applyPolicyPeriodFallback(
     document,
@@ -624,8 +738,11 @@ export async function postProcessExtractionDocument(
       sourceSpans: options.sourceSpans,
       log: options.log,
     })
-    : { document, applied: [], skipped: [] };
+    : { document, applied: [], skipped: [], reviewedFieldCount: 0 };
   document = fieldReview.document;
+  // Never attribute these checks to the later review/copy calls. Feedback below
+  // uses only the operational-profile request captured before review began. Later
+  // human edits still lack durable request lineage and remain intentionally unwired.
   const groundedDocument = stripUngroundedSourceSensitiveValues(document, options.sourceSpans);
   document = groundedDocument.value;
   await logRemovedSourceSensitiveValues(groundedDocument.removed, options.log);
@@ -669,12 +786,23 @@ export async function postProcessExtractionDocument(
     : reviewCopyFields;
   const groundedFields = stripUngroundedSourceSensitiveValues(fields, options.sourceSpans);
   await logRemovedSourceSensitiveValues(groundedFields.removed, options.log);
+  const coverageReviewQuestionCount = openReviewQuestionCount(groundedFields.value);
+  if (feedbackOrigin) {
+    sendPostProcessFeedback({
+      options,
+      originRequestId: feedbackOrigin.requestId,
+      fieldReview,
+      ungroundedStripCount: groundedDocument.removed.length + groundedFields.removed.length,
+      sensitiveFieldCount: groundedDocument.sensitiveFieldCount + groundedFields.sensitiveFieldCount,
+      escalationCount: coverageReviewQuestionCount,
+    });
+  }
 
   return {
     document,
     fields: groundedFields.value,
     fieldReview,
-    coverageReviewQuestionCount: openReviewQuestionCount(groundedFields.value),
+    coverageReviewQuestionCount,
   };
 }
 
