@@ -28,6 +28,7 @@ import {
   WEB_RETRIEVAL_LABELS,
   WEB_RETRIEVAL_MODEL_CATALOG,
   directProviderModelForRoute,
+  isWebRetrievalApiProvider,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
   modelRouteSupportsTask,
@@ -65,6 +66,7 @@ const routeValidator = v.object({
 const routeUpdateValidator = v.union(routeValidator, v.null());
 
 const webRetrievalProviderValidator = v.union(
+  v.literal("parallel"),
   v.literal("exa"),
   v.literal("openai"),
   v.literal("google"),
@@ -308,6 +310,8 @@ function configurableProviderKeys(keys: ProviderKeys | undefined) {
 
 function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
   switch (provider) {
+    case "parallel":
+      return !!configuredEnv(process.env.PARALLEL_API_KEY);
     case "exa":
       return !!configuredEnv(process.env.EXA_API_KEY);
     case "openai":
@@ -326,7 +330,7 @@ function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
 
 function normalizeWebRetrieval(config: WebRetrievalRoute | undefined): WebRetrievalRoute {
   if (!config) return WEB_RETRIEVAL_DEFAULT;
-  if (config.primary === "exa") return { primary: "exa" };
+  if (isWebRetrievalApiProvider(config.primary)) return { primary: config.primary };
   return {
     primary: config.primary,
     route: config.route ?? WEB_RETRIEVAL_DEFAULT_ROUTES[config.primary],
@@ -334,8 +338,10 @@ function normalizeWebRetrieval(config: WebRetrievalRoute | undefined): WebRetrie
 }
 
 function assertSupportedWebRetrieval(config: WebRetrievalRoute) {
-  if (config.primary === "exa") {
-    if (config.route) throw new Error("Exa web retrieval does not use a model route");
+  if (isWebRetrievalApiProvider(config.primary)) {
+    if (config.route) {
+      throw new Error(`${WEB_RETRIEVAL_LABELS[config.primary]} web retrieval does not use a model route`);
+    }
     return;
   }
   const route = config.route ?? WEB_RETRIEVAL_DEFAULT_ROUTES[config.primary];
@@ -514,8 +520,12 @@ export const getGlobal = query({
           id,
           label: WEB_RETRIEVAL_LABELS[id],
           configured: webRetrievalEnvConfigured(id),
-          models: id === "exa" ? [] : (WEB_RETRIEVAL_MODEL_CATALOG[id] ?? []),
-          defaultRoute: id === "exa" ? null : WEB_RETRIEVAL_DEFAULT_ROUTES[id],
+          models: isWebRetrievalApiProvider(id)
+            ? []
+            : (WEB_RETRIEVAL_MODEL_CATALOG[id] ?? []),
+          defaultRoute: isWebRetrievalApiProvider(id)
+            ? null
+            : WEB_RETRIEVAL_DEFAULT_ROUTES[id],
         }),
       ),
       modelCapabilities: modelCapabilityCatalog(),

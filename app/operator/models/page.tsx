@@ -42,7 +42,13 @@ type ProviderId =
   | "deepseek";
 type Route = { provider: ProviderId; model: string };
 type Routes = Record<string, Route | null>;
-type WebRetrievalProviderId = "exa" | "openai" | "google" | "anthropic" | "xai";
+type WebRetrievalProviderId =
+  | "parallel"
+  | "exa"
+  | "openai"
+  | "google"
+  | "anthropic"
+  | "xai";
 type WebRetrieval = { primary: WebRetrievalProviderId; route?: Route };
 type ModelCapability = {
   modelName: string;
@@ -110,6 +116,7 @@ const PROVIDER_PRIORITY: ProviderId[] = [
   "deepseek",
 ];
 const WEB_RETRIEVAL_PRIORITY: WebRetrievalProviderId[] = [
+  "parallel",
   "exa",
   "openai",
   "google",
@@ -144,6 +151,25 @@ function ExaLogo({ size = 14 }: { size?: number }) {
   );
 }
 
+function ParallelLogo({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height={size}
+      viewBox="0 0 24 24"
+      width={size}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M3 6h18M2 12h20M3 18h18" stroke="currentColor" strokeWidth="2.25" />
+    </svg>
+  );
+}
+
+function isApiWebRetrievalProvider(provider: WebRetrievalProviderId) {
+  return provider === "parallel" || provider === "exa";
+}
+
 function WebRetrievalLogo({
   provider,
   size = 14,
@@ -151,6 +177,7 @@ function WebRetrievalLogo({
   provider: WebRetrievalProviderId;
   size?: number;
 }) {
+  if (provider === "parallel") return <ParallelLogo size={size} />;
   if (provider === "exa") return <ExaLogo size={size} />;
   return <ProviderLogo provider={provider} size={size} />;
 }
@@ -237,15 +264,14 @@ function WebBrowsingRouteRow({
     providers.map((provider) => [provider.id, provider]),
   ) as Partial<Record<WebRetrievalProviderId, WebRetrievalProviderConfig>>;
   const selectedProvider = providersById[webRetrieval.primary];
-  const selectedRoute =
-    webRetrieval.primary === "exa"
-      ? null
-      : (webRetrieval.route ?? selectedProvider?.defaultRoute ?? null);
+  const selectedRoute = isApiWebRetrievalProvider(webRetrieval.primary)
+    ? null
+    : (webRetrieval.route ?? selectedProvider?.defaultRoute ?? null);
   const selectedModels = selectedProvider?.models ?? [];
 
   function commitProvider(primary: WebRetrievalProviderId) {
-    if (primary === "exa") {
-      void onCommit({ primary: "exa" });
+    if (isApiWebRetrievalProvider(primary)) {
+      void onCommit({ primary });
       return;
     }
 
@@ -270,7 +296,7 @@ function WebBrowsingRouteRow({
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-base font-medium text-foreground">Web browsing</p>
           <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
-            {webRetrieval.primary === "exa" ? "Default" : "Override"}
+            {webRetrieval.primary === "parallel" ? "Default" : "Override"}
           </span>
         </div>
       </div>
@@ -319,7 +345,11 @@ function WebBrowsingRouteRow({
         <Select
           value={selectedRoute?.model ?? DEFAULT_VALUE}
           onValueChange={(model) => {
-            if (!model || !selectedRoute || webRetrieval.primary === "exa") {
+            if (
+              !model ||
+              !selectedRoute ||
+              isApiWebRetrievalProvider(webRetrieval.primary)
+            ) {
               return;
             }
             void onCommit({
@@ -330,7 +360,7 @@ function WebBrowsingRouteRow({
               },
             });
           }}
-          disabled={saving || webRetrieval.primary === "exa"}
+          disabled={saving || isApiWebRetrievalProvider(webRetrieval.primary)}
         >
           <SelectTrigger className={MODEL_SELECT_WIDTH_CLASS}>
             <SelectValue>

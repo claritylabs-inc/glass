@@ -12,7 +12,9 @@ import type { ActionCtx } from "../_generated/server";
 import {
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
+  isWebRetrievalApiProvider,
   type ModelRoute,
+  type WebRetrievalApiProvider,
   type WebRetrievalProvider,
   type WebRetrievalRoute,
 } from "./modelCatalog";
@@ -58,8 +60,22 @@ type ProviderResult = {
   sources: WebRetrievalSource[];
 };
 
+type NativeWebRetrievalProvider = Exclude<
+  WebRetrievalProvider,
+  WebRetrievalApiProvider
+>;
+
+type ParallelResult = {
+  url?: string;
+  title?: string;
+  excerpts?: string[];
+  full_content?: string;
+};
+
 function hasProviderAccess(provider: WebRetrievalProvider) {
   switch (provider) {
+    case "parallel":
+      return !!process.env.PARALLEL_API_KEY;
     case "exa":
       return !!process.env.EXA_API_KEY;
     case "openai":
@@ -75,7 +91,7 @@ function hasProviderAccess(provider: WebRetrievalProvider) {
 
 function normalizeRoute(config: WebRetrievalRoute | undefined): WebRetrievalRoute {
   if (!config) return WEB_RETRIEVAL_DEFAULT;
-  if (config.primary === "exa") return { primary: "exa" };
+  if (isWebRetrievalApiProvider(config.primary)) return { primary: config.primary };
   return {
     primary: config.primary,
     route: config.route ?? WEB_RETRIEVAL_DEFAULT_ROUTES[config.primary],
@@ -252,7 +268,85 @@ async function retrieveWithExa(input: NormalizedInput): Promise<ProviderResult |
   };
 }
 
-function nativePrompt(input: NormalizedInput, provider: WebRetrievalProvider) {
+function parallelResultContent(result: ParallelResult) {
+  return result.excerpts?.filter(Boolean).join("\n\n") || result.full_content;
+}
+
+async function retrieveWithParallel(
+  input: NormalizedInput,
+): Promise<ProviderResult | null> {
+  const apiKey = process.env.PARALLEL_API_KEY;
+  if (!apiKey) return null;
+
+  if (input.url) {
+    const response = await fetch("https://api.parallel.ai/v1/extract", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        urls: [input.url],
+        objective: input.goal ?? `Retrieve the public content at ${input.url}`,
+        max_chars_total: MAX_OUTPUT_CHARS,
+      }),
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { results?: ParallelResult[] };
+    const first = data.results?.[0];
+    const content = first ? parallelResultContent(first) : undefined;
+    if (!first || !content) return null;
+    return {
+      text: truncateText([first.title, content].filter(Boolean).join("\n\n")),
+      sources: [{ title: first.title, url: first.url ?? input.url }],
+    };
+  }
+
+  const query = input.query;
+  if (!query) return null;
+  const response = await fetch("https://api.parallel.ai/v1/search", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      objective: [query, input.goal].filter(Boolean).join("\n"),
+      search_queries: [query],
+      mode: "advanced",
+      max_chars_total: MAX_OUTPUT_CHARS,
+      advanced_settings: input.allowedDomains.length
+        ? {
+            source_policy: {
+              include_domains: input.allowedDomains,
+            },
+          }
+        : undefined,
+    }),
+  });
+  if (!response.ok) return null;
+  const data = (await response.json()) as { results?: ParallelResult[] };
+  const results = (data.results ?? []).slice(0, input.maxResults);
+  const blocks = results
+    .flatMap((result) => {
+      const content = parallelResultContent(result);
+      return content
+        ? [[result.title, result.url, content].filter(Boolean).join("\n")]
+        : [];
+    })
+    .join("\n\n---\n\n");
+  if (!blocks) return null;
+  return {
+    text: truncateText(blocks),
+    sources: normalizeSources(
+      results.flatMap((result) =>
+        result.url ? [{ title: result.title, url: result.url }] : [],
+      ),
+    ),
+  };
+}
+
+function nativePrompt(input: NormalizedInput, provider: NativeWebRetrievalProvider) {
   const target = input.url
     ? `Retrieve and summarize this public URL: ${input.url}`
     : `Search the public web for: ${input.query}`;
@@ -267,7 +361,7 @@ function nativePrompt(input: NormalizedInput, provider: WebRetrievalProvider) {
   ].filter(Boolean).join("\n");
 }
 
-function providerModel(provider: WebRetrievalProvider, route: ModelRoute) {
+function providerModel(provider: NativeWebRetrievalProvider, route: ModelRoute) {
   switch (provider) {
     case "openai":
       return createOpenAI()(route.model);
@@ -277,12 +371,13 @@ function providerModel(provider: WebRetrievalProvider, route: ModelRoute) {
       return createAnthropic()(normalizeAnthropicModel(route.model));
     case "xai":
       return createXai().responses(route.model);
-    case "exa":
-      throw new Error("Exa does not use a model route");
   }
 }
 
-function providerTools(provider: WebRetrievalProvider, input: NormalizedInput): Record<string, unknown> {
+function providerTools(
+  provider: NativeWebRetrievalProvider,
+  input: NormalizedInput,
+): Record<string, unknown> {
   switch (provider) {
     case "openai": {
       const openai = createOpenAI();
@@ -326,13 +421,11 @@ function providerTools(provider: WebRetrievalProvider, input: NormalizedInput): 
         }),
       };
     }
-    case "exa":
-      return {};
   }
 }
 
 async function retrieveWithNativeProvider(
-  provider: Exclude<WebRetrievalProvider, "exa">,
+  provider: NativeWebRetrievalProvider,
   route: ModelRoute,
   input: NormalizedInput,
 ): Promise<ProviderResult | null> {
@@ -365,6 +458,7 @@ async function attemptProvider(
   route: ModelRoute | undefined,
   input: NormalizedInput,
 ) {
+  if (provider === "parallel") return await retrieveWithParallel(input);
   if (provider === "exa") return await retrieveWithExa(input);
   const effectiveRoute = route ?? WEB_RETRIEVAL_DEFAULT_ROUTES[provider];
   return await retrieveWithNativeProvider(provider, effectiveRoute, input);
@@ -390,7 +484,9 @@ export async function runWebRetrieval(
     { provider: config.primary, route: config.route },
   ];
 
-  if (config.primary !== "exa") fallbackProviders.push({ provider: "exa" });
+  for (const provider of ["parallel", "exa"] as const) {
+    if (provider !== config.primary) fallbackProviders.push({ provider });
+  }
 
   for (const fallback of fallbackProviders) {
     try {
