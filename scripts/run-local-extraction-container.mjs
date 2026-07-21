@@ -1,12 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
 import {
+  conductorContainerName,
   conductorImageTag,
   containerGateway,
   ensureNode24,
   repoRoot,
   waitForLocalConvex,
-  workspaceSlug,
 } from "./lib/conductor-workspace.mjs";
 
 ensureNode24();
@@ -21,7 +21,7 @@ const { cloud } = await waitForLocalConvex();
 const localConvexUrl = new URL(cloud);
 const convexPort = Number.parseInt(localConvexUrl.port, 10);
 const gateway = containerGateway();
-const containerName = `glass-extraction-${workspaceSlug()}-${port}`;
+const containerName = conductorContainerName("extraction", port);
 
 function containerCommand(args, options = {}) {
   return spawnSync("container", args, {

@@ -4,7 +4,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  conductorContainerName,
   conductorImageTag,
+  conductorImageTags,
   repoRoot,
   workspaceSlug,
 } from "../scripts/lib/conductor-workspace.mjs";
@@ -15,9 +17,10 @@ describe("Conductor workspace identity", () => {
     process.env.CONDUCTOR_WORKSPACE_NAME = "renamed-feature-branch";
 
     try {
-      expect(workspaceSlug()).toBe(path.basename(repoRoot));
+      const expectedSlug = path.basename(repoRoot).toLowerCase();
+      expect(workspaceSlug()).toBe(expectedSlug);
       expect(conductorImageTag("extraction-worker")).toBe(
-        `glass-extraction-worker:conductor-${path.basename(repoRoot)}`,
+        `glass-extraction-worker:conductor-${expectedSlug}`,
       );
     } finally {
       if (originalWorkspaceName === undefined) {
@@ -32,5 +35,18 @@ describe("Conductor workspace identity", () => {
     expect(workspaceSlug("/tmp/Glass Feature + QA")).toBe(
       "glass-feature-qa",
     );
+  });
+
+  it("enumerates every workspace-scoped Apple Container resource", () => {
+    const workspace = "/tmp/Glass Feature + QA";
+
+    expect(conductorContainerName("extraction", 8081, workspace)).toBe(
+      "glass-extraction-glass-feature-qa-8081",
+    );
+    expect(conductorImageTags(workspace)).toEqual([
+      "glass-extraction-worker:conductor-glass-feature-qa",
+      "glass-imessage-worker:conductor-glass-feature-qa",
+      "glass-mailbox-scan-worker:conductor-glass-feature-qa",
+    ]);
   });
 });
