@@ -22,7 +22,9 @@ const modelRouteValidator = v.object({
 });
 
 const webRetrievalProviderValidator = v.union(
+  v.literal("parallel"),
   v.literal("exa"),
+  v.literal("model_default"),
   v.literal("openai"),
   v.literal("google"),
   v.literal("anthropic"),

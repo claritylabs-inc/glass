@@ -22,6 +22,7 @@ import {
   MODEL_ROUTE_LABELS,
   MODEL_TASK_GROUPS,
   OPERATOR_MODEL_ROUTE_GROUPS,
+  OPERATOR_WEB_RETRIEVAL_PROVIDERS,
   defaultModelRouteForId,
   directProviderModelForRoute,
   isRetiredModelRoute,
@@ -660,8 +661,16 @@ describe("mailbox coordinator routing", () => {
 });
 
 describe("web retrieval routing", () => {
-  test("defaults public web retrieval to Exa", () => {
-    expect(WEB_RETRIEVAL_DEFAULT).toEqual({ primary: "exa" });
+  test("defaults public web retrieval to Parallel", () => {
+    expect(WEB_RETRIEVAL_DEFAULT).toEqual({ primary: "parallel" });
+  });
+
+  test("offers only dedicated search or the active model in Tools", () => {
+    expect(OPERATOR_WEB_RETRIEVAL_PROVIDERS).toEqual([
+      "parallel",
+      "exa",
+      "model_default",
+    ]);
   });
 
   test("keeps native browsing default routes aligned with their providers", () => {
@@ -695,6 +704,66 @@ describe("web retrieval routing", () => {
     expect(source).toContain("runWebRetrieval");
     expect(source).not.toContain("api.exa.ai/contents");
     expect(source).not.toContain('livecrawl: "always"');
+  });
+
+  test("uses Parallel's GA Search and Extract endpoints", () => {
+    const source = readFileSync(
+      join(__dirname, "../convex/lib/webRetrieval.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("https://api.parallel.ai/v1/search");
+    expect(source).toContain("https://api.parallel.ai/v1/extract");
+    expect(source).toContain("process.env.PARALLEL_API_KEY");
+    expect(source).not.toContain("https://api.parallel.ai/v1beta/");
+  });
+
+  test("keeps web retrieval in the operator Tools surface instead of Models", () => {
+    const modelsPage = readFileSync(
+      join(__dirname, "../app/operator/models/page.tsx"),
+      "utf-8",
+    );
+    const toolsPage = readFileSync(
+      join(__dirname, "../app/operator/tools/page.tsx"),
+      "utf-8",
+    );
+    const sidebar = readFileSync(
+      join(__dirname, "../app/operator/operator-sidebar.tsx"),
+      "utf-8",
+    );
+    const authGuard = readFileSync(
+      join(__dirname, "../components/auth-guard.tsx"),
+      "utf-8",
+    );
+
+    expect(modelsPage).not.toContain("webRetrieval");
+    expect(modelsPage).not.toContain("SearchProviderRow");
+    expect(toolsPage).toContain('breadcrumbDetail="Tools"');
+    expect(toolsPage).toContain("Search and retrieval");
+    expect(toolsPage).toContain('"model_default"');
+    expect(toolsPage).toContain("LogoIcon");
+    expect(toolsPage).toContain('fill="#0143D9"');
+    expect(toolsPage).not.toContain('"openai"');
+    expect(toolsPage).not.toContain('"anthropic"');
+    expect(toolsPage).not.toContain("ModelRouteLogo");
+    expect(toolsPage).not.toContain("getModelDisplayName");
+    expect(toolsPage).toContain("updateGlobalWebRetrieval");
+    expect(toolsPage).toContain("useCachedOperatorGlobalToolSettings");
+    expect(toolsPage).not.toContain("useCachedOperatorGlobalModelSettings");
+    expect(toolsPage).toContain("useOperatorGlobalToolSettingsCacheActions");
+    expect(sidebar).toContain('href="/operator/tools"');
+    expect(sidebar).toContain('label="Tools"');
+    expect(authGuard).toContain('pathname.startsWith("/operator/tools")');
+  });
+
+  test("uses the Claude product mark for Anthropic model routes", () => {
+    const providerLogos = readFileSync(
+      join(__dirname, "../components/model-provider-logo.tsx"),
+      "utf-8",
+    );
+
+    expect(providerLogos).toContain("SiClaude");
+    expect(providerLogos).not.toContain("SiAnthropic");
   });
 
   test("keeps web retrieval direct-provider-only", () => {
