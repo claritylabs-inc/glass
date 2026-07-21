@@ -22,6 +22,7 @@ import {
   MODEL_ROUTE_LABELS,
   MODEL_TASK_GROUPS,
   OPERATOR_MODEL_ROUTE_GROUPS,
+  OPERATOR_WEB_RETRIEVAL_PROVIDERS,
   defaultModelRouteForId,
   directProviderModelForRoute,
   isRetiredModelRoute,
@@ -664,6 +665,14 @@ describe("web retrieval routing", () => {
     expect(WEB_RETRIEVAL_DEFAULT).toEqual({ primary: "parallel" });
   });
 
+  test("offers only dedicated search or the active model in Tools", () => {
+    expect(OPERATOR_WEB_RETRIEVAL_PROVIDERS).toEqual([
+      "parallel",
+      "exa",
+      "model_default",
+    ]);
+  });
+
   test("keeps native browsing default routes aligned with their providers", () => {
     expect(WEB_RETRIEVAL_DEFAULT_ROUTES.openai.provider).toBe("openai");
     expect(WEB_RETRIEVAL_DEFAULT_ROUTES.google.provider).toBe("google");
@@ -731,6 +740,13 @@ describe("web retrieval routing", () => {
     expect(modelsPage).not.toContain("SearchProviderRow");
     expect(toolsPage).toContain('breadcrumbDetail="Tools"');
     expect(toolsPage).toContain("Search and retrieval");
+    expect(toolsPage).toContain('"model_default"');
+    expect(toolsPage).toContain("LogoIcon");
+    expect(toolsPage).toContain('fill="#0143D9"');
+    expect(toolsPage).not.toContain('"openai"');
+    expect(toolsPage).not.toContain('"anthropic"');
+    expect(toolsPage).not.toContain("ModelRouteLogo");
+    expect(toolsPage).not.toContain("getModelDisplayName");
     expect(toolsPage).toContain("updateGlobalWebRetrieval");
     expect(toolsPage).toContain("useCachedOperatorGlobalToolSettings");
     expect(toolsPage).not.toContain("useCachedOperatorGlobalModelSettings");
@@ -738,6 +754,16 @@ describe("web retrieval routing", () => {
     expect(sidebar).toContain('href="/operator/tools"');
     expect(sidebar).toContain('label="Tools"');
     expect(authGuard).toContain('pathname.startsWith("/operator/tools")');
+  });
+
+  test("uses the Claude product mark for Anthropic model routes", () => {
+    const providerLogos = readFileSync(
+      join(__dirname, "../components/model-provider-logo.tsx"),
+      "utf-8",
+    );
+
+    expect(providerLogos).toContain("SiClaude");
+    expect(providerLogos).not.toContain("SiAnthropic");
   });
 
   test("keeps web retrieval direct-provider-only", () => {

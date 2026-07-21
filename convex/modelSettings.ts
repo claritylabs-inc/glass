@@ -21,14 +21,12 @@ import {
   MODEL_TASK_DESCRIPTIONS,
   MODEL_TASK_LABELS,
   OPERATOR_MODEL_ROUTE_GROUPS,
+  OPERATOR_WEB_RETRIEVAL_PROVIDERS,
   MODEL_CAPABILITIES,
   PROVIDER_LABELS,
   WEB_RETRIEVAL_DEFAULT,
-  WEB_RETRIEVAL_DEFAULT_ROUTES,
   WEB_RETRIEVAL_LABELS,
-  WEB_RETRIEVAL_MODEL_CATALOG,
   directProviderModelForRoute,
-  isWebRetrievalApiProvider,
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
   modelRouteSupportsTask,
@@ -68,10 +66,7 @@ const routeUpdateValidator = v.union(routeValidator, v.null());
 const webRetrievalProviderValidator = v.union(
   v.literal("parallel"),
   v.literal("exa"),
-  v.literal("openai"),
-  v.literal("google"),
-  v.literal("anthropic"),
-  v.literal("xai"),
+  v.literal("model_default"),
 );
 
 const webRetrievalValidator = v.object({
@@ -314,6 +309,8 @@ function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
       return !!configuredEnv(process.env.PARALLEL_API_KEY);
     case "exa":
       return !!configuredEnv(process.env.EXA_API_KEY);
+    case "model_default":
+      return true;
     case "openai":
       return !!configuredEnv(process.env.OPENAI_API_KEY);
     case "google":
@@ -330,27 +327,21 @@ function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
 
 function normalizeWebRetrieval(config: WebRetrievalRoute | undefined): WebRetrievalRoute {
   if (!config) return WEB_RETRIEVAL_DEFAULT;
-  if (isWebRetrievalApiProvider(config.primary)) return { primary: config.primary };
-  return {
-    primary: config.primary,
-    route: config.route ?? WEB_RETRIEVAL_DEFAULT_ROUTES[config.primary],
-  };
+  if (
+    config.primary === "parallel" ||
+    config.primary === "exa" ||
+    config.primary === "model_default"
+  ) {
+    return { primary: config.primary };
+  }
+  return { primary: "model_default" };
 }
 
 function assertSupportedWebRetrieval(config: WebRetrievalRoute) {
-  if (isWebRetrievalApiProvider(config.primary)) {
-    if (config.route) {
-      throw new Error(`${WEB_RETRIEVAL_LABELS[config.primary]} web retrieval does not use a model route`);
-    }
-    return;
-  }
-  const route = config.route ?? WEB_RETRIEVAL_DEFAULT_ROUTES[config.primary];
-  if (route.provider !== config.primary) {
-    throw new Error("Web retrieval route provider must match the selected provider");
-  }
-  const models = WEB_RETRIEVAL_MODEL_CATALOG[config.primary];
-  if (!models?.includes(route.model)) {
-    throw new Error(`Unsupported web retrieval model ${route.model}`);
+  if (config.route) {
+    throw new Error(
+      `${WEB_RETRIEVAL_LABELS[config.primary]} web retrieval does not use a model override`,
+    );
   }
 }
 
@@ -514,20 +505,11 @@ export const getGlobal = query({
       groups: OPERATOR_MODEL_ROUTE_GROUPS,
       routes: nullableGlobalRoutes(settings?.routes as GlobalRoutes | undefined),
       webRetrieval: normalizeWebRetrieval(settings?.webRetrieval),
-      webRetrievalProviders: (
-        Object.keys(WEB_RETRIEVAL_LABELS) as WebRetrievalProvider[]
-      ).map((id) => ({
-          id,
-          label: WEB_RETRIEVAL_LABELS[id],
-          configured: webRetrievalEnvConfigured(id),
-          models: isWebRetrievalApiProvider(id)
-            ? []
-            : (WEB_RETRIEVAL_MODEL_CATALOG[id] ?? []),
-          defaultRoute: isWebRetrievalApiProvider(id)
-            ? null
-            : WEB_RETRIEVAL_DEFAULT_ROUTES[id],
-        }),
-      ),
+      webRetrievalProviders: OPERATOR_WEB_RETRIEVAL_PROVIDERS.map((id) => ({
+        id,
+        label: WEB_RETRIEVAL_LABELS[id],
+        configured: webRetrievalEnvConfigured(id),
+      })),
       modelCapabilities: modelCapabilityCatalog(),
       updatedAt: settings?.updatedAt ?? null,
     };
