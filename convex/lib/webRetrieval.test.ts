@@ -5,9 +5,15 @@ import { runWebRetrieval } from "./webRetrieval";
 
 const orgId = "org_test" as Id<"organizations">;
 
-function actionContext(webRetrieval?: { primary: "parallel" | "exa" }) {
+function actionContext(
+  webRetrieval?: { primary: "parallel" | "exa" | "model_default" },
+  chatRoute?: { provider: "fireworks"; model: string },
+) {
   return {
-    runQuery: vi.fn().mockResolvedValue({ webRetrieval }),
+    runQuery: vi.fn().mockResolvedValue({
+      webRetrieval,
+      routes: chatRoute ? { chat: chatRoute } : undefined,
+    }),
   } as unknown as ActionCtx;
 }
 
@@ -137,6 +143,40 @@ describe("Parallel web retrieval", () => {
     expect(result.attempts).toEqual([
       { provider: "parallel", ok: false, error: "No useful content" },
       { provider: "exa", ok: true },
+    ]);
+  });
+
+  test("falls back to dedicated search when the active model has no native web tool", async () => {
+    vi.stubEnv("PARALLEL_API_KEY", "parallel-test-key");
+    vi.stubEnv("EXA_API_KEY", "");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          results: [
+            {
+              url: "https://example.com/model-default",
+              title: "Model default fallback",
+              excerpts: ["Dedicated fallback evidence"],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await runWebRetrieval(
+      actionContext(
+        { primary: "model_default" },
+        { provider: "fireworks", model: "accounts/fireworks/models/test" },
+      ),
+      orgId,
+      { query: "model default query" },
+    );
+
+    expect(result.provider).toBe("parallel");
+    expect(result.attempts).toEqual([
+      { provider: "model_default", ok: false, error: "No useful content" },
+      { provider: "parallel", ok: true },
     ]);
   });
 });
