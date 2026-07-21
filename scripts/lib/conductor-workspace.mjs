@@ -115,8 +115,22 @@ export function workspaceSlug(workspacePath = repoRoot) {
   );
 }
 
-export function conductorImageTag(workerName) {
-  return `glass-${workerName}:conductor-${workspaceSlug()}`;
+export function conductorImageTag(workerName, workspacePath = repoRoot) {
+  return `glass-${workerName}:conductor-${workspaceSlug(workspacePath)}`;
+}
+
+export function conductorImageTags(workspacePath = repoRoot) {
+  return ["extraction-worker", "imessage-worker", "mailbox-scan-worker"].map(
+    (workerName) => conductorImageTag(workerName, workspacePath),
+  );
+}
+
+export function conductorContainerName(
+  workerName,
+  port,
+  workspacePath = repoRoot,
+) {
+  return `glass-${workerName}-${workspaceSlug(workspacePath)}-${port}`;
 }
 
 export function localConvexUrls() {
