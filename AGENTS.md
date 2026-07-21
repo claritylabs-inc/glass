@@ -174,7 +174,7 @@ Usage notes:
 
 - Broker admins can configure their own provider API keys and per-use-case model routes in `/settings?section=models`.
 - Broker model settings are stored in `brokerModelSettings`, keyed by broker org. Client-org workflows inherit the managing broker's settings.
-- Operators can configure global default routes in `/operator/models`; broker admins still only see provider-key-backed overrides for their own broker org.
+- Operators configure global model routes in `/operator/models` and global tool providers such as web search in `/operator/tools`; broker admins still only see provider-key-backed overrides for their own broker org.
 - The broker UI never exposes Glass's exact default model configuration; broker model selectors unlock only for providers where the broker has supplied an API key.
 - `embeddings` is routed separately from language-model use cases and is restricted to direct embedding providers. Embeddings remain 1536-dimensional to match Convex vector indexes.
 - Default Fireworks language routes require `FIREWORKS_API_KEY` for direct provider calls. OpenAI vision-chat, voice-transcription, and embedding routes require `OPENAI_API_KEY`. Parallel is the default public web retrieval provider and requires `PARALLEL_API_KEY`; Exa remains an operator-selectable compatibility provider through `EXA_API_KEY`. Glass model routing is direct-provider-only; do not use Vercel AI Gateway as a fallback for chat, extraction, provisional extraction, classification, embeddings, web retrieval, or any configured model route.

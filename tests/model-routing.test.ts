@@ -709,6 +709,37 @@ describe("web retrieval routing", () => {
     expect(source).not.toContain("https://api.parallel.ai/v1beta/");
   });
 
+  test("keeps web retrieval in the operator Tools surface instead of Models", () => {
+    const modelsPage = readFileSync(
+      join(__dirname, "../app/operator/models/page.tsx"),
+      "utf-8",
+    );
+    const toolsPage = readFileSync(
+      join(__dirname, "../app/operator/tools/page.tsx"),
+      "utf-8",
+    );
+    const sidebar = readFileSync(
+      join(__dirname, "../app/operator/operator-sidebar.tsx"),
+      "utf-8",
+    );
+    const authGuard = readFileSync(
+      join(__dirname, "../components/auth-guard.tsx"),
+      "utf-8",
+    );
+
+    expect(modelsPage).not.toContain("webRetrieval");
+    expect(modelsPage).not.toContain("SearchProviderRow");
+    expect(toolsPage).toContain('breadcrumbDetail="Tools"');
+    expect(toolsPage).toContain("Search and retrieval");
+    expect(toolsPage).toContain("updateGlobalWebRetrieval");
+    expect(toolsPage).toContain("useCachedOperatorGlobalToolSettings");
+    expect(toolsPage).not.toContain("useCachedOperatorGlobalModelSettings");
+    expect(toolsPage).toContain("useOperatorGlobalToolSettingsCacheActions");
+    expect(sidebar).toContain('href="/operator/tools"');
+    expect(sidebar).toContain('label="Tools"');
+    expect(authGuard).toContain('pathname.startsWith("/operator/tools")');
+  });
+
   test("keeps web retrieval direct-provider-only", () => {
     const retrievalSource = readFileSync(
       join(__dirname, "../convex/lib/webRetrieval.ts"),

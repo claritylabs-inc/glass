@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import dayjs from "dayjs";
-import type { FunctionReturnType } from "convex/server";
+import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -19,6 +19,19 @@ type OperatorClientRow = OperatorClientList[number];
 type OperatorGlobalModelSettings = FunctionReturnType<
   typeof api.modelSettings.getGlobal
 >;
+type GlobalWebRetrieval = FunctionArgs<
+  typeof api.modelSettings.updateGlobalWebRetrieval
+>["webRetrieval"];
+type GlobalWebRetrievalProvider =
+  OperatorGlobalModelSettings["webRetrievalProviders"][number];
+type OperatorGlobalToolSettings = {
+  webRetrieval: GlobalWebRetrieval;
+  webRetrievalProviders: Array<
+    Omit<GlobalWebRetrievalProvider, "defaultRoute"> & {
+      defaultRoute: NonNullable<GlobalWebRetrieval["route"]> | null;
+    }
+  >;
+};
 type OperatorExtractionTraceList = FunctionReturnType<
   typeof api.operator.listExtractionTraces
 >;
@@ -32,7 +45,6 @@ type OperatorDemoSalesTranscriptDetail = FunctionReturnType<
   typeof api.operator.getPublicDemoSalesTranscript
 >;
 type GlobalRoutes = OperatorGlobalModelSettings["routes"];
-type GlobalWebRetrieval = OperatorGlobalModelSettings["webRetrieval"];
 type EmptyArgs = Record<string, never>;
 type OperatorStatus = "onboarding" | "live";
 type TraceStatus = "running" | "complete" | "error" | "cancelled";
@@ -138,6 +150,14 @@ export function useCachedOperatorGlobalModelSettings() {
     api.modelSettings.getGlobal,
     {},
   ) as OperatorGlobalModelSettings | undefined;
+}
+
+export function useCachedOperatorGlobalToolSettings() {
+  return useCachedQuery(
+    "operator.modelSettings.getGlobal",
+    api.modelSettings.getGlobal,
+    {},
+  ) as OperatorGlobalToolSettings | undefined;
 }
 
 export function useCachedOperatorExtractionTraces(
@@ -343,7 +363,7 @@ export function useOperatorClientCacheActions() {
   return { seedClient, patchClientStatus, patchClientSettings };
 }
 
-export function useOperatorGlobalModelSettingsCacheActions() {
+export function useOperatorGlobalModelRouteCacheActions() {
   const updateSettings = useUpdateCachedQuery<OperatorGlobalModelSettings, EmptyArgs>(
     "operator.modelSettings.getGlobal",
   );
@@ -362,6 +382,14 @@ export function useOperatorGlobalModelSettingsCacheActions() {
     [updateSettings],
   );
 
+  return { patchRoute };
+}
+
+export function useOperatorGlobalToolSettingsCacheActions() {
+  const updateSettings = useUpdateCachedQuery<OperatorGlobalModelSettings, EmptyArgs>(
+    "operator.modelSettings.getGlobal",
+  );
+
   const patchWebRetrieval = useCallback(
     async (webRetrieval: GlobalWebRetrieval) => {
       await updateSettings({}, (current) => ({
@@ -373,5 +401,5 @@ export function useOperatorGlobalModelSettingsCacheActions() {
     [updateSettings],
   );
 
-  return { patchRoute, patchWebRetrieval };
+  return { patchWebRetrieval };
 }
