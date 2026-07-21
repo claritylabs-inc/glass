@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { IconType } from "react-icons";
 import { BsOpenai } from "react-icons/bs";
 import {
-  SiAnthropic,
+  SiClaude,
   SiGooglegemini,
   SiMistralai,
   SiX,
@@ -129,7 +129,7 @@ function DeepSeekMark({
 
 const ICONS: Partial<Record<ModelProviderId, IconType>> = {
   openai: BsOpenai,
-  anthropic: SiAnthropic,
+  anthropic: SiClaude,
   google: SiGooglegemini,
   xai: SiX,
   mistral: SiMistralai,
