@@ -660,8 +660,8 @@ describe("mailbox coordinator routing", () => {
 });
 
 describe("web retrieval routing", () => {
-  test("defaults public web retrieval to Exa", () => {
-    expect(WEB_RETRIEVAL_DEFAULT).toEqual({ primary: "exa" });
+  test("defaults public web retrieval to Parallel", () => {
+    expect(WEB_RETRIEVAL_DEFAULT).toEqual({ primary: "parallel" });
   });
 
   test("keeps native browsing default routes aligned with their providers", () => {
@@ -695,6 +695,18 @@ describe("web retrieval routing", () => {
     expect(source).toContain("runWebRetrieval");
     expect(source).not.toContain("api.exa.ai/contents");
     expect(source).not.toContain('livecrawl: "always"');
+  });
+
+  test("uses Parallel's GA Search and Extract endpoints", () => {
+    const source = readFileSync(
+      join(__dirname, "../convex/lib/webRetrieval.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("https://api.parallel.ai/v1/search");
+    expect(source).toContain("https://api.parallel.ai/v1/extract");
+    expect(source).toContain("process.env.PARALLEL_API_KEY");
+    expect(source).not.toContain("https://api.parallel.ai/v1beta/");
   });
 
   test("keeps web retrieval direct-provider-only", () => {
