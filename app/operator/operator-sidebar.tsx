@@ -1,7 +1,15 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Activity, Building2, LogOut, MessageSquareText, SlidersHorizontal, Users } from "lucide-react";
+import {
+  Activity,
+  Building2,
+  LogOut,
+  MessageSquareText,
+  SlidersHorizontal,
+  Users,
+  Wrench,
+} from "lucide-react";
 import {
   SectionHeader,
   SidebarMenuItem,
@@ -19,7 +27,13 @@ export function OperatorSidebar({
   collapsed: boolean;
   onToggleCollapse: () => void;
   email?: string;
-  active: "brokers" | "clients" | "demo-leads" | "models" | "extractions";
+  active:
+    | "brokers"
+    | "clients"
+    | "demo-leads"
+    | "models"
+    | "tools"
+    | "extractions";
 }) {
   const { signOut } = useAuthActions();
 
@@ -67,6 +81,13 @@ export function OperatorSidebar({
             label="Models"
             icon={SlidersHorizontal}
             active={active === "models"}
+            collapsed={collapsed}
+          />
+          <SidebarMenuItem
+            href="/operator/tools"
+            label="Tools"
+            icon={Wrench}
+            active={active === "tools"}
             collapsed={collapsed}
           />
           <SidebarMenuItem

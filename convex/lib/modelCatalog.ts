@@ -23,11 +23,40 @@ import {
 export type { ModelCapabilityConfig, ModelProvider, ModelRoute, ModelTask };
 
 export type WebRetrievalProvider =
+  | "parallel"
   | "exa"
+  | "model_default"
   | "openai"
   | "google"
   | "anthropic"
   | "xai";
+
+export type WebRetrievalApiProvider = Extract<
+  WebRetrievalProvider,
+  "parallel" | "exa"
+>;
+
+export function isWebRetrievalApiProvider(
+  provider: WebRetrievalProvider,
+): provider is WebRetrievalApiProvider {
+  return provider === "parallel" || provider === "exa";
+}
+
+export type NativeWebRetrievalProvider = Extract<
+  ModelProvider,
+  "openai" | "google" | "anthropic" | "xai"
+>;
+
+export function isNativeWebRetrievalProvider(
+  provider: ModelProvider,
+): provider is NativeWebRetrievalProvider {
+  return (
+    provider === "openai" ||
+    provider === "google" ||
+    provider === "anthropic" ||
+    provider === "xai"
+  );
+}
 
 export type WebRetrievalRoute = {
   primary: WebRetrievalProvider;
@@ -400,17 +429,25 @@ export const CONFIGURABLE_MODEL_PROVIDERS = MODEL_PROVIDERS.filter(
 ) as Exclude<ModelProvider, "moonshot">[];
 
 export const WEB_RETRIEVAL_LABELS: Record<WebRetrievalProvider, string> = {
+  parallel: "Parallel",
   exa: "Exa",
+  model_default: "Model default",
   openai: "OpenAI",
   google: "Google",
   anthropic: "Claude",
   xai: "xAI",
 };
 
-export const WEB_RETRIEVAL_DEFAULT: WebRetrievalRoute = { primary: "exa" };
+export const OPERATOR_WEB_RETRIEVAL_PROVIDERS = [
+  "parallel",
+  "exa",
+  "model_default",
+] as const satisfies readonly WebRetrievalProvider[];
+
+export const WEB_RETRIEVAL_DEFAULT: WebRetrievalRoute = { primary: "parallel" };
 
 export const WEB_RETRIEVAL_MODEL_CATALOG: Partial<
-  Record<Exclude<WebRetrievalProvider, "exa">, string[]>
+  Record<NativeWebRetrievalProvider, string[]>
 > = {
   openai: LANGUAGE_MODEL_CATALOG.openai,
   google: LANGUAGE_MODEL_CATALOG.google.filter((model) =>
@@ -421,7 +458,7 @@ export const WEB_RETRIEVAL_MODEL_CATALOG: Partial<
 };
 
 export const WEB_RETRIEVAL_DEFAULT_ROUTES: Record<
-  Exclude<WebRetrievalProvider, "exa">,
+  NativeWebRetrievalProvider,
   ModelRoute
 > = {
   openai: { provider: "openai", model: "gpt-5.4-mini" },

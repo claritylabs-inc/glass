@@ -27,7 +27,7 @@ import { OperatorSidebar } from "../operator-sidebar";
 import {
   useCachedOperatorCurrent,
   useCachedOperatorGlobalModelSettings,
-  useOperatorGlobalModelSettingsCacheActions,
+  useOperatorGlobalModelRouteCacheActions,
 } from "@/lib/sync/operator-cached-queries";
 import { formatDisplayDate } from "@/lib/date-format";
 
@@ -42,8 +42,6 @@ type ProviderId =
   | "deepseek";
 type Route = { provider: ProviderId; model: string };
 type Routes = Record<string, Route | null>;
-type WebRetrievalProviderId = "exa" | "openai" | "google" | "anthropic" | "xai";
-type WebRetrieval = { primary: WebRetrievalProviderId; route?: Route };
 type ModelCapability = {
   modelName: string;
   known: boolean;
@@ -78,20 +76,11 @@ type TaskGroupConfig = {
   description: string;
   tasks: string[];
 };
-type WebRetrievalProviderConfig = {
-  id: WebRetrievalProviderId;
-  label: string;
-  configured: boolean;
-  models: string[];
-  defaultRoute: Route | null;
-};
 type Settings = {
   providers: ProviderConfig[];
   tasks: TaskConfig[];
   groups: TaskGroupConfig[];
   routes: Routes;
-  webRetrieval: WebRetrieval;
-  webRetrievalProviders: WebRetrievalProviderConfig[];
   modelCapabilities: Record<string, ModelCapability>;
   updatedAt: number | null;
 };
@@ -109,13 +98,6 @@ const PROVIDER_PRIORITY: ProviderId[] = [
   "cohere",
   "deepseek",
 ];
-const WEB_RETRIEVAL_PRIORITY: WebRetrievalProviderId[] = [
-  "exa",
-  "openai",
-  "google",
-  "anthropic",
-  "xai",
-];
 function ProviderLogo({
   provider,
   size = 14,
@@ -124,35 +106,6 @@ function ProviderLogo({
   size?: number;
 }) {
   return <ModelProviderLogo provider={provider} size={size} />;
-}
-
-function ExaLogo({ size = 14 }: { size?: number }) {
-  return (
-    <svg
-      aria-hidden="true"
-      fill="none"
-      height={size}
-      viewBox="0 0 151 182"
-      width={size}
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M150.5 14.1064C150.5 14.3356 150.421 14.5579 150.277 14.736L88.4766 91L150.277 167.264C150.421 167.442 150.5 167.664 150.5 167.894V181C150.5 181.552 150.052 182 149.5 182H1C0.44772 182 0 181.552 0 181V0.999995C0 0.44771 0.447715 0 1 0H149.5C150.052 0 150.5 0.447715 150.5 1V14.1064ZM30.4059 162.719H121.728L76.0664 106.326L30.4059 162.719ZM19.2949 100.261V145.787L56.1572 100.261H19.2949ZM19.2949 80.9801H55.5434L19.2949 36.2121V80.9801ZM76.0664 75.6731L121.728 19.281H30.4059L76.0664 75.6731Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
-function WebRetrievalLogo({
-  provider,
-  size = 14,
-}: {
-  provider: WebRetrievalProviderId;
-  size?: number;
-}) {
-  if (provider === "exa") return <ExaLogo size={size} />;
-  return <ProviderLogo provider={provider} size={size} />;
 }
 
 function sameRoute(left: Route | null, right: Route) {
@@ -205,190 +158,14 @@ function providerSortIndex(provider: ProviderId) {
   return index === -1 ? PROVIDER_PRIORITY.length : index;
 }
 
-function webProviderSortIndex(provider: WebRetrievalProviderId) {
-  const index = WEB_RETRIEVAL_PRIORITY.indexOf(provider);
-  return index === -1 ? WEB_RETRIEVAL_PRIORITY.length : index;
-}
-
-function webProviderOptions(
-  providers: WebRetrievalProviderConfig[],
-  selectedProvider: WebRetrievalProviderId,
-) {
-  return providers
-    .filter((provider) => provider.configured || provider.id === selectedProvider)
-    .sort(
-      (left, right) =>
-        webProviderSortIndex(left.id) - webProviderSortIndex(right.id),
-    );
-}
-
-function WebBrowsingRouteRow({
-  webRetrieval,
-  providers,
-  saving,
-  onCommit,
-}: {
-  webRetrieval: WebRetrieval;
-  providers: WebRetrievalProviderConfig[];
-  saving: boolean;
-  onCommit: (next: WebRetrieval) => void | Promise<void>;
-}) {
-  const providersById = Object.fromEntries(
-    providers.map((provider) => [provider.id, provider]),
-  ) as Partial<Record<WebRetrievalProviderId, WebRetrievalProviderConfig>>;
-  const selectedProvider = providersById[webRetrieval.primary];
-  const selectedRoute =
-    webRetrieval.primary === "exa"
-      ? null
-      : (webRetrieval.route ?? selectedProvider?.defaultRoute ?? null);
-  const selectedModels = selectedProvider?.models ?? [];
-
-  function commitProvider(primary: WebRetrievalProviderId) {
-    if (primary === "exa") {
-      void onCommit({ primary: "exa" });
-      return;
-    }
-
-    const provider = providersById[primary];
-    const existingModel =
-      webRetrieval.primary === primary ? webRetrieval.route?.model : null;
-    const model =
-      existingModel && provider?.models.includes(existingModel)
-        ? existingModel
-        : (provider?.defaultRoute?.model ?? provider?.models[0]);
-    if (!model) return;
-
-    void onCommit({
-      primary,
-      route: { provider: primary, model },
-    });
-  }
-
-  return (
-    <div className="grid gap-3 py-3.5 xl:grid-cols-[1fr_auto] xl:items-center">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-base font-medium text-foreground">Web browsing</p>
-          <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
-            {webRetrieval.primary === "exa" ? "Default" : "Override"}
-          </span>
-        </div>
-      </div>
-      <div className="flex w-full flex-col gap-2 justify-self-start xl:w-auto xl:flex-row xl:justify-self-end">
-        {saving ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground xl:self-center" />
-        ) : null}
-        <Select
-          value={webRetrieval.primary}
-          onValueChange={(nextProvider) => {
-            if (!nextProvider) return;
-            commitProvider(nextProvider as WebRetrievalProviderId);
-          }}
-          disabled={saving}
-        >
-          <SelectTrigger className={PROVIDER_SELECT_WIDTH_CLASS}>
-            <SelectValue>
-              <span className="flex min-w-0 items-center gap-2">
-                <WebRetrievalLogo provider={webRetrieval.primary} size={15} />
-                <span className="truncate text-sm">
-                  {selectedProvider?.label ?? webRetrieval.primary}
-                </span>
-              </span>
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent className="min-w-56">
-            {webProviderOptions(providers, webRetrieval.primary).map(
-              (provider) => (
-                <SelectItem
-                  key={provider.id}
-                  value={provider.id}
-                  disabled={!provider.configured}
-                >
-                  <span className="flex min-w-0 flex-1 items-center gap-2">
-                    <WebRetrievalLogo provider={provider.id} size={15} />
-                    <span className="truncate text-sm">{provider.label}</span>
-                    <span className="ml-auto shrink-0 text-label text-muted-foreground/60">
-                      {provider.configured ? "Env" : "Unavailable"}
-                    </span>
-                  </span>
-                </SelectItem>
-              ),
-            )}
-          </SelectContent>
-        </Select>
-        <Select
-          value={selectedRoute?.model ?? DEFAULT_VALUE}
-          onValueChange={(model) => {
-            if (!model || !selectedRoute || webRetrieval.primary === "exa") {
-              return;
-            }
-            void onCommit({
-              primary: webRetrieval.primary,
-              route: {
-                provider: selectedRoute.provider,
-                model,
-              },
-            });
-          }}
-          disabled={saving || webRetrieval.primary === "exa"}
-        >
-          <SelectTrigger className={MODEL_SELECT_WIDTH_CLASS}>
-            <SelectValue>
-              {selectedRoute ? (
-                <span className="flex min-w-0 items-center gap-2">
-                  <ModelRouteLogo route={selectedRoute} size={16} />
-                  <span
-                    className="min-w-0 truncate text-base"
-                    title={selectedRoute.model}
-                  >
-                    {getModelDisplayName(selectedRoute)}
-                  </span>
-                </span>
-              ) : (
-                <span className="text-base text-muted-foreground">
-                  No model
-                </span>
-              )}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent className="min-w-[min(42rem,calc(100vw-2rem))]">
-            {selectedModels.map((model) => {
-              if (!selectedRoute) return null;
-              const optionRoute = {
-                provider: selectedRoute.provider,
-                model,
-              };
-              return (
-                <SelectItem key={model} value={model}>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <ModelRouteLogo route={optionRoute} size={16} />
-                    <span className="truncate text-base" title={model}>
-                      {getModelDisplayName(optionRoute)}
-                    </span>
-                  </span>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
-  );
-}
-
 export default function OperatorModelsPage() {
   const current = useCachedOperatorCurrent();
   const settings = useCachedOperatorGlobalModelSettings() as
     | Settings
     | undefined;
   const updateRoutes = useMutation(api.modelSettings.updateGlobalRoutes);
-  const updateWebRetrieval = useMutation(
-    api.modelSettings.updateGlobalWebRetrieval,
-  );
-  const { patchRoute, patchWebRetrieval } =
-    useOperatorGlobalModelSettingsCacheActions();
+  const { patchRoute } = useOperatorGlobalModelRouteCacheActions();
   const [savingTask, setSavingTask] = useState<string | null>(null);
-  const [savingWebRetrieval, setSavingWebRetrieval] = useState(false);
 
   const providersById = useMemo(() => {
     return Object.fromEntries(
@@ -411,23 +188,6 @@ export default function OperatorModelsPage() {
       );
     } finally {
       setSavingTask(null);
-    }
-  }
-
-  async function commitWebRetrieval(next: WebRetrieval) {
-    setSavingWebRetrieval(true);
-    try {
-      await updateWebRetrieval({ webRetrieval: next });
-      await patchWebRetrieval(next);
-      toast.success("Web browsing provider updated");
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to update web browsing provider",
-      );
-    } finally {
-      setSavingWebRetrieval(false);
     }
   }
 
@@ -707,14 +467,6 @@ export default function OperatorModelsPage() {
                         </div>
                       );
                     })}
-                    {group.id === "platform" ? (
-                      <WebBrowsingRouteRow
-                        webRetrieval={settings.webRetrieval}
-                        providers={settings.webRetrievalProviders}
-                        saving={savingWebRetrieval}
-                        onCommit={commitWebRetrieval}
-                      />
-                    ) : null}
                   </div>
                 </OperationalPanel>
               );
