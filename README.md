@@ -182,6 +182,8 @@ Repeat with `imessage-worker/.env` or `mailbox-scan-worker/.env` for those servi
 Common variables used across major workflows:
 
 - `CONVEX_DEPLOYMENT`
+- `PARALLEL_API_KEY` — default public web search and known-URL extraction provider
+- `EXA_API_KEY` — optional Exa web retrieval override and compatibility fallback
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `DEEPSEEK_API_KEY`

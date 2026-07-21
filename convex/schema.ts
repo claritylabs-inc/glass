@@ -22,6 +22,7 @@ const modelRouteValidator = v.object({
 });
 
 const webRetrievalProviderValidator = v.union(
+  v.literal("parallel"),
   v.literal("exa"),
   v.literal("openai"),
   v.literal("google"),
@@ -2927,6 +2928,7 @@ export default defineSchema({
     primaryOrgId: v.optional(v.id("organizations")),
     title: v.optional(v.string()),
     participantCount: v.number(),
+    contactCardSentAt: v.optional(v.number()),
     lastParticipantSyncAt: v.number(),
     lastMessageAt: v.number(),
     createdAt: v.number(),

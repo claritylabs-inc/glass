@@ -84,6 +84,7 @@ type AutomationAttention = {
   itemId?: Id<"connectedEmailAutomationItems">;
   messageKey?: string;
   kind?: "mailbox" | "compliance";
+  classification?: MailboxAutomationDecision["classification"];
   subject: string;
   reason: string;
 };
@@ -671,6 +672,7 @@ async function processAutomationDecision(
         itemId,
         messageKey: message.messageKey,
         kind: "mailbox",
+        classification: decision.classification,
         subject: decision.attentionTitle ?? message.subject,
         reason:
           [decision.attentionBody, ...errors]
@@ -842,14 +844,27 @@ export function buildMailboxActivityBody(
   ].filter((part): part is string => part !== undefined).join("\n");
 }
 
-export function buildEmailReviewNotificationCopy(emailCount: number) {
+export function buildEmailReviewNotificationCopy(
+  emailCount: number,
+  uncategorizedCount: number,
+) {
   const isSingleEmail = emailCount === 1;
+  const title = `${emailCount} email${isSingleEmail ? " needs" : "s need"} your review`;
+
+  if (uncategorizedCount === emailCount) {
+    return {
+      title,
+      body: isSingleEmail
+        ? "While reviewing your emails, Glass couldn't categorize one of them. Review it in Glass and choose how it should be handled."
+        : `While reviewing your emails, Glass couldn't categorize ${emailCount} of them. Review them in Glass and choose how each email should be handled.`,
+    };
+  }
 
   return {
-    title: `${emailCount} email${isSingleEmail ? " needs" : "s need"} your review`,
+    title,
     body: isSingleEmail
-      ? "While reviewing your emails, Glass couldn't categorize one of them. Review it in Glass and choose how it should be handled."
-      : `While reviewing your emails, Glass couldn't categorize ${emailCount} of them. Review them in Glass and choose how each email should be handled.`,
+      ? "Glass found an email that needs review. Open it in Glass to see what happened and choose how it should be handled."
+      : `Glass found ${emailCount} emails that need review. Open them in Glass to see what happened and choose how they should be handled.`,
   };
 }
 
@@ -879,8 +894,12 @@ async function createMailboxActivity(
     content: body,
   });
   if (mailboxAttention.length > 0) {
+    const uncategorizedCount = mailboxAttention.filter(
+      (item) => item.classification === "review_needed",
+    ).length;
     const notificationCopy = buildEmailReviewNotificationCopy(
       mailboxAttention.length,
+      uncategorizedCount,
     );
     await ctx.runMutation(internal.lib.notify.notifyInternal, {
       orgId: account.orgId,

@@ -72,6 +72,7 @@ type ImessageResponse = {
   leaveGroup?: boolean;
   chatGuid?: string;
   threadMessageId?: string;
+  sendContactCard?: boolean;
 };
 
 async function sendImmediateImessage(params: {
@@ -150,6 +151,7 @@ export const processInbound = internalAction({
         participants: args.participants,
       });
     const siteUrl = getClientPortalUrl();
+    let shouldSendContactCard = false;
     const eventKey = buildInboundImessageEventKey({
       fromPhone,
       chatGuid,
@@ -184,6 +186,7 @@ export const processInbound = internalAction({
         leaveGroup?: boolean;
         appCards?: ImessageAppCard[];
         threadMessageId?: Id<"threadMessages">;
+        sendContactCard?: boolean;
       },
     ) => {
       await ctx.runMutation(internal.imessageInboundEvents.complete, {
@@ -199,6 +202,8 @@ export const processInbound = internalAction({
         threadMessageId: options?.threadMessageId
           ? String(options.threadMessageId)
           : undefined,
+        sendContactCard:
+          (options?.sendContactCard ?? shouldSendContactCard) || undefined,
       };
     };
 
@@ -270,7 +275,7 @@ export const processInbound = internalAction({
         ? buildImessageGroupMemberTitle(resolvedParticipants)
         : undefined;
 
-      await ctx.runMutation(internal.imessageChats.syncChat, {
+      const chatSync = await ctx.runMutation(internal.imessageChats.syncChat, {
         chatGuid,
         isGroup,
         primaryOrgId: scope.primaryOrgId,
@@ -283,6 +288,7 @@ export const processInbound = internalAction({
           role: participant.role,
         })),
       });
+      shouldSendContactCard = chatSync.shouldSendContactCard;
 
       const voiceMemoInput = await transcribeImessageVoiceMemos(ctx, {
         orgId:
@@ -303,7 +309,10 @@ export const processInbound = internalAction({
           return await finish(
             VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
             undefined,
-            { leaveGroup: isGroup },
+            {
+              leaveGroup: isGroup,
+              sendContactCard: chatSync.shouldSendContactCard,
+            },
           );
         }
         const demo = await ctx.runAction(
@@ -322,7 +331,7 @@ export const processInbound = internalAction({
         return await finish(
           demo.text,
           undefined,
-          { leaveGroup: isGroup },
+          { leaveGroup: isGroup, sendContactCard: chatSync.shouldSendContactCard },
         );
       }
 
@@ -341,7 +350,9 @@ export const processInbound = internalAction({
             chatGuid,
           },
         );
-        return await finish(demo.text);
+        return await finish(demo.text, undefined, {
+          sendContactCard: chatSync.shouldSendContactCard,
+        });
       }
       const currentParticipant = resolvedParticipants.find(
         (participant) =>

@@ -47,11 +47,23 @@ export type ModelRoute = {
 };
 
 export type WebRetrievalProvider =
+  | "parallel"
   | "exa"
   | "openai"
   | "google"
   | "anthropic"
   | "xai";
+
+export type WebRetrievalApiProvider = Extract<
+  WebRetrievalProvider,
+  "parallel" | "exa"
+>;
+
+export function isWebRetrievalApiProvider(
+  provider: WebRetrievalProvider,
+): provider is WebRetrievalApiProvider {
+  return provider === "parallel" || provider === "exa";
+}
 
 export type WebRetrievalRoute = {
   primary: WebRetrievalProvider;
@@ -457,6 +469,7 @@ export const CONFIGURABLE_MODEL_PROVIDERS = MODEL_PROVIDERS.filter(
 ) as Exclude<ModelProvider, "moonshot">[];
 
 export const WEB_RETRIEVAL_LABELS: Record<WebRetrievalProvider, string> = {
+  parallel: "Parallel",
   exa: "Exa",
   openai: "OpenAI",
   google: "Google",
@@ -464,10 +477,10 @@ export const WEB_RETRIEVAL_LABELS: Record<WebRetrievalProvider, string> = {
   xai: "xAI",
 };
 
-export const WEB_RETRIEVAL_DEFAULT: WebRetrievalRoute = { primary: "exa" };
+export const WEB_RETRIEVAL_DEFAULT: WebRetrievalRoute = { primary: "parallel" };
 
 export const WEB_RETRIEVAL_MODEL_CATALOG: Partial<
-  Record<Exclude<WebRetrievalProvider, "exa">, string[]>
+  Record<Exclude<WebRetrievalProvider, WebRetrievalApiProvider>, string[]>
 > = {
   openai: LANGUAGE_MODEL_CATALOG.openai,
   google: LANGUAGE_MODEL_CATALOG.google.filter((model) =>
@@ -478,7 +491,7 @@ export const WEB_RETRIEVAL_MODEL_CATALOG: Partial<
 };
 
 export const WEB_RETRIEVAL_DEFAULT_ROUTES: Record<
-  Exclude<WebRetrievalProvider, "exa">,
+  Exclude<WebRetrievalProvider, WebRetrievalApiProvider>,
   ModelRoute
 > = {
   openai: { provider: "openai", model: "gpt-5.4-mini" },

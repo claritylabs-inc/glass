@@ -114,6 +114,21 @@ describe("iMessage group chat surfaces", () => {
     expect(worker).toContain("space.send(imessageProcessingFallbackMessage(err))");
   });
 
+  it("treats first-contact card delivery as best-effort after the response", () => {
+    const worker = read("imessage-worker/src/index.ts");
+    const inboundDeliveryBlock = worker.slice(
+      worker.indexOf("const result = await sendToConvex"),
+      worker.indexOf("await sendOutboundAppCards(space, result.appCards)"),
+    );
+
+    expect(inboundDeliveryBlock.indexOf("await sendResponseText")).toBeLessThan(
+      inboundDeliveryBlock.indexOf("await sendGlassContactCard"),
+    );
+    expect(inboundDeliveryBlock).toContain(
+      "Contact card delivery failed; continuing with response",
+    );
+  });
+
   it("waits for policy-aware empty state context before rendering suggestions", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
     const emptyState = read("components/new-chat-empty-state.tsx");
