@@ -1458,10 +1458,9 @@ async function recordAgentRun(
     );
   }
 
-  const qualityScore = error
-    ? 0
-    : workflowQualityScore(audit.workflowOutcomes);
-  if (!requestId || qualityScore === undefined) return;
+  if (!requestId || audit.workflowOutcomes.length === 0) return;
+  const qualityScore = error ? 0 : workflowQualityScore(audit.workflowOutcomes);
+  if (qualityScore === undefined) return;
   try {
     await sendClRouterFeedback({
       requestId,

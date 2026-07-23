@@ -48,6 +48,16 @@ describe("user-facing error messages", () => {
     );
   });
 
+  test("preserves useful errors inside Convex server wrappers", () => {
+    const error = new Error(
+      "[CONVEX M(orgs:claimAgentHandle)] [Request ID: 79453de80c006a69] Server Error\nUncaught Error: Handle already taken",
+    );
+
+    expect(getUserFacingErrorMessage(error, "Could not save handle")).toBe(
+      "Handle already taken",
+    );
+  });
+
   test("normalizes legacy permission errors while old deployments roll out", () => {
     const error = new Error("Uncaught Error: Broker admin access required");
 

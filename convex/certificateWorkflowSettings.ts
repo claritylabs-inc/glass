@@ -5,7 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   requireCurrentOrgAccess,
-  requireCurrentOrgAdmin,
+  requireCurrentOrgAdminWrite,
   type CurrentOrgAccess,
 } from "./lib/access";
 import {
@@ -145,7 +145,7 @@ export const getEffectiveInternal = internalQuery({
 export const updateBrokerDefault = mutation({
   args: settingsArgs,
   handler: async (ctx, args) => {
-    const access = await requireCurrentOrgAdmin(ctx);
+    const access = await requireCurrentOrgAdminWrite(ctx);
     assertBrokerAdmin(access);
     const now = dayjs().valueOf();
     const patch = {
@@ -171,7 +171,7 @@ export const updateBrokerDefault = mutation({
 export const updateClientOverride = mutation({
   args: settingsArgs,
   handler: async (ctx, args) => {
-    const access = await requireCurrentOrgAdmin(ctx);
+    const access = await requireCurrentOrgAdminWrite(ctx);
     assertClientAdmin(access);
     const now = dayjs().valueOf();
     const patch = {

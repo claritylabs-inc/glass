@@ -7,7 +7,11 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
-import { getActiveOperatorImpersonation, getActiveOperatorProfile } from "./operatorIdentity";
+import {
+  assertImpersonatedSetupWrite,
+  getActiveOperatorImpersonation,
+  getActiveOperatorProfile,
+} from "./operatorIdentity";
 import {
   isUserFacingErrorCode,
   throwUserFacingError,
@@ -289,6 +293,14 @@ export async function requireCurrentOrgAdmin(ctx: Ctx): Promise<CurrentOrgAccess
   if (access.role !== "admin") {
     throwUserFacingError(userFacingErrorCodes.orgAdminRequired);
   }
+  return access;
+}
+
+export async function requireCurrentOrgAdminWrite(
+  ctx: MutationCtx,
+): Promise<CurrentOrgAccess> {
+  const access = await requireCurrentOrgAdmin(ctx);
+  await assertImpersonatedSetupWrite(ctx, access.orgId);
   return access;
 }
 

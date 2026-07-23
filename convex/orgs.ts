@@ -10,7 +10,7 @@ import {
   getCurrentOrgAccess as getOrgAccess,
   getOrgAccess as getOrgAccessNew,
   requireCurrentOrgAccess as requireOrgAccess,
-  requireCurrentOrgAdmin as requireOrgAdmin,
+  requireCurrentOrgAdminWrite as requireOrgAdminWrite,
 } from "./lib/access";
 import type { Id } from "./_generated/dataModel";
 import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
@@ -56,7 +56,7 @@ async function createMemberInvitation(
 ) {
   const access = args.invitedByUserId
     ? await requireOrgAdminForUser(ctx, args.invitedByUserId)
-    : await requireOrgAdmin(ctx);
+    : await requireOrgAdminWrite(ctx);
   const { userId, orgId } = access;
   const email = normalizeEmail(args.email);
   if (!email) throw new Error("Email is required");
@@ -911,8 +911,7 @@ export const updateOrg = mutation({
     agentDisplayName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdmin(ctx);
-    await assertImpersonatedSetupWrite(ctx, orgId);
+    const { orgId } = await requireOrgAdminWrite(ctx);
     await ctx.db.patch(orgId, args);
   },
 });
@@ -990,12 +989,10 @@ export const updateOrganizationProfile = mutation({
     profile: v.union(editableOrganizationProfileValidator, v.null()),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId, org } = await requireOrgAdmin(ctx);
+    const { orgId, userId, org } = await requireOrgAdminWrite(ctx);
     if ((org.type ?? "client") !== "client") {
       throw new Error("Organization insurance profiles are available for clients only");
     }
-    await assertImpersonatedSetupWrite(ctx, orgId);
-
     if (args.profile === null) {
       await ctx.db.patch(orgId, {
         profileOverrides: undefined,
@@ -1047,8 +1044,7 @@ export const setFeatureFlag = mutation({
     enabled: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const { orgId, org } = await requireOrgAdmin(ctx);
-    await assertImpersonatedSetupWrite(ctx, orgId);
+    const { orgId, org } = await requireOrgAdminWrite(ctx);
     assertFeatureFlagAllowedForOrg(args.flagId, org);
     await ctx.db.patch(orgId, {
       featureFlags: setFeatureFlagPatch(org.featureFlags, args.flagId, args.enabled),
@@ -1059,7 +1055,7 @@ export const setFeatureFlag = mutation({
 export const claimAgentHandle = mutation({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
-    const { orgId, org } = await requireOrgAdmin(ctx);
+    const { orgId, org } = await requireOrgAdminWrite(ctx);
     if (org.type !== "broker") throw new Error("Only broker orgs can claim an agent handle");
 
     const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -1326,7 +1322,7 @@ export const acceptInvitation = mutation({
 export const removeMember = mutation({
   args: { membershipId: v.id("orgMemberships") },
   handler: async (ctx, args) => {
-    const { orgId, org } = await requireOrgAdmin(ctx);
+    const { orgId, org } = await requireOrgAdminWrite(ctx);
 
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
@@ -1369,7 +1365,7 @@ export const updateMemberRole = mutation({
     role: v.union(v.literal("admin"), v.literal("member")),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdmin(ctx);
+    const { orgId } = await requireOrgAdminWrite(ctx);
 
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
@@ -1396,7 +1392,7 @@ export const updateMemberProfile = mutation({
     phone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdmin(ctx);
+    const { orgId } = await requireOrgAdminWrite(ctx);
 
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
@@ -1422,7 +1418,7 @@ export const cancelMemberEmailChange = mutation({
     requestId: v.id("userEmailChangeRequests"),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAdmin(ctx);
+    const { orgId, userId } = await requireOrgAdminWrite(ctx);
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) {
       throw new Error("Membership not found");
@@ -1449,7 +1445,7 @@ export const cancelMemberEmailChange = mutation({
 export const setPrimaryInsuranceContact = mutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdmin(ctx);
+    const { orgId } = await requireOrgAdminWrite(ctx);
 
     const membership = await ctx.db
       .query("orgMemberships")
@@ -1495,7 +1491,7 @@ export const ensurePrimaryInsuranceContact = mutation({
 export const cancelInvitation = mutation({
   args: { invitationId: v.id("orgInvitations") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdmin(ctx);
+    const { orgId } = await requireOrgAdminWrite(ctx);
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation || invitation.orgId !== orgId) throw new Error("Invitation not found");
     await ctx.db.delete(args.invitationId);

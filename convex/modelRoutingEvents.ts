@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalMutation, query } from "./_generated/server";
 import type { ClRouterResponseMetadata } from "./lib/clRouterClient";
 import { requireOperator } from "./lib/operatorIdentity";
@@ -136,6 +137,12 @@ export const sweepExpired = internalMutation({
       .withIndex("by_expiresAt", (q) => q.lt("expiresAt", dayjs().valueOf()))
       .take(limit);
     for (const event of expired) await ctx.db.delete(event._id);
-    return { deleted: expired.length };
+    const continuationScheduled = expired.length === limit;
+    if (continuationScheduled) {
+      await ctx.scheduler.runAfter(0, internal.modelRoutingEvents.sweepExpired, {
+        batchSize: limit,
+      });
+    }
+    return { deleted: expired.length, continuationScheduled };
   },
 });

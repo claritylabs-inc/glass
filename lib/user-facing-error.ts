@@ -74,6 +74,8 @@ function legacyPermissionMessage(message: string) {
 function normalizedErrorMessage(error: unknown) {
   if (!(error instanceof Error)) return null;
   return error.message
+    .replace(convexServerErrorPattern, "")
+    .trim()
     .replace(/^(?:Uncaught Error: )+/, "")
     .trim();
 }
@@ -93,7 +95,7 @@ export function getUserFacingErrorMessage(
   if (structured) return structured.message;
 
   const message = normalizedErrorMessage(error);
-  if (!message || convexServerErrorPattern.test(message)) return fallback;
+  if (!message) return fallback;
   return legacyPermissionMessage(message) ?? message;
 }
 
