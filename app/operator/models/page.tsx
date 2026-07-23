@@ -179,12 +179,12 @@ export default function OperatorModelsPage() {
     try {
       await updateRoutes({ routes: { [taskId]: route } });
       await patchRoute(taskId, route);
-      toast.success(route ? "Global model updated" : "Global model reset");
+      toast.success(route ? "Router seed updated" : "Router seed reset");
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to update global model",
+          : "Failed to update router seed",
       );
     } finally {
       setSavingTask(null);
@@ -277,7 +277,10 @@ export default function OperatorModelsPage() {
               if (tasks.length === 0) return null;
               return (
                 <OperationalPanel key={group.id}>
-                  <OperationalPanelHeader title={group.label} />
+                  <OperationalPanelHeader
+                    title={group.label}
+                    description={`${group.description} These choices seed new autonomous routing policies; they do not pin an active route.`}
+                  />
                   <div className="divide-y divide-foreground/6 px-4">
                     {tasks.map((task) => {
                       const route = settings.routes[task.id] ?? null;
@@ -318,7 +321,7 @@ export default function OperatorModelsPage() {
                                 {task.label}
                               </p>
                               <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
-                                {displayRoute ? "Override" : "Default"}
+                                {displayRoute ? "Custom seed" : "Code seed"}
                               </span>
                             </div>
                           </div>

@@ -378,6 +378,22 @@ async function traceEvent(
     durationMs?: number;
     inputTokens?: number;
     outputTokens?: number;
+    cachedInputTokens?: number;
+    routerRequestId?: string;
+    costUsd?: number | null;
+    costStatus?: "priced" | "unpriced";
+    routingDecision?: string;
+    routing?: {
+      decision: string;
+      candidatesConsidered: Array<{ provider: string; model: string }>;
+      policyVersion: string | null;
+      cacheStickinessApplied: boolean;
+      routeSource?: string;
+      attemptCount?: number;
+      shadowMode?: boolean;
+      wouldHaveChosen?: { provider: string; model: string; decision: string };
+      wouldHaveMatched?: boolean;
+    };
     error?: string;
     details?: unknown;
   },
@@ -1475,6 +1491,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         orgId: state.orgId as Id<"organizations">,
         document: result.document as Record<string, unknown>,
         sourceSpans: canonicalSpans as Array<Record<string, any>>,
+        traceId: state.traceId,
+        policyId,
         skipDeterministicCoverageRecovery: coverageRecoverySucceeded(state, coverageRecovery),
         log: async (message, level) => { await pCtx.log(message, level); },
       });
@@ -2224,6 +2242,26 @@ export const recordExternalTraceEvent = action({
     durationMs: v.optional(v.number()),
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
+    cachedInputTokens: v.optional(v.number()),
+    routerRequestId: v.optional(v.string()),
+    costUsd: v.optional(v.union(v.number(), v.null())),
+    costStatus: v.optional(v.union(v.literal("priced"), v.literal("unpriced"))),
+    routingDecision: v.optional(v.string()),
+    routing: v.optional(v.object({
+      decision: v.string(),
+      candidatesConsidered: v.array(v.object({ provider: v.string(), model: v.string() })),
+      policyVersion: v.union(v.string(), v.null()),
+      cacheStickinessApplied: v.boolean(),
+      routeSource: v.optional(v.string()),
+      attemptCount: v.optional(v.number()),
+      shadowMode: v.optional(v.boolean()),
+      wouldHaveChosen: v.optional(v.object({
+        provider: v.string(),
+        model: v.string(),
+        decision: v.string(),
+      })),
+      wouldHaveMatched: v.optional(v.boolean()),
+    })),
     error: v.optional(v.string()),
     details: v.optional(v.any()),
   },
@@ -2244,6 +2282,12 @@ export const recordExternalTraceEvent = action({
       durationMs: args.durationMs,
       inputTokens: args.inputTokens,
       outputTokens: args.outputTokens,
+      cachedInputTokens: args.cachedInputTokens,
+      routerRequestId: args.routerRequestId,
+      costUsd: args.costUsd,
+      costStatus: args.costStatus,
+      routingDecision: args.routingDecision,
+      routing: args.routing,
       error: args.error,
       details: args.details,
     });
@@ -2330,6 +2374,8 @@ async function completeExternalExtractFromPayload(
     orgId: state.orgId as Id<"organizations">,
     document: doc,
     sourceSpans: canonicalSpans,
+    traceId: state.traceId,
+    policyId,
     runModelReview: false,
     skipDeterministicCoverageRecovery: coverageRecoverySucceeded(state, coverageRecovery),
     log: async (message, level = "info") => {

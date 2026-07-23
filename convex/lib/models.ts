@@ -8,20 +8,36 @@ import { createXai } from "@ai-sdk/xai";
 import { createMistral } from "@ai-sdk/mistral";
 import { createCohere } from "@ai-sdk/cohere";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { Output, type LanguageModel } from "ai";
+import { Output, type LanguageModel, type LanguageModelUsage } from "ai";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
-import type { z } from "zod";
+import {
+  fallbackRouteForCall as policyFallbackRouteForCall,
+  modelTaskForCall as policyModelTaskForCall,
+  primaryRouteForCall as policyPrimaryRouteForCall,
+} from "@claritylabs/cl-router-policy";
+import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import {
+  ClRouterRequestError,
+  clRouterGenerate,
+  clRouterTranscribe,
+  shouldUseClRouterForCall,
+  shouldUseClRouterForTask,
+  withClRouterDirectFallback,
+  type ClRouterGenerateRequest,
+  type ClRouterMessage,
+  type ClRouterResponseMetadata,
+  type ClRouterSettingsSnapshot,
+  type ClRouterUsage,
+} from "./clRouterClient";
+import {
   EXTRACTION_QUALITY_MODEL,
   FALLBACK_MODEL,
   COVERAGE_CLEANUP_MODEL,
   FIREWORKS_MODEL_IDS,
-  QUALITY_ESCALATION_TASK_KINDS,
-  QUALITY_PRIMARY_TASK_KINDS,
   MODEL_ROUTING,
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
@@ -168,6 +184,7 @@ type RoutedGenerateTextResult = AiGenerateTextResult & {
   route: ModelRoute;
   routeSource?: string;
   transport?: ModelTransport;
+  clRouter?: ClRouterResponseMetadata;
 };
 type RoutedGenerateObjectResult<T> = Omit<AiGenerateTextResult, "output" | "object"> & {
   output: T;
@@ -175,9 +192,10 @@ type RoutedGenerateObjectResult<T> = Omit<AiGenerateTextResult, "output" | "obje
   route: ModelRoute;
   routeSource?: string;
   transport?: ModelTransport;
+  clRouter?: ClRouterResponseMetadata;
 };
 
-export type ModelTransport = "direct";
+export type ModelTransport = "direct" | "cl-router";
 export type ModelRouteSource = "broker" | "global" | "static" | "default";
 
 export function generatedTextFromResult(result: unknown): string {
@@ -219,6 +237,115 @@ function cleanEnv(value: string | undefined): string | undefined {
   return trimmed || undefined;
 }
 
+function clRouterSettingsSnapshot(settings: unknown): ClRouterSettingsSnapshot | null {
+  if (!settings || typeof settings !== "object") return null;
+  const record = settings as Record<string, unknown>;
+  return {
+    ...(record.routes && typeof record.routes === "object"
+      ? { routes: record.routes as Record<string, ModelRoute> }
+      : {}),
+    ...(record.routeSources && typeof record.routeSources === "object"
+      ? { routeSources: record.routeSources as Record<string, string> }
+      : {}),
+    ...(record.providerKeys && typeof record.providerKeys === "object"
+      ? {
+        providerKeys: record.providerKeys as Partial<Record<ModelProvider, string>>,
+      }
+      : {}),
+  };
+}
+
+function clRouterMessages(value: unknown): ClRouterMessage[] | null {
+  if (!Array.isArray(value)) return null;
+  const messages: ClRouterMessage[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") return null;
+    const message = item as Record<string, unknown>;
+    if (
+      (message.role !== "system" &&
+        message.role !== "user" &&
+        message.role !== "assistant" &&
+        message.role !== "tool") ||
+      typeof message.content !== "string"
+    ) {
+      return null;
+    }
+    messages.push({ role: message.role, content: message.content });
+  }
+  return messages;
+}
+
+function clRouterGenerateInput(
+  options: RoutedGenerateTextOptions,
+): Pick<ClRouterGenerateRequest, "system" | "messages" | "prompt" | "maxTokens"> | null {
+  const record = options as Record<string, unknown>;
+  const supportedKeys = new Set(["system", "messages", "prompt", "maxOutputTokens"]);
+  if (Object.keys(record).some((key) => record[key] !== undefined && !supportedKeys.has(key))) {
+    return null;
+  }
+  if (record.system !== undefined && typeof record.system !== "string") return null;
+  if (record.prompt !== undefined && typeof record.prompt !== "string") return null;
+  const messages = record.messages === undefined ? undefined : clRouterMessages(record.messages);
+  if (record.messages !== undefined && !messages) return null;
+  if (record.prompt === undefined && messages === undefined) return null;
+  if (record.maxOutputTokens !== undefined && typeof record.maxOutputTokens !== "number") {
+    return null;
+  }
+  return {
+    ...(typeof record.system === "string" ? { system: record.system } : {}),
+    ...(typeof record.prompt === "string" ? { prompt: record.prompt } : {}),
+    ...(messages ? { messages } : {}),
+    ...(typeof record.maxOutputTokens === "number"
+      ? { maxTokens: record.maxOutputTokens }
+      : {}),
+  };
+}
+
+function clRouterGenerateInputForEnabledTask(
+  task: ModelTask,
+  taskKind: ModelCallTaskKind | undefined,
+  options: RoutedGenerateTextOptions,
+): Pick<ClRouterGenerateRequest, "system" | "messages" | "prompt" | "maxTokens"> {
+  const input = clRouterGenerateInput(options);
+  if (input) return input;
+
+  throw new ClRouterRequestError(
+    "configuration",
+    `cl-router is enabled for ${taskKind ?? task}, but this generation call uses options that the non-streaming router adapter cannot preserve; disable that CL_ROUTER_TASKS gate or route the call through the Glass-owned cl-router language-model tool loop`,
+  );
+}
+
+function languageModelUsageFromClRouter(usage: ClRouterUsage): LanguageModelUsage {
+  const reasoningTokens = usage.reasoningTokens ?? 0;
+  return {
+    inputTokens: usage.inputTokens,
+    inputTokenDetails: {
+      noCacheTokens: Math.max(
+        0,
+        usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteTokens,
+      ),
+      cacheReadTokens: usage.cachedInputTokens,
+      cacheWriteTokens: usage.cacheWriteTokens,
+    },
+    outputTokens: usage.outputTokens,
+    outputTokenDetails: {
+      textTokens: Math.max(0, usage.outputTokens - reasoningTokens),
+      reasoningTokens,
+    },
+    totalTokens: usage.inputTokens + usage.outputTokens,
+    reasoningTokens,
+    cachedInputTokens: usage.cachedInputTokens,
+  };
+}
+
+function warnClRouterFallback(task: ModelTask, error: ClRouterRequestError): void {
+  console.warn("cl-router unavailable; using direct provider fallback", {
+    task,
+    kind: error.kind,
+    status: error.status,
+  });
+}
+
 export function getProviderOptionsForRoute(route: ModelRoute): ProviderOptions | undefined {
   if (route.provider === "openai" && route.model === GPT_55) {
     return { openai: { reasoningEffort: "none" } };
@@ -231,36 +358,8 @@ function isMissingApiKeyError(err: unknown): boolean {
   return /api key is missing/i.test(message);
 }
 
-const LOW_COST_NO_ESCALATION_TASKS = new Set<ModelTask>([
-  "voice_transcription",
-  "classification",
-  "extraction",
-  "extraction_preview",
-  "extraction_coverage_recovery",
-  "requirement_extraction",
-  "org_memory_extraction",
-  "email_extraction",
-  "document_extraction",
-]);
-
-const QUALITY_ESCALATION_TASK_KIND_SET = new Set<string>(QUALITY_ESCALATION_TASK_KINDS);
-const QUALITY_PRIMARY_TASK_KIND_SET = new Set<string>(QUALITY_PRIMARY_TASK_KINDS);
-
-function sameRoute(left?: ModelRoute, right?: ModelRoute): boolean {
-  return !!left && !!right && left.provider === right.provider && left.model === right.model;
-}
-
 export function modelTaskForCall(baseTask: ModelTask, taskKind?: ModelCallTaskKind): ModelTask {
-  if (!taskKind) return baseTask;
-  if (taskKind === "extraction_classify") return "classification";
-  if (taskKind === "extraction_coverage_recovery") return "extraction_coverage_recovery";
-  if (taskKind.startsWith("extraction_")) return "extraction";
-  if (taskKind === "query_classify") return "classification";
-  if (taskKind.startsWith("query_")) {
-    return baseTask === "chat_vision" ? "chat_vision" : "chat";
-  }
-  if (taskKind.startsWith("pce_")) return "analysis";
-  return baseTask;
+  return policyModelTaskForCall(baseTask, taskKind);
 }
 
 export function fallbackRouteForCall({
@@ -270,23 +369,13 @@ export function fallbackRouteForCall({
   fallbackRoute = FALLBACK_MODEL,
   allowFallback = true,
 }: ModelFallbackContext): ModelRoute | null {
-  if (!allowFallback) return null;
-
-  const effectiveTask = task && modelTaskForCall(task, taskKind);
-  const effectivePrimaryRoute =
-    primaryRoute ?? (effectiveTask ? MODEL_ROUTING[effectiveTask] : undefined);
-
-  if (sameRoute(effectivePrimaryRoute, fallbackRoute)) return null;
-
-  if (taskKind && QUALITY_ESCALATION_TASK_KIND_SET.has(taskKind)) {
-    return fallbackRoute;
-  }
-
-  if (effectiveTask && LOW_COST_NO_ESCALATION_TASKS.has(effectiveTask)) {
-    return null;
-  }
-
-  return fallbackRoute;
+  return policyFallbackRouteForCall({
+    task,
+    taskKind,
+    primaryRoute,
+    fallbackRoute,
+    allowFallback,
+  });
 }
 
 export function primaryRouteForCall({
@@ -294,10 +383,7 @@ export function primaryRouteForCall({
   taskKind,
   qualityRoute = EXTRACTION_QUALITY_MODEL,
 }: ModelFallbackContext): ModelRoute | null {
-  if (!taskKind || !QUALITY_PRIMARY_TASK_KIND_SET.has(taskKind)) return null;
-  const effectiveTask = task && modelTaskForCall(task, taskKind);
-  if (effectiveTask !== "extraction") return null;
-  return qualityRoute;
+  return policyPrimaryRouteForCall({ task, taskKind, qualityRoute });
 }
 
 export function getProviderOptionsForTask(task: ModelTask): ProviderOptions | undefined {
@@ -395,6 +481,7 @@ type AudioTranscriptionResult = {
   route: ModelRoute;
   routeSource: ModelRouteSource;
   transport: ModelTransport;
+  clRouter?: ClRouterResponseMetadata;
 };
 
 const AUDIO_TRANSCRIPTION_TASK = "voice_transcription" as const;
@@ -436,33 +523,14 @@ async function resolveAudioTranscriptionRouteForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
 ): Promise<{ route: ModelRoute; apiKey: string; routeSource: ModelRouteSource }> {
-  const staticRoute = MODEL_ROUTING[AUDIO_TRANSCRIPTION_TASK];
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, {
       orgId,
     });
-    const configuredRoute = settings?.routes?.[AUDIO_TRANSCRIPTION_TASK];
-    const routeSource = settings?.routeSources?.[AUDIO_TRANSCRIPTION_TASK];
-    const configuredApiKey =
-      routeSource === "broker" && configuredRoute
-        ? settings?.providerKeys?.[configuredRoute.provider]
-        : undefined;
-    const apiKey = configuredRoute
-      ? routeDirectApiKey(configuredRoute, configuredApiKey)
-      : undefined;
-    if (
-      configuredRoute &&
-      configuredRoute.provider !== "moonshot" &&
-      directProviderModelForRoute(configuredRoute) &&
-      modelRouteSupportsTask(AUDIO_TRANSCRIPTION_TASK, configuredRoute) &&
-      apiKey
-    ) {
-      return {
-        route: configuredRoute,
-        apiKey,
-        routeSource: routeSource ?? "global",
-      };
-    }
+    return resolveAudioTranscriptionRouteForSettingsSnapshot(
+      clRouterSettingsSnapshot(settings),
+      true,
+    );
   } catch (error) {
     console.warn(
       `Configured voice transcription route unavailable: ${
@@ -471,13 +539,46 @@ async function resolveAudioTranscriptionRouteForOrg(
     );
   }
 
-  const apiKey = routeDirectApiKey(staticRoute);
-  if (!apiKey) {
+  return resolveAudioTranscriptionRouteForSettingsSnapshot(null, true);
+}
+
+function resolveAudioTranscriptionRouteForSettingsSnapshot(
+  settings: ClRouterSettingsSnapshot | null,
+  allowBroker: boolean,
+): { route: ModelRoute; apiKey: string; routeSource: ModelRouteSource } {
+  const staticRoute = MODEL_ROUTING[AUDIO_TRANSCRIPTION_TASK];
+  const configuredRoute = settings?.routes?.[AUDIO_TRANSCRIPTION_TASK];
+  const rawRouteSource = settings?.routeSources?.[AUDIO_TRANSCRIPTION_TASK];
+  const configuredApiKey = allowBroker && rawRouteSource === "broker" && configuredRoute
+    ? settings?.providerKeys?.[configuredRoute.provider]
+    : undefined;
+  const apiKey = configuredRoute
+    ? routeDirectApiKey(configuredRoute, configuredApiKey)
+    : undefined;
+  if (
+    configuredRoute &&
+    (allowBroker || rawRouteSource !== "broker") &&
+    configuredRoute.provider !== "moonshot" &&
+    directProviderModelForRoute(configuredRoute) &&
+    modelRouteSupportsTask(AUDIO_TRANSCRIPTION_TASK, configuredRoute) &&
+    apiKey
+  ) {
+    const routeSource: ModelRouteSource =
+      allowBroker && rawRouteSource === "broker"
+        ? "broker"
+        : rawRouteSource === "global"
+          ? "global"
+          : "default";
+    return { route: configuredRoute, apiKey, routeSource };
+  }
+
+  const staticApiKey = routeDirectApiKey(staticRoute);
+  if (!staticApiKey) {
     throw new Error(
       "Direct OpenAI API key is missing for voice memo transcription. AI Gateway is not a fallback for Glass model routing.",
     );
   }
-  return { route: staticRoute, apiKey, routeSource: "default" };
+  return { route: staticRoute, apiKey: staticApiKey, routeSource: "default" };
 }
 
 async function resolveAudioTranscriptionRouteForPublicTask(
@@ -487,32 +588,16 @@ async function resolveAudioTranscriptionRouteForPublicTask(
   apiKey: string;
   routeSource: Extract<ModelRouteSource, "global" | "default">;
 }> {
-  const staticRoute = MODEL_ROUTING[AUDIO_TRANSCRIPTION_TASK];
   try {
     const settings = await ctx.runQuery(
       internal.modelSettings.resolvePublicDefaults,
       {},
     );
-    const configuredRoute = settings?.routes?.[AUDIO_TRANSCRIPTION_TASK];
-    const configuredRouteSource =
-      settings?.routeSources?.[AUDIO_TRANSCRIPTION_TASK];
-    const apiKey = configuredRoute
-      ? routeDirectApiKey(configuredRoute)
-      : undefined;
-    if (
-      configuredRoute &&
-      configuredRoute.provider !== "moonshot" &&
-      directProviderModelForRoute(configuredRoute) &&
-      modelRouteSupportsTask(AUDIO_TRANSCRIPTION_TASK, configuredRoute) &&
-      apiKey
-    ) {
-      return {
-        route: configuredRoute,
-        apiKey,
-        routeSource:
-          configuredRouteSource === "global" ? "global" : "default",
-      };
-    }
+    const resolved = resolveAudioTranscriptionRouteForSettingsSnapshot(
+      clRouterSettingsSnapshot(settings),
+      false,
+    );
+    return { ...resolved, routeSource: resolved.routeSource === "global" ? "global" : "default" };
   } catch (error) {
     console.warn(
       `Global voice transcription route unavailable: ${
@@ -521,13 +606,8 @@ async function resolveAudioTranscriptionRouteForPublicTask(
     );
   }
 
-  const apiKey = routeDirectApiKey(staticRoute);
-  if (!apiKey) {
-    throw new Error(
-      "Direct OpenAI API key is missing for voice memo transcription. AI Gateway is not a fallback for Glass model routing.",
-    );
-  }
-  return { route: staticRoute, apiKey, routeSource: "default" };
+  const resolved = resolveAudioTranscriptionRouteForSettingsSnapshot(null, false);
+  return { ...resolved, routeSource: "default" };
 }
 
 async function transcribeAudioWithResolvedRoute(
@@ -601,16 +681,96 @@ export async function transcribeAudioForOrg(
   orgId: Id<"organizations">,
   input: AudioTranscriptionInput,
 ): Promise<AudioTranscriptionResult> {
-  const resolved = await resolveAudioTranscriptionRouteForOrg(ctx, orgId);
-  return transcribeAudioWithResolvedRoute(resolved, input);
+  const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
+    const resolved = settings === undefined
+      ? await resolveAudioTranscriptionRouteForOrg(ctx, orgId)
+      : resolveAudioTranscriptionRouteForSettingsSnapshot(settings, true);
+    return transcribeAudioWithResolvedRoute(resolved, input);
+  };
+  if (!shouldUseClRouterForTask(AUDIO_TRANSCRIPTION_TASK)) return direct();
+  const settings = await resolveClRouterSettingsForOrg(ctx, orgId);
+  return withClRouterDirectFallback({
+    router: async () => {
+      const response = await clRouterTranscribe({
+        orgId,
+        settings,
+        data: new Uint8Array(input.data),
+        filename: transcriptionFilename(input.filename, input.mediaType),
+        mediaType: input.mediaType,
+        prompt: input.prompt,
+        trace: { label: "convex.models.transcribeAudioForOrg" },
+      });
+      const text = response.text.trim();
+      if (!text) {
+        throw new ClRouterRequestError(
+          "invalid_response",
+          "cl-router audio transcription returned no text",
+        );
+      }
+      const routeSource = response.routing.routeSource;
+      return {
+        text,
+        route: response.model,
+        routeSource:
+          routeSource === "broker" ||
+          routeSource === "global" ||
+          routeSource === "static" ||
+          routeSource === "default"
+            ? routeSource
+            : "default",
+        transport: "cl-router" as const,
+        clRouter: response,
+      };
+    },
+    direct: () => direct(settings),
+    onFallback: (error) => warnClRouterFallback(AUDIO_TRANSCRIPTION_TASK, error),
+  });
 }
 
 export async function transcribeAudioForPublicTask(
   ctx: ActionCtx,
   input: AudioTranscriptionInput,
 ): Promise<AudioTranscriptionResult> {
-  const resolved = await resolveAudioTranscriptionRouteForPublicTask(ctx);
-  return transcribeAudioWithResolvedRoute(resolved, input);
+  const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
+    const resolved = settings === undefined
+      ? await resolveAudioTranscriptionRouteForPublicTask(ctx)
+      : resolveAudioTranscriptionRouteForSettingsSnapshot(settings, false);
+    return transcribeAudioWithResolvedRoute(resolved, input);
+  };
+  if (!shouldUseClRouterForTask(AUDIO_TRANSCRIPTION_TASK)) return direct();
+  const settings = await clRouterSettingsForPublicTask(ctx);
+  return withClRouterDirectFallback({
+    router: async () => {
+      const response = await clRouterTranscribe({
+        settings,
+        data: new Uint8Array(input.data),
+        filename: transcriptionFilename(input.filename, input.mediaType),
+        mediaType: input.mediaType,
+        prompt: input.prompt,
+        trace: { label: "convex.models.transcribeAudioForPublicTask" },
+      });
+      const text = response.text.trim();
+      if (!text) {
+        throw new ClRouterRequestError(
+          "invalid_response",
+          "cl-router audio transcription returned no text",
+        );
+      }
+      const routeSource = response.routing.routeSource;
+      return {
+        text,
+        route: response.model,
+        routeSource:
+          routeSource === "global" || routeSource === "static" || routeSource === "default"
+            ? routeSource
+            : "default",
+        transport: "cl-router" as const,
+        clRouter: response,
+      };
+    },
+    direct: () => direct(settings),
+    onFallback: (error) => warnClRouterFallback(AUDIO_TRANSCRIPTION_TASK, error),
+  });
 }
 
 function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
@@ -694,11 +854,7 @@ export async function getModelForOrg(
   return (await getModelAndRouteForOrg(ctx, orgId, task)).model;
 }
 
-export async function getModelAndRouteForOrg(
-  ctx: ActionCtx,
-  orgId: Id<"organizations">,
-  task: ModelTask,
-): Promise<{
+type OrgModelRouteResolution = {
   model: LanguageModel;
   route: ModelRoute;
   routeSource: ModelRouteSource;
@@ -708,7 +864,67 @@ export async function getModelAndRouteForOrg(
   coverageCleanupRoute: ModelRoute;
   coverageCleanupRouteSource: "broker" | "global" | "static";
   fallbackRoute: ModelRoute;
-}> {
+};
+
+function resolvedSettingsRouteSource(
+  value: string | undefined,
+  defaultSource: "global" | "static",
+): "broker" | "global" | "static" {
+  return value === "broker" || value === "global" || value === "static"
+    ? value
+    : defaultSource;
+}
+
+export function getModelAndRouteForSettingsSnapshot(
+  settings: ClRouterSettingsSnapshot | null,
+  task: ModelTask,
+): OrgModelRouteResolution {
+  const configuredRoute = settings?.routes?.[task];
+  const routeSource = resolvedSettingsRouteSource(
+    settings?.routeSources?.[task],
+    "global",
+  );
+  const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+  const qualityRouteSource = resolvedSettingsRouteSource(
+    settings?.routeSources?.extraction_quality,
+    "static",
+  );
+  const coverageCleanupRoute =
+    settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
+  const coverageCleanupRouteSource = resolvedSettingsRouteSource(
+    settings?.routeSources?.extraction_coverage_cleanup,
+    "static",
+  );
+  const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
+  const configuredApiKey = routeSource === "broker" && configuredRoute
+    ? settings?.providerKeys?.[configuredRoute.provider]
+    : undefined;
+  const canUseConfiguredRoute =
+    !!configuredRoute &&
+    configuredRoute.provider !== "moonshot" &&
+    !!directProviderModelForRoute(configuredRoute) &&
+    modelRouteSupportsTask(task, configuredRoute) &&
+    !!routeDirectApiKey(configuredRoute, configuredApiKey);
+  const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
+  const apiKey = canUseConfiguredRoute ? configuredApiKey : undefined;
+  return {
+    model: modelFromRoute(route, apiKey),
+    route,
+    routeSource: canUseConfiguredRoute ? routeSource : "default",
+    transport: "direct",
+    qualityRoute,
+    qualityRouteSource,
+    coverageCleanupRoute,
+    coverageCleanupRouteSource,
+    fallbackRoute,
+  };
+}
+
+export async function getModelAndRouteForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  task: ModelTask,
+): Promise<OrgModelRouteResolution> {
   if (task === "voice_transcription") {
     throw new Error(
       "Voice memo transcription must use transcribeAudioForOrg, not getModelAndRouteForOrg()",
@@ -716,36 +932,7 @@ export async function getModelAndRouteForOrg(
   }
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
-    const configuredRoute = settings?.routes?.[task];
-    const routeSource = settings?.routeSources?.[task];
-    const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
-    const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
-    const coverageCleanupRoute =
-      settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
-    const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
-    const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
-    const configuredApiKey = routeSource === "broker" && configuredRoute
-      ? settings?.providerKeys?.[configuredRoute.provider]
-      : undefined;
-    const canUseConfiguredRoute =
-      !!configuredRoute &&
-      configuredRoute.provider !== "moonshot" &&
-      !!directProviderModelForRoute(configuredRoute) &&
-      modelRouteSupportsTask(task, configuredRoute) &&
-      !!routeDirectApiKey(configuredRoute, configuredApiKey);
-    const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
-    const apiKey = canUseConfiguredRoute ? configuredApiKey : undefined;
-    return {
-      model: modelFromRoute(route, apiKey),
-      route,
-      routeSource: canUseConfiguredRoute ? (routeSource ?? "global") : "default",
-      transport: "direct",
-      qualityRoute,
-      qualityRouteSource,
-      coverageCleanupRoute,
-      coverageCleanupRouteSource,
-      fallbackRoute,
-    };
+    return getModelAndRouteForSettingsSnapshot(clRouterSettingsSnapshot(settings), task);
   } catch (err) {
     console.warn(
       `Configured model for task "${task}" unavailable: ${
@@ -788,33 +975,10 @@ export async function getModelAndRouteForPublicTask(
   }
   try {
     const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
-    const configuredRoute = settings?.routes?.[task];
-    const configuredRouteSource = settings?.routeSources?.[task];
-    const canUseConfiguredRoute =
-      !!configuredRoute &&
-      configuredRoute.provider !== "moonshot" &&
-      !!directProviderModelForRoute(configuredRoute) &&
-      modelRouteSupportsTask(task, configuredRoute) &&
-      !!routeDirectApiKey(configuredRoute);
-    const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
-    const routeSource = canUseConfiguredRoute ? (configuredRouteSource ?? "global") : "static";
-    const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
-    const qualityRouteSource = settings?.routeSources?.extraction_quality ?? "static";
-    const coverageCleanupRoute =
-      settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
-    const coverageCleanupRouteSource = settings?.routeSources?.extraction_coverage_cleanup ?? "static";
-    const fallbackRoute = settings?.routes?.fallback ?? FALLBACK_MODEL;
-    return {
-      model: modelFromRoute(route),
-      route,
-      routeSource,
-      transport: "direct",
-      qualityRoute,
-      qualityRouteSource,
-      coverageCleanupRoute,
-      coverageCleanupRouteSource,
-      fallbackRoute,
-    };
+    return getModelAndRouteForPublicSettingsSnapshot(
+      clRouterSettingsSnapshot(settings),
+      task,
+    );
   } catch (err) {
     console.warn(
       `Public model for task "${task}" unavailable: ${
@@ -834,6 +998,53 @@ export async function getModelAndRouteForPublicTask(
       fallbackRoute: FALLBACK_MODEL,
     };
   }
+}
+
+export function getModelAndRouteForPublicSettingsSnapshot(
+  settings: ClRouterSettingsSnapshot | null,
+  task: ModelTask,
+): {
+  model: LanguageModel;
+  route: ModelRoute;
+  routeSource: "global" | "static" | "default";
+  transport: ModelTransport;
+  qualityRoute: ModelRoute;
+  qualityRouteSource: "global" | "static";
+  coverageCleanupRoute: ModelRoute;
+  coverageCleanupRouteSource: "global" | "static";
+  fallbackRoute: ModelRoute;
+} {
+  const configuredRoute = settings?.routes?.[task];
+  const rawRouteSource = settings?.routeSources?.[task];
+  const canUseConfiguredRoute =
+    !!configuredRoute &&
+    rawRouteSource !== "broker" &&
+    configuredRoute.provider !== "moonshot" &&
+    !!directProviderModelForRoute(configuredRoute) &&
+    modelRouteSupportsTask(task, configuredRoute) &&
+    !!routeDirectApiKey(configuredRoute);
+  const route = canUseConfiguredRoute ? configuredRoute : MODEL_ROUTING[task];
+  const routeSource = canUseConfiguredRoute
+    ? rawRouteSource === "static" || rawRouteSource === "default"
+      ? rawRouteSource
+      : "global"
+    : "static";
+  const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+  const coverageCleanupRoute =
+    settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
+  return {
+    model: modelFromRoute(route),
+    route,
+    routeSource,
+    transport: "direct",
+    qualityRoute,
+    qualityRouteSource:
+      settings?.routeSources?.extraction_quality === "global" ? "global" : "static",
+    coverageCleanupRoute,
+    coverageCleanupRouteSource:
+      settings?.routeSources?.extraction_coverage_cleanup === "global" ? "global" : "static",
+    fallbackRoute: settings?.routes?.fallback ?? FALLBACK_MODEL,
+  };
 }
 
 export async function generateTextWithFallback(
@@ -959,6 +1170,79 @@ async function generateObjectForResolvedRoute<T>(
   };
 }
 
+function routedTextResultFromClRouter(
+  response: Awaited<ReturnType<typeof clRouterGenerate>>,
+): RoutedGenerateTextResult {
+  if (typeof response.output !== "string") {
+    throw new ClRouterRequestError(
+      "invalid_response",
+      "cl-router text generation returned a non-text output",
+    );
+  }
+  const usage = languageModelUsageFromClRouter(response.usage);
+  return {
+    text: response.output,
+    output: response.output,
+    finishReason: response.finishReason ?? "stop",
+    usage,
+    totalUsage: usage,
+    route: response.model,
+    routeSource: response.routing.routeSource,
+    transport: "cl-router",
+    clRouter: response,
+  } as unknown as RoutedGenerateTextResult;
+}
+
+function routedObjectResultFromClRouter<T>(
+  response: Awaited<ReturnType<typeof clRouterGenerate>>,
+  schema: z.ZodType<T>,
+): RoutedGenerateObjectResult<T> {
+  const parsed = schema.safeParse(response.output);
+  if (!parsed.success) {
+    throw new ClRouterRequestError(
+      "invalid_response",
+      "cl-router structured generation returned an invalid object",
+      { cause: parsed.error },
+    );
+  }
+  const usage = languageModelUsageFromClRouter(response.usage);
+  return {
+    text: JSON.stringify(parsed.data),
+    output: parsed.data,
+    object: parsed.data,
+    finishReason: response.finishReason ?? "stop",
+    usage,
+    totalUsage: usage,
+    route: response.model,
+    routeSource: response.routing.routeSource,
+    transport: "cl-router",
+    clRouter: response,
+  } as unknown as RoutedGenerateObjectResult<T>;
+}
+
+function clRouterRoutingForFallbackContext(
+  fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
+): ClRouterGenerateRequest["routing"] {
+  return fallbackContext?.allowFallback === undefined
+    ? undefined
+    : { allowFallback: fallbackContext.allowFallback };
+}
+
+export async function resolveClRouterSettingsForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+): Promise<ClRouterSettingsSnapshot | null> {
+  const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
+  return clRouterSettingsSnapshot(settings);
+}
+
+async function clRouterSettingsForPublicTask(
+  ctx: ActionCtx,
+): Promise<ClRouterSettingsSnapshot | null> {
+  const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
+  return clRouterSettingsSnapshot(settings);
+}
+
 export async function generateTextForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
@@ -966,8 +1250,31 @@ export async function generateTextForOrg(
   options: RoutedGenerateTextOptions,
   fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
 ): Promise<RoutedGenerateTextResult> {
-  const resolved = await getModelAndRouteForOrg(ctx, orgId, task);
-  return generateTextForResolvedRoute(resolved, task, options, fallbackContext);
+  const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
+    const resolved = settings === undefined
+      ? await getModelAndRouteForOrg(ctx, orgId, task)
+      : getModelAndRouteForSettingsSnapshot(settings, task);
+    return generateTextForResolvedRoute(resolved, task, options, fallbackContext);
+  };
+  if (!shouldUseClRouterForCall(task, fallbackContext?.taskKind)) return direct();
+  const input = clRouterGenerateInputForEnabledTask(task, fallbackContext?.taskKind, options);
+  const settings = await resolveClRouterSettingsForOrg(ctx, orgId);
+  return withClRouterDirectFallback({
+    router: async () => routedTextResultFromClRouter(await clRouterGenerate({
+      task,
+      taskKind: fallbackContext?.taskKind,
+      orgId,
+      settings,
+      ...input,
+      routing: clRouterRoutingForFallbackContext(fallbackContext),
+      trace: {
+        label: "convex.models.generateTextForOrg",
+        ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
+      },
+    })),
+    direct: () => direct(settings),
+    onFallback: (error) => warnClRouterFallback(task, error),
+  });
 }
 
 export async function generateObjectForOrg<T>(
@@ -977,8 +1284,38 @@ export async function generateObjectForOrg<T>(
   options: RoutedGenerateObjectOptions<T>,
   fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
 ): Promise<RoutedGenerateObjectResult<T>> {
-  const resolved = await getModelAndRouteForOrg(ctx, orgId, task);
-  return generateObjectForResolvedRoute(resolved, task, options, fallbackContext);
+  const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
+    const resolved = settings === undefined
+      ? await getModelAndRouteForOrg(ctx, orgId, task)
+      : getModelAndRouteForSettingsSnapshot(settings, task);
+    return generateObjectForResolvedRoute(resolved, task, options, fallbackContext);
+  };
+  const { schema, ...textOptions } = options;
+  if (!shouldUseClRouterForCall(task, fallbackContext?.taskKind)) return direct();
+  const input = clRouterGenerateInputForEnabledTask(
+    task,
+    fallbackContext?.taskKind,
+    textOptions,
+  );
+  const settings = await resolveClRouterSettingsForOrg(ctx, orgId);
+  return withClRouterDirectFallback({
+    router: async () => routedObjectResultFromClRouter(await clRouterGenerate({
+      task,
+      taskKind: fallbackContext?.taskKind,
+      orgId,
+      settings,
+      ...input,
+      schema: z.toJSONSchema(schema) as Record<string, unknown>,
+      schemaDialect: "https://json-schema.org/draft/2020-12/schema",
+      routing: clRouterRoutingForFallbackContext(fallbackContext),
+      trace: {
+        label: "convex.models.generateObjectForOrg",
+        ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
+      },
+    }), schema),
+    direct: () => direct(settings),
+    onFallback: (error) => warnClRouterFallback(task, error),
+  });
 }
 
 export async function generateTextForPublicTask(
@@ -987,8 +1324,30 @@ export async function generateTextForPublicTask(
   options: RoutedGenerateTextOptions,
   fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
 ): Promise<RoutedGenerateTextResult> {
-  const resolved = await getModelAndRouteForPublicTask(ctx, task);
-  return generateTextForResolvedRoute(resolved, task, options, fallbackContext);
+  const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
+    const resolved = settings === undefined
+      ? await getModelAndRouteForPublicTask(ctx, task)
+      : getModelAndRouteForPublicSettingsSnapshot(settings, task);
+    return generateTextForResolvedRoute(resolved, task, options, fallbackContext);
+  };
+  if (!shouldUseClRouterForCall(task, fallbackContext?.taskKind)) return direct();
+  const input = clRouterGenerateInputForEnabledTask(task, fallbackContext?.taskKind, options);
+  const settings = await clRouterSettingsForPublicTask(ctx);
+  return withClRouterDirectFallback({
+    router: async () => routedTextResultFromClRouter(await clRouterGenerate({
+      task,
+      taskKind: fallbackContext?.taskKind,
+      settings,
+      ...input,
+      routing: clRouterRoutingForFallbackContext(fallbackContext),
+      trace: {
+        label: "convex.models.generateTextForPublicTask",
+        ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
+      },
+    })),
+    direct: () => direct(settings),
+    onFallback: (error) => warnClRouterFallback(task, error),
+  });
 }
 
 export async function generateObjectForPublicTask<T>(
@@ -997,8 +1356,37 @@ export async function generateObjectForPublicTask<T>(
   options: RoutedGenerateObjectOptions<T>,
   fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
 ): Promise<RoutedGenerateObjectResult<T>> {
-  const resolved = await getModelAndRouteForPublicTask(ctx, task);
-  return generateObjectForResolvedRoute(resolved, task, options, fallbackContext);
+  const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
+    const resolved = settings === undefined
+      ? await getModelAndRouteForPublicTask(ctx, task)
+      : getModelAndRouteForPublicSettingsSnapshot(settings, task);
+    return generateObjectForResolvedRoute(resolved, task, options, fallbackContext);
+  };
+  const { schema, ...textOptions } = options;
+  if (!shouldUseClRouterForCall(task, fallbackContext?.taskKind)) return direct();
+  const input = clRouterGenerateInputForEnabledTask(
+    task,
+    fallbackContext?.taskKind,
+    textOptions,
+  );
+  const settings = await clRouterSettingsForPublicTask(ctx);
+  return withClRouterDirectFallback({
+    router: async () => routedObjectResultFromClRouter(await clRouterGenerate({
+      task,
+      taskKind: fallbackContext?.taskKind,
+      settings,
+      ...input,
+      schema: z.toJSONSchema(schema) as Record<string, unknown>,
+      schemaDialect: "https://json-schema.org/draft/2020-12/schema",
+      routing: clRouterRoutingForFallbackContext(fallbackContext),
+      trace: {
+        label: "convex.models.generateObjectForPublicTask",
+        ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
+      },
+    }), schema),
+    direct: () => direct(settings),
+    onFallback: (error) => warnClRouterFallback(task, error),
+  });
 }
 
 export function availableProviders(): string[] {

@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, test } from "vitest";
 
@@ -213,17 +213,11 @@ describe("model task routing", () => {
       join(__dirname, "../extraction-worker/src/index.ts"),
       "utf-8",
     );
-    const routingPolicy = readFileSync(
-      join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts"),
-      "utf-8",
-    );
-
     expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).not.toContain(
       "extraction_form_inventory",
     );
     expect(MODEL_ROUTE_IDS).not.toContain("extraction_form_inventory");
     expect(workerSource).not.toContain("extraction_form_inventory");
-    expect(routingPolicy).not.toContain("extraction_form_inventory");
   });
 
   test("uses a standard operator-configurable route for coverage cleanup", () => {
@@ -239,11 +233,6 @@ describe("model task routing", () => {
       join(__dirname, "../extraction-worker/src/index.ts"),
       "utf-8",
     );
-    const routingPolicy = readFileSync(
-      join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts"),
-      "utf-8",
-    );
-
     expect(defaultModelRouteForId("extraction_coverage_cleanup")).toEqual({
       provider: "openai",
       model: "gpt-5.4-mini",
@@ -263,7 +252,7 @@ describe("model task routing", () => {
     expect(sdkCallbacks).toContain("coverageCleanupRouteOverride");
     expect(sdkCallbacks).toContain('routePurpose = "extraction_coverage_cleanup"');
     expect(workerSource).toContain("WORKER_COVERAGE_CLEANUP_ROUTE");
-    expect(routingPolicy).toContain('extraction_coverage_cleanup: { provider: "openai", model: "gpt-5.4-mini" }');
+    expect(workerSource).toContain("SPECIAL_MODEL_ROUTES.extraction_coverage_cleanup");
     expect(workerSource).toContain('"extraction_coverage_cleanup"');
   });
 
@@ -276,11 +265,6 @@ describe("model task routing", () => {
       join(__dirname, "../extraction-worker/src/index.ts"),
       "utf-8",
     );
-    const routingPolicy = readFileSync(
-      join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts"),
-      "utf-8",
-    );
-
     expect(defaultModelRouteForId("extraction_coverage_recovery")).toEqual({
       provider: "openai",
       model: "gpt-5.4-mini",
@@ -297,9 +281,7 @@ describe("model task routing", () => {
     expect(modelTaskForCall("extraction", "extraction_coverage_recovery")).toBe(
       "extraction_coverage_recovery",
     );
-    expect(routingPolicy).toContain(
-      'extraction_coverage_recovery: { provider: "openai", model: "gpt-5.4-mini" }',
-    );
+    expect(workerSource).toContain("MODEL_ROUTING.extraction_coverage_recovery");
     expect(workerSource).toContain('"extraction_coverage_recovery"');
   });
 
@@ -320,51 +302,67 @@ describe("model task routing", () => {
     expect(modelTaskForCall("extraction", "pce_impact_analysis")).toBe("analysis");
   });
 
-  test("keeps root app and extraction worker on the same cl-sdk version", () => {
+  test("keeps root app and extraction worker on the same shared package versions", () => {
     const appPackage = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
     const workerPackage = JSON.parse(
       readFileSync(join(__dirname, "../extraction-worker/package.json"), "utf-8"),
     );
 
-    expect(appPackage.scripts["check:cl-sdk-version"]).toContain("check-cl-sdk-version");
-    expect(workerPackage.scripts.prebuild).toContain("check-cl-sdk-version");
-    expect(appPackage.dependencies["@claritylabs/cl-sdk"]).toBe(
-      workerPackage.dependencies["@claritylabs/cl-sdk"],
+    expect(appPackage.scripts["check:shared-package-versions"]).toContain(
+      "check-shared-package-versions",
     );
+    expect(workerPackage.scripts.prebuild).toContain(
+      "check-shared-package-versions",
+    );
+    for (const packageName of [
+      "@claritylabs/cl-router-policy",
+      "@claritylabs/cl-sdk",
+    ]) {
+      expect(appPackage.dependencies[packageName]).toBe(
+        workerPackage.dependencies[packageName],
+      );
+      expect(appPackage.dependencies[packageName]).toMatch(
+        /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
+      );
+    }
+    expect(appPackage.dependencies["@claritylabs/cl-router-policy"]).toBe("0.1.0");
+  });
+
+  test("uses the published router policy package as the single routing vocabulary", () => {
+    const modelCatalog = readFileSync(
+      join(__dirname, "../convex/lib/modelCatalog.ts"),
+      "utf-8",
+    );
+    const worker = readFileSync(
+      join(__dirname, "../extraction-worker/src/index.ts"),
+      "utf-8",
+    );
+
+    expect(modelCatalog).toContain('from "@claritylabs/cl-router-policy"');
+    expect(worker).toContain('from "@claritylabs/cl-router-policy"');
+    expect(
+      existsSync(join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts")),
+    ).toBe(false);
   });
 
   test("keeps extraction hosts on source-span model passes without legacy review knobs", () => {
     const appExtractor = readFileSync(join(__dirname, "../convex/lib/extraction.ts"), "utf-8");
     const worker = readFileSync(join(__dirname, "../extraction-worker/src/index.ts"), "utf-8");
-    const routingPolicy = readFileSync(
-      join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts"),
-      "utf-8",
-    );
-
     expect(appExtractor).not.toContain("EXTRACTION_REVIEW_MODE");
     expect(worker).not.toContain("EXTRACTION_REVIEW_MODE");
     expect(worker).not.toContain("EXTRACTION_PAGE_MAP_CONCURRENCY");
     expect(worker).not.toContain("EXTRACTION_FORMAT_CONCURRENCY");
     expect(worker).toContain("modelCapabilitiesForRoute(route.model)");
     expect(worker).toContain("modelCapabilitiesByTaskKind");
-    expect(routingPolicy).toContain("extraction_operational_profile");
-    expect(routingPolicy).toContain("extraction_coverage_cleanup");
     expect(worker).not.toContain("EXTRACTION_MAX_TOKEN_OVERRIDES");
   });
 
   test("does not cap source-backed operational profiles below full structured output", () => {
-    const routingPolicy = readFileSync(
-      join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts"),
-      "utf-8",
-    );
-
     const deepseekFlashCapabilities = modelCapabilitiesForRoute({
       provider: "fireworks",
       model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
     });
     expect(deepseekFlashCapabilities?.taskOutputTokens?.extraction_operational_profile).toBe(32_768);
-    expect(routingPolicy).toContain("extraction_operational_profile: 32_768");
-    expect(routingPolicy).not.toContain("extraction_operational_profile: 8_192");
   });
 });
 

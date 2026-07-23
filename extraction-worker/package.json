@@ -10,8 +10,9 @@
   },
   "main": "dist/index.js",
   "scripts": {
-    "prebuild": "node ../scripts/check-cl-sdk-version.mjs",
+    "prebuild": "node ../scripts/check-shared-package-versions.mjs",
     "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test tests/*.test.ts",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
   },
@@ -26,7 +27,8 @@
     "@ai-sdk/openai-compatible": "^2.0.51",
     "@ai-sdk/provider-utils": "^4.0.23",
     "@ai-sdk/xai": "^3.0.83",
-    "@claritylabs/cl-sdk": "4.4.0",
+    "@claritylabs/cl-router-policy": "0.1.0",
+    "@claritylabs/cl-sdk": "4.4.1",
     "@llamaindex/liteparse": "^2.0.3",
     "ai": "^6.0.134",
     "convex": "^1.32.0",

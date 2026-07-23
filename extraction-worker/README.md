@@ -22,6 +22,24 @@ Required env:
 
 Set `EXTRACTION_WORKER_MODE=external` on the Convex deployment to queue new and retried extraction jobs for this worker.
 
+## cl-router rollout
+
+The worker can forward structured full-extraction and provisional-extraction model calls to the internal task-aware router. It sends the claimed job's resolved broker/operator settings snapshot, organization context, exact JSON schema, trace metadata, and base64 document/image parts on every request. The returned provider/model, request ID, routing decision, cached-token usage, and dollar cost are copied into the existing extraction trace details. Provider keys are forwarded only inside the authenticated request and are never logged.
+
+Routing is opt-in per task:
+
+```bash
+CL_ROUTER_URL=https://cl-router-dev.up.railway.app
+CL_ROUTER_SECRET=shared-router-secret
+CL_ROUTER_TASKS=extraction,extraction_preview
+CL_ROUTER_TENANT_ID=glass
+CL_ROUTER_TIMEOUT_MS=180000
+```
+
+`extraction` covers the full extraction pipeline, including its classification and coverage subtasks. `extraction_preview` controls the provisional path independently. Exact model task or task-kind names can be listed for narrower staging, and `*` enables every worker model call. An empty `CL_ROUTER_TASKS` preserves direct-only behavior and does not require router configuration.
+
+The direct provider implementation remains the break-glass path. It is used automatically only when the router cannot connect, times out, or returns HTTP 5xx. Authentication, validation, other 4xx responses, and malformed successful responses fail closed. Direct primary and fallback attempts continue to rebuild their route-specific input and structured-output schema independently.
+
 Convex rejects stale external workers before they can claim jobs when expected-version env vars are set. Workers send `workerProtocolVersion`, `workerVersion`, and `clSdkVersion` on every claim and expose the same values at `GET /health`. Dev Convex should set `EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION` to the current worker protocol and `EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION` to the package spec in `extraction-worker/package.json`.
 
 Set `EXTRACTION_WORKER_URL` and the same `EXTRACTION_WORKER_SECRET` on Convex to let requirement imports, mailbox attachment reads, on-demand source lookup, and agent PDF attachment context call the worker's LiteParse endpoint. The endpoint accepts `{ "pdfBase64": "..." }` with `Authorization: Bearer <secret>` and returns `{ text, sourceSpans, sourceChunks, pageScreenshots, metadata }`.
@@ -35,3 +53,10 @@ node dist/index.js
 ```
 
 Run at least one worker replica. Multiple replicas are safe because jobs are claimed with Convex-backed leases and periodic heartbeats.
+
+Focused validation:
+
+```bash
+npm test
+npm run build
+```

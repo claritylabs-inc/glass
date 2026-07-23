@@ -174,7 +174,7 @@ export function useCachedOperatorExtractionTraceDetail(
   traceId: string | null,
 ) {
   return useCachedQuery(
-    "operator.getExtractionTrace.v3",
+    "operator.getExtractionTrace.v4",
     api.operator.getExtractionTrace,
     traceId ? { traceId } : "skip",
   ) as OperatorExtractionTraceDetail | undefined;

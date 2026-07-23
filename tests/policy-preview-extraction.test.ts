@@ -19,21 +19,17 @@ describe("policy preview extraction", () => {
     expect(schema).toContain("extraction_preview: v.optional(modelRouteValidator)");
   });
 
-  it("routes preview extraction through the worker preview path with fallback support", () => {
+  it("routes preview extraction through the shared policy and worker preview path", () => {
     const worker = read("extraction-worker/src/index.ts");
     const modelCatalog = read("convex/lib/modelCatalog.ts");
-    const routingPolicy = read("extraction-worker/src/modelRoutingPolicy.ts");
 
-    expect(modelCatalog).toContain("MODEL_POLICY_TASK_ROUTES");
-    expect(routingPolicy).toContain(
-      'extraction_preview: { provider: "fireworks", model: MODEL_POLICY_FIREWORKS_MODEL_IDS.deepseekV4Flash }',
-    );
+    expect(modelCatalog).toContain('from "@claritylabs/cl-router-policy"');
+    expect(worker).toContain("MODEL_ROUTING.extraction_preview");
     expect(worker).toContain("type ModelTask =");
     expect(worker).toContain('| "extraction_preview"');
     expect(worker).toContain('| "extraction_coverage_recovery"');
     expect(worker).toContain("POLICY_PREVIEW_VERSION");
     expect(worker).toContain("claimExternalPreviewJob");
-    expect(worker).toContain('resolveFallbackModel(route.task, "extraction_preview", route.route, job.modelSettings)');
   });
 
   it("keeps the preview structured-output schema strict and nullable", () => {

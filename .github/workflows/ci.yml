@@ -25,8 +25,11 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund --loglevel=error
 
-      - name: Check cl-sdk version
-        run: npm run check:cl-sdk-version
+      - name: Check shared package versions
+        run: npm run check:shared-package-versions
+
+      - name: Check cl-router API contract
+        run: npm run check:cl-router-contract
 
       - name: Lint
         run: npm run lint

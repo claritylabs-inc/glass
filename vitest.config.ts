@@ -11,6 +11,8 @@ export default defineConfig({
     exclude: [
       ...configDefaults.exclude,
       ".claude/**",
+      ".context/**",
+      "extraction-worker/tests/**",
       "convex/tests/applicationReturnFlow.test.ts",
     ],
   },

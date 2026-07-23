@@ -21,6 +21,22 @@ const modelRouteValidator = v.object({
   model: v.string(),
 });
 
+const extractionTraceRoutingValidator = v.object({
+  decision: v.string(),
+  candidatesConsidered: v.array(modelRouteValidator),
+  policyVersion: v.union(v.string(), v.null()),
+  cacheStickinessApplied: v.boolean(),
+  routeSource: v.optional(v.string()),
+  attemptCount: v.optional(v.number()),
+  shadowMode: v.optional(v.boolean()),
+  wouldHaveChosen: v.optional(v.object({
+    provider: modelProviderValidator,
+    model: v.string(),
+    decision: v.string(),
+  })),
+  wouldHaveMatched: v.optional(v.boolean()),
+});
+
 const webRetrievalProviderValidator = v.union(
   v.literal("parallel"),
   v.literal("exa"),
@@ -1878,6 +1894,12 @@ export default defineSchema({
     durationMs: v.optional(v.number()),
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
+    cachedInputTokens: v.optional(v.number()),
+    routerRequestId: v.optional(v.string()),
+    costUsd: v.optional(v.union(v.number(), v.null())),
+    costStatus: v.optional(v.union(v.literal("priced"), v.literal("unpriced"))),
+    routingDecision: v.optional(v.string()),
+    routing: v.optional(extractionTraceRoutingValidator),
     error: v.optional(v.string()),
     details: v.optional(v.any()),
     expiresAt: v.number(),
