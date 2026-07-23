@@ -100,6 +100,22 @@ type TraceEvent = {
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
+  cachedInputTokens?: number;
+  routerRequestId?: string;
+  costUsd?: number | null;
+  costStatus?: "priced" | "unpriced";
+  routingDecision?: string;
+  routing?: {
+    decision: string;
+    candidatesConsidered: Array<{ provider: string; model: string }>;
+    policyVersion: string | null;
+    cacheStickinessApplied: boolean;
+    routeSource?: string;
+    attemptCount?: number;
+    shadowMode?: boolean;
+    wouldHaveChosen?: { provider: string; model: string; decision: string };
+    wouldHaveMatched?: boolean;
+  };
   error?: string;
   details?: unknown;
 };
@@ -181,6 +197,19 @@ function formatCompactTokens(input?: number, output?: number) {
   if (!total) return "—";
   if (total >= 1000) return `${Math.round(total / 1000).toLocaleString()}k`;
   return total.toLocaleString();
+}
+
+function formatCost(costUsd?: number | null, costStatus?: "priced" | "unpriced") {
+  const amount = typeof costUsd === "number"
+    ? new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 8,
+      }).format(costUsd)
+    : undefined;
+  const status = costStatus ? formatProfileLabel(costStatus) : undefined;
+  return [amount, status].filter(Boolean).join(" · ") || "—";
 }
 
 function statusVariant(status: TraceStatus): "default" | "secondary" | "destructive" {
@@ -749,13 +778,19 @@ function traceEventStatusLabel(event: TraceEvent) {
 function traceEventRouteLabel(event: TraceEvent) {
   return [
     [event.provider, event.model].filter(Boolean).join(" / "),
-    event.routeSource?.replace(/_/g, " "),
+    (event.routeSource ?? event.routing?.routeSource)?.replace(/_/g, " "),
     event.transport,
   ].filter(Boolean).join(" · ");
 }
 
 function traceEventAttemptLabel(event: TraceEvent) {
-  return event.attempt ? `attempt ${event.attempt}` : undefined;
+  const attempt = event.routing?.attemptCount ?? event.attempt;
+  return attempt !== undefined ? `attempt ${attempt}` : undefined;
+}
+
+function traceEventRoutingDecision(event: TraceEvent) {
+  const decision = event.routingDecision ?? event.routing?.decision;
+  return decision ? formatProfileLabel(decision) : undefined;
 }
 
 function traceEventMaxTokens(event: TraceEvent) {
@@ -776,6 +811,7 @@ function eventCaption(event: TraceEvent) {
   if (event.kind === "model_call") {
     return [
       traceEventRouteLabel(event),
+      traceEventRoutingDecision(event),
       traceEventRoutePurpose(event),
       event.taskKind,
       traceEventAttemptLabel(event),
@@ -1261,16 +1297,67 @@ function ModelCallSelector({
           label="Model"
           value={[selectedEvent.provider, selectedEvent.model].filter(Boolean).join(" / ") || "—"}
         />
-        <OperationalLabelValueRow label="Route" value={[selectedEvent.routeSource, selectedEvent.transport].filter(Boolean).join(" / ") || "—"} />
+        <OperationalLabelValueRow
+          label="Route"
+          value={[
+            selectedEvent.routeSource ?? selectedEvent.routing?.routeSource,
+            selectedEvent.transport,
+          ].filter(Boolean).join(" / ") || "—"}
+        />
         <OperationalLabelValueRow label="Route purpose" value={traceEventRoutePurpose(selectedEvent) ?? "—"} />
+        <OperationalLabelValueRow label="Decision" value={traceEventRoutingDecision(selectedEvent) ?? "—"} />
+        <OperationalLabelValueRow
+          label="Shadow mode"
+          value={selectedEvent.routing?.shadowMode === undefined
+            ? "—"
+            : selectedEvent.routing.shadowMode ? "yes" : "no"}
+        />
+        <OperationalLabelValueRow
+          label="Shadow choice"
+          value={selectedEvent.routing?.wouldHaveChosen
+            ? [
+                selectedEvent.routing.wouldHaveChosen.provider,
+                selectedEvent.routing.wouldHaveChosen.model,
+                formatProfileLabel(selectedEvent.routing.wouldHaveChosen.decision),
+              ].join(" / ")
+            : "—"}
+        />
+        <OperationalLabelValueRow
+          label="Shadow matched"
+          value={selectedEvent.routing?.wouldHaveMatched === undefined
+            ? "—"
+            : selectedEvent.routing.wouldHaveMatched ? "yes" : "no"}
+        />
+        <OperationalLabelValueRow label="Policy" value={selectedEvent.routing?.policyVersion ?? "—"} />
+        <OperationalLabelValueRow
+          label="Router request"
+          value={selectedEvent.routerRequestId ? (
+            <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-label">
+              {selectedEvent.routerRequestId}
+            </code>
+          ) : "—"}
+        />
         <OperationalLabelValueRow label="Status" value={traceEventStatusLabel(selectedEvent) ?? "—"} />
-        <OperationalLabelValueRow label="Attempt" value={selectedEvent.attempt ? String(selectedEvent.attempt) : "—"} />
+        <OperationalLabelValueRow
+          label="Attempt"
+          value={selectedEvent.routing?.attemptCount ?? selectedEvent.attempt ?? "—"}
+        />
         <OperationalLabelValueRow label="Task" value={selectedEvent.taskKind ?? selectedEvent.task ?? "—"} />
         <OperationalLabelValueRow label="Max tokens" value={traceEventMaxTokens(selectedEvent)?.toLocaleString() ?? "—"} />
         <OperationalLabelValueRow label="Time" value={formatDuration(selectedEvent.durationMs)} />
         <OperationalLabelValueRow
           label="Tokens"
           value={formatTokens(selectedEvent.inputTokens, selectedEvent.outputTokens)}
+        />
+        <OperationalLabelValueRow
+          label="Cached input"
+          value={selectedEvent.cachedInputTokens !== undefined
+            ? selectedEvent.cachedInputTokens.toLocaleString()
+            : "—"}
+        />
+        <OperationalLabelValueRow
+          label="Cost"
+          value={formatCost(selectedEvent.costUsd, selectedEvent.costStatus)}
         />
         {selectedEvent.error ? (
           <OperationalLabelValueRow label="Error" value={selectedEvent.error} />

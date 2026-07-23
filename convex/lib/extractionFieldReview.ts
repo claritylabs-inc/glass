@@ -57,12 +57,14 @@ function isClearFieldCorrection(value: unknown): value is typeof CLEAR_FIELD_COR
 type ReviewResult = {
   groupId: string;
   corrections: ReviewCorrection[];
+  reviewedFields?: readonly string[];
 };
 
 export type FieldReviewApplication = {
   document: Record<string, unknown>;
   applied: Array<ReviewCorrection & { groupId: string }>;
   skipped: Array<ReviewCorrection & { groupId: string; reasonSkipped: string }>;
+  reviewedFieldCount: number;
 };
 
 const FIELD_REVIEW_GROUPS: FieldReviewGroup[] = [
@@ -461,10 +463,12 @@ export function applyFieldReviewResults(
   const next = { ...document };
   const applied: FieldReviewApplication["applied"] = [];
   const skipped: FieldReviewApplication["skipped"] = [];
+  const reviewedFields = new Set<string>();
 
   for (const review of reviews) {
     const group = FIELD_REVIEW_GROUPS.find((item) => item.id === review.groupId);
     if (!group) continue;
+    for (const field of review.reviewedFields ?? group.fields) reviewedFields.add(field);
     for (const correction of review.corrections) {
       const normalizedCorrection = {
         ...correction,
@@ -478,11 +482,12 @@ export function applyFieldReviewResults(
       next[normalizedCorrection.field] = isClearFieldCorrection(normalizedCorrection.value)
         ? undefined
         : normalizedCorrection.value;
+      reviewedFields.add(normalizedCorrection.field);
       applied.push({ ...normalizedCorrection, groupId: review.groupId });
     }
   }
 
-  return { document: next, applied, skipped };
+  return { document: next, applied, skipped, reviewedFieldCount: reviewedFields.size };
 }
 
 async function reviewGroup(options: FieldReviewOptions, group: FieldReviewGroup) {
@@ -525,6 +530,7 @@ ${JSON.stringify(evidence, null, 2)}`,
 
   return {
     groupId: group.id,
+    reviewedFields: group.fields,
     corrections: object.corrections.flatMap((correction): ReviewCorrection[] => {
       const value = correctionValue(correction);
       if (value === undefined) return [];
@@ -579,7 +585,11 @@ ${JSON.stringify(evidence, null, 2)}`,
   });
 
   if (object.confidence === "low" || !normalizeText(object.evidenceQuote)) {
-    return null;
+    return {
+      groupId: "financial_terms",
+      corrections: [],
+      reviewedFields: FIELD_REVIEW_GROUPS.find((item) => item.id === "financial_terms")?.fields ?? [],
+    };
   }
 
   const corrections: ReviewCorrection[] = [];
@@ -613,9 +623,11 @@ ${JSON.stringify(evidence, null, 2)}`,
   if (minimumPremium && object.depositPremium === null) add("depositPremium", clearFieldCorrection());
   if (minimumPremium && object.depositPremiumAmount === null) add("depositPremiumAmount", clearFieldCorrection());
 
-  return corrections.length > 0
-    ? { groupId: "financial_terms", corrections }
-    : null;
+  return {
+    groupId: "financial_terms",
+    corrections,
+    reviewedFields: FIELD_REVIEW_GROUPS.find((item) => item.id === "financial_terms")?.fields ?? [],
+  };
 }
 
 async function reconcileMinimumPremium(options: FieldReviewOptions): Promise<ReviewResult | null> {
@@ -652,7 +664,11 @@ ${JSON.stringify(evidence, null, 2)}`,
   });
 
   if (object.confidence === "low" || !normalizeText(object.evidenceQuote)) {
-    return null;
+    return {
+      groupId: "financial_terms",
+      corrections: [],
+      reviewedFields: ["minimumPremium", "minimumPremiumAmount", "depositPremium", "depositPremiumAmount"],
+    };
   }
 
   const corrections: ReviewCorrection[] = [];
@@ -675,16 +691,18 @@ ${JSON.stringify(evidence, null, 2)}`,
   if (object.clearDepositPremium) add("depositPremium", clearFieldCorrection());
   if (object.clearDepositPremiumAmount) add("depositPremiumAmount", clearFieldCorrection());
 
-  return corrections.length > 0
-    ? { groupId: "financial_terms", corrections }
-    : null;
+  return {
+    groupId: "financial_terms",
+    corrections,
+    reviewedFields: ["minimumPremium", "minimumPremiumAmount", "depositPremium", "depositPremiumAmount"],
+  };
 }
 
 export async function reviewExtractionFields(
   options: FieldReviewOptions,
 ): Promise<FieldReviewApplication> {
   if (reviewMode() === "skip") {
-    return { document: options.document, applied: [], skipped: [] };
+    return { document: options.document, applied: [], skipped: [], reviewedFieldCount: 0 };
   }
 
   const reviews: ReviewResult[] = [];

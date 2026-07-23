@@ -18,7 +18,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 - Next.js 16 + React 19 + Tailwind 4
 - Convex (DB, actions, scheduler, storage, vector search, HTTP)
 - Vercel AI SDK (`ai`) for model execution + tool-enabled chat
-- `@claritylabs/cl-sdk@4.4.0` for source-tree extraction and insurance-focused primitives
+- `@claritylabs/cl-sdk@4.4.1` for source-tree extraction and insurance-focused primitives
 - Resend for email ingest and messaging workflows
 
 ## Getting Started
@@ -241,11 +241,23 @@ Connected vendor data is exposed in the same channels as first-party insurance d
 
 ## Model Routing
 
-Model routing is defined in `convex/lib/models.ts`:
+Model execution can be routed through the separate task-aware `cl-router`
+service. Glass resolves the broker/global/code settings snapshot and sends it
+with each enabled request; the router owns direct-provider selection,
+failover, cost telemetry, calibration, and autonomous policy.
 
-- Defaults are broker-configurable in `/settings?section=models`; see `AGENTS.md` for the current opaque Glass defaults and fallback behavior.
+- `CL_ROUTER_TASKS` enables task families incrementally; clearing it restores
+  the retained direct path.
+- Broker routes and keys remain org-scoped overrides. Operator global choices
+  seed new autonomous policies rather than pinning active routes.
+- `convex/lib/clRouterClient.ts` owns the API contract and safe pre-response
+  fallback. `convex/lib/clRouterLanguageModel.ts` preserves the Glass-side chat
+  tool loop with one router stream per model step.
+- Defaults remain broker-configurable in `/settings?section=models`; see
+  `AGENTS.md` and `docs/deployment/environments.md` for rollout and controls.
 
-Fallback logic retries supported calls on the configured fallback route. The static default is Fireworks DeepSeek V4 Pro.
+The router and retained fallback path both call providers directly. Vercel AI
+Gateway is not a fallback.
 
 ## Convex Rule Of Thumb
 
@@ -253,8 +265,10 @@ Internal Convex functions do not have user auth context. Do not call public auth
 
 ## Key Files
 
-- `convex/lib/models.ts` - model routing
-- `convex/lib/sdkCallbacks.ts` - `cl-sdk` callback adapter
+- `convex/lib/clRouterClient.ts` - task-aware router API client
+- `convex/lib/clRouterLanguageModel.ts` - AI SDK chat streaming adapter
+- `convex/lib/models.ts` - settings resolution and direct break-glass path
+- `convex/lib/sdkCallbacks.ts` - `cl-sdk` task bridge
 - `convex/lib/agentPrompts.ts` - retrieval context builders
 - `convex/actions/extractPolicy.ts` - policy extraction entrypoint
 - `convex/connectedOrgs.ts` - connected vendor/client relationship mutations and queries

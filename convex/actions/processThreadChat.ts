@@ -13,9 +13,16 @@ import {
   generateTextForOrg,
   generatedTextFromResult,
   getModelAndRouteForOrg,
+  getModelAndRouteForSettingsSnapshot,
   getModelForRoute,
   getProviderOptionsForRoute,
+  resolveClRouterSettingsForOrg,
 } from "../lib/models";
+import {
+  ClRouterVisibleOutputError,
+  createClRouterLanguageModel,
+} from "../lib/clRouterLanguageModel";
+import { shouldUseClRouterForCall } from "../lib/clRouterClient";
 import {
   createImessageGroupChat,
   coordinateMailboxTask,
@@ -201,6 +208,15 @@ function errorStatus(error: unknown): number | undefined {
 }
 
 function isTransientChatStreamError(error: unknown): boolean {
+  const nestedError = error && typeof error === "object"
+    ? (error as Record<string, unknown>).error
+    : undefined;
+  if (
+    error instanceof ClRouterVisibleOutputError ||
+    nestedError instanceof ClRouterVisibleOutputError
+  ) {
+    return false;
+  }
   const code = errorCode(error);
   const status = errorStatus(error);
   const text = errorText(error);
@@ -1472,7 +1488,37 @@ export const run = internalAction({
       ]);
 
       const chatTask = hasImageInput ? "chat_vision" : "chat";
-      const chatModel = await getModelAndRouteForOrg(ctx, args.orgId, chatTask);
+      const useClRouter = shouldUseClRouterForCall(chatTask, "query_reason");
+      const routerSettings = useClRouter
+        ? await resolveClRouterSettingsForOrg(ctx, args.orgId)
+        : undefined;
+      const chatModel = useClRouter
+        ? getModelAndRouteForSettingsSnapshot(routerSettings ?? null, chatTask)
+        : await getModelAndRouteForOrg(ctx, args.orgId, chatTask);
+      let activeChatModel = chatModel.model;
+      if (useClRouter) {
+        if (
+          typeof chatModel.model === "string" ||
+          chatModel.model.specificationVersion !== "v3"
+        ) {
+          throw new Error("cl-router chat break-glass requires an AI SDK v3 direct model");
+        }
+        activeChatModel = createClRouterLanguageModel({
+          task: chatTask,
+          taskKind: "query_reason",
+          orgId: String(args.orgId),
+          settings: routerSettings ?? null,
+          sessionKey: String(args.threadId),
+          trace: {
+            traceId: String(agentMsgId),
+            parentRequestId: String(args.userMessageId),
+            label: "convex.processThreadChat",
+            phase: "query_reason",
+            channel: "web",
+          },
+          directModel: chatModel.model,
+        });
+      }
       const startChatStream = (
         model: typeof chatModel.model,
         route: typeof chatModel.route,
@@ -1702,7 +1748,7 @@ export const run = internalAction({
 
       try {
         const completed = await consumeChatStream(
-          startChatStream(chatModel.model, chatModel.route).fullStream,
+          startChatStream(activeChatModel, chatModel.route).fullStream,
         );
         if (!completed) return;
       } catch (streamError) {
