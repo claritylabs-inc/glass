@@ -15,6 +15,7 @@ import {
 import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
 import { completeOtpSignIn } from "@/lib/otp-auth";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 type ConnectedOrgsApi = {
@@ -80,7 +81,11 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
         setRequestData(typed);
         setEmail(typed.vendorEmail ?? "");
       })
-      .catch((err: Error) => setFetchError(err.message))
+      .catch((err: unknown) =>
+        setFetchError(
+          getUserFacingErrorMessage(err, "Could not load this access request."),
+        ),
+      )
       .finally(() => setFetching(false));
   }, [getInvitationByToken, token]);
 
@@ -109,9 +114,10 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
         window.location.reload();
       } catch (err) {
         setError(
-          err instanceof Error && err.message
-            ? err.message
-            : "Could not auto-verify. Please try again.",
+          getUserFacingErrorMessage(
+            err,
+            "Could not auto-verify. Please try again.",
+          ),
         );
         autoStartedRef.current = false;
       } finally {
@@ -133,7 +139,9 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
         router.replace(`/onboarding?${params.toString()}`);
       })
       .catch((err: unknown) => {
-        setError(friendlyError(err instanceof Error ? err.message : "Could not accept invite"));
+        setError(
+          friendlyError(getUserFacingErrorMessage(err, "Could not accept invite")),
+        );
         acceptingRef.current = false;
       });
   }, [requestData, isAuthenticated, acceptInvitation, token, router]);
@@ -151,7 +159,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
       await signIn("resend-otp", { email });
       setStep("code");
     } catch (err: unknown) {
-      setError(friendlyError(err instanceof Error ? err.message : ""));
+      setError(friendlyError(getUserFacingErrorMessage(err, "")));
     } finally {
       setLoading(false);
     }
@@ -165,7 +173,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
       await completeOtpSignIn(email, code);
       window.location.reload();
     } catch (err: unknown) {
-      setError(friendlyError(err instanceof Error ? err.message : ""));
+      setError(friendlyError(getUserFacingErrorMessage(err, "")));
       setLoading(false);
     }
   }

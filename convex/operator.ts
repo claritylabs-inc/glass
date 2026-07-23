@@ -27,6 +27,10 @@ import {
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
 import { orgBrandFields } from "./lib/orgBranding";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const brokerStatusValidator = v.union(v.literal("onboarding"), v.literal("live"));
 const orgRoleValidator = v.union(v.literal("admin"), v.literal("member"));
@@ -433,11 +437,14 @@ export const bootstrapViewer = mutation({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const user = await ctx.db.get(userId);
     const email = normalizeOperatorEmail(user?.email);
     if (!user || !email || !isBootstrapOperatorEmail(email)) {
-      throw new Error("This email is not authorized for operator access");
+      throwUserFacingError(
+        userFacingErrorCodes.operatorRequired,
+        "This account is not authorized for Glass operator access.",
+      );
     }
 
     const memberships = await ctx.db
@@ -445,7 +452,10 @@ export const bootstrapViewer = mutation({
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (memberships) {
-      throw new Error("Customer accounts cannot become operator accounts");
+      throwUserFacingError(
+        userFacingErrorCodes.operatorRequired,
+        "Customer organization accounts cannot be converted into operator accounts.",
+      );
     }
 
     const now = dayjs().valueOf();
@@ -815,7 +825,7 @@ export const rerunExtraction = action({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args): Promise<{ success: boolean; traceId?: string }> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
 
     const policy = await ctx.runQuery(internalApi.policies.getInternal, {
@@ -838,7 +848,7 @@ export const backfillCoverageRecovery = action({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
     return await ctx.runAction(
       internalApi.actions.policyExtraction.backfillStoredCoverageRecovery,
@@ -1033,7 +1043,7 @@ export const createBroker = action({
   },
   handler: async (ctx, args): Promise<{ brokerOrgId: Id<"organizations"> }> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
 
     const adminEmail = normalizeOperatorEmail(args.adminEmail);
@@ -1083,7 +1093,7 @@ export const createSoloClient = action({
   },
   handler: async (ctx, args): Promise<{ clientOrgId: Id<"organizations"> }> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
 
     const adminEmail = normalizeOperatorEmail(args.adminEmail);
@@ -1351,7 +1361,7 @@ export const launchBroker = action({
   args: { brokerOrgId: v.id("organizations") },
   handler: async (ctx, args): Promise<{ loginUrl: string }> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
     const launch: {
       brokerOrgId: Id<"organizations">;
@@ -1412,7 +1422,7 @@ export const launchSoloClient = action({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args): Promise<{ loginUrl: string }> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
     const launch: {
       clientOrgId: Id<"organizations">;
@@ -1655,12 +1665,16 @@ export const requireOperatorForUserInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
-    if (!user || user.accountKind !== "operator") throw new Error("Operator access required");
+    if (!user || user.accountKind !== "operator") {
+      throwUserFacingError(userFacingErrorCodes.operatorRequired);
+    }
     const profile = await ctx.db
       .query("operatorProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .first();
-    if (!profile || profile.status !== "active") throw new Error("Operator access required");
+    if (!profile || profile.status !== "active") {
+      throwUserFacingError(userFacingErrorCodes.operatorRequired);
+    }
     return { userId: args.userId, profile };
   },
 });

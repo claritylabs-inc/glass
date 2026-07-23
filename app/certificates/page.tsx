@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAction, useMutation } from "convex/react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -327,7 +328,7 @@ export default function CertificatesPage() {
       toast.success("Certificate archived");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not archive certificate",
+        getUserFacingErrorMessage(error, "Could not archive certificate"),
       );
     } finally {
       setArchivingCertificateId(null);
@@ -342,7 +343,7 @@ export default function CertificatesPage() {
       toast.success("Certificate restored");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not restore certificate",
+        getUserFacingErrorMessage(error, "Could not restore certificate"),
       );
     } finally {
       setUnarchivingCertificateId(null);
@@ -371,7 +372,9 @@ export default function CertificatesPage() {
         openWithUrl((result as { url: string }).url);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not reissue certificate");
+      toast.error(
+        getUserFacingErrorMessage(error, "Could not reissue certificate"),
+      );
     } finally {
       setReissuingCertificateId(null);
     }
@@ -405,9 +408,10 @@ export default function CertificatesPage() {
       return true;
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not update certificate holder",
+        getUserFacingErrorMessage(
+          error,
+          "Could not update certificate holder",
+        ),
       );
       return false;
     } finally {

@@ -12,6 +12,7 @@ import { getPublicAgentDomain } from "@/lib/domains";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 import { useThreadCacheActions } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   optimisticPromptAttachments,
   promptReferenceIds,
@@ -111,13 +112,15 @@ export function useStartAgentThread(cacheKeyPrefix: string) {
             await markOptimisticSendFailed({
               threadId,
               clientMutationId,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to send message",
+              error: getUserFacingErrorMessage(
+                error,
+                "Failed to send message",
+              ),
             });
           }
-          toast.error("Failed to send message");
+          toast.error(
+            getUserFacingErrorMessage(error, "Failed to send message"),
+          );
         }
       })();
 

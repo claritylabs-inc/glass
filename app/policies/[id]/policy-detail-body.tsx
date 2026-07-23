@@ -11,6 +11,7 @@ import {
 import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { FadeIn } from "@/components/ui/fade-in";
 import {
   Archive,
@@ -538,7 +539,9 @@ export function PolicyDetailBody({
         openWithUrl((result as { url: string }).url);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not reissue certificate");
+      toast.error(
+        getUserFacingErrorMessage(error, "Could not reissue certificate"),
+      );
     } finally {
       setReissuingCertificateId(null);
     }
@@ -572,9 +575,10 @@ export function PolicyDetailBody({
       return true;
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not update certificate holder",
+        getUserFacingErrorMessage(
+          error,
+          "Could not update certificate holder",
+        ),
       );
       return false;
     } finally {
@@ -591,9 +595,7 @@ export function PolicyDetailBody({
         toast.success("Certificate archived");
       } catch (error) {
         toast.error(
-          error instanceof Error
-            ? error.message
-            : "Could not archive certificate",
+          getUserFacingErrorMessage(error, "Could not archive certificate"),
         );
       } finally {
         setArchivingCertificateId(null);

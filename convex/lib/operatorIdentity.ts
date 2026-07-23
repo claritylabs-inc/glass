@@ -2,6 +2,10 @@ import dayjs from "dayjs";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./userFacingErrors";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -33,7 +37,7 @@ export async function assertCustomerUser(
   const user = await ctx.db.get(userId);
   if (!user) throw new Error("User not found");
   if (user.accountKind === "operator" || isBootstrapOperatorEmail(user.email)) {
-    throw new Error(message);
+    throwUserFacingError(userFacingErrorCodes.orgAccessRequired, message);
   }
   return user;
 }
@@ -42,7 +46,9 @@ export async function assertCustomerEmail(
   email: string,
   message = "Operator emails cannot be used for customer accounts",
 ) {
-  if (isBootstrapOperatorEmail(email)) throw new Error(message);
+  if (isBootstrapOperatorEmail(email)) {
+    throwUserFacingError(userFacingErrorCodes.orgAccessRequired, message);
+  }
 }
 
 export async function getActiveOperatorProfile(ctx: Ctx): Promise<{
@@ -64,13 +70,15 @@ export async function getActiveOperatorProfile(ctx: Ctx): Promise<{
 
 export async function requireOperator(ctx: Ctx) {
   const operator = await getActiveOperatorProfile(ctx);
-  if (!operator) throw new Error("Operator access required");
+  if (!operator) throwUserFacingError(userFacingErrorCodes.operatorRequired);
   return operator;
 }
 
 export async function requireOperatorOwner(ctx: Ctx) {
   const operator = await requireOperator(ctx);
-  if (operator.profile.role !== "owner") throw new Error("Operator owner access required");
+  if (operator.profile.role !== "owner") {
+    throwUserFacingError(userFacingErrorCodes.operatorOwnerRequired);
+  }
   return operator;
 }
 
@@ -141,7 +149,7 @@ export async function assertImpersonatedSetupWrite(
   }
 
   if (!setupOrg || (setupOrg.operatorStatus ?? "live") !== "onboarding") {
-    throw new Error("Operator impersonation is read-only for this organization");
+    throwUserFacingError(userFacingErrorCodes.impersonationReadOnly);
   }
   return active;
 }
@@ -168,7 +176,10 @@ export async function assertImpersonatedBrokerTaskWrite(
   }
 
   if (!brokerOrg) {
-    throw new Error("Operator impersonation is read-only for this organization");
+    throwUserFacingError(
+      userFacingErrorCodes.impersonationReadOnly,
+      "This operator session can perform broker tasks only for the impersonated brokerage and its managed clients.",
+    );
   }
   return active;
 }

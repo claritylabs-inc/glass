@@ -29,6 +29,7 @@ import {
   useCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NO_PRODUCER_ID = "__none";
@@ -214,9 +215,10 @@ function BrokerIdentityForm({
     },
     flush: saveBrokerIdentity,
     errorMessage: (error) =>
-      error instanceof Error
-        ? error.message
-        : "The broker contact could not be saved.",
+      getUserFacingErrorMessage(
+        error,
+        "The broker contact could not be saved.",
+      ),
   });
 
   function finishTextEdit() {

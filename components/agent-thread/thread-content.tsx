@@ -14,6 +14,7 @@ import { useStickToBottom } from "use-stick-to-bottom";
 import dayjs from "dayjs";
 import JSZip from "jszip";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   Loader2,
   Archive,
@@ -2349,8 +2350,10 @@ export function UnifiedThreadContent({
           clientMutationId,
         });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to send message";
+        const message = getUserFacingErrorMessage(
+          error,
+          "Failed to send message",
+        );
         await markOptimisticSendFailed({
           threadId,
           clientMutationId,

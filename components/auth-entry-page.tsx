@@ -8,6 +8,7 @@ import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-she
 import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
 import { completeOtpSignIn } from "@/lib/otp-auth";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 function friendlyError(raw: string): string {
@@ -65,7 +66,7 @@ export function AuthEntryPage({
       await signIn("resend-otp", { email });
       setStep("code");
     } catch (err: unknown) {
-      setError(friendlyError(err instanceof Error ? err.message : ""));
+      setError(friendlyError(getUserFacingErrorMessage(err, "")));
     } finally {
       setLoading(false);
     }
@@ -79,7 +80,7 @@ export function AuthEntryPage({
       await completeOtpSignIn(email, code);
       window.location.assign(postLoginPath);
     } catch (err: unknown) {
-      setError(friendlyError(err instanceof Error ? err.message : ""));
+      setError(friendlyError(getUserFacingErrorMessage(err, "")));
       setLoading(false);
     }
   }

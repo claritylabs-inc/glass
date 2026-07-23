@@ -4,6 +4,10 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api } from "../_generated/api";
 import { getImessageWorkerUrl, isImessageInboundEnabled } from "../lib/imessageConfig";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "../lib/userFacingErrors";
 
 /**
  * Sends an intro iMessage from the Photon agent to the authenticated user's
@@ -16,7 +20,7 @@ export const sendIntroImessage = action({
   returns: v.any(),
   handler: async (ctx): Promise<{ ok: boolean; error?: string }> => {
     const viewer = await ctx.runQuery(api.users.viewer);
-    if (!viewer) throw new Error("Not authenticated");
+    if (!viewer) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const phone = viewer.phone;
     if (!phone) return { ok: false, error: "no_phone" };

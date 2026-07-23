@@ -82,7 +82,9 @@ describe("connected email org scope", () => {
         username: "member@example.com",
         password: "secret",
       }),
-    ).rejects.toThrow("Only org admins can connect organization-scoped mailboxes");
+    ).rejects.toThrow(
+      "Only an organization admin can connect a shared mailbox.",
+    );
     expect(imapMock.options).toHaveLength(0);
   });
 
@@ -143,7 +145,7 @@ describe("connected email org scope", () => {
         scope: "org",
       }),
     ).rejects.toThrow(
-      "Only org admins can make a mailbox available to the organization",
+      "Only an organization admin can make a mailbox available to the organization.",
     );
 
     await expect(
@@ -151,7 +153,7 @@ describe("connected email org scope", () => {
         accountId,
         scope: "org",
       }),
-    ).rejects.toThrow("Only the owner can manage a personal mailbox");
+    ).rejects.toThrow("Only the mailbox owner can manage a personal mailbox.");
 
     const adminAccountId = await t.run(async (ctx) =>
       ctx.db.insert("connectedEmailAccounts", {

@@ -36,6 +36,10 @@ import type {
   PolicyImportOutcome,
   RequirementImportOutcome,
 } from "./connectedEmail";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "../lib/userFacingErrors";
 
 const AUTOMATION_INITIAL_LOOKBACK_DAYS = 400;
 const AUTOMATION_SCAN_LIMIT = 50;
@@ -1240,7 +1244,7 @@ export const scanMailboxRange = action({
   returns: manualScanResultValidator,
   handler: async (ctx, args): Promise<ManualScanResult> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const manageable = await ctx.runQuery(
       internal.connectedEmail.getManageableForUserInternal,
       { accountId: args.accountId, userId: userId as Id<"users"> },

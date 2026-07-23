@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/operational-toast";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 type RetryMode = "resume" | "full";
 
@@ -243,9 +244,7 @@ export function PolicyExtractionBanner({
         });
       } catch (error) {
         toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to restart extraction",
+          getUserFacingErrorMessage(error, "Failed to restart extraction"),
         );
       } finally {
         setRetryingMode(null);

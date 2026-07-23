@@ -26,6 +26,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { OperatorSidebar } from "./operator-sidebar";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   useCachedOperatorBrokers,
   useCachedOperatorCurrent,
@@ -239,7 +240,7 @@ export default function OperatorPage() {
       await patchBrokerSettings(brokerOrgId, patch);
     },
     errorMessage: (error) =>
-      error instanceof Error ? error.message : "Broker settings could not be saved.",
+      getUserFacingErrorMessage(error, "Broker settings could not be saved."),
   });
 
   async function saveBrokerSettingsBeforeTransition() {
@@ -292,7 +293,7 @@ export default function OperatorPage() {
       setAdminPhone("");
       setPanelMode(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create broker");
+      toast.error(getUserFacingErrorMessage(error, "Failed to create broker"));
     } finally {
       setBusy(false);
     }
@@ -306,7 +307,9 @@ export default function OperatorPage() {
       await startImpersonation({ targetOrgId: broker._id, targetRole: "admin" });
       router.push("/clients");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to impersonate broker");
+      toast.error(
+        getUserFacingErrorMessage(error, "Failed to impersonate broker"),
+      );
     } finally {
       setBusy(false);
     }
@@ -321,7 +324,7 @@ export default function OperatorPage() {
       await patchBrokerStatus(broker._id, "live");
       toast.success("Broker launched and login email sent");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to launch broker");
+      toast.error(getUserFacingErrorMessage(error, "Failed to launch broker"));
     } finally {
       setBusy(false);
     }
@@ -336,7 +339,7 @@ export default function OperatorPage() {
       await patchBrokerStatus(broker._id, "onboarding");
       toast.success("Broker account disabled");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update broker");
+      toast.error(getUserFacingErrorMessage(error, "Failed to update broker"));
     } finally {
       setBusy(false);
     }

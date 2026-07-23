@@ -19,6 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -208,9 +209,7 @@ export function AddMailboxDrawer({
       toast.success("Mailbox connected");
       onOpenChange(false);
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to connect mailbox",
-      );
+      toast.error(getUserFacingErrorMessage(error, "Failed to connect mailbox"));
     } finally {
       setConnecting(false);
     }
@@ -465,9 +464,7 @@ export function MailboxSettingsDrawer({
     },
     onFlushed: () => setConfigurationSaved(true),
     errorMessage: (error) =>
-      error instanceof Error
-        ? error.message
-        : "Mailbox settings could not be saved.",
+      getUserFacingErrorMessage(error, "Mailbox settings could not be saved."),
   });
   const saveSettings = settingsAutoSave.saveNow;
   const saveSettingsBeforeAction = useCallback(
@@ -530,9 +527,7 @@ export function MailboxSettingsDrawer({
       });
       setScanDialogOpen(false);
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to scan the mailbox",
-      );
+      toast.error(getUserFacingErrorMessage(error, "Failed to scan the mailbox"));
     } finally {
       setScanning(false);
     }
@@ -548,7 +543,7 @@ export function MailboxSettingsDrawer({
       onOpenChange(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to disconnect mailbox",
+        getUserFacingErrorMessage(error, "Failed to disconnect mailbox"),
       );
     } finally {
       setDisconnecting(false);

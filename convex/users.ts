@@ -28,6 +28,10 @@ import {
   assertCustomerUser,
   isBootstrapOperatorEmail,
 } from "./lib/operatorIdentity";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const internal = _internal as any;
 const EMAIL_INVALID_MESSAGE = "Enter a valid email address.";
@@ -171,7 +175,7 @@ export const checkEmailAvailability = query({
   args: { email: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await assertCustomerUser(ctx, userId);
 
     let normalized = "";
@@ -198,7 +202,7 @@ export const getMyPendingEmailChange = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const request = await latestActiveEmailChangeRequest(ctx, userId);
     if (!request) return null;
 
@@ -220,7 +224,7 @@ export const checkPhoneAvailability = query({
   args: { phone: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     let normalized: string | undefined;
     try {
@@ -283,7 +287,7 @@ export const updateProfile = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const patch: { name?: string; title?: string; phone?: string | undefined } =
       {};
     if (args.name !== undefined) patch.name = args.name;
@@ -308,7 +312,7 @@ export const requestEmailChange = action({
   args: { email: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const code = generateEmailChangeCode();
     const request = await ctx.runMutation(
@@ -344,7 +348,7 @@ export const confirmEmailChange = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const request = await ctx.db.get(args.requestId);
     if (!request || request.targetUserId !== userId) {
@@ -439,7 +443,7 @@ export const cancelEmailChange = mutation({
   args: { requestId: v.id("userEmailChangeRequests") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const request = await ctx.db.get(args.requestId);
     if (!request || request.targetUserId !== userId) {
       throw new Error("Email change request not found");
@@ -531,7 +535,7 @@ export const completeOnboarding = mutation({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.db.patch(userId, { onboardingComplete: true });
 
     // Also mark org as onboarded if user has one
@@ -563,7 +567,7 @@ export const restartOnboarding = mutation({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.db.patch(userId, { onboardingComplete: false });
 
     const membership = await ctx.db
@@ -663,7 +667,7 @@ export const resetAccount = mutation({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const user = await ctx.db.get(userId);
     if (!user?.isAdmin) throw new Error("Not authorized");

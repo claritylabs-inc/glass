@@ -27,6 +27,7 @@ import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
@@ -173,7 +174,7 @@ export function OrganizationSection() {
       patchCachedViewerOrg(store, { slug: savedSlug });
     },
     errorMessage: (error) =>
-      error instanceof Error ? error.message : "The workspace link could not be saved.",
+      getUserFacingErrorMessage(error, "The workspace link could not be saved."),
   });
 
   const { setActions } = useSettingsActions();
@@ -681,7 +682,7 @@ function BrandingCard({
       patchCachedViewerOrg(store, { iconStorageId: result.iconStorageId });
       toast.success("Logo pulled from website");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to pull logo");
+      toast.error(getUserFacingErrorMessage(error, "Failed to pull logo"));
     } finally {
       setImportingLogo(false);
     }

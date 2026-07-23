@@ -27,6 +27,10 @@ import {
   assertImpersonatedSetupWrite,
   isBootstrapOperatorEmail,
 } from "./lib/operatorIdentity";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -197,7 +201,7 @@ export const joinBroker = mutation({
   args: { slug: v.string() },
   handler: async (ctx, { slug }) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internal.users.requireCustomerUserInternal, { userId });
 
     const normalized = slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -457,14 +461,19 @@ export const sendDraftInvite = action({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internal.users.requireCustomerUserInternal, { userId });
 
     const draft = await ctx.runQuery(internal.clientInvitations.getDraftContextInternal, {
       clientOrgId: args.clientOrgId,
       userId,
     });
-    if (!draft) throw new Error("Draft not found or unauthorized");
+    if (!draft) {
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "This client draft was not found or you no longer have access to it.",
+      );
+    }
     if (!draft.primaryContactEmail) throw new Error("Primary contact email required");
 
     const rawToken = randomToken();
@@ -565,7 +574,12 @@ export const revoke = mutation({
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx, args.orgId);
     assertBrokerOrg(access);
-    if (access.role !== "admin") throw new Error("Admin role required to revoke invitations");
+    if (access.role !== "admin") {
+      throwUserFacingError(
+        userFacingErrorCodes.orgAdminRequired,
+        "Only an organization admin can revoke invitations.",
+      );
+    }
 
     const inv = await ctx.db.get(args.invitationId);
     if (!inv || inv.brokerOrgId !== args.orgId) throw new Error("Invitation not found");
@@ -661,7 +675,7 @@ export const acceptInvite = mutation({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await assertCustomerUser(ctx, userId);
 
     const tokenHash = await sha256Hex(args.token);

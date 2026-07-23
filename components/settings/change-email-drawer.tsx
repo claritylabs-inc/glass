@@ -5,6 +5,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { OtpField } from "@/components/ui/otp-field";
@@ -110,8 +111,10 @@ export function SelfEmailChangeDrawer({
       setCode("");
       toast.success(`Verification code sent to ${result.newEmail}`);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to request email change";
+      const message = getUserFacingErrorMessage(
+        err,
+        "Failed to request email change",
+      );
       setError(message);
       toast.error(message);
     } finally {
@@ -132,8 +135,10 @@ export function SelfEmailChangeDrawer({
       toast.success("Email updated");
       closeDrawer(false);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to confirm email change";
+      const message = getUserFacingErrorMessage(
+        err,
+        "Failed to confirm email change",
+      );
       setError(message);
       toast.error(message);
     } finally {
@@ -150,8 +155,10 @@ export function SelfEmailChangeDrawer({
       setCode("");
       toast.success("Email change cancelled");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to cancel email change";
+      const message = getUserFacingErrorMessage(
+        err,
+        "Failed to cancel email change",
+      );
       setError(message);
       toast.error(message);
     } finally {

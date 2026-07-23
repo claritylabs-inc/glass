@@ -5,6 +5,10 @@ import type { Doc } from "./_generated/dataModel";
 import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import { requireOperator } from "./lib/operatorIdentity";
 import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
+import {
   AUDIO_TRANSCRIPTION_MODEL_CATALOG,
   CONFIGURABLE_MODEL_PROVIDERS,
   EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
@@ -165,7 +169,10 @@ function isConfigurableProvider(provider: ModelProvider) {
 async function requireCurrentBrokerAdmin(ctx: QueryCtx | MutationCtx) {
   const access = await requireOrgAccess(ctx);
   if (access.role !== "admin") {
-    throw new Error("Admin role required to manage model settings");
+    throwUserFacingError(
+      userFacingErrorCodes.brokerAdminRequired,
+      "Only a broker admin can manage model settings.",
+    );
   }
 
   if (access.org.type !== "broker") {

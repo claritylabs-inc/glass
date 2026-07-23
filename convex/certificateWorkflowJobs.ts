@@ -9,6 +9,10 @@ import {
   holderSnapshot,
   type CertificateHolderAddressInput,
 } from "./lib/certificateIdentity";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const jobStatusValidator = v.union(
   v.literal("review_required"),
@@ -273,7 +277,12 @@ export const reviewJob = mutation({
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Certificate workflow job not found");
     const access = await getOrgAccess(ctx, job.orgId);
-    if (access.accessType === "connected_client") throw new Error("Connected client access is read-only.");
+    if (access.accessType === "connected_client") {
+      throwUserFacingError(
+        userFacingErrorCodes.readOnlyAccess,
+        "Connected organization access is read-only. Ask the vendor to manage this certificate workflow.",
+      );
+    }
     if (job.status === "sent" || job.status === "cancelled") throw new Error("Completed jobs cannot be reviewed.");
     const recipientEmail = normalizeEmail(args.recipientEmail) ?? job.recipientEmail;
     const now = dayjs().valueOf();
@@ -300,7 +309,12 @@ export const cancelJob = mutation({
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Certificate workflow job not found");
     const access = await getOrgAccess(ctx, job.orgId);
-    if (access.accessType === "connected_client") throw new Error("Connected client access is read-only.");
+    if (access.accessType === "connected_client") {
+      throwUserFacingError(
+        userFacingErrorCodes.readOnlyAccess,
+        "Connected organization access is read-only. Ask the vendor to manage this certificate workflow.",
+      );
+    }
     if (job.status === "sent") throw new Error("Sent jobs cannot be cancelled.");
     const now = dayjs().valueOf();
     await ctx.db.patch(args.jobId, {
@@ -327,7 +341,12 @@ export const prepareSendJob = mutation({
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Certificate workflow job not found");
     const access = await getOrgAccess(ctx, job.orgId);
-    if (access.accessType === "connected_client") throw new Error("Connected client access is read-only.");
+    if (access.accessType === "connected_client") {
+      throwUserFacingError(
+        userFacingErrorCodes.readOnlyAccess,
+        "Connected organization access is read-only. Ask the vendor to manage this certificate workflow.",
+      );
+    }
     if (job.status !== "review_required") throw new Error("Job must be ready for review before sending.");
     if (!job.recipientEmail) throw new Error("Recipient email is required before sending.");
     const holder = await ctx.db.get(job.holderId);

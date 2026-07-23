@@ -5,6 +5,10 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireCurrentOrgAccess } from "./lib/access";
 import { requireBrokerAccessToClient } from "./lib/access";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const channelValidator = v.union(v.literal("email"), v.literal("imessage"));
 const actionValidator = v.union(
@@ -44,10 +48,13 @@ function normalizeChannels(channels: Array<"email" | "imessage"> | undefined) {
 async function requireBrokerAdmin(ctx: Parameters<typeof requireCurrentOrgAccess>[0]) {
   const access = await requireCurrentOrgAccess(ctx);
   if ((access.org.type ?? "client") !== "broker") {
-    throw new Error("Broker organization required");
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Switch to a broker organization to manage policy delivery.",
+    );
   }
   if (access.role !== "admin") {
-    throw new Error("Broker admin access required");
+    throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
   }
   return access;
 }
@@ -59,7 +66,7 @@ async function requireBrokerAdminAccessToClient(
   const access = await requireBrokerAccessToClient(ctx, clientOrgId);
   const current = await requireCurrentOrgAccess(ctx);
   if (current.orgId !== access.brokerOrgId || current.role !== "admin") {
-    throw new Error("Broker admin access required");
+    throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
   }
   return access;
 }
@@ -246,7 +253,12 @@ export const upsertRule = mutation({
       : null;
     const brokerAccess = args.clientOrgId ? null : await requireBrokerAdmin(ctx);
     const access = clientAccess ?? brokerAccess;
-    if (!access) throw new Error("Broker access required");
+    if (!access) {
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "You need broker access to manage policy delivery.",
+      );
+    }
     const brokerOrgId = clientAccess?.brokerOrgId ?? brokerAccess!.orgId;
     const now = dayjs().valueOf();
     const patch = {

@@ -31,6 +31,11 @@ import {
 } from "./lib/complianceRequirementMigration";
 import { isLobCode, lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 import { notify } from "./lib/notify";
+import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const sourceDocumentTypeValidator = v.union(
   v.literal("lease_agreement"),
@@ -105,7 +110,23 @@ async function requireOrgMember(
 ) {
   const access = await getOrgAccess(ctx, orgId);
   if (access.accessType !== "member") {
-    throw new Error("Only organization members can manage compliance requirements");
+    throwUserFacingError(
+      userFacingErrorCodes.readOnlyAccess,
+      "Only members of this organization can manage its compliance requirements.",
+    );
+  }
+  return access;
+}
+
+async function requireOrgAdminWrite(
+  ctx: QueryCtx | MutationCtx,
+  orgId: Id<"organizations">,
+  errorMessage: string,
+) {
+  const access = await requireOrgMember(ctx, orgId);
+  await assertImpersonatedSetupWrite(ctx, orgId);
+  if (access.role !== "admin") {
+    throwUserFacingError(userFacingErrorCodes.orgAdminRequired, errorMessage);
   }
   return access;
 }
@@ -125,8 +146,12 @@ async function requireAdminWriteActor(
   if (membership?.role === "admin") return;
 
   const access = await requireOrgMember(ctx, orgId);
-  if (access.userId === userId && access.role === "admin") return;
-  throw new Error(errorMessage);
+  if (access.userId !== userId) {
+    throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
+  }
+  await assertImpersonatedSetupWrite(ctx, orgId);
+  if (access.role === "admin") return;
+  throwUserFacingError(userFacingErrorCodes.orgAdminRequired, errorMessage);
 }
 
 function normalizeText(value: unknown) {
@@ -448,10 +473,11 @@ export const upsertRequirement = mutation({
     sourcePageEnd: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin") {
-      throw new Error("Admin role required to update compliance requirements");
-    }
+    const access = await requireOrgAdminWrite(
+      ctx,
+      args.orgId,
+      "Only an organization admin can update compliance requirements.",
+    );
     const now = dayjs().valueOf();
     const sanitized = sanitizeRequirementArgs(args);
     const patch = {
@@ -491,10 +517,11 @@ export const updateRequirementSource = mutation({
     sourceType: v.optional(sourceDocumentTypeValidator),
   },
   handler: async (ctx, args) => {
-    const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin") {
-      throw new Error("Admin role required to update requirement sources");
-    }
+    const access = await requireOrgAdminWrite(
+      ctx,
+      args.orgId,
+      "Only an organization admin can update requirement sources.",
+    );
     const source = await ctx.db.get(args.sourceDocumentId);
     if (!source || source.orgId !== args.orgId || source.archivedAt) {
       throw new Error("Requirement source not found");
@@ -536,10 +563,11 @@ export const archiveRequirementSources = mutation({
     sourceDocumentIds: v.array(v.id("requirementSourceDocuments")),
   },
   handler: async (ctx, args) => {
-    const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin") {
-      throw new Error("Admin role required to archive requirement sources");
-    }
+    const access = await requireOrgAdminWrite(
+      ctx,
+      args.orgId,
+      "Only an organization admin can archive requirement sources.",
+    );
     const sourceDocumentIds = Array.from(new Set(args.sourceDocumentIds));
     if (sourceDocumentIds.length === 0) {
       throw new Error("Select at least one requirement source");
@@ -583,10 +611,11 @@ export const archiveRequirement = mutation({
     requirementId: v.id("insuranceRequirements"),
   },
   handler: async (ctx, args) => {
-    const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin") {
-      throw new Error("Admin role required to archive compliance requirements");
-    }
+    const access = await requireOrgAdminWrite(
+      ctx,
+      args.orgId,
+      "Only an organization admin can archive compliance requirements.",
+    );
     const existing = await ctx.db.get(args.requirementId);
     if (!existing || existing.orgId !== args.orgId) {
       throw new Error("Requirement not found");
@@ -602,10 +631,11 @@ export const archiveRequirement = mutation({
 export const generateRequirementImportUploadUrl = mutation({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin") {
-      throw new Error("Admin role required to import compliance requirements");
-    }
+    await requireOrgAdminWrite(
+      ctx,
+      args.orgId,
+      "Only an organization admin can import compliance requirements.",
+    );
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -613,10 +643,11 @@ export const generateRequirementImportUploadUrl = mutation({
 export const generateEvidenceUploadUrl = mutation({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin") {
-      throw new Error("Admin role required to verify requirements");
-    }
+    await requireOrgAdminWrite(
+      ctx,
+      args.orgId,
+      "Only an organization admin can verify compliance requirements.",
+    );
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -631,10 +662,11 @@ export const verifyRequirement = mutation({
     evidence: v.optional(evidenceValidator),
   },
   handler: async (ctx, args) => {
-    const access = await requireOrgMember(ctx, args.orgId);
-    if (access.role !== "admin") {
-      throw new Error("Admin role required to verify requirements");
-    }
+    const access = await requireOrgAdminWrite(
+      ctx,
+      args.orgId,
+      "Only an organization admin can verify compliance requirements.",
+    );
     const requirement = await ctx.db.get(args.requirementId);
     if (!requirement || requirement.orgId !== args.orgId) {
       throw new Error("Requirement not found");
@@ -891,13 +923,12 @@ export const getManualComplianceReviewContextInternal = internalQuery({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
-        q.eq("orgId", args.orgId).eq("userId", args.userId),
-      )
-      .first();
-    if (!membership) throw new Error("Organization access required");
+    await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Only an organization admin can run a deeper compliance check.",
+    );
     const requirement = await ctx.db.get(args.requirementId);
     if (
       !requirement ||
@@ -1047,19 +1078,18 @@ export const getRequirementImportContextInternal = internalQuery({
   handler: async (ctx, args) => {
     const access = args.userId
       ? null
-      : await requireOrgMember(ctx, args.orgId);
+      : await requireOrgAdminWrite(
+        ctx,
+        args.orgId,
+        "Only an organization admin can import compliance requirements.",
+      );
     if (args.userId) {
-      const membership = await ctx.db
-        .query("orgMemberships")
-        .withIndex("by_orgId_userId", (q) =>
-          q.eq("orgId", args.orgId).eq("userId", args.userId!),
-        )
-        .first();
-      if (membership?.role !== "admin") {
-        throw new Error("Admin role required to import compliance requirements");
-      }
-    } else if (access?.role !== "admin") {
-      throw new Error("Admin role required to import compliance requirements");
+      await requireAdminWriteActor(
+        ctx,
+        args.orgId,
+        args.userId,
+        "Only an organization admin can import compliance requirements.",
+      );
     }
     const existing = await listRequirementsForOrg(ctx, args.orgId);
     return {
@@ -1079,15 +1109,12 @@ export const getRequirementImportContextInternal = internalQuery({
 export const getRequirementImportContextForUserInternal = internalQuery({
   args: { orgId: v.id("organizations"), userId: v.id("users") },
   handler: async (ctx, args) => {
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
-        q.eq("orgId", args.orgId).eq("userId", args.userId),
-      )
-      .first();
-    if (membership?.role !== "admin") {
-      throw new Error("Admin role required to import compliance requirements");
-    }
+    await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Only an organization admin can import compliance requirements.",
+    );
     const existing = await listRequirementsForOrg(ctx, args.orgId);
     return {
       userId: args.userId,

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { FileText, Loader2, MessageSquare, RefreshCw, Send, X } from "lucide-react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -153,7 +154,7 @@ function DeliveryDrawer({
       await fn();
       toast.success("Delivery updated");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update delivery");
+      toast.error(getUserFacingErrorMessage(error, "Failed to update delivery"));
     } finally {
       setBusy(null);
     }

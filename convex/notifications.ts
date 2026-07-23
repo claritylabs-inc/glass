@@ -4,6 +4,10 @@ import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { getCurrentOrgAccess as getOrgAccess, requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import type { Doc, Id } from "./_generated/dataModel";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 type NotificationVisibilityRow = {
   status: string;
@@ -163,7 +167,9 @@ export const markAllRead = mutation({
   handler: async (ctx, args) => {
     const access = await requireOrgAccess(ctx);
     const orgId = args.orgId ?? access.orgId;
-    if (orgId !== access.orgId) throw new Error("Access denied");
+    if (orgId !== access.orgId) {
+      throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
+    }
 
     const unread = await ctx.db
       .query("notifications")

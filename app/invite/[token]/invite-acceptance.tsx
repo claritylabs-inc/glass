@@ -15,6 +15,7 @@ import {
 import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
 import { completeOtpSignIn } from "@/lib/otp-auth";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 type InviteData = {
@@ -84,7 +85,11 @@ export default function InviteAcceptance({ token }: { token: string }) {
         setInviteData(data as InviteData);
         if (data.primaryContactEmail) setEmail(data.primaryContactEmail);
       })
-      .catch((err: Error) => setFetchError(err.message))
+      .catch((err: unknown) =>
+        setFetchError(
+          getUserFacingErrorMessage(err, "Could not load this invitation."),
+        ),
+      )
       .finally(() => setFetching(false));
   }, [token, getByToken]);
 
@@ -113,9 +118,10 @@ export default function InviteAcceptance({ token }: { token: string }) {
         window.location.reload();
       } catch (err) {
         setError(
-          err instanceof Error && err.message
-            ? err.message
-            : "Could not auto-verify. Please try again.",
+          getUserFacingErrorMessage(
+            err,
+            "Could not auto-verify. Please try again.",
+          ),
         );
         autoStartedRef.current = false;
       } finally {
@@ -134,7 +140,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
         router.replace("/onboarding");
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Could not accept invitation");
+        setError(getUserFacingErrorMessage(err, "Could not accept invitation"));
         acceptingRef.current = false;
       });
   }, [isAuthenticated, acceptInvitation, token, router]);
@@ -152,7 +158,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
       await signIn("resend-otp", { email });
       setStep("code");
     } catch (err: unknown) {
-      setError(friendlyError(err instanceof Error ? err.message : ""));
+      setError(friendlyError(getUserFacingErrorMessage(err, "")));
     } finally {
       setLoading(false);
     }
@@ -166,7 +172,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
       await completeOtpSignIn(email, code);
       window.location.reload();
     } catch (err: unknown) {
-      setError(friendlyError(err instanceof Error ? err.message : ""));
+      setError(friendlyError(getUserFacingErrorMessage(err, "")));
       setLoading(false);
     }
   }

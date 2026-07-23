@@ -50,7 +50,7 @@ describe("policy delivery access", () => {
       t
         .withIdentity({ subject: `${ids.memberUserId}|session` })
         .mutation(updateClientOverrideFn, args),
-    ).rejects.toThrow("Broker admin access required");
+    ).rejects.toThrow("Only a broker admin can perform this action.");
 
     await expect(
       t

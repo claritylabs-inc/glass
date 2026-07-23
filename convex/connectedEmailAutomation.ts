@@ -5,6 +5,10 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { getCurrentOrgAccess } from "./lib/access";
 import { canAccessThread } from "./lib/threadAccess";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const classificationValidator = v.union(
   v.literal("ignore"),
@@ -156,7 +160,7 @@ export const resolveReview = mutation({
   },
   handler: async (ctx, args) => {
     const access = await getCurrentOrgAccess(ctx);
-    if (!access) throw new Error("Not authenticated");
+    if (!access) throwUserFacingError(userFacingErrorCodes.authRequired);
     const thread = await ctx.db.get(args.threadId);
     if (
       !thread ||

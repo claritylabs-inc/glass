@@ -150,7 +150,9 @@ describe("policy archive and restore", () => {
         archiveFn,
         { id: policyId },
       ),
-    ).rejects.toThrow("Not authorized to archive this policy");
+    ).rejects.toThrow(
+      "Brokers can archive only policies uploaded by their brokerage.",
+    );
 
     const policy = await t.run(async (ctx) => ctx.db.get(policyId));
     expect(policy?.deletedAt).toBeUndefined();

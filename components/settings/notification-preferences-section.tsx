@@ -26,6 +26,7 @@ import {
   type NotificationSettingsRow,
 } from "@/convex/lib/notificationTypes";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 interface NotificationPreferencesSectionProps {
   orgId: Id<"organizations">;
@@ -117,9 +118,10 @@ function NotificationPreferenceDrawer({
       onOpenChange(false);
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to save notification preference",
+        getUserFacingErrorMessage(
+          error,
+          "Failed to save notification preference",
+        ),
       );
     } finally {
       setSaving(false);
@@ -295,9 +297,10 @@ export function NotificationPreferencesSection({
         setLocalPreference("__all__", channel, previous);
       }
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to update notification default",
+        getUserFacingErrorMessage(
+          error,
+          "Failed to update notification default",
+        ),
       );
     } finally {
       setSavingDefault(null);
