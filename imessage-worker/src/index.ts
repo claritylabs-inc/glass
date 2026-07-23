@@ -1214,13 +1214,20 @@ async function main() {
             attachments: attachments.length > 0 ? attachments : undefined,
           });
 
-          if (result.sendContactCard) {
-            await sendGlassContactCard(space);
-          }
-
           // Send the text response
           if (result.response) {
             await sendResponseText(space, message, result.response);
+          }
+
+          if (result.sendContactCard) {
+            try {
+              await sendGlassContactCard(space);
+            } catch (err) {
+              console.warn(
+                "[glass-imessage] Contact card delivery failed; continuing with response:",
+                err,
+              );
+            }
           }
 
           await sendOutboundAppCards(space, result.appCards);
