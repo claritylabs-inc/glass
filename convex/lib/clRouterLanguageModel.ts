@@ -29,19 +29,31 @@ import {
   type ClRouterToolDefinition,
   type ClRouterUsage,
 } from "./clRouterClient";
-import type { ModelTask } from "./modelCatalog";
+import type { ModelRoute, ModelTask } from "./modelCatalog";
 
-type ClRouterChatTask = Extract<ModelTask, "chat" | "chat_vision">;
+export type ClRouterLanguageModelStep = {
+  step: number;
+  hasTools: boolean;
+  hasToolResults: boolean;
+};
 
 export type ClRouterLanguageModelOptions = {
-  task: ClRouterChatTask;
+  task: ModelTask;
   taskKind?: string;
-  orgId: string;
+  orgId?: string;
   settings: ClRouterSettingsSnapshot | null;
   sessionKey: string;
   trace?: ClRouterGenerateRequest["trace"];
   directModel: LanguageModelV3;
   client?: ClRouterClientOptions;
+  onResponse?: (
+    response: ClRouterResponseMetadata,
+    step: ClRouterLanguageModelStep,
+  ) => void | Promise<void>;
+  onDirectFallback?: (
+    error: unknown,
+    step: ClRouterLanguageModelStep,
+  ) => void | Promise<void>;
 };
 
 export class ClRouterVisibleOutputError extends Error {
@@ -176,17 +188,20 @@ function requestForCall(
   adapter: ClRouterLanguageModelOptions,
   options: LanguageModelV3CallOptions,
   parentRequestId?: string,
+  selectedRoute?: ModelRoute,
+  allowFallback = true,
 ): ClRouterGenerateRequest {
   const responseFormat = options.responseFormat;
-  const schema = responseFormat?.type === "json" && responseFormat.schema
-    ? responseFormat.schema as Record<string, unknown>
-    : undefined;
+  const schema =
+    responseFormat?.type === "json" && responseFormat.schema
+      ? (responseFormat.schema as Record<string, unknown>)
+      : undefined;
   const tools = clRouterTools(options.tools);
   const toolChoice = clRouterToolChoice(options.toolChoice);
   return {
     task: adapter.task,
     ...(adapter.taskKind ? { taskKind: adapter.taskKind } : {}),
-    orgId: adapter.orgId,
+    ...(adapter.orgId ? { orgId: adapter.orgId } : {}),
     settings: adapter.settings,
     messages: clRouterMessagesFromPrompt(options.prompt),
     ...(schema
@@ -199,15 +214,28 @@ function requestForCall(
     sessionKey: adapter.sessionKey,
     ...(tools ? { tools } : {}),
     ...(toolChoice ? { toolChoice } : {}),
+    routing: {
+      ...(selectedRoute ? { pin: selectedRoute } : {}),
+      allowFallback,
+    },
     ...(adapter.trace || parentRequestId
       ? {
-        trace: {
-          ...adapter.trace,
-          ...(parentRequestId ? { parentRequestId } : {}),
-        },
-      }
+          trace: {
+            ...adapter.trace,
+            ...(parentRequestId ? { parentRequestId } : {}),
+          },
+        }
       : {}),
   };
+}
+
+function promptHasToolResults(prompt: LanguageModelV3Prompt): boolean {
+  return prompt.some(
+    (message) =>
+      message.role !== "system" &&
+      typeof message.content !== "string" &&
+      message.content.some((part) => part.type === "tool-result"),
+  );
 }
 
 function languageModelUsage(usage: ClRouterUsage): LanguageModelV3Usage {
@@ -328,10 +356,46 @@ export function createClRouterLanguageModel(
   adapter: ClRouterLanguageModelOptions,
 ): LanguageModelV3 {
   let parentRequestId = adapter.trace?.parentRequestId;
-  const clientOptions = (abortSignal: AbortSignal | undefined): ClRouterClientOptions => ({
+  let selectedRoute: ModelRoute | undefined;
+  let successfulRouterSteps = 0;
+  let useDirectForRun = false;
+  const clientOptions = (
+    abortSignal: AbortSignal | undefined,
+  ): ClRouterClientOptions => ({
     ...adapter.client,
     abortSignal,
   });
+  const stepContext = (
+    options: LanguageModelV3CallOptions,
+  ): ClRouterLanguageModelStep => ({
+    step: successfulRouterSteps + 1,
+    hasTools: (options.tools?.length ?? 0) > 0,
+    hasToolResults: promptHasToolResults(options.prompt),
+  });
+  const notifyResponse = async (
+    response: ClRouterResponseMetadata,
+    step: ClRouterLanguageModelStep,
+  ) => {
+    try {
+      await adapter.onResponse?.(response, step);
+    } catch (error) {
+      console.warn("[cl-router] Failed to record routed model response", error);
+    }
+  };
+  const switchRunToDirect = async (
+    error: unknown,
+    step: ClRouterLanguageModelStep,
+  ) => {
+    useDirectForRun = true;
+    try {
+      await adapter.onDirectFallback?.(error, step);
+    } catch (recordingError) {
+      console.warn(
+        "[cl-router] Failed to record direct fallback",
+        recordingError,
+      );
+    }
+  };
 
   return {
     specificationVersion: "v3",
@@ -340,13 +404,24 @@ export function createClRouterLanguageModel(
     supportedUrls: {},
 
     async doGenerate(options): Promise<LanguageModelV3GenerateResult> {
-      const request = requestForCall(adapter, options, parentRequestId);
+      if (useDirectForRun) return adapter.directModel.doGenerate(options);
+      const step = stepContext(options);
+      const request = requestForCall(
+        adapter,
+        options,
+        parentRequestId,
+        selectedRoute,
+        successfulRouterSteps === 0,
+      );
       try {
         const response = await clRouterGenerate(
           request,
           clientOptions(options.abortSignal),
         );
         parentRequestId = response.requestId;
+        selectedRoute = response.model;
+        successfulRouterSteps += 1;
+        await notifyResponse(response, step);
         return {
           content: generatedContent(response),
           finishReason: finishReason(response.finishReason ?? "stop"),
@@ -359,13 +434,27 @@ export function createClRouterLanguageModel(
           warnings: unsupportedWarnings(options),
         };
       } catch (error) {
-        if (!isClRouterDirectFallbackError(error)) throw error;
+        if (
+          successfulRouterSteps > 0 ||
+          !isClRouterDirectFallbackError(error)
+        ) {
+          throw error;
+        }
+        await switchRunToDirect(error, step);
         return adapter.directModel.doGenerate(options);
       }
     },
 
     async doStream(options): Promise<LanguageModelV3StreamResult> {
-      const request = requestForCall(adapter, options, parentRequestId);
+      if (useDirectForRun) return adapter.directModel.doStream(options);
+      const step = stepContext(options);
+      const request = requestForCall(
+        adapter,
+        options,
+        parentRequestId,
+        selectedRoute,
+        successfulRouterSteps === 0,
+      );
       let response: Awaited<ReturnType<typeof clRouterGenerateStream>>;
       try {
         response = await clRouterGenerateStream(
@@ -373,7 +462,13 @@ export function createClRouterLanguageModel(
           clientOptions(options.abortSignal),
         );
       } catch (error) {
-        if (!isClRouterDirectFallbackError(error)) throw error;
+        if (
+          successfulRouterSteps > 0 ||
+          !isClRouterDirectFallbackError(error)
+        ) {
+          throw error;
+        }
+        await switchRunToDirect(error, step);
         return adapter.directModel.doStream(options);
       }
 
@@ -432,6 +527,9 @@ export function createClRouterLanguageModel(
                   } else {
                     receivedDone = true;
                     parentRequestId = event.requestId;
+                    selectedRoute = event.model;
+                    successfulRouterSteps += 1;
+                    await notifyResponse(event, step);
                     startStream();
                     for (const id of activeTextIds) {
                       controller.enqueue({ type: "text-end", id });
@@ -457,9 +555,15 @@ export function createClRouterLanguageModel(
                 }
                 controller.close();
               } catch (error) {
-                if (!visibleRouterOutput && isClRouterDirectFallbackError(error)) {
+                if (
+                  !visibleRouterOutput &&
+                  successfulRouterSteps === 0 &&
+                  isClRouterDirectFallbackError(error)
+                ) {
                   try {
-                    const fallback = await adapter.directModel.doStream(options);
+                    await switchRunToDirect(error, step);
+                    const fallback =
+                      await adapter.directModel.doStream(options);
                     await pipeStream(fallback.stream, controller);
                     controller.close();
                   } catch (fallbackError) {

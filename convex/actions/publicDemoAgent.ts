@@ -8,7 +8,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
-  generateTextForPublicTask,
+  generateAgentTextForPublicTask,
   generatedTextFromResult,
   type ModelTask,
 } from "../lib/models";
@@ -609,13 +609,36 @@ export const respond = internalAction({
       },
     ];
 
-    const result = await generateTextForPublicTask(ctx, task, {
-      maxOutputTokens: channel === "imessage" ? 120 : 700,
-      system,
-      messages,
-      tools,
-      stopWhen: stepCountIs(5),
-    });
+    const publicDemoRunId =
+      args.sourceMessageId ??
+      args.resendEmailId ??
+      `${String(conversation._id)}:${logs.length}`;
+    const result = await generateAgentTextForPublicTask(
+      ctx,
+      task,
+      {
+        maxOutputTokens: channel === "imessage" ? 120 : 700,
+        system,
+        messages,
+        tools,
+        stopWhen: stepCountIs(5),
+      },
+      {
+        taskKind:
+          channel === "email" ? "public_demo_email_reply" : "public_demo_chat",
+        sessionKey: String(conversation._id),
+        trace: {
+          traceId: `${publicDemoRunId}:agent`,
+          parentRequestId: publicDemoRunId,
+          label: "convex.publicDemoAgent",
+          phase:
+            channel === "email"
+              ? "public_demo_email_reply"
+              : "public_demo_chat",
+          channel,
+        },
+      },
+    );
 
     let responseText = generatedTextFromResult(result).trim();
     const lead = mergeLead(conversation, leadPatch);

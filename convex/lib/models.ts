@@ -24,6 +24,7 @@ import {
   ClRouterRequestError,
   clRouterGenerate,
   clRouterTranscribe,
+  sendClRouterFeedback,
   shouldUseClRouterForCall,
   shouldUseClRouterForTask,
   withClRouterDirectFallback,
@@ -33,6 +34,10 @@ import {
   type ClRouterSettingsSnapshot,
   type ClRouterUsage,
 } from "./clRouterClient";
+import {
+  createClRouterLanguageModel,
+  type ClRouterLanguageModelOptions,
+} from "./clRouterLanguageModel";
 import {
   EXTRACTION_QUALITY_MODEL,
   FALLBACK_MODEL,
@@ -47,6 +52,7 @@ import {
   type ModelRoute,
   type ModelTask,
 } from "./modelCatalog";
+import { collectToolAudit, type AgentToolAudit } from "./agentToolAudit";
 
 /**
  * Centralized model configuration for Glass.
@@ -174,19 +180,43 @@ type ResolvedModelRoute = {
 };
 
 type AiGenerateTextOptions = Parameters<typeof import("ai").generateText>[0];
-type AiGenerateTextResult = Awaited<ReturnType<typeof import("ai").generateText>>;
+type AiGenerateTextResult = Awaited<
+  ReturnType<typeof import("ai").generateText>
+>;
 type RoutedGenerateTextOptions = Omit<AiGenerateTextOptions, "model">;
-type RoutedGenerateObjectOptions<T> =
-  Omit<AiGenerateTextOptions, "model" | "output"> & {
-    schema: z.ZodType<T>;
-  };
+type RoutedGenerateObjectOptions<T> = Omit<
+  AiGenerateTextOptions,
+  "model" | "output"
+> & {
+  schema: z.ZodType<T>;
+};
 type RoutedGenerateTextResult = AiGenerateTextResult & {
   route: ModelRoute;
   routeSource?: string;
   transport?: ModelTransport;
   clRouter?: ClRouterResponseMetadata;
 };
-type RoutedGenerateObjectResult<T> = Omit<AiGenerateTextResult, "output" | "object"> & {
+export type AgentModelRunOptions = {
+  sessionKey: string;
+  taskKind: ModelCallTaskKind;
+  trace: {
+    traceId: string;
+    parentRequestId?: string;
+    label: string;
+    phase: string;
+    channel: "web" | "imessage" | "mcp" | "email" | "mailbox" | "public_demo";
+  };
+  onResponse?: ClRouterLanguageModelOptions["onResponse"];
+  onDirectFallback?: ClRouterLanguageModelOptions["onDirectFallback"];
+};
+export type ResolvedAgentLanguageModel = ResolvedModelRoute & {
+  transport: ModelTransport;
+  routerResponses: ClRouterResponseMetadata[];
+};
+type RoutedGenerateObjectResult<T> = Omit<
+  AiGenerateTextResult,
+  "output" | "object"
+> & {
   output: T;
   object: T;
   route: ModelRoute;
@@ -1241,6 +1271,364 @@ async function clRouterSettingsForPublicTask(
 ): Promise<ClRouterSettingsSnapshot | null> {
   const settings = await ctx.runQuery(internal.modelSettings.resolvePublicDefaults, {});
   return clRouterSettingsSnapshot(settings);
+}
+
+function assertAgentModelRunOptions(options: AgentModelRunOptions) {
+  if (!options.sessionKey.trim()) {
+    throw new Error("Agent model routing requires a stable session key");
+  }
+  if (!options.taskKind.trim()) {
+    throw new Error("Agent model routing requires an explicit task kind");
+  }
+  const { trace } = options;
+  if (
+    !trace.traceId.trim() ||
+    !trace.label.trim() ||
+    !trace.phase.trim() ||
+    !trace.channel.trim()
+  ) {
+    throw new Error(
+      "Agent model routing requires trace, phase, label, and channel metadata",
+    );
+  }
+}
+
+function agentLanguageModel(
+  task: ModelTask,
+  orgId: string | undefined,
+  settings: ClRouterSettingsSnapshot | null,
+  resolved: ResolvedModelRoute,
+  run: AgentModelRunOptions,
+): ResolvedAgentLanguageModel {
+  if (
+    typeof resolved.model === "string" ||
+    resolved.model.specificationVersion !== "v3"
+  ) {
+    throw new Error(
+      `cl-router ${task} break-glass requires an AI SDK v3 direct model`,
+    );
+  }
+  const routerResponses: ClRouterResponseMetadata[] = [];
+  return {
+    ...resolved,
+    model: createClRouterLanguageModel({
+      task,
+      taskKind: run.taskKind,
+      ...(orgId ? { orgId } : {}),
+      settings,
+      sessionKey: run.sessionKey,
+      trace: run.trace,
+      directModel: resolved.model,
+      onResponse: async (response, step) => {
+        routerResponses.push(response);
+        await run.onResponse?.(response, step);
+      },
+      onDirectFallback: run.onDirectFallback,
+    }),
+    transport: "cl-router",
+    routerResponses,
+  };
+}
+
+function routingEventRun(
+  orgId: Id<"organizations"> | undefined,
+  task: ModelTask,
+  run: AgentModelRunOptions,
+) {
+  return {
+    runId: run.trace.traceId,
+    sessionKey: run.sessionKey,
+    ...(orgId ? { orgId } : {}),
+    task,
+    taskKind: run.taskKind,
+    channel: run.trace.channel,
+    label: run.trace.label,
+    phase: run.trace.phase,
+    ...(run.trace.parentRequestId
+      ? { parentRequestId: run.trace.parentRequestId }
+      : {}),
+  };
+}
+
+function errorText(error: unknown) {
+  return (error instanceof Error ? error.message : String(error)).slice(
+    0,
+    1_000,
+  );
+}
+
+function withAgentRoutingTelemetry(
+  ctx: ActionCtx,
+  orgId: Id<"organizations"> | undefined,
+  task: ModelTask,
+  run: AgentModelRunOptions,
+): AgentModelRunOptions {
+  const eventRun = routingEventRun(orgId, task, run);
+  return {
+    ...run,
+    onResponse: async (response, step) => {
+      await ctx.runMutation(
+        internal.modelRoutingEvents.recordResponseInternal,
+        { run: eventRun, response, ...step },
+      );
+      await run.onResponse?.(response, step);
+    },
+    onDirectFallback: async (error, step) => {
+      await ctx.runMutation(
+        internal.modelRoutingEvents.recordFallbackInternal,
+        { run: eventRun, error: errorText(error), ...step },
+      );
+      await run.onDirectFallback?.(error, step);
+    },
+  };
+}
+
+function workflowOutcomeStatus(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const status = (value as Record<string, unknown>).status;
+  return typeof status === "string" ? status : undefined;
+}
+
+function workflowQualityScore(outcomes: unknown[]): number | undefined {
+  if (outcomes.length === 0) return undefined;
+  const scores: number[] = outcomes.map((outcome) => {
+    switch (workflowOutcomeStatus(outcome)) {
+      case "completed":
+        return 1;
+      case "needs_input":
+      case "held":
+        return 0.75;
+      case "running":
+        return 0.5;
+      case "failed_recoverably":
+        return 0.25;
+      case "failed_terminal":
+        return 0;
+      default:
+        return 0.5;
+    }
+  });
+  return scores.reduce((sum, score) => sum + score, 0) / scores.length;
+}
+
+function workflowFailureCount(outcomes: unknown[]) {
+  return outcomes.filter((outcome) => {
+    const status = workflowOutcomeStatus(outcome);
+    return status === "failed_recoverably" || status === "failed_terminal";
+  }).length;
+}
+
+async function recordAgentRun(
+  ctx: ActionCtx,
+  orgId: Id<"organizations"> | undefined,
+  task: ModelTask,
+  run: AgentModelRunOptions,
+  result?: RoutedGenerateTextResult,
+  error?: unknown,
+  auditOverride?: AgentToolAudit,
+  routerResponseOverride?: ClRouterResponseMetadata,
+) {
+  if (!shouldUseClRouterForCall(task, run.taskKind)) return;
+  const audit =
+    auditOverride ??
+    (result
+      ? collectToolAudit(result)
+      : {
+          usedTools: [],
+          toolCalls: [],
+          workflowOutcomes: [],
+  });
+  const failures = workflowFailureCount(audit.workflowOutcomes);
+  const requestId =
+    routerResponseOverride?.requestId ?? result?.clRouter?.requestId;
+  try {
+    await ctx.runMutation(internal.modelRoutingEvents.recordRunInternal, {
+      run: routingEventRun(orgId, task, run),
+      status: error ? "error" : "complete",
+      ...(requestId ? { requestId } : {}),
+      toolCallCount: audit.toolCalls.length,
+      workflowOutcomeCount: audit.workflowOutcomes.length,
+      workflowFailureCount: failures,
+      ...(error ? { error: errorText(error) } : {}),
+    });
+  } catch (telemetryError) {
+    console.warn(
+      "[cl-router] Failed to record agent routing run",
+      telemetryError,
+    );
+  }
+
+  const qualityScore = error
+    ? 0
+    : workflowQualityScore(audit.workflowOutcomes);
+  if (!requestId || qualityScore === undefined) return;
+  try {
+    await sendClRouterFeedback({
+      requestId,
+      idempotencyKey: `agent-workflow:${run.trace.traceId}:${requestId}`,
+      signals: {
+        qualityScore,
+        escalationCount: failures + (error ? 1 : 0),
+      },
+      trace: {
+        ...run.trace,
+        task,
+        taskKind: run.taskKind,
+      },
+    });
+  } catch (feedbackError) {
+    console.warn(
+      "[cl-router] Failed to submit agent workflow feedback",
+      feedbackError,
+    );
+  }
+}
+
+export async function recordAgentRoutingRun(
+  ctx: ActionCtx,
+  orgId: Id<"organizations"> | undefined,
+  task: ModelTask,
+  run: AgentModelRunOptions,
+  audit: AgentToolAudit,
+  routerResponse?: ClRouterResponseMetadata,
+  error?: unknown,
+) {
+  await recordAgentRun(
+    ctx,
+    orgId,
+    task,
+    run,
+    undefined,
+    error,
+    audit,
+    routerResponse,
+  );
+}
+
+export async function getAgentLanguageModelForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  task: ModelTask,
+  run: AgentModelRunOptions,
+): Promise<ResolvedAgentLanguageModel> {
+  assertAgentModelRunOptions(run);
+  if (!shouldUseClRouterForCall(task, run.taskKind)) {
+    const resolved = await getModelAndRouteForOrg(ctx, orgId, task);
+    return { ...resolved, transport: "direct", routerResponses: [] };
+  }
+  const settings = await resolveClRouterSettingsForOrg(ctx, orgId);
+  const resolved = getModelAndRouteForSettingsSnapshot(settings, task);
+  return agentLanguageModel(
+    task,
+    String(orgId),
+    settings,
+    resolved,
+    withAgentRoutingTelemetry(ctx, orgId, task, run),
+  );
+}
+
+export async function getAgentLanguageModelForPublicTask(
+  ctx: ActionCtx,
+  task: ModelTask,
+  run: AgentModelRunOptions,
+): Promise<ResolvedAgentLanguageModel> {
+  assertAgentModelRunOptions(run);
+  if (!shouldUseClRouterForCall(task, run.taskKind)) {
+    const resolved = await getModelAndRouteForPublicTask(ctx, task);
+    return { ...resolved, transport: "direct", routerResponses: [] };
+  }
+  const settings = await clRouterSettingsForPublicTask(ctx);
+  const resolved = getModelAndRouteForPublicSettingsSnapshot(settings, task);
+  return agentLanguageModel(
+    task,
+    undefined,
+    settings,
+    resolved,
+    withAgentRoutingTelemetry(ctx, undefined, task, run),
+  );
+}
+
+async function generateAgentTextForResolvedModel(
+  resolved: ResolvedAgentLanguageModel,
+  options: RoutedGenerateTextOptions,
+): Promise<RoutedGenerateTextResult> {
+  const { generateText } = await import("ai");
+  const result = withGeneratedText(
+    await generateText(
+      withModelTimeout({
+        ...options,
+        model: resolved.model,
+        providerOptions: routeProviderOptions(
+          resolved,
+          options.providerOptions,
+        ),
+      } as AiGenerateTextOptions),
+    ),
+  );
+  return {
+    ...result,
+    route: resolved.route,
+    routeSource: resolved.routeSource,
+    transport: resolved.transport,
+    ...(resolved.routerResponses.length > 0
+      ? { clRouter: resolved.routerResponses.at(-1) }
+      : {}),
+  };
+}
+
+export async function generateAgentTextForOrg(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  task: ModelTask,
+  options: RoutedGenerateTextOptions,
+  run: AgentModelRunOptions,
+): Promise<RoutedGenerateTextResult> {
+  let resolved: ResolvedAgentLanguageModel | undefined;
+  try {
+    resolved = await getAgentLanguageModelForOrg(ctx, orgId, task, run);
+    const result = await generateAgentTextForResolvedModel(resolved, options);
+    await recordAgentRun(ctx, orgId, task, run, result);
+    return result;
+  } catch (error) {
+    await recordAgentRun(
+      ctx,
+      orgId,
+      task,
+      run,
+      undefined,
+      error,
+      undefined,
+      resolved?.routerResponses.at(-1),
+    );
+    throw error;
+  }
+}
+
+export async function generateAgentTextForPublicTask(
+  ctx: ActionCtx,
+  task: ModelTask,
+  options: RoutedGenerateTextOptions,
+  run: AgentModelRunOptions,
+): Promise<RoutedGenerateTextResult> {
+  let resolved: ResolvedAgentLanguageModel | undefined;
+  try {
+    resolved = await getAgentLanguageModelForPublicTask(ctx, task, run);
+    const result = await generateAgentTextForResolvedModel(resolved, options);
+    await recordAgentRun(ctx, undefined, task, run, result);
+    return result;
+  } catch (error) {
+    await recordAgentRun(
+      ctx,
+      undefined,
+      task,
+      run,
+      undefined,
+      error,
+      undefined,
+      resolved?.routerResponses.at(-1),
+    );
+    throw error;
+  }
 }
 
 export async function generateTextForOrg(

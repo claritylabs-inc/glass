@@ -6,6 +6,7 @@ import {
   Building2,
   LogOut,
   MessageSquareText,
+  Route,
   SlidersHorizontal,
   Users,
   Wrench,
@@ -32,6 +33,7 @@ export function OperatorSidebar({
     | "clients"
     | "demo-leads"
     | "models"
+    | "routing"
     | "tools"
     | "extractions";
 }) {
@@ -81,6 +83,13 @@ export function OperatorSidebar({
             label="Models"
             icon={SlidersHorizontal}
             active={active === "models"}
+            collapsed={collapsed}
+          />
+          <SidebarMenuItem
+            href="/operator/routing"
+            label="Routing"
+            icon={Route}
+            active={active === "routing"}
             collapsed={collapsed}
           />
           <SidebarMenuItem
