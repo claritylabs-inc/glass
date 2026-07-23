@@ -10,6 +10,10 @@ import {
   type ResolvedImessageParticipant,
 } from "./lib/imessageGroupResolution";
 import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 function looksLikePhone(value: string): boolean {
   const digits = value.replace(/\D/g, "");
@@ -268,7 +272,7 @@ export const setPrimaryBrokerContactForClient = mutation({
     if (!clientOrg?.brokerOrgId) throw new Error("Client is not connected to a broker org");
     const brokerAccess = await getOrgAccess(ctx, clientOrg.brokerOrgId);
     if (brokerAccess.accessType !== "member" || brokerAccess.role !== "admin") {
-      throw new Error("Broker admin access required");
+      throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
     }
     const membership = await ctx.db
       .query("orgMemberships")

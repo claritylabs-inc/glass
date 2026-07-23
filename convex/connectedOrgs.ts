@@ -11,6 +11,10 @@ import { buildEmailShell } from "./lib/emailTemplate";
 import { getBrandingContext } from "./lib/branding";
 import { getAuthSiteUrl } from "./lib/domains";
 import { assertCustomerUser } from "./lib/operatorIdentity";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const internal = internalApi as any;
 
@@ -132,7 +136,7 @@ ${safeNote ? `<tr><td style="padding:12px 40px 0 40px;"><p style="margin:0;font-
 async function requireOrgAdmin(ctx: QueryCtx | MutationCtx, orgId: Id<"organizations">) {
   const access = await getOrgAccess(ctx, orgId);
   if (access.accessType !== "member" || access.role !== "admin") {
-    throw new Error("Admin role required");
+    throwUserFacingError(userFacingErrorCodes.orgAdminRequired);
   }
   return access;
 }
@@ -312,7 +316,7 @@ export const requestVendorAccessByEmail = action({
   },
   handler: async (ctx, args): Promise<{ status: "pending"; email: string }> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const vendorEmail = normalizeEmail(args.vendorEmail);
     const rawToken = randomToken();
@@ -383,7 +387,7 @@ export const resendVendorInvitation = action({
   args: { invitationId: v.id("connectedOrgInvitations") },
   handler: async (ctx, args): Promise<{ status: "resent"; email: string }> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const rawToken = randomToken();
     const tokenHash = await sha256Hex(rawToken);
@@ -421,7 +425,10 @@ export const requestVendorAccess = mutation({
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx, args.clientOrgId);
     if (access.accessType !== "member" || access.role !== "admin") {
-      throw new Error("Admin role required to request vendor access");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAdminRequired,
+        "Only an organization admin can request vendor access.",
+      );
     }
     await requireConnectClientOrg(ctx, args.clientOrgId);
     if (args.clientOrgId === args.vendorOrgId) throw new Error("Cannot connect an org to itself");
@@ -497,7 +504,7 @@ export const acceptInvitation = mutation({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const tokenHash = await sha256Hex(args.token);
     const inv = await ctx.db
       .query("connectedOrgInvitations")
@@ -516,7 +523,12 @@ export const acceptInvitation = mutation({
     if (!vendorOrgId) {
       const picked = await pickUserOrg(ctx, userId);
       if (picked) {
-        if (picked.membership.role !== "admin") throw new Error("Admin role required to accept this vendor invite");
+        if (picked.membership.role !== "admin") {
+          throwUserFacingError(
+            userFacingErrorCodes.orgAdminRequired,
+            "Only an organization admin can accept this vendor invitation.",
+          );
+        }
         vendorOrgId = picked.org._id;
       } else {
         vendorOrgId = await ctx.db.insert("organizations", {
@@ -591,7 +603,10 @@ export const revoke = mutation({
       .withIndex("by_orgId_userId", (q) => q.eq("orgId", rel.vendorOrgId).eq("userId", userId))
       .first();
     if (clientMembership?.role !== "admin" && vendorMembership?.role !== "admin") {
-      throw new Error("Admin role required to revoke a connection");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAdminRequired,
+        "Only an organization admin can revoke this connection.",
+      );
     }
     await ctx.db.patch(args.relationshipId, {
       status: "revoked",
@@ -619,7 +634,10 @@ export const createEmailRequestInternal = internalMutation({
       )
       .first();
     if (membership?.role !== "admin") {
-      throw new Error("Admin role required to request vendor access");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAdminRequired,
+        "Only an organization admin can request vendor access.",
+      );
     }
 
     const clientOrg = await requireConnectClientOrg(ctx, args.clientOrgId);
@@ -687,7 +705,10 @@ export const refreshEmailRequestInternal = internalMutation({
       )
       .first();
     if (membership?.role !== "admin") {
-      throw new Error("Admin role required to resend vendor invitations");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAdminRequired,
+        "Only an organization admin can resend vendor invitations.",
+      );
     }
 
     const clientOrg = await ctx.db.get(inv.clientOrgId);

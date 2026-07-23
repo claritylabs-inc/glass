@@ -42,7 +42,7 @@ describe("assertCanConnectIntegration", () => {
       assertCanConnectIntegration(
         makeAccess({ accessType: "broker_of_client", brokerOrgId: "b1" as OrgAccess["brokerOrgId"] }),
       ),
-    ).toThrow("Only org members");
+    ).toThrow("Only members of this organization");
   });
 });
 
@@ -55,7 +55,7 @@ describe("assertCanDisconnectIntegration", () => {
       assertCanDisconnectIntegration(
         makeAccess({ accessType: "broker_of_client", brokerOrgId: "b1" as OrgAccess["brokerOrgId"] }),
       ),
-    ).toThrow("Only org members");
+    ).toThrow("Only members of this organization");
   });
 });
 
@@ -81,6 +81,6 @@ describe("assertCanReadRawIntegrationData", () => {
       assertCanReadRawIntegrationData(
         makeAccess({ accessType: "broker_of_client", brokerOrgId: "b1" as OrgAccess["brokerOrgId"] }),
       ),
-    ).toThrow("restricted to org members");
+    ).toThrow("restricted to members of this organization");
   });
 });

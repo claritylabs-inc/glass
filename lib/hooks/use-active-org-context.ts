@@ -22,6 +22,14 @@ export type ActiveOrgContext = {
   brandingColor: string | undefined;
   agentDisplayName: string | undefined;
   featureFlags: FeatureFlagMap | undefined;
+  isOperatorImpersonation: boolean;
+  isReadOnlyImpersonation: boolean;
+};
+
+type OperatorContext = {
+  activeImpersonation?: {
+    targetOrgOperatorStatus?: "onboarding" | "live";
+  } | null;
 };
 
 /**
@@ -44,7 +52,7 @@ export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).operator.current,
     viewer?.accountKind === "operator" ? {} : "skip",
-  );
+  ) as OperatorContext | undefined;
 
   const orgData = useCachedQuery(
     orgIdFromUrl ? "orgs.viewerOrg.byUrl" : "orgs.viewerOrg",
@@ -85,6 +93,13 @@ export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
   // access type can be widened here when the server starts returning it.
   const accessType: "member" | "broker_of_client" | "connected_client" =
     "member";
+  const isOperatorImpersonation =
+    viewer?.accountKind === "operator" &&
+    Boolean(operatorContext?.activeImpersonation);
+  const isReadOnlyImpersonation =
+    isOperatorImpersonation &&
+    operatorContext?.activeImpersonation?.targetOrgOperatorStatus !==
+      "onboarding";
 
   return {
     orgId: org._id,
@@ -98,5 +113,7 @@ export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
     brandingColor: org.brandingColor,
     agentDisplayName: org.agentDisplayName,
     featureFlags: org.featureFlags,
+    isOperatorImpersonation,
+    isReadOnlyImpersonation,
   };
 }

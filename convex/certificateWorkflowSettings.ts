@@ -5,9 +5,13 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   requireCurrentOrgAccess,
-  requireCurrentOrgAdmin,
+  requireCurrentOrgAdminWrite,
   type CurrentOrgAccess,
 } from "./lib/access";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 export const DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS = {
   renewalReissueEnabled: true,
@@ -100,13 +104,27 @@ async function resolveEffectiveForOrg(ctx: ReadCtx, orgId: Id<"organizations">) 
 }
 
 function assertBrokerAdmin(access: CurrentOrgAccess) {
-  if ((access.org.type ?? "client") !== "broker") throw new Error("Broker organization required");
-  if (access.role !== "admin") throw new Error("Broker admin access required");
+  if ((access.org.type ?? "client") !== "broker") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Switch to a broker organization to manage broker certificate settings.",
+    );
+  }
+  if (access.role !== "admin") {
+    throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
+  }
 }
 
 function assertClientAdmin(access: CurrentOrgAccess) {
-  if ((access.org.type ?? "client") !== "client") throw new Error("Client organization required");
-  if (access.role !== "admin") throw new Error("Client admin access required");
+  if ((access.org.type ?? "client") !== "client") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Switch to a client organization to manage client certificate settings.",
+    );
+  }
+  if (access.role !== "admin") {
+    throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
+  }
 }
 
 export const getEffectiveForCurrentOrg = query({
@@ -127,7 +145,7 @@ export const getEffectiveInternal = internalQuery({
 export const updateBrokerDefault = mutation({
   args: settingsArgs,
   handler: async (ctx, args) => {
-    const access = await requireCurrentOrgAdmin(ctx);
+    const access = await requireCurrentOrgAdminWrite(ctx);
     assertBrokerAdmin(access);
     const now = dayjs().valueOf();
     const patch = {
@@ -153,7 +171,7 @@ export const updateBrokerDefault = mutation({
 export const updateClientOverride = mutation({
   args: settingsArgs,
   handler: async (ctx, args) => {
-    const access = await requireCurrentOrgAdmin(ctx);
+    const access = await requireCurrentOrgAdminWrite(ctx);
     assertClientAdmin(access);
     const now = dayjs().valueOf();
     const patch = {

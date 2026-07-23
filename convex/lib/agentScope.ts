@@ -2,6 +2,10 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalQuery } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./userFacingErrors";
 
 export type AgentSurface = "web" | "email" | "imessage" | "mcp" | "cli";
 
@@ -182,7 +186,9 @@ export const resolveForAction = internalQuery({
             userMessageId: args.operatorInitiatedUserMessageId,
           })
         : null;
-    if (!membership && !operatorInitiated) throw new Error("Unauthorized");
+    if (!membership && !operatorInitiated) {
+      throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
+    }
 
     const primaryType = (primaryOrg.type as "broker" | "client") ?? "client";
     const allowBrokerPortfolio = args.allowBrokerPortfolio ?? true;

@@ -11,6 +11,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { Loader2, ArrowLeft, ArrowRight, X } from "lucide-react";
 import { completeOtpSignIn } from "@/lib/otp-auth";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
@@ -84,7 +85,7 @@ export default function OAuthAuthorizePage() {
       await signIn("resend-otp", { email });
       setLoginStep("code");
     } catch (err: unknown) {
-      setError(friendlyError(err instanceof Error ? err.message : ""));
+      setError(friendlyError(getUserFacingErrorMessage(err, "")));
     } finally {
       setSendingCode(false);
     }
@@ -98,7 +99,7 @@ export default function OAuthAuthorizePage() {
       await completeOtpSignIn(email, code);
       window.location.reload();
     } catch (err: unknown) {
-      setError(friendlyError(err instanceof Error ? err.message : ""));
+      setError(friendlyError(getUserFacingErrorMessage(err, "")));
       setVerifying(false);
     }
   }
@@ -122,11 +123,7 @@ export default function OAuthAuthorizePage() {
       setRedirecting(true);
       window.location.assign(target);
     } catch (err: unknown) {
-      const message = typeof err === "string" ? err
-        : (err as { data?: string; message?: string } | null)?.data
-          ?? (err instanceof Error ? err.message : null)
-          ?? "Failed to authorize";
-      setError(String(message));
+      setError(getUserFacingErrorMessage(err, "Failed to authorize"));
       setAuthorizing(false);
     }
   }

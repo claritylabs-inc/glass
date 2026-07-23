@@ -4,7 +4,10 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
-import { generateTextForOrg, generatedTextFromResult } from "../lib/models";
+import {
+  generateAgentTextForOrg,
+  generatedTextFromResult,
+} from "../lib/models";
 import {
   createImessageGroupChat,
   coordinateMailboxTask,
@@ -687,6 +690,7 @@ export const processInbound = internalAction({
                     orgId,
                     userId: user._id,
                     task: params.task,
+                    routingParentId: `${eventKey}:agent`,
                     statusToPhone: fromPhone,
                     statusChatGuid: chatGuid,
                   }),
@@ -722,6 +726,7 @@ export const processInbound = internalAction({
                 orgId,
                 userId: user._id,
                 threadId,
+                routingParentId: `${eventKey}:agent`,
                 channel: "imessage",
                 fromHeader: emailIdentity.fromHeader,
                 agentAddress: emailIdentity.agentAddress,
@@ -761,17 +766,32 @@ export const processInbound = internalAction({
           : {}),
       };
 
-      const result = await generateTextForOrg(ctx, orgId, "chat", {
-        maxOutputTokens: 512,
-        system: systemPrompt,
-        messages: modelMessages,
-        tools: imessageTools,
-        stopWhen: stepCountIs(8),
-      }, {
-        taskKind: "query_reason",
-      });
+      const result = await generateAgentTextForOrg(
+        ctx,
+        orgId,
+        "chat",
+        {
+          maxOutputTokens: 512,
+          system: systemPrompt,
+          messages: modelMessages,
+          tools: imessageTools,
+          stopWhen: stepCountIs(8),
+        },
+        {
+          taskKind: "query_reason",
+          sessionKey: String(threadId),
+          trace: {
+            traceId: `${eventKey}:agent`,
+            parentRequestId: args.sourceMessageId ?? eventKey,
+            label: "convex.handleInboundImessage",
+            phase: "query_reason",
+            channel: "imessage",
+          },
+        },
+      );
 
-      const { usedTools, toolCalls, workflowOutcomes } = collectToolAudit(result);
+      const { usedTools, toolCalls, workflowOutcomes } =
+        collectToolAudit(result);
       runState.appendWorkflowOutcomes(workflowOutcomes);
       const responseFileAttachments = runState.responseFileAttachments;
       const imessageToolArtifacts = runState.toolArtifacts;

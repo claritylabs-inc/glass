@@ -6,6 +6,11 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess } from "./lib/access";
 import { resolveMailboxAutomationPolicy } from "./lib/mailboxAutomation";
+import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const automationValidator = v.object({
   policyImports: v.boolean(),
@@ -64,7 +69,10 @@ async function requireDirectOrgMember(
 ) {
   const access = await getOrgAccess(ctx, orgId);
   if (access.accessType !== "member") {
-    throw new Error("Connected email is available only to direct org members");
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Connected email is available only to members of this organization.",
+    );
   }
   return access;
 }
@@ -279,18 +287,23 @@ export const updateScope = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const account = await ctx.db.get(args.accountId);
     if (!account || account.status === "revoked") throw new Error("Email account not found");
     const access = await requireDirectOrgMember(ctx, account.orgId);
     if (!canManageConnectedMailbox(account, userId, access.role)) {
-      throw new Error(
-        "Only the owner can manage a personal mailbox; org admins can manage shared mailboxes",
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "Only the mailbox owner can manage a personal mailbox. Organization admins can manage shared mailboxes.",
       );
     }
     if (args.scope === "org" && access.role !== "admin") {
-      throw new Error("Only org admins can make a mailbox available to the organization");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAdminRequired,
+        "Only an organization admin can make a mailbox available to the organization.",
+      );
     }
+    await assertImpersonatedSetupWrite(ctx, account.orgId);
     await ctx.db.patch(account._id, {
       scope: args.scope,
       updatedAt: dayjs().valueOf(),
@@ -306,20 +319,25 @@ export const updateSettings = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const account = await ctx.db.get(args.accountId);
     if (!account || account.status === "revoked") {
       throw new Error("Email account not found");
     }
     const access = await requireDirectOrgMember(ctx, account.orgId);
     if (!canManageConnectedMailbox(account, userId, access.role)) {
-      throw new Error(
-        "Only the owner can manage a personal mailbox; org admins can manage shared mailboxes",
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "Only the mailbox owner can manage a personal mailbox. Organization admins can manage shared mailboxes.",
       );
     }
     if (args.scope === "org" && access.role !== "admin") {
-      throw new Error("Only org admins can make a mailbox available to the organization");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAdminRequired,
+        "Only an organization admin can make a mailbox available to the organization.",
+      );
     }
+    await assertImpersonatedSetupWrite(ctx, account.orgId);
     await ctx.db.patch(account._id, {
       scope: args.scope,
       automation: args.automation,
@@ -342,15 +360,17 @@ export const revoke = mutation({
   args: { accountId: v.id("connectedEmailAccounts") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const account = await ctx.db.get(args.accountId);
     if (!account || account.status === "revoked") return;
     const access = await requireDirectOrgMember(ctx, account.orgId);
     if (!canManageConnectedMailbox(account, userId, access.role)) {
-      throw new Error(
-        "Only the owner can manage a personal mailbox; org admins can manage shared mailboxes",
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "Only the mailbox owner can manage a personal mailbox. Organization admins can manage shared mailboxes.",
       );
     }
+    await assertImpersonatedSetupWrite(ctx, account.orgId);
     await ctx.db.patch(account._id, {
       status: "revoked",
       updatedAt: dayjs().valueOf(),

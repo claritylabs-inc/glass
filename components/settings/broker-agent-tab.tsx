@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/operational-panel";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
@@ -189,7 +190,7 @@ export function BrokerAgentTab() {
       patchCachedViewerOrg(store, { agentHandle: savedHandle });
     },
     errorMessage: (error) =>
-      error instanceof Error ? error.message : "The agent handle could not be saved.",
+      getUserFacingErrorMessage(error, "The agent handle could not be saved."),
   });
 
   useEffect(() => {

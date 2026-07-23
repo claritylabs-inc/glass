@@ -26,6 +26,7 @@ import {
   useUpsertCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 const INPUT_CLASSES =
   "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
@@ -34,14 +35,14 @@ const LABEL_CLASSES =
   "text-label font-medium text-muted-foreground block mb-1";
 
 function cleanError(error: unknown, fallback: string) {
-  if (!(error instanceof Error)) return fallback;
-  if (error.message.includes("This phone number is already used")) {
+  const message = getUserFacingErrorMessage(error, fallback);
+  if (message.includes("This phone number is already used")) {
     return "This phone number is already used by another user.";
   }
-  if (error.message.includes("Enter a valid phone number")) {
+  if (message.includes("Enter a valid phone number")) {
     return "Enter a valid phone number with country code.";
   }
-  return error.message.replace(/^[\s\S]*Uncaught Error:\s*/, "") || fallback;
+  return message;
 }
 
 function filterPdfs(incoming: File[]) {

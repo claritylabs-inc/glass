@@ -30,6 +30,7 @@ import {
   useOperatorGlobalModelRouteCacheActions,
 } from "@/lib/sync/operator-cached-queries";
 import { formatDisplayDate } from "@/lib/date-format";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 type ProviderId =
   | "openai"
@@ -182,9 +183,7 @@ export default function OperatorModelsPage() {
       toast.success(route ? "Router seed updated" : "Router seed reset");
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to update router seed",
+        getUserFacingErrorMessage(error, "Failed to update router seed"),
       );
     } finally {
       setSavingTask(null);

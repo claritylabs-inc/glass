@@ -40,4 +40,11 @@ crons.cron(
   {},
 );
 
+crons.cron(
+  "sweep model routing events",
+  "45 3 * * *",
+  internal.modelRoutingEvents.sweepExpired,
+  {},
+);
+
 export default crons;

@@ -24,6 +24,7 @@ import {
   useViewerCacheActions,
 } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 const GLASS_IMESSAGE_NUMBER =
@@ -316,7 +317,7 @@ export default function ClientOnboardingSetupPage() {
       });
       setCurrentStep(1);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to save";
+      const message = getUserFacingErrorMessage(e, "Failed to save");
       setError(
         message.includes("This phone number is already used")
           ? "This phone number is already used by another user."
@@ -364,7 +365,7 @@ export default function ClientOnboardingSetupPage() {
       }
       setCurrentStep(2);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      setError(getUserFacingErrorMessage(e, "Failed to save"));
     } finally {
       setSubmitting(false);
     }
@@ -485,7 +486,7 @@ export default function ClientOnboardingSetupPage() {
       patchViewerOrg({ onboardingComplete: true });
       router.replace(isVendorInvite ? "/connect/clients" : "/");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to finish");
+      setError(getUserFacingErrorMessage(e, "Failed to finish"));
       setSubmitting(false);
     }
   }, [

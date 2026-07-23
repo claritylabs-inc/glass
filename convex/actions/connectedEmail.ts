@@ -31,6 +31,10 @@ import {
   isPdfMailboxAttachment,
   isSupportedRequirementAttachment,
 } from "../lib/mailboxAutomation";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "../lib/userFacingErrors";
 
 const SEARCH_CANDIDATE_MULTIPLIER = 3;
 const SEARCH_MAX_CANDIDATES = 30;
@@ -264,7 +268,12 @@ async function requireOrgMember(
 ) {
   const members = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
   const membership = members.find((member) => member.userId === userId);
-  if (!membership) throw new Error("Connected email is available only to direct org members");
+  if (!membership) {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Connected email is available only to members of this organization.",
+    );
+  }
   return membership;
 }
 
@@ -430,11 +439,14 @@ export const connect = action({
   returns: v.any(),
   handler: async (ctx, args): Promise<Id<"connectedEmailAccounts">> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     const membership = await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
     const scope = args.scope ?? "user";
     if (scope === "org" && membership.role !== "admin") {
-      throw new Error("Only org admins can connect organization-scoped mailboxes");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAdminRequired,
+        "Only an organization admin can connect a shared mailbox.",
+      );
     }
 
     const destination = await resolveImapDestination({
@@ -654,7 +666,7 @@ export const readEmail = action({
   returns: v.any(),
   handler: async (ctx, args): Promise<MailboxReadRow> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
     try {
       return await readMailboxMessage(ctx, {
@@ -697,7 +709,7 @@ export const previewAttachment = action({
   }),
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
 
     const ref = parseMessageRef(args.emailRef);
@@ -984,7 +996,7 @@ export const saveAttachmentsToThread = action({
   returns: v.any(),
   handler: async (ctx, args): Promise<SaveAttachmentsOutcome> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
     const outcome: SaveAttachmentsOutcome = await ctx.runAction(
       internal.actions.connectedEmail.saveAttachmentsToThreadInternal,
@@ -1077,7 +1089,7 @@ export const importPolicyAttachments = action({
   returns: v.any(),
   handler: async (ctx, args): Promise<PolicyImportOutcome> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
     const outcome: PolicyImportOutcome = await ctx.runAction(
       internal.actions.connectedEmail.importPolicyAttachmentsInternal,
@@ -1242,7 +1254,7 @@ export const importRequirementAttachments = action({
   returns: v.any(),
   handler: async (ctx, args): Promise<RequirementImportOutcome> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await requireOrgMember(ctx, args.orgId, userId as Id<"users">);
     const outcome: RequirementImportOutcome = await ctx.runAction(
       internal.actions.connectedEmail.importRequirementAttachmentsInternal,

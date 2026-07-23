@@ -93,8 +93,8 @@ describe("workflow orchestration wiring", () => {
     );
     expect(audit).toContain("workflowOutcomes");
     expect(audit).toContain("workflowOutcome");
-    expect(read("convex/actions/handleInboundEmail.ts")).toContain(
-      "collectToolAudit(result).workflowOutcomes",
+    expect(read("convex/actions/handleInboundEmail.ts")).toMatch(
+      /collectToolAudit\(result\)[\s\S]*?\.workflowOutcomes/,
     );
     expect(read("convex/actions/handleInboundImessage.ts")).toContain(
       "workflowOutcomes",

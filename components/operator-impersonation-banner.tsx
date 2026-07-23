@@ -11,6 +11,7 @@ type OperatorImpersonationContext = {
   activeImpersonation?: {
     targetOrgName?: string;
     targetRole: "admin" | "member";
+    targetOrgOperatorStatus?: "onboarding" | "live";
   } | null;
 };
 
@@ -25,6 +26,8 @@ export function OperatorImpersonationBanner() {
   const stopOperatorImpersonation = useStopOperatorImpersonation();
   const impersonation = operatorContext?.activeImpersonation;
   const hasImpersonation = Boolean(impersonation);
+  const isReadOnly =
+    impersonation?.targetOrgOperatorStatus !== "onboarding";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -64,13 +67,16 @@ export function OperatorImpersonationBanner() {
         <div className="min-w-0">
           <p className="truncate text-base font-medium">Operator mode</p>
           <p className="truncate text-label text-white/62 dark:text-black/62">
-            {operatorContext?.user?.email ?? "Operator account"}
+            {isReadOnly ? "Read-only live organization" : "Onboarding setup access"}
           </p>
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3 sm:justify-end">
           <p className="min-w-0 truncate text-label text-white/72 dark:text-black/72">
             Viewing {impersonation.targetOrgName ?? "organization"} as{" "}
             {impersonation.targetRole}
+            {operatorContext?.user?.email
+              ? ` · ${operatorContext.user.email}`
+              : ""}
           </p>
           <PillButton
             type="button"

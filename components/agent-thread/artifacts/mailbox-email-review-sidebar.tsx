@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useAction, useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   Ban,
   ChevronDown,
@@ -92,7 +93,10 @@ export function mailboxReadErrorMessage(error: unknown) {
   ) {
     return error.data.message;
   }
-  return error instanceof Error ? error.message : "The live message could not be loaded.";
+  return getUserFacingErrorMessage(
+    error,
+    "The live message could not be loaded.",
+  );
 }
 
 function addressFromNotation(value?: string): MailboxAddress | null {

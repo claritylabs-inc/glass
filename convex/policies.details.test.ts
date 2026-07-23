@@ -213,6 +213,8 @@ describe("broker policy detail editing", () => {
           },
         },
       ),
-    ).rejects.toThrow("Only brokers can edit extracted policy fields");
+    ).rejects.toThrow(
+      "Only the managing broker can edit extracted policy fields.",
+    );
   });
 });

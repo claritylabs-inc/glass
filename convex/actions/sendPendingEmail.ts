@@ -17,6 +17,10 @@ import {
 } from "../lib/emailWorkflow";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "../lib/userFacingErrors";
 
 type SendEmailResult = { recipientEmail: string } | null;
 type BulkDraftSendResult = {
@@ -253,7 +257,7 @@ export const sendDraftNow = action({
       membership?: { orgId: string };
     } | null;
     if (!orgData?.membership?.orgId) {
-      throw new Error("Not authenticated");
+      throwUserFacingError(userFacingErrorCodes.authRequired);
     }
     const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
       id: args.id,
@@ -278,7 +282,7 @@ export const sendDraftsNow = action({
       membership?: { orgId: string };
     } | null;
     if (!orgData?.membership?.orgId) {
-      throw new Error("Not authenticated");
+      throwUserFacingError(userFacingErrorCodes.authRequired);
     }
 
     const uniqueIds = [...new Set(args.ids)];

@@ -8,6 +8,10 @@ import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { generateObjectForOrg } from "../lib/models";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "../lib/userFacingErrors";
 
 const ComplianceReviewSchema = z.object({
   status: z.enum(["met", "not_met", "expiring_soon", "expired", "unverified"]),
@@ -67,7 +71,7 @@ export const recheckOwnRequirement = action({
   }),
   handler: async (ctx, args): Promise<ComplianceReviewResult> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const context = await ctx.runQuery(
       internal.compliance.getManualComplianceReviewContextInternal,

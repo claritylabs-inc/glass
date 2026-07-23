@@ -77,7 +77,7 @@ describe("agent operator impersonation scope", () => {
         userId: operatorUserId,
         surface: "web",
       }),
-    ).rejects.toThrow("Unauthorized");
+    ).rejects.toThrow("You don’t have access to this organization.");
 
     await expect(
       t.query(validateOperatorInitiatedForActionFn, {

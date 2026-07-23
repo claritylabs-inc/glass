@@ -18,6 +18,10 @@ import {
   type CertificateHolderResolutionCandidate,
 } from "./lib/certificateHolderResolution";
 import { requireOperator } from "./lib/operatorIdentity";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const certificateSourceValidator = v.union(
   v.literal("policy_page"),
@@ -60,7 +64,10 @@ type IssuedCertificateCandidate = {
 
 function assertCanWriteCertificates(access: OrgAccess) {
   if (access.accessType === "connected_client") {
-    throw new Error("Connected client access is read-only.");
+    throwUserFacingError(
+      userFacingErrorCodes.readOnlyAccess,
+      "Connected organization access is read-only. Ask the vendor to manage this certificate.",
+    );
   }
 }
 

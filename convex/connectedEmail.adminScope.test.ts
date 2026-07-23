@@ -82,7 +82,9 @@ describe("connected email org scope", () => {
         username: "member@example.com",
         password: "secret",
       }),
-    ).rejects.toThrow("Only org admins can connect organization-scoped mailboxes");
+    ).rejects.toThrow(
+      "Only an organization admin can connect a shared mailbox.",
+    );
     expect(imapMock.options).toHaveLength(0);
   });
 
@@ -143,7 +145,7 @@ describe("connected email org scope", () => {
         scope: "org",
       }),
     ).rejects.toThrow(
-      "Only org admins can make a mailbox available to the organization",
+      "Only an organization admin can make a mailbox available to the organization.",
     );
 
     await expect(
@@ -151,7 +153,7 @@ describe("connected email org scope", () => {
         accountId,
         scope: "org",
       }),
-    ).rejects.toThrow("Only the owner can manage a personal mailbox");
+    ).rejects.toThrow("Only the mailbox owner can manage a personal mailbox.");
 
     const adminAccountId = await t.run(async (ctx) =>
       ctx.db.insert("connectedEmailAccounts", {
@@ -175,6 +177,54 @@ describe("connected email org scope", () => {
     });
     const adminAccount = await t.run((ctx) => ctx.db.get(adminAccountId));
     expect(adminAccount?.scope).toBe("org");
+  });
+
+  test("blocks shared mailbox changes during live operator impersonation", async () => {
+    const { t, orgId, adminUserId } = await seedOrgWithUsers();
+    const { accountId, operatorUserId } = await t.run(async (ctx) => {
+      await ctx.db.patch(orgId, { operatorStatus: "live" });
+      const operatorUserId = await ctx.db.insert("users", {
+        email: "operator@example.com",
+        accountKind: "operator",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId: operatorUserId,
+        email: "operator@example.com",
+        role: "operator",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("operatorImpersonationSessions", {
+        operatorUserId,
+        targetOrgId: orgId,
+        targetRole: "admin",
+        status: "active",
+        createdAt: 1,
+      });
+      const accountId = await ctx.db.insert("connectedEmailAccounts", {
+        orgId,
+        userId: adminUserId,
+        scope: "org",
+        emailAddress: "shared@example.com",
+        host: "imap.example.com",
+        port: 993,
+        secure: true,
+        username: "shared@example.com",
+        encryptedPassword: "encrypted",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { accountId, operatorUserId };
+    });
+
+    await expect(
+      t.withIdentity(sessionFor(operatorUserId)).mutation(updateScopeFn, {
+        accountId,
+        scope: "user",
+      }),
+    ).rejects.toThrow("Live-organization impersonation is read-only");
   });
 
   test("keeps legacy org mailboxes alert-only eligible without enabling personal mailboxes", async () => {

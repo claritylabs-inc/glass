@@ -349,12 +349,14 @@ describe("connected email surfaces", () => {
 
     expect(action).toContain("resolveImapDestination");
     expect(action).toContain("destination.normalizedHost");
-    expect(action).toContain("Only org admins can connect organization-scoped mailboxes");
+    expect(action).toContain(
+      "Only an organization admin can connect a shared mailbox.",
+    );
     expect(guard).toContain("Connected email supports IMAP ports 993 and 143 only");
     expect(guard).toContain("IMAP host resolves to a private or reserved network address");
     expect(guard).toContain("BlockList");
     expect(mutation).toContain(
-      "Only org admins can make a mailbox available to the organization",
+      "Only an organization admin can make a mailbox available to the organization.",
     );
   });
 

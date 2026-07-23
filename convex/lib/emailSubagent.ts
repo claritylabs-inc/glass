@@ -6,7 +6,7 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import dayjs from "dayjs";
-import { generateTextForOrg } from "./models";
+import { generateAgentTextForOrg } from "./models";
 import { buildAgentToolExecutors } from "./agentToolExecutors";
 import type { AgentScope } from "./agentScope";
 import { extractEmailAddress, normalizeEmailAddress } from "./emailAddress";
@@ -70,6 +70,7 @@ type EmailExpertContext = {
   userId?: Id<"users">;
   threadId?: Id<"threads">;
   chatMessageId?: Id<"threadMessages">;
+  routingParentId: string;
   channel: "web" | "email" | "imessage" | "mcp";
   fromHeader: string;
   agentAddress: string;
@@ -800,9 +801,14 @@ async function runEmailSubagent(
     return sentResult;
   };
 
-  const subagentResult = await generateTextForOrg(ctx, context.orgId, "email_draft", {
-    maxOutputTokens: 1536,
-    system: `You are Glass's email expert subagent.
+  const emailRunId = `${context.routingParentId}:email-draft`;
+  const subagentResult = await generateAgentTextForOrg(
+    ctx,
+    context.orgId,
+    "email_draft",
+    {
+      maxOutputTokens: 1536,
+      system: `You are Glass's email expert subagent.
 
 You only handle Glass Agent outbound email. Your job is to draft or send polished insurance-business emails from ${context.agentAddress}.
 
@@ -951,7 +957,19 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
       }),
     },
     stopWhen: stepCountIs(8),
-  });
+    },
+    {
+      taskKind: "email_draft_tool_loop",
+      sessionKey: String(context.threadId ?? context.orgId),
+      trace: {
+        traceId: emailRunId,
+        parentRequestId: context.routingParentId,
+        label: "convex.emailSubagent",
+        phase: "email_draft_tool_loop",
+        channel: context.channel,
+      },
+    },
+  );
 
   if (finalResult) return finalResult;
 

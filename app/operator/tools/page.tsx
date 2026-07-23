@@ -23,6 +23,7 @@ import {
   useCachedOperatorGlobalToolSettings,
   useOperatorGlobalToolSettingsCacheActions,
 } from "@/lib/sync/operator-cached-queries";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { OperatorSidebar } from "../operator-sidebar";
 
 type WebRetrievalProviderId = "parallel" | "exa" | "model_default";
@@ -236,9 +237,7 @@ export default function OperatorToolsPage() {
       toast.success("Search provider updated");
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to update search provider",
+        getUserFacingErrorMessage(error, "Failed to update search provider"),
       );
     } finally {
       setSaving(false);

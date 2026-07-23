@@ -4,6 +4,10 @@ import type { QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getOrgAccess, assertBrokerOrg } from "./lib/access";
 import { orgBrandFields } from "./lib/orgBranding";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 function isEmailLike(value: string | undefined): boolean {
   if (!value) return false;
@@ -163,7 +167,7 @@ async function assertBrokerMembership(ctx: QueryCtx, brokerOrgId: Id<"organizati
     .query("orgMemberships")
     .withIndex("by_orgId_userId", (q) => q.eq("orgId", brokerOrgId).eq("userId", userId))
     .first();
-  if (!membership) throw new Error("Unauthorized");
+  if (!membership) throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
 
   const org = await ctx.db.get(brokerOrgId);
   if (!org || org.type !== "broker") throw new Error("Expected a broker organization");

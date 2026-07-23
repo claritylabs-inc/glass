@@ -4,6 +4,7 @@ import { useMemo, useState, type MouseEvent } from "react";
 import { useAction, useMutation } from "convex/react";
 import { Loader2, Mail as MailIcon, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
@@ -256,7 +257,7 @@ export function EmailSummaryCard({
       );
       toast.success(`Email sent to ${result.recipientEmail}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send email");
+      toast.error(getUserFacingErrorMessage(err, "Failed to send email"));
     } finally {
       setIsSending(false);
     }
@@ -273,9 +274,7 @@ export function EmailSummaryCard({
       );
       toast.success("Email restored as draft");
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to restore email",
-      );
+      toast.error(getUserFacingErrorMessage(err, "Failed to restore email"));
     } finally {
       setIsRestoring(false);
     }
@@ -423,7 +422,7 @@ export function EmailStackCard({
         );
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send emails");
+      toast.error(getUserFacingErrorMessage(err, "Failed to send emails"));
     } finally {
       setIsSendingAll(false);
     }
@@ -575,7 +574,7 @@ export function EmailThreadSidebar({
       );
       toast.success(`Email sent to ${result.recipientEmail}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send email");
+      toast.error(getUserFacingErrorMessage(err, "Failed to send email"));
     } finally {
       setIsSending(false);
     }
@@ -591,9 +590,7 @@ export function EmailThreadSidebar({
       );
       toast.success("Email draft cancelled");
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to cancel email",
-      );
+      toast.error(getUserFacingErrorMessage(err, "Failed to cancel email"));
     } finally {
       setIsCancelling(false);
     }
@@ -609,9 +606,7 @@ export function EmailThreadSidebar({
       );
       toast.success("Email restored as draft");
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to restore email",
-      );
+      toast.error(getUserFacingErrorMessage(err, "Failed to restore email"));
     } finally {
       setIsRestoring(false);
     }
