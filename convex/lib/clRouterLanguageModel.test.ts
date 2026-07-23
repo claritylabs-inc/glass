@@ -165,7 +165,9 @@ describe("cl-router LanguageModelV3 adapter", () => {
         parentRequestId: "user-message-1",
       },
       settings: { providerKeys: { openai: "broker-openai-key" } },
+      routing: { allowFallback: true },
     });
+    expect(firstRequest.routing).not.toHaveProperty("pin");
     expect(firstRequest.messages[0]).toEqual({
       role: "system",
       content: "Use the policy tool before answering.",
@@ -175,41 +177,105 @@ describe("cl-router LanguageModelV3 adapter", () => {
       String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
     );
     expect(secondRequest.trace.parentRequestId).toBe("request-1");
-    expect(secondRequest.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        role: "assistant",
-        content: expect.arrayContaining([
-          expect.objectContaining({
-            type: "tool-call",
-            toolCallId: "call-1",
-            toolName: "lookup_policy",
-            input: { policyNumber: "GL-100" },
-          }),
-        ]),
-      }),
-      expect.objectContaining({
-        role: "tool",
-        content: expect.arrayContaining([
-          expect.objectContaining({
-            type: "tool-result",
-            toolCallId: "call-1",
-            toolName: "lookup_policy",
-          }),
-        ]),
-      }),
-    ]));
+    expect(secondRequest.routing).toEqual({
+      pin: { provider: "openai", model: "gpt-5.5" },
+      allowFallback: false,
+    });
+    expect(secondRequest.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "assistant",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-call",
+              toolCallId: "call-1",
+              toolName: "lookup_policy",
+              input: { policyNumber: "GL-100" },
+            }),
+          ]),
+        }),
+        expect.objectContaining({
+          role: "tool",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-result",
+              toolCallId: "call-1",
+              toolName: "lookup_policy",
+            }),
+          ]),
+        }),
+      ]),
+    );
     expect(directModel.doStreamCalls).toHaveLength(0);
   });
 
   test("uses the direct model for an HTTP 5xx before router output", async () => {
-    const directModel = new MockLanguageModelV3({ doStream: directStream("Direct answer.") });
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
-      new Response(null, { status: 503 }));
-    const model = createClRouterLanguageModel(adapterOptions(directModel, fetchMock));
+    const directModel = new MockLanguageModelV3({
+      doStream: directStream("Direct answer."),
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(
+      async () => new Response(null, { status: 503 }),
+    );
+    const model = createClRouterLanguageModel(
+      adapterOptions(directModel, fetchMock),
+    );
 
     const result = streamText({ model, prompt: "Hello" });
     await expect(result.text).resolves.toBe("Direct answer.");
     expect(directModel.doStreamCalls).toHaveLength(1);
+  });
+
+  test("keeps the entire run on the direct model after initial router fallback", async () => {
+    const directModel = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "Direct answer." }],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage,
+        warnings: [],
+      }),
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(
+      async () => new Response(null, { status: 503 }),
+    );
+    const model = createClRouterLanguageModel(
+      adapterOptions(directModel, fetchMock),
+    );
+
+    await model.doGenerate(rawCallOptions());
+    await model.doGenerate(rawCallOptions());
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(directModel.doGenerateCalls).toHaveLength(2);
+  });
+
+  test("fails closed instead of changing transport after a successful router step", async () => {
+    const fetchMock = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          ...doneEvent("stop"),
+          output: "First step",
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
+    const directModel = new MockLanguageModelV3();
+    const model = createClRouterLanguageModel(
+      adapterOptions(directModel, fetchMock),
+    );
+
+    await model.doGenerate(rawCallOptions());
+    await expect(model.doGenerate(rawCallOptions())).rejects.toThrow(
+      "HTTP 503",
+    );
+
+    const secondRequest = JSON.parse(
+      String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
+    );
+    expect(secondRequest.routing).toEqual({
+      pin: { provider: "openai", model: "gpt-5.5" },
+      allowFallback: false,
+    });
+    expect(directModel.doGenerateCalls).toHaveLength(0);
   });
 
   test("uses the direct model for a retryable SSE failure before router output", async () => {

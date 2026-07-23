@@ -637,15 +637,34 @@ describe("model fallback policy", () => {
     expect(settingsSource).toContain('routeSources[routeId] = "global"');
   });
 
-  test("uses the routed generation primitive for iMessage chat fallback", () => {
-    const source = readFileSync(
-      join(__dirname, "../convex/actions/handleInboundImessage.ts"),
+  test("uses the routed agent-loop primitives across every tool-bearing surface", () => {
+    const orgAgentFiles = [
+      "../convex/actions/mcpChat.ts",
+      "../convex/actions/handleInboundEmail.ts",
+      "../convex/actions/handleInboundImessage.ts",
+      "../convex/actions/mailboxCoordinator.ts",
+      "../convex/lib/emailSubagent.ts",
+    ];
+    for (const file of orgAgentFiles) {
+      const source = readFileSync(join(__dirname, file), "utf-8");
+      expect(source).toContain("generateAgentTextForOrg(");
+      expect(source).toContain("sessionKey:");
+      expect(source).toContain("traceId:");
+    }
+
+    const webChat = readFileSync(
+      join(__dirname, "../convex/actions/processThreadChat.ts"),
       "utf-8",
     );
+    expect(webChat).toContain("getAgentLanguageModelForOrg(");
+    expect(webChat).toContain("recordAgentRoutingRun(");
 
-    expect(source).toContain("generateTextForOrg(ctx, orgId, \"chat\"");
-    expect(source).toContain('taskKind: "query_reason"');
-    expect(source).not.toContain("AI Gateway");
+    const publicDemo = readFileSync(
+      join(__dirname, "../convex/actions/publicDemoAgent.ts"),
+      "utf-8",
+    );
+    expect(publicDemo).toContain("generateAgentTextForPublicTask(");
+    expect(publicDemo).toContain("sessionKey:");
   });
 });
 

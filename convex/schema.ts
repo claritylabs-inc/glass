@@ -587,6 +587,50 @@ export default defineSchema({
     .index("by_operatorUserId_createdAt", ["operatorUserId", "createdAt"])
     .index("by_targetOrgId_createdAt", ["targetOrgId", "createdAt"]),
 
+  modelRoutingEvents: defineTable({
+    kind: v.union(
+      v.literal("model_step"),
+      v.literal("direct_fallback"),
+      v.literal("run"),
+    ),
+    runId: v.string(),
+    sessionKey: v.string(),
+    orgId: v.optional(v.id("organizations")),
+    task: v.string(),
+    taskKind: v.string(),
+    channel: v.string(),
+    label: v.string(),
+    phase: v.string(),
+    step: v.optional(v.number()),
+    hasTools: v.optional(v.boolean()),
+    hasToolResults: v.optional(v.boolean()),
+    requestId: v.optional(v.string()),
+    parentRequestId: v.optional(v.string()),
+    provider: v.optional(modelProviderValidator),
+    model: v.optional(v.string()),
+    routeSource: v.optional(v.string()),
+    routing: v.optional(extractionTraceRoutingValidator),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    cachedInputTokens: v.optional(v.number()),
+    cacheWriteTokens: v.optional(v.number()),
+    costUsd: v.optional(v.union(v.number(), v.null())),
+    costStatus: v.optional(v.union(v.literal("priced"), v.literal("unpriced"))),
+    status: v.optional(
+      v.union(v.literal("complete"), v.literal("error"), v.literal("fallback")),
+    ),
+    toolCallCount: v.optional(v.number()),
+    workflowOutcomeCount: v.optional(v.number()),
+    workflowFailureCount: v.optional(v.number()),
+    error: v.optional(v.string()),
+    timestamp: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_timestamp", ["timestamp"])
+    .index("by_task_timestamp", ["task", "timestamp"])
+    .index("by_runId_timestamp", ["runId", "timestamp"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   brokerModelSettings: defineTable({
     brokerOrgId: v.id("organizations"),
     providerKeys: v.optional(

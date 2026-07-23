@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs, type ModelMessage } from "ai";
-import { generateTextForOrg } from "../lib/models";
+import { generateAgentTextForOrg } from "../lib/models";
 import {
   extractPolicyAttachment,
   createImessageGroupChat,
@@ -1226,6 +1226,7 @@ export const processInbound = internalAction({
                 orgId,
                 userId: primaryUserId,
                 threadId: unifiedThreadId,
+                routingParentId: String(inboundMessageId),
                 channel: "email",
                 fromHeader,
                 agentAddress,
@@ -1421,6 +1422,7 @@ export const processInbound = internalAction({
                     orgId,
                     userId: primaryUserId,
                     task: params.task,
+                    routingParentId: String(inboundMessageId),
                   }),
               },
               web_research: {
@@ -1533,14 +1535,31 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       if (deterministicControlResult) {
         responseBody = deterministicControlResult.responseBody;
       } else {
-        const result = await generateTextForOrg(ctx, orgId, "email_reply", {
-          maxOutputTokens: 2048,
-          system: systemContext,
-          messages,
-          tools: emailTools,
-          stopWhen: stepCountIs(10),
-        });
-        for (const workflowOutcome of collectToolAudit(result).workflowOutcomes) {
+        const result = await generateAgentTextForOrg(
+          ctx,
+          orgId,
+          "email_reply",
+          {
+            maxOutputTokens: 2048,
+            system: systemContext,
+            messages,
+            tools: emailTools,
+            stopWhen: stepCountIs(10),
+          },
+          {
+            taskKind: "inbound_email_reply",
+            sessionKey: String(unifiedThreadId),
+            trace: {
+              traceId: String(inboundMessageId),
+              parentRequestId: messageId ?? resendEmailId ?? args.svixId,
+              label: "convex.handleInboundEmail",
+              phase: "inbound_email_reply",
+              channel: "email",
+            },
+          },
+        );
+        for (const workflowOutcome of collectToolAudit(result)
+          .workflowOutcomes) {
           emailToolArtifacts.push({
             type: "workflow_outcome",
             data: workflowOutcome,

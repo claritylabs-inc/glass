@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { tool } from "ai";
+import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 import type { Id } from "../_generated/dataModel";
 import {
   generateObjectForOrg,
   generateObjectForPublicTask,
+  generateAgentTextForOrg,
   generateTextForOrg,
   generateTextForPublicTask,
   getModelAndRouteForSettingsSnapshot,
@@ -39,11 +40,13 @@ function routerContext() {
   return {
     runQuery: vi.fn(async () => ({
       routes: {
+        chat: { provider: "openai", model: "gpt-5-mini" },
         classification: { provider: "openai", model: "gpt-5-mini" },
       },
-      routeSources: { classification: "broker" },
+      routeSources: { chat: "broker", classification: "broker" },
       providerKeys: { openai: "broker-openai-key" },
     })),
+    runMutation: vi.fn(async () => null),
   };
 }
 
@@ -162,6 +165,80 @@ describe("Convex cl-router generation integration", () => {
       transport: "cl-router",
       clRouter: { requestId: "request-1" },
     });
+  });
+
+  test("routes org tool loops through the shared agent adapter and pins later steps", async () => {
+    vi.stubEnv("CL_ROUTER_TASKS", "chat");
+    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
+    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () =>
+        Response.json({
+          ...routerResponse({
+            text: "",
+            toolCalls: [
+              {
+                toolCallId: "call-1",
+                toolName: "lookup_policy",
+                input: { policyNumber: "GL-100" },
+              },
+            ],
+          }),
+          finishReason: "tool-calls",
+        }),
+      )
+      .mockImplementationOnce(async () =>
+        Response.json({
+          ...routerResponse("Acme policy found."),
+          requestId: "request-2",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const execute = vi.fn(async () => ({ carrier: "Acme" }));
+
+    const result = await generateAgentTextForOrg(
+      routerContext() as never,
+      "org-1" as Id<"organizations">,
+      "chat",
+      {
+        prompt: "Find GL-100.",
+        tools: {
+          lookup_policy: tool({
+            inputSchema: z.object({ policyNumber: z.string() }),
+            execute,
+          }),
+        },
+        stopWhen: stepCountIs(2),
+      },
+      {
+        taskKind: "query_reason",
+        sessionKey: "thread-1",
+        trace: {
+          traceId: "agent-message-1",
+          parentRequestId: "user-message-1",
+          label: "test.agent",
+          phase: "query_reason",
+          channel: "mcp",
+        },
+      },
+    );
+
+    expect(result.text).toBe("Acme policy found.");
+    expect(execute).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstRequest = JSON.parse(
+      String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
+    );
+    const secondRequest = JSON.parse(
+      String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
+    );
+    expect(firstRequest.routing).toEqual({ allowFallback: true });
+    expect(secondRequest.routing).toEqual({
+      pin: { provider: "openai", model: "gpt-5-mini" },
+      allowFallback: false,
+    });
+    expect(secondRequest.trace.parentRequestId).toBe("request-1");
   });
 
   test("fails closed instead of silently bypassing an enabled router task with tools", async () => {

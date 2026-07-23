@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
-import { generateTextForOrg } from "../lib/models";
+import { generateAgentTextForOrg, generateTextForOrg } from "../lib/models";
 import {
   buildScopedDocumentContext,
   buildScopedOrgMemoryContext,
@@ -97,13 +97,16 @@ export const run = internalAction({
     const userName = user?.name?.split(/\s+/)[0];
 
     // Insert user message
-    await ctx.runMutation(internal.threads.insertUserMessageInternal, {
-      threadId,
-      orgId: args.orgId,
-      userId: args.userId,
-      userName: user?.name ?? user?.email ?? "User",
-      content: args.message,
-    });
+    const userMessageId = await ctx.runMutation(
+      internal.threads.insertUserMessageInternal,
+      {
+        threadId,
+        orgId: args.orgId,
+        userId: args.userId,
+        userName: user?.name ?? user?.email ?? "User",
+        content: args.message,
+      },
+    );
 
     const scope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
       orgId: args.orgId,
@@ -327,6 +330,7 @@ MCP MODE:
             orgId: args.orgId,
             userId: args.userId,
             task: params.task,
+            routingParentId: `${String(userMessageId)}:mcp-agent`,
           }),
       },
       web_research: {
@@ -367,13 +371,29 @@ MCP MODE:
     const messageHistory = buildMessageHistory(allMessages);
 
     // Generate response (non-streaming)
-    const { text: content } = await generateTextForOrg(ctx, args.orgId, "chat", {
-      maxOutputTokens: 2048,
-      system: fullSystemPrompt,
-      messages: messageHistory,
-      tools,
-      stopWhen: stepCountIs(10),
-    });
+    const { text: content } = await generateAgentTextForOrg(
+      ctx,
+      args.orgId,
+      "chat",
+      {
+        maxOutputTokens: 2048,
+        system: fullSystemPrompt,
+        messages: messageHistory,
+        tools,
+        stopWhen: stepCountIs(10),
+      },
+      {
+        taskKind: "query_reason",
+        sessionKey: String(threadId),
+        trace: {
+          traceId: `${String(userMessageId)}:mcp-agent`,
+          parentRequestId: String(userMessageId),
+          label: "convex.mcpChat",
+          phase: "query_reason",
+          channel: "mcp",
+        },
+      },
+    );
 
     // Insert agent message
     const agentMsgId = await ctx.runMutation(

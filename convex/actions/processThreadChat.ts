@@ -12,17 +12,12 @@ import {
   fallbackRouteForCall,
   generateTextForOrg,
   generatedTextFromResult,
-  getModelAndRouteForOrg,
-  getModelAndRouteForSettingsSnapshot,
+  getAgentLanguageModelForOrg,
   getModelForRoute,
   getProviderOptionsForRoute,
-  resolveClRouterSettingsForOrg,
+  recordAgentRoutingRun,
 } from "../lib/models";
-import {
-  ClRouterVisibleOutputError,
-  createClRouterLanguageModel,
-} from "../lib/clRouterLanguageModel";
-import { shouldUseClRouterForCall } from "../lib/clRouterClient";
+import { ClRouterVisibleOutputError } from "../lib/clRouterLanguageModel";
 import {
   createImessageGroupChat,
   coordinateMailboxTask,
@@ -1349,6 +1344,7 @@ export const run = internalAction({
                 accountIds: referencedMailboxIds,
                 chatMessageId: agentMsgId,
                 threadId: args.threadId,
+                routingParentId: String(agentMsgId),
               },
             );
           },
@@ -1400,6 +1396,7 @@ export const run = internalAction({
                 userId: args.userId,
                 threadId: args.threadId,
                 chatMessageId: agentMsgId,
+                routingParentId: String(agentMsgId),
                 channel: "web",
                 fromHeader: emailIdentity.fromHeader,
                 agentAddress: emailIdentity.agentAddress,
@@ -1488,37 +1485,23 @@ export const run = internalAction({
       ]);
 
       const chatTask = hasImageInput ? "chat_vision" : "chat";
-      const useClRouter = shouldUseClRouterForCall(chatTask, "query_reason");
-      const routerSettings = useClRouter
-        ? await resolveClRouterSettingsForOrg(ctx, args.orgId)
-        : undefined;
-      const chatModel = useClRouter
-        ? getModelAndRouteForSettingsSnapshot(routerSettings ?? null, chatTask)
-        : await getModelAndRouteForOrg(ctx, args.orgId, chatTask);
-      let activeChatModel = chatModel.model;
-      if (useClRouter) {
-        if (
-          typeof chatModel.model === "string" ||
-          chatModel.model.specificationVersion !== "v3"
-        ) {
-          throw new Error("cl-router chat break-glass requires an AI SDK v3 direct model");
-        }
-        activeChatModel = createClRouterLanguageModel({
-          task: chatTask,
-          taskKind: "query_reason",
-          orgId: String(args.orgId),
-          settings: routerSettings ?? null,
-          sessionKey: String(args.threadId),
-          trace: {
-            traceId: String(agentMsgId),
-            parentRequestId: String(args.userMessageId),
-            label: "convex.processThreadChat",
-            phase: "query_reason",
-            channel: "web",
-          },
-          directModel: chatModel.model,
-        });
-      }
+      const chatRun = {
+        taskKind: "query_reason",
+        sessionKey: String(args.threadId),
+        trace: {
+          traceId: String(agentMsgId),
+          parentRequestId: String(args.userMessageId),
+          label: "convex.processThreadChat",
+          phase: "query_reason",
+          channel: "web",
+        },
+      } as const;
+      const chatModel = await getAgentLanguageModelForOrg(
+        ctx,
+        args.orgId,
+        chatTask,
+        chatRun,
+      );
       const startChatStream = (
         model: typeof chatModel.model,
         route: typeof chatModel.route,
@@ -1746,44 +1729,75 @@ export const run = internalAction({
         return true;
       };
 
+      const routingAudit = () => ({
+        usedTools: [...new Set(usedTools)],
+        toolCalls,
+        workflowOutcomes: toolArtifacts
+          .filter((artifact) => artifact.type === "workflow_outcome")
+          .map((artifact) => artifact.data),
+      });
       try {
-        const completed = await consumeChatStream(
-          startChatStream(activeChatModel, chatModel.route).fullStream,
-        );
-        if (!completed) return;
-      } catch (streamError) {
-        const hasStartedSideEffectfulWork =
-          usedTools.length > 0 ||
-          toolCalls.length > 0 ||
-          toolArtifacts.length > 0 ||
-          responseAttachments.length > 0;
-        if (!isTransientChatStreamError(streamError) || hasStartedSideEffectfulWork) {
-          throw streamError;
-        }
+        try {
+          const completed = await consumeChatStream(
+            startChatStream(chatModel.model, chatModel.route).fullStream,
+          );
+          if (!completed) return;
+        } catch (streamError) {
+          const hasStartedSideEffectfulWork =
+            usedTools.length > 0 ||
+            toolCalls.length > 0 ||
+            toolArtifacts.length > 0 ||
+            responseAttachments.length > 0;
+          if (
+            !isTransientChatStreamError(streamError) ||
+            hasStartedSideEffectfulWork
+          ) {
+            throw streamError;
+          }
 
-        const fallbackRoute = fallbackRouteForCall({
-          task: chatTask,
-          taskKind: "query_reason",
-          primaryRoute: chatModel.route,
-          fallbackRoute: chatModel.fallbackRoute,
-        });
-        const compatibleFallbackRoute =
-          fallbackRoute &&
-          (!hasImageInput || modelSupportsImageInput(fallbackRoute))
-            ? fallbackRoute
-            : null;
-        const retryRoute = compatibleFallbackRoute ?? chatModel.route;
-        const retryModel = compatibleFallbackRoute
-          ? getModelForRoute(compatibleFallbackRoute)
-          : chatModel.model;
-        console.warn(
-          `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
+          const fallbackRoute = fallbackRouteForCall({
+            task: chatTask,
+            taskKind: "query_reason",
+            primaryRoute: chatModel.route,
+            fallbackRoute: chatModel.fallbackRoute,
+          });
+          const compatibleFallbackRoute =
+            fallbackRoute &&
+            (!hasImageInput || modelSupportsImageInput(fallbackRoute))
+              ? fallbackRoute
+              : null;
+          const retryRoute = compatibleFallbackRoute ?? chatModel.route;
+          const retryModel = compatibleFallbackRoute
+            ? getModelForRoute(compatibleFallbackRoute)
+            : chatModel.model;
+          console.warn(
+            `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
+          );
+          await resetStreamStateForRetry();
+          const completed = await consumeChatStream(
+            startChatStream(retryModel, retryRoute).fullStream,
+          );
+          if (!completed) return;
+        }
+        await recordAgentRoutingRun(
+          ctx,
+          args.orgId,
+          chatTask,
+          chatRun,
+          routingAudit(),
+          chatModel.routerResponses.at(-1),
         );
-        await resetStreamStateForRetry();
-        const completed = await consumeChatStream(
-          startChatStream(retryModel, retryRoute).fullStream,
+      } catch (streamError) {
+        await recordAgentRoutingRun(
+          ctx,
+          args.orgId,
+          chatTask,
+          chatRun,
+          routingAudit(),
+          chatModel.routerResponses.at(-1),
+          streamError,
         );
-        if (!completed) return;
+        throw streamError;
       }
 
       if (await isAgentResponseCancelled(true)) return;
