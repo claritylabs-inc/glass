@@ -35,6 +35,23 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).not.toContain("SummaryHeader");
   });
 
+  it("shows permission restrictions before compliance write actions", () => {
+    const page = read("components/compliance-page.tsx");
+    const activeOrg = read("lib/hooks/use-active-org-context.ts");
+
+    expect(page).toContain("canManageCompliance");
+    expect(page).toContain("Compliance is read-only");
+    expect(page).toContain(
+      "Live-organization operator mode is read-only. Exit operator mode to make changes.",
+    );
+    expect(page).toContain(
+      "Only an organization admin can make compliance changes.",
+    );
+    expect(page).toContain("getUserFacingErrorMessage");
+    expect(activeOrg).toContain("isReadOnlyImpersonation");
+    expect(activeOrg).toContain("targetOrgOperatorStatus");
+  });
+
   it("keeps agent lookup tools scoped to coverage requirements", () => {
     const complianceAgent = read("convex/lib/complianceAgent.ts");
     const chatTools = read("convex/lib/chatTools.ts");

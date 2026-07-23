@@ -1,10 +1,14 @@
 import { v } from "convex/values";
 import { mutation, internalQuery } from "./_generated/server";
 import { getOrgAccess, assertCanManageBroker, type OrgAccess } from "./lib/access";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 function assertCanManageOwnOrg(access: OrgAccess) {
   if (access.accessType !== "member" || access.role !== "admin") {
-    throw new Error("Admin access required");
+    throwUserFacingError(userFacingErrorCodes.orgAdminRequired);
   }
 }
 

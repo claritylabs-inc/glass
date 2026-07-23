@@ -6,6 +6,7 @@ import { Link2, Check } from "lucide-react";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 export function BrokerShareLinkButton() {
   const currentOrg = useCurrentOrg();
@@ -27,7 +28,9 @@ export function BrokerShareLinkButton() {
       toast.success("Signup link copied");
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      toast.error(String(err));
+      toast.error(
+        getUserFacingErrorMessage(err, "Could not copy the signup link."),
+      );
     }
   }
 

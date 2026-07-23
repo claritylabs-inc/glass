@@ -35,6 +35,10 @@ import {
 } from "./lib/featureFlags";
 import { resolveEffectiveOrganizationProfile } from "./lib/orgProfileFacts";
 import { IRS_ENTITY_TYPES } from "./lib/entityTypes";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const internal = _internal as any;
 
@@ -111,8 +115,12 @@ async function requireOrgAdminForUser(
     .query("orgMemberships")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
     .first();
-  if (!membership) throw new Error("No organization membership");
-  if (membership.role !== "admin") throw new Error("Admin access required");
+  if (!membership) {
+    throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
+  }
+  if (membership.role !== "admin") {
+    throwUserFacingError(userFacingErrorCodes.orgAdminRequired);
+  }
 
   const org = await ctx.db.get(membership.orgId);
   if (!org) throw new Error("Organization not found");
@@ -453,7 +461,7 @@ export const createBrokerOrg = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await assertCustomerUser(ctx, userId);
 
     // Validate slug
@@ -509,7 +517,7 @@ export const createClientOrg = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await assertCustomerUser(ctx, userId);
 
     // Check if user already has an org membership
@@ -560,7 +568,10 @@ export const updateClientEmailSettings = mutation({
     const access = await getOrgAccessNew(ctx, client.brokerOrgId);
     assertBrokerOrg(access);
     if (access.role !== "admin") {
-      throw new Error("Only broker admins can update client email settings");
+      throwUserFacingError(
+        userFacingErrorCodes.brokerAdminRequired,
+        "Only a broker admin can update client email settings.",
+      );
     }
     await assertImpersonatedSetupWrite(ctx, client.brokerOrgId);
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -723,7 +734,7 @@ export const updateClientBrokerAssignment = mutation({
       const brokerAccess = await getOrgAccessNew(ctx, connectedBrokerOrgId);
       assertBrokerOrg(brokerAccess);
       if (brokerAccess.role !== "admin") {
-        throw new Error("Broker admin access required");
+        throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
       }
       await assertImpersonatedSetupWrite(ctx, connectedBrokerOrgId);
     } else {
@@ -733,7 +744,7 @@ export const updateClientBrokerAssignment = mutation({
         clientAccess.orgType !== "client" ||
         clientAccess.role !== "admin"
       ) {
-        throw new Error("Client admin access required");
+        throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
       }
     }
     if (args.producerId && connectedBrokerOrgId) {
@@ -1086,7 +1097,7 @@ export const sendMemberInvitation = action({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const invitationResult = await ctx.runMutation(internal.orgs.createMemberInvitationInternal, {
       ...args,
@@ -1166,7 +1177,7 @@ export const requestMemberEmailChange = action({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const target = await ctx.runQuery(
       internal.orgs.getMemberEmailChangeTargetInternal,
@@ -1272,7 +1283,7 @@ export const acceptInvitation = mutation({
   args: { invitationId: v.id("orgInvitations") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation) throw new Error("Invitation not found");

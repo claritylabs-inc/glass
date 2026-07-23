@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { OperatorSidebar } from "../operator-sidebar";
 import { getPublicAgentDomain } from "@/lib/domains";
 import {
@@ -317,7 +318,7 @@ export default function OperatorClientsPage() {
       setAdminPhone("");
       setPanelMode(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create client");
+      toast.error(getUserFacingErrorMessage(error, "Failed to create client"));
     } finally {
       setBusy(false);
     }
@@ -330,7 +331,9 @@ export default function OperatorClientsPage() {
       await startImpersonation({ targetOrgId: client._id, targetRole: "admin" });
       router.push("/policies");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to impersonate client");
+      toast.error(
+        getUserFacingErrorMessage(error, "Failed to impersonate client"),
+      );
     } finally {
       setBusy(false);
     }
@@ -344,7 +347,7 @@ export default function OperatorClientsPage() {
       await patchClientStatus(client._id, "live");
       toast.success("Client launched and login email sent");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to launch client");
+      toast.error(getUserFacingErrorMessage(error, "Failed to launch client"));
     } finally {
       setBusy(false);
     }
@@ -400,7 +403,7 @@ export default function OperatorClientsPage() {
       });
     },
     errorMessage: (error) =>
-      error instanceof Error ? error.message : "Client settings could not be saved.",
+      getUserFacingErrorMessage(error, "Client settings could not be saved."),
   });
 
   async function saveClientSettingsBeforeAction() {
@@ -429,7 +432,7 @@ export default function OperatorClientsPage() {
       await patchClientStatus(client._id, "onboarding");
       toast.success("Client account disabled");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update client");
+      toast.error(getUserFacingErrorMessage(error, "Failed to update client"));
     } finally {
       setBusy(false);
     }
@@ -475,7 +478,9 @@ export default function OperatorClientsPage() {
       toast.success("Beta feature updated");
     } catch (error) {
       await patchClientSettings(client._id, { featureFlags: previousFlags });
-      toast.error(error instanceof Error ? error.message : "Failed to update beta feature");
+      toast.error(
+        getUserFacingErrorMessage(error, "Failed to update beta feature"),
+      );
     } finally {
       setSavingFeatureFlagId(null);
     }

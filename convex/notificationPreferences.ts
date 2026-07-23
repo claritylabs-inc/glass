@@ -17,6 +17,10 @@ import {
   type NotificationChannel,
   type NotificationSeverity,
 } from "./lib/notificationTypes";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const channelValidator = v.union(
   v.literal("email"),
@@ -123,7 +127,9 @@ function assertCurrentOrg(
   currentOrgId: Id<"organizations">,
   requestedOrgId: Id<"organizations">,
 ) {
-  if (currentOrgId !== requestedOrgId) throw new Error("Access denied");
+  if (currentOrgId !== requestedOrgId) {
+    throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
+  }
 }
 
 // ── Public mutations ────────────────────────────────────────────────────────

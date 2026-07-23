@@ -29,6 +29,10 @@ import {
 } from "./lib/certificateHolderResolution";
 import { makeGenerateObject } from "./lib/sdkCallbacks";
 import { z } from "zod";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const certificateSourceValidator = v.union(
   v.literal("policy_page"),
@@ -312,7 +316,10 @@ export const getGenerationContext = query({
 
     const access = await getOrgAccess(ctx, policy.orgId);
     if (access.accessType === "connected_client") {
-      throw new Error("Connected client access is read-only.");
+      throwUserFacingError(
+        userFacingErrorCodes.readOnlyAccess,
+        "Connected organization access is read-only. Ask the vendor to create this certificate.",
+      );
     }
 
     return { orgId: policy.orgId, userId: access.userId };
@@ -671,7 +678,7 @@ export const generateForPolicy = action({
   },
   handler: async (ctx, args): Promise<any> => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
 
     const holderName = args.holderName.trim();
     if (!holderName) throw new Error("Certificate holder is required.");

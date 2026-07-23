@@ -11,6 +11,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 dayjs.extend(relativeTime);
 
@@ -200,7 +201,9 @@ export function ClientListRow({ row }: { row: ClientRow }) {
               });
               toast.success("Deleted");
             } catch (err) {
-              toast.error(String(err));
+              toast.error(
+                getUserFacingErrorMessage(err, "Could not delete this draft."),
+              );
             }
           }}
         >

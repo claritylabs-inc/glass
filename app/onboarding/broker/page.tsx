@@ -18,6 +18,7 @@ import {
   useViewerCacheActions,
 } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
@@ -404,7 +405,7 @@ export default function BrokerOnboardingPage() {
       }
       setCurrentStep(1);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      setError(getUserFacingErrorMessage(e, "Failed to save"));
     } finally {
       setSubmitting(false);
     }
@@ -443,7 +444,7 @@ export default function BrokerOnboardingPage() {
       }
       setCurrentStep(2);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      setError(getUserFacingErrorMessage(e, "Failed to save"));
     } finally {
       setSubmitting(false);
     }
@@ -465,7 +466,7 @@ export default function BrokerOnboardingPage() {
       });
       setCurrentStep(3);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      setError(getUserFacingErrorMessage(e, "Failed to save"));
     } finally {
       setSubmitting(false);
     }
@@ -486,7 +487,7 @@ export default function BrokerOnboardingPage() {
       setOnboardingComplete(true);
       router.push("/");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to finish");
+      setError(getUserFacingErrorMessage(e, "Failed to finish"));
       setSubmitting(false);
     }
   }

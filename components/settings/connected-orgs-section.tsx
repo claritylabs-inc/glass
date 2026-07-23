@@ -8,6 +8,7 @@ import dayjs from "dayjs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   AlertCircle,
   Check,
@@ -561,9 +562,7 @@ export function ConnectedOrgsSection({
         setRequestOpen(false);
       } catch (error) {
         toast.error(
-          error instanceof Error
-            ? error.message
-            : "Could not request vendor access",
+          getUserFacingErrorMessage(error, "Could not request vendor access"),
         );
       } finally {
         setSubmitting(false);
@@ -662,7 +661,7 @@ export function ConnectedOrgsSection({
       toast.success("Connection approved");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not approve connection",
+        getUserFacingErrorMessage(error, "Could not approve connection"),
       );
     }
   }
@@ -690,7 +689,7 @@ export function ConnectedOrgsSection({
       toast.success("Connection revoked");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not revoke connection",
+        getUserFacingErrorMessage(error, "Could not revoke connection"),
       );
     }
   }
@@ -709,9 +708,7 @@ export function ConnectedOrgsSection({
       });
       toast.success("Vendor invite resent");
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not resend invite",
-      );
+      toast.error(getUserFacingErrorMessage(error, "Could not resend invite"));
     } finally {
       setResendingInvitationId(null);
     }

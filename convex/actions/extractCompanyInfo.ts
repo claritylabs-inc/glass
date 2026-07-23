@@ -8,6 +8,10 @@ import type { Id } from "../_generated/dataModel";
 import { generateObjectForOrg } from "../lib/models";
 import { INDUSTRIES } from "../lib/industries";
 import { runWebRetrieval } from "../lib/webRetrieval";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "../lib/userFacingErrors";
 
 // Build a compact reference of valid industry/vertical values for the prompt
 const INDUSTRY_REF = INDUSTRIES.map(
@@ -234,7 +238,7 @@ async function resolveTargetOrgId(
   orgId: Id<"organizations"> | undefined,
 ): Promise<Id<"organizations">> {
   const viewer = await ctx.runQuery(api.users.viewer);
-  if (!viewer) throw new Error("Not authenticated");
+  if (!viewer) throwUserFacingError(userFacingErrorCodes.authRequired);
   const viewerOrg: { org: { _id: Id<"organizations"> } } | null = await ctx.runQuery(
     api.orgs.viewerOrg,
     {},
@@ -249,7 +253,12 @@ async function resolveTargetOrgId(
         orgId,
       },
     );
-    if (!access) throw new Error("Not authorized");
+    if (!access) {
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "You don’t have access to update this organization.",
+      );
+    }
   }
   return targetOrgId;
 }

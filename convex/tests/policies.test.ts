@@ -93,6 +93,6 @@ test("provenance fields are accepted in schema (structural test)", () => {
 test("archive blocks a broker from archiving a client-uploaded policy", () => {
   const policy = { uploadedBySide: "client" as const, uploadedByBrokerOrgId: undefined };
   expect(() => assertCanArchivePolicy(makeBrokerAccess(), policy)).toThrow(
-    "Not authorized to archive this policy",
+    "Brokers can archive only policies uploaded by their brokerage.",
   );
 });

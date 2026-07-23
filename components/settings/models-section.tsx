@@ -29,6 +29,7 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { ModelProviderLogo } from "@/components/model-provider-logo";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   useCachedQuery,
   useUpdateCachedQuery,
@@ -170,7 +171,7 @@ export function ModelsSection() {
       toast.success(apiKey ? "Provider key saved" : "Provider key removed");
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to update provider key",
+        getUserFacingErrorMessage(err, "Failed to update provider key"),
       );
     } finally {
       setSavingProvider(null);
@@ -196,7 +197,7 @@ export function ModelsSection() {
       }));
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to update model routing",
+        getUserFacingErrorMessage(err, "Failed to update model routing"),
       );
     } finally {
       setSavingTask(null);

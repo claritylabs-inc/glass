@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import { AlertTriangle, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -50,9 +51,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const MEMORY_TYPE_ORDER = ["fact", "preference", "risk_note", "observation"];
 function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error
-    ? error.message.replace(/^Uncaught Error: /, "")
-    : fallback;
+  return getUserFacingErrorMessage(error, fallback);
 }
 
 function MemoryEditDrawer({

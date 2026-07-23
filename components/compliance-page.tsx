@@ -68,6 +68,7 @@ import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-quer
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { formatDisplayDate } from "@/lib/date-format";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 type RequirementScope = "vendors" | "own_org";
 type ComplianceStatus = "met" | "not_met" | "expiring_soon" | "expired" | "unverified";
@@ -686,12 +687,16 @@ function latestCheckNote(check: Requirement["complianceCheck"]) {
 function RequirementDrawer({
   requirement,
   checking,
+  canManage,
+  writeRestriction,
   onDeepCheck,
   onArchive,
   onClose,
 }: {
   requirement: Requirement;
   checking: boolean;
+  canManage: boolean;
+  writeRestriction: string | null;
   onDeepCheck: (requirement: Requirement) => void;
   onArchive: (requirementId: Id<"insuranceRequirements">) => void;
   onClose: () => void;
@@ -700,11 +705,12 @@ function RequirementDrawer({
   const policy = check?.matchedPolicy;
   const policyIds = matchedPolicyIdsForRequirement(requirement);
   const checkNote = latestCheckNote(check);
-  const canDeepCheck =
+  const deepCheckAvailableForRequirement =
     requirement.canArchive !== false &&
     requirement.scope === "own_org" &&
     check &&
     check.status !== "met";
+  const canDeepCheck = canManage && deepCheckAvailableForRequirement;
   const detectedLimit = policy?.coverageLimit ?? formatMoney(policy?.detectedLimitAmount);
   return (
     <SettingsDrawer
@@ -716,7 +722,7 @@ function RequirementDrawer({
       actions={check ? <StatusBadge status={check.status} /> : undefined}
       footer={
         <>
-          {requirement.canArchive !== false ? (
+          {canManage && requirement.canArchive !== false ? (
             <PillButton
               type="button"
               variant="secondary"
@@ -730,6 +736,10 @@ function RequirementDrawer({
             <PillButton type="button" disabled={checking} onClick={() => onDeepCheck(requirement)}>
               {checking ? "Checking…" : "Run deeper check"}
             </PillButton>
+          ) : deepCheckAvailableForRequirement && writeRestriction ? (
+            <p className="max-w-72 text-right text-label text-muted-foreground">
+              {writeRestriction}
+            </p>
           ) : null}
         </>
       }
@@ -1137,6 +1147,8 @@ function SourceDrawer({
   source,
   requirements,
   archiving,
+  canManage,
+  writeRestriction,
   onUpdateSource,
   onSaveRequirement,
   onArchiveRequirement,
@@ -1146,6 +1158,8 @@ function SourceDrawer({
   source: RequirementSource;
   requirements: Requirement[] | undefined;
   archiving: boolean;
+  canManage: boolean;
+  writeRestriction: string | null;
   onUpdateSource: (source: RequirementSource, patch: SourceUpdatePatch) => Promise<void>;
   onSaveRequirement: (
     requirement: Requirement,
@@ -1170,6 +1184,7 @@ function SourceDrawer({
       sourceType: sourceTypeDraft,
     },
     resetKey: source._id,
+    enabled: canManage,
     canSave: !!titleDraft.trim(),
     autoSave: !titleFocused,
     delayMs: 0,
@@ -1189,17 +1204,23 @@ function SourceDrawer({
         if (!open) onClose();
       }}
       title="Requirement source"
-      actions={<AutoSaveStatus status={sourceAutoSave.status} />}
+      actions={canManage ? <AutoSaveStatus status={sourceAutoSave.status} /> : undefined}
       footer={
-        <PillButton
-          type="button"
-          variant="secondary"
-          disabled={archiving}
-          onClick={() => void archiveSource()}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          {archiving ? "Archiving..." : "Archive source"}
-        </PillButton>
+        canManage ? (
+          <PillButton
+            type="button"
+            variant="secondary"
+            disabled={archiving}
+            onClick={() => void archiveSource()}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {archiving ? "Archiving..." : "Archive source"}
+          </PillButton>
+        ) : writeRestriction ? (
+          <p className="max-w-72 text-right text-label text-muted-foreground">
+            {writeRestriction}
+          </p>
+        ) : null
       }
     >
       <div className="space-y-5">
@@ -1214,6 +1235,7 @@ function SourceDrawer({
                 setTitleFocused(false);
                 void sourceAutoSave.saveNow();
               }}
+              disabled={!canManage}
             />
             {!titleDraft.trim() ? (
               <span className="text-destructive">Source name is required.</span>
@@ -1223,6 +1245,7 @@ function SourceDrawer({
             Source type
             <Select
               value={sourceTypeDraft}
+              disabled={!canManage}
               onValueChange={(value) => {
                 if (value) setSourceTypeDraft(value as RequirementSourceDocumentType);
               }}
@@ -1250,7 +1273,11 @@ function SourceDrawer({
         </section>
         <FormSection
           title="Requirements"
-          description="Edit the coverage requirements extracted from this source."
+          description={
+            canManage
+              ? "Edit the coverage requirements extracted from this source."
+              : "Review the coverage requirements extracted from this source."
+          }
         >
           {requirements === undefined ? (
             <OperationalSkeletonList rows={3} />
@@ -1291,13 +1318,23 @@ function SourceDrawer({
                         </span>
                       </span>
                     </button>
-                    {expanded ? (
+                    {expanded && canManage ? (
                       <div className="border-t border-foreground/6 px-3 pb-3 pt-3">
                         <RequirementEditForm
                           requirement={requirement}
                           onSave={(values) => onSaveRequirement(requirement, values)}
                           onArchive={() => void onArchiveRequirement(requirement._id)}
                         />
+                      </div>
+                    ) : expanded ? (
+                      <div className="space-y-2 border-t border-foreground/6 px-3 pb-3 pt-3">
+                        <DrawerDetail
+                          label="Line"
+                          value={lineDisplayLabel(requirement.lineOfBusiness)}
+                        />
+                        <p className="text-base text-muted-foreground">
+                          {requirement.requirementText}
+                        </p>
                       </div>
                     ) : null}
                   </div>
@@ -1440,6 +1477,16 @@ export function CompliancePage() {
   const [importing, setImporting] = useState(false);
   const [archivingSources, setArchivingSources] = useState(false);
   const [checkingRequirementId, setCheckingRequirementId] = useState<Id<"insuranceRequirements"> | null>(null);
+  const canManageCompliance =
+    currentOrg?.role === "admin" &&
+    !currentOrg.isReadOnlyImpersonation;
+  const complianceWriteRestriction = !currentOrg
+    ? null
+    : currentOrg.isReadOnlyImpersonation
+      ? "Live-organization operator mode is read-only. Exit operator mode to make changes."
+      : currentOrg.role !== "admin"
+        ? "Only an organization admin can make compliance changes."
+        : null;
 
   const hasActiveClients = (clientRows ?? []).some((row) => row.status === "active");
   const hasActiveVendors = (vendorRows ?? []).some((row) => row.status === "active");
@@ -1532,7 +1579,7 @@ export function CompliancePage() {
       setProvisions([]);
       setDrawerOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to save requirement");
+      toast.error(getUserFacingErrorMessage(error, "Unable to save requirement"));
     } finally {
       setSubmitting(false);
     }
@@ -1562,7 +1609,7 @@ export function CompliancePage() {
       setSelectedRequirementId(null);
       toast.success("Requirement archived");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to archive requirement");
+      toast.error(getUserFacingErrorMessage(error, "Unable to archive requirement"));
     }
   }
 
@@ -1592,7 +1639,7 @@ export function CompliancePage() {
       );
       toast.success("Compliance checked");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to check compliance");
+      toast.error(getUserFacingErrorMessage(error, "Unable to check compliance"));
     } finally {
       setCheckingRequirementId(null);
     }
@@ -1638,7 +1685,7 @@ export function CompliancePage() {
       setSourceName("");
       setDrawerOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to generate requirements");
+      toast.error(getUserFacingErrorMessage(error, "Unable to generate requirements"));
     } finally {
       setImporting(false);
     }
@@ -1768,7 +1815,7 @@ export function CompliancePage() {
       );
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to archive sources");
+      toast.error(getUserFacingErrorMessage(error, "Unable to archive sources"));
       return false;
     } finally {
       setArchivingSources(false);
@@ -1913,6 +1960,8 @@ export function CompliancePage() {
     <RequirementDrawer
       requirement={selectedRequirement}
       checking={checkingRequirementId === selectedRequirement._id}
+      canManage={canManageCompliance}
+      writeRestriction={complianceWriteRestriction}
       onDeepCheck={(row) => void runDeeperCheck(row)}
       onArchive={(id) => void removeRequirement(id)}
       onClose={() => setSelectedRequirementId(null)}
@@ -1924,6 +1973,8 @@ export function CompliancePage() {
       source={selectedSource}
       requirements={selectedSourceRequirements}
       archiving={archivingSources}
+      canManage={canManageCompliance}
+      writeRestriction={complianceWriteRestriction}
       onUpdateSource={updateSource}
       onSaveRequirement={saveRequirementEdits}
       onArchiveRequirement={removeRequirement}
@@ -1935,14 +1986,29 @@ export function CompliancePage() {
   return (
     <AppShell
       actions={
-        <PillButton size="compact" variant="primary" onClick={openAddRequirements}>
-          <Plus className="h-3.5 w-3.5" />
-          Add requirements
-        </PillButton>
+        canManageCompliance ? (
+          <PillButton size="compact" variant="primary" onClick={openAddRequirements}>
+            <Plus className="h-3.5 w-3.5" />
+            Add requirements
+          </PillButton>
+        ) : undefined
       }
       rightPanel={detailPanel ?? sourcePanel ?? addPanel}
     >
       <div className="flex w-full flex-col gap-4">
+        {complianceWriteRestriction ? (
+          <OperationalPanel as="div" className="flex items-start gap-3 px-4 py-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <div>
+              <p className="text-base font-medium text-foreground">
+                Compliance is read-only
+              </p>
+              <p className="text-base text-muted-foreground">
+                {complianceWriteRestriction}
+              </p>
+            </div>
+          </OperationalPanel>
+        ) : null}
         <Tabs
           value={navigationValue}
           onValueChange={(value) => {

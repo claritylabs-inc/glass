@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 import { CheckCircle2, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 import { PillButton } from "@/components/ui/pill-button";
 import { api } from "@/convex/_generated/api";
@@ -270,7 +271,7 @@ export function PolicyExtractionReview({
       toast.success("Coverage confirmed");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not confirm coverage",
+        getUserFacingErrorMessage(error, "Could not confirm coverage"),
       );
     } finally {
       setPendingId(null);
@@ -287,9 +288,7 @@ export function PolicyExtractionReview({
       toast.success("Broker help requested");
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not request broker help",
+        getUserFacingErrorMessage(error, "Could not request broker help"),
       );
     } finally {
       setPendingId(null);

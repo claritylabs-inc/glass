@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 
@@ -41,8 +42,7 @@ export function InviteMemberDrawer({
       toast.success(`Invitation sent to ${email}`);
       resetAndClose();
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to send invitation";
+      const msg = getUserFacingErrorMessage(err, "Failed to send invitation");
       toast.error(msg);
     } finally {
       setSending(false);

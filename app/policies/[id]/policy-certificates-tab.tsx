@@ -28,6 +28,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { AddressAutofillInput } from "@/components/ui/address-autofill-input";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 import { usePdf } from "@/components/pdf-context";
 
@@ -313,9 +314,7 @@ export function CertificateCreatePanel({
       if (result.url) openWithUrl(result.url);
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not generate certificate",
+        getUserFacingErrorMessage(error, "Could not generate certificate"),
       );
     } finally {
       setGenerating(false);

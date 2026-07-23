@@ -17,6 +17,7 @@ import {
   type AutoSaveRequestState,
 } from "@/lib/sync/auto-save-sequencer";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
+import { getPermissionErrorMessage } from "@/lib/user-facing-error";
 
 type LocalFirstAutoSaveOptions<TArgs, TResult> = {
   mutationName: string;
@@ -270,10 +271,12 @@ export function useLocalFirstAutoSave<TArgs, TResult = unknown>({
             failedSaveRef.current = request;
             setFailedSave(request);
             onErrorRef.current?.(error, queuedArgs);
-            const detail =
+            const configuredDetail =
               typeof errorMessageRef.current === "function"
                 ? errorMessageRef.current(error, queuedArgs)
                 : errorMessageRef.current;
+            const detail =
+              getPermissionErrorMessage(error) ?? configuredDetail;
             toast.error("Changes weren’t saved", {
               id: `auto-save:${mutationName}`,
               description: detail,

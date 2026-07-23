@@ -38,6 +38,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { useViewerCacheActions } from "@/lib/sync/glass-cached-queries";
 import {
   cachedQueryArgsKey,
@@ -209,8 +210,7 @@ export default function ProfilePage() {
     flush: saveProfile,
     onFlushed: (_result, next) => setPersistedValues(next),
     errorMessage: (err) => {
-      const message =
-        err instanceof Error ? err.message : "Failed to save profile";
+      const message = getUserFacingErrorMessage(err, "Failed to save profile");
       return message.includes("This phone number is already used")
         ? "This phone number is already used by another user."
         : message.includes("Enter a valid phone number")
@@ -255,9 +255,10 @@ export default function ProfilePage() {
       setProactiveDrawerOpen(false);
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message.replace(/^Uncaught Error: /, "")
-          : "Failed to update proactive contact method",
+        getUserFacingErrorMessage(
+          error,
+          "Failed to update proactive contact method",
+        ),
       );
     } finally {
       setSavingProactiveChannels(false);

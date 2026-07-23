@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAction, useMutation } from "convex/react";
 import dayjs from "dayjs";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -1471,7 +1472,9 @@ export default function OperatorExtractionsPage() {
         openTrace(result.traceId, "summary");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to rerun extraction");
+      toast.error(
+        getUserFacingErrorMessage(error, "Failed to rerun extraction"),
+      );
     } finally {
       setRerunningPolicyId(null);
     }
@@ -1483,7 +1486,9 @@ export default function OperatorExtractionsPage() {
       const result = await stopExtraction({ traceId: selectedTraceId });
       toast.success(result?.stopped ? "Extraction stopped" : "Extraction was already stopped");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to stop extraction");
+      toast.error(
+        getUserFacingErrorMessage(error, "Failed to stop extraction"),
+      );
     } finally {
       setStoppingTraceId(null);
     }

@@ -6,6 +6,7 @@ import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { Loader2, UserPlus } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { InviteMemberDrawer } from "@/components/settings/invite-member-drawer";
@@ -109,9 +110,10 @@ export function TeamSection() {
         toast.success("Primary contact updated");
       } catch (error) {
         toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to update primary contact",
+          getUserFacingErrorMessage(
+            error,
+            "Failed to update primary contact",
+          ),
         );
       } finally {
         setSettingPrimaryContactUserId(null);
@@ -146,9 +148,7 @@ export function TeamSection() {
         toast.success("Member removed");
         setEditingMember(null);
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Failed to remove member",
-        );
+        toast.error(getUserFacingErrorMessage(error, "Failed to remove member"));
       } finally {
         setRemovingMember(false);
       }
@@ -193,7 +193,7 @@ export function TeamSection() {
         setEditingMember(null);
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to update team member",
+          getUserFacingErrorMessage(error, "Failed to update team member"),
         );
       } finally {
         setSavingProfile(false);
@@ -235,10 +235,10 @@ export function TeamSection() {
         );
         toast.success("Email change cancelled");
       } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to cancel email change";
+        const message = getUserFacingErrorMessage(
+          error,
+          "Failed to cancel email change",
+        );
         setEmailChangeError(message);
         toast.error(message);
       } finally {
@@ -282,10 +282,10 @@ export function TeamSection() {
         setEditEmail("");
         toast.success(`Verification code sent to ${result.newEmail}`);
       } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to request email change";
+        const message = getUserFacingErrorMessage(
+          error,
+          "Failed to request email change",
+        );
         setEmailChangeError(message);
         toast.error(message);
       } finally {

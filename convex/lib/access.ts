@@ -8,6 +8,11 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import { getActiveOperatorImpersonation, getActiveOperatorProfile } from "./operatorIdentity";
+import {
+  isUserFacingErrorCode,
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./userFacingErrors";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -40,7 +45,7 @@ function policyHasOrg(policy: Doc<"policies"> | null): policy is PolicyWithOrg {
 /** Require an authenticated session. Throws if not logged in. */
 export async function requireAuth(ctx: Ctx): Promise<{ userId: Id<"users"> }> {
   const userId = await getAuthUserId(ctx);
-  if (!userId) throw new Error("Not authenticated");
+  if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
   return { userId };
 }
 
@@ -163,7 +168,7 @@ export async function getOrgAccess(ctx: Ctx, orgId: Id<"organizations">): Promis
     }
   }
 
-  throw new Error("Unauthorized");
+  throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
 }
 
 function errorHasMessage(error: unknown, message: string) {
@@ -171,7 +176,12 @@ function errorHasMessage(error: unknown, message: string) {
 }
 
 async function shouldSuppressOperatorTeardownUnauthorized(ctx: Ctx, error: unknown) {
-  if (!errorHasMessage(error, "Unauthorized")) return false;
+  if (
+    !isUserFacingErrorCode(error, userFacingErrorCodes.orgAccessRequired) &&
+    !errorHasMessage(error, "Unauthorized")
+  ) {
+    return false;
+  }
   const [operator, impersonation] = await Promise.all([
     getActiveOperatorProfile(ctx),
     getActiveOperatorImpersonation(ctx),
@@ -193,7 +203,10 @@ export async function getOrgAccessForQuery(
 
 function toCurrentOrgAccess(access: OrgAccess): CurrentOrgAccess {
   if (access.accessType !== "member" || !access.role) {
-    throw new Error("No organization membership");
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "You need an organization membership to access this workspace.",
+    );
   }
   return {
     ...access,
@@ -223,7 +236,12 @@ async function resolveCurrentOrgAccess(
 
   const membership = await getFirstOrgMembershipForUser(ctx, userId);
   if (!membership) {
-    if (options.requireMembership) throw new Error("No organization membership");
+    if (options.requireMembership) {
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "You need an organization membership to access this workspace.",
+      );
+    }
     return null;
   }
 
@@ -247,7 +265,12 @@ async function resolveCurrentOrgAccess(
 export async function requireCurrentOrgAccess(ctx: Ctx): Promise<CurrentOrgAccess> {
   const { userId } = await requireAuth(ctx);
   const access = await resolveCurrentOrgAccess(ctx, userId, { requireMembership: true });
-  if (!access) throw new Error("No organization membership");
+  if (!access) {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "You need an organization membership to access this workspace.",
+    );
+  }
   return access;
 }
 
@@ -263,22 +286,39 @@ export async function getCurrentOrgAccess(ctx: Ctx): Promise<CurrentOrgAccess | 
 
 export async function requireCurrentOrgAdmin(ctx: Ctx): Promise<CurrentOrgAccess> {
   const access = await requireCurrentOrgAccess(ctx);
-  if (access.role !== "admin") throw new Error("Admin access required");
+  if (access.role !== "admin") {
+    throwUserFacingError(userFacingErrorCodes.orgAdminRequired);
+  }
   return access;
 }
 
 // ── Capability helpers ──────────────────────────────────────────────────────
 
 export function assertBrokerOrg(access: OrgAccess): void {
-  if (access.orgType !== "broker") throw new Error("Expected a broker organization");
+  if (access.orgType !== "broker") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "This action is available only in a broker organization.",
+    );
+  }
 }
 
 export function assertClientOrg(access: OrgAccess): void {
-  if (access.orgType !== "client") throw new Error("Expected a client organization");
+  if (access.orgType !== "client") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "This action is available only in a client organization.",
+    );
+  }
 }
 
 export function assertPartnerOrg(access: OrgAccess): void {
-  if (access.orgType !== "partner") throw new Error("Expected a partner organization");
+  if (access.orgType !== "partner") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "This action is available only in a partner organization.",
+    );
+  }
 }
 
 export function assertCanReadPassport(_access: OrgAccess): void {
@@ -286,15 +326,30 @@ export function assertCanReadPassport(_access: OrgAccess): void {
 }
 
 export function assertCanEditPassport(access: OrgAccess): void {
-  if (access.accessType !== "member") throw new Error("Only org members can edit the passport");
+  if (access.accessType !== "member") {
+    throwUserFacingError(
+      userFacingErrorCodes.readOnlyAccess,
+      "Only members of this organization can edit its profile.",
+    );
+  }
 }
 
 export function assertCanReadEmails(access: OrgAccess): void {
-  if (access.accessType !== "member") throw new Error("Email access is restricted to org members");
+  if (access.accessType !== "member") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Email access is restricted to members of this organization.",
+    );
+  }
 }
 
 export function assertCanReadInternalThreads(access: OrgAccess): void {
-  if (access.accessType !== "member") throw new Error("Internal thread access is restricted to org members");
+  if (access.accessType !== "member") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Internal conversations are restricted to members of this organization.",
+    );
+  }
 }
 
 export function assertCanReadBrokerVisibleThreads(_access: OrgAccess): void {
@@ -307,7 +362,10 @@ export function assertCanReadPolicies(_access: OrgAccess): void {
 
 export function assertCanUploadPolicy(access: OrgAccess): void {
   if (access.accessType === "connected_client") {
-    throw new Error("Connected clients have read-only vendor access");
+    throwUserFacingError(
+      userFacingErrorCodes.readOnlyAccess,
+      "Connected organization access is read-only. Ask the vendor to upload the policy.",
+    );
   }
   // member OR broker_of_client
 }
@@ -315,7 +373,10 @@ export function assertCanUploadPolicy(access: OrgAccess): void {
 export function assertCanEditPolicyExtractedFields(access: OrgAccess): void {
   if (access.accessType === "broker_of_client") return;
   if (access.accessType === "member" && access.orgType === "broker") return;
-  throw new Error("Only brokers can edit extracted policy fields");
+  throwUserFacingError(
+    userFacingErrorCodes.readOnlyAccess,
+    "Only the managing broker can edit extracted policy fields.",
+  );
 }
 
 export function assertCanArchivePolicy(
@@ -323,7 +384,10 @@ export function assertCanArchivePolicy(
   policy: { uploadedBySide?: string; uploadedByBrokerOrgId?: Id<"organizations"> },
 ): void {
   if (access.accessType === "connected_client") {
-    throw new Error("Connected clients have read-only vendor access");
+    throwUserFacingError(
+      userFacingErrorCodes.readOnlyAccess,
+      "Connected organization access is read-only. Ask the vendor to archive this policy.",
+    );
   }
   if (access.accessType === "broker_of_client") {
     // Brokers can only archive policies they uploaded.
@@ -331,7 +395,10 @@ export function assertCanArchivePolicy(
       policy.uploadedBySide !== "broker" ||
       policy.uploadedByBrokerOrgId !== access.brokerOrgId
     ) {
-      throw new Error("Not authorized to archive this policy");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "Brokers can archive only policies uploaded by their brokerage.",
+      );
     }
   }
   // Members can archive any policy in their org.
@@ -376,7 +443,10 @@ export async function requireBrokerAccessToClient(
     access.orgType !== "client" ||
     !access.brokerOrgId
   ) {
-    throw new Error("Broker access required for this client");
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "You need broker access to this client to perform this action.",
+    );
   }
 
   return {
@@ -400,16 +470,31 @@ export async function getBrokerAccessToClientForQuery(
 
 export function assertCanManageBroker(access: OrgAccess): void {
   assertBrokerOrg(access);
-  if (access.role !== "admin") throw new Error("Admin role required to manage broker settings");
+  if (access.role !== "admin") {
+    throwUserFacingError(
+      userFacingErrorCodes.brokerAdminRequired,
+      "Only a broker admin can manage brokerage settings.",
+    );
+  }
 }
 
 export function assertCanInviteClient(access: OrgAccess): void {
   assertBrokerOrg(access);
-  if (access.accessType !== "member") throw new Error("Must be a broker org member to invite clients");
+  if (access.accessType !== "member") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "You must be a member of this brokerage to invite clients.",
+    );
+  }
 }
 
 export function assertCanInviteTeammate(access: OrgAccess): void {
-  if (access.role !== "admin") throw new Error("Admin role required to invite teammates");
+  if (access.role !== "admin") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAdminRequired,
+      "Only an organization admin can invite teammates.",
+    );
+  }
 }
 
 // ── Integration capability helpers ─────────────────────────────────────────
@@ -422,27 +507,39 @@ export function assertCanReadIntegrationsList(_access: OrgAccess): void {
 /** member only — creating connections requires being in the client org */
 export function assertCanConnectIntegration(access: OrgAccess): void {
   if (access.accessType !== "member") {
-    throw new Error("Only org members can connect integrations");
+    throwUserFacingError(
+      userFacingErrorCodes.readOnlyAccess,
+      "Only members of this organization can connect integrations.",
+    );
   }
 }
 
 /** member only */
 export function assertCanDisconnectIntegration(access: OrgAccess): void {
   if (access.accessType !== "member") {
-    throw new Error("Only org members can disconnect integrations");
+    throwUserFacingError(
+      userFacingErrorCodes.readOnlyAccess,
+      "Only members of this organization can disconnect integrations.",
+    );
   }
 }
 
 /** broker_of_client only — requesting a connection from the client */
 export function assertCanRequestIntegration(access: OrgAccess): void {
   if (access.accessType !== "broker_of_client") {
-    throw new Error("Only broker users can request integrations from a client");
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Only the client’s managing broker can request this integration.",
+    );
   }
 }
 
 /** member only — raw integration values are never exposed directly to brokers */
 export function assertCanReadRawIntegrationData(access: OrgAccess): void {
   if (access.accessType !== "member") {
-    throw new Error("Raw integration data is restricted to org members");
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Raw integration data is restricted to members of this organization.",
+    );
   }
 }

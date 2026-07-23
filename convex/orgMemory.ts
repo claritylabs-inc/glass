@@ -1,7 +1,8 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { getOrgAccess, requireAuth } from "./lib/access";
+import { getOrgAccess } from "./lib/access";
+import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
 import {
   isCompanyContextMemory,
   normalizeMemoryContent,
@@ -9,6 +10,10 @@ import {
 } from "./lib/orgMemoryPolicy";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./lib/userFacingErrors";
 
 const orgMemoryTypeValidator = v.union(
   v.literal("fact"),
@@ -36,18 +41,16 @@ async function requireMemoryAdmin(
   ctx: QueryCtx | MutationCtx,
   memoryId: Id<"orgMemory">,
 ) {
-  const { userId } = await requireAuth(ctx);
   const memory = await ctx.db.get(memoryId);
   if (!memory) throw new Error("Memory item not found");
 
-  const membership = await ctx.db
-    .query("orgMemberships")
-    .withIndex("by_orgId_userId", (q) =>
-      q.eq("orgId", memory.orgId).eq("userId", userId),
-    )
-    .first();
-  if (membership?.role !== "admin") {
-    throw new Error("Admin role required to manage memory");
+  const access = await getOrgAccess(ctx, memory.orgId);
+  await assertImpersonatedSetupWrite(ctx, memory.orgId);
+  if (access.accessType !== "member" || access.role !== "admin") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAdminRequired,
+      "Only an organization admin can manage memory.",
+    );
   }
 
   return {
@@ -306,7 +309,10 @@ export const list = query({
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx, args.orgId);
     if (access.accessType !== "member") {
-      throw new Error("Company memory is available only to direct org members");
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "Company memory is available only to members of this organization.",
+      );
     }
     const memories = await ctx.db
       .query("orgMemory")

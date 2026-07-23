@@ -1,5 +1,9 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import {
+  throwUserFacingError,
+  userFacingErrorCodes,
+} from "./userFacingErrors";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -24,7 +28,10 @@ export async function assertBrokerOfClient(
   const clientOrg = await ctx.db.get(clientOrgId);
   if (clientOrg?.brokerOrgId === brokerOrgId) return;
 
-  throw new Error("Forbidden: no broker–client relationship found");
+  throwUserFacingError(
+    userFacingErrorCodes.orgAccessRequired,
+    "This brokerage is not authorized to access the selected client.",
+  );
 }
 
 /**

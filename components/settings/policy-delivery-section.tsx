@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
@@ -233,7 +234,7 @@ function RuleDrawer({
       toast.success("Delivery rule saved");
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save rule");
+      toast.error(getUserFacingErrorMessage(error, "Failed to save rule"));
     } finally {
       setSaving(false);
     }
@@ -415,7 +416,7 @@ function PolicyDeliveryEditor({
       toast.success("Client override cleared");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to clear client override",
+        getUserFacingErrorMessage(error, "Failed to clear client override"),
       );
       setClearingOverride(false);
     }
@@ -434,7 +435,7 @@ function PolicyDeliveryEditor({
       });
       toast.success("Client override added");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to add override");
+      toast.error(getUserFacingErrorMessage(error, "Failed to add override"));
     }
   }
 
