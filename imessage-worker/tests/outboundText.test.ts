@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  imessageMarkdown,
+  imessageMarkdownSource,
   imessagePlainText,
 } from "../src/outboundText";
 
 describe("iMessage outbound text", () => {
-  it("uses Spectrum markdown content for native iMessage formatting", async () => {
-    await expect(imessageMarkdown("**Bold** and _italic_.").build()).resolves.toEqual({
-      type: "markdown",
-      markdown: "**Bold** and _italic_.",
-    });
+  it("preserves Markdown for Spectrum-native iMessage formatting", () => {
+    expect(imessageMarkdownSource("**Bold** and _italic_.")).toBe(
+      "**Bold** and _italic_.",
+    );
   });
 
   it("removes markdown syntax from low-level Photon sends", () => {
@@ -52,17 +51,38 @@ describe("iMessage outbound text", () => {
     );
   });
 
-  it("removes Glass confidence markers before either outbound format", async () => {
+  it("removes Glass confidence markers before either outbound format", () => {
     const source =
       "[[g]:**Confirmed coverage** with [evidence](https://glass.insure)]]";
 
     expect(imessagePlainText(source)).toBe(
       "Confirmed coverage with evidence (https://glass.insure)",
     );
-    await expect(imessageMarkdown(source).build()).resolves.toEqual({
-      type: "markdown",
-      markdown:
-        "**Confirmed coverage** with [evidence](https://glass.insure)",
-    });
+    expect(imessageMarkdownSource(source)).toBe(
+      "**Confirmed coverage** with [evidence](https://glass.insure)",
+    );
+  });
+
+  it("preserves nested double brackets inside confidence spans", () => {
+    const source = "[[g:Use `[[1, 2]]` in the formula]]";
+
+    expect(imessageMarkdownSource(source)).toBe(
+      "Use `[[1, 2]]` in the formula",
+    );
+    expect(imessagePlainText(source)).toBe(
+      "Use [[1, 2]] in the formula",
+    );
+  });
+
+  it("does not close a confidence span inside code or a nested link label", () => {
+    const source =
+      "[[g:Use `tail]]` and see [array [1, 2]](https://glass.insure)]]";
+
+    expect(imessageMarkdownSource(source)).toBe(
+      "Use `tail]]` and see [array [1, 2]](https://glass.insure)",
+    );
+    expect(imessagePlainText(source)).toBe(
+      "Use tail]] and see array [1, 2] (https://glass.insure)",
+    );
   });
 });

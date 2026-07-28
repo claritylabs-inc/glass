@@ -4,6 +4,7 @@ import {
   app as appCard,
   attachment,
   contact,
+  markdown,
   type Message,
   type Space,
   type SpectrumInstance,
@@ -23,8 +24,15 @@ import {
   parseTerminalIdentityCommand,
   terminalIdentityLabel,
 } from "./terminalIdentity.js";
-import { imessageMarkdown, imessagePlainText } from "./outboundText.js";
+import {
+  imessageMarkdownSource,
+  imessagePlainText,
+} from "./outboundText.js";
 import { readInboundAttachment } from "./voiceAttachment.js";
+
+function imessageMarkdown(value: string) {
+  return markdown(imessageMarkdownSource(value));
+}
 
 type MiniAppLayout = {
   caption?: string;

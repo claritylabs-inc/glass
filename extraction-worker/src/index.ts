@@ -39,6 +39,7 @@ import {
 import {
   buildPdfSourceSpans,
   buildPdfTextSupplements,
+  orderSourceSpansForPreview,
   type WorkerSourceChunk,
   type WorkerSourceSpan,
 } from "./pdfSourceSpans.js";
@@ -2294,13 +2295,13 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
 }
 
 function previewTextFromSourceSpans(
-  sourceSpans: Array<{ text?: unknown; pageStart?: unknown }>,
+  sourceSpans: WorkerSourceSpan[],
 ): string {
   let output = "";
-  for (const span of sourceSpans) {
-    const text = typeof span.text === "string" ? span.text.replace(/\s+/g, " ").trim() : "";
+  for (const span of orderSourceSpansForPreview(sourceSpans)) {
+    const text = span.text.replace(/\s+/g, " ").trim();
     if (!text) continue;
-    const page = typeof span.pageStart === "number" ? `p.${span.pageStart}` : "p.unknown";
+    const page = span.pageStart ? `p.${span.pageStart}` : "p.unknown";
     const next = `[${page}] ${text}\n`;
     if (output.length + next.length > POLICY_PREVIEW_TEXT_LIMIT) {
       output += next.slice(0, Math.max(0, POLICY_PREVIEW_TEXT_LIMIT - output.length));
@@ -2670,8 +2671,8 @@ async function processJob(job: ClaimedJob): Promise<void> {
         pdfBytes,
         job.policyId,
         {
-          sourceSpans: converted.sourceSpans as unknown as WorkerSourceSpan[],
-          sourceChunks: converted.sourceChunks as unknown as WorkerSourceChunk[],
+          sourceSpans: converted.sourceSpans,
+          sourceChunks: converted.sourceChunks,
         },
       );
       preparedSource = supplementedSource;
@@ -2816,8 +2817,8 @@ async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
         pdfBytes,
         job.policyId,
         {
-          sourceSpans: converted.sourceSpans as unknown as WorkerSourceSpan[],
-          sourceChunks: converted.sourceChunks as unknown as WorkerSourceChunk[],
+          sourceSpans: converted.sourceSpans,
+          sourceChunks: converted.sourceChunks,
         },
       );
       sourceSpans = supplementedSource.sourceSpans;

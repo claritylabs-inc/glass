@@ -1,5 +1,4 @@
 import { Marked, type MarkedToken, type Token, type Tokens } from "marked";
-import { markdown } from "spectrum-ts";
 
 const markdownLexer = new Marked();
 const BLOCK_SEPARATOR = "\n\n";
@@ -9,23 +8,52 @@ const TABLE_CELL_SEPARATOR = " | ";
 function normalizeGlassMarkdown(value: string) {
   let result = "";
   let openMarkers = 0;
+  let markdownBracketDepth = 0;
+  let codeDelimiterLength = 0;
 
   for (let index = 0; index < value.length; ) {
-    const opener = value.slice(index).match(/^\[\[(?:g|i|u)(?:\]:|:)/)?.[0];
+    const opener =
+      codeDelimiterLength === 0
+        ? value.slice(index).match(/^\[\[(?:g|i|u)(?:\]:|:)/)?.[0]
+        : undefined;
     if (opener) {
       openMarkers += 1;
       index += opener.length;
       continue;
     }
-    if (openMarkers > 0 && value.startsWith("]]", index)) {
-      openMarkers -= 1;
-      index += 2;
+    if (openMarkers > 0 && value[index] === "`") {
+      let runLength = 1;
+      while (value[index + runLength] === "`") runLength += 1;
+      if (codeDelimiterLength === 0) {
+        codeDelimiterLength = runLength;
+      } else if (runLength === codeDelimiterLength) {
+        codeDelimiterLength = 0;
+      }
+      result += value.slice(index, index + runLength);
+      index += runLength;
       continue;
     }
-    if (openMarkers > 0 && value[index] === "]" && index === value.length - 1) {
-      openMarkers -= 1;
-      index += 1;
-      continue;
+    if (openMarkers > 0 && codeDelimiterLength === 0) {
+      if (value[index] === "\\" && index + 1 < value.length) {
+        result += value.slice(index, index + 2);
+        index += 2;
+        continue;
+      }
+      if (value[index] === "[") {
+        markdownBracketDepth += 1;
+      } else if (value[index] === "]") {
+        if (markdownBracketDepth > 0) {
+          markdownBracketDepth -= 1;
+        } else if (value.startsWith("]]", index)) {
+          openMarkers -= 1;
+          index += 2;
+          continue;
+        } else if (index === value.length - 1) {
+          openMarkers -= 1;
+          index += 1;
+          continue;
+        }
+      }
     }
     result += value[index];
     index += 1;
@@ -34,8 +62,8 @@ function normalizeGlassMarkdown(value: string) {
   return result;
 }
 
-export function imessageMarkdown(value: string) {
-  return markdown(normalizeGlassMarkdown(value));
+export function imessageMarkdownSource(value: string) {
+  return normalizeGlassMarkdown(value);
 }
 
 function renderInlineTokens(tokens: Token[]): string {

@@ -1,39 +1,11 @@
 import { createHash } from "crypto";
 import { spawn } from "node:child_process";
+import type { SourceChunk, SourceSpan } from "@claritylabs/cl-sdk";
 
 type SourceKind = "policy_pdf" | "email" | "attachment" | "manual_note";
 
-export type WorkerSourceSpan = {
-  id: string;
-  documentId: string;
-  sourceKind: SourceKind;
-  kind: "pdf_text" | "plain_text";
-  pageStart?: number;
-  pageEnd?: number;
-  sectionId?: string;
-  formNumber?: string;
-  text: string;
-  textHash: string;
-  hash: string;
-  location?: {
-    page?: number;
-    startPage?: number;
-    endPage?: number;
-    fieldPath?: string;
-  };
-  metadata?: Record<string, string>;
-};
-
-export type WorkerSourceChunk = {
-  id: string;
-  documentId: string;
-  sourceSpanIds: string[];
-  text: string;
-  textHash: string;
-  pageStart?: number;
-  pageEnd?: number;
-  metadata?: Record<string, string>;
-};
+export type WorkerSourceSpan = SourceSpan;
+export type WorkerSourceChunk = SourceChunk;
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -129,6 +101,7 @@ function chunkSourceSpans(sourceSpans: WorkerSourceSpan[], maxChars = 6000): Wor
       textHash,
       pageStart: current.find((span) => typeof span.pageStart === "number")?.pageStart,
       pageEnd: [...current].reverse().find((span) => typeof span.pageEnd === "number")?.pageEnd,
+      metadata: {},
     });
     current = [];
     currentLength = 0;
@@ -149,6 +122,7 @@ type SourceSpanText = {
   pageStart?: number;
   pageEnd?: number;
   text?: string;
+  metadata?: Record<string, string>;
 };
 
 const PDFTOTEXT_TIMEOUT_MS = 20_000;
@@ -156,38 +130,90 @@ const PDFTOTEXT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const LABELED_PAGE_PATTERN =
   /\b(?:print name|named insured|customer name|occupant name|policy number|coverage limit|monthly premium)\b/i;
 
-function comparisonTokens(value: string): Set<string> {
-  return new Set(
+function comparisonProfile(value: string): {
+  tokens: Set<string>;
+  compact: string;
+} {
+  const tokens =
     normalizeWhitespace(value)
       .toLowerCase()
       .match(/[a-z0-9]+/g)
-      ?.filter((token) => token.length >= 3 || /\d/.test(token)) ?? [],
-  );
+      ?.filter((token) => token.length >= 3 || /\d/.test(token)) ?? [];
+  return {
+    tokens: new Set(tokens),
+    compact: tokens.join(""),
+  };
+}
+
+function tokenIsRepresented(
+  token: string,
+  primary: ReturnType<typeof comparisonProfile>,
+): boolean {
+  return primary.tokens.has(token) || primary.compact.includes(token);
+}
+
+export function orderSourceSpansForPreview<T extends SourceSpanText>(
+  sourceSpans: T[],
+): T[] {
+  return sourceSpans
+    .map((span, index) => ({ span, index }))
+    .sort((left, right) => {
+      const leftPage = left.span.pageStart ?? left.span.pageEnd ?? Number.MAX_SAFE_INTEGER;
+      const rightPage = right.span.pageStart ?? right.span.pageEnd ?? Number.MAX_SAFE_INTEGER;
+      if (leftPage !== rightPage) return leftPage - rightPage;
+      const leftSupplement =
+        left.span.metadata?.sourceUnit === "page_text_supplement";
+      const rightSupplement =
+        right.span.metadata?.sourceUnit === "page_text_supplement";
+      if (leftSupplement !== rightSupplement) return leftSupplement ? -1 : 1;
+      return left.index - right.index;
+    })
+    .map(({ span }) => span);
 }
 
 export function selectPdfTextSupplements(
   primarySourceSpans: SourceSpanText[],
   candidates: WorkerSourceSpan[],
 ): WorkerSourceSpan[] {
-  const primaryTokensByPage = new Map<number, Set<string>>();
+  const primaryTextByPage = new Map<number, string[]>();
   for (const span of primarySourceSpans) {
     const page = span.pageStart ?? span.pageEnd;
     if (!page || !span.text) continue;
-    const pageTokens = primaryTokensByPage.get(page) ?? new Set<string>();
-    for (const token of comparisonTokens(span.text)) pageTokens.add(token);
-    primaryTokensByPage.set(page, pageTokens);
+    const pageText = primaryTextByPage.get(page) ?? [];
+    pageText.push(span.text);
+    primaryTextByPage.set(page, pageText);
   }
 
   return candidates.filter((candidate) => {
     const page = candidate.pageStart ?? candidate.pageEnd;
     if (!page) return false;
-    const primaryTokens = primaryTokensByPage.get(page) ?? new Set<string>();
-    const novelTokens = [...comparisonTokens(candidate.text)].filter(
-      (token) => !primaryTokens.has(token),
+    const primary = comparisonProfile(
+      primaryTextByPage.get(page)?.join("\n") ?? "",
     );
+    const candidateProfile = comparisonProfile(candidate.text);
+    const novelTokens = [...candidateProfile.tokens].filter(
+      (token) => !tokenIsRepresented(token, primary),
+    );
+    const novelCharacters = novelTokens.reduce(
+      (total, token) => total + token.length,
+      0,
+    );
+    const candidateCharacters = [...candidateProfile.tokens].reduce(
+      (total, token) => total + token.length,
+      0,
+    );
+    const hasNovelNumber = novelTokens.some((token) => /\d/.test(token));
+    const labeledDifference =
+      LABELED_PAGE_PATTERN.test(candidate.text) &&
+      (hasNovelNumber ||
+        (novelTokens.length >= 2 && novelCharacters >= 8));
+    const materialPageDifference =
+      novelTokens.length >= 3 &&
+      novelCharacters >= 16 &&
+      novelCharacters / Math.max(1, candidateCharacters) >= 0.05;
     return (
-      novelTokens.length >= 2 ||
-      (novelTokens.length >= 1 && LABELED_PAGE_PATTERN.test(candidate.text))
+      labeledDifference ||
+      materialPageDifference
     );
   });
 }
