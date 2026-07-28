@@ -242,7 +242,7 @@ export function PolicySummary({
       </div>
 
       {pdfUrl || hasOverviewRows || !hasExtractedDetails ? (
-        <OperationalPanelBody className="flex flex-col p-0 @lg:flex-row">
+        <OperationalPanelBody className="flex flex-col p-0 @lg:flex-row @lg:items-center">
           {pdfUrl ? (
             <div className="shrink-0 p-5 pb-2 @lg:pb-5 @lg:pr-0">
               <PolicyPdfThumbnail url={pdfUrl} />
