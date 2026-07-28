@@ -23,6 +23,7 @@ import {
   parseTerminalIdentityCommand,
   terminalIdentityLabel,
 } from "./terminalIdentity.js";
+import { imessageMarkdown, imessagePlainText } from "./outboundText.js";
 import { readInboundAttachment } from "./voiceAttachment.js";
 
 type MiniAppLayout = {
@@ -425,12 +426,12 @@ async function sendReplyOrFallback(
   text: string,
 ) {
   try {
-    const replied = await message.reply(text);
+    const replied = await message.reply(imessageMarkdown(text));
     if (replied) return;
   } catch (err) {
     console.warn("[glass-imessage] Failed to send threaded reply:", err);
   }
-  await space.send(text);
+  await space.send(imessageMarkdown(text));
 }
 
 function splitLongTextLine(line: string): string[] {
@@ -493,7 +494,7 @@ async function sendResponseText(
     if (index === 0) {
       await sendReplyOrFallback(space, message, segment);
     } else {
-      await space.send(segment);
+      await space.send(imessageMarkdown(segment));
     }
   }
 }
@@ -558,7 +559,7 @@ async function sendOutboundAppCards(
       await space.send(content);
     } catch (err) {
       console.warn(`[glass-imessage] Failed to send app card ${card.url}:`, err);
-      await space.send(appCardFallbackText(card));
+      await space.send(imessageMarkdown(appCardFallbackText(card)));
     }
   }
 }
@@ -619,11 +620,15 @@ async function sendAppCardsThroughClient(
     if (!client.messages?.sendText) return;
     for (const [index, card] of appCards.entries()) {
       if (!card.url) continue;
-      await client.messages.sendText(chatGuid, appCardFallbackText(card), {
-        clientMessageId: clientMessageId
-          ? `${clientMessageId}:app-card:${index}`
-          : undefined,
-      });
+      await client.messages.sendText(
+        chatGuid,
+        imessagePlainText(appCardFallbackText(card)),
+        {
+          clientMessageId: clientMessageId
+            ? `${clientMessageId}:app-card:${index}`
+            : undefined,
+        },
+      );
     }
     return;
   }
@@ -646,11 +651,15 @@ async function sendAppCardsThroughClient(
         err,
       );
       if (!client.messages.sendText) continue;
-      await client.messages.sendText(chatGuid, appCardFallbackText(card), {
-        clientMessageId: clientMessageId
-          ? `${clientMessageId}:app-card-fallback:${index}`
-          : undefined,
-      });
+      await client.messages.sendText(
+        chatGuid,
+        imessagePlainText(appCardFallbackText(card)),
+        {
+          clientMessageId: clientMessageId
+            ? `${clientMessageId}:app-card-fallback:${index}`
+            : undefined,
+        },
+      );
     }
   }
 }
@@ -675,9 +684,13 @@ async function sendByChatGuid(params: {
   }
 
   try {
-    await client.messages.sendText(params.chatGuid, params.message, {
-      clientMessageId: params.clientMessageId,
-    });
+    await client.messages.sendText(
+      params.chatGuid,
+      imessagePlainText(params.message),
+      {
+        clientMessageId: params.clientMessageId,
+      },
+    );
     await sendAppCardsThroughClient(
       client,
       params.chatGuid,
@@ -907,7 +920,11 @@ async function main() {
         if (TRANSPORT === "terminal") {
           const terminalClient = terminal(app);
           const space = await terminalClient.space.get(TERMINAL_SPACE_ID);
-          await space.send(`[new group: ${participants.join(", ")}] ${messageText}`);
+          await space.send(
+            imessageMarkdown(
+              `[new group: ${participants.join(", ")}] ${messageText}`,
+            ),
+          );
           await sendOutboundAppCards(space, payload.appCards);
           const attachmentFailures = await sendOutboundAttachments(
             space,
@@ -938,7 +955,7 @@ async function main() {
         }
 
         const created = await imessageClient.chats.create(participants, {
-          message: messageText,
+          message: imessagePlainText(messageText),
           clientMessageId: payload.clientMessageId,
         });
         if (payload.appCards?.length) {
@@ -982,7 +999,7 @@ async function main() {
         ? activeSpacesByChatGuid.get(payload.chatGuid)
         : undefined;
       if (activeChatSpace) {
-        await activeChatSpace.send(messageText);
+        await activeChatSpace.send(imessageMarkdown(messageText));
         await sendOutboundAppCards(activeChatSpace, payload.appCards);
         const attachmentFailures = await sendOutboundAttachments(
           activeChatSpace,
@@ -1026,7 +1043,7 @@ async function main() {
       const toPhone = normalizePhone(payload.toPhone);
       const activeSpace = activeSpacesByPhone.get(toPhone);
       if (activeSpace) {
-        await activeSpace.send(messageText);
+        await activeSpace.send(imessageMarkdown(messageText));
         await sendOutboundAppCards(activeSpace, payload.appCards);
         const attachmentFailures = await sendOutboundAttachments(
           activeSpace,
@@ -1044,7 +1061,7 @@ async function main() {
       if (TRANSPORT === "terminal") {
         const terminalClient = terminal(app);
         const space = await terminalClient.space.get(TERMINAL_SPACE_ID);
-        await space.send(messageText);
+        await space.send(imessageMarkdown(messageText));
         await sendOutboundAppCards(space, payload.appCards);
         const attachmentFailures = await sendOutboundAttachments(
           space,
@@ -1062,7 +1079,7 @@ async function main() {
       const imessageClient = imessage(app);
       const user = await imessageClient.user(payload.toPhone);
       const space = await imessageClient.space.create(user);
-      await space.send(messageText);
+      await space.send(imessageMarkdown(messageText));
       await sendOutboundAppCards(space, payload.appCards);
       const attachmentFailures = await sendOutboundAttachments(
         space,
