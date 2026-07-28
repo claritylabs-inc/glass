@@ -6,7 +6,10 @@ import { usePdf } from "@/components/pdf-context";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 export function PolicyPdfThumbnail({ url }: { url: string }) {
   const [loaded, setLoaded] = useState(false);
