@@ -1511,6 +1511,142 @@ function enrichOperationalPartyIdentifiers(
   };
 }
 
+const MONEY_WITH_MAGNITUDE_PATTERN =
+  /(?:(?:USD|CAD)\s*)?\$\s*([\d,]+(?:\.\d{1,2})?)\s*(thousand|million|billion|[kmb])?\b|(?:USD|CAD)\s+([\d,]+(?:\.\d{1,2})?)\s*(thousand|million|billion|[kmb])?\b/gi;
+
+type MonetaryAmount = {
+  amount: number;
+  unscaledAmount: number;
+  multiplier: number;
+};
+
+function monetaryAmounts(value: string): MonetaryAmount[] {
+  const amounts: MonetaryAmount[] = [];
+  MONEY_WITH_MAGNITUDE_PATTERN.lastIndex = 0;
+  for (
+    let match = MONEY_WITH_MAGNITUDE_PATTERN.exec(value);
+    match;
+    match = MONEY_WITH_MAGNITUDE_PATTERN.exec(value)
+  ) {
+    const rawAmount = match[1] ?? match[3];
+    const suffix = (match[2] ?? match[4] ?? "").toLowerCase();
+    const amount = Number(rawAmount.replace(/,/g, ""));
+    if (!Number.isFinite(amount)) continue;
+    const multiplier =
+      suffix === "k" || suffix === "thousand"
+        ? 1_000
+        : suffix === "m" || suffix === "million"
+          ? 1_000_000
+          : suffix === "b" || suffix === "billion"
+            ? 1_000_000_000
+            : 1;
+    amounts.push({
+      amount: amount * multiplier,
+      unscaledAmount: amount,
+      multiplier,
+    });
+  }
+  return amounts;
+}
+
+function monetaryAmountsMatch(left: number, right: number): boolean {
+  return (
+    Math.abs(left - right) <=
+    Math.max(0.005, Math.abs(left) * Number.EPSILON * 10)
+  );
+}
+
+function preservesCitedMonetaryMagnitude(
+  value: string | undefined,
+  sourceSpanIds: string[],
+  sourceTextBySpanId: Map<string, string>,
+): boolean {
+  if (!hasMonetaryCoverageValue(value) || sourceSpanIds.length === 0) {
+    return true;
+  }
+  const expectedAmounts = monetaryAmounts(value ?? "");
+  if (expectedAmounts.length === 0) return true;
+  const evidenceAmounts = sourceSpanIds.flatMap((spanId) =>
+    monetaryAmounts(sourceTextBySpanId.get(spanId) ?? "")
+  );
+  if (
+    expectedAmounts.some((expected) =>
+      evidenceAmounts.some((evidence) =>
+        monetaryAmountsMatch(expected.amount, evidence.amount)
+      )
+    )
+  ) {
+    return true;
+  }
+  return !expectedAmounts.some((expected) =>
+    evidenceAmounts.some(
+      (evidence) =>
+        evidence.multiplier > 1 &&
+        monetaryAmountsMatch(expected.amount, evidence.unscaledAmount),
+    )
+  );
+}
+
+function removeCollapsedCoverageMagnitudes(
+  profile: PolicyOperationalProfile,
+  sourceTree: DocumentSourceNode[],
+  sourceSpans: ReturnType<typeof sourceSpansForSdk>,
+): PolicyOperationalProfile {
+  const sourceTextBySpanId = new Map(
+    sourceSpans.map((span) => [String(span.id), span.text ?? ""]),
+  );
+  const sourceSpanIdsByNodeId = new Map(
+    sourceTree.map((node) => [node.id, node.sourceSpanIds]),
+  );
+  const evidenceSpanIds = (
+    sourceNodeIds: string[],
+    sourceSpanIds: string[],
+  ): string[] => [
+    ...new Set([
+      ...sourceSpanIds,
+      ...sourceNodeIds.flatMap(
+        (nodeId) => sourceSpanIdsByNodeId.get(nodeId) ?? [],
+      ),
+    ]),
+  ];
+  const coverages = profile.coverages.map((coverage: OperationalCoverageLine) => {
+    const coverageSpanIds = evidenceSpanIds(
+      coverage.sourceNodeIds,
+      coverage.sourceSpanIds,
+    );
+    const limits = (coverage.limits ?? []).filter(
+      (term: NonNullable<OperationalCoverageLine["limits"]>[number]) => {
+        const termSpanIds = evidenceSpanIds(
+          term.sourceNodeIds,
+          term.sourceSpanIds,
+        );
+        return preservesCitedMonetaryMagnitude(
+          term.value,
+          termSpanIds.length > 0 ? termSpanIds : coverageSpanIds,
+          sourceTextBySpanId,
+        );
+      },
+    );
+    const cleaned = { ...coverage, limits } as OperationalCoverageLine;
+    for (const key of ["limit", "deductible", "premium"] as const) {
+      if (
+        !preservesCitedMonetaryMagnitude(
+          coverage[key],
+          coverageSpanIds,
+          sourceTextBySpanId,
+        )
+      ) {
+        delete cleaned[key];
+      }
+    }
+    return cleaned;
+  });
+  return {
+    ...profile,
+    coverages,
+  };
+}
+
 export function normalizeOperationalProfile(
   rawProfile: unknown,
   sourceTree: DocumentSourceNode[],
@@ -1522,7 +1658,13 @@ export function normalizeOperationalProfile(
   const normalized = normalizeRawOperationalProfile(rawProfile, validNodeIds, validSpanIds);
   const profile = preserveOperationalProfileExtensions(
     enrichOperationalPartyIdentifiers(
-      finalizeOperationalProfile(normalized),
+      finalizeOperationalProfile(
+        removeCollapsedCoverageMagnitudes(
+          normalized,
+          sourceTree,
+          sdkSpans,
+        ),
+      ),
       sourceTree,
       sdkSpans,
     ),
