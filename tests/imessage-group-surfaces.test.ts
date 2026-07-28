@@ -98,7 +98,9 @@ describe("iMessage group chat surfaces", () => {
     expect(appCardBlock).not.toContain("sendReplyOrFallback");
     expect(chatGuidBlock).toContain("sendCustomizedMiniApp");
     expect(chatGuidBlock).toContain("buildSpectrumMiniApp");
-    expect(chatGuidBlock).toContain("sendText(chatGuid, appCardFallbackText(card)");
+    expect(chatGuidBlock).toContain(
+      "imessagePlainText(appCardFallbackText(card))",
+    );
   });
 
   it("uses non-committal timeout copy for late Convex iMessage responses", () => {

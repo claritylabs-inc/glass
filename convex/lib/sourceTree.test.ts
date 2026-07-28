@@ -1191,6 +1191,76 @@ describe("normalizeSourceTree", () => {
     expect(new Set(spanIds).size).toBe(spanIds.length);
   });
 
+  it("drops coverage amounts that appear only as a different cited magnitude", () => {
+    const spans: SourceSpanLike[] = [
+      {
+        id: "statutory-notice",
+        text: `
+          This statutory notice contains a $100 billion government reimbursement cap.
+          The annual charge attributable to the optional protection is $0.
+        `,
+        pageStart: 2,
+      },
+    ];
+    const tree = normalizeSourceTree([], spans, "policy");
+    const profile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["property"],
+        coverages: [
+          {
+            name: "Statutory Reimbursement Notice",
+            limit: "$100",
+            sourceSpanIds: ["statutory-notice"],
+            sourceNodeIds: [],
+            limits: [
+              {
+                kind: "other",
+                label: "Statutory cap",
+                value: "$100",
+                sourceSpanIds: ["statutory-notice"],
+                sourceNodeIds: [],
+              },
+            ],
+          },
+        ],
+      },
+      tree,
+      spans,
+    );
+
+    expect(profile.coverages).toEqual([]);
+  });
+
+  it("keeps a coverage amount when the cited source contains that exact magnitude", () => {
+    const spans: SourceSpanLike[] = [
+      {
+        id: "coverage-terms",
+        text: "Personal Property Coverage Limit $5,000. Deductible $100.",
+        pageStart: 3,
+      },
+    ];
+    const tree = normalizeSourceTree([], spans, "policy");
+    const profile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["property"],
+        coverages: [
+          {
+            name: "Personal Property",
+            limit: "$5,000",
+            deductible: "$100",
+            sourceSpanIds: ["coverage-terms"],
+            sourceNodeIds: [],
+          },
+        ],
+      },
+      tree,
+      spans,
+    );
+
+    expect(profile.coverages[0]?.limit).toBe("$5,000");
+    expect(profile.coverages[0]?.deductible).toBe("$100");
+  });
+
 });
 
 describe("sourceTreePolicyFields", () => {

@@ -36,7 +36,13 @@ import {
   normalizeJsonSchemaForFireworks,
   structuredOutputSchemaForProvider,
 } from "./fireworksStructuredOutput.js";
-import { buildPdfSourceSpans } from "./pdfSourceSpans.js";
+import {
+  buildPdfSourceSpans,
+  buildPdfTextSupplements,
+  orderSourceSpansForPreview,
+  type WorkerSourceChunk,
+  type WorkerSourceSpan,
+} from "./pdfSourceSpans.js";
 import { convertPdfWithLiteParse, type PageScreenshot } from "./liteparse.js";
 import { resolveConvexStorageUrl } from "./convexStorageUrl.js";
 import {
@@ -2288,12 +2294,14 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
   return fields;
 }
 
-function previewTextFromSourceSpans(sourceSpans: Array<Record<string, unknown>>): string {
+function previewTextFromSourceSpans(
+  sourceSpans: WorkerSourceSpan[],
+): string {
   let output = "";
-  for (const span of sourceSpans) {
-    const text = typeof span.text === "string" ? span.text.replace(/\s+/g, " ").trim() : "";
+  for (const span of orderSourceSpansForPreview(sourceSpans)) {
+    const text = span.text.replace(/\s+/g, " ").trim();
     if (!text) continue;
-    const page = typeof span.pageStart === "number" ? `p.${span.pageStart}` : "p.unknown";
+    const page = span.pageStart ? `p.${span.pageStart}` : "p.unknown";
     const next = `[${page}] ${text}\n`;
     if (output.length + next.length > POLICY_PREVIEW_TEXT_LIMIT) {
       output += next.slice(0, Math.max(0, POLICY_PREVIEW_TEXT_LIMIT - output.length));
@@ -2555,7 +2563,7 @@ async function completeJob(
   }
 }
 
-function dedupeById<T extends Record<string, unknown>>(items: T[]): T[] {
+function dedupeById<T extends { id?: unknown }>(items: T[]): T[] {
   const seen = new Set<string>();
   const deduped: T[] = [];
   for (const item of items) {
@@ -2565,6 +2573,37 @@ function dedupeById<T extends Record<string, unknown>>(items: T[]): T[] {
     deduped.push(item);
   }
   return deduped;
+}
+
+async function supplementPreparedPdfSource(
+  pdfBytes: Uint8Array,
+  documentId: string,
+  preparedSource: {
+    sourceSpans: WorkerSourceSpan[];
+    sourceChunks: WorkerSourceChunk[];
+  },
+): Promise<{
+  sourceSpans: WorkerSourceSpan[];
+  sourceChunks: WorkerSourceChunk[];
+  supplementCount: number;
+}> {
+  const supplemental = await buildPdfTextSupplements({
+    pdfBytes,
+    documentId,
+    sourceKind: "policy_pdf",
+    primarySourceSpans: preparedSource.sourceSpans,
+  });
+  return {
+    sourceSpans: dedupeById([
+      ...preparedSource.sourceSpans,
+      ...supplemental.sourceSpans,
+    ]),
+    sourceChunks: dedupeById([
+      ...preparedSource.sourceChunks,
+      ...supplemental.sourceChunks,
+    ]),
+    supplementCount: supplemental.sourceSpans.length,
+  };
 }
 
 async function failJob(job: ClaimedJob, error: unknown): Promise<void> {
@@ -2628,17 +2667,28 @@ async function processJob(job: ClaimedJob): Promise<void> {
         modelSettings: job.modelSettings,
         pageScreenshots: converted.pageScreenshots,
       });
-      preparedSource = {
-        sourceSpans: converted.sourceSpans as Awaited<ReturnType<typeof buildPdfSourceSpans>>["sourceSpans"],
-        sourceChunks: converted.sourceChunks as Awaited<ReturnType<typeof buildPdfSourceSpans>>["sourceChunks"],
-      };
+      const supplementedSource = await supplementPreparedPdfSource(
+        pdfBytes,
+        job.policyId,
+        {
+          sourceSpans: converted.sourceSpans,
+          sourceChunks: converted.sourceChunks,
+        },
+      );
+      preparedSource = supplementedSource;
+      if (supplementedSource.supplementCount > 0) {
+        await logJob(
+          job,
+          `Added ${supplementedSource.supplementCount} Poppler text supplement span${supplementedSource.supplementCount === 1 ? "" : "s"} for visible PDF text omitted by LiteParse`,
+        );
+      }
       result = await extractor.extract(
         pdfBytes,
         job.policyId,
         {
-          ...(converted.sourceSpans.length > 0
+          ...(preparedSource.sourceSpans.length > 0
             ? {
-                sourceSpans: converted.sourceSpans as unknown as Array<Record<string, unknown>>,
+                sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>>,
               }
             : {}),
           coverageRecovery: job.state.coverageRecovery ?? { enabled: false },
@@ -2650,13 +2700,24 @@ async function processJob(job: ClaimedJob): Promise<void> {
         `LiteParse unavailable; falling back to PDF.js source spans (${errorMessage(error)})`,
         "warn",
       );
-      preparedSource = await buildPdfSourceSpans({
+      const pdfJsSource = await buildPdfSourceSpans({
         pdfBytes,
         documentId: job.policyId,
         sourceKind: "policy_pdf",
       });
+      preparedSource = await supplementPreparedPdfSource(
+        pdfBytes,
+        job.policyId,
+        {
+          sourceSpans: pdfJsSource.sourceSpans,
+          sourceChunks: pdfJsSource.sourceChunks,
+        },
+      );
       if (preparedSource.sourceSpans.length > 0) {
-        await logJob(job, `Prepared ${preparedSource.sourceSpans.length} PDF.js source spans for source-grounded extraction`);
+        await logJob(
+          job,
+          `Prepared ${preparedSource.sourceSpans.length} PDF.js/Poppler source spans for source-grounded extraction`,
+        );
       }
       const extractor = buildWorkerExtractor({
         job,
@@ -2743,7 +2804,7 @@ async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
 
   try {
     const pdfBytes = await fetchPdfBytes(job.fileUrl);
-    let sourceSpans: Array<Record<string, unknown>>;
+    let sourceSpans: WorkerSourceSpan[];
     try {
       const converted = await convertPdfWithLiteParse({
         pdfBytes,
@@ -2752,10 +2813,18 @@ async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
         maxPages: LITEPARSE_MAX_PAGES,
         maxFileSize: LITEPARSE_MAX_FILE_SIZE,
       });
-      sourceSpans = converted.sourceSpans as Array<Record<string, unknown>>;
+      const supplementedSource = await supplementPreparedPdfSource(
+        pdfBytes,
+        job.policyId,
+        {
+          sourceSpans: converted.sourceSpans,
+          sourceChunks: converted.sourceChunks,
+        },
+      );
+      sourceSpans = supplementedSource.sourceSpans;
       await logJob(
         job,
-        `LiteParse prepared ${sourceSpans.length} spans for provisional extraction in ${converted.metadata.parsingMs ?? 0}ms`,
+        `LiteParse prepared ${converted.sourceSpans.length} spans plus ${supplementedSource.supplementCount} Poppler supplement${supplementedSource.supplementCount === 1 ? "" : "s"} for provisional extraction in ${converted.metadata.parsingMs ?? 0}ms`,
         "info",
       );
     } catch (error) {
@@ -2764,12 +2833,20 @@ async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
         `LiteParse unavailable for provisional extraction; falling back to PDF.js source spans (${errorMessage(error)})`,
         "warn",
       );
-      const fallbackSource = await buildPdfSourceSpans({
+      const pdfJsSource = await buildPdfSourceSpans({
         pdfBytes,
         documentId: job.policyId,
         sourceKind: "policy_pdf",
       });
-      sourceSpans = fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>>;
+      const fallbackSource = await supplementPreparedPdfSource(
+        pdfBytes,
+        job.policyId,
+        {
+          sourceSpans: pdfJsSource.sourceSpans,
+          sourceChunks: pdfJsSource.sourceChunks,
+        },
+      );
+      sourceSpans = fallbackSource.sourceSpans;
     }
 
     const sourceText = previewTextFromSourceSpans(sourceSpans);

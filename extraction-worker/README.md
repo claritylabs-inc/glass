@@ -2,7 +2,7 @@
 
 Standalone worker for long-running `cl-sdk` policy extraction jobs. Convex stays the durable job ledger; this service claims extract-phase work, sends heartbeats, saves SDK checkpoints, and returns the extracted document/chunks to Convex for embedding and post-processing.
 
-The worker also owns LiteParse preprocessing for `@claritylabs/cl-sdk`. It converts PDFs to parser text plus hierarchical page/row/cell source spans with bounding boxes, captures bounded page screenshots for multimodal model calls, passes the original PDF bytes and those spans into `cl-sdk`, and exposes a small authenticated HTTP endpoint for Convex actions that need synchronous parsed PDF text. If LiteParse fails or times out, callers fall back to the existing PDF/PDF.js path.
+The worker also owns LiteParse preprocessing for `@claritylabs/cl-sdk`. It converts PDFs to parser text plus hierarchical page/row/cell source spans with bounding boxes, captures bounded page screenshots for multimodal model calls, passes the original PDF bytes and those spans into `cl-sdk`, and exposes a small authenticated HTTP endpoint for Convex actions that need synchronous parsed PDF text. Policy extraction also runs Poppler's `pdftotext` as a bounded supplement and adds only pages containing visible text that LiteParse omitted, which covers filled form overlays without replacing precise LiteParse bounding-box evidence. If LiteParse fails or times out, callers fall back to PDF.js plus the same supplemental visible-text check.
 
 ## Local
 
@@ -46,7 +46,7 @@ Set `EXTRACTION_WORKER_URL` and the same `EXTRACTION_WORKER_SECRET` on Convex to
 
 ## Railway
 
-Create a Railway service rooted at `extraction-worker/`. The included `railway.json` builds the Dockerfile with Node and the native `@llamaindex/liteparse` package:
+Create a Railway service rooted at `extraction-worker/`. The included `railway.json` builds the Dockerfile with Node, Poppler, and the native `@llamaindex/liteparse` package:
 
 ```bash
 node dist/index.js

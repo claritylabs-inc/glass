@@ -1,0 +1,88 @@
+import { describe, expect, it } from "vitest";
+import {
+  imessageMarkdownSource,
+  imessagePlainText,
+} from "../src/outboundText";
+
+describe("iMessage outbound text", () => {
+  it("preserves Markdown for Spectrum-native iMessage formatting", () => {
+    expect(imessageMarkdownSource("**Bold** and _italic_.")).toBe(
+      "**Bold** and _italic_.",
+    );
+  });
+
+  it("removes markdown syntax from low-level Photon sends", () => {
+    const source =
+      "You've got a **Starr Indemnity & Liability Company** policy " +
+      "(#G20SILIM1001CUS) with **Personal Property Storage Insurance** — " +
+      "$5,000 limit, $100 deductible.";
+
+    expect(imessagePlainText(source)).toBe(
+      "You've got a Starr Indemnity & Liability Company policy " +
+        "(#G20SILIM1001CUS) with Personal Property Storage Insurance — " +
+        "$5,000 limit, $100 deductible.",
+    );
+  });
+
+  it("keeps common GFM structures readable without raw formatting markers", () => {
+    const source = [
+      "# Coverage",
+      "",
+      "- **Limit:** $5,000",
+      "- ~~Old deductible~~ New deductible",
+      "- [Open Glass](https://glass.insure)",
+      "",
+      "| Field | Value |",
+      "| --- | --- |",
+      "| Code | `G20` |",
+    ].join("\n");
+
+    expect(imessagePlainText(source)).toBe(
+      [
+        "Coverage",
+        "",
+        "• Limit: $5,000",
+        "• Old deductible New deductible",
+        "• Open Glass (https://glass.insure)",
+        "",
+        "Field | Value",
+        "Code | G20",
+      ].join("\n"),
+    );
+  });
+
+  it("removes Glass confidence markers before either outbound format", () => {
+    const source =
+      "[[g]:**Confirmed coverage** with [evidence](https://glass.insure)]]";
+
+    expect(imessagePlainText(source)).toBe(
+      "Confirmed coverage with evidence (https://glass.insure)",
+    );
+    expect(imessageMarkdownSource(source)).toBe(
+      "**Confirmed coverage** with [evidence](https://glass.insure)",
+    );
+  });
+
+  it("preserves nested double brackets inside confidence spans", () => {
+    const source = "[[g:Use `[[1, 2]]` in the formula]]";
+
+    expect(imessageMarkdownSource(source)).toBe(
+      "Use `[[1, 2]]` in the formula",
+    );
+    expect(imessagePlainText(source)).toBe(
+      "Use [[1, 2]] in the formula",
+    );
+  });
+
+  it("does not close a confidence span inside code or a nested link label", () => {
+    const source =
+      "[[g:Use `tail]]` and see [array [1, 2]](https://glass.insure)]]";
+
+    expect(imessageMarkdownSource(source)).toBe(
+      "Use `tail]]` and see [array [1, 2]](https://glass.insure)",
+    );
+    expect(imessagePlainText(source)).toBe(
+      "Use tail]] and see array [1, 2] (https://glass.insure)",
+    );
+  });
+});

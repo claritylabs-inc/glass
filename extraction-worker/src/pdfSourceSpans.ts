@@ -1,38 +1,11 @@
 import { createHash } from "crypto";
+import { spawn } from "node:child_process";
+import type { SourceChunk, SourceSpan } from "@claritylabs/cl-sdk";
 
 type SourceKind = "policy_pdf" | "email" | "attachment" | "manual_note";
 
-export type WorkerSourceSpan = {
-  id: string;
-  documentId: string;
-  sourceKind: SourceKind;
-  kind: "pdf_text" | "plain_text";
-  pageStart?: number;
-  pageEnd?: number;
-  sectionId?: string;
-  formNumber?: string;
-  text: string;
-  textHash: string;
-  hash: string;
-  location?: {
-    page?: number;
-    startPage?: number;
-    endPage?: number;
-    fieldPath?: string;
-  };
-  metadata?: Record<string, string>;
-};
-
-export type WorkerSourceChunk = {
-  id: string;
-  documentId: string;
-  sourceSpanIds: string[];
-  text: string;
-  textHash: string;
-  pageStart?: number;
-  pageEnd?: number;
-  metadata?: Record<string, string>;
-};
+export type WorkerSourceSpan = SourceSpan;
+export type WorkerSourceChunk = SourceChunk;
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -128,6 +101,7 @@ function chunkSourceSpans(sourceSpans: WorkerSourceSpan[], maxChars = 6000): Wor
       textHash,
       pageStart: current.find((span) => typeof span.pageStart === "number")?.pageStart,
       pageEnd: [...current].reverse().find((span) => typeof span.pageEnd === "number")?.pageEnd,
+      metadata: {},
     });
     current = [];
     currentLength = 0;
@@ -142,6 +116,214 @@ function chunkSourceSpans(sourceSpans: WorkerSourceSpan[], maxChars = 6000): Wor
   flush();
 
   return chunks;
+}
+
+type SourceSpanText = {
+  pageStart?: number;
+  pageEnd?: number;
+  text?: string;
+  metadata?: Record<string, string>;
+};
+
+const PDFTOTEXT_TIMEOUT_MS = 20_000;
+const PDFTOTEXT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
+const LABELED_PAGE_PATTERN =
+  /\b(?:print name|named insured|customer name|occupant name|policy number|coverage limit|monthly premium)\b/i;
+
+function comparisonProfile(value: string): {
+  tokens: Set<string>;
+  compact: string;
+} {
+  const tokens =
+    normalizeWhitespace(value)
+      .toLowerCase()
+      .match(/[a-z0-9]+/g)
+      ?.filter((token) => token.length >= 3 || /\d/.test(token)) ?? [];
+  return {
+    tokens: new Set(tokens),
+    compact: tokens.join(""),
+  };
+}
+
+function tokenIsRepresented(
+  token: string,
+  primary: ReturnType<typeof comparisonProfile>,
+): boolean {
+  return primary.tokens.has(token) || primary.compact.includes(token);
+}
+
+export function orderSourceSpansForPreview<T extends SourceSpanText>(
+  sourceSpans: T[],
+): T[] {
+  return sourceSpans
+    .map((span, index) => ({ span, index }))
+    .sort((left, right) => {
+      const leftPage = left.span.pageStart ?? left.span.pageEnd ?? Number.MAX_SAFE_INTEGER;
+      const rightPage = right.span.pageStart ?? right.span.pageEnd ?? Number.MAX_SAFE_INTEGER;
+      if (leftPage !== rightPage) return leftPage - rightPage;
+      const leftSupplement =
+        left.span.metadata?.sourceUnit === "page_text_supplement";
+      const rightSupplement =
+        right.span.metadata?.sourceUnit === "page_text_supplement";
+      if (leftSupplement !== rightSupplement) return leftSupplement ? -1 : 1;
+      return left.index - right.index;
+    })
+    .map(({ span }) => span);
+}
+
+export function selectPdfTextSupplements(
+  primarySourceSpans: SourceSpanText[],
+  candidates: WorkerSourceSpan[],
+): WorkerSourceSpan[] {
+  const primaryTextByPage = new Map<number, string[]>();
+  for (const span of primarySourceSpans) {
+    const page = span.pageStart ?? span.pageEnd;
+    if (!page || !span.text) continue;
+    const pageText = primaryTextByPage.get(page) ?? [];
+    pageText.push(span.text);
+    primaryTextByPage.set(page, pageText);
+  }
+
+  return candidates.filter((candidate) => {
+    const page = candidate.pageStart ?? candidate.pageEnd;
+    if (!page) return false;
+    const primary = comparisonProfile(
+      primaryTextByPage.get(page)?.join("\n") ?? "",
+    );
+    const candidateProfile = comparisonProfile(candidate.text);
+    const novelTokens = [...candidateProfile.tokens].filter(
+      (token) => !tokenIsRepresented(token, primary),
+    );
+    const novelCharacters = novelTokens.reduce(
+      (total, token) => total + token.length,
+      0,
+    );
+    const candidateCharacters = [...candidateProfile.tokens].reduce(
+      (total, token) => total + token.length,
+      0,
+    );
+    const hasNovelNumber = novelTokens.some((token) => /\d/.test(token));
+    const labeledDifference =
+      LABELED_PAGE_PATTERN.test(candidate.text) &&
+      (hasNovelNumber ||
+        (novelTokens.length >= 2 && novelCharacters >= 8));
+    const materialPageDifference =
+      novelTokens.length >= 3 &&
+      novelCharacters >= 16 &&
+      novelCharacters / Math.max(1, candidateCharacters) >= 0.05;
+    return (
+      labeledDifference ||
+      materialPageDifference
+    );
+  });
+}
+
+async function popplerPageText(pdfBytes: Uint8Array): Promise<string[]> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(
+      "pdftotext",
+      ["-layout", "-enc", "UTF-8", "-", "-"],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let stdoutBytes = 0;
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(
+        Buffer.concat(stdout)
+          .toString("utf8")
+          .split("\f")
+          .map((page) => page.trimEnd()),
+      );
+    };
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(new Error(`pdftotext timed out after ${PDFTOTEXT_TIMEOUT_MS}ms`));
+    }, PDFTOTEXT_TIMEOUT_MS);
+
+    child.on("error", (error) => finish(error));
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.byteLength;
+      if (stdoutBytes > PDFTOTEXT_MAX_OUTPUT_BYTES) {
+        child.kill("SIGKILL");
+        finish(
+          new Error(
+            `pdftotext output exceeded ${PDFTOTEXT_MAX_OUTPUT_BYTES} bytes`,
+          ),
+        );
+        return;
+      }
+      stdout.push(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.on("close", (code) => {
+      if (settled) return;
+      if (code !== 0) {
+        finish(
+          new Error(
+            `pdftotext exited with code ${code}: ${Buffer.concat(stderr)
+              .toString("utf8")
+              .trim()}`,
+          ),
+        );
+        return;
+      }
+      finish();
+    });
+    child.stdin.on("error", (error) => finish(error));
+    child.stdin.end(Buffer.from(pdfBytes));
+  });
+}
+
+export async function buildPdfTextSupplements(params: {
+  pdfBytes: Uint8Array;
+  documentId: string;
+  primarySourceSpans: SourceSpanText[];
+  sourceKind?: SourceKind;
+}): Promise<{
+  sourceSpans: WorkerSourceSpan[];
+  sourceChunks: WorkerSourceChunk[];
+}> {
+  try {
+    const pages = await popplerPageText(params.pdfBytes);
+    const candidates = pages.flatMap((text, index) => {
+      const span = buildSpan({
+        documentId: params.documentId,
+        sourceKind: params.sourceKind ?? "policy_pdf",
+        pageNumber: index + 1,
+        text,
+        index: 100_000 + index,
+        metadata: {
+          sourceSystem: "poppler",
+          sourceUnit: "page_text_supplement",
+        },
+      });
+      return span ? [span] : [];
+    });
+    const sourceSpans = selectPdfTextSupplements(
+      params.primarySourceSpans,
+      candidates,
+    );
+    return {
+      sourceSpans,
+      sourceChunks: chunkSourceSpans(sourceSpans),
+    };
+  } catch (error) {
+    console.warn(
+      `Supplemental PDF text extraction unavailable: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return { sourceSpans: [], sourceChunks: [] };
+  }
 }
 
 export async function buildPdfSourceSpans(params: {
