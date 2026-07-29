@@ -18,6 +18,7 @@ const ICON_COLOR_BUCKET_SIZE = 16;
 type WebsiteBrandSignals = {
   website: string;
   title?: string;
+  primaryColor?: string;
   colorCandidates: string[];
 };
 
@@ -323,6 +324,7 @@ export async function readWebsiteBrandSignals(
   return {
     website,
     title: extractTitle(html),
+    primaryColor: faviconColors[0],
     colorCandidates: Array.from(
       new Set([
         ...faviconColors,

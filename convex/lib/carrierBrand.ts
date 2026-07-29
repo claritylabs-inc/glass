@@ -1,4 +1,4 @@
-export const CARRIER_BRAND_ENRICHMENT_VERSION = 3;
+export const CARRIER_BRAND_ENRICHMENT_VERSION = 4;
 
 export function normalizeCarrierBrandName(value: string) {
   return value
@@ -102,7 +102,7 @@ export function fallbackCarrierWebsiteIndex(
     );
     let domainMatches = 0;
     let matchedWords = 0;
-    let score = words.reduce((total, word) => {
+    const score = words.reduce((total, word) => {
       const compactWord = word.replace(/[^a-z0-9]/g, "");
       if (compactHostname.includes(compactWord)) {
         domainMatches += 1;

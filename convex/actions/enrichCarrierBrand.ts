@@ -27,7 +27,6 @@ const RETRY_DELAYS_MS = [30_000, 5 * 60_000];
 
 const CarrierBrandSelectionSchema = z.object({
   candidateIndex: z.number().int().nonnegative(),
-  accentColor: z.string(),
   confidence: z.enum(["high", "medium", "low"]),
 });
 
@@ -45,6 +44,7 @@ type CarrierBrandPolicy = {
 type CandidateSite = {
   website: string;
   title?: string;
+  primaryColor?: string;
   colorCandidates: string[];
 };
 
@@ -87,11 +87,8 @@ function candidateUrls(sources: Array<{ url: string }>, retrievalText: string) {
     .slice(0, MAX_CANDIDATE_SITES);
 }
 
-function normalizedAccent(candidate: string, available: string[]) {
-  const normalized = candidate.trim().toUpperCase();
-  return available.includes(normalized)
-    ? normalized
-    : (available[0] ?? DEFAULT_ACCENT);
+function preferredAccent(site: CandidateSite) {
+  return site.primaryColor ?? site.colorCandidates[0] ?? DEFAULT_ACCENT;
 }
 
 async function linkCachedBrand(
@@ -169,7 +166,6 @@ async function enrichPolicyCarrierBrand(
     if (sites.length === 0) throw new Error("No candidate carrier websites");
 
     let modelSelectedIndex = -1;
-    let selectedAccent = DEFAULT_ACCENT;
     let confidence: "high" | "medium" = "medium";
     try {
       const { output } = await generateObjectForOrg(
@@ -195,7 +191,6 @@ ${retrieval.text.slice(0, 8_000)}
 
 Return:
 - candidateIndex: the candidate that is the carrier's official website.
-- accentColor: exactly one color from that candidate's colorCandidates. Prefer the primary logo or wordmark accent over utility, link, status, or neutral colors. If its list is empty, return "${DEFAULT_ACCENT}".
 - confidence: high only when the public site explicitly belongs to this exact legal carrier or its clearly documented parent brand. Return low when the match relies only on a shared word in the name.
 
 Do not choose a login/account portal, broker, agency, directory, social network, news site, or similarly named unrelated company.`,
@@ -207,7 +202,6 @@ Do not choose a login/account portal, broker, agency, directory, social network,
         isPrimaryCarrierWebsiteCandidate(sites[output.candidateIndex])
       ) {
         modelSelectedIndex = output.candidateIndex;
-        selectedAccent = output.accentColor;
         confidence = output.confidence;
       }
     } catch (error) {
@@ -231,17 +225,13 @@ Do not choose a login/account portal, broker, agency, directory, social network,
       evidenceSelectedIndex >= 0 &&
       evidenceSelectedIndex !== modelSelectedIndex
     ) {
-      selectedAccent = DEFAULT_ACCENT;
       confidence = "medium";
     }
     const selected = sites[selectedIndex];
     if (!selected) {
       throw new Error("Carrier website could not be identified confidently");
     }
-    const accentColor = normalizedAccent(
-      selectedAccent,
-      selected.colorCandidates,
-    );
+    const accentColor = preferredAccent(selected);
     const iconStorageId = await storeWebsiteFavicon(ctx, selected.website);
     const carrierBrandId = (await ctx.runMutation(
       internal.carrierBrands.upsertInternal,
