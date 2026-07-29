@@ -2601,6 +2601,86 @@ export const pipelineStartExternalWorkerJob = internalMutation({
   },
 });
 
+// Marks an extraction run as rejected before it is handed to the external
+// worker queue (document intake gate). No lease exists yet, so this cannot go
+// through pipelineCompleteLease. Rejected documents are auto-archived so they
+// move to the archived list instead of lingering as failed policy rows; the
+// stored error and summary still explain the rejection on the detail page.
+export const pipelineRejectExternalJob = internalMutation({
+  args: {
+    jobId: v.string(),
+    error: v.string(),
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, { jobId, error, userId }) => {
+    const policyId = jobId as DataModelId<"policies">;
+    const now = nowMs();
+    const run = await ensurePolicyExtractionRun(ctx, policyId);
+    if (run) {
+      await ctx.db.patch(run._id, {
+        pipelineStatus: "error",
+        pipelineError: error,
+        pipelineCheckpoint: undefined,
+        updatedAt: now,
+      });
+    }
+    await clearExternalPolicyExtractionQueue(ctx, policyId);
+    await clearExternalPolicyExtractionPreviewQueue(ctx, policyId);
+    await ctx.db.patch(policyId, {
+      pipelineStatus: "error",
+      pipelineError: error,
+      pipelineCheckpoint: undefined,
+      pipelineLog: undefined,
+    });
+    await archiveRejectedPolicyDocument(ctx, policyId, userId);
+    await insertPipelineTraceLog(ctx, policyId, {
+      timestamp: now,
+      message: error,
+      phase: "gate",
+      level: "error",
+    });
+  },
+});
+
+// Auto-archives a policy row whose document was rejected by the intake gate so
+// it lands in the archived list instead of lingering as a failed policy row.
+async function archiveRejectedPolicyDocument(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+  userId?: string,
+) {
+  const policy = await ctx.db.get(policyId);
+  if (!policy || policy.deletedAt) return;
+  await ctx.db.patch(policyId, { deletedAt: nowMs() });
+  if (policy.orgId) {
+    await deactivatePolicyDeclarationFacts(ctx, policyId, policy.orgId);
+  }
+  const auditUserId =
+    userId ?? String(policy.userId ?? policy.uploadedByUserId ?? "");
+  if (auditUserId) {
+    await ctx.db.insert("policyAuditLog", {
+      policyId,
+      userId: auditUserId as DataModelId<"users">,
+      orgId: policy.orgId,
+      action: "archived",
+      detail: "Auto-archived: rejected by the document intake gate",
+    });
+  }
+}
+
+// In-Convex extraction rejects documents inside the pipeline's extract phase;
+// this lets that action path share the same auto-archive behavior as
+// pipelineRejectExternalJob.
+export const archiveRejectedDocumentInternal = internalMutation({
+  args: {
+    id: v.id("policies"),
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await archiveRejectedPolicyDocument(ctx, args.id, args.userId);
+  },
+});
+
 export const pipelineClaimExternalWorkerJob = internalMutation({
   args: {
     leaseId: v.string(),
@@ -2688,6 +2768,38 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
         phase: "worker",
         level: "info",
       });
+      // A worker crash can drop the preview job without recording a failure:
+      // the lease dies with the worker and the queue row is later deleted while
+      // the run is not in a claimable state. When the main job is re-claimed
+      // and the preview never delivered (stage still "placeholder", no recorded
+      // preview error), restore the preview queue row so the provisional
+      // extraction gets another attempt.
+      const claimState = checkpoint.state as
+        | { policyVersionKind?: string }
+        | undefined;
+      if (!claimState?.policyVersionKind || claimState.policyVersionKind === "new_policy") {
+        const policy = await ctx.db.get(run.policyId);
+        const previewPending =
+          !!policy &&
+          !policy.deletedAt &&
+          policy.extractionDataStage === "placeholder" &&
+          !policy.extractionPreviewError;
+        if (previewPending) {
+          const previewRows = await ctx.db
+            .query("policyExtractionPreviewQueue")
+            .withIndex("by_policyId", (q) => q.eq("policyId", run.policyId))
+            .collect();
+          if (previewRows.length === 0) {
+            await enqueueExternalPolicyExtractionPreview(ctx, run.policyId, run._id, now);
+            await appendPolicyPipelineLog(ctx, run.policyId, {
+              timestamp: now,
+              message: "Re-queued provisional extraction after interrupted preview job",
+              phase: "preview",
+              level: "info",
+            });
+          }
+        }
+      }
       return {
         policyId: String(run.policyId),
         checkpoint: leasedCheckpoint,
