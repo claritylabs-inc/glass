@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
+import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
 import { formatDisplayDate } from "@/lib/date-format";
 
@@ -17,6 +18,7 @@ interface PolicyListItemProps {
   carrier: string;
   generalAgent?: string;
   policyNumber: string;
+  linesOfBusiness?: readonly string[];
   fileName?: string | null;
   effectiveDate?: string;
   expirationDate?: string;
@@ -65,6 +67,7 @@ export function PolicyListItem({
   carrier,
   generalAgent,
   policyNumber,
+  linesOfBusiness,
   fileName,
   effectiveDate,
   expirationDate,
@@ -86,10 +89,25 @@ export function PolicyListItem({
   const effectiveClean = formatPolicyDate(effectiveDate);
   const expirationClean = formatPolicyDate(expirationDate);
 
+  const lobLabels = policyLobCodes({ linesOfBusiness })
+    .filter((code) => code !== "UN")
+    .map(lobLabel);
+  const productLine =
+    lobLabels.length > 2
+      ? `${lobLabels.slice(0, 2).join(" · ")} +${lobLabels.length - 2}`
+      : lobLabels.join(" · ");
+  const sourceName = generalAgentClean ?? carrierClean;
+
+  // Policy identity leads with what the coverage is (product line) and its
+  // number; the issuing carrier/GA is secondary.
   const title =
-    generalAgentClean ??
-    carrierClean ??
+    productLine ||
+    policyNumberClean ||
+    sourceName ||
     (isProcessing ? (fileNameClean ?? "New upload") : "Untitled policy");
+  const inlinePolicyNumber =
+    productLine && policyNumberClean ? policyNumberClean : undefined;
+  const subtitle = sourceName !== title ? sourceName : undefined;
   const hasDates = effectiveClean && expirationClean;
   const rowClass =
     "flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0 hover:bg-muted/40 transition-colors";
@@ -100,6 +118,11 @@ export function PolicyListItem({
           <span className="text-base font-medium text-foreground truncate">
             {title}
           </span>
+          {inlinePolicyNumber ? (
+            <span className="text-base text-muted-foreground truncate">
+              {inlinePolicyNumber}
+            </span>
+          ) : null}
           {isProcessing ? (
             <Badge
               variant="outline"
@@ -118,9 +141,9 @@ export function PolicyListItem({
           ) : null}
           <ProvenanceBadge side={uploadedBySide} />
         </div>
-        {policyNumberClean ? (
+        {subtitle ? (
           <p className="text-label text-muted-foreground truncate">
-            {policyNumberClean}
+            {subtitle}
           </p>
         ) : null}
       </div>

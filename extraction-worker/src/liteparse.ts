@@ -51,8 +51,24 @@ type PositionedRow = {
 };
 
 const LITEPARSE_VERSION = "2.0.3";
+export const LITEPARSE_NATIVE_CONCURRENCY = 1;
 const TABLE_HEADER_PATTERN = /\b(coverage|limit|limits?|basis|retroactive|deductible|premium|tax|fee|sub-?limit|aggregate|claim)\b/i;
 const TABLE_VALUE_PATTERN = /\b(CAD|USD|\$|limit|aggregate|claim|shared|claims?-made|prior acts?|full prior|deductible|premium|tax|fee)\b/i;
+let liteParseQueue = Promise.resolve();
+
+async function withSerializedLiteParse<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = liteParseQueue;
+  let release: () => void = () => {};
+  liteParseQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -553,39 +569,41 @@ export async function convertPdfWithLiteParse(params: {
     throw new Error(`PDF exceeds LiteParse maximum size (${params.pdfBytes.byteLength} > ${params.maxFileSize})`);
   }
 
-  const startedAt = dayjs().valueOf();
-  const parser = new LiteParse({
-    ocrEnabled: readBooleanEnv("LITEPARSE_OCR_ENABLED", false),
-    ocrLanguage: process.env.LITEPARSE_OCR_LANGUAGE ?? "eng",
-    maxPages: params.maxPages ?? readBoundedIntEnv("LITEPARSE_MAX_PAGES", 1000, 1, 5000),
-    dpi: readBoundedIntEnv("LITEPARSE_DPI", 150, 72, 600),
-    quiet: true,
-    numWorkers: readBoundedIntEnv("LITEPARSE_NUM_WORKERS", 4, 1, 32),
-  });
-  const parsed = await parser.parse(Buffer.from(params.pdfBytes));
-  const sourceSpans = buildLiteParseSourceSpans({
-    pages: parsed.pages,
-    text: parsed.text,
-    documentId: params.documentId,
-    sourceKind: params.sourceKind ?? "policy_pdf",
-  });
-  const pageScreenshots = await buildPageScreenshots({
-    parser,
-    pdfBytes: params.pdfBytes,
-    pages: parsed.pages,
-  });
+  return withSerializedLiteParse(async () => {
+    const startedAt = dayjs().valueOf();
+    const parser = new LiteParse({
+      ocrEnabled: readBooleanEnv("LITEPARSE_OCR_ENABLED", false),
+      ocrLanguage: process.env.LITEPARSE_OCR_LANGUAGE ?? "eng",
+      maxPages: params.maxPages ?? readBoundedIntEnv("LITEPARSE_MAX_PAGES", 1000, 1, 5000),
+      dpi: readBoundedIntEnv("LITEPARSE_DPI", 150, 72, 600),
+      quiet: true,
+      numWorkers: readBoundedIntEnv("LITEPARSE_NUM_WORKERS", 4, 1, 32),
+    });
+    const parsed = await parser.parse(Buffer.from(params.pdfBytes));
+    const sourceSpans = buildLiteParseSourceSpans({
+      pages: parsed.pages,
+      text: parsed.text,
+      documentId: params.documentId,
+      sourceKind: params.sourceKind ?? "policy_pdf",
+    });
+    const pageScreenshots = await buildPageScreenshots({
+      parser,
+      pdfBytes: params.pdfBytes,
+      pages: parsed.pages,
+    });
 
-  return {
-    text: parsed.text,
-    sourceSpans,
-    sourceChunks: chunkSourceSpans(sourceSpans),
-    pageScreenshots,
-    metadata: {
-      parserBackend: "liteparse",
-      parserVersion: LITEPARSE_VERSION,
-      parsedAt: dayjs().valueOf(),
-      parsingMs: dayjs().valueOf() - startedAt,
-      pageCount: parsed.pages.length,
-    },
-  };
+    return {
+      text: parsed.text,
+      sourceSpans,
+      sourceChunks: chunkSourceSpans(sourceSpans),
+      pageScreenshots,
+      metadata: {
+        parserBackend: "liteparse",
+        parserVersion: LITEPARSE_VERSION,
+        parsedAt: dayjs().valueOf(),
+        parsingMs: dayjs().valueOf() - startedAt,
+        pageCount: parsed.pages.length,
+      },
+    };
+  });
 }

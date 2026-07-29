@@ -242,10 +242,12 @@ export function PolicySummary({
       </div>
 
       {pdfUrl || hasOverviewRows || !hasExtractedDetails ? (
-        <OperationalPanelBody className="flex flex-col p-0 @lg:flex-row @lg:items-center">
+        <OperationalPanelBody className="flex flex-col p-0 @lg:flex-row @lg:items-start">
           {pdfUrl ? (
-            <div className="shrink-0 p-5 pb-2 @lg:pb-5 @lg:pr-0">
-              <PolicyPdfThumbnail url={pdfUrl} />
+            <div className="shrink-0 p-5 pb-5 @lg:pb-5 @lg:pr-4 border-b @lg:border-r @lg:border-b-0 border-foreground/6">
+              <div className="w-fit overflow-clip bg-background">
+                <PolicyPdfThumbnail url={pdfUrl} />
+              </div>
             </div>
           ) : null}
 

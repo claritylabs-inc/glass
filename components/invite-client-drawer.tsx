@@ -68,6 +68,7 @@ type DraftPolicyRow = {
   mga?: string;
   generalAgent?: { agencyName?: string };
   policyNumber?: string;
+  linesOfBusiness?: string[];
   fileName?: string;
   effectiveDate?: string;
   expirationDate?: string;
@@ -599,6 +600,7 @@ export function InviteClientDrawer({
                   carrier={policy.carrier ?? ""}
                   generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                   policyNumber={policy.policyNumber ?? ""}
+                  linesOfBusiness={policy.linesOfBusiness}
                   fileName={policy.fileName}
                   effectiveDate={policy.effectiveDate}
                   expirationDate={policy.expirationDate}

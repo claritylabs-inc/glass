@@ -70,6 +70,9 @@ describe("settings panel surfaces", () => {
     const policy = read("app/policies/[id]/policy-parties-panel.tsx");
     const policyEditor = read("app/policies/[id]/policy-details-editor.tsx");
     const summary = read("app/policies/[id]/policy-summary.tsx");
+    const policyThumbnail = read(
+      "app/policies/[id]/policy-pdf-thumbnail.tsx",
+    );
     const details = read("app/policies/[id]/policy-details-tab.tsx");
     const detailBody = read("app/policies/[id]/policy-detail-body.tsx");
     const coverages = read("app/policies/[id]/policy-coverages-tab.tsx");
@@ -124,6 +127,16 @@ describe("settings panel surfaces", () => {
     expect(summary).toContain("sm:justify-end");
     expect(summary.match(/<OperationalLabelValueRow/g)).toHaveLength(7);
     expect(summary.match(/align="right"/g)).toHaveLength(7);
+    expect(summary).toContain("@lg:flex-row @lg:items-start");
+    expect(summary).not.toContain("@lg:items-center");
+    expect(summary).toContain("@lg:pr-4");
+    expect(summary).not.toContain("hover:opacity");
+    expect(policyThumbnail).toContain(
+      "transition-[background-color,border-color] duration-150 ease-out",
+    );
+    expect(policyThumbnail).toContain("group-hover:bg-black/6");
+    expect(policyThumbnail).toContain("group-focus-visible:bg-black/6");
+    expect(policyThumbnail).toContain("group relative block w-40 shrink-0");
     expect(operationalPanel).toContain("grid grid-cols-1 gap-1");
     expect(operationalPanel).toContain(
       "sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3",

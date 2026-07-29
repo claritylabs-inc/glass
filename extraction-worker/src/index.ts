@@ -43,7 +43,11 @@ import {
   type WorkerSourceChunk,
   type WorkerSourceSpan,
 } from "./pdfSourceSpans.js";
-import { convertPdfWithLiteParse, type PageScreenshot } from "./liteparse.js";
+import {
+  convertPdfWithLiteParse,
+  LITEPARSE_NATIVE_CONCURRENCY,
+  type PageScreenshot,
+} from "./liteparse.js";
 import { resolveConvexStorageUrl } from "./convexStorageUrl.js";
 import {
   ClRouterProtocolError,
@@ -1766,6 +1770,7 @@ function startHttpServer(): { close: () => void } | null {
         gitBranch: process.env.RAILWAY_GIT_BRANCH,
         extractionJobConcurrency: EXTRACTION_JOB_CONCURRENCY,
         previewJobConcurrency: PREVIEW_JOB_CONCURRENCY,
+        liteParseNativeConcurrency: LITEPARSE_NATIVE_CONCURRENCY,
       });
       return;
     }
@@ -2930,7 +2935,7 @@ async function runPreviewLoop(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log(
-    `Glass extraction worker ${WORKER_ID} env=${GLASS_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} connected to ${CONVEX_URL}`,
+    `Glass extraction worker ${WORKER_ID} env=${GLASS_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} previewConcurrency=${PREVIEW_JOB_CONCURRENCY} liteParseNativeConcurrency=${LITEPARSE_NATIVE_CONCURRENCY} connected to ${CONVEX_URL}`,
   );
   const httpServer = startHttpServer();
   const previewLoop = runPreviewLoop().catch((error) => {

@@ -322,6 +322,7 @@ export default function PoliciesPage() {
                 carrier={p.carrier}
                 generalAgent={p.generalAgent?.agencyName ?? p.mga}
                 policyNumber={p.policyNumber}
+                linesOfBusiness={p.linesOfBusiness}
                 fileName={p.fileName}
                 effectiveDate={p.effectiveDate}
                 expirationDate={p.expirationDate}
