@@ -5,6 +5,6 @@
   },
   "node": {
     "nodeVersion": "24",
-    "externalPackages": ["pdfjs-dist"]
+    "externalPackages": ["pdfjs-dist", "sharp"]
   }
 }

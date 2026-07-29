@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import { readableTextFor } from "@/lib/branding";
 
 const DEFAULT_CARD_COLOR = "#1E293B";
-const BRAND_COLOR_WEIGHT = 0.28;
+const BRAND_COLOR_WEIGHT = 0.52;
 
 function hashString(value: string) {
   let hash = 0;

@@ -57,7 +57,7 @@ describe("PolicyListItem", () => {
       />,
     );
 
-    expect(markup).toContain("background-color:#5C5C3E");
+    expect(markup).toContain("background-color:#928841");
     expect(markup).toContain("color:#FFFFFF");
     expect(markup).toContain("repeating-");
     expect(markup).toContain("radial-gradient(ellipse at 100% 100%");

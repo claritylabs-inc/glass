@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractImageBrandColors,
   extractWebsiteBrandColors,
   extractWebsiteStylesheetUrls,
   normalizePublicWebsiteUrl,
@@ -34,5 +35,15 @@ describe("website brand signals", () => {
         "https://markel.com/",
       ),
     ).toEqual(["https://markel.com/assets/brand.css"]);
+  });
+
+  it("uses saturated favicon pixels as primary brand-color evidence", async () => {
+    const svg = new TextEncoder().encode(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+        <rect width="32" height="32" fill="#FF4E00" />
+      </svg>
+    `);
+
+    expect(await extractImageBrandColors(svg)).toEqual(["#FF4E00"]);
   });
 });

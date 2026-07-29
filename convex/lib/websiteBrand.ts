@@ -1,6 +1,7 @@
 "use node";
 
 import { isIP } from "node:net";
+import sharp from "sharp";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
@@ -11,6 +12,8 @@ const MAX_IMAGE_BYTES = 512 * 1024;
 const MAX_REDIRECTS = 3;
 const MAX_COLOR_CANDIDATES = 8;
 const MAX_STYLESHEETS = 2;
+const ICON_SAMPLE_SIZE = 64;
+const ICON_COLOR_BUCKET_SIZE = 16;
 
 type WebsiteBrandSignals = {
   website: string;
@@ -28,9 +31,9 @@ function isPrivateIpv4(hostname: string) {
     a === 0 ||
     a === 10 ||
     a === 127 ||
-    a === 169 && b === 254 ||
-    a === 172 && b >= 16 && b <= 31 ||
-    a === 192 && b === 168
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
   );
 }
 
@@ -68,8 +71,8 @@ export function normalizePublicWebsiteUrl(rawUrl: string) {
   }
   const ipVersion = isIP(hostname);
   if (
-    ipVersion === 4 && isPrivateIpv4(hostname) ||
-    ipVersion === 6 && isPrivateIpv6(hostname)
+    (ipVersion === 4 && isPrivateIpv4(hostname)) ||
+    (ipVersion === 6 && isPrivateIpv6(hostname))
   ) {
     throw new Error("Private network websites are not supported");
   }
@@ -155,6 +158,72 @@ export function extractWebsiteBrandColors(html: string) {
   ).slice(0, MAX_COLOR_CANDIDATES);
 }
 
+export async function extractImageBrandColors(input: Uint8Array | ArrayBuffer) {
+  try {
+    const bytes =
+      input instanceof ArrayBuffer
+        ? Buffer.from(new Uint8Array(input))
+        : Buffer.from(input);
+    const { data, info } = await sharp(bytes)
+      .resize({
+        width: ICON_SAMPLE_SIZE,
+        height: ICON_SAMPLE_SIZE,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const buckets = new Map<
+      string,
+      { red: number; green: number; blue: number; count: number }
+    >();
+    for (let index = 0; index < data.length; index += info.channels) {
+      const red = data[index];
+      const green = data[index + 1];
+      const blue = data[index + 2];
+      const alpha = data[index + 3];
+      if (alpha < 128) continue;
+      const spread = Math.max(red, green, blue) - Math.min(red, green, blue);
+      const luminance = (red * 0.299 + green * 0.587 + blue * 0.114) / 255;
+      if (spread < 28 || luminance < 0.07 || luminance > 0.92) continue;
+      const key = [red, green, blue]
+        .map((channel) =>
+          Math.min(
+            255,
+            Math.round(channel / ICON_COLOR_BUCKET_SIZE) *
+              ICON_COLOR_BUCKET_SIZE,
+          ),
+        )
+        .join("-");
+      const bucket = buckets.get(key) ?? {
+        red: 0,
+        green: 0,
+        blue: 0,
+        count: 0,
+      };
+      bucket.red += red;
+      bucket.green += green;
+      bucket.blue += blue;
+      bucket.count += 1;
+      buckets.set(key, bucket);
+    }
+    return Array.from(buckets.values())
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 4)
+      .map((bucket) => {
+        const channel = (value: number) =>
+          Math.round(value / bucket.count)
+            .toString(16)
+            .padStart(2, "0")
+            .toUpperCase();
+        return `#${channel(bucket.red)}${channel(bucket.green)}${channel(bucket.blue)}`;
+      });
+  } catch {
+    return [];
+  }
+}
+
 function extractTitle(html: string) {
   const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   return match?.[1]?.replace(/\s+/g, " ").trim().slice(0, 160) || undefined;
@@ -178,7 +247,9 @@ function extractIconCandidates(html: string, website: string) {
     `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`,
   );
   return Array.from(
-    new Set(candidates.map((candidate) => new URL(candidate, website).toString())),
+    new Set(
+      candidates.map((candidate) => new URL(candidate, website).toString()),
+    ),
   );
 }
 
@@ -195,7 +266,9 @@ export function extractWebsiteStylesheetUrls(html: string, website: string) {
     candidates.push(match[1]);
   }
   return Array.from(
-    new Set(candidates.map((candidate) => new URL(candidate, website).toString())),
+    new Set(
+      candidates.map((candidate) => new URL(candidate, website).toString()),
+    ),
   ).slice(0, MAX_STYLESHEETS);
 }
 
@@ -240,18 +313,34 @@ export async function readWebsiteBrandSignals(
   rawUrl: string,
 ): Promise<WebsiteBrandSignals> {
   const { html, website } = await fetchWebsiteHtml(rawUrl);
-  const stylesheetColors = await readStylesheetBrandColors(html, website);
+  const [stylesheetColors, favicon] = await Promise.all([
+    readStylesheetBrandColors(html, website),
+    fetchFaviconFromHtml(html, website),
+  ]);
+  const faviconColors = favicon
+    ? await extractImageBrandColors(await favicon.arrayBuffer())
+    : [];
   return {
     website,
     title: extractTitle(html),
     colorCandidates: Array.from(
-      new Set([...stylesheetColors, ...extractWebsiteBrandColors(html)]),
+      new Set([
+        ...faviconColors,
+        ...stylesheetColors,
+        ...extractWebsiteBrandColors(html),
+      ]),
     ).slice(0, MAX_COLOR_CANDIDATES),
   };
 }
 
-export async function fetchWebsiteFavicon(rawUrl: string): Promise<Blob | null> {
+export async function fetchWebsiteFavicon(
+  rawUrl: string,
+): Promise<Blob | null> {
   const { html, website } = await fetchWebsiteHtml(rawUrl);
+  return await fetchFaviconFromHtml(html, website);
+}
+
+async function fetchFaviconFromHtml(html: string, website: string) {
   for (const candidate of extractIconCandidates(html, website)) {
     try {
       const response = await fetchPublic(candidate);
