@@ -24,6 +24,11 @@ export function PolicyDetailsTab({
     _id: Id<"policies">;
     policyNumber?: string;
     carrier?: string;
+    carrierBrand?: {
+      name?: string | null;
+      accentColor?: string | null;
+      iconUrl?: string | null;
+    } | null;
     insuredName?: string;
     effectiveDate?: string;
     expirationDate?: string;
@@ -63,6 +68,8 @@ export function PolicyDetailsTab({
         </OperationalPanel>
       ) : null}
       <PolicySummary
+        carrier={policy.carrier}
+        carrierBrand={policy.carrierBrand}
         policyNumber={policy.policyNumber}
         effectiveDate={policy.effectiveDate}
         expirationDate={policy.expirationDate}
@@ -70,7 +77,6 @@ export function PolicyDetailsTab({
         totalCost={policy.totalCost}
         taxesAndFees={policy.taxesAndFees}
         linesOfBusiness={linesOfBusiness}
-        policyTermType={policy.policyTermType as string | undefined}
         operationsDescription={partyContext.operationsDescription}
         isRenewal={policy.isRenewal}
         pdfUrl={fileUrl ?? undefined}

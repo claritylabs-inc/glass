@@ -399,6 +399,45 @@ async function mergePolicyPipelineState<T extends { _id: DataModelId<"policies">
   };
 }
 
+async function attachCarrierBrand<
+  T extends {
+    carrierBrandId?: DataModelId<"carrierBrands">;
+    carrierBrandStatus?: "pending" | "ready" | "failed";
+  },
+>(
+  ctx: any,
+  policy: T,
+): Promise<T & {
+  carrierBrand?: {
+    name: string;
+    website: string;
+    accentColor: string;
+    iconUrl: string | null;
+    enrichmentVersion: number;
+  };
+}> {
+  if (
+    !policy.carrierBrandId ||
+    policy.carrierBrandStatus !== "ready"
+  ) {
+    return policy;
+  }
+  const brand = await ctx.db.get(policy.carrierBrandId);
+  if (!brand) return policy;
+  return {
+    ...policy,
+    carrierBrand: {
+      name: brand.carrierName,
+      website: brand.website,
+      accentColor: brand.accentColor,
+      enrichmentVersion: brand.enrichmentVersion ?? 0,
+      iconUrl: brand.iconStorageId
+        ? await ctx.storage.getUrl(brand.iconStorageId)
+        : null,
+    },
+  };
+}
+
 async function ensurePolicyExtractionRun(ctx: any, policyId: DataModelId<"policies">) {
   const existing = await getPolicyExtractionRun(ctx, policyId);
   if (existing) return existing;
@@ -680,7 +719,10 @@ export const get = query({
     } catch {
       return null;
     }
-    return await mergePolicyPipelineState(ctx, policy);
+    return await attachCarrierBrand(
+      ctx,
+      await mergePolicyPipelineState(ctx, policy),
+    );
   },
 });
 
@@ -695,7 +737,10 @@ export const getSummary = query({
       return null;
     }
 
-    const enrichedPolicy = await mergePolicyPipelineState(ctx, policy);
+    const enrichedPolicy = await attachCarrierBrand(
+      ctx,
+      await mergePolicyPipelineState(ctx, policy),
+    );
 
     return {
       _id: enrichedPolicy._id,
@@ -710,6 +755,7 @@ export const getSummary = query({
       carrier: enrichedPolicy.carrier,
       carrierLegalName: enrichedPolicy.carrierLegalName,
       carrierNaicNumber: enrichedPolicy.carrierNaicNumber,
+      carrierBrand: enrichedPolicy.carrierBrand,
       security: enrichedPolicy.security,
       generalAgent: enrichedPolicy.generalAgent,
       // Read compatibility for policies extracted before General Agent nomenclature.
@@ -881,6 +927,8 @@ const premiumLineValidator = v.object({
   documentNodeId: v.optional(v.string()),
   sourceSpanIds: v.optional(v.array(v.string())),
   sourceTextHash: v.optional(v.string()),
+  pageStart: v.optional(v.number()),
+  pageEnd: v.optional(v.number()),
 });
 
 const addressValidator = v.object({
@@ -1234,6 +1282,11 @@ export const updateExtraction = mutation({
       address: v.optional(addressValidator),
       relationship: v.optional(v.string()),
       scope: v.optional(v.string()),
+      documentNodeId: v.optional(v.string()),
+      sourceSpanIds: v.optional(v.array(v.string())),
+      sourceTextHash: v.optional(v.string()),
+      pageStart: v.optional(v.number()),
+      pageEnd: v.optional(v.number()),
     }))),
     mortgageHolders: v.optional(v.array(v.object({
       name: v.string(),
@@ -1241,6 +1294,11 @@ export const updateExtraction = mutation({
       address: v.optional(addressValidator),
       relationship: v.optional(v.string()),
       scope: v.optional(v.string()),
+      documentNodeId: v.optional(v.string()),
+      sourceSpanIds: v.optional(v.array(v.string())),
+      sourceTextHash: v.optional(v.string()),
+      pageStart: v.optional(v.number()),
+      pageEnd: v.optional(v.number()),
     }))),
     priorPolicyNumber: v.optional(v.string()),
     programName: v.optional(v.string()),
@@ -1254,6 +1312,11 @@ export const updateExtraction = mutation({
       name: v.string(),
       relationship: v.optional(v.string()),
       address: v.optional(addressValidator),
+      documentNodeId: v.optional(v.string()),
+      sourceSpanIds: v.optional(v.array(v.string())),
+      sourceTextHash: v.optional(v.string()),
+      pageStart: v.optional(v.number()),
+      pageEnd: v.optional(v.number()),
     }))),
     // Coverage structure
     coverageForm: v.optional(v.string()),
@@ -1966,7 +2029,7 @@ export const listForBroker = query({
       .query("policies")
       .withIndex("by_orgId", (idx) => idx.eq("orgId", args.clientOrgId))
       .collect();
-    return all.filter((p) => {
+    const filtered = all.filter((p) => {
       const matchesArchive = args.archived
         ? Boolean(p.deletedAt)
         : isVisiblePolicyListRow(p);
@@ -1975,6 +2038,9 @@ export const listForBroker = query({
         (!args.documentType || p.documentType === args.documentType)
       );
     });
+    return await Promise.all(
+      filtered.map((policy) => attachCarrierBrand(ctx, policy)),
+    );
   },
 });
 
@@ -2002,7 +2068,14 @@ export const listForClient = query({
         (!args.documentType || p.documentType === args.documentType)
       );
     });
-    return await Promise.all(filtered.map((p) => mergePolicyPipelineState(ctx, p)));
+    return await Promise.all(
+      filtered.map(async (policy) =>
+        attachCarrierBrand(
+          ctx,
+          await mergePolicyPipelineState(ctx, policy),
+        ),
+      ),
+    );
   },
 });
 
@@ -2385,7 +2458,12 @@ export const listForOrg = query({
         (!args.documentType || policy.documentType === args.documentType),
     );
     return await Promise.all(
-      filtered.map((policy) => mergePolicyPipelineState(ctx, policy)),
+      filtered.map(async (policy) =>
+        attachCarrierBrand(
+          ctx,
+          await mergePolicyPipelineState(ctx, policy),
+        ),
+      ),
     );
   },
 });

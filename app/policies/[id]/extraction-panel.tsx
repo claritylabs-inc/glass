@@ -21,7 +21,10 @@ import {
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
-import { formatDisplayDate } from "@/lib/date-format";
+import {
+  formatDisplayDate,
+  formatDisplayPolicyPeriod,
+} from "@/lib/date-format";
 import {
   SourceEvidenceButton,
   collectSourceSpanIds,
@@ -2633,7 +2636,10 @@ export function ExtractionCards({
     },
     (policyDocument?.effectiveDate || policyDocument?.expirationDate) && {
       label: "Policy period",
-      value: `${policyDocument.effectiveDate ? formatDisplayDate(policyDocument.effectiveDate, policyDocument.effectiveDate) : "—"} – ${policyDocument.expirationDate ? formatDisplayDate(policyDocument.expirationDate, policyDocument.expirationDate) : "—"}`,
+      value: formatDisplayPolicyPeriod(
+        policyDocument.effectiveDate,
+        policyDocument.expirationDate,
+      ),
     },
     policyLobCodes(policyDocument ?? {}).filter((code) => code !== "UN").length && {
       label: "Lines of business",

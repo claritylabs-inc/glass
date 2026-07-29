@@ -49,7 +49,10 @@ function formatCoverage(coverage: Doc<"policies">["coverages"][number]) {
   };
 }
 
-function publicPolicy(policy: Doc<"policies">) {
+async function publicPolicy(ctx: QueryCtx, policy: Doc<"policies">) {
+  const carrierBrand = policy.carrierBrandId
+    ? await ctx.db.get(policy.carrierBrandId)
+    : null;
   return {
     id: policy._id,
     title: policyTitle(policy),
@@ -59,6 +62,16 @@ function publicPolicy(policy: Doc<"policies">) {
     linesOfBusiness: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
+    carrierBrand: carrierBrand
+      ? {
+          name: carrierBrand.carrierName,
+          website: carrierBrand.website,
+          accentColor: carrierBrand.accentColor,
+          iconUrl: carrierBrand.iconStorageId
+            ? await ctx.storage.getUrl(carrierBrand.iconStorageId)
+            : null,
+        }
+      : undefined,
     dataStage: policy.extractionDataStage ?? (
       policy.pipelineStatus === "complete" ? "final" : "placeholder"
     ),
@@ -161,7 +174,7 @@ async function buildCertificateView(
       policyCertificateId: policyCertificate?._id,
       createdAt: certificate.createdAt,
     },
-    policy: publicPolicy(policy),
+    policy: await publicPolicy(ctx, policy),
   };
 }
 
@@ -269,7 +282,7 @@ export const getByToken = query({
         title: policyTitle(policy),
         subtitle: policySubtitle(policy),
         label: link.label,
-        policy: publicPolicy(policy),
+        policy: await publicPolicy(ctx, policy),
       };
     }
 

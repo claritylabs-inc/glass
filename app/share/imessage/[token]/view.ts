@@ -2,13 +2,22 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
-import { formatDisplayDate } from "@/lib/date-format";
+import {
+  formatDisplayDate,
+  formatDisplayPolicyPeriod,
+} from "@/lib/date-format";
 
 export type Policy = {
   id: string;
   title: string;
   insuredName: string;
   carrier?: string;
+  carrierBrand?: {
+    name?: string | null;
+    website?: string | null;
+    accentColor?: string | null;
+    iconUrl?: string | null;
+  } | null;
   policyNumber: string;
   linesOfBusiness?: string[];
   effectiveDate: string;
@@ -49,6 +58,15 @@ export function formatDate(value?: string | number) {
   return formatDisplayDate(value, String(value));
 }
 
+export function policyPeriod(
+  policy: Pick<Policy, "effectiveDate" | "expirationDate">,
+) {
+  return (
+    formatDisplayPolicyPeriod(policy.effectiveDate, policy.expirationDate) ||
+    "Not listed"
+  );
+}
+
 export function labelForStatus(status?: string) {
   if (!status) return "Not listed";
   return status
@@ -80,7 +98,7 @@ export function metadataDescription(view: AppCardView) {
     return compactList([
       view.policy.carrier,
       policyLineBusinessLabels(view.policy).join(", "),
-      `${formatDate(view.policy.effectiveDate)} to ${formatDate(view.policy.expirationDate)}`,
+      policyPeriod(view.policy),
       view.orgName,
     ]) || view.subtitle || view.orgName;
   }

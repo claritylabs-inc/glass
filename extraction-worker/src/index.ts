@@ -1734,22 +1734,46 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
     return;
   }
 
-  const pdfBytes = Buffer.from(pdfBase64, "base64");
-  const converted = await convertPdfWithLiteParse({
-    pdfBytes,
-    documentId: typeof body.documentId === "string" ? body.documentId : "inline-pdf",
-    sourceKind: readSourceKind(body.sourceKind),
-    maxPages: LITEPARSE_MAX_PAGES,
-    maxFileSize: LITEPARSE_MAX_FILE_SIZE,
-  });
-  jsonResponse(res, 200, {
-    ok: true,
-    text: converted.text,
-    sourceSpans: converted.sourceSpans,
-    sourceChunks: converted.sourceChunks,
-    pageScreenshots: converted.pageScreenshots,
-    metadata: converted.metadata,
-  });
+  const abortController = new AbortController();
+  const abortQueuedConversion = () => {
+    if (!res.writableEnded) {
+      abortController.abort();
+    }
+  };
+  req.once("aborted", abortQueuedConversion);
+  req.once("close", abortQueuedConversion);
+
+  try {
+    const pdfBytes = Buffer.from(pdfBase64, "base64");
+    const converted = await convertPdfWithLiteParse({
+      pdfBytes,
+      documentId: typeof body.documentId === "string" ? body.documentId : "inline-pdf",
+      sourceKind: readSourceKind(body.sourceKind),
+      maxPages: LITEPARSE_MAX_PAGES,
+      maxFileSize: LITEPARSE_MAX_FILE_SIZE,
+      priority: "http",
+      signal: abortController.signal,
+    });
+    jsonResponse(res, 200, {
+      ok: true,
+      text: converted.text,
+      sourceSpans: converted.sourceSpans,
+      sourceChunks: converted.sourceChunks,
+      pageScreenshots: converted.pageScreenshots,
+      metadata: converted.metadata,
+    });
+  } catch (error) {
+    if (abortController.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+      if (!res.headersSent) {
+        jsonResponse(res, 499, { error: "Client closed request" });
+      }
+      return;
+    }
+    throw error;
+  } finally {
+    req.off("aborted", abortQueuedConversion);
+    req.off("close", abortQueuedConversion);
+  }
 }
 
 function startHttpServer(): { close: () => void } | null {
@@ -2658,6 +2682,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
         sourceKind: "policy_pdf",
         maxPages: LITEPARSE_MAX_PAGES,
         maxFileSize: LITEPARSE_MAX_FILE_SIZE,
+        priority: "full",
       });
       await logJob(
         job,
@@ -2814,6 +2839,7 @@ async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
         sourceKind: "policy_pdf",
         maxPages: LITEPARSE_MAX_PAGES,
         maxFileSize: LITEPARSE_MAX_FILE_SIZE,
+        priority: "preview",
       });
       const supplementedSource = await supplementPreparedPdfSource(
         pdfBytes,

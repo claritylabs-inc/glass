@@ -1865,6 +1865,11 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           );
         }
         if (finalPolicy?.orgId) {
+          await convexCtx.scheduler.runAfter(
+            0,
+            internal.actions.enrichCarrierBrand.ensureInternal,
+            { policyId: policyId as Id<"policies"> },
+          );
           await convexCtx.runMutation(
             (internal as any).declarationFacts.syncPolicyInternal,
             { policyId },

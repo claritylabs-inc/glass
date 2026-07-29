@@ -12,7 +12,6 @@ import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import { AgentContactCallout } from "@/components/agent-contact-callout";
-import { OperationalPanel } from "@/components/ui/operational-panel";
 import { toast } from "sonner";
 import { ArchiveRestore, Upload } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,6 +25,7 @@ import {
   showPolicyExtractionReadyToast,
 } from "@/components/shared/extraction-banner";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
+import { CARRIER_BRAND_ENRICHMENT_VERSION } from "@/convex/lib/carrierBrand";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -42,6 +42,14 @@ type PolicyListToastRow = {
   extractionDataStage?: string | null;
   extractionPreviewError?: string | null;
   uploadedBySide?: string;
+  carrierBrandStatus?: "pending" | "ready" | "failed";
+  carrierBrand?: {
+    name?: string | null;
+    website?: string | null;
+    accentColor?: string | null;
+    iconUrl?: string | null;
+    enrichmentVersion?: number;
+  } | null;
 };
 
 export default function PoliciesPage() {
@@ -53,6 +61,7 @@ export default function PoliciesPage() {
   const pendingExtractionToastsRef = useRef<
     Record<string, { fileName?: string | null }>
   >({});
+  const attemptedCarrierBrandIdsRef = useRef(new Set<string>());
 
   const policies = useCachedPolicyList(showArchived);
   const viewerOrg = useCachedViewerOrg();
@@ -64,6 +73,7 @@ export default function PoliciesPage() {
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
+  const ensureCarrierBrand = useAction(api.actions.enrichCarrierBrand.ensure);
   const restorePolicy = useMutation(api.policies.restore);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
@@ -95,9 +105,7 @@ export default function PoliciesPage() {
   );
 
   const resolvePendingExtractionToasts = useCallback(
-    (
-      rows: PolicyListToastRow[] | undefined,
-    ) => {
+    (rows: PolicyListToastRow[] | undefined) => {
       if (!rows) return;
       const pending = pendingExtractionToastsRef.current;
       if (Object.keys(pending).length === 0) return;
@@ -173,7 +181,9 @@ export default function PoliciesPage() {
             pendingExtractionToastsRef.current[result.id] = {
               fileName: candidates[i].file.name,
             };
-            resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
+            resolvePendingExtractionToasts(
+              policies as PolicyListToastRow[] | undefined,
+            );
           }
         } else {
           const result = (await extractFromUpload({
@@ -204,9 +214,10 @@ export default function PoliciesPage() {
           pendingExtractionToastsRef.current[result.id] = {
             fileName: displayFileName,
           };
-          resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
+          resolvePendingExtractionToasts(
+            policies as PolicyListToastRow[] | undefined,
+          );
         }
-
       } catch (err) {
         console.error(err);
         toast.error("Upload failed. Please try again.");
@@ -250,8 +261,34 @@ export default function PoliciesPage() {
   const fallbackHandle = viewerOrg?.org?.agentHandle ?? null;
 
   useEffect(() => {
-    resolvePendingExtractionToasts(policies as PolicyListToastRow[] | undefined);
+    resolvePendingExtractionToasts(
+      policies as PolicyListToastRow[] | undefined,
+    );
   }, [policies, resolvePendingExtractionToasts]);
+
+  useEffect(() => {
+    if (!policies) return;
+    for (const policy of policies as PolicyListToastRow[]) {
+      const isFinal =
+        policy.extractionDataStage === "final" ||
+        policy.pipelineStatus === "complete";
+      if (
+        !isFinal ||
+        policy.carrierBrand?.enrichmentVersion ===
+          CARRIER_BRAND_ENRICHMENT_VERSION ||
+        policy.carrierBrandStatus === "pending" ||
+        attemptedCarrierBrandIdsRef.current.has(policy._id)
+      ) {
+        continue;
+      }
+      attemptedCarrierBrandIdsRef.current.add(policy._id);
+      void ensureCarrierBrand({
+        policyId: policy._id as Id<"policies">,
+      }).catch(() => {
+        attemptedCarrierBrandIdsRef.current.delete(policy._id);
+      });
+    }
+  }, [ensureCarrierBrand, policies]);
 
   return (
     <AppShell
@@ -314,12 +351,13 @@ export default function PoliciesPage() {
             onUpload={handleEmptyStateFiles}
           />
         ) : (
-          <OperationalPanel as="div">
+          <div className="grid gap-3 md:grid-cols-2">
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             {(list as any[]).map((p: any) => (
               <PolicyListItem
                 key={p._id}
                 carrier={p.carrier}
+                carrierBrand={p.carrierBrand}
                 generalAgent={p.generalAgent?.agencyName ?? p.mga}
                 policyNumber={p.policyNumber}
                 linesOfBusiness={p.linesOfBusiness}
@@ -330,20 +368,22 @@ export default function PoliciesPage() {
                 extractionDataStage={p.extractionDataStage}
                 uploadedBySide={p.uploadedBySide}
                 href={`/policies/${p._id}`}
-                trailingAction={showArchived ? (
-                  <PillButton
-                    size="compact"
-                    variant="secondary"
-                    disabled={restoringId === p._id}
-                    onClick={() => void handleRestore(p._id)}
-                  >
-                    <ArchiveRestore className="size-3.5" />
-                    {restoringId === p._id ? "Restoring..." : "Restore"}
-                  </PillButton>
-                ) : undefined}
+                trailingAction={
+                  showArchived ? (
+                    <PillButton
+                      size="compact"
+                      variant="secondary"
+                      disabled={restoringId === p._id}
+                      onClick={() => void handleRestore(p._id)}
+                    >
+                      <ArchiveRestore className="size-3.5" />
+                      {restoringId === p._id ? "Restoring..." : "Restore"}
+                    </PillButton>
+                  ) : undefined
+                }
               />
             ))}
-          </OperationalPanel>
+          </div>
         )}
       </div>
     </AppShell>

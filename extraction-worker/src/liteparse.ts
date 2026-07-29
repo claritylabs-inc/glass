@@ -52,22 +52,120 @@ type PositionedRow = {
 
 const LITEPARSE_VERSION = "2.0.3";
 export const LITEPARSE_NATIVE_CONCURRENCY = 1;
+export type LiteParseQueuePriority = "http" | "preview" | "full";
+const LITEPARSE_PRIORITY_RANK: Record<LiteParseQueuePriority, number> = {
+  http: 0,
+  preview: 1,
+  full: 2,
+};
 const TABLE_HEADER_PATTERN = /\b(coverage|limit|limits?|basis|retroactive|deductible|premium|tax|fee|sub-?limit|aggregate|claim)\b/i;
 const TABLE_VALUE_PATTERN = /\b(CAD|USD|\$|limit|aggregate|claim|shared|claims?-made|prior acts?|full prior|deductible|premium|tax|fee)\b/i;
-let liteParseQueue = Promise.resolve();
 
-async function withSerializedLiteParse<T>(operation: () => Promise<T>): Promise<T> {
-  const previous = liteParseQueue;
-  let release: () => void = () => {};
-  liteParseQueue = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await previous;
-  try {
-    return await operation();
-  } finally {
-    release();
+type LiteParseQueueEntry = {
+  priority: LiteParseQueuePriority;
+  enqueuedAt: number;
+  signal?: AbortSignal;
+  cancelled: boolean;
+  start: () => void;
+  reject: (error: Error) => void;
+};
+
+let liteParseRunning = false;
+const liteParseWaitQueue: LiteParseQueueEntry[] = [];
+
+function abortError(message = "LiteParse conversion aborted"): Error {
+  if (typeof DOMException === "function") {
+    return new DOMException(message, "AbortError");
   }
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+
+function sortLiteParseWaitQueue(): void {
+  liteParseWaitQueue.sort((left, right) => {
+    const rank =
+      LITEPARSE_PRIORITY_RANK[left.priority] -
+      LITEPARSE_PRIORITY_RANK[right.priority];
+    if (rank !== 0) return rank;
+    return left.enqueuedAt - right.enqueuedAt;
+  });
+}
+
+function pumpLiteParseQueue(): void {
+  if (liteParseRunning) return;
+  while (liteParseWaitQueue.length > 0) {
+    const next = liteParseWaitQueue[0];
+    if (next.cancelled || next.signal?.aborted) {
+      liteParseWaitQueue.shift();
+      next.reject(abortError());
+      continue;
+    }
+    break;
+  }
+  const entry = liteParseWaitQueue.shift();
+  if (!entry) return;
+  liteParseRunning = true;
+  entry.start();
+}
+
+async function withSerializedLiteParse<T>(
+  operation: () => Promise<T>,
+  options?: {
+    priority?: LiteParseQueuePriority;
+    signal?: AbortSignal;
+  },
+): Promise<T> {
+  const priority = options?.priority ?? "full";
+  const signal = options?.signal;
+  if (signal?.aborted) {
+    throw abortError();
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const entry: LiteParseQueueEntry = {
+      priority,
+      enqueuedAt: Date.now(),
+      signal,
+      cancelled: false,
+      reject,
+      start: () => {
+        if (entry.cancelled || signal?.aborted) {
+          liteParseRunning = false;
+          reject(abortError());
+          pumpLiteParseQueue();
+          return;
+        }
+        Promise.resolve()
+          .then(operation)
+          .then(resolve, reject)
+          .finally(() => {
+            liteParseRunning = false;
+            pumpLiteParseQueue();
+          });
+      },
+    };
+
+    if (signal) {
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (entry.cancelled) return;
+          entry.cancelled = true;
+          const index = liteParseWaitQueue.indexOf(entry);
+          if (index >= 0) {
+            liteParseWaitQueue.splice(index, 1);
+            reject(abortError());
+          }
+        },
+        { once: true },
+      );
+    }
+
+    liteParseWaitQueue.push(entry);
+    sortLiteParseWaitQueue();
+    pumpLiteParseQueue();
+  });
 }
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
@@ -564,6 +662,8 @@ export async function convertPdfWithLiteParse(params: {
   sourceKind?: SourceKindInput;
   maxPages?: number;
   maxFileSize?: number;
+  priority?: LiteParseQueuePriority;
+  signal?: AbortSignal;
 }): Promise<LiteParseConversionResult> {
   if (params.maxFileSize && params.pdfBytes.byteLength > params.maxFileSize) {
     throw new Error(`PDF exceeds LiteParse maximum size (${params.pdfBytes.byteLength} > ${params.maxFileSize})`);
@@ -605,5 +705,8 @@ export async function convertPdfWithLiteParse(params: {
         pageCount: parsed.pages.length,
       },
     };
+  }, {
+    priority: params.priority,
+    signal: params.signal,
   });
 }

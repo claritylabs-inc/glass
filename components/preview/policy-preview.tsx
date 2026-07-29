@@ -25,7 +25,10 @@ import {
   coverageSourceNodeIds,
   coverageSourceSpanIds,
 } from "@/app/policies/[id]/policy-coverage-breakdown";
-import { formatDisplayDate } from "@/lib/date-format";
+import {
+  formatDisplayDate,
+  formatDisplayPolicyPeriod,
+} from "@/lib/date-format";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -77,20 +80,13 @@ function titleLabel(value: string | undefined) {
     .join(" ");
 }
 
-function formatDate(value: unknown) {
-  const text = realText(value);
-  if (!text) return undefined;
-  return formatDisplayDate(text, text);
-}
-
 function formatPolicyPeriod(record: Record<string, unknown>) {
-  const effectiveDate = formatDate(record.effectiveDate);
-  const expirationDate = formatDate(record.expirationDate);
-  if (record.policyTermType === "continuous" && effectiveDate) {
-    return `${effectiveDate} - Until Cancelled`;
-  }
-  if (!effectiveDate && !expirationDate) return undefined;
-  return `${effectiveDate ?? "-"} - ${expirationDate ?? "-"}`;
+  return (
+    formatDisplayPolicyPeriod(
+      realText(record.effectiveDate),
+      realText(record.expirationDate),
+    ) || undefined
+  );
 }
 
 function carrierName(record: Record<string, unknown>) {

@@ -103,6 +103,7 @@
     "read-excel-file": "^9.2.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "sharp": "0.34.5",
     "shiki": "^4.0.2",
     "simple-icons": "^16.17.0",
     "sonner": "^2.0.7",

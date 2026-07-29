@@ -160,6 +160,7 @@ describe("source spans and policy update backend surfaces", () => {
     const liteparsePreprocessor = read("convex/lib/liteparsePreprocessor.ts");
     const pdfSourceSpans = read("convex/lib/pdfSourceSpans.ts");
     const workerLiteparse = read("extraction-worker/src/liteparse.ts");
+    const worker = read("extraction-worker/src/index.ts");
     const conductorSetup = read("scripts/setup-conductor-workspace.mjs");
 
     expect(liteparsePreprocessor).toContain("preparePdfTextWithParserFallback");
@@ -178,9 +179,14 @@ describe("source spans and policy update backend surfaces", () => {
     expect(policyExtraction).toContain("documentChunksForEmbedding");
     expect(policyExtraction).toContain("sourceChunksForEmbedding");
     expect(workerLiteparse).toContain("withSerializedLiteParse");
-    expect(workerLiteparse).toContain(
-      "return withSerializedLiteParse(async () => {",
-    );
+    expect(workerLiteparse).toContain("LiteParseQueuePriority");
+    expect(workerLiteparse).toContain('priority?: LiteParseQueuePriority');
+    expect(workerLiteparse).toContain("signal?: AbortSignal");
+    expect(workerLiteparse).toContain("liteParseWaitQueue");
+    expect(worker).toContain('priority: "http"');
+    expect(worker).toContain('priority: "preview"');
+    expect(worker).toContain('priority: "full"');
+    expect(worker).toContain("abortController.abort()");
     expect(conductorSetup).toContain('EXTRACTION_JOB_CONCURRENCY: "8"');
     expect(conductorSetup).toContain('EXTRACTION_PREVIEW_CONCURRENCY: "2"');
   });

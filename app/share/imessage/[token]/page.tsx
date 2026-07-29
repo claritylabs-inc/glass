@@ -1,17 +1,20 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { FileText } from "lucide-react";
+import { BrandIcon } from "@/components/ui/brand-icon";
 import {
   OperationalLabelValueList,
   OperationalLabelValueRow,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { policyCardBranding } from "@/lib/policy-card-branding";
 import { buildCoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 import { CoverageBreakdownCards } from "@/app/policies/[id]/policy-coverage-breakdown";
 import {
   formatDate,
   loadAppCardView,
   metadataDescription,
+  policyPeriod,
   policyLineBusinessLabels,
   type Policy,
 } from "./view";
@@ -54,15 +57,6 @@ export async function generateMetadata({
   };
 }
 
-function policyPeriod(policy: Policy) {
-  const effective = formatDate(policy.effectiveDate);
-  const expiration = formatDate(policy.expirationDate);
-  if (effective === "Not listed" && expiration === "Not listed") {
-    return "Not listed";
-  }
-  return `${effective} to ${expiration}`;
-}
-
 function GlassWordmark() {
   return (
     <div className="flex items-center gap-2.5 text-base font-medium tracking-tight text-foreground">
@@ -72,22 +66,96 @@ function GlassWordmark() {
   );
 }
 
-function PolicyPanel({ policy }: { policy: Policy }) {
+function BrandedPolicyIdentity({ policy }: { policy: Policy }) {
+  const issuerName =
+    policy.carrierBrand?.name ?? policy.carrier ?? "Insurance carrier";
+  const linesOfBusiness = policyLineBusinessLabels(policy);
+  const { patternStyle, surfaceStyle } = policyCardBranding(
+    issuerName,
+    policy.carrierBrand?.accentColor,
+  );
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-xl border border-black/10 p-5 shadow-[0_4px_18px_rgba(0,0,0,0.1)]"
+      style={surfaceStyle}
+    >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={patternStyle}
+      />
+      <div className="relative z-10 flex min-w-0 items-center gap-3">
+        <BrandIcon
+          src={policy.carrierBrand?.iconUrl}
+          name={issuerName}
+          size="lg"
+          className="size-10 rounded-lg bg-background"
+        />
+        <p className="truncate text-base font-medium text-current opacity-85">
+          {issuerName}
+        </p>
+      </div>
+      <div className="relative z-10 mt-7">
+        <p className="mb-1 text-label font-medium text-current opacity-55">
+          Product lines
+        </p>
+        {linesOfBusiness.length > 0 ? (
+          <ul className="space-y-0.5">
+            {linesOfBusiness.map((line) => (
+              <li key={line} className="text-base font-medium text-current">
+                {line}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-base font-medium text-current">Policy</p>
+        )}
+      </div>
+      <dl className="relative z-10 mt-7 grid gap-5 border-t border-current/15 pt-4 sm:grid-cols-3">
+        {[
+          ["Named insured", policy.insuredName || "Not listed"],
+          ["Policy number", policy.policyNumber || "Not listed"],
+          ["Policy period", policyPeriod(policy)],
+        ].map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <dt className="text-label text-current opacity-55">{label}</dt>
+            <dd className="mt-1 break-words text-base text-current opacity-85">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function PolicyPanel({
+  policy,
+  branded,
+}: {
+  policy: Policy;
+  branded: boolean;
+}) {
   const coverageBreakdown =
     policy.coverageBreakdown ?? buildCoverageBreakdown(policy);
 
   return (
     <section className="space-y-5 py-7">
-      <OperationalLabelValueList>
-        <OperationalLabelValueRow label="Named insured" value={policy.insuredName} />
-        <OperationalLabelValueRow label="Carrier" value={policy.carrier ?? "Not listed"} />
-        <OperationalLabelValueRow label="Policy number" value={policy.policyNumber} />
-        <OperationalLabelValueRow
-          label="Lines of business"
-          value={policyLineBusinessLabels(policy).join(", ") || "Not listed"}
-        />
-        <OperationalLabelValueRow label="Policy period" value={policyPeriod(policy)} />
-      </OperationalLabelValueList>
+      {branded ? (
+        <BrandedPolicyIdentity policy={policy} />
+      ) : (
+        <OperationalLabelValueList>
+          <OperationalLabelValueRow label="Named insured" value={policy.insuredName} />
+          <OperationalLabelValueRow label="Carrier" value={policy.carrier ?? "Not listed"} />
+          <OperationalLabelValueRow label="Policy number" value={policy.policyNumber} />
+          <OperationalLabelValueRow
+            label="Lines of business"
+            value={policyLineBusinessLabels(policy).join(", ") || "Not listed"}
+          />
+          <OperationalLabelValueRow label="Policy period" value={policyPeriod(policy)} />
+        </OperationalLabelValueList>
+      )}
 
       <CoverageBreakdownCards breakdown={coverageBreakdown} />
     </section>
@@ -202,7 +270,9 @@ export default async function ImessageSharePage({
           </section>
         ) : null}
 
-        {view.policy ? <PolicyPanel policy={view.policy} /> : null}
+        {view.policy ? (
+          <PolicyPanel policy={view.policy} branded={view.kind === "policy"} />
+        ) : null}
       </div>
     </main>
   );

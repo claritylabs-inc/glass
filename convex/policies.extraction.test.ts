@@ -121,6 +121,95 @@ describe("policies.updateExtractionInternal", () => {
     });
   });
 
+  test("stores source provenance on extracted scheduled policy parties", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Carrier",
+        policyNumber: "POL-123",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        additionalNamedInsureds: [
+          {
+            name: "Town of Milton",
+            documentNodeId: "policy:source_node:additional-insured",
+            sourceSpanIds: ["policy:span:additional-insured"],
+            sourceTextHash: "additional-insured-hash",
+            pageStart: 2,
+            pageEnd: 2,
+          },
+        ],
+        lossPayees: [
+          {
+            name: "First Bank",
+            role: "loss_payee",
+            documentNodeId: "policy:source_node:loss-payee",
+            sourceSpanIds: ["policy:span:loss-payee"],
+            sourceTextHash: "loss-payee-hash",
+            pageStart: 4,
+            pageEnd: 4,
+          },
+        ],
+        mortgageHolders: [
+          {
+            name: "Second Bank",
+            role: "mortgage_holder",
+            documentNodeId: "policy:source_node:mortgage-holder",
+            sourceSpanIds: ["policy:span:mortgage-holder"],
+            sourceTextHash: "mortgage-holder-hash",
+            pageStart: 5,
+            pageEnd: 5,
+          },
+        ],
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.additionalNamedInsureds?.[0]).toMatchObject({
+      name: "Town of Milton",
+      documentNodeId: "policy:source_node:additional-insured",
+      sourceSpanIds: ["policy:span:additional-insured"],
+      sourceTextHash: "additional-insured-hash",
+      pageStart: 2,
+      pageEnd: 2,
+    });
+    expect(policy?.lossPayees?.[0]).toMatchObject({
+      name: "First Bank",
+      role: "loss_payee",
+      documentNodeId: "policy:source_node:loss-payee",
+      sourceSpanIds: ["policy:span:loss-payee"],
+      sourceTextHash: "loss-payee-hash",
+      pageStart: 4,
+      pageEnd: 4,
+    });
+    expect(policy?.mortgageHolders?.[0]).toMatchObject({
+      name: "Second Bank",
+      role: "mortgage_holder",
+      documentNodeId: "policy:source_node:mortgage-holder",
+      sourceSpanIds: ["policy:span:mortgage-holder"],
+      sourceTextHash: "mortgage-holder-hash",
+      pageStart: 5,
+      pageEnd: 5,
+    });
+  });
+
   test("drops provenance-only address shells without rejecting the extraction update", async () => {
     const t = convexTest(schema, modules);
     const policyId = await t.run(async (ctx) => {

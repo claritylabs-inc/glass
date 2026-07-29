@@ -26,4 +26,43 @@ describe("PolicyListItem", () => {
     expect(numeric).toContain("Mar 15, 2026 – Mar 15, 2027");
     expect(named).toContain("Mar 8, 2026 – Mar 8, 2027");
   });
+
+  it("renders each product line separately instead of joining them with dots", () => {
+    const markup = renderToStaticMarkup(
+      <PolicyListItem
+        carrier="Northwoods Continental"
+        policyNumber="NWC-100"
+        linesOfBusiness={["EO", "OLIB"]}
+        pipelineStatus="complete"
+      />,
+    );
+
+    expect(markup).toContain("<li");
+    expect(markup).toContain("Errors &amp; Omissions");
+    expect(markup).toContain("Other Liability");
+    expect(markup).not.toContain("Errors &amp; Omissions · Other Liability");
+  });
+
+  it("uses a restrained carrier-derived color, readable text, a favicon, and a softly masked pattern", () => {
+    const markup = renderToStaticMarkup(
+      <PolicyListItem
+        carrier="Clearcover"
+        carrierBrand={{
+          accentColor: "#FDE047",
+          iconUrl: "https://clearcover.example/favicon.png",
+        }}
+        policyNumber="CC-100"
+        linesOfBusiness={["AUTOB"]}
+        pipelineStatus="complete"
+      />,
+    );
+
+    expect(markup).toContain("background-color:#5C5C3E");
+    expect(markup).toContain("color:#FFFFFF");
+    expect(markup).toContain("repeating-");
+    expect(markup).toContain("radial-gradient(ellipse at 100% 100%");
+    expect(markup).toContain("https://clearcover.example/favicon.png");
+    expect(markup).not.toContain("uppercase");
+    expect(markup).not.toContain("inset-x-0 top-0 h-1");
+  });
 });

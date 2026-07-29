@@ -15,9 +15,9 @@ import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 function VendorPoliciesLoadingSkeleton() {
   return (
-    <div className="space-y-2">
+    <div className="grid gap-3 md:grid-cols-2">
       {Array.from({ length: 4 }).map((_, index) => (
-        <Skeleton key={index} className="h-14 w-full rounded-lg" />
+        <Skeleton key={index} className="h-44 w-full rounded-xl" />
       ))}
     </div>
   );
@@ -72,11 +72,12 @@ export default function ConnectedVendorPoliciesPage({
             </OperationalPanelBody>
           </OperationalPanel>
         ) : (
-          <OperationalPanel as="div">
+          <div className="grid gap-3 md:grid-cols-2">
             {rows.map((policy) => (
               <PolicyListItem
                 key={policy._id}
                 carrier={policy.carrier}
+                carrierBrand={policy.carrierBrand}
                 generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                 policyNumber={policy.policyNumber}
                 linesOfBusiness={policy.linesOfBusiness}
@@ -93,7 +94,7 @@ export default function ConnectedVendorPoliciesPage({
                 }
               />
             ))}
-          </OperationalPanel>
+          </div>
         )}
       </div>
     </AppShell>

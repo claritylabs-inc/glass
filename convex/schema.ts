@@ -29,11 +29,13 @@ const extractionTraceRoutingValidator = v.object({
   routeSource: v.optional(v.string()),
   attemptCount: v.optional(v.number()),
   shadowMode: v.optional(v.boolean()),
-  wouldHaveChosen: v.optional(v.object({
-    provider: modelProviderValidator,
-    model: v.string(),
-    decision: v.string(),
-  })),
+  wouldHaveChosen: v.optional(
+    v.object({
+      provider: modelProviderValidator,
+      model: v.string(),
+      decision: v.string(),
+    }),
+  ),
   wouldHaveMatched: v.optional(v.boolean()),
 });
 
@@ -201,16 +203,20 @@ const policyDetailOverridesValidator = v.object({
       email: v.string(),
     }),
   ),
-  insurer: v.optional(v.object({
-    name: v.string(),
-    address: orgMailingAddressValidator,
-    naicNumber: v.string(),
-  })),
-  generalAgent: v.optional(v.object({
-    name: v.string(),
-    address: orgMailingAddressValidator,
-    licenseNumber: v.string(),
-  })),
+  insurer: v.optional(
+    v.object({
+      name: v.string(),
+      address: orgMailingAddressValidator,
+      naicNumber: v.string(),
+    }),
+  ),
+  generalAgent: v.optional(
+    v.object({
+      name: v.string(),
+      address: orgMailingAddressValidator,
+      licenseNumber: v.string(),
+    }),
+  ),
   // Read compatibility for overrides saved before General Agent nomenclature.
   mga: v.optional(policyDetailPartyValidator),
 });
@@ -424,7 +430,9 @@ export default defineSchema({
         fein: v.optional(orgProfileScalarFactValidator),
         businessNumber: v.optional(orgProfileScalarFactValidator),
         operationsDescription: v.optional(orgProfileScalarFactValidator),
-        additionalNamedInsureds: v.optional(v.array(orgProfileScalarFactValidator)),
+        additionalNamedInsureds: v.optional(
+          v.array(orgProfileScalarFactValidator),
+        ),
       }),
     ),
     profileFactsUpdatedAt: v.optional(v.number()),
@@ -530,6 +538,26 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"])
     .index("by_orgId_userId", ["orgId", "userId"]),
+
+  // Public carrier identity cached from the carrier's official website.
+  // Policies link to this shared record so repeated carriers reuse one model
+  // lookup, favicon, and accent selection.
+  carrierBrands: defineTable({
+    normalizedName: v.string(),
+    carrierName: v.string(),
+    website: v.string(),
+    websiteTitle: v.optional(v.string()),
+    iconStorageId: v.optional(v.id("_storage")),
+    accentColor: v.string(),
+    confidence: v.union(
+      v.literal("high"),
+      v.literal("medium"),
+      v.literal("low"),
+    ),
+    sourceUrls: v.array(v.string()),
+    enrichmentVersion: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_normalizedName", ["normalizedName"]),
 
   operatorAuthNonces: defineTable({
     nonce: v.string(),
@@ -1044,11 +1072,13 @@ export default defineSchema({
     // Legacy staging/prod rows from the pre-redesign requirement model do not
     // have kind/scope yet. Keep these optional until all environments have run
     // the compliance requirement shape backfill.
-    kind: v.optional(v.union(
-      v.literal("coverage"),
-      v.literal("insurer"),
-      v.literal("condition"),
-    )),
+    kind: v.optional(
+      v.union(
+        v.literal("coverage"),
+        v.literal("insurer"),
+        v.literal("condition"),
+      ),
+    ),
     scope: v.optional(v.union(v.literal("own_org"), v.literal("vendors"))),
     title: v.string(),
     requirementText: v.string(),
@@ -1121,11 +1151,7 @@ export default defineSchema({
     deductibleValueType: v.optional(v.string()),
     originalContent: v.optional(v.string()),
     appliesTo: v.optional(
-      v.union(
-        v.literal("vendors"),
-        v.literal("own_org"),
-        v.literal("both"),
-      ),
+      v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
     evaluationTarget: v.optional(
       v.union(
@@ -1201,10 +1227,7 @@ export default defineSchema({
     ),
     checkedByUserId: v.optional(v.id("users")),
   })
-    .index("by_requirementId_subjectOrgId", [
-      "requirementId",
-      "subjectOrgId",
-    ])
+    .index("by_requirementId_subjectOrgId", ["requirementId", "subjectOrgId"])
     .index("by_orgId_subjectOrgId", ["orgId", "subjectOrgId"])
     .index("by_relationshipId", ["relationshipId"])
     .index("by_requirementId_subjectOrgId_checkedBy_checkedAt", [
@@ -1267,6 +1290,12 @@ export default defineSchema({
     carrier: v.string(), // backward compat — prefer security for new extractions
     security: v.optional(v.string()), // insurer/underwriter company (e.g. "Lloyd's Underwriters")
     underwriter: v.optional(v.string()), // named individual underwriter (e.g. "Libby Rudd")
+    carrierBrandId: v.optional(v.id("carrierBrands")),
+    carrierBrandStatus: v.optional(
+      v.union(v.literal("pending"), v.literal("ready"), v.literal("failed")),
+    ),
+    carrierBrandAttempts: v.optional(v.number()),
+    carrierBrandAttemptedAt: v.optional(v.number()),
     // Read compatibility for policies extracted before generalAgent.
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
@@ -1370,6 +1399,11 @@ export default defineSchema({
           ),
           relationship: v.optional(v.string()),
           scope: v.optional(v.string()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
+          pageStart: v.optional(v.number()),
+          pageEnd: v.optional(v.number()),
         }),
       ),
     ),
@@ -1391,6 +1425,11 @@ export default defineSchema({
           ),
           relationship: v.optional(v.string()),
           scope: v.optional(v.string()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
+          pageStart: v.optional(v.number()),
+          pageEnd: v.optional(v.number()),
         }),
       ),
     ),
@@ -1411,6 +1450,8 @@ export default defineSchema({
         documentNodeId: v.optional(v.string()),
         sourceSpanIds: v.optional(v.array(v.string())),
         sourceTextHash: v.optional(v.string()),
+        pageStart: v.optional(v.number()),
+        pageEnd: v.optional(v.number()),
       }),
     ),
     insuredEntityType: v.optional(v.string()), // corporation, llc, partnership, etc.
@@ -1431,6 +1472,11 @@ export default defineSchema({
               formatted: v.optional(v.string()),
             }),
           ),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
+          pageStart: v.optional(v.number()),
+          pageEnd: v.optional(v.number()),
         }),
       ),
     ),

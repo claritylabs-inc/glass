@@ -3,9 +3,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
+import { BrandIcon } from "@/components/ui/brand-icon";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
-import { formatDisplayDate } from "@/lib/date-format";
+import {
+  formatDisplayDate,
+  formatDisplayPolicyPeriod,
+} from "@/lib/date-format";
+import { policyCardBranding } from "@/lib/policy-card-branding";
+import { cn } from "@/lib/utils";
 
 type UploadedBySide =
   | "broker"
@@ -14,8 +20,16 @@ type UploadedBySide =
   | "agent_email"
   | undefined;
 
+type CarrierBrand = {
+  name?: string | null;
+  website?: string | null;
+  accentColor?: string | null;
+  iconUrl?: string | null;
+};
+
 interface PolicyListItemProps {
   carrier: string;
+  carrierBrand?: CarrierBrand | null;
   generalAgent?: string;
   policyNumber: string;
   linesOfBusiness?: readonly string[];
@@ -33,14 +47,20 @@ interface PolicyListItemProps {
 function ProvenanceBadge({ side }: { side: UploadedBySide }) {
   if (side === "broker") {
     return (
-      <Badge variant="secondary">
+      <Badge
+        variant="outline"
+        className="border-current/20 bg-transparent text-current"
+      >
         Broker provided
       </Badge>
     );
   }
   if (side === "email_scan") {
     return (
-      <Badge variant="outline">
+      <Badge
+        variant="outline"
+        className="border-current/20 bg-transparent text-current"
+      >
         Email scan
       </Badge>
     );
@@ -51,8 +71,7 @@ function ProvenanceBadge({ side }: { side: UploadedBySide }) {
 function cleanField(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  if (/^extracting/i.test(trimmed)) return undefined;
+  if (!trimmed || /^extracting/i.test(trimmed)) return undefined;
   return trimmed;
 }
 
@@ -65,6 +84,7 @@ function formatPolicyDate(value: string | undefined): string | undefined {
 
 export function PolicyListItem({
   carrier,
+  carrierBrand,
   generalAgent,
   policyNumber,
   linesOfBusiness,
@@ -88,45 +108,72 @@ export function PolicyListItem({
   const fileNameClean = cleanField(fileName ?? undefined);
   const effectiveClean = formatPolicyDate(effectiveDate);
   const expirationClean = formatPolicyDate(expirationDate);
-
-  const lobLabels = policyLobCodes({ linesOfBusiness })
+  const productLines = policyLobCodes({ linesOfBusiness })
     .filter((code) => code !== "UN")
     .map(lobLabel);
-  const productLine =
-    lobLabels.length > 2
-      ? `${lobLabels.slice(0, 2).join(" · ")} +${lobLabels.length - 2}`
-      : lobLabels.join(" · ");
-  const sourceName = generalAgentClean ?? carrierClean;
+  const visibleProductLines = productLines.slice(0, 3);
+  const hiddenProductLineCount = Math.max(
+    0,
+    productLines.length - visibleProductLines.length,
+  );
+  const issuerName =
+    carrierClean ??
+    cleanField(carrierBrand?.name ?? undefined) ??
+    generalAgentClean ??
+    "Insurance carrier";
+  const coveragePeriod =
+    formatDisplayPolicyPeriod(effectiveClean, expirationClean) ||
+    (isProcessing || isProvisional ? "Pending extraction" : "Not listed");
+  const fallbackTitle =
+    policyNumberClean ??
+    fileNameClean ??
+    (isProcessing ? "New policy upload" : "Policy");
+  const { patternStyle, surfaceStyle } = policyCardBranding(
+    issuerName,
+    carrierBrand?.accentColor,
+  );
+  const isInteractive = Boolean(href || onClick);
+  const cardClassName = cn(
+    "group relative flex min-h-44 min-w-0 flex-col overflow-hidden rounded-xl border border-black/10 text-left shadow-[0_2px_8px_rgba(0,0,0,0.08)]",
+    isInteractive && [
+      "transition-[filter,box-shadow] duration-150 ease-out",
+      "hover:brightness-[0.97] hover:shadow-[0_6px_18px_rgba(0,0,0,0.12)]",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2",
+      "focus-within:ring-2 focus-within:ring-ring/30",
+    ],
+  );
 
-  // Policy identity leads with what the coverage is (product line) and its
-  // number; the issuing carrier/GA is secondary.
-  const title =
-    productLine ||
-    policyNumberClean ||
-    sourceName ||
-    (isProcessing ? (fileNameClean ?? "New upload") : "Untitled policy");
-  const inlinePolicyNumber =
-    productLine && policyNumberClean ? policyNumberClean : undefined;
-  const subtitle = sourceName !== title ? sourceName : undefined;
-  const hasDates = effectiveClean && expirationClean;
-  const rowClass =
-    "flex items-center justify-between px-4 py-3 border-t border-foreground/4 first:border-t-0 hover:bg-muted/40 transition-colors";
   const content = (
-    <>
-      <div className="space-y-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-base font-medium text-foreground truncate">
-            {title}
-          </span>
-          {inlinePolicyNumber ? (
-            <span className="text-base text-muted-foreground truncate">
-              {inlinePolicyNumber}
-            </span>
-          ) : null}
+    <div className="relative flex h-full min-h-44 flex-col overflow-hidden p-4">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={patternStyle}
+      />
+      <div className="relative z-10 flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <BrandIcon
+            src={carrierBrand?.iconUrl}
+            name={issuerName}
+            size="lg"
+            className="size-8 rounded-md bg-background"
+          />
+          <div className="min-w-0">
+            <p className="truncate text-label font-medium text-current opacity-85">
+              {issuerName}
+            </p>
+            {generalAgentClean && generalAgentClean !== issuerName ? (
+              <p className="truncate text-tag text-current opacity-55">
+                via {generalAgentClean}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
           {isProcessing ? (
             <Badge
               variant="outline"
-              className="text-label text-muted-foreground"
+              className="border-current/20 bg-transparent text-current"
             >
               Extracting
             </Badge>
@@ -134,51 +181,98 @@ export function PolicyListItem({
           {isProvisional ? (
             <Badge
               variant="outline"
-              className="text-label text-muted-foreground"
+              className="border-current/20 bg-transparent text-current"
             >
               Enriching
             </Badge>
           ) : null}
           <ProvenanceBadge side={uploadedBySide} />
         </div>
-        {subtitle ? (
-          <p className="text-label text-muted-foreground truncate">
-            {subtitle}
+      </div>
+
+      <div className="relative z-10 mt-5 mb-3 min-h-12">
+        <dt className="text-tag font-medium text-current opacity-55 mb-1">
+          Product lines
+        </dt>
+        {visibleProductLines.length > 0 ? (
+          <ul
+            className="space-y-0.5"
+            aria-label="Policy lines of business"
+          >
+            {visibleProductLines.map((productLine, index) => (
+              <li
+                key={`${productLine}-${index}`}
+                className="truncate text-base font-medium leading-5 text-current"
+              >
+                {productLine}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="truncate text-base font-medium leading-5 text-current">
+            {fallbackTitle}
+          </p>
+        )}
+        {hiddenProductLineCount > 0 ? (
+          <p className="mt-1 text-tag text-current opacity-55">
+            +{hiddenProductLineCount} more{" "}
+            {hiddenProductLineCount === 1 ? "coverage" : "coverages"}
           </p>
         ) : null}
       </div>
-      {hasDates ? (
-        <span className="text-label text-muted-foreground hidden sm:block shrink-0 ml-4">
-          {effectiveClean} – {expirationClean}
-        </span>
-      ) : null}
-    </>
+
+      <dl className="relative z-10 mt-auto grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)] gap-4 border-t border-current/15 pt-3">
+        <div className="min-w-0">
+          <dt className="text-tag font-medium text-current opacity-55">
+            Policy number
+          </dt>
+          <dd className="mt-1 truncate text-label text-current opacity-85">
+            {policyNumberClean ?? (isProcessing ? "Pending" : "Not listed")}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-tag font-medium text-current opacity-55">
+            Coverage period
+          </dt>
+          <dd className="mt-1 truncate text-label text-current opacity-85">
+            {coveragePeriod}
+          </dd>
+        </div>
+      </dl>
+    </div>
   );
 
-  if (href) {
-    if (trailingAction) {
-      return (
-        <div className={rowClass}>
-          <Link
-            href={href}
-            prefetch
-            className="flex min-w-0 flex-1 items-center justify-between"
-          >
-            {content}
-          </Link>
-          <div className="ml-4 shrink-0">{trailingAction}</div>
-        </div>
-      );
-    }
+  if (href && trailingAction) {
     return (
-      <Link href={href} prefetch className={rowClass}>
+      <div className={cardClassName} style={surfaceStyle}>
+        <Link href={href} prefetch className="min-h-0 flex-1">
+          {content}
+        </Link>
+        <div className="flex justify-end px-4 pb-4">{trailingAction}</div>
+      </div>
+    );
+  }
+  if (href) {
+    return (
+      <Link href={href} prefetch className={cardClassName} style={surfaceStyle}>
         {content}
       </Link>
     );
   }
-
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={cardClassName}
+        style={surfaceStyle}
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    );
+  }
   return (
-    <div className={rowClass} onClick={onClick}>
+    <div className={cardClassName} style={surfaceStyle}>
       {content}
     </div>
   );

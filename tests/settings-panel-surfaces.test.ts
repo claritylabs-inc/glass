@@ -119,12 +119,12 @@ describe("settings panel surfaces", () => {
     expect(summary).toContain('className="border-t border-foreground/6"');
     expect(summary).not.toContain("function SummaryRow");
     expect(summary).toContain('label="Policy number"');
-    expect(summary).toContain('label="Lines of business"');
+    expect(summary).toContain('label="Product lines"');
     expect(summary).toContain('label="Policy period"');
     expect(summary).toContain('label="Premium"');
     expect(summary).toContain('label="Taxes & fees"');
     expect(summary).toContain('label="Total payable"');
-    expect(summary).toContain("sm:justify-end");
+    expect(summary).toContain("sm:items-end");
     expect(summary.match(/<OperationalLabelValueRow/g)).toHaveLength(7);
     expect(summary.match(/align="right"/g)).toHaveLength(7);
     expect(summary).toContain("@lg:flex-row @lg:items-start");
@@ -148,7 +148,7 @@ describe("settings panel surfaces", () => {
       'align === "right" && "sm:text-right"',
     );
     const editActionIndex = summary.indexOf("{onEdit ?");
-    const renewalStatusIndex = summary.indexOf("{isRenewal &&");
+    const renewalStatusIndex = summary.indexOf("{isRenewal ?");
     const lifecycleStatusIndex = summary.indexOf("<StatusBadge");
     expect(editActionIndex).toBeGreaterThan(-1);
     expect(renewalStatusIndex).toBeGreaterThan(-1);

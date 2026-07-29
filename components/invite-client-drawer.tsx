@@ -75,6 +75,12 @@ type DraftPolicyRow = {
   pipelineStatus?: string;
   extractionDataStage?: string;
   uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email";
+  carrierBrand?: {
+    name?: string | null;
+    website?: string | null;
+    accentColor?: string | null;
+    iconUrl?: string | null;
+  } | null;
 };
 
 type BrokerClientRow = {
@@ -593,11 +599,12 @@ export function InviteClientDrawer({
               Loading policy uploads…
             </OperationalPanel>
           ) : existingPolicies && existingPolicies.length > 0 ? (
-            <OperationalPanel as="div" className="mb-2">
+            <div className="mb-2 grid gap-2">
               {existingPolicies.map((policy) => (
                 <PolicyListItem
                   key={policy._id}
                   carrier={policy.carrier ?? ""}
+                  carrierBrand={policy.carrierBrand}
                   generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                   policyNumber={policy.policyNumber ?? ""}
                   linesOfBusiness={policy.linesOfBusiness}
@@ -609,7 +616,7 @@ export function InviteClientDrawer({
                   uploadedBySide={policy.uploadedBySide}
                 />
               ))}
-            </OperationalPanel>
+            </div>
           ) : null}
           <button
             type="button"

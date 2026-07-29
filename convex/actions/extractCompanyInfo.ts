@@ -9,6 +9,10 @@ import { generateObjectForOrg } from "../lib/models";
 import { INDUSTRIES } from "../lib/industries";
 import { runWebRetrieval } from "../lib/webRetrieval";
 import {
+  normalizePublicWebsiteUrl,
+  storeWebsiteFavicon,
+} from "../lib/websiteBrand";
+import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "../lib/userFacingErrors";
@@ -54,70 +58,13 @@ type OrgLogoImportResult =
   | { success: true; iconStorageId: Id<"_storage">; error?: undefined }
   | { success: false; iconStorageId?: undefined; error: string };
 
-function normalizeWebsiteUrl(url: string) {
-  const trimmed = url.trim();
-  if (!trimmed) return "";
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
-
-async function fetchFavicon(siteUrl: string): Promise<Blob | null> {
-  let base: URL;
-  try {
-    base = new URL(siteUrl);
-  } catch {
-    return null;
-  }
-
-  const candidates: string[] = [];
-  try {
-    const pageRes = await fetch(base.toString(), {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; GlassBot/1.0)" },
-    });
-    if (pageRes.ok) {
-      const html = await pageRes.text();
-      const iconMatches = html.matchAll(
-        /<link[^>]+rel=["']([^"']*icon[^"']*)["'][^>]*href=["']([^"']+)["']/gi,
-      );
-      for (const m of iconMatches) candidates.push(m[2]);
-      const reverseMatches = html.matchAll(
-        /<link[^>]+href=["']([^"']+)["'][^>]*rel=["']([^"']*icon[^"']*)["']/gi,
-      );
-      for (const m of reverseMatches) candidates.push(m[1]);
-    }
-  } catch {
-    // ignore
-  }
-
-  candidates.push("/apple-touch-icon.png", "/favicon.ico");
-  candidates.push(`https://www.google.com/s2/favicons?domain=${base.hostname}&sz=128`);
-
-  for (const candidate of candidates) {
-    try {
-      const absolute = new URL(candidate, base).toString();
-      const res = await fetch(absolute, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; GlassBot/1.0)" },
-      });
-      if (!res.ok) continue;
-      const contentType = res.headers.get("content-type") ?? "";
-      if (!contentType.startsWith("image/") && !absolute.endsWith(".ico")) continue;
-      const buffer = await res.arrayBuffer();
-      if (buffer.byteLength < 64 || buffer.byteLength > 512 * 1024) continue;
-      return new Blob([buffer], { type: contentType || "image/x-icon" });
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
 async function storeFaviconForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
   url: string,
 ) {
-  const iconBlob = await fetchFavicon(url);
-  if (!iconBlob) return null;
-  const iconStorageId = await ctx.storage.store(iconBlob);
+  const iconStorageId = await storeWebsiteFavicon(ctx, url);
+  if (!iconStorageId) return null;
   await ctx.runMutation(internal.orgs.setIconInternal, {
     orgId,
     iconStorageId,
@@ -130,7 +77,7 @@ async function importOrgLogoForOrg(
   orgId: Id<"organizations">,
   rawUrl: string,
 ): Promise<OrgLogoImportResult> {
-  const url = normalizeWebsiteUrl(rawUrl);
+  const url = normalizePublicWebsiteUrl(rawUrl);
   if (!url) return { success: false, error: "Website URL is required" } as const;
   const iconStorageId = await storeFaviconForOrg(ctx, orgId, url);
   if (!iconStorageId) {
@@ -147,7 +94,7 @@ async function extractAndApplyCompanyInfo(
   targetOrgId: Id<"organizations">,
   rawUrl: string,
 ): Promise<ExtractCompanyInfoResult> {
-  const url = normalizeWebsiteUrl(rawUrl);
+  const url = normalizePublicWebsiteUrl(rawUrl);
   if (!url) return { error: "Website URL is required" };
 
   const faviconPromise = storeFaviconForOrg(ctx, targetOrgId, url).catch(() => null);
