@@ -13,7 +13,7 @@ import {
 import type { Phase, PhaseResult } from "@claritylabs/cl-pipelines";
 import { buildExtractor, runCoverageRecovery } from "../lib/extraction";
 import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
-import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
+import { preparePdfTextWithParserFallback, tryConvertPdfWithLiteParse } from "../lib/liteparsePreprocessor";
 import type { ExtractionResult, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";
@@ -1405,6 +1405,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               reconciliationStatus: "error" as const,
             });
           }
+
+          await convexCtx.runMutation(
+            (internal as any).policies.archiveRejectedDocumentInternal,
+            {
+              id: policyId,
+              userId: state.userId,
+            },
+          );
 
           return { kind: "error", error: rejectionSummary };
         }
@@ -3080,6 +3088,108 @@ export const backfillStoredCoverageRecovery = internalAction({
 
 // ─── Entry point: start from upload ───────────────────────────────────────────
 
+/**
+ * Mirrors the in-Convex extract-phase document gate for external worker mode,
+ * where the worker never runs `classifyInsuranceExtractability`. Runs before the
+ * job is handed to the external queue so non-policy documents are rejected with
+ * a user-facing error instead of completing as empty "Unknown" policies.
+ * Returns true when the document was rejected and the handoff must not happen.
+ */
+async function rejectedByDocumentGateBeforeExternalHandoff(
+  ctx: ActionCtx,
+  params: {
+    policyId: string;
+    state: {
+      fileId?: string;
+      fileName?: string;
+      orgId?: string;
+      userId?: string;
+      traceId?: string;
+    };
+  },
+): Promise<boolean> {
+  const { fileId, fileName, orgId, userId, traceId } = params.state;
+  if (!fileId || !orgId) return false;
+  let gateDecision: ExtractionGateDecision;
+  try {
+    const pdfBytes = await loadPdfBytes(ctx, fileId);
+    if (!pdfBytes) return false;
+    const converted = await tryConvertPdfWithLiteParse({
+      pdfBytes,
+      documentId: params.policyId,
+      sourceKind: "policy_pdf",
+    });
+    const sourceSpans = converted?.sourceSpans?.length
+      ? converted.sourceSpans
+      : (await preparePdfTextWithParserFallback({
+          pdfBytes,
+          documentId: params.policyId,
+          sourceKind: "policy_pdf",
+        })).sourceSpans;
+    gateDecision = await classifyInsuranceExtractability({
+      ctx,
+      orgId: orgId as Id<"organizations">,
+      traceId,
+      policyId: params.policyId,
+      pdfBytes,
+      sourceSpans,
+    });
+  } catch (error) {
+    // Gate parity with the in-Convex path: never block extraction on gate
+    // infrastructure failures.
+    await traceEvent(ctx, traceId, {
+      kind: "log",
+      phase: "gate",
+      level: "warn",
+      message: `Document gate failed; continuing extraction (${error instanceof Error ? error.message : String(error)})`,
+    });
+    return false;
+  }
+  await traceEvent(ctx, traceId, {
+    kind: "log",
+    phase: "gate",
+    message: `Document gate: ${gateDecision.classification} (${Math.round(gateDecision.confidence * 100)}% confidence) — ${gateDecision.reason}`,
+  });
+  if (!shouldRejectDocument(gateDecision)) return false;
+
+  const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
+  await ctx.runMutation(
+    (internal as any).policies.updateExtractionInternal,
+    {
+      id: params.policyId,
+      fields: {
+        carrier: "Non-insurance document",
+        policyNumber: "Not applicable",
+        linesOfBusiness: ["UN"],
+        insuredName: "Not applicable",
+        effectiveDate: "Not applicable",
+        expirationDate: "Not applicable",
+        summary: rejectionSummary,
+        excludeFromSearch: true,
+      },
+    },
+  );
+  await ctx.runMutation((internal as any).policies.updateFiles, {
+    id: params.policyId,
+    files: [
+      {
+        fileId: fileId as Id<"_storage">,
+        fileName: fileName || "upload.pdf",
+        fileType: "unknown",
+        status: "not_insurance",
+      },
+    ],
+    reconciliationStatus: "error" as const,
+  });
+  await ctx.runMutation((internal as any).policies.pipelineRejectExternalJob, {
+    jobId: params.policyId,
+    error: rejectionSummary,
+    userId,
+  });
+  await completeTraceSession(ctx, traceId, "error", rejectionSummary);
+  return true;
+}
+
 export const startPolicyExtractionFromUpload = internalAction({
   args: {
     policyId: v.id("policies"),
@@ -3107,23 +3217,32 @@ export const startPolicyExtractionFromUpload = internalAction({
       fileName,
     });
     if (EXTERNAL_WORKER_MODE) {
+      const externalState = {
+        sourceKind: "upload",
+        fileId: String(fileId),
+        fileName,
+        orgId: String(orgId),
+        userId: String(userId),
+        policyFileId: policyFileId ? String(policyFileId) : undefined,
+        policyVersionKind,
+        coverageRecovery,
+        traceId,
+      };
+      if (
+        await rejectedByDocumentGateBeforeExternalHandoff(ctx, {
+          policyId: String(policyId),
+          state: externalState,
+        })
+      ) {
+        return;
+      }
       await ctx.runMutation(internal.policies.pipelineClearLog, {
         jobId: String(policyId),
       });
       await clearArtifacts(ctx, String(policyId));
       await ctx.runMutation((internal as any).policies.pipelineStartExternalWorkerJob, {
         jobId: String(policyId),
-        state: {
-          sourceKind: "upload",
-          fileId: String(fileId),
-          fileName,
-          orgId: String(orgId),
-          userId: String(userId),
-          policyFileId: policyFileId ? String(policyFileId) : undefined,
-          policyVersionKind,
-          coverageRecovery,
-          traceId,
-        },
+        state: externalState,
       });
       return;
     }
@@ -3238,6 +3357,15 @@ export const retryPolicyExtraction = internalAction({
         traceId,
       };
       if (!nextState.fileId) throw new Error("Policy source file is missing");
+      if (
+        mode === "full" &&
+        (await rejectedByDocumentGateBeforeExternalHandoff(ctx, {
+          policyId: String(policyId),
+          state: nextState,
+        }))
+      ) {
+        return { success: true, traceId };
+      }
       if (mode === "full") {
         await ctx.runMutation(internal.policies.pipelineClearLog, {
           jobId: String(policyId),
