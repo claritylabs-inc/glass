@@ -353,7 +353,7 @@ const clRouter = CL_ROUTER_TASK_FLAGS.size > 0
       timeoutMs: CL_ROUTER_TIMEOUT_MS,
     })
   : null;
-const POLICY_PREVIEW_VERSION = "policy-preview-v1";
+const POLICY_PREVIEW_VERSION = "policy-preview-v2";
 const POLICY_PREVIEW_TEXT_LIMIT = readBoundedIntEnv(
   "EXTRACTION_PREVIEW_TEXT_LIMIT",
   120_000,
@@ -1973,7 +1973,6 @@ const PREVIEW_COVERAGE_FIELDS = [
   "limitType",
   "deductible",
   "deductibleType",
-  "originalContent",
 ] as const;
 
 const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
@@ -2039,7 +2038,6 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
           limitType: { type: ["string", "null"] },
           deductible: { type: ["string", "null"] },
           deductibleType: { type: ["string", "null"] },
-          originalContent: { type: ["string", "null"] },
         },
         required: [...PREVIEW_COVERAGE_FIELDS],
       },
@@ -2270,7 +2268,6 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
           limitType: cleanPreviewString(row.limitType),
           deductible: cleanPreviewString(row.deductible),
           deductibleType: cleanPreviewString(row.deductibleType),
-          originalContent: cleanPreviewParagraph(row.originalContent),
         });
       })
       .filter(Boolean)
