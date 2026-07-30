@@ -274,11 +274,12 @@ async function enrichPolicyCarrierIdentity(
     }
   }
 
+  const attemptedAt = dayjs().valueOf();
   const attempt = await ctx.runMutation(
     internal.carrierIdentityCache.markPolicyPendingInternal,
     {
       policyId,
-      attemptedAt: dayjs().valueOf(),
+      attemptedAt,
       allowReady: true,
     },
   );
@@ -552,12 +553,25 @@ Keep the extracted legal name intact; do not shorten it into a guessed brand. Do
       carrierName,
       error: error instanceof Error ? error.message : String(error),
     });
-    await ctx.runMutation(
+    const failureResult = await ctx.runMutation(
       internal.carrierIdentityCache.markPolicyFailedInternal,
-      { policyId },
+      { policyId, normalizedName, attemptedAt },
     );
+    if (failureResult.status === "identity_changed") {
+      await rescheduleChangedCarrierIdentity(ctx, policyId);
+      return { success: false as const, reason: "in_progress" };
+    }
+    if (failureResult.status === "ready") {
+      return { success: true as const, cached: true };
+    }
+    if (failureResult.status === "superseded") {
+      return { success: false as const, reason: "in_progress" };
+    }
     const retryDelay = RETRY_DELAYS_MS[attempt - 1];
-    if (retryDelay !== undefined) {
+    if (
+      failureResult.status === "failed" &&
+      retryDelay !== undefined
+    ) {
       await ctx.scheduler.runAfter(
         retryDelay,
         internal.actions.enrichCarrierIdentity.ensureInternal,

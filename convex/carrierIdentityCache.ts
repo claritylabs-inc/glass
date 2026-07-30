@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { normalizeCarrierIdentityName } from "./lib/carrierIdentityEnrichment";
 import {
   applyCarrierIdentityEnrichment,
@@ -8,6 +9,25 @@ import {
 } from "./lib/carrierIdentity";
 
 const PENDING_LEASE_MINUTES = 10;
+
+function normalizedPolicyCarrierNames(policy: Doc<"policies">) {
+  const identity = readCarrierIdentity(policy.carrierIdentity);
+  return (identity
+    ? [
+        identity.sourceName,
+        identity.displayName,
+        identity.operatingName,
+        ...identity.legalEntities.map((entity) => entity.name),
+      ]
+    : [
+        policy.carrier,
+        policy.insurer?.legalName,
+        policy.carrierLegalName,
+        policy.security,
+      ])
+    .filter((name): name is string => typeof name === "string")
+    .map(normalizeCarrierIdentityName);
+}
 
 export const getByNormalizedNameInternal = internalQuery({
   args: { normalizedName: v.string() },
@@ -55,16 +75,44 @@ export const markPolicyPendingInternal = internalMutation({
 });
 
 export const markPolicyFailedInternal = internalMutation({
-  args: { policyId: v.id("policies") },
+  args: {
+    policyId: v.id("policies"),
+    normalizedName: v.optional(v.string()),
+    attemptedAt: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy || policy.carrierIdentityEnrichmentStatus === "ready") {
-      return false;
+    if (!policy) return { status: "not_found" as const };
+    if (policy.carrierIdentityEnrichmentStatus === "ready") {
+      return { status: "ready" as const };
+    }
+    if (
+      args.normalizedName &&
+      !normalizedPolicyCarrierNames(policy).includes(args.normalizedName)
+    ) {
+      if (
+        args.attemptedAt === undefined ||
+        policy.carrierIdentityEnrichmentAttemptedAt === args.attemptedAt
+      ) {
+        await ctx.db.patch(args.policyId, {
+          carrierIdentityEnrichmentStatus: undefined,
+          carrierIdentityEnrichmentAttempts: undefined,
+          carrierIdentityEnrichmentAttemptedAt: undefined,
+        });
+      }
+      return { status: "identity_changed" as const };
+    }
+    if (
+      args.attemptedAt !== undefined &&
+      (policy.carrierIdentityEnrichmentStatus !== "pending" ||
+        policy.carrierIdentityEnrichmentAttemptedAt !== args.attemptedAt)
+    ) {
+      return { status: "superseded" as const };
     }
     await ctx.db.patch(args.policyId, {
       carrierIdentityEnrichmentStatus: "failed",
     });
-    return true;
+    return { status: "failed" as const };
   },
 });
 
@@ -127,21 +175,7 @@ export const applyToPolicyInternal = internalMutation({
     const cacheEntry = await ctx.db.get(args.cacheEntryId);
     if (!cacheEntry) return { applied: false, identityChanged: false };
     const identity = readCarrierIdentity(policy.carrierIdentity);
-    const currentNames = (identity
-      ? [
-          identity.sourceName,
-          identity.displayName,
-          identity.operatingName,
-          ...identity.legalEntities.map((entity) => entity.name),
-        ]
-      : [
-          policy.carrier,
-          policy.insurer?.legalName,
-          policy.carrierLegalName,
-          policy.security,
-        ])
-      .filter((name): name is string => typeof name === "string")
-      .map(normalizeCarrierIdentityName);
+    const currentNames = normalizedPolicyCarrierNames(policy);
     if (!currentNames.includes(args.normalizedName)) {
       await ctx.db.patch(args.policyId, {
         carrierIdentityEnrichmentStatus: undefined,

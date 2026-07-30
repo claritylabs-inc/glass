@@ -6,12 +6,14 @@ import { listForClient } from "./policies";
 import { CARRIER_IDENTITY_ENRICHMENT_VERSION } from "./lib/carrierIdentityEnrichment";
 import {
   applyToPolicyInternal,
+  markPolicyFailedInternal,
   upsertInternal,
 } from "./carrierIdentityCache";
 
 const modules = import.meta.glob("./**/*.ts");
 const listForClientFn = listForClient as any;
 const applyToPolicyInternalFn = applyToPolicyInternal as any;
+const markPolicyFailedInternalFn = markPolicyFailedInternal as any;
 const upsertInternalFn = upsertInternal as any;
 
 describe("carrier identity branding", () => {
@@ -234,6 +236,102 @@ describe("carrier identity branding", () => {
     expect(policy?.carrierIdentityEnrichmentStatus).toBeUndefined();
     expect(policy?.carrierIdentityEnrichmentAttempts).toBeUndefined();
     expect(policy?.carrierIdentityEnrichmentAttemptedAt).toBeUndefined();
+  });
+
+  it("does not mark a changed carrier failed after a stale lookup throws", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Replacement Carrier",
+        carrierIdentity: {
+          displayName: "Replacement Carrier",
+          sourceName: "Replacement Carrier Company",
+          legalEntities: [{
+            name: "Replacement Carrier Company",
+            sourceNodeIds: ["replacement-carrier"],
+            sourceSpanIds: ["span-replacement-carrier"],
+          }],
+          legalEntityRelationship: "single",
+          sourceNodeIds: ["replacement-carrier"],
+          sourceSpanIds: ["span-replacement-carrier"],
+        },
+        carrierIdentityEnrichmentStatus: "pending",
+        carrierIdentityEnrichmentAttempts: 3,
+        carrierIdentityEnrichmentAttemptedAt: 100,
+        policyNumber: "R-200",
+        linesOfBusiness: ["AUTOB"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Client",
+      });
+    });
+
+    const result = await t.mutation(markPolicyFailedInternalFn, {
+      policyId,
+      normalizedName: "original carrier",
+      attemptedAt: 100,
+    });
+    const policy = await t.run((ctx) => ctx.db.get(policyId));
+
+    expect(result).toEqual({ status: "identity_changed" });
+    expect(policy?.carrierIdentityEnrichmentStatus).toBeUndefined();
+    expect(policy?.carrierIdentityEnrichmentAttempts).toBeUndefined();
+    expect(policy?.carrierIdentityEnrichmentAttemptedAt).toBeUndefined();
+    expect(policy?.carrierIdentity).toMatchObject({
+      displayName: "Replacement Carrier",
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(policyId, {
+        carrierIdentityEnrichmentStatus: "pending",
+        carrierIdentityEnrichmentAttempts: 1,
+        carrierIdentityEnrichmentAttemptedAt: 200,
+      });
+    });
+    const supersededResult = await t.mutation(markPolicyFailedInternalFn, {
+      policyId,
+      normalizedName: "original carrier",
+      attemptedAt: 100,
+    });
+    const policyWithCurrentLease = await t.run((ctx) =>
+      ctx.db.get(policyId)
+    );
+    expect(supersededResult).toEqual({ status: "identity_changed" });
+    expect(policyWithCurrentLease).toMatchObject({
+      carrierIdentityEnrichmentStatus: "pending",
+      carrierIdentityEnrichmentAttempts: 1,
+      carrierIdentityEnrichmentAttemptedAt: 200,
+    });
+
+    const sameIdentitySuperseded = await t.mutation(
+      markPolicyFailedInternalFn,
+      {
+        policyId,
+        normalizedName: "replacement carrier company",
+        attemptedAt: 100,
+      },
+    );
+    expect(sameIdentitySuperseded).toEqual({ status: "superseded" });
+
+    const currentResult = await t.mutation(markPolicyFailedInternalFn, {
+      policyId,
+      normalizedName: "replacement carrier company",
+      attemptedAt: 200,
+    });
+    expect(currentResult).toEqual({ status: "failed" });
+    expect(
+      (await t.run((ctx) => ctx.db.get(policyId)))
+        ?.carrierIdentityEnrichmentStatus,
+    ).toBe("failed");
   });
 
   it("clears stale optional identity evidence when refreshing a cache row", async () => {

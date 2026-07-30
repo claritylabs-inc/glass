@@ -19,6 +19,9 @@ describe("policy carrier branding ownership", () => {
     expect(policyPage).not.toContain("enrichCarrierIdentity");
     expect(policyPage).not.toContain("CARRIER_IDENTITY_ENRICHMENT_VERSION");
     expect(carrierIdentityAction).not.toContain("export const ensure = action");
+    expect(carrierIdentityAction).toMatch(
+      /failureResult\.status === "identity_changed"[\s\S]*rescheduleChangedCarrierIdentity/,
+    );
     expect(
       extraction.match(
         /existingPolicyFields: fieldsWithPersistedCarrierIdentity\(\s*fields,\s*existingPolicy,\s*\)/g,

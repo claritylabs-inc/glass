@@ -1944,6 +1944,86 @@ describe("sourceTreePolicyFields", () => {
     });
   });
 
+  it("does not promote an incidental Lloyd's clause over the actual carrier", () => {
+    const spans: SourceSpanLike[] = [
+      {
+        id: "span-actual-carrier",
+        text: "Insurer: HDI Global Specialty SE",
+        pageStart: 1,
+      },
+      {
+        id: "span-prior-policy-carrier",
+        text:
+          "Prior policy: Lloyd's Underwriters led by Liberty Managing Agency Limited Syndicate 4472",
+        pageStart: 4,
+      },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "actual-carrier",
+        documentId: "incidental-lloyds-policy",
+        kind: "section",
+        title: "Insurer",
+        description: spans[0].text,
+        textExcerpt: spans[0].text,
+        sourceSpanIds: ["span-actual-carrier"],
+        order: 0,
+        path: "Policy / Insurer",
+      },
+      {
+        id: "prior-insurance",
+        documentId: "incidental-lloyds-policy",
+        kind: "section",
+        title: "Prior insurance",
+        description: spans[1].text,
+        textExcerpt: spans[1].text,
+        sourceSpanIds: ["span-prior-policy-carrier"],
+        order: 1,
+        path: "Policy / Prior insurance",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["GL"],
+        coverages: [],
+        insurer: {
+          value: "HDI Global Specialty SE",
+          sourceNodeIds: ["actual-carrier"],
+          sourceSpanIds: ["span-actual-carrier"],
+        },
+        parties: [{
+          role: "insurer",
+          name: "HDI Global Specialty SE",
+          sourceNodeIds: ["actual-carrier"],
+          sourceSpanIds: ["span-actual-carrier"],
+        }],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrier).toBe("HDI Global Specialty SE");
+    expect(fields.carrierIdentity).toEqual({
+      displayName: "HDI Global Specialty SE",
+      sourceName: "HDI Global Specialty SE",
+      legalEntities: [{
+        name: "HDI Global Specialty SE",
+        sourceNodeIds: ["actual-carrier"],
+        sourceSpanIds: ["span-actual-carrier"],
+      }],
+      legalEntityRelationship: "single",
+      sourceNodeIds: ["actual-carrier"],
+      sourceSpanIds: ["span-actual-carrier"],
+    });
+  });
+
   it("preserves Lloyd's lead underwriter and syndicates from source evidence", () => {
     const carrierText = [
       "LLOYD'S UNDERWRITERS LED BY: TOKIO",

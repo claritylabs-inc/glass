@@ -531,11 +531,25 @@ function parseLloydsIdentity(item: CarrierEvidence) {
   };
 }
 
-function lloydsLedByIdentity(evidence: CarrierEvidence[]) {
+function lloydsLedByIdentity(
+  evidence: CarrierEvidence[],
+  carrierPartyNames: string[],
+) {
   return evidence
     .flatMap((item) => {
       const parsed = parseLloydsIdentity(item);
-      return parsed ? [parsed] : [];
+      if (!parsed) return [];
+      const belongsToCarrier = [
+        "Lloyd's Underwriters",
+        parsed.displayName,
+        parsed.sourceName,
+        ...parsed.legalNames,
+      ].some((name) =>
+        carrierPartyNames.some((partyName) =>
+          sameCarrierIdentityName(name, partyName)
+        )
+      );
+      return belongsToCarrier ? [parsed] : [];
     })
     .sort((left, right) =>
       right.score - left.score ||
@@ -728,7 +742,10 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
       .map((party) => party.name),
     ...(insurerValueName ? [insurerValueName] : []),
   ]);
-  const lloydsIdentity = lloydsLedByIdentity(evidence);
+  const lloydsIdentity = lloydsLedByIdentity(
+    evidence,
+    carrierPartyNames,
+  );
   const operatingIdentity = operatingCarrierIdentity(
     evidence,
     carrierPartyNames,
