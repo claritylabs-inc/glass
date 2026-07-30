@@ -58,6 +58,12 @@ type PositionedRow = {
 
 const LITEPARSE_VERSION = "2.0.3";
 export const LITEPARSE_NATIVE_CONCURRENCY = 1;
+export const LITEPARSE_MAX_QUEUED_DOCUMENTS = readBoundedIntEnv(
+  "LITEPARSE_MAX_QUEUED_DOCUMENTS",
+  12,
+  1,
+  64,
+);
 const LITEPARSE_PRIORITY_RANK: Record<LiteParseQueuePriority, number> = {
   http: 0,
   preview: 1,
@@ -132,6 +138,11 @@ async function withSerializedLiteParse<T>(
   const signal = options?.signal;
   if (signal?.aborted) {
     throw abortError();
+  }
+  if (liteParseWaitQueue.length >= LITEPARSE_MAX_QUEUED_DOCUMENTS) {
+    throw new Error(
+      `LiteParse wait queue is full (${LITEPARSE_MAX_QUEUED_DOCUMENTS} documents)`,
+    );
   }
 
   return new Promise<T>((resolve, reject) => {

@@ -48,6 +48,7 @@ import {
 } from "./pdfSourceSpans.js";
 import {
   convertPdfWithLiteParse,
+  LITEPARSE_MAX_QUEUED_DOCUMENTS,
   LITEPARSE_NATIVE_CONCURRENCY,
   type PageScreenshot,
 } from "./liteparse.js";
@@ -63,6 +64,7 @@ import {
 } from "./clRouterClient.js";
 import { applyCarrierIdentityGuidance } from "./extractionPromptGuidance.js";
 import { watchClientDisconnect } from "./httpRequestCancellation.js";
+import { createPdfWorkAdmission } from "./pdfWorkAdmission.js";
 import { resolveWorkerRuntimeAccess } from "./railwayRuntime.js";
 
 type WorkerState = {
@@ -385,15 +387,34 @@ const EXTRACTION_JOB_CONCURRENCY = readBoundedIntEnv(
   1,
   1000,
 );
+const PDF_WORK_MAX_ACTIVE = readBoundedIntEnv(
+  "EXTRACTION_PDF_WORK_MAX_ACTIVE",
+  Math.min(12, LITEPARSE_MAX_QUEUED_DOCUMENTS + 1),
+  2,
+  LITEPARSE_MAX_QUEUED_DOCUMENTS + 1,
+);
+const PDF_WORK_MAX_FULL_ACTIVE = readBoundedIntEnv(
+  "EXTRACTION_PDF_WORK_MAX_FULL_ACTIVE",
+  Math.min(8, PDF_WORK_MAX_ACTIVE),
+  1,
+  PDF_WORK_MAX_ACTIVE,
+);
 
 const convex = new ConvexHttpClient(CONVEX_URL);
+const pdfWorkAdmission = createPdfWorkAdmission({
+  maxActive: PDF_WORK_MAX_ACTIVE,
+  maxFullActive: PDF_WORK_MAX_FULL_ACTIVE,
+});
+const shutdownController = new AbortController();
 
 let shuttingDown = false;
 process.on("SIGTERM", () => {
   shuttingDown = true;
+  shutdownController.abort();
 });
 process.on("SIGINT", () => {
   shuttingDown = true;
+  shutdownController.abort();
 });
 
 function requiredEnv(name: string): string {
@@ -1746,10 +1767,16 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
     return;
   }
   const cancellation = watchClientDisconnect(req, res);
+  const signal = AbortSignal.any([
+    cancellation.signal,
+    shutdownController.signal,
+  ]);
+  let releasePdfWork: (() => void) | undefined;
 
   try {
+    releasePdfWork = await pdfWorkAdmission.acquire("http", signal);
     const body = await readJsonBody(req);
-    if (cancellation.signal.aborted) {
+    if (signal.aborted) {
       throw new DOMException("Client closed request", "AbortError");
     }
     const pdfBase64 = typeof body.pdfBase64 === "string" ? body.pdfBase64 : "";
@@ -1765,7 +1792,7 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
       maxPages: LITEPARSE_MAX_PAGES,
       maxFileSize: LITEPARSE_MAX_FILE_SIZE,
       priority: "http",
-      signal: cancellation.signal,
+      signal,
     });
     jsonResponse(res, 200, {
       ok: true,
@@ -1776,7 +1803,7 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
       metadata: converted.metadata,
     });
   } catch (error) {
-    if (cancellation.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+    if (signal.aborted || (error instanceof Error && error.name === "AbortError")) {
       if (!res.headersSent && !res.destroyed && !res.writableEnded) {
         jsonResponse(res, 499, { error: "Client closed request" });
       }
@@ -1784,6 +1811,7 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
     }
     throw error;
   } finally {
+    releasePdfWork?.();
     cancellation.dispose();
   }
 }
@@ -1809,6 +1837,9 @@ function startHttpServer(): { close: () => void } | null {
         conversionsEnabled: RUNTIME_ACCESS.conversionsEnabled,
         extractionJobConcurrency: EXTRACTION_JOB_CONCURRENCY,
         previewJobConcurrency: PREVIEW_JOB_CONCURRENCY,
+        pdfWorkMaxActive: PDF_WORK_MAX_ACTIVE,
+        pdfWorkMaxFullActive: PDF_WORK_MAX_FULL_ACTIVE,
+        pdfWorkAdmission: pdfWorkAdmission.snapshot(),
         liteParseNativeConcurrency: LITEPARSE_NATIVE_CONCURRENCY,
       });
       return;
@@ -2535,7 +2566,10 @@ async function failJob(job: ClaimedJob, error: unknown): Promise<void> {
   });
 }
 
-async function processJob(job: ClaimedJob): Promise<void> {
+async function processJob(
+  job: ClaimedJob,
+  releasePdfWork: () => void,
+): Promise<void> {
   console.log(`[${job.policyId}] claimed external extraction job`);
   await logJob(job, `External worker ${WORKER_ID} started extraction`);
   const heartbeatTimer = setInterval(() => {
@@ -2671,6 +2705,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
     console.error(`[${job.policyId}] extraction failed:`, error);
     await failJob(job, error);
   } finally {
+    releasePdfWork();
     clearInterval(heartbeatTimer);
   }
 }
@@ -2713,7 +2748,10 @@ async function heartbeatPreview(job: ClaimedPreviewJob): Promise<AckResult> {
   });
 }
 
-async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
+async function processPreviewJob(
+  job: ClaimedPreviewJob,
+  releasePdfWork: () => void,
+): Promise<void> {
   console.log(`[${job.policyId}] claimed external preview extraction job`);
   await logJob(job, `External worker ${WORKER_ID} started provisional extraction`, "info");
   const heartbeatTimer = setInterval(() => {
@@ -2789,6 +2827,7 @@ async function processPreviewJob(job: ClaimedPreviewJob): Promise<void> {
     console.error(`[${job.policyId}] preview extraction failed:`, error);
     await failPreviewJob(job, error);
   } finally {
+    releasePdfWork();
     clearInterval(heartbeatTimer);
   }
 }
@@ -2823,20 +2862,38 @@ async function runPreviewLoop(): Promise<void> {
     }
 
     let job: ClaimedPreviewJob | null = null;
+    let releasePdfWork: (() => void) | undefined;
     try {
+      releasePdfWork = await pdfWorkAdmission.acquire(
+        "preview",
+        shutdownController.signal,
+      );
+      if (shuttingDown) {
+        releasePdfWork();
+        break;
+      }
       job = await claimPreviewJob();
     } catch (error) {
+      releasePdfWork?.();
+      if (
+        shuttingDown &&
+        error instanceof Error &&
+        error.name === "AbortError"
+      ) {
+        break;
+      }
       console.error("Failed to claim preview extraction job:", error);
       await sleep(POLL_MS);
       continue;
     }
     if (job) {
-      const task = processPreviewJob(job).finally(() => {
+      const task = processPreviewJob(job, releasePdfWork).finally(() => {
         active.delete(task);
       });
       active.add(task);
       continue;
     }
+    releasePdfWork();
 
     const now = nowMs();
     if (now - lastIdleLogAt >= IDLE_LOG_MS) {
@@ -2851,7 +2908,7 @@ async function runPreviewLoop(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log(
-    `Glass extraction worker ${WORKER_ID} env=${GLASS_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} previewConcurrency=${PREVIEW_JOB_CONCURRENCY} liteParseNativeConcurrency=${LITEPARSE_NATIVE_CONCURRENCY} connected to ${CONVEX_URL}`,
+    `Glass extraction worker ${WORKER_ID} env=${GLASS_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} previewConcurrency=${PREVIEW_JOB_CONCURRENCY} pdfWorkMaxActive=${PDF_WORK_MAX_ACTIVE} pdfWorkMaxFullActive=${PDF_WORK_MAX_FULL_ACTIVE} liteParseNativeConcurrency=${LITEPARSE_NATIVE_CONCURRENCY} connected to ${CONVEX_URL}`,
   );
   const httpServer = startHttpServer();
   if (!RUNTIME_ACCESS.jobsEnabled) {
@@ -2881,20 +2938,38 @@ async function main(): Promise<void> {
       }
 
       let job: ClaimedJob | null = null;
+      let releasePdfWork: (() => void) | undefined;
       try {
+        releasePdfWork = await pdfWorkAdmission.acquire(
+          "full",
+          shutdownController.signal,
+        );
+        if (shuttingDown) {
+          releasePdfWork();
+          break;
+        }
         job = await claimJob();
       } catch (error) {
+        releasePdfWork?.();
+        if (
+          shuttingDown &&
+          error instanceof Error &&
+          error.name === "AbortError"
+        ) {
+          break;
+        }
         console.error("Failed to claim extraction job:", error);
         await sleep(POLL_MS);
         continue;
       }
       if (job) {
-        const task = processJob(job).finally(() => {
+        const task = processJob(job, releasePdfWork).finally(() => {
           active.delete(task);
         });
         active.add(task);
         continue;
       }
+      releasePdfWork();
 
       const now = nowMs();
       if (now - lastIdleLogAt >= IDLE_LOG_MS) {
@@ -2905,6 +2980,7 @@ async function main(): Promise<void> {
     }
   } finally {
     shuttingDown = true;
+    shutdownController.abort();
     await Promise.allSettled(active);
     await previewLoop;
     httpServer?.close();
