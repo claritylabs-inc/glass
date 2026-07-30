@@ -37,6 +37,44 @@ function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function validatedOperationalProfileProvenance(params: {
+  profile: Record<string, unknown>;
+  validSourceNodeIds: Set<string>;
+  validSourceSpanIds: Set<string>;
+}) {
+  const validate = (value: unknown) => {
+    const entry = record(value);
+    return {
+      ...entry,
+      sourceNodeIds: Array.isArray(entry.sourceNodeIds)
+        ? entry.sourceNodeIds.filter(
+            (id): id is string =>
+              typeof id === "string" &&
+              params.validSourceNodeIds.has(id),
+          )
+        : [],
+      sourceSpanIds: Array.isArray(entry.sourceSpanIds)
+        ? entry.sourceSpanIds.filter(
+            (id): id is string =>
+              typeof id === "string" &&
+              params.validSourceSpanIds.has(id),
+          )
+        : [],
+    };
+  };
+  return {
+    ...validate(params.profile),
+    ...(params.profile.insurer &&
+      typeof params.profile.insurer === "object" &&
+      !Array.isArray(params.profile.insurer)
+      ? { insurer: validate(params.profile.insurer) }
+      : {}),
+    ...(Array.isArray(params.profile.parties)
+      ? { parties: params.profile.parties.map(validate) }
+      : {}),
+  };
+}
+
 function insurerAddress(value: unknown) {
   const address = record(value);
   const normalized = {
@@ -143,8 +181,17 @@ export function rebuildCarrierIdentityFromStoredSources(params: {
         (node): node is CarrierSourceNode & Record<string, unknown> =>
           Boolean(node),
       );
+    const profile = validatedOperationalProfileProvenance({
+      profile: record(params.policy.operationalProfile),
+      validSourceNodeIds: new Set(storedSourceTree.map((node) => node.id)),
+      validSourceSpanIds: new Set(
+        params.sourceSpans
+          .map((span) => text(span.spanId))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    });
     const rebuilt = buildCarrierIdentityFromSourceEvidence({
-      operationalProfile: params.policy.operationalProfile,
+      operationalProfile: profile,
       sourceTree: storedSourceTree,
       sourceSpans,
     });
@@ -162,7 +209,6 @@ export function rebuildCarrierIdentityFromStoredSources(params: {
     const primaryLegalEntity = carrierIdentity.legalEntities[0];
     const currentInsurer = record(params.policy.insurer);
     const currentGeneralAgent = record(params.policy.generalAgent);
-    const profile = record(params.policy.operationalProfile);
     const sourceParties = Array.isArray(profile.parties)
       ? profile.parties.map(record)
       : [];

@@ -157,6 +157,86 @@ describe("stored-source carrier identity backfill", () => {
     });
   });
 
+  it("rejects carrier identity backed only by dangling provenance ids", () => {
+    const result = rebuildCarrierIdentityFromStoredSources({
+      policyId,
+      policy: {
+        carrier: "Hallucinated Carrier Insurance Company",
+        operationalProfile: {
+          ...operationalProfile,
+          insurer: {
+            value: "Hallucinated Carrier Insurance Company",
+            sourceNodeIds: ["missing-carrier-node"],
+            sourceSpanIds: ["missing-carrier-span"],
+          },
+          parties: [{
+            role: "carrier",
+            name: "Hallucinated Carrier Insurance Company",
+            naicNumber: "99999",
+            address: { street1: "1 Imaginary Plaza" },
+            sourceNodeIds: ["missing-carrier-node"],
+            sourceSpanIds: ["missing-carrier-span"],
+          }],
+        },
+      },
+      sourceSpans: [{
+        spanId: "unrelated-span",
+        documentId: policyId,
+        sourceKind: "policy_pdf",
+        pageStart: 1,
+        text: "General policy conditions",
+        textHash: "unrelated-hash",
+      }],
+      sourceNodes: [{
+        nodeId: "unrelated-node",
+        documentId: policyId,
+        kind: "section",
+        title: "Conditions",
+        description: "General policy conditions",
+        textExcerpt: "General policy conditions",
+        sourceSpanIds: ["unrelated-span"],
+        order: 1,
+        path: "Policy / Conditions",
+      }],
+    });
+
+    expect(result).toEqual({
+      outcome: "skipped",
+      reason: "insufficient_source_identity",
+      shouldEnrich: false,
+    });
+  });
+
+  it("removes dangling ids while retaining valid carrier provenance", () => {
+    const result = rebuildCarrierIdentityFromStoredSources({
+      policyId,
+      policy: {
+        carrier: "HDI Global Specialty SE",
+        operationalProfile: {
+          ...operationalProfile,
+          parties: [{
+            ...operationalProfile.parties[0],
+            sourceNodeIds: ["missing-node", "node-hdi"],
+            sourceSpanIds: ["missing-span", "span-hdi"],
+          }],
+        },
+      },
+      sourceSpans,
+      sourceNodes,
+    });
+
+    expect(result.patch?.carrierIdentity).toMatchObject({
+      displayName: "HDI Global Specialty SE",
+      sourceNodeIds: ["node-hdi"],
+      sourceSpanIds: ["span-hdi"],
+      legalEntities: [{
+        name: "HDI Global Specialty SE",
+        sourceNodeIds: ["node-hdi"],
+        sourceSpanIds: ["span-hdi"],
+      }],
+    });
+  });
+
   it("preserves every source-backed carrier legal entity", () => {
     const secondCarrierSpan = {
       spanId: "span-second-carrier",
