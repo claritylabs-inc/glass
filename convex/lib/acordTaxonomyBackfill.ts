@@ -356,7 +356,6 @@ function classificationLabels(params: {
   ].map((coverage) => coverage.name);
   return [
     params.productIdentity?.name?.value,
-    text(params.policy.programName),
     ...coverageNames,
   ].filter((value): value is string => Boolean(value));
 }

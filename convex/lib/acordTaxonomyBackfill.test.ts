@@ -208,6 +208,66 @@ describe("rebuildAcordTaxonomyFromStoredSources", () => {
     },
   );
 
+  it.each([
+    "Travel Insurance Program",
+    "Cyber Insurance",
+  ])(
+    "does not classify an unsourced compatibility program name (%s)",
+    (programName) => {
+      const decision = rebuildAcordTaxonomyFromStoredSources({
+        policy: policy({ programName }),
+        sourceNodes: [],
+        sourceSpans: [],
+      });
+
+      expect(decision).toMatchObject({
+        lineChanged: false,
+        productIdentityAdded: false,
+        reason: "ambiguous_or_unclassified",
+        beforeLines: ["UN"],
+        afterLines: ["UN"],
+      });
+      expect(decision.patch).toBeUndefined();
+    },
+  );
+
+  it("uses a compatibility program name only when stored evidence supports it", () => {
+    const programName = "Travel Insurance Program";
+    const decision = rebuildAcordTaxonomyFromStoredSources({
+      policy: policy({ programName }),
+      sourceNodes: [{
+        nodeId: "product-node",
+        title: programName,
+        textExcerpt: programName,
+        sourceSpanIds: ["product-span"],
+        pageStart: 1,
+      }],
+      sourceSpans: [{
+        spanId: "product-span",
+        text: programName,
+        pageStart: 1,
+      }],
+    });
+
+    expect(decision).toMatchObject({
+      lineChanged: true,
+      productIdentityAdded: true,
+      beforeLines: ["UN"],
+      afterLines: ["TRVL"],
+      patch: {
+        linesOfBusiness: ["TRVL"],
+        programName,
+        productIdentity: {
+          name: {
+            value: programName,
+            sourceNodeIds: ["product-node"],
+            sourceSpanIds: ["product-span"],
+          },
+        },
+      },
+    });
+  });
+
   it("keeps ambiguous policies unclassified", () => {
     const decision = rebuildAcordTaxonomyFromStoredSources({
       policy: policy(),
