@@ -116,6 +116,95 @@ describe("policies.updatePreviewExtractionInternal", () => {
 });
 
 describe("policies.updateExtractionInternal", () => {
+  test("clears a provisional product name when final extraction has no product identity", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Unknown",
+        policyNumber: "Unknown",
+        insuredName: "Unknown",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        extractionDataStage: "placeholder",
+      });
+    });
+    await t.mutation(updatePreviewExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        programName: "Provisional Travel Plan",
+      },
+      previewVersion: "preview-test",
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        extractionDataStage: "final",
+        sourceTreeFieldClears: ["productIdentity", "programName"],
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.extractionDataStage).toBe("final");
+    expect(policy?.programName).toBeUndefined();
+    expect(policy?.productIdentity).toBeUndefined();
+  });
+
+  test("clears a previous PDF product identity when replacement evidence omits it", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Known Carrier",
+        policyNumber: "POL-REPLACEMENT",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["TRVL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        extractionDataStage: "final",
+        programName: "Previous Travel Plan",
+        productIdentity: {
+          name: {
+            value: "Previous Travel Plan",
+            confidence: "high",
+            sourceNodeIds: ["previous-product-node"],
+            sourceSpanIds: ["previous-product-span"],
+          },
+        },
+      });
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        extractionDataStage: "final",
+        sourceTreeFieldClears: ["productIdentity", "programName"],
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.programName).toBeUndefined();
+    expect(policy?.productIdentity).toBeUndefined();
+  });
+
   test("stores SDK-formatted compatibility addresses for extracted policy parties", async () => {
     const t = convexTest(schema, modules);
     const policyId = await t.run(async (ctx) => {

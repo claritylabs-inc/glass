@@ -1312,6 +1312,77 @@ describe("sourceTreePolicyFields", () => {
     });
   });
 
+  it("clears stale carrier product projections when final evidence has no product identity", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["travel"],
+        coverages: [],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+      existingPolicyFields: {
+        programName: "Previous Travel Plan",
+        productIdentity: {
+          name: {
+            value: "Previous Travel Plan",
+            sourceNodeIds: ["old-product-node"],
+            sourceSpanIds: ["old-product-span"],
+          },
+        },
+      },
+    });
+
+    expect(fields).toHaveProperty("programName", undefined);
+    expect(fields).toHaveProperty("productIdentity", undefined);
+    expect(fields.sourceTreeFieldClears).toEqual([
+      "productIdentity",
+      "programName",
+    ]);
+  });
+
+  it("keeps source-backed product codes while clearing a stale product name", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["travel"],
+        productIdentity: {
+          companyProductCode: {
+            value: "TCI",
+            confidence: "high",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+        },
+        coverages: [],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+      existingPolicyFields: {
+        programName: "Previous Travel Plan",
+      },
+    });
+
+    expect(fields).toHaveProperty("programName", undefined);
+    expect(fields.sourceTreeFieldClears).toEqual(["programName"]);
+    expect(fields.productIdentity).toMatchObject({
+      companyProductCode: {
+        value: "TCI",
+        confidence: "high",
+        sourceNodeIds: ["named-insured-row"],
+        sourceSpanIds: ["span-named-insured"],
+      },
+    });
+  });
+
   it("uses preliminary policy types as hints when coverage evidence is not classifiable", () => {
     const operationalProfile = normalizeOperationalProfile(
       {

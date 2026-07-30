@@ -2377,6 +2377,15 @@ export const updateExtractionInternal = internalMutation({
       deriveNumericAmounts: false,
       normalizeMoneyText: false,
     });
+    const sourceTreeFieldClears = Array.isArray(fields.sourceTreeFieldClears)
+      ? fields.sourceTreeFieldClears
+      : [];
+    delete fields.sourceTreeFieldClears;
+    for (const field of sourceTreeFieldClears) {
+      if (field === "productIdentity" || field === "programName") {
+        fields[field] = undefined;
+      }
+    }
     dropUnpersistableExtractedAddresses(fields);
     const existingPolicy = await ctx.db.get(args.id);
     preserveKnownFinalExtractionIdentityFields(fields, existingPolicy);

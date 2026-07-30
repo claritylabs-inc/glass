@@ -2192,6 +2192,10 @@ export function sourceTreePolicyFields(params: {
     ...fields,
     ...operationalProfilePolicyFields(operationalProfile, params.existingPolicyFields),
   };
+  projected.sourceTreeFieldClears = [
+    ...(projected.productIdentity === undefined ? ["productIdentity"] : []),
+    ...(projected.programName === undefined ? ["programName"] : []),
+  ];
   const {
     carrierIdentity,
     replacementCarrierName,
@@ -2415,12 +2419,8 @@ export function operationalProfilePolicyFields(
   if (effectiveDate) fields.effectiveDate = effectiveDate;
   if (expirationDate) fields.expirationDate = expirationDate;
   if (retroactiveDate) fields.retroactiveDate = retroactiveDate;
-  if (productIdentity) {
-    fields.productIdentity = productIdentity;
-    if (productIdentity.name?.value) {
-      fields.programName = productIdentity.name.value;
-    }
-  }
+  fields.productIdentity = productIdentity ?? undefined;
+  fields.programName = productIdentity?.name?.value ?? undefined;
   fields.premium = premium ?? undefined;
   if (premiumAmount !== undefined) fields.premiumAmount = premiumAmount;
   if (extendedProfile.coverageSchedules?.length) {
