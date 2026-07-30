@@ -78,6 +78,7 @@ export default function ConnectedVendorPoliciesPage({
                 key={policy._id}
                 carrier={policy.carrier}
                 carrierIdentity={policy.carrierIdentity}
+                policyDetailOverrides={policy.policyDetailOverrides}
                 generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                 policyNumber={policy.policyNumber}
                 productIdentity={policy.productIdentity}

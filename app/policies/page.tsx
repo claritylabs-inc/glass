@@ -323,6 +323,7 @@ export default function PoliciesPage() {
                 key={p._id}
                 carrier={p.carrier}
                 carrierIdentity={p.carrierIdentity}
+                policyDetailOverrides={p.policyDetailOverrides}
                 generalAgent={p.generalAgent?.agencyName ?? p.mga}
                 policyNumber={p.policyNumber}
                 productIdentity={p.productIdentity}

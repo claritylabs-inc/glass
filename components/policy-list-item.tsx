@@ -6,9 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { BrandIcon } from "@/components/ui/brand-icon";
 import {
   readCarrierIdentity,
+  sameCarrierIdentityName,
   type CarrierIdentity,
 } from "@/convex/lib/carrierIdentity";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
+import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
 import { policyProductName } from "@/convex/lib/policyProductIdentity";
 import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
 import {
@@ -28,6 +30,7 @@ type UploadedBySide =
 interface PolicyListItemProps {
   carrier: string;
   carrierIdentity?: CarrierIdentity | null;
+  policyDetailOverrides?: unknown;
   generalAgent?: string;
   policyNumber: string;
   productIdentity?: unknown;
@@ -85,6 +88,7 @@ function formatPolicyDate(value: string | undefined): string | undefined {
 export function PolicyListItem({
   carrier,
   carrierIdentity: carrierIdentityValue,
+  policyDetailOverrides,
   generalAgent,
   policyNumber,
   productIdentity,
@@ -104,7 +108,6 @@ export function PolicyListItem({
     extractionDataStage === "preview" && pipelineStatus !== "complete";
   const isProcessing =
     !isProvisional && (pipelineStatus === "running" || !pipelineStatus);
-  const carrierClean = cleanField(carrier);
   const generalAgentClean = cleanField(generalAgent);
   const policyNumberClean = cleanField(policyNumber);
   const productNameClean = cleanField(
@@ -113,7 +116,23 @@ export function PolicyListItem({
   const effectiveClean = formatPolicyDate(effectiveDate);
   const expirationClean = formatPolicyDate(expirationDate);
   const carrierIdentity = readCarrierIdentity(carrierIdentityValue);
-  const branding = carrierIdentity?.branding;
+  const resolvedCarrierDisplayName = resolvePolicyPartyContext({
+    carrier,
+    carrierIdentity: carrierIdentityValue,
+    policyDetailOverrides,
+  }).carrierDisplayName;
+  const carrierClean = cleanField(resolvedCarrierDisplayName ?? carrier);
+  const brandingMatchesIssuer =
+    !carrierClean ||
+    [
+      carrierIdentity?.displayName,
+      carrierIdentity?.sourceName,
+      carrierIdentity?.operatingName,
+      ...(carrierIdentity?.legalEntities.map((entity) => entity.name) ?? []),
+    ].some((name) => sameCarrierIdentityName(name, carrierClean));
+  const branding = brandingMatchesIssuer
+    ? carrierIdentity?.branding
+    : undefined;
   const productLines = policyLobCodes({ linesOfBusiness })
     .filter((code) => code !== "UN")
     .map(lobLabel);
@@ -123,8 +142,8 @@ export function PolicyListItem({
     productLines.length - visibleProductLines.length,
   );
   const issuerName =
-    cleanField(carrierIdentity?.displayName) ??
     carrierClean ??
+    cleanField(carrierIdentity?.displayName) ??
     generalAgentClean ??
     "Insurance carrier";
   const coveragePeriod =

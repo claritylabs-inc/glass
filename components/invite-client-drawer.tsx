@@ -78,6 +78,7 @@ type DraftPolicyRow = {
   extractionDataStage?: string;
   uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email";
   carrierIdentity?: CarrierIdentity | null;
+  policyDetailOverrides?: unknown;
   productIdentity?: unknown;
   programName?: string;
 };
@@ -604,6 +605,7 @@ export function InviteClientDrawer({
                   key={policy._id}
                   carrier={policy.carrier ?? ""}
                   carrierIdentity={policy.carrierIdentity}
+                  policyDetailOverrides={policy.policyDetailOverrides}
                   generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                   policyNumber={policy.policyNumber ?? ""}
                   productIdentity={policy.productIdentity}
