@@ -119,6 +119,41 @@ describe("rebuildAcordTaxonomyFromStoredSources", () => {
     });
   });
 
+  it("does not infer cyber from exclusions or negated body text", () => {
+    const decision = rebuildAcordTaxonomyFromStoredSources({
+      policy: policy({
+        linesOfBusiness: ["OLIB"],
+        operationalProfile: {
+          documentType: "policy",
+          linesOfBusiness: ["OLIB"],
+          declarationFacts: [],
+          coverages: [],
+          parties: [],
+          endorsementSupport: [],
+          sourceNodeIds: ["node-1"],
+          sourceSpanIds: ["span-1"],
+          warnings: [],
+        },
+      }),
+      sourceNodes: [{
+        nodeId: "node-1",
+        title: "Cyber Liability",
+        textExcerpt:
+          "This is not cyber insurance and cyber liability is excluded.",
+        sourceSpanIds: ["span-1"],
+        pageStart: 1,
+      }],
+      sourceSpans: [{
+        spanId: "span-1",
+        text: "This is not cyber insurance and cyber liability is excluded.",
+        pageStart: 1,
+      }],
+    });
+
+    expect(decision.afterLines).toEqual(["OLIB"]);
+    expect(decision.lineChanged).toBe(false);
+  });
+
   it("normalizes retired LOB aliases without inventing a product identity", () => {
     const decision = rebuildAcordTaxonomyFromStoredSources({
       policy: policy({

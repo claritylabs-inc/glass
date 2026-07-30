@@ -40,18 +40,53 @@ function isPrivateIpv4(hostname: string) {
   );
 }
 
-function isPrivateIpv6(hostname: string) {
-  const normalized = hostname.toLowerCase();
-  return (
-    normalized === "::" ||
-    normalized === "::1" ||
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd") ||
-    normalized.startsWith("fe80") ||
-    normalized.startsWith("::ffff:127.") ||
-    normalized.startsWith("::ffff:10.") ||
-    normalized.startsWith("::ffff:192.168.")
-  );
+function unbracketHostname(hostname: string) {
+  return hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1)
+    : hostname;
+}
+
+function parseIpv6Hextets(hostname: string) {
+  if (hostname.includes(".")) return undefined;
+  const halves = hostname.toLowerCase().split("::");
+  if (halves.length > 2) return undefined;
+  const parseHalf = (value: string) =>
+    value
+      ? value.split(":").map((part) => Number.parseInt(part, 16))
+      : [];
+  const left = parseHalf(halves[0]);
+  const right = parseHalf(halves[1] ?? "");
+  if (
+    [...left, ...right].some((part) =>
+      !Number.isInteger(part) || part < 0 || part > 0xffff
+    )
+  ) {
+    return undefined;
+  }
+  if (halves.length === 1) {
+    return left.length === 8 ? left : undefined;
+  }
+  const omitted = 8 - left.length - right.length;
+  return omitted > 0
+    ? [...left, ...Array<number>(omitted).fill(0), ...right]
+    : undefined;
+}
+
+function isPublicIpv6(hostname: string) {
+  const hextets = parseIpv6Hextets(hostname);
+  if (!hextets) return false;
+  const [first, second] = hextets;
+  if (first < 0x2000 || first > 0x3fff) return false;
+  const first32 = (first * 0x10000 + second) >>> 0;
+  if (
+    (first32 >= 0x20010000 && first32 <= 0x200101ff) ||
+    first32 === 0x20010db8 ||
+    first === 0x2002 ||
+    (first === 0x3fff && (second & 0xf000) === 0)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export function normalizePublicWebsiteUrl(rawUrl: string) {
@@ -64,7 +99,7 @@ export function normalizePublicWebsiteUrl(rawUrl: string) {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("Only public http(s) websites are supported");
   }
-  const hostname = parsed.hostname.toLowerCase();
+  const hostname = unbracketHostname(parsed.hostname.toLowerCase());
   if (
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
@@ -75,7 +110,7 @@ export function normalizePublicWebsiteUrl(rawUrl: string) {
   const ipVersion = isIP(hostname);
   if (
     (ipVersion === 4 && isPrivateIpv4(hostname)) ||
-    (ipVersion === 6 && isPrivateIpv6(hostname))
+    (ipVersion === 6 && !isPublicIpv6(hostname))
   ) {
     throw new Error("Private network websites are not supported");
   }
@@ -330,6 +365,58 @@ export function extractWebsiteStylesheetUrls(html: string, website: string) {
   ).slice(0, MAX_STYLESHEETS);
 }
 
+export async function readResponseBytesWithinLimit(
+  response: Response,
+  maxBytes: number,
+) {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new Error(`Website response exceeded ${maxBytes} bytes`);
+  }
+  if (!response.body) {
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > maxBytes) {
+      throw new Error(`Website response exceeded ${maxBytes} bytes`);
+    }
+    return new Uint8Array(buffer);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new Error(`Website response exceeded ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function readResponseTextWithinLimit(
+  response: Response,
+  maxBytes: number,
+) {
+  return new TextDecoder().decode(
+    await readResponseBytesWithinLimit(response, maxBytes),
+  );
+}
+
 async function fetchWebsiteHtml(rawUrl: string) {
   const response = await fetchPublic(rawUrl);
   if (!response.ok) throw new Error(`Website returned ${response.status}`);
@@ -337,7 +424,7 @@ async function fetchWebsiteHtml(rawUrl: string) {
   if (!contentType.includes("text/html")) {
     throw new Error("Website did not return HTML");
   }
-  const html = (await response.text()).slice(0, MAX_HTML_BYTES);
+  const html = await readResponseTextWithinLimit(response, MAX_HTML_BYTES);
   return {
     html,
     website: normalizePublicWebsiteUrl(response.url || rawUrl),
@@ -357,7 +444,10 @@ async function readStylesheetBrandColors(html: string, website: string) {
         ) {
           return [];
         }
-        const css = (await response.text()).slice(0, MAX_STYLESHEET_BYTES);
+        const css = await readResponseTextWithinLimit(
+          response,
+          MAX_STYLESHEET_BYTES,
+        );
         return extractWebsiteBrandColors(css);
       } catch {
         return [];
@@ -418,11 +508,14 @@ async function fetchFaviconFromHtml(html: string, website: string) {
       ) {
         continue;
       }
-      const buffer = await response.arrayBuffer();
-      if (buffer.byteLength < 64 || buffer.byteLength > MAX_IMAGE_BYTES) {
+      const bytes = await readResponseBytesWithinLimit(
+        response,
+        MAX_IMAGE_BYTES,
+      );
+      if (bytes.byteLength < 64) {
         continue;
       }
-      return new Blob([buffer], { type: contentType || "image/x-icon" });
+      return new Blob([bytes], { type: contentType || "image/x-icon" });
     } catch {
       continue;
     }

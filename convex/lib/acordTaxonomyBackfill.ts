@@ -297,49 +297,37 @@ function normalizedCoverageRows(value: unknown): OperationalCoverageLine[] {
   });
 }
 
-function classificationText(params: {
+function classificationLabels(params: {
   productIdentity?: PolicyProductIdentity;
   policy: Record<string, unknown>;
   profile: Record<string, unknown>;
-  sourceNodes: StoredSourceNode[];
-  sourceSpans: StoredSourceSpan[];
 }) {
   const coverageNames = [
     ...normalizedCoverageRows(params.policy.coverages),
     ...normalizedCoverageRows(params.profile.coverages),
   ].map((coverage) => coverage.name);
-  const headingText = params.sourceNodes
-    .filter((node) =>
-      typeof node.pageStart !== "number" || node.pageStart <= 5
-    )
-    .flatMap((node) => [
-      text(node.title),
-      text(node.textExcerpt)?.slice(0, 500),
-    ])
-    .filter((value): value is string => Boolean(value));
-  const spanText = params.sourceSpans
-    .filter((span) =>
-      typeof span.pageStart !== "number" || span.pageStart <= 5
-    )
-    .map((span) => text(span.text)?.slice(0, 500))
-    .filter((value): value is string => Boolean(value));
   return [
     params.productIdentity?.name?.value,
     text(params.policy.programName),
     ...coverageNames,
-    ...headingText,
-    ...spanText,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join("\n");
+  ].filter((value): value is string => Boolean(value));
+}
+
+function hasAffirmativeClassificationLabel(
+  labels: string[],
+  pattern: RegExp,
+) {
+  const negative =
+    /\b(?:not|no|without|exclude(?:s|d)?|exclusion|not covered|not included|not provided)\b/i;
+  return labels.some((label) =>
+    pattern.test(label) && !negative.test(label)
+  );
 }
 
 function repairedLines(params: {
   policy: Record<string, unknown>;
   profile: Record<string, unknown>;
   productIdentity?: PolicyProductIdentity;
-  sourceNodes: StoredSourceNode[];
-  sourceSpans: StoredSourceSpan[];
   coverages: OperationalCoverageLine[];
 }): string[] {
   const rawLines = [
@@ -352,21 +340,21 @@ function repairedLines(params: {
     existingLinesOfBusiness: current,
     coverages: params.coverages,
   }).linesOfBusiness;
-  const evidence = classificationText({
+  const labels = classificationLabels({
     productIdentity: params.productIdentity,
     policy: params.policy,
     profile: params.profile,
-    sourceNodes: params.sourceNodes,
-    sourceSpans: params.sourceSpans,
   });
   const inferred = [
-    /\b(?:travel insurance|trip cancellation|trip interruption|travel delay|travel disruption)\b/i.test(
-      evidence,
+    hasAffirmativeClassificationLabel(
+      labels,
+      /\b(?:travel insurance|trip cancellation|trip interruption|travel delay|travel disruption)\b/i,
     )
       ? "TRVL"
       : undefined,
-    /\b(?:commercial cyber(?: and privacy)? liability|cyber (?:insurance|liability)|network security(?: and privacy)? liability|privacy liability)\b/i.test(
-      evidence,
+    hasAffirmativeClassificationLabel(
+      labels,
+      /\b(?:commercial cyber(?: and privacy)? liability|cyber (?:insurance|liability)|network security(?: and privacy)? liability|privacy liability)\b/i,
     )
       ? "CYBER"
       : undefined,
@@ -423,8 +411,6 @@ export function rebuildAcordTaxonomyFromStoredSources(params: {
     policy: params.policy,
     profile,
     productIdentity,
-    sourceNodes: params.sourceNodes,
-    sourceSpans: params.sourceSpans,
     coverages: sourceCoverages,
   });
   const annotatedProfileCoverages =

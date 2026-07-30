@@ -7,6 +7,7 @@ import {
   extractWebsiteSiteName,
   extractWebsiteStylesheetUrls,
   normalizePublicWebsiteUrl,
+  readResponseBytesWithinLimit,
   readWebsiteFaviconSignals,
 } from "./websiteBrand";
 
@@ -33,6 +34,43 @@ describe("website brand signals", () => {
     );
     expect(() => normalizePublicWebsiteUrl("http://127.0.0.1")).toThrow(
       "Private network",
+    );
+    expect(() => normalizePublicWebsiteUrl("http://[::1]")).toThrow(
+      "Private network",
+    );
+    expect(() => normalizePublicWebsiteUrl("http://[fc00::1]")).toThrow(
+      "Private network",
+    );
+    expect(() => normalizePublicWebsiteUrl("http://[fe80::1]")).toThrow(
+      "Private network",
+    );
+    expect(() => normalizePublicWebsiteUrl("http://[2001:db8::1]")).toThrow(
+      "Private network",
+    );
+    expect(
+      normalizePublicWebsiteUrl("https://[2606:4700:4700::1111]"),
+    ).toBe("https://[2606:4700:4700::1111]/");
+  });
+
+  it("rejects declared and streamed bodies above the byte limit", async () => {
+    const declared = new Response("not read", {
+      headers: { "content-length": "5" },
+    });
+    await expect(readResponseBytesWithinLimit(declared, 4)).rejects.toThrow(
+      "exceeded 4 bytes",
+    );
+
+    const streamed = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+          controller.enqueue(new Uint8Array([4, 5]));
+          controller.close();
+        },
+      }),
+    );
+    await expect(readResponseBytesWithinLimit(streamed, 4)).rejects.toThrow(
+      "exceeded 4 bytes",
     );
   });
 

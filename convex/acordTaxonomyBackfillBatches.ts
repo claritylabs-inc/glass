@@ -1,7 +1,9 @@
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { internalMutation } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+} from "./_generated/server";
 import { effectiveExtractionDataStage } from "./backfillDeclarationFacts";
 import {
   rebuildAcordTaxonomyFromStoredSources,
@@ -75,31 +77,22 @@ function recordDecision(
   if (decision.productIdentityAdded) {
     report.productIdentitiesAdded += 1;
   }
-  if (report.samples.length < 25) {
-    report.samples.push({
-      policyId,
-      beforeLines: decision.beforeLines,
-      afterLines: decision.afterLines,
-      coverageCodesAdded: decision.coverageCodesAdded,
-      productIdentityAdded: decision.productIdentityAdded,
-    });
-  }
+  report.samples.push({
+    policyId,
+    beforeLines: decision.beforeLines,
+    afterLines: decision.afterLines,
+    coverageCodesAdded: decision.coverageCodesAdded,
+    productIdentityAdded: decision.productIdentityAdded,
+  });
 }
 
-export const backfillPoliciesBatchInternal = internalMutation({
+export const listPolicyIdsPageInternal = internalQuery({
   args: {
     orgId: v.optional(v.id("organizations")),
-    dryRun: v.boolean(),
     limit: v.number(),
     cursor: v.optional(v.union(v.string(), v.null())),
   },
-  handler: async (ctx, args): Promise<
-    AcordTaxonomyBackfillReport & {
-      nextCursor: string | null;
-      isDone: boolean;
-    }
-  > => {
-    const report = emptyAcordTaxonomyBackfillReport(args.dryRun);
+  handler: async (ctx, args) => {
     const page = args.orgId
       ? await ctx.db
           .query("policies")
@@ -114,57 +107,56 @@ export const backfillPoliciesBatchInternal = internalMutation({
           numItems: args.limit,
           cursor: args.cursor ?? null,
         });
-
-    report.scannedCount = page.page.length;
-    for (const policy of page.page) {
-      const reason = skipReason(policy);
-      if (reason) {
-        recordSkip(report, reason);
-        continue;
-      }
-      const [sourceSpans, sourceNodes] = await Promise.all([
-        ctx.db
-          .query("sourceSpans")
-          .withIndex("by_policyId", (query) =>
-            query.eq("policyId", policy._id)
-          )
-          .collect(),
-        ctx.db
-          .query("sourceNodes")
-          .withIndex("by_policyId", (query) =>
-            query.eq("policyId", policy._id)
-          )
-          .collect(),
-      ]);
-      const decision = rebuildAcordTaxonomyFromStoredSources({
-        policy,
-        sourceSpans,
-        sourceNodes,
-      });
-      recordDecision(report, policy._id, decision);
-      if (!args.dryRun && decision.patch) {
-        await ctx.db.patch(policy._id, decision.patch);
-      }
-    }
-
-    if (!args.dryRun && !page.isDone) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.acordTaxonomyBackfillBatches
-          .backfillPoliciesBatchInternal,
-        {
-          orgId: args.orgId,
-          dryRun: false,
-          limit: args.limit,
-          cursor: page.continueCursor,
-        },
-      );
-      report.continuationScheduled = true;
-    }
     return {
-      ...report,
+      policyIds: page.page.map((policy) => policy._id),
       nextCursor: page.continueCursor,
       isDone: page.isDone,
     };
+  },
+});
+
+export const backfillPolicyInternal = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+    dryRun: v.boolean(),
+  },
+  handler: async (ctx, args): Promise<AcordTaxonomyBackfillReport> => {
+    const report = emptyAcordTaxonomyBackfillReport(args.dryRun);
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy) {
+      recordSkip(report, "missing_policy");
+      return report;
+    }
+    report.scannedCount = 1;
+    const reason = skipReason(policy);
+    if (reason) {
+      recordSkip(report, reason);
+      return report;
+    }
+
+    const [sourceSpans, sourceNodes] = await Promise.all([
+      ctx.db
+        .query("sourceSpans")
+        .withIndex("by_policyId", (query) =>
+          query.eq("policyId", policy._id)
+        )
+        .collect(),
+      ctx.db
+        .query("sourceNodes")
+        .withIndex("by_policyId", (query) =>
+          query.eq("policyId", policy._id)
+        )
+        .collect(),
+    ]);
+    const decision = rebuildAcordTaxonomyFromStoredSources({
+      policy,
+      sourceSpans,
+      sourceNodes,
+    });
+    recordDecision(report, policy._id, decision);
+    if (!args.dryRun && decision.patch) {
+      await ctx.db.patch(policy._id, decision.patch);
+    }
+    return report;
   },
 });
