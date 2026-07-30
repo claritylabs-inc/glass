@@ -65,6 +65,7 @@ async function publicPolicy(ctx: QueryCtx, policy: Doc<"policies">) {
     linesOfBusiness: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
+    policyTermType: policy.policyTermType,
     dataStage: policy.extractionDataStage ?? (
       policy.pipelineStatus === "complete" ? "final" : "placeholder"
     ),

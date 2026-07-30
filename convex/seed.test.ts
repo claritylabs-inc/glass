@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import { encode } from "fast-png";
 import { afterEach, describe, expect, test, vi } from "vitest";
 const { dnsLookupMock, undiciFetchMock } = vi.hoisted(() => ({
   dnsLookupMock: vi.fn(),
@@ -293,6 +294,16 @@ describe("local workspace seed", () => {
   test("stores Montgomery Risk and Cove favicons during the full seed action", async () => {
     vi.stubEnv("GLASS_ENV", "local");
     const fetchedUrls: string[] = [];
+    const favicon = encode({
+      width: 2,
+      height: 2,
+      channels: 4,
+      depth: 8,
+      data: new Uint8Array([
+        20, 52, 203, 255, 20, 52, 203, 255,
+        20, 52, 203, 255, 20, 52, 203, 255,
+      ]),
+    });
     dnsLookupMock.mockResolvedValue([
       { address: "93.184.216.34", family: 4 },
     ]);
@@ -301,7 +312,11 @@ describe("local workspace seed", () => {
         const url = String(input instanceof Request ? input.url : input);
         fetchedUrls.push(url);
         if (url.endsWith("/favicon.png")) {
-          return new Response(new Uint8Array(128).fill(1), {
+          const body = favicon.buffer.slice(
+            favicon.byteOffset,
+            favicon.byteOffset + favicon.byteLength,
+          ) as ArrayBuffer;
+          return new Response(body, {
             headers: { "content-type": "image/png" },
           });
         }

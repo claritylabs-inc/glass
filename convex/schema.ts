@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 import { pipelineFields } from "@claritylabs/cl-pipelines/convex";
+import { acordTaxonomyBackfillReportValidator } from "./lib/acordTaxonomyBackfillReport";
 import { agentStepsValidator } from "./lib/agentSteps";
 import { policyProductIdentityValidator } from "./lib/policyProductIdentity";
 
@@ -628,6 +629,19 @@ export default defineSchema({
   })
     .index("by_policyId", ["policyId"])
     .index("by_outcome", ["outcome"]),
+
+  acordTaxonomyDryRunPages: defineTable({
+    runId: v.string(),
+    cursorKey: v.string(),
+    orgId: v.optional(v.id("organizations")),
+    limit: v.number(),
+    report: acordTaxonomyBackfillReportValidator,
+    nextCursor: v.optional(v.string()),
+    isDone: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_runId", ["runId"])
+    .index("by_runId_cursorKey", ["runId", "cursorKey"]),
 
   operatorAuthNonces: defineTable({
     nonce: v.string(),

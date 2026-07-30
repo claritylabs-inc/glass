@@ -533,22 +533,34 @@ function parseLloydsIdentity(item: CarrierEvidence) {
 
 function lloydsLedByIdentity(
   evidence: CarrierEvidence[],
-  carrierPartyNames: string[],
+  carrierParties: CarrierOperationalParty[],
 ) {
   return evidence
     .flatMap((item) => {
       const parsed = parseLloydsIdentity(item);
       if (!parsed) return [];
-      const belongsToCarrier = [
-        "Lloyd's Underwriters",
+      const specificNames = [
         parsed.displayName,
         parsed.sourceName,
         ...parsed.legalNames,
-      ].some((name) =>
-        carrierPartyNames.some((partyName) =>
-          sameCarrierIdentityName(name, partyName)
-        )
-      );
+      ];
+      const belongsToCarrier = carrierParties.some((party) => {
+        if (
+          specificNames.some((name) =>
+            sameCarrierIdentityName(name, party.name),
+          )
+        ) {
+          return true;
+        }
+        if (!sameCarrierIdentityName(party.name, "Lloyd's Underwriters")) {
+          return false;
+        }
+        if (item.pageLevel) return false;
+        return (
+          party.sourceNodeIds.some((id) => item.nodeIds.includes(id)) ||
+          party.sourceSpanIds.some((id) => item.spanIds.includes(id))
+        );
+      });
       return belongsToCarrier ? [parsed] : [];
     })
     .sort((left, right) =>
@@ -742,9 +754,23 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
       .map((party) => party.name),
     ...(insurerValueName ? [insurerValueName] : []),
   ]);
+  const sourceBackedCarrierParties = [
+    ...parties.filter((party) =>
+      ["carrier", "insurer"].includes(party.role.toLowerCase()) &&
+      (party.sourceNodeIds.length > 0 || party.sourceSpanIds.length > 0)
+    ),
+    ...(insurerValueName
+      ? [{
+          role: "insurer",
+          name: insurerValueName,
+          sourceNodeIds: stringArray(insurerValue?.sourceNodeIds),
+          sourceSpanIds: stringArray(insurerValue?.sourceSpanIds),
+        }]
+      : []),
+  ];
   const lloydsIdentity = lloydsLedByIdentity(
     evidence,
-    carrierPartyNames,
+    sourceBackedCarrierParties,
   );
   const operatingIdentity = operatingCarrierIdentity(
     evidence,

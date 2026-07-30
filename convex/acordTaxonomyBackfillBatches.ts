@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
   internalMutation,
@@ -9,40 +10,85 @@ import {
   rebuildAcordTaxonomyFromStoredSources,
   type AcordTaxonomyBackfillDecision,
 } from "./lib/acordTaxonomyBackfill";
+import {
+  acordTaxonomyBackfillReportValidator,
+  emptyAcordTaxonomyBackfillReport,
+  type AcordTaxonomyBackfillReport,
+} from "./lib/acordTaxonomyBackfillReport";
 
-export type AcordTaxonomyBackfillReport = {
-  dryRun: boolean;
-  scannedCount: number;
-  changedCount: number;
-  lineChangedCount: number;
-  coverageCodesAdded: number;
-  productIdentitiesAdded: number;
-  skippedReasons: Record<string, number>;
-  samples: Array<{
-    policyId: Id<"policies">;
-    beforeLines: string[];
-    afterLines: string[];
-    coverageCodesAdded: number;
-    productIdentityAdded: boolean;
-  }>;
-  continuationScheduled: boolean;
-};
+export const recordDryRunPageInternal = internalMutation({
+  args: {
+    runId: v.string(),
+    cursorKey: v.string(),
+    orgId: v.optional(v.id("organizations")),
+    limit: v.number(),
+    report: acordTaxonomyBackfillReportValidator,
+    nextCursor: v.optional(v.string()),
+    isDone: v.boolean(),
+    createdAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("acordTaxonomyDryRunPages")
+      .withIndex("by_runId_cursorKey", (query) =>
+        query.eq("runId", args.runId).eq("cursorKey", args.cursorKey)
+      )
+      .unique();
+    if (existing) {
+      return {
+        continuationScheduled: !existing.isDone,
+        isDone: existing.isDone,
+      };
+    }
+    await ctx.db.insert("acordTaxonomyDryRunPages", {
+      runId: args.runId,
+      cursorKey: args.cursorKey,
+      orgId: args.orgId,
+      limit: args.limit,
+      report: args.report,
+      nextCursor: args.nextCursor,
+      isDone: args.isDone,
+      createdAt: args.createdAt,
+    });
+    if (!args.isDone) {
+      if (!args.nextCursor) {
+        throw new Error(
+          "ACORD taxonomy dry-run page omitted its continuation",
+        );
+      }
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.backfillAcordTaxonomy.continueDryRun,
+        {
+          runId: args.runId,
+          orgId: args.orgId,
+          limit: args.limit,
+          cursor: args.nextCursor,
+        },
+      );
+    }
+    return {
+      continuationScheduled: !args.isDone,
+      isDone: args.isDone,
+    };
+  },
+});
 
-export function emptyAcordTaxonomyBackfillReport(
-  dryRun: boolean,
-): AcordTaxonomyBackfillReport {
-  return {
-    dryRun,
-    scannedCount: 0,
-    changedCount: 0,
-    lineChangedCount: 0,
-    coverageCodesAdded: 0,
-    productIdentitiesAdded: 0,
-    skippedReasons: {},
-    samples: [],
-    continuationScheduled: false,
-  };
-}
+export const listDryRunReportPagesInternal = internalQuery({
+  args: {
+    runId: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) =>
+    await ctx.db
+      .query("acordTaxonomyDryRunPages")
+      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .paginate({
+        cursor: args.cursor,
+        numItems: args.limit,
+      }),
+});
 
 function recordSkip(report: AcordTaxonomyBackfillReport, reason: string) {
   report.skippedReasons[reason] =

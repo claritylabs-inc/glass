@@ -13,6 +13,7 @@ import {
   extractWebsiteIdentityEvidence,
   extractWebsiteSiteName,
   extractWebsiteStylesheetUrls,
+  hasSafeFaviconDimensions,
   hasSafePngDimensions,
   normalizePublicWebsiteUrl,
   readResponseBytesWithinLimit,
@@ -176,7 +177,20 @@ describe("website brand signals", () => {
     view.setUint32(20, 65_535);
 
     expect(hasSafePngDimensions(unsafe)).toBe(false);
+    expect(hasSafeFaviconDimensions(unsafe)).toBe(false);
     expect(await extractImageBrandColors(unsafe)).toEqual([]);
+
+    const unsafeIco = new Uint8Array(22 + unsafe.byteLength);
+    const icoView = new DataView(unsafeIco.buffer);
+    icoView.setUint16(2, 1, true);
+    icoView.setUint16(4, 1, true);
+    unsafeIco[6] = 2;
+    unsafeIco[7] = 2;
+    icoView.setUint32(14, unsafe.byteLength, true);
+    icoView.setUint32(18, 22, true);
+    unsafeIco.set(unsafe, 22);
+
+    expect(hasSafeFaviconDimensions(unsafeIco)).toBe(false);
   });
 
   it("recovers a canonical domain favicon and color when website HTML is blocked", async () => {

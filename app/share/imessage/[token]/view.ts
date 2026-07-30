@@ -18,6 +18,7 @@ export type Policy = {
   linesOfBusiness?: string[];
   effectiveDate: string;
   expirationDate: string;
+  policyTermType?: string;
   dataStage?: string;
   coverageBreakdown?: CoverageBreakdown;
   coverages: Array<{
@@ -55,10 +56,17 @@ export function formatDate(value?: string | number) {
 }
 
 export function policyPeriod(
-  policy: Pick<Policy, "effectiveDate" | "expirationDate">,
+  policy: Pick<
+    Policy,
+    "effectiveDate" | "expirationDate" | "policyTermType"
+  >,
 ) {
   return (
-    formatDisplayPolicyPeriod(policy.effectiveDate, policy.expirationDate) ||
+    formatDisplayPolicyPeriod(
+      policy.effectiveDate,
+      policy.expirationDate,
+      policy.policyTermType,
+    ) ||
     "Not listed"
   );
 }

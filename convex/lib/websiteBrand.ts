@@ -19,6 +19,7 @@ const ICON_SAMPLE_SIZE = 64;
 const ICON_COLOR_BUCKET_SIZE = 16;
 const MAX_PNG_DIMENSION = 2_048;
 const MAX_PNG_PIXELS = 1_048_576;
+const MAX_ICO_ENTRIES = 64;
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
 
 type WebsiteBrandSignals = {
@@ -330,6 +331,88 @@ export function hasSafePngDimensions(bytes: Uint8Array) {
     height <= MAX_PNG_DIMENSION &&
     width * height <= MAX_PNG_PIXELS
   );
+}
+
+function startsWithPngSignature(bytes: Uint8Array) {
+  return PNG_SIGNATURE.every((value, index) => bytes[index] === value);
+}
+
+function hasSafeIconArea(width: number, height: number) {
+  return (
+    width > 0 &&
+    height > 0 &&
+    width <= MAX_PNG_DIMENSION &&
+    height <= MAX_PNG_DIMENSION &&
+    width * height <= MAX_PNG_PIXELS
+  );
+}
+
+export function hasSafeFaviconDimensions(bytes: Uint8Array) {
+  if (startsWithPngSignature(bytes)) return hasSafePngDimensions(bytes);
+  if (bytes.byteLength < 22) return false;
+  const view = new DataView(
+    bytes.buffer,
+    bytes.byteOffset,
+    bytes.byteLength,
+  );
+  const entryCount = view.getUint16(4, true);
+  if (
+    view.getUint16(0, true) !== 0 ||
+    view.getUint16(2, true) !== 1 ||
+    entryCount === 0 ||
+    entryCount > MAX_ICO_ENTRIES ||
+    6 + entryCount * 16 > bytes.byteLength
+  ) {
+    return false;
+  }
+
+  for (let index = 0; index < entryCount; index += 1) {
+    const entryOffset = 6 + index * 16;
+    const declaredWidth = bytes[entryOffset] || 256;
+    const declaredHeight = bytes[entryOffset + 1] || 256;
+    const byteLength = view.getUint32(entryOffset + 8, true);
+    const imageOffset = view.getUint32(entryOffset + 12, true);
+    if (
+      !hasSafeIconArea(declaredWidth, declaredHeight) ||
+      byteLength === 0 ||
+      imageOffset + byteLength > bytes.byteLength
+    ) {
+      return false;
+    }
+
+    const image = bytes.subarray(imageOffset, imageOffset + byteLength);
+    if (startsWithPngSignature(image)) {
+      if (!hasSafePngDimensions(image)) return false;
+      continue;
+    }
+    if (image.byteLength < 12) return false;
+    const imageView = new DataView(
+      image.buffer,
+      image.byteOffset,
+      image.byteLength,
+    );
+    const headerSize = imageView.getUint32(0, true);
+    const width = headerSize === 12
+      ? imageView.getUint16(4, true)
+      : headerSize >= 40 && image.byteLength >= 40
+        ? Math.abs(imageView.getInt32(4, true))
+        : 0;
+    const storedHeight = headerSize === 12
+      ? imageView.getUint16(6, true)
+      : headerSize >= 40 && image.byteLength >= 40
+        ? Math.abs(imageView.getInt32(8, true))
+        : 0;
+    const height = storedHeight % 2 === 0
+      ? storedHeight / 2
+      : storedHeight;
+    if (!hasSafeIconArea(width, height)) return false;
+  }
+  return true;
+}
+
+function safeFaviconMimeType(bytes: Uint8Array) {
+  if (!hasSafeFaviconDimensions(bytes)) return undefined;
+  return startsWithPngSignature(bytes) ? "image/png" : "image/x-icon";
 }
 
 export async function extractImageBrandColors(input: Uint8Array | ArrayBuffer) {
@@ -670,7 +753,9 @@ async function fetchFaviconFromHtml(html: string, website: string) {
       if (bytes.byteLength < 64) {
         continue;
       }
-      return new Blob([bytes], { type: contentType || "image/x-icon" });
+      const safeMimeType = safeFaviconMimeType(bytes);
+      if (!safeMimeType) continue;
+      return new Blob([bytes], { type: safeMimeType });
     } catch {
       continue;
     }

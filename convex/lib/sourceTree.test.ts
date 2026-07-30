@@ -2024,6 +2024,78 @@ describe("sourceTreePolicyFields", () => {
     });
   });
 
+  it("requires generic Lloyd's parties to share provenance with the led-by clause", () => {
+    const canonicalText =
+      "Lloyd's Underwriters led by Canonical Managing Agency Limited Syndicate 1234";
+    const unrelatedText =
+      "Underlying policy: Lloyd's Underwriters led by Unrelated Managing Agency Limited Syndicate 1111 and Syndicate 2222";
+    const spans: SourceSpanLike[] = [
+      {
+        id: "canonical-lloyds-span",
+        text: canonicalText,
+        pageStart: 1,
+      },
+      {
+        id: "unrelated-lloyds-span",
+        text: unrelatedText,
+        pageStart: 4,
+      },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "canonical-lloyds-carrier",
+        documentId: "generic-lloyds-policy",
+        kind: "section",
+        title: "Insurer",
+        description: canonicalText,
+        textExcerpt: canonicalText,
+        sourceSpanIds: ["canonical-lloyds-span"],
+        order: 0,
+        path: "Policy / Insurer",
+      },
+      {
+        id: "underlying-lloyds-reference",
+        documentId: "generic-lloyds-policy",
+        kind: "section",
+        title: "Underlying policy",
+        description: unrelatedText,
+        textExcerpt: unrelatedText,
+        sourceSpanIds: ["unrelated-lloyds-span"],
+        order: 1,
+        path: "Policy / Underlying policy",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        parties: [{
+          role: "carrier",
+          name: "Lloyd's Underwriters",
+          sourceNodeIds: ["canonical-lloyds-carrier"],
+          sourceSpanIds: ["canonical-lloyds-span"],
+        }],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrierIdentity).toMatchObject({
+      displayName: "Canonical Managing Agency Limited",
+      sourceName:
+        "Lloyd's Underwriters led by: Canonical Managing Agency Limited, Syndicate No. 1234",
+      sourceNodeIds: ["canonical-lloyds-carrier"],
+      sourceSpanIds: ["canonical-lloyds-span"],
+    });
+  });
+
   it("preserves Lloyd's lead underwriter and syndicates from source evidence", () => {
     const carrierText = [
       "LLOYD'S UNDERWRITERS LED BY: TOKIO",

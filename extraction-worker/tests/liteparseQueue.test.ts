@@ -58,6 +58,31 @@ test("gives a waiting preview a turn after four HTTP starts", () => {
   );
 });
 
+test("preserves preview debt when a waiting full parse gets its turn", () => {
+  let state = { ...INITIAL_LITEPARSE_QUEUE_FAIRNESS_STATE };
+  const selected: LiteParseQueuePriority[] = [];
+
+  for (let index = 0; index < 6; index += 1) {
+    const priorities: LiteParseQueuePriority[] = [
+      "http",
+      "preview",
+      "full",
+    ];
+    const selection = selectNextLiteParseQueueIndex(priorities, state);
+    state = selection.state;
+    selected.push(priorities[selection.index]);
+  }
+
+  assert.deepEqual(selected, [
+    "http",
+    "http",
+    "http",
+    "http",
+    "full",
+    "preview",
+  ]);
+});
+
 test("does not carry a stale burst penalty into a newly waiting class", () => {
   const initial = selectNextLiteParseQueueIndex(
     ["http"],

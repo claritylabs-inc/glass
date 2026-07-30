@@ -91,6 +91,7 @@ import type * as lib_accessTests from "../lib/accessTests.js";
 import type * as lib_acordForms_select from "../lib/acordForms/select.js";
 import type * as lib_acordForms_types from "../lib/acordForms/types.js";
 import type * as lib_acordTaxonomyBackfill from "../lib/acordTaxonomyBackfill.js";
+import type * as lib_acordTaxonomyBackfillReport from "../lib/acordTaxonomyBackfillReport.js";
 import type * as lib_actionFailures from "../lib/actionFailures.js";
 import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
 import type * as lib_agentMessageHistory from "../lib/agentMessageHistory.js";
@@ -347,6 +348,7 @@ declare const fullApi: ApiFromModules<{
   "lib/acordForms/select": typeof lib_acordForms_select;
   "lib/acordForms/types": typeof lib_acordForms_types;
   "lib/acordTaxonomyBackfill": typeof lib_acordTaxonomyBackfill;
+  "lib/acordTaxonomyBackfillReport": typeof lib_acordTaxonomyBackfillReport;
   "lib/actionFailures": typeof lib_actionFailures;
   "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;
   "lib/agentMessageHistory": typeof lib_agentMessageHistory;

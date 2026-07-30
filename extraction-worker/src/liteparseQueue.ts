@@ -48,9 +48,11 @@ export function selectNextLiteParseQueueIndex(
     index,
     state: {
       httpStartsWhilePreviewWaiting:
-        previewIndex < 0 || selected !== "http"
+        previewIndex < 0 || selected === "preview"
           ? 0
-          : state.httpStartsWhilePreviewWaiting + 1,
+          : selected === "http"
+            ? state.httpStartsWhilePreviewWaiting + 1
+            : state.httpStartsWhilePreviewWaiting,
       nonFullStartsWhileFullWaiting:
         fullIndex < 0 || selected === "full"
           ? 0
