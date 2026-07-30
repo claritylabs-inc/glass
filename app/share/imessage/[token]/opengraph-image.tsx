@@ -1,9 +1,11 @@
 import { ImageResponse } from "next/og";
 import { GLOBE_PATH, ogFonts } from "../../../opengraph-image";
+import { policyCardBranding } from "@/lib/policy-card-branding";
+import { readCarrierIdentity } from "@/convex/lib/carrierIdentity";
 import {
   compactList,
-  formatDate,
   loadAppCardView,
+  policyPeriod,
   policyLineBusinessLabels,
   truncate,
   type AppCardView,
@@ -30,7 +32,7 @@ function heroSubtitle(view: AppCardView) {
     return compactList([
       view.policy.carrier,
       policyLineBusinessLabels(view.policy).join(", "),
-      `${formatDate(view.policy.effectiveDate)} to ${formatDate(view.policy.expirationDate)}`,
+      policyPeriod(view.policy),
     ]);
   }
   if (view.certificate) {
@@ -57,19 +59,19 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function globeSvg(size: number): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 65" width="${size}" height="${size}"><circle cx="32.5" cy="32.5" r="31" fill="none" stroke="${BRAND_BLUE}" stroke-width="1.25"/><path fill="${BRAND_BLUE}" fill-rule="evenodd" d="${GLOBE_PATH}"/></svg>`;
+function globeSvg(size: number, color = BRAND_BLUE): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 65 65" width="${size}" height="${size}"><circle cx="32.5" cy="32.5" r="31" fill="none" stroke="${color}" stroke-width="1.25"/><path fill="${color}" fill-rule="evenodd" d="${GLOBE_PATH}"/></svg>`;
 }
 
-function globeDataUri(size: number): string {
-  return `data:image/svg+xml;utf8,${encodeURIComponent(globeSvg(size))}`;
+function globeDataUri(size: number, color = BRAND_BLUE): string {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(globeSvg(size, color))}`;
 }
 
-function GlassMark() {
+function GlassMark({ color = "#000000" }: { color?: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <img src={globeDataUri(34)} alt="" width={34} height={34} />
-      <div style={{ fontSize: 28, fontWeight: 500, color: "#000000", letterSpacing: 0 }}>
+      <img src={globeDataUri(34, color)} alt="" width={34} height={34} />
+      <div style={{ fontSize: 28, fontWeight: 500, color, letterSpacing: 0 }}>
         Glass
       </div>
     </div>
@@ -143,6 +145,199 @@ function PolicyDetails({ policy }: { policy: Policy }) {
   );
 }
 
+function PolicyPattern({
+  variant,
+  color,
+}: {
+  variant: number;
+  color: string;
+}) {
+  if (variant === 0) {
+    return (
+      <div style={{ position: "absolute", inset: 0, display: "flex", overflow: "hidden" }}>
+        {Array.from({ length: 11 }).map((_, index) => {
+          const size = 180 + index * 44;
+          return (
+            <div
+              key={size}
+              style={{
+                position: "absolute",
+                right: 80 - size / 2,
+                bottom: 20 - size / 2,
+                width: size,
+                height: size,
+                border: `2px solid ${color}`,
+                borderRadius: "999px",
+                opacity: 0.03 + index * 0.012,
+              }}
+            />
+          );
+        })}
+      </div>
+    );
+  }
+  if (variant === 1) {
+    return (
+      <div style={{ position: "absolute", inset: 0, display: "flex", overflow: "hidden" }}>
+        {Array.from({ length: 18 }).map((_, index) => (
+          <div
+            key={index}
+            style={{
+              position: "absolute",
+              right: -160 + index * 32,
+              bottom: -130,
+              width: 2,
+              height: 520,
+              backgroundColor: color,
+              opacity: 0.025 + index * 0.006,
+              transform: "rotate(28deg)",
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div style={{ position: "absolute", right: 0, bottom: 0, width: 590, height: 330, display: "flex", overflow: "hidden" }}>
+      {Array.from({ length: 14 }).map((_, index) => (
+        <div
+          key={`v-${index}`}
+          style={{
+            position: "absolute",
+            right: index * 42,
+            bottom: 0,
+            width: 1,
+            height: 330,
+            backgroundColor: color,
+            opacity: 0.03 + index * 0.004,
+          }}
+        />
+      ))}
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div
+          key={`h-${index}`}
+          style={{
+            position: "absolute",
+            right: 0,
+            bottom: index * 42,
+            width: 590,
+            height: 1,
+            backgroundColor: color,
+            opacity: 0.03 + index * 0.006,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function BrandedPolicyImage({ policy, orgName }: { policy: Policy; orgName: string }) {
+  const carrierIdentity = readCarrierIdentity(policy.carrierIdentity);
+  const branding = carrierIdentity?.branding;
+  const issuerName =
+    carrierIdentity?.displayName ?? policy.carrier ?? "Insurance carrier";
+  const lines = policyLineBusinessLabels(policy);
+  const { cardColor, patternVariant, textColor } = policyCardBranding(
+    issuerName,
+    branding?.accentColor,
+  );
+  const details = [
+    ["Named insured", policy.insuredName || "Not listed"],
+    ["Policy number", policy.policyNumber || "Not listed"],
+    [
+      "Policy period",
+      policyPeriod(policy),
+    ],
+  ];
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        backgroundColor: cardColor,
+        color: textColor,
+        fontFamily: "Geist",
+        padding: "54px 66px",
+      }}
+    >
+      <PolicyPattern variant={patternVariant} color={textColor} />
+      <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <GlassMark color={textColor} />
+        <div style={{ fontSize: 23, color: textColor, opacity: 0.65 }}>Policy</div>
+      </div>
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 18, marginTop: 48 }}>
+        {branding?.iconUrl ? (
+          <img
+            src={branding.iconUrl}
+            alt=""
+            width={56}
+            height={56}
+            style={{ borderRadius: 10, objectFit: "contain", backgroundColor: "#ffffff" }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 10,
+              backgroundColor: "#ffffff",
+              color: "#0F172A",
+              fontSize: 25,
+              fontWeight: 600,
+            }}
+          >
+            {issuerName[0]}
+          </div>
+        )}
+        <div style={{ fontSize: 27, color: textColor, fontWeight: 500, opacity: 0.85 }}>
+          {truncate(issuerName, 58)}
+        </div>
+      </div>
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", marginTop: 42 }}>
+        <div style={{ fontSize: 20, color: textColor, opacity: 0.55 }}>Product lines</div>
+        <div style={{ display: "flex", flexDirection: "column", marginTop: 7 }}>
+          {(lines.length ? lines : ["Policy"]).slice(0, 3).map((line) => (
+            <div key={line} style={{ fontSize: 38, lineHeight: 1.13, color: textColor, fontWeight: 500 }}>
+              {truncate(line, 48)}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div
+        style={{
+          position: "relative",
+          display: "flex",
+          gap: 30,
+          marginTop: "auto",
+          borderTop: `1px solid ${textColor}33`,
+          paddingTop: 22,
+        }}
+      >
+        {details.map(([label, value]) => (
+          <div key={label} style={{ display: "flex", minWidth: 0, flex: 1, flexDirection: "column" }}>
+            <div style={{ fontSize: 18, color: textColor, opacity: 0.55 }}>{label}</div>
+            <div style={{ marginTop: 6, fontSize: 24, color: textColor, opacity: 0.85 }}>
+              {truncate(value, 34)}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "relative", display: "flex", justifyContent: "space-between", marginTop: 24, fontSize: 17, color: textColor, opacity: 0.48 }}>
+        <div>{truncate(orgName, 70)}</div>
+        <div>app.glass.insure</div>
+      </div>
+    </div>
+  );
+}
+
 export default async function Image({
   params,
 }: {
@@ -157,6 +352,13 @@ export default async function Image({
       ...size,
       ...(fonts ? { fonts } : {}),
     });
+  }
+
+  if (view.kind === "policy" && view.policy) {
+    return new ImageResponse(
+      <BrandedPolicyImage policy={view.policy} orgName={view.orgName} />,
+      { ...size, ...(fonts ? { fonts } : {}) },
+    );
   }
 
   const subtitle = heroSubtitle(view);

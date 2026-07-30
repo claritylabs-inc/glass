@@ -13,14 +13,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { FadeIn } from "@/components/ui/fade-in";
-import {
-  Archive,
-  Clock3,
-  Loader2,
-  Plus,
-  RotateCw,
-  X,
-} from "lucide-react";
+import { Archive, Clock3, Loader2, Plus, RotateCw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dayjs from "dayjs";
@@ -74,7 +67,11 @@ import {
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
-import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
+import {
+  formatDisplayDateTime,
+  formatDisplayPolicyPeriod,
+} from "@/lib/date-format";
+import { policyTermTypeFromVersionSnapshot } from "@/convex/lib/policyVersioning";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import { PolicyDetailSkeleton } from "./policy-detail-skeleton";
 import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
@@ -128,6 +125,7 @@ type PolicyVersionRow = {
   policyNumber?: string;
   summary?: string;
   fieldDiffs?: PolicyVersionFieldDiff[];
+  snapshot?: unknown;
   createdAt: number;
 };
 
@@ -162,11 +160,14 @@ function formatVersionDate(value: number) {
 }
 
 function formatPolicyTerm(version: PolicyVersionRow) {
-  if (version.effectiveDate && version.expirationDate) {
-    return `${formatDisplayDate(version.effectiveDate, version.effectiveDate)} - ${formatDisplayDate(version.expirationDate, version.expirationDate)}`;
-  }
-  const date = version.effectiveDate ?? version.expirationDate;
-  return date ? formatDisplayDate(date, date) : "Not recorded";
+  return (
+    formatDisplayPolicyPeriod(
+      version.effectiveDate,
+      version.expirationDate,
+      policyTermTypeFromVersionSnapshot(version.snapshot),
+    ) ||
+    "Not recorded"
+  );
 }
 
 function meaningfulVersionSummary(version: PolicyVersionRow) {
@@ -199,13 +200,7 @@ function changedFieldLabels(version: PolicyVersionRow) {
     .map(formatFieldLabel);
 }
 
-function HistoryDatum({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
+function HistoryDatum({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <p className="text-label text-muted-foreground">{label}</p>
@@ -298,9 +293,7 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
                   </span>
                 ) : null}
                 {index === 0 ? (
-                  <Badge variant="secondary">
-                    Current
-                  </Badge>
+                  <Badge variant="secondary">Current</Badge>
                 ) : null}
                 <span className="text-label text-muted-foreground sm:ml-auto">
                   {formatVersionDate(version.createdAt)}
@@ -448,7 +441,7 @@ export function PolicyDetailBody({
       setPageContext({
         pageType: "policy",
         entityId: policy._id,
-        summary: `${parties.generalAgentName ?? parties.insurerName ?? "Unknown"} ${policy.policyNumber ?? ""} — ${lines.join(", ")}`,
+        summary: `${parties.generalAgentName ?? parties.carrierDisplayName ?? parties.insurerName ?? "Unknown"} ${policy.policyNumber ?? ""} — ${lines.join(", ")}`,
       });
     }
     return () => setPageContext(null);
@@ -467,7 +460,10 @@ export function PolicyDetailBody({
 
   const p = (policy ?? {}) as unknown as Record<string, unknown>;
   const policyParties = resolvePolicyPartyContext(p);
-  const carrierName = policyParties.insurerName ?? "";
+  const carrierName =
+    policyParties.carrierDisplayName ??
+    policyParties.insurerName ??
+    "";
   const generalAgentName = policyParties.generalAgentName ?? "";
   const displayName = generalAgentName || carrierName;
   const policyNumber = (p.policyNumber as string | undefined) ?? "";
@@ -517,74 +513,95 @@ export function PolicyDetailBody({
     [],
   );
 
-  const reissueCertificate = useCallback(async (row: PolicyCertificateRecord) => {
-    const holder = row.holder;
-    if (!holder?.displayName) {
-      toast.error("Certificate holder is missing");
-      return;
-    }
-    setReissuingCertificateId(row._id);
-    try {
-      const result = await generateCertificate(certificateVersionActionInput(row));
-      if ((result as { status?: string }).status === "ambiguous_certificate_holder") {
-        toast.message((result as { message?: string }).message ?? "Choose the existing certificate to reissue.");
+  const reissueCertificate = useCallback(
+    async (row: PolicyCertificateRecord) => {
+      const holder = row.holder;
+      if (!holder?.displayName) {
+        toast.error("Certificate holder is missing");
         return;
       }
-      if ((result as { status?: string }).status === "held_policy_change_required") {
-        toast.message((result as { message?: string }).message ?? "Broker review is needed before reissue.");
-        return;
+      setReissuingCertificateId(row._id);
+      try {
+        const result = await generateCertificate(
+          certificateVersionActionInput(row),
+        );
+        if (
+          (result as { status?: string }).status ===
+          "ambiguous_certificate_holder"
+        ) {
+          toast.message(
+            (result as { message?: string }).message ??
+              "Choose the existing certificate to reissue.",
+          );
+          return;
+        }
+        if (
+          (result as { status?: string }).status ===
+          "held_policy_change_required"
+        ) {
+          toast.message(
+            (result as { message?: string }).message ??
+              "Broker review is needed before reissue.",
+          );
+          return;
+        }
+        toast.success("Certificate reissued");
+        if ((result as { url?: string }).url) {
+          openWithUrl((result as { url: string }).url);
+        }
+      } catch (error) {
+        toast.error(
+          getUserFacingErrorMessage(error, "Could not reissue certificate"),
+        );
+      } finally {
+        setReissuingCertificateId(null);
       }
-      toast.success("Certificate reissued");
-      if ((result as { url?: string }).url) {
-        openWithUrl((result as { url: string }).url);
-      }
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(error, "Could not reissue certificate"),
-      );
-    } finally {
-      setReissuingCertificateId(null);
-    }
-  }, [generateCertificate, openWithUrl]);
+    },
+    [generateCertificate, openWithUrl],
+  );
 
-  const editCertificateHolder = useCallback(async (
-    row: PolicyCertificateRecord,
-    draft: CertificateHolderDraft,
-  ) => {
-    setSavingCertificateId(row._id);
-    try {
-      const result = await generateCertificate(
-        certificateVersionActionInput(row, draft),
-      );
-      if ((result as { status?: string }).status === "held_policy_change_required") {
-        toast.message(
-          (result as { message?: string }).message ??
-            "Broker review is needed before generating this version.",
+  const editCertificateHolder = useCallback(
+    async (row: PolicyCertificateRecord, draft: CertificateHolderDraft) => {
+      setSavingCertificateId(row._id);
+      try {
+        const result = await generateCertificate(
+          certificateVersionActionInput(row, draft),
+        );
+        if (
+          (result as { status?: string }).status ===
+          "held_policy_change_required"
+        ) {
+          toast.message(
+            (result as { message?: string }).message ??
+              "Broker review is needed before generating this version.",
+          );
+          return false;
+        }
+        const versionNumber = (result as { versionNumber?: number })
+          .versionNumber;
+        toast.success(
+          versionNumber
+            ? `Certificate version ${versionNumber} generated`
+            : "New certificate version generated",
+        );
+        if ((result as { url?: string }).url) {
+          openWithUrl((result as { url: string }).url);
+        }
+        return true;
+      } catch (error) {
+        toast.error(
+          getUserFacingErrorMessage(
+            error,
+            "Could not update certificate holder",
+          ),
         );
         return false;
+      } finally {
+        setSavingCertificateId(null);
       }
-      const versionNumber = (result as { versionNumber?: number }).versionNumber;
-      toast.success(
-        versionNumber
-          ? `Certificate version ${versionNumber} generated`
-          : "New certificate version generated",
-      );
-      if ((result as { url?: string }).url) {
-        openWithUrl((result as { url: string }).url);
-      }
-      return true;
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(
-          error,
-          "Could not update certificate holder",
-        ),
-      );
-      return false;
-    } finally {
-      setSavingCertificateId(null);
-    }
-  }, [generateCertificate, openWithUrl]);
+    },
+    [generateCertificate, openWithUrl],
+  );
 
   const archiveCertificate = useCallback(
     async (row: PolicyCertificateRecord) => {
@@ -937,7 +954,8 @@ export function PolicyDetailBody({
             <DialogTitle>Archive policy</DialogTitle>
             <DialogDescription>
               Archive <strong>{policyNumber}</strong>? It will be excluded from
-              active policy lists, compliance, search, and Glass tools until restored.
+              active policy lists, compliance, search, and Glass tools until
+              restored.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

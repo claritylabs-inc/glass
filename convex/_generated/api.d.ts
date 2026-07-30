@@ -8,7 +8,10 @@
  * @module
  */
 
+import type * as acordTaxonomyBackfillBatches from "../acordTaxonomyBackfillBatches.js";
 import type * as actions_archiveNonCoverageRequirements from "../actions/archiveNonCoverageRequirements.js";
+import type * as actions_backfillAcordTaxonomy from "../actions/backfillAcordTaxonomy.js";
+import type * as actions_backfillCarrierIdentity from "../actions/backfillCarrierIdentity.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_backfillComplianceRequirementShape from "../actions/backfillComplianceRequirementShape.js";
 import type * as actions_backfillLinesOfBusiness from "../actions/backfillLinesOfBusiness.js";
@@ -19,6 +22,7 @@ import type * as actions_connectedEmail from "../actions/connectedEmail.js";
 import type * as actions_connectedEmailScan from "../actions/connectedEmailScan.js";
 import type * as actions_createOutboundImessageGroup from "../actions/createOutboundImessageGroup.js";
 import type * as actions_emailDrafts from "../actions/emailDrafts.js";
+import type * as actions_enrichCarrierIdentity from "../actions/enrichCarrierIdentity.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
 import type * as actions_extractSupplementary from "../actions/extractSupplementary.js";
@@ -54,6 +58,8 @@ import type * as auth from "../auth.js";
 import type * as backfillDeclarationFacts from "../backfillDeclarationFacts.js";
 import type * as backfillLinesOfBusinessBatches from "../backfillLinesOfBusinessBatches.js";
 import type * as brokerActivity from "../brokerActivity.js";
+import type * as carrierIdentityBackfill from "../carrierIdentityBackfill.js";
+import type * as carrierIdentityCache from "../carrierIdentityCache.js";
 import type * as certificateHolders from "../certificateHolders.js";
 import type * as certificateLifecycle from "../certificateLifecycle.js";
 import type * as certificateWorkflowJobs from "../certificateWorkflowJobs.js";
@@ -85,6 +91,8 @@ import type * as lib_access from "../lib/access.js";
 import type * as lib_accessTests from "../lib/accessTests.js";
 import type * as lib_acordForms_select from "../lib/acordForms/select.js";
 import type * as lib_acordForms_types from "../lib/acordForms/types.js";
+import type * as lib_acordTaxonomyBackfill from "../lib/acordTaxonomyBackfill.js";
+import type * as lib_acordTaxonomyBackfillReport from "../lib/acordTaxonomyBackfillReport.js";
 import type * as lib_actionFailures from "../lib/actionFailures.js";
 import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
 import type * as lib_agentMessageHistory from "../lib/agentMessageHistory.js";
@@ -101,6 +109,11 @@ import type * as lib_apiError from "../lib/apiError.js";
 import type * as lib_branding from "../lib/branding.js";
 import type * as lib_brokerActivity from "../lib/brokerActivity.js";
 import type * as lib_brokerIdentity from "../lib/brokerIdentity.js";
+import type * as lib_carrierIdentity from "../lib/carrierIdentity.js";
+import type * as lib_carrierIdentityBackfill from "../lib/carrierIdentityBackfill.js";
+import type * as lib_carrierIdentityEnrichment from "../lib/carrierIdentityEnrichment.js";
+import type * as lib_carrierIdentityProjection from "../lib/carrierIdentityProjection.js";
+import type * as lib_carrierIdentitySource from "../lib/carrierIdentitySource.js";
 import type * as lib_certificateBrokerEmail from "../lib/certificateBrokerEmail.js";
 import type * as lib_certificateDescription from "../lib/certificateDescription.js";
 import type * as lib_certificateEndorsements from "../lib/certificateEndorsements.js";
@@ -146,6 +159,7 @@ import type * as lib_entityTypes from "../lib/entityTypes.js";
 import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_extractionFieldReview from "../lib/extractionFieldReview.js";
 import type * as lib_extractionPostProcess from "../lib/extractionPostProcess.js";
+import type * as lib_extractionPromptGuidance from "../lib/extractionPromptGuidance.js";
 import type * as lib_extractionTraceRouterFields from "../lib/extractionTraceRouterFields.js";
 import type * as lib_featureFlags from "../lib/featureFlags.js";
 import type * as lib_fireworksStructuredOutput from "../lib/fireworksStructuredOutput.js";
@@ -189,6 +203,7 @@ import type * as lib_policyDocumentStructure from "../lib/policyDocumentStructur
 import type * as lib_policyLookup from "../lib/policyLookup.js";
 import type * as lib_policyPartyContext from "../lib/policyPartyContext.js";
 import type * as lib_policyPeriodExtraction from "../lib/policyPeriodExtraction.js";
+import type * as lib_policyProductIdentity from "../lib/policyProductIdentity.js";
 import type * as lib_policyToolResolution from "../lib/policyToolResolution.js";
 import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_policyVersioning from "../lib/policyVersioning.js";
@@ -210,6 +225,7 @@ import type * as lib_valueNormalization from "../lib/valueNormalization.js";
 import type * as lib_vendorComplianceTools from "../lib/vendorComplianceTools.js";
 import type * as lib_webChatDeterministicControls from "../lib/webChatDeterministicControls.js";
 import type * as lib_webRetrieval from "../lib/webRetrieval.js";
+import type * as lib_websiteBrand from "../lib/websiteBrand.js";
 import type * as lib_workflows_certificateRequest from "../lib/workflows/certificateRequest.js";
 import type * as lib_workflows_comms from "../lib/workflows/comms.js";
 import type * as lib_workflows_index from "../lib/workflows/index.js";
@@ -250,7 +266,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  acordTaxonomyBackfillBatches: typeof acordTaxonomyBackfillBatches;
   "actions/archiveNonCoverageRequirements": typeof actions_archiveNonCoverageRequirements;
+  "actions/backfillAcordTaxonomy": typeof actions_backfillAcordTaxonomy;
+  "actions/backfillCarrierIdentity": typeof actions_backfillCarrierIdentity;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/backfillComplianceRequirementShape": typeof actions_backfillComplianceRequirementShape;
   "actions/backfillLinesOfBusiness": typeof actions_backfillLinesOfBusiness;
@@ -261,6 +280,7 @@ declare const fullApi: ApiFromModules<{
   "actions/connectedEmailScan": typeof actions_connectedEmailScan;
   "actions/createOutboundImessageGroup": typeof actions_createOutboundImessageGroup;
   "actions/emailDrafts": typeof actions_emailDrafts;
+  "actions/enrichCarrierIdentity": typeof actions_enrichCarrierIdentity;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
   "actions/extractFromUpload": typeof actions_extractFromUpload;
   "actions/extractSupplementary": typeof actions_extractSupplementary;
@@ -296,6 +316,8 @@ declare const fullApi: ApiFromModules<{
   backfillDeclarationFacts: typeof backfillDeclarationFacts;
   backfillLinesOfBusinessBatches: typeof backfillLinesOfBusinessBatches;
   brokerActivity: typeof brokerActivity;
+  carrierIdentityBackfill: typeof carrierIdentityBackfill;
+  carrierIdentityCache: typeof carrierIdentityCache;
   certificateHolders: typeof certificateHolders;
   certificateLifecycle: typeof certificateLifecycle;
   certificateWorkflowJobs: typeof certificateWorkflowJobs;
@@ -327,6 +349,8 @@ declare const fullApi: ApiFromModules<{
   "lib/accessTests": typeof lib_accessTests;
   "lib/acordForms/select": typeof lib_acordForms_select;
   "lib/acordForms/types": typeof lib_acordForms_types;
+  "lib/acordTaxonomyBackfill": typeof lib_acordTaxonomyBackfill;
+  "lib/acordTaxonomyBackfillReport": typeof lib_acordTaxonomyBackfillReport;
   "lib/actionFailures": typeof lib_actionFailures;
   "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;
   "lib/agentMessageHistory": typeof lib_agentMessageHistory;
@@ -343,6 +367,11 @@ declare const fullApi: ApiFromModules<{
   "lib/branding": typeof lib_branding;
   "lib/brokerActivity": typeof lib_brokerActivity;
   "lib/brokerIdentity": typeof lib_brokerIdentity;
+  "lib/carrierIdentity": typeof lib_carrierIdentity;
+  "lib/carrierIdentityBackfill": typeof lib_carrierIdentityBackfill;
+  "lib/carrierIdentityEnrichment": typeof lib_carrierIdentityEnrichment;
+  "lib/carrierIdentityProjection": typeof lib_carrierIdentityProjection;
+  "lib/carrierIdentitySource": typeof lib_carrierIdentitySource;
   "lib/certificateBrokerEmail": typeof lib_certificateBrokerEmail;
   "lib/certificateDescription": typeof lib_certificateDescription;
   "lib/certificateEndorsements": typeof lib_certificateEndorsements;
@@ -388,6 +417,7 @@ declare const fullApi: ApiFromModules<{
   "lib/extraction": typeof lib_extraction;
   "lib/extractionFieldReview": typeof lib_extractionFieldReview;
   "lib/extractionPostProcess": typeof lib_extractionPostProcess;
+  "lib/extractionPromptGuidance": typeof lib_extractionPromptGuidance;
   "lib/extractionTraceRouterFields": typeof lib_extractionTraceRouterFields;
   "lib/featureFlags": typeof lib_featureFlags;
   "lib/fireworksStructuredOutput": typeof lib_fireworksStructuredOutput;
@@ -431,6 +461,7 @@ declare const fullApi: ApiFromModules<{
   "lib/policyLookup": typeof lib_policyLookup;
   "lib/policyPartyContext": typeof lib_policyPartyContext;
   "lib/policyPeriodExtraction": typeof lib_policyPeriodExtraction;
+  "lib/policyProductIdentity": typeof lib_policyProductIdentity;
   "lib/policyToolResolution": typeof lib_policyToolResolution;
   "lib/policyTypes": typeof lib_policyTypes;
   "lib/policyVersioning": typeof lib_policyVersioning;
@@ -452,6 +483,7 @@ declare const fullApi: ApiFromModules<{
   "lib/vendorComplianceTools": typeof lib_vendorComplianceTools;
   "lib/webChatDeterministicControls": typeof lib_webChatDeterministicControls;
   "lib/webRetrieval": typeof lib_webRetrieval;
+  "lib/websiteBrand": typeof lib_websiteBrand;
   "lib/workflows/certificateRequest": typeof lib_workflows_certificateRequest;
   "lib/workflows/comms": typeof lib_workflows_comms;
   "lib/workflows/index": typeof lib_workflows_index;

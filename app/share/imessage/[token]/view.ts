@@ -2,17 +2,23 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
-import { formatDisplayDate } from "@/lib/date-format";
+import {
+  formatDisplayDate,
+  formatDisplayPolicyPeriod,
+} from "@/lib/date-format";
+import type { CarrierIdentity } from "@/convex/lib/carrierIdentity";
 
 export type Policy = {
   id: string;
   title: string;
   insuredName: string;
   carrier?: string;
+  carrierIdentity?: CarrierIdentity | null;
   policyNumber: string;
   linesOfBusiness?: string[];
   effectiveDate: string;
   expirationDate: string;
+  policyTermType?: string;
   dataStage?: string;
   coverageBreakdown?: CoverageBreakdown;
   coverages: Array<{
@@ -49,6 +55,22 @@ export function formatDate(value?: string | number) {
   return formatDisplayDate(value, String(value));
 }
 
+export function policyPeriod(
+  policy: Pick<
+    Policy,
+    "effectiveDate" | "expirationDate" | "policyTermType"
+  >,
+) {
+  return (
+    formatDisplayPolicyPeriod(
+      policy.effectiveDate,
+      policy.expirationDate,
+      policy.policyTermType,
+    ) ||
+    "Not listed"
+  );
+}
+
 export function labelForStatus(status?: string) {
   if (!status) return "Not listed";
   return status
@@ -80,7 +102,7 @@ export function metadataDescription(view: AppCardView) {
     return compactList([
       view.policy.carrier,
       policyLineBusinessLabels(view.policy).join(", "),
-      `${formatDate(view.policy.effectiveDate)} to ${formatDate(view.policy.expirationDate)}`,
+      policyPeriod(view.policy),
       view.orgName,
     ]) || view.subtitle || view.orgName;
   }

@@ -1,7 +1,29 @@
 import { lobLabel, policyLobCodes, toLobCodes } from "./linesOfBusiness";
+import {
+  policyProductName,
+  readPolicyProductIdentity,
+} from "./policyProductIdentity";
 
 type DtoId = string;
 type Jsonish = unknown;
+type ProductIdentitySource = {
+  productIdentity?: unknown;
+  programName?: unknown;
+};
+
+function mcpProductIdentity(
+  policy: ProductIdentitySource,
+) {
+  const identity = readPolicyProductIdentity(
+    policy.productIdentity,
+  );
+  return {
+    productName: policyProductName(policy),
+    companyProductCode: identity?.companyProductCode?.value,
+    companyProductSubCode:
+      identity?.companyProductSubCode?.value,
+  };
+}
 
 export interface OrgDtoSource {
   _id: DtoId;
@@ -33,6 +55,8 @@ export interface PolicyDtoSource {
   policyNumber: string;
   linesOfBusiness?: string[];
   policyTypes?: string[];
+  productIdentity?: unknown;
+  programName?: string;
   effectiveDate: string;
   expirationDate: string;
   premium?: string | number;
@@ -44,6 +68,9 @@ export interface PolicyDto {
   policy_number: string;
   lines_of_business: string[];
   policy_types: string[];
+  product_name: string | null;
+  company_product_code: string | null;
+  company_product_sub_code: string | null;
   effective_date: string;
   expiration_date: string;
   premium?: string | number;
@@ -52,12 +79,20 @@ export interface PolicyDto {
 
 export function toPolicyDto(policy: PolicyDtoSource): PolicyDto {
   const linesOfBusiness = policyLobCodes(policy);
+  const productIdentity = readPolicyProductIdentity(
+    policy.productIdentity,
+  );
   return {
     id: policy._id,
     carrier: policy.carrier,
     policy_number: policy.policyNumber,
     lines_of_business: linesOfBusiness,
     policy_types: linesOfBusiness,
+    product_name: policyProductName(policy) ?? null,
+    company_product_code:
+      productIdentity?.companyProductCode?.value ?? null,
+    company_product_sub_code:
+      productIdentity?.companyProductSubCode?.value ?? null,
     effective_date: policy.effectiveDate,
     expiration_date: policy.expirationDate,
     premium: policy.premium,
@@ -83,6 +118,8 @@ export interface McpPolicySummarySource {
   coverages: Jsonish[];
   pipelineStatus?: string;
   extractionDataStage?: "placeholder" | "preview" | "final" | string;
+  productIdentity?: unknown;
+  programName?: string;
 }
 
 export interface McpPolicySummaryDto {
@@ -103,6 +140,9 @@ export interface McpPolicySummaryDto {
   pipelineStatus?: string;
   extractionDataStage?: string;
   provisional?: boolean;
+  productName?: string;
+  companyProductCode?: string;
+  companyProductSubCode?: string;
 }
 
 export function toMcpPolicySummaryDto(policy: McpPolicySummarySource): McpPolicySummaryDto {
@@ -125,6 +165,7 @@ export function toMcpPolicySummaryDto(policy: McpPolicySummarySource): McpPolicy
     pipelineStatus: policy.pipelineStatus,
     extractionDataStage: policy.extractionDataStage,
     provisional: policy.extractionDataStage === "preview",
+    ...mcpProductIdentity(policy),
   };
 }
 
@@ -142,6 +183,9 @@ export interface McpPolicySearchResultDto {
   pipelineStatus?: string;
   extractionDataStage?: string;
   provisional?: boolean;
+  productName?: string;
+  companyProductCode?: string;
+  companyProductSubCode?: string;
 }
 
 export function toMcpPolicySearchResultDto(
@@ -162,6 +206,7 @@ export function toMcpPolicySearchResultDto(
     pipelineStatus: policy.pipelineStatus,
     extractionDataStage: policy.extractionDataStage,
     provisional: policy.extractionDataStage === "preview",
+    ...mcpProductIdentity(policy),
   };
 }
 
@@ -177,6 +222,9 @@ export interface McpConnectedVendorPolicyDto {
   pipelineStatus?: string;
   extractionDataStage?: string;
   provisional?: boolean;
+  productName?: string;
+  companyProductCode?: string;
+  companyProductSubCode?: string;
 }
 
 export function toMcpConnectedVendorPolicyDto(
@@ -195,6 +243,7 @@ export function toMcpConnectedVendorPolicyDto(
     pipelineStatus: policy.pipelineStatus,
     extractionDataStage: policy.extractionDataStage,
     provisional: policy.extractionDataStage === "preview",
+    ...mcpProductIdentity(policy),
   };
 }
 
@@ -209,6 +258,9 @@ export interface McpMyPolicyDto {
   pipelineStatus?: string;
   extractionDataStage?: string;
   provisional?: boolean;
+  productName?: string;
+  companyProductCode?: string;
+  companyProductSubCode?: string;
 }
 
 export function toMcpMyPolicyDto(policy: McpPolicySummarySource): McpMyPolicyDto {
@@ -224,6 +276,7 @@ export function toMcpMyPolicyDto(policy: McpPolicySummarySource): McpMyPolicyDto
     pipelineStatus: policy.pipelineStatus,
     extractionDataStage: policy.extractionDataStage,
     provisional: policy.extractionDataStage === "preview",
+    ...mcpProductIdentity(policy),
   };
 }
 
@@ -669,9 +722,12 @@ export interface PolicySearchSource {
   broker?: string;
   linesOfBusiness?: string[];
   policyTypes?: string[];
+  productIdentity?: unknown;
+  programName?: string;
 }
 
 export function policyMatchesSearch(policy: PolicySearchSource, query: string): boolean {
+  const productIdentity = mcpProductIdentity(policy);
   const searchable = [
     policy.carrier,
     policy.policyNumber,
@@ -679,6 +735,9 @@ export function policyMatchesSearch(policy: PolicySearchSource, query: string): 
     policy.summary,
     policy.security,
     policy.broker,
+    productIdentity.productName,
+    productIdentity.companyProductCode,
+    productIdentity.companyProductSubCode,
     ...policyLobCodes(policy),
     ...policyLobCodes(policy).map(lobLabel),
   ]

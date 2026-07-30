@@ -20,7 +20,6 @@ import { ACORD_LOB_LABELS, isLobCode } from "../lib/linesOfBusiness";
 
 const COMMON_COMMERCIAL_LOBS = [
   "CGL",
-  "GL",
   "AUTOB",
   "WORK",
   "WCMA",
@@ -28,7 +27,6 @@ const COMMON_COMMERCIAL_LOBS = [
   "EXLIA",
   "EO",
   "PL",
-  "PROPC",
   "PROP",
   "BOP",
   "CRIME",
@@ -36,6 +34,7 @@ const COMMON_COMMERCIAL_LOBS = [
   "DO",
   "FIDUC",
   "INMRC",
+  "CYBER",
   "OLIB",
 ] as const;
 

@@ -2,12 +2,209 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
-import { updateExtractionInternal } from "./policies";
+import {
+  pipelineCompleteLease,
+  pipelineReconcileTerminalState,
+  pipelineRejectExternalJob,
+  pipelineSetStatus,
+  updateExtractionInternal,
+  updatePreviewExtractionInternal,
+} from "./policies";
+import { policyExtractionRetrySource } from "./actions/policyExtraction";
 
 const modules = import.meta.glob("./**/*.ts");
+const pipelineCompleteLeaseFn = pipelineCompleteLease as any;
+const pipelineReconcileTerminalStateFn = pipelineReconcileTerminalState as any;
+const pipelineRejectExternalJobFn = pipelineRejectExternalJob as any;
+const pipelineSetStatusFn = pipelineSetStatus as any;
 const updateExtractionInternalFn = updateExtractionInternal as any;
+const updatePreviewExtractionInternalFn =
+  updatePreviewExtractionInternal as any;
+
+describe("policy extraction retry source selection", () => {
+  const policy = {
+    orgId: "org-active",
+    userId: "user-active",
+    uploadedByUserId: "uploader-active",
+    fileId: "active-policy-file",
+    fileName: "active-policy.pdf",
+  };
+  const existingState = {
+    sourceKind: "upload" as const,
+    fileId: "staged-replacement-file",
+    fileName: "staged-replacement.pdf",
+    orgId: "org-active",
+    userId: "user-replacement",
+    policyFileId: "replacement-policy-file-row",
+    policyVersionKind: "re_extraction" as const,
+    replacementPromotionStarted: false,
+  };
+
+  test("full re-extraction selects the active policy file", () => {
+    expect(policyExtractionRetrySource({
+      mode: "full",
+      policy,
+      existingState,
+    })).toEqual({
+      sourceKind: "upload",
+      fileId: "active-policy-file",
+      fileName: "active-policy.pdf",
+      orgId: "org-active",
+      userId: "user-active",
+      policyFileId: undefined,
+      policyVersionKind: "re_extraction",
+      replacementPromotionStarted: false,
+    });
+  });
+
+  test("resume keeps the staged replacement checkpoint source", () => {
+    expect(policyExtractionRetrySource({
+      mode: "resume",
+      policy,
+      existingState,
+    })).toEqual(existingState);
+  });
+
+  test("restart reseeds the staged replacement file", () => {
+    expect(policyExtractionRetrySource({
+      mode: "restart",
+      policy,
+      existingState,
+    })).toEqual(existingState);
+  });
+});
+
+describe("policies.updatePreviewExtractionInternal", () => {
+  test("persists the provisional carrier product name", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Unknown",
+        policyNumber: "Unknown",
+        insuredName: "Unknown",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        extractionDataStage: "placeholder",
+      });
+    });
+
+    await expect(t.mutation(updatePreviewExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        programName: "Trip Cancellation & Interruption Plan",
+      },
+      previewVersion: "preview-test",
+    })).resolves.toEqual({ updated: true });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy).toMatchObject({
+      programName: "Trip Cancellation & Interruption Plan",
+      extractionDataStage: "preview",
+      extractionPreviewVersion: "preview-test",
+    });
+  });
+});
 
 describe("policies.updateExtractionInternal", () => {
+  test("clears a provisional product name when final extraction has no product identity", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Unknown",
+        policyNumber: "Unknown",
+        insuredName: "Unknown",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        extractionDataStage: "placeholder",
+      });
+    });
+    await t.mutation(updatePreviewExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        programName: "Provisional Travel Plan",
+      },
+      previewVersion: "preview-test",
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        extractionDataStage: "final",
+        sourceTreeFieldClears: ["productIdentity", "programName"],
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.extractionDataStage).toBe("final");
+    expect(policy?.programName).toBeUndefined();
+    expect(policy?.productIdentity).toBeUndefined();
+  });
+
+  test("clears a previous PDF product identity when replacement evidence omits it", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Known Carrier",
+        policyNumber: "POL-REPLACEMENT",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["TRVL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        extractionDataStage: "final",
+        programName: "Previous Travel Plan",
+        productIdentity: {
+          name: {
+            value: "Previous Travel Plan",
+            confidence: "high",
+            sourceNodeIds: ["previous-product-node"],
+            sourceSpanIds: ["previous-product-span"],
+          },
+        },
+      });
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        extractionDataStage: "final",
+        sourceTreeFieldClears: ["productIdentity", "programName"],
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.programName).toBeUndefined();
+    expect(policy?.productIdentity).toBeUndefined();
+  });
+
   test("stores SDK-formatted compatibility addresses for extracted policy parties", async () => {
     const t = convexTest(schema, modules);
     const policyId = await t.run(async (ctx) => {
@@ -118,6 +315,95 @@ describe("policies.updateExtractionInternal", () => {
       documentNodeId: "policy:source_node:declarations",
       sourceSpanIds: ["policy:span:6:104"],
       sourceTextHash: "address-hash",
+    });
+  });
+
+  test("stores source provenance on extracted scheduled policy parties", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Carrier",
+        policyNumber: "POL-123",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+    });
+
+    await t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        additionalNamedInsureds: [
+          {
+            name: "Town of Milton",
+            documentNodeId: "policy:source_node:additional-insured",
+            sourceSpanIds: ["policy:span:additional-insured"],
+            sourceTextHash: "additional-insured-hash",
+            pageStart: 2,
+            pageEnd: 2,
+          },
+        ],
+        lossPayees: [
+          {
+            name: "First Bank",
+            role: "loss_payee",
+            documentNodeId: "policy:source_node:loss-payee",
+            sourceSpanIds: ["policy:span:loss-payee"],
+            sourceTextHash: "loss-payee-hash",
+            pageStart: 4,
+            pageEnd: 4,
+          },
+        ],
+        mortgageHolders: [
+          {
+            name: "Second Bank",
+            role: "mortgage_holder",
+            documentNodeId: "policy:source_node:mortgage-holder",
+            sourceSpanIds: ["policy:span:mortgage-holder"],
+            sourceTextHash: "mortgage-holder-hash",
+            pageStart: 5,
+            pageEnd: 5,
+          },
+        ],
+      },
+    });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy?.additionalNamedInsureds?.[0]).toMatchObject({
+      name: "Town of Milton",
+      documentNodeId: "policy:source_node:additional-insured",
+      sourceSpanIds: ["policy:span:additional-insured"],
+      sourceTextHash: "additional-insured-hash",
+      pageStart: 2,
+      pageEnd: 2,
+    });
+    expect(policy?.lossPayees?.[0]).toMatchObject({
+      name: "First Bank",
+      role: "loss_payee",
+      documentNodeId: "policy:source_node:loss-payee",
+      sourceSpanIds: ["policy:span:loss-payee"],
+      sourceTextHash: "loss-payee-hash",
+      pageStart: 4,
+      pageEnd: 4,
+    });
+    expect(policy?.mortgageHolders?.[0]).toMatchObject({
+      name: "Second Bank",
+      role: "mortgage_holder",
+      documentNodeId: "policy:source_node:mortgage-holder",
+      sourceSpanIds: ["policy:span:mortgage-holder"],
+      sourceTextHash: "mortgage-holder-hash",
+      pageStart: 5,
+      pageEnd: 5,
     });
   });
 
@@ -240,4 +526,317 @@ describe("policies.updateExtractionInternal", () => {
       extractionDataStage: "final",
     });
   });
+
+  test("leaves an existing bound policy active when re-extraction is rejected", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Known Carrier",
+        policyNumber: "POL-REEXTRACT",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        pipelineStatus: "complete",
+        extractionDataStage: "final",
+      });
+      const factId = await ctx.db.insert("policyDeclarationFacts", {
+        orgId,
+        policyId,
+        fieldPath: "coverages.0.limit",
+        fieldGroup: "coverage_limit:general_liability",
+        displayValue: "General Liability: $1,000,000",
+        normalizedValue: "general liability 1000000",
+        valueKind: "money",
+        observedAt: 1,
+        active: true,
+        recordHash: "re-extraction-fact",
+      });
+      return { factId, policyId };
+    });
+
+    await t.mutation(pipelineRejectExternalJobFn, {
+      jobId: ids.policyId,
+      error: "Replacement document is not a bound policy.",
+      archivePolicy: false,
+      state: {
+        policyVersionKind: "re_extraction",
+        replacementPromotionStarted: false,
+        fileId: "replacement-file",
+        traceId: "replacement-trace",
+      },
+    });
+
+    const result = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(ids.policyId),
+      fact: await ctx.db.get(ids.factId),
+      run: await ctx.db
+        .query("policyExtractionRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", ids.policyId))
+        .first(),
+    }));
+    expect(result.policy).toMatchObject({
+      carrier: "Known Carrier",
+      policyNumber: "POL-REEXTRACT",
+      pipelineStatus: "complete",
+    });
+    expect(result.run).toMatchObject({
+      pipelineStatus: "complete",
+      pipelineCheckpoint: {
+        nextPhase: "extract",
+        state: {
+          policyVersionKind: "re_extraction",
+          replacementPromotionStarted: false,
+          fileId: "replacement-file",
+          externalWorker: true,
+        },
+      },
+    });
+    expect(result.run?.pipelineError).toBeUndefined();
+    expect(result.policy?.pipelineError).toBeUndefined();
+    expect(result.policy?.deletedAt).toBeUndefined();
+    expect(result.fact?.active).toBe(true);
+  });
+
+  test("keeps final policy workflows active when in-process re-extraction fails", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Known Carrier",
+        policyNumber: "POL-IN-PROCESS",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        pipelineStatus: "running",
+        extractionDataStage: "final",
+      });
+      await ctx.db.insert("policyExtractionRuns", {
+        policyId,
+        pipelineStatus: "running",
+        pipelineCheckpoint: {
+          nextPhase: "extract",
+          state: {
+            policyVersionKind: "re_extraction",
+            replacementPromotionStarted: false,
+            fileId: "replacement-file",
+          },
+          createdAt: 1,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return policyId;
+    });
+
+    await t.mutation(pipelineSetStatusFn, {
+      jobId: policyId,
+      status: "error",
+      error: "Replacement document is not a bound policy.",
+    });
+    await t.mutation(pipelineReconcileTerminalStateFn, {
+      jobId: policyId,
+    });
+
+    const result = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(policyId),
+      run: await ctx.db
+        .query("policyExtractionRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .first(),
+    }));
+    expect(result.policy?.pipelineStatus).toBe("complete");
+    expect(result.policy?.pipelineError).toBeUndefined();
+    expect(result.run).toMatchObject({
+      pipelineStatus: "complete",
+      pipelineCheckpoint: {
+        nextPhase: "extract",
+        state: {
+          policyVersionKind: "re_extraction",
+          replacementPromotionStarted: false,
+          fileId: "replacement-file",
+        },
+      },
+    });
+    expect(result.run?.pipelineError).toBeUndefined();
+  });
+
+  test("keeps an external replacement checkpoint retryable after worker failure", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Known Carrier",
+        policyNumber: "POL-EXTERNAL-RETRY",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        pipelineStatus: "running",
+        extractionDataStage: "final",
+      });
+      await ctx.db.insert("policyExtractionRuns", {
+        policyId,
+        pipelineStatus: "running",
+        pipelineCheckpoint: {
+          nextPhase: "extract",
+          state: {
+            policyVersionKind: "re_extraction",
+            replacementPromotionStarted: false,
+            fileId: "replacement-file",
+            externalWorker: true,
+          },
+          createdAt: 1,
+          lease: {
+            id: "replacement-lease",
+            phase: "extract",
+            expiresAt: 100,
+          },
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return policyId;
+    });
+
+    await t.mutation(pipelineCompleteLeaseFn, {
+      jobId: policyId,
+      leaseId: "replacement-lease",
+      status: "error",
+      error: "Worker failed before replacement promotion.",
+      checkpoint: {
+        nextPhase: "extract",
+        state: {
+          policyVersionKind: "re_extraction",
+          replacementPromotionStarted: false,
+          fileId: "replacement-file",
+          externalWorker: true,
+        },
+        createdAt: 2,
+      },
+    });
+    await t.mutation(pipelineReconcileTerminalStateFn, {
+      jobId: policyId,
+    });
+
+    const result = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(policyId),
+      run: await ctx.db
+        .query("policyExtractionRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .first(),
+    }));
+    expect(result.policy?.pipelineStatus).toBe("complete");
+    expect(result.run).toMatchObject({
+      pipelineStatus: "complete",
+      pipelineCheckpoint: {
+        nextPhase: "extract",
+        state: {
+          fileId: "replacement-file",
+          replacementPromotionStarted: false,
+        },
+      },
+    });
+    expect(result.run?.pipelineError).toBeUndefined();
+  });
+
+  test.each([
+    {
+      nextPhase: "extract",
+      replacementPromotionStarted: true,
+    },
+    {
+      nextPhase: "embed_and_store",
+      replacementPromotionStarted: false,
+    },
+  ])(
+    "fails closed when re-extraction errors after replacement promotion ($nextPhase)",
+    async ({ nextPhase, replacementPromotionStarted }) => {
+      const t = convexTest(schema, modules);
+      const policyId = await t.run(async (ctx) => {
+        const orgId = await ctx.db.insert("organizations", {
+          name: "Client",
+          type: "client",
+        });
+        const policyId = await ctx.db.insert("policies", {
+          orgId,
+          carrier: "Replacement Carrier",
+          policyNumber: "POL-PROMOTED",
+          insuredName: "Known Insured",
+          linesOfBusiness: ["CGL"],
+          effectiveDate: "01/01/2026",
+          expirationDate: "01/01/2027",
+          documentType: "policy",
+          policyYear: 2026,
+          isRenewal: false,
+          coverages: [],
+          pipelineStatus: "running",
+          extractionDataStage: "final",
+        });
+        await ctx.db.insert("policyExtractionRuns", {
+          policyId,
+          pipelineStatus: "running",
+          pipelineCheckpoint: {
+            nextPhase,
+            state: {
+              policyVersionKind: "re_extraction",
+              replacementPromotionStarted,
+            },
+            createdAt: 1,
+          },
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        return policyId;
+      });
+
+      await t.mutation(pipelineSetStatusFn, {
+        jobId: policyId,
+        status: "error",
+        error: "Replacement evidence persistence failed.",
+      });
+
+      const result = await t.run(async (ctx) => ({
+        policy: await ctx.db.get(policyId),
+        run: await ctx.db
+          .query("policyExtractionRuns")
+          .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+          .first(),
+      }));
+      expect(result.policy).toMatchObject({
+        pipelineStatus: "error",
+        pipelineError: "Replacement evidence persistence failed.",
+      });
+      expect(result.run).toMatchObject({
+        pipelineStatus: "error",
+        pipelineError: "Replacement evidence persistence failed.",
+      });
+    },
+  );
 });

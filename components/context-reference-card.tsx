@@ -2,13 +2,38 @@
 
 import { Id } from "@/convex/_generated/dataModel";
 import { FileText } from "lucide-react";
+import { BrandIcon } from "@/components/ui/brand-icon";
 import {
   ActionSurface,
   ActionSurfaceButton,
 } from "@/components/ui/action-surface";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
+import {
+  resolvePolicyCarrierDisplay,
+  resolvePolicyPartyContext,
+} from "@/convex/lib/policyPartyContext";
 import { useCachedPolicySummary } from "@/lib/sync/glass-cached-queries";
+import { policyCardBranding } from "@/lib/policy-card-branding";
+
+function policyCarrierIdentity(policy: {
+  carrier?: string;
+  security?: string;
+  carrierIdentity?: unknown;
+  policyDetailOverrides?: unknown;
+}) {
+  const { carrierDisplayName, carrierIdentity } =
+    resolvePolicyCarrierDisplay(policy);
+  const branding = carrierIdentity?.branding;
+  const issuerName =
+    carrierDisplayName ??
+    "Insurance carrier";
+  return {
+    issuerName,
+    branding,
+    ...policyCardBranding(issuerName, branding?.accentColor),
+  };
+}
 
 function isConvexId(id: string): boolean {
   return id.length > 0 && !/^\d+$/.test(id);
@@ -72,12 +97,10 @@ export function PolicyReferenceCard({
     );
   }
 
+  const { branding, issuerName, patternStyle, surfaceStyle } =
+    policyCarrierIdentity(policy);
   const generalAgent =
-    (policy as { generalAgent?: { agencyName?: string } }).generalAgent?.agencyName ||
-    (policy as { mga?: string }).mga ||
-    policy.carrier ||
-    policy.security ||
-    "Unknown";
+    resolvePolicyPartyContext(policy).generalAgentName ?? issuerName;
   const policyNum = policy.policyNumber;
   const linesOfBusiness = policyLobCodes(policy);
   const primaryLine = linesOfBusiness[0] && linesOfBusiness[0] !== "UN"
@@ -88,7 +111,6 @@ export function PolicyReferenceCard({
   const summary = primaryLine
     ? `${summaryParts} — ${primaryLine}`
     : summaryParts;
-
   return (
     <ActionSurfaceButton
       type="button"
@@ -102,16 +124,25 @@ export function PolicyReferenceCard({
           citedSourceSpanIds,
         })
       }
-      className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md px-2 py-1.5 hover:border-foreground/10 hover:bg-foreground/2"
+      className="relative inline-flex max-w-[18rem] items-center gap-1.5 overflow-hidden rounded-md border-black/10 px-2 py-1.5 text-current shadow-[0_1px_4px_rgba(0,0,0,0.08)] transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.97] hover:shadow-[0_3px_10px_rgba(0,0,0,0.12)]"
+      style={surfaceStyle}
     >
-      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-foreground/4">
-        <FileText className="h-3 w-3 text-muted-foreground/50" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="mb-0.5 text-label font-medium leading-none text-muted-foreground/40">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-60"
+        style={patternStyle}
+      />
+      <BrandIcon
+        src={branding?.iconUrl}
+        name={issuerName}
+        size="sm"
+        className="relative z-10 size-5 rounded bg-background"
+      />
+      <div className="relative z-10 min-w-0 flex-1">
+        <p className="mb-0.5 text-label font-medium leading-none text-current opacity-55">
           Policy
         </p>
-        <p className="truncate text-label leading-4 text-foreground">
+        <p className="truncate text-label leading-4 text-current opacity-90">
           {summary}
         </p>
       </div>
@@ -135,8 +166,12 @@ export function PolicyCitation({
   const policy = useCachedPolicySummary(id as Id<"policies">);
   const { openPreview } = useEntityPreview();
 
+  const brand = policy ? policyCarrierIdentity(policy) : null;
   const label = policy
-    ? [policy.carrier || policy.security || "Policy", policy.policyNumber]
+    ? [
+        brand?.issuerName ?? "Policy",
+        policy.policyNumber,
+      ]
         .filter(Boolean)
         .join(" ")
     : "Policy";
@@ -154,11 +189,28 @@ export function PolicyCitation({
           citedSourceSpanIds,
         })
       }
-      className="mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 rounded-full border border-foreground/8 bg-foreground/3 px-1.5 align-middle text-tag font-medium leading-none text-muted-foreground/65 no-underline transition-colors hover:border-foreground/12 hover:bg-foreground/5 hover:text-foreground/80"
+      className="relative mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 overflow-hidden rounded-full border border-black/10 px-1.5 align-middle text-tag font-medium leading-none text-current no-underline transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.96] hover:shadow-sm"
+      style={brand?.surfaceStyle}
       title={label}
     >
-      <FileText className="h-2.5 w-2.5 shrink-0" />
-      <span className="truncate">{label}</span>
+      {brand ? (
+        <>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 opacity-50"
+            style={brand.patternStyle}
+          />
+          <BrandIcon
+            src={brand.branding?.iconUrl}
+            name={brand.issuerName}
+            size="xs"
+            className="relative z-10 size-3 rounded-sm bg-background"
+          />
+        </>
+      ) : (
+        <FileText className="h-2.5 w-2.5 shrink-0" />
+      )}
+      <span className="relative z-10 truncate">{label}</span>
     </button>
   );
 }
@@ -179,8 +231,12 @@ export function PolicySourcePill({
   const policy = useCachedPolicySummary(id as Id<"policies">);
   const { openPreview } = useEntityPreview();
 
+  const brand = policy ? policyCarrierIdentity(policy) : null;
   const label = policy
-    ? [policy.carrier || policy.security || "Policy", policy.policyNumber]
+    ? [
+        brand?.issuerName ?? "Policy",
+        policy.policyNumber,
+      ]
         .filter(Boolean)
         .join(" ")
     : "Policy";
@@ -198,10 +254,26 @@ export function PolicySourcePill({
           citedSourceSpanIds,
         })
       }
-      className="inline-flex h-6 max-w-48 items-center justify-center gap-1.5 rounded-full border border-foreground/8 bg-transparent px-2 text-tag font-medium leading-none text-muted-foreground/60 transition-colors hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+      className="relative inline-flex h-6 max-w-48 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-black/10 px-2 text-tag font-medium leading-none text-current transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.96] hover:shadow-sm"
+      style={brand?.surfaceStyle}
       title={label}
     >
-      <span className="truncate">{label}</span>
+      {brand ? (
+        <>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 opacity-50"
+            style={brand.patternStyle}
+          />
+          <BrandIcon
+            src={brand.branding?.iconUrl}
+            name={brand.issuerName}
+            size="xs"
+            className="relative z-10 size-3 rounded-sm bg-background"
+          />
+        </>
+      ) : null}
+      <span className="relative z-10 truncate">{label}</span>
     </button>
   );
 }

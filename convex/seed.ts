@@ -39,7 +39,7 @@ const LOCAL_FIXTURE = {
     carrier: "Northwoods Continental Insurance Company",
     broker: "Montgomery Risk",
     policyNumber: "NWC-TEC-3110-26-01",
-    linesOfBusiness: ["EO", "OLIB"],
+    linesOfBusiness: ["EO", "CYBER"],
     policyYear: 2026,
     effectiveDate: "03/15/2026",
     expirationDate: "03/15/2027",

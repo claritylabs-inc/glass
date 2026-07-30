@@ -19,19 +19,12 @@ type HighlightBox = PdfHighlightBox;
 export function EntityPreviewPanel() {
   const { preview, closePreview } = useEntityPreview();
   const reduceMotion = useReducedMotion();
-  const [headerInfo, setHeaderInfo] = useState<{
-    policyId: string;
-    carrier: string;
-    policyNum?: string;
-  } | null>(null);
   const [footerActions, setFooterActions] = useState<{
     fileUrl?: string;
     policyId: string;
     page?: number;
     highlightBoxes?: HighlightBox[];
   } | null>(null);
-  const currentHeaderInfo =
-    preview && headerInfo?.policyId === preview.id ? headerInfo : null;
   const currentFooterActions =
     preview && footerActions?.policyId === preview.id ? footerActions : null;
 
@@ -48,22 +41,9 @@ export function EntityPreviewPanel() {
         {/* Toolbar */}
         <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0 gap-3">
           <div className="min-w-0 flex-1">
-            {currentHeaderInfo ? (
-              <div className="flex items-baseline gap-2 min-w-0">
-                <span className="text-base font-medium text-foreground truncate">
-                  {currentHeaderInfo.carrier}
-                </span>
-                {currentHeaderInfo.policyNum && (
-                  <span className="min-w-0 max-w-[45%] truncate text-base text-muted-foreground/60">
-                    {currentHeaderInfo.policyNum}
-                  </span>
-                )}
-              </div>
-            ) : (
-              <span className="text-base font-medium text-foreground">
-                Policy Preview
-              </span>
-            )}
+            <span className="text-base font-medium text-foreground">
+              Policy preview
+            </span>
           </div>
 
           <button
@@ -83,7 +63,6 @@ export function EntityPreviewPanel() {
             citedSections={preview.citedSections}
             citedCoverageNames={preview.citedCoverageNames}
             citedSourceSpanIds={preview.citedSourceSpanIds}
-            onHeaderInfo={setHeaderInfo}
             onFooterActions={setFooterActions}
           />
         </div>

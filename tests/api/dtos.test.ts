@@ -25,7 +25,42 @@ describe("toPolicyDto", () => {
     expect(dto.policy_number).toBe("ZR-001");
     expect(dto.lines_of_business).toEqual(["CGL"]);
     expect(dto.policy_types).toEqual(["CGL"]);
+    expect(dto.product_name).toBeNull();
+    expect(dto.company_product_code).toBeNull();
     expect(dto.created_at).toBe(1000);
+  });
+
+  it("emits source-backed carrier product identity separately from LOB", () => {
+    const dto = toPolicyDto({
+      _id: "p2",
+      _creationTime: 1001,
+      carrier: "Allianz",
+      policyNumber: "TRV-001",
+      linesOfBusiness: ["TRVL"],
+      productIdentity: {
+        name: {
+          value: "Trip Cancellation & Interruption Plan",
+          confidence: "high",
+          sourceNodeIds: ["node-1"],
+          sourceSpanIds: ["span-1"],
+        },
+        companyProductCode: {
+          value: "TCI",
+          confidence: "high",
+          sourceNodeIds: ["node-1"],
+          sourceSpanIds: ["span-1"],
+        },
+      },
+      effectiveDate: "2026-01-01",
+      expirationDate: "2026-01-15",
+    });
+
+    expect(dto).toMatchObject({
+      lines_of_business: ["TRVL"],
+      product_name: "Trip Cancellation & Interruption Plan",
+      company_product_code: "TCI",
+      company_product_sub_code: null,
+    });
   });
 });
 
@@ -87,6 +122,9 @@ describe("MCP policy DTO helpers", () => {
       pipelineStatus: undefined,
       extractionDataStage: undefined,
       provisional: false,
+      productName: undefined,
+      companyProductCode: undefined,
+      companyProductSubCode: undefined,
     });
   });
 

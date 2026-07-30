@@ -28,24 +28,27 @@ describe("toaster layout", () => {
     expect(banner).toContain("--glass-app-bottom-inset");
   });
 
-  it("keeps operational status toasts parent-hover expandable", () => {
+  it("keeps operational status toasts compact without resizing their Sonner slot", () => {
     const operationalToast = read("components/ui/operational-toast.tsx");
     const extractionBanner = read("components/shared/extraction-banner.tsx");
     const globals = read("app/globals.css");
 
     expect(operationalToast).toContain("function OperationalStatusToast");
-    expect(operationalToast).toContain("glass-operational-toast__reveal");
-    expect(operationalToast).toContain('data-collapsed={collapsible && hasRevealContent && isCollapsed}');
-    expect(operationalToast).not.toContain("onMouseEnter");
-    expect(operationalToast).not.toContain("onMouseLeave");
+    expect(operationalToast).toContain(
+      "grid-cols-[1rem_minmax(0,1fr)_auto]",
+    );
+    expect(operationalToast).toContain(
+      'className="truncate text-label leading-4 text-muted-foreground"',
+    );
+    expect(operationalToast).not.toContain("collapseDelayMs");
+    expect(operationalToast).not.toContain("data-collapsed");
     expect(extractionBanner).toContain("showOperationalStatusToast");
     expect(extractionBanner).not.toContain("function ExtractionStatusToast");
-    expect(globals).toContain(
+    expect(extractionBanner).not.toContain("collapsible");
+    expect(globals).not.toContain(".glass-operational-toast__reveal");
+    expect(globals).not.toContain(
       '[data-sonner-toast]:is(:hover, :focus-within, [data-expanded="true"])',
     );
-    expect(globals).toContain(".glass-operational-toast__reveal");
-    expect(globals).toContain("grid-template-rows: 0fr");
-    expect(globals).toContain("visibility: visible");
   });
 
   it("uses the custom PillButton layout for duplicate upload confirmation", () => {

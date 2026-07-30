@@ -30,6 +30,13 @@ describe("centralized agent tool execution", () => {
     expect(executors).toContain("export function buildAgentToolExecutors");
     expect(executors).toContain("resolvePolicyReferenceForOrg");
     expect(executors).toContain("buildVendorComplianceTools");
+    expect(executors).toContain("resolvePolicyCarrierDisplay");
+    expect(executors).toContain(
+      "carrierIdentity: carrierDisplay.carrierIdentity",
+    );
+    expect(executors).not.toContain(
+      "carrierIdentity: policy.carrierIdentity",
+    );
     for (const toolName of [
       "lookup_policy",
       "lookup_address",

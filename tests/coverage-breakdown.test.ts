@@ -78,7 +78,7 @@ describe("coverage breakdown formatting", () => {
     expect(breakdown.groups).toEqual([
       expect.objectContaining({
         lineOfBusiness: "CGL",
-        label: "Commercial General Liability",
+        label: "General Liability",
         items: [
           expect.objectContaining({
             name: "Commercial General Liability",
@@ -91,7 +91,7 @@ describe("coverage breakdown formatting", () => {
     expect(breakdown.unassigned).toEqual([]);
 
     const text = formatCoverageBreakdownForPrompt(policy);
-    expect(text).toContain("Commercial General Liability coverage schedules:");
+    expect(text).toContain("General Liability coverage schedules:");
     expect(text).toContain("- Commercial General Liability: Each Occurrence $1,000,000");
     expect(text).not.toContain("Products-Completed Operations Aggregate coverage schedules:");
   });

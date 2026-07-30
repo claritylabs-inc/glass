@@ -27,6 +27,7 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import type { CarrierIdentity } from "@/convex/lib/carrierIdentity";
 
 const INPUT_CLASSES =
   "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
@@ -68,12 +69,18 @@ type DraftPolicyRow = {
   mga?: string;
   generalAgent?: { agencyName?: string };
   policyNumber?: string;
+  linesOfBusiness?: string[];
   fileName?: string;
   effectiveDate?: string;
   expirationDate?: string;
+  policyTermType?: string;
   pipelineStatus?: string;
   extractionDataStage?: string;
   uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email";
+  carrierIdentity?: CarrierIdentity | null;
+  policyDetailOverrides?: unknown;
+  productIdentity?: unknown;
+  programName?: string;
 };
 
 type BrokerClientRow = {
@@ -592,22 +599,27 @@ export function InviteClientDrawer({
               Loading policy uploads…
             </OperationalPanel>
           ) : existingPolicies && existingPolicies.length > 0 ? (
-            <OperationalPanel as="div" className="mb-2">
+            <div className="mb-2 grid gap-2">
               {existingPolicies.map((policy) => (
                 <PolicyListItem
                   key={policy._id}
                   carrier={policy.carrier ?? ""}
+                  carrierIdentity={policy.carrierIdentity}
+                  policyDetailOverrides={policy.policyDetailOverrides}
                   generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                   policyNumber={policy.policyNumber ?? ""}
-                  fileName={policy.fileName}
+                  productIdentity={policy.productIdentity}
+                  programName={policy.programName}
+                  linesOfBusiness={policy.linesOfBusiness}
                   effectiveDate={policy.effectiveDate}
                   expirationDate={policy.expirationDate}
+                  policyTermType={policy.policyTermType}
                   pipelineStatus={policy.pipelineStatus}
                   extractionDataStage={policy.extractionDataStage}
                   uploadedBySide={policy.uploadedBySide}
                 />
               ))}
-            </OperationalPanel>
+            </div>
           ) : null}
           <button
             type="button"

@@ -101,8 +101,8 @@ const CATEGORY_LOB: Record<string, AcordLobCode> = {
   workers_comp: "WORK",
   umbrella: "UMBRC",
   professional: "EO",
-  cyber: "OLIB",
-  property: "PROPC",
+  cyber: "CYBER",
+  property: "PROP",
 };
 
 function cleanString(value: unknown) {
@@ -133,9 +133,9 @@ function lineOfBusinessFromLegacy(row: LegacyComplianceRequirement) {
   if (/\b(umbrella|excess)\b/.test(text)) return "UMBRC";
   if (/\b(workers?|employers?)\b/.test(text)) return "WORK";
   if (/\b(auto|automobile|vehicle)\b/.test(text)) return "AUTOB";
-  if (/\b(cyber|privacy|network security)\b/.test(text)) return "OLIB";
+  if (/\b(cyber|privacy|network security)\b/.test(text)) return "CYBER";
   if (/\b(e&o|errors?\s+and\s+omissions?|professional)\b/.test(text)) return "EO";
-  if (/\b(property)\b/.test(text)) return "PROPC";
+  if (/\b(property)\b/.test(text)) return "PROP";
   if (/\b(general liability|commercial general liability|cgl)\b/.test(text)) {
     return "CGL";
   }

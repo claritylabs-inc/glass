@@ -707,7 +707,7 @@ function MessageFooterActions({
   rightAligned?: boolean;
 }) {
   const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
-  const [isSourcesExpanded, setIsSourcesExpanded] = useState(false);
+  const [isSourcesExpanded, setIsSourcesExpanded] = useState(true);
   const [isAttachmentExpanded, setIsAttachmentExpanded] = useState(false);
   const [isDownloadingAttachments, setIsDownloadingAttachments] =
     useState(false);

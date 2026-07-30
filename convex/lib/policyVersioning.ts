@@ -28,6 +28,18 @@ const POLICY_VERSION_SNAPSHOT_KEYS = [
 
 export type PolicyVersionSnapshot = Record<string, unknown>;
 
+export function policyTermTypeFromVersionSnapshot(
+  snapshot: unknown,
+): string | undefined {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return undefined;
+  }
+  const value = (snapshot as Record<string, unknown>).policyTermType;
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : undefined;
+}
+
 export function buildPolicyVersionSnapshot(policy: Record<string, unknown>): PolicyVersionSnapshot {
   return Object.fromEntries(
     POLICY_VERSION_SNAPSHOT_KEYS.map((key) => [key, policy[key]]),

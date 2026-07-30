@@ -13,7 +13,11 @@ import {
 import type { Phase, PhaseResult } from "@claritylabs/cl-pipelines";
 import { buildExtractor, runCoverageRecovery } from "../lib/extraction";
 import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
-import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
+import {
+  preparePdfTextWithParserFallback,
+  preparePdfTextWithPdfJs,
+  tryConvertPdfWithLiteParse,
+} from "../lib/liteparsePreprocessor";
 import type { ExtractionResult, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";
@@ -33,6 +37,8 @@ import {
   normalizeStoredOperationalProfile,
   normalizeSourceTree,
   operationalProfilePolicyFields,
+  sourceNodeFromStoredSource,
+  sourceSpanLikeFromStoredSource,
   sourceSpansForSdk,
   sourceTreePolicyFields,
   type DocumentSourceNode,
@@ -154,6 +160,15 @@ function sourceKindForStorage(value: unknown) {
     : "policy_pdf";
 }
 
+function fieldsWithPersistedCarrierIdentity(
+  fields: Record<string, unknown>,
+  policy: { carrierIdentity?: unknown } | null,
+) {
+  return policy?.carrierIdentity
+    ? { ...fields, carrierIdentity: policy.carrierIdentity }
+    : fields;
+}
+
 // ─── State Type ────────────────────────────────────────────────────────────────
 
 export type PolicyExtractionState = {
@@ -166,6 +181,11 @@ export type PolicyExtractionState = {
   userId: string;
   policyFileId?: string;
   policyVersionKind?: "new_policy" | "re_extraction" | "renewal";
+  /**
+   * Set before replacement fields or files are written. Replacement failures
+   * remain operationally complete only while this is explicitly false.
+   */
+  replacementPromotionStarted?: boolean;
   traceId?: string;
   externalWorker?: boolean;
   /** Client-owned feature snapshot. It must not be re-read during a run. */
@@ -212,6 +232,12 @@ export type PolicyExtractionState = {
   sourceNodesForStorage?: Array<DocumentSourceNode>;
   operationalProfile?: PolicyOperationalProfile;
 };
+
+function shouldArchiveRejectedPolicy(
+  policyVersionKind: PolicyExtractionState["policyVersionKind"],
+) {
+  return !policyVersionKind || policyVersionKind === "new_policy";
+}
 
 type EmbeddingPayload = Pick<
   PolicyExtractionState,
@@ -1374,36 +1400,46 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
         if (shouldRejectDocument(gateDecision)) {
           const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
-          await convexCtx.runMutation(
-            (internal as any).policies.updateExtractionInternal,
-            {
-              id: policyId,
-              fields: {
-                carrier: "Non-insurance document",
-                policyNumber: "Not applicable",
-                linesOfBusiness: ["UN"],
-                insuredName: "Not applicable",
-                effectiveDate: "Not applicable",
-                expirationDate: "Not applicable",
-                summary: rejectionSummary,
-                excludeFromSearch: true,
-              },
-            },
-          );
-
-          if (state.fileId) {
-            await convexCtx.runMutation((internal as any).policies.updateFiles, {
-              id: policyId,
-              files: [
-                {
-                  fileId: state.fileId as Id<"_storage">,
-                  fileName: state.fileName || "upload.pdf",
-                  fileType: "unknown",
-                  status: "not_insurance",
+          if (shouldArchiveRejectedPolicy(state.policyVersionKind)) {
+            await convexCtx.runMutation(
+              (internal as any).policies.updateExtractionInternal,
+              {
+                id: policyId,
+                fields: {
+                  carrier: "Non-insurance document",
+                  policyNumber: "Not applicable",
+                  linesOfBusiness: ["UN"],
+                  insuredName: "Not applicable",
+                  effectiveDate: "Not applicable",
+                  expirationDate: "Not applicable",
+                  summary: rejectionSummary,
+                  excludeFromSearch: true,
                 },
-              ],
-              reconciliationStatus: "error" as const,
-            });
+              },
+            );
+
+            if (state.fileId) {
+              await convexCtx.runMutation((internal as any).policies.updateFiles, {
+                id: policyId,
+                files: [
+                  {
+                    fileId: state.fileId as Id<"_storage">,
+                    fileName: state.fileName || "upload.pdf",
+                    fileType: "unknown",
+                    status: "not_insurance",
+                  },
+                ],
+                reconciliationStatus: "error" as const,
+              });
+            }
+
+            await convexCtx.runMutation(
+              (internal as any).policies.archiveRejectedDocumentInternal,
+              {
+                id: policyId,
+                userId: state.userId,
+              },
+            );
           }
 
           return { kind: "error", error: rejectionSummary };
@@ -1518,7 +1554,18 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
       const existingPolicy = await convexCtx.runQuery(internal.policies.getInternal, {
         id: policyId as Id<"policies">,
-      }) as { linesOfBusiness?: string[] } | null;
+      }) as {
+        linesOfBusiness?: string[];
+        carrierIdentity?: unknown;
+      } | null;
+      const promotionState: PolicyExtractionState =
+        state.policyVersionKind === "re_extraction" ||
+        state.policyVersionKind === "renewal"
+          ? { ...state, replacementPromotionStarted: true }
+          : state;
+      if (promotionState !== state) {
+        await pCtx.saveState(promotionState);
+      }
 
       await convexCtx.runMutation(
         (internal as any).policies.updateExtractionInternal,
@@ -1530,10 +1577,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             ...sourceTreePolicyFields({
               sourceTree: sourceNodes,
               operationalProfile,
+              sourceSpans: canonicalSpans,
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
               existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
-              existingPolicyFields: fields,
+              existingPolicyFields: fieldsWithPersistedCarrierIdentity(
+                fields,
+                existingPolicy,
+              ),
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -1545,6 +1596,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       await convexCtx.runMutation((internal as any).policies.updateFiles, {
         id: policyId,
         files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+        primaryFileId: state.fileId as Id<"_storage">,
       });
 
       const embeddingPayloadFileId = await storeEmbeddingPayload(convexCtx, policyId, {
@@ -1555,7 +1607,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       });
       const chunkIds = chunks.map((c: { id: string }) => c.id);
       const nextState: PolicyExtractionState = {
-        ...state,
+        ...promotionState,
         embeddingPayloadFileId,
         chunkIds,
         sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
@@ -1763,7 +1815,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     },
   };
 
-  // ── Phase 4: post_process (terminal — schedules downstream work) ──────────────
+  // ── Phase 4: post_process (terminal — persists enrichment and downstream work)
   const postProcessPhase: Phase<PolicyExtractionState> = {
     name: "post_process",
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
@@ -1830,7 +1882,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
       } catch { /* non-critical */ }
 
-      // Broker activity record
+      // Final policy enrichment and downstream work
       try {
         const finalPolicy = await convexCtx.runQuery(
           internal.policies.getInternal,
@@ -1843,6 +1895,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           policyNumber?: string;
           carrier?: string;
         } | null;
+        let carrierDisplayName = finalPolicy?.carrier;
         if (finalPolicy?.uploadedByBrokerOrgId && finalPolicy.orgId) {
           await convexCtx.runMutation(
             (internal as any).brokerActivity.record,
@@ -1857,6 +1910,32 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           );
         }
         if (finalPolicy?.orgId) {
+          try {
+            const carrierIdentity = await convexCtx.runAction(
+              internal.actions.enrichCarrierIdentity.ensureInternal,
+              { policyId: policyId as Id<"policies"> },
+            ) as { success: boolean };
+            await pCtx.log(
+              carrierIdentity.success
+                ? "Stored carrier branding"
+                : "Carrier branding unavailable",
+              carrierIdentity.success ? "info" : "warn",
+            );
+            if (carrierIdentity.success) {
+              const enrichedPolicy = await convexCtx.runQuery(
+                internal.policies.getInternal,
+                { id: policyId as Id<"policies"> },
+              );
+              carrierDisplayName =
+                enrichedPolicy?.carrier ?? carrierDisplayName;
+            }
+          } catch (error) {
+            console.warn(
+              "[policyExtraction] carrier branding failed",
+              error,
+            );
+            await pCtx.log("Carrier branding could not be stored", "warn");
+          }
           await convexCtx.runMutation(
             (internal as any).declarationFacts.syncPolicyInternal,
             { policyId },
@@ -1871,7 +1950,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               orgId: finalPolicy.orgId as Id<"organizations">,
               policyId,
               policyNumber: finalPolicy.policyNumber,
-              carrier: finalPolicy.carrier,
+              carrier: carrierDisplayName,
               questionCount: reviewQuestions.length,
             });
             await pCtx.log(
@@ -2410,7 +2489,28 @@ async function completeExternalExtractFromPayload(
   const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
   const existingPolicy = await ctx.runQuery(internal.policies.getInternal, {
     id: policyId as Id<"policies">,
-  }) as { linesOfBusiness?: string[] } | null;
+  }) as {
+    linesOfBusiness?: string[];
+    carrierIdentity?: unknown;
+  } | null;
+  const promotionState: PolicyExtractionState =
+    state.policyVersionKind === "re_extraction" ||
+    state.policyVersionKind === "renewal"
+      ? { ...state, replacementPromotionStarted: true }
+      : state;
+  const promotionLeaseCurrent = await ctx.runMutation(
+    (internal as any).policies.pipelineSaveStateForLease,
+    {
+      jobId: policyId,
+      leaseId: args.leaseId,
+      nextPhase: "extract",
+      state: promotionState,
+      leaseExpiresAt: nowMs() + EXTERNAL_WORKER_LEASE_MS,
+    },
+  ) as boolean;
+  if (!promotionLeaseCurrent) {
+    return { ok: false };
+  }
 
   await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
     id: policyId,
@@ -2420,10 +2520,14 @@ async function completeExternalExtractFromPayload(
       ...sourceTreePolicyFields({
         sourceTree: sourceNodes,
         operationalProfile: normalizedOperationalProfile,
+        sourceSpans: canonicalSpans,
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
         existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
-        existingPolicyFields: fields,
+        existingPolicyFields: fieldsWithPersistedCarrierIdentity(
+          fields,
+          existingPolicy,
+        ),
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),
@@ -2435,6 +2539,7 @@ async function completeExternalExtractFromPayload(
     await ctx.runMutation((internal as any).policies.updateFiles, {
       id: policyId,
       files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+      primaryFileId: state.fileId as Id<"_storage">,
     });
   }
 
@@ -2445,7 +2550,7 @@ async function completeExternalExtractFromPayload(
     sourceNodesForStorage: sourceNodes,
   });
   const nextState: PolicyExtractionState = {
-    ...state,
+    ...promotionState,
     embeddingPayloadFileId,
     chunkIds: chunks.map((chunk) => String(chunk.id)),
     sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
@@ -2764,28 +2869,6 @@ export const rematerializeSourceTreeProfile = internalAction({
   },
 });
 
-function storedSourceSpanLike(span: Record<string, any>, policyId: Id<"policies">): SourceSpanLike {
-  return {
-    id: String(span.spanId),
-    spanId: String(span.spanId),
-    documentId: typeof span.documentId === "string" ? span.documentId : policyId,
-    sourceKind: typeof span.sourceKind === "string" ? span.sourceKind : "policy_pdf",
-    kind: "pdf_text",
-    pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
-    pageEnd: typeof span.pageEnd === "number" ? span.pageEnd : undefined,
-    sectionId: typeof span.sectionId === "string" ? span.sectionId : undefined,
-    formNumber: typeof span.formNumber === "string" ? span.formNumber : undefined,
-    sourceUnit: typeof span.sourceUnit === "string" ? span.sourceUnit : undefined,
-    parentSpanId: typeof span.parentSpanId === "string" ? span.parentSpanId : undefined,
-    table: span.table,
-    location: span.location,
-    text: typeof span.text === "string" ? span.text : "",
-    textHash: typeof span.textHash === "string" ? span.textHash : undefined,
-    bbox: span.bbox,
-    metadata: span.metadata,
-  };
-}
-
 const SEMANTIC_SOURCE_NODE_KINDS = new Set([
   "page_group",
   "form",
@@ -2794,29 +2877,6 @@ const SEMANTIC_SOURCE_NODE_KINDS = new Set([
   "schedule",
   "clause",
 ]);
-
-function storedSourceNodeTreeInput(node: Record<string, any>, policyId: Id<"policies">): Record<string, unknown> | undefined {
-  if (typeof node.nodeId !== "string" || !node.nodeId.trim()) return undefined;
-  if (typeof node.kind !== "string" || !node.kind.trim()) return undefined;
-  return {
-    id: node.nodeId,
-    documentId: typeof node.documentId === "string" ? node.documentId : policyId,
-    parentId: typeof node.parentNodeId === "string" ? node.parentNodeId : undefined,
-    kind: node.kind,
-    title: typeof node.title === "string" ? node.title : node.kind,
-    description: typeof node.description === "string" ? node.description : node.kind,
-    textExcerpt: typeof node.textExcerpt === "string" ? node.textExcerpt : undefined,
-    sourceSpanIds: Array.isArray(node.sourceSpanIds)
-      ? node.sourceSpanIds.filter((spanId): spanId is string => typeof spanId === "string")
-      : [],
-    pageStart: typeof node.pageStart === "number" ? node.pageStart : undefined,
-    pageEnd: typeof node.pageEnd === "number" ? node.pageEnd : undefined,
-    bbox: node.bbox,
-    order: typeof node.order === "number" ? node.order : 0,
-    path: typeof node.path === "string" ? node.path : "",
-    metadata: node.metadata,
-  };
-}
 
 function hasSemanticSourceHierarchy(nodes: Array<Record<string, unknown>>): boolean {
   return nodes.some((node) =>
@@ -2850,15 +2910,23 @@ export const rebuildStoredSourceNodes = internalAction({
       throw new Error("Policy is missing stored source spans");
     }
 
-    const sourceSpans = spanDocs.map((span) => storedSourceSpanLike(span, args.policyId));
+    const sourceSpans = spanDocs.map((span) =>
+      sourceSpanLikeFromStoredSource(span, args.policyId)
+    );
     const canonicalSpans = canonicalSourceSpans(sourceSpans);
     const existingNodeDocs = await ctx.runQuery(
       (internal as any).sourceNodes.listByPolicyInternal,
       { policyId: args.policyId },
     ) as Array<Record<string, any>>;
     const existingSourceTree = existingNodeDocs
-      .map((node) => storedSourceNodeTreeInput(node, args.policyId))
-      .filter((node): node is Record<string, unknown> => Boolean(node));
+      .map((node) => sourceNodeFromStoredSource(node, args.policyId))
+      .filter(
+        (
+          node,
+        ): node is NonNullable<
+          ReturnType<typeof sourceNodeFromStoredSource>
+        > => Boolean(node),
+      );
     const sourceNodes = normalizeSourceTree(
       hasSemanticSourceHierarchy(existingSourceTree) ? existingSourceTree : [],
       canonicalSpans,
@@ -2894,6 +2962,7 @@ export const rebuildStoredSourceNodes = internalAction({
         ...sourceTreePolicyFields({
           sourceTree: sourceNodes,
           operationalProfile,
+          sourceSpans: canonicalSpans,
           existingDocumentMetadata: policy.documentMetadata,
           existingDeclarations: policy.declarations,
           existingLinesOfBusiness: policy.linesOfBusiness,
@@ -3010,11 +3079,19 @@ export const backfillStoredCoverageRecovery = internalAction({
     }
 
     const sourceSpans = canonicalSourceSpans(
-      spanDocs.map((span) => storedSourceSpanLike(span, args.policyId)),
+      spanDocs.map((span) =>
+        sourceSpanLikeFromStoredSource(span, args.policyId)
+      ),
     );
     const storedSourceTree = nodeDocs
-      .map((node) => storedSourceNodeTreeInput(node, args.policyId))
-      .filter((node): node is Record<string, unknown> => Boolean(node));
+      .map((node) => sourceNodeFromStoredSource(node, args.policyId))
+      .filter(
+        (
+          node,
+        ): node is NonNullable<
+          ReturnType<typeof sourceNodeFromStoredSource>
+        > => Boolean(node),
+      );
     const sourceTree = normalizeSourceTree(storedSourceTree, sourceSpans, args.policyId);
     const sdkSourceSpans = sourceSpansForSdk(sourceSpans, args.policyId);
     const primaryProfile = normalizeOperationalProfile(
@@ -3080,6 +3157,116 @@ export const backfillStoredCoverageRecovery = internalAction({
 
 // ─── Entry point: start from upload ───────────────────────────────────────────
 
+/**
+ * Mirrors the in-Convex extract-phase document gate for external worker mode,
+ * where the worker never runs `classifyInsuranceExtractability`. Runs before the
+ * job is handed to the external queue so non-policy documents are rejected with
+ * a user-facing error instead of completing as empty "Unknown" policies.
+ * Returns true when the document was rejected and the handoff must not happen.
+ */
+async function rejectedByDocumentGateBeforeExternalHandoff(
+  ctx: ActionCtx,
+  params: {
+    policyId: string;
+    state: {
+      fileId?: string;
+      fileName?: string;
+      orgId?: string;
+      userId?: string;
+      traceId?: string;
+      policyVersionKind?: PolicyExtractionState["policyVersionKind"];
+    };
+  },
+): Promise<boolean> {
+  const { fileId, fileName, orgId, userId, traceId } = params.state;
+  if (!fileId || !orgId) return false;
+  let gateDecision: ExtractionGateDecision;
+  try {
+    const pdfBytes = await loadPdfBytes(ctx, fileId);
+    if (!pdfBytes) return false;
+    const converted = await tryConvertPdfWithLiteParse({
+      pdfBytes,
+      documentId: params.policyId,
+      sourceKind: "policy_pdf",
+    });
+    const sourceSpans = converted?.sourceSpans?.length
+      ? converted.sourceSpans
+      : (await preparePdfTextWithPdfJs({
+          pdfBytes,
+          documentId: params.policyId,
+          sourceKind: "policy_pdf",
+        })).sourceSpans;
+    gateDecision = await classifyInsuranceExtractability({
+      ctx,
+      orgId: orgId as Id<"organizations">,
+      traceId,
+      policyId: params.policyId,
+      pdfBytes,
+      sourceSpans,
+    });
+  } catch (error) {
+    // Gate parity with the in-Convex path: never block extraction on gate
+    // infrastructure failures.
+    await traceEvent(ctx, traceId, {
+      kind: "log",
+      phase: "gate",
+      level: "warn",
+      message: `Document gate failed; continuing extraction (${error instanceof Error ? error.message : String(error)})`,
+    });
+    return false;
+  }
+  await traceEvent(ctx, traceId, {
+    kind: "log",
+    phase: "gate",
+    message: `Document gate: ${gateDecision.classification} (${Math.round(gateDecision.confidence * 100)}% confidence) — ${gateDecision.reason}`,
+  });
+  if (!shouldRejectDocument(gateDecision)) return false;
+
+  const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
+  const archivePolicy = shouldArchiveRejectedPolicy(
+    params.state.policyVersionKind,
+  );
+  if (archivePolicy) {
+    await ctx.runMutation(
+      (internal as any).policies.updateExtractionInternal,
+      {
+        id: params.policyId,
+        fields: {
+          carrier: "Non-insurance document",
+          policyNumber: "Not applicable",
+          linesOfBusiness: ["UN"],
+          insuredName: "Not applicable",
+          effectiveDate: "Not applicable",
+          expirationDate: "Not applicable",
+          summary: rejectionSummary,
+          excludeFromSearch: true,
+        },
+      },
+    );
+    await ctx.runMutation((internal as any).policies.updateFiles, {
+      id: params.policyId,
+      files: [
+        {
+          fileId: fileId as Id<"_storage">,
+          fileName: fileName || "upload.pdf",
+          fileType: "unknown",
+          status: "not_insurance",
+        },
+      ],
+      reconciliationStatus: "error" as const,
+    });
+  }
+  await ctx.runMutation((internal as any).policies.pipelineRejectExternalJob, {
+    jobId: params.policyId,
+    error: rejectionSummary,
+    userId,
+    archivePolicy,
+    state: archivePolicy ? undefined : params.state,
+  });
+  await completeTraceSession(ctx, traceId, "error", rejectionSummary);
+  return true;
+}
+
 export const startPolicyExtractionFromUpload = internalAction({
   args: {
     policyId: v.id("policies"),
@@ -3107,23 +3294,36 @@ export const startPolicyExtractionFromUpload = internalAction({
       fileName,
     });
     if (EXTERNAL_WORKER_MODE) {
+      const externalState = {
+        sourceKind: "upload",
+        fileId: String(fileId),
+        fileName,
+        orgId: String(orgId),
+        userId: String(userId),
+        policyFileId: policyFileId ? String(policyFileId) : undefined,
+        policyVersionKind,
+        replacementPromotionStarted:
+          policyVersionKind === "re_extraction" || policyVersionKind === "renewal"
+            ? false
+            : undefined,
+        coverageRecovery,
+        traceId,
+      };
+      if (
+        await rejectedByDocumentGateBeforeExternalHandoff(ctx, {
+          policyId: String(policyId),
+          state: externalState,
+        })
+      ) {
+        return;
+      }
       await ctx.runMutation(internal.policies.pipelineClearLog, {
         jobId: String(policyId),
       });
       await clearArtifacts(ctx, String(policyId));
       await ctx.runMutation((internal as any).policies.pipelineStartExternalWorkerJob, {
         jobId: String(policyId),
-        state: {
-          sourceKind: "upload",
-          fileId: String(fileId),
-          fileName,
-          orgId: String(orgId),
-          userId: String(userId),
-          policyFileId: policyFileId ? String(policyFileId) : undefined,
-          policyVersionKind,
-          coverageRecovery,
-          traceId,
-        },
+        state: externalState,
       });
       return;
     }
@@ -3155,6 +3355,10 @@ export const startPolicyExtractionFromUpload = internalAction({
         userId: String(userId),
         policyFileId: policyFileId ? String(policyFileId) : undefined,
         policyVersionKind,
+        replacementPromotionStarted:
+          policyVersionKind === "re_extraction" || policyVersionKind === "renewal"
+            ? false
+            : undefined,
         coverageRecovery,
         traceId,
       },
@@ -3164,10 +3368,55 @@ export const startPolicyExtractionFromUpload = internalAction({
 
 // ─── Entry point: retry ────────────────────────────────────────────────────────
 
+export function policyExtractionRetrySource(params: {
+  mode: "resume" | "restart" | "full";
+  policy: {
+    orgId?: string;
+    userId?: string;
+    uploadedByUserId?: string;
+    fileId?: string;
+    fileName?: string;
+  };
+  existingState?: PolicyExtractionState;
+}): Pick<
+  PolicyExtractionState,
+  | "sourceKind"
+  | "fileId"
+  | "fileName"
+  | "orgId"
+  | "userId"
+  | "policyFileId"
+  | "policyVersionKind"
+  | "replacementPromotionStarted"
+> {
+  const retryState =
+    params.mode === "full" ? undefined : params.existingState;
+  return {
+    sourceKind: retryState?.sourceKind ?? "upload",
+    fileId: retryState?.fileId ?? params.policy.fileId,
+    fileName: retryState?.fileName ?? params.policy.fileName,
+    orgId: retryState?.orgId ?? String(params.policy.orgId ?? ""),
+    userId:
+      retryState?.userId ??
+      String(params.policy.userId ?? params.policy.uploadedByUserId ?? ""),
+    policyFileId: retryState?.policyFileId,
+    policyVersionKind:
+      params.mode === "full" ? "re_extraction" : retryState?.policyVersionKind,
+    replacementPromotionStarted:
+      params.mode === "full"
+        ? false
+        : retryState?.replacementPromotionStarted,
+  };
+}
+
 export const retryPolicyExtraction = internalAction({
   args: {
     policyId: v.id("policies"),
-    mode: v.union(v.literal("resume"), v.literal("full")),
+    mode: v.union(
+      v.literal("resume"),
+      v.literal("restart"),
+      v.literal("full"),
+    ),
   },
   handler: async (ctx, { policyId, mode }) => {
     const mutations = makeMutations();
@@ -3196,11 +3445,17 @@ export const retryPolicyExtraction = internalAction({
       userId?: string;
       uploadedByUserId?: string;
       fileId?: string;
+      fileName?: string;
       pipelineCheckpoint?: { state?: PolicyExtractionState };
     } | null;
     if (!policy) throw new Error("Policy not found");
 
     const existingState = policy.pipelineCheckpoint?.state;
+    const retrySource = policyExtractionRetrySource({
+      mode,
+      policy,
+      existingState,
+    });
     if (!policy.orgId) throw new Error("Policy is missing orgId");
     const coverageRecovery = mode === "resume" && existingState?.coverageRecovery
       ? existingState.coverageRecovery
@@ -3213,10 +3468,10 @@ export const retryPolicyExtraction = internalAction({
         traceId,
         policyId,
         orgId: String(policy.orgId ?? "") as Id<"organizations">,
-        userId: asOptionalId<Id<"users">>(existingState?.userId ?? policy.userId ?? policy.uploadedByUserId),
-        sourceKind: existingState?.sourceKind ?? "upload",
+        userId: asOptionalId<Id<"users">>(retrySource.userId),
+        sourceKind: retrySource.sourceKind,
         trigger: `retry_${mode}`,
-        fileName: existingState?.fileName,
+        fileName: retrySource.fileName,
       });
     } else {
       await traceEvent(ctx, traceId, {
@@ -3227,17 +3482,20 @@ export const retryPolicyExtraction = internalAction({
     }
     if (EXTERNAL_WORKER_MODE) {
       const nextState = {
-        sourceKind: existingState?.sourceKind ?? "upload",
-        fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
-        fileName: existingState?.fileName,
-        orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
-        userId: existingState?.userId ?? String(policy.userId ?? policy.uploadedByUserId ?? ""),
-        policyFileId: existingState?.policyFileId,
-        policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
+        ...retrySource,
         coverageRecovery,
         traceId,
       };
       if (!nextState.fileId) throw new Error("Policy source file is missing");
+      if (
+        mode === "full" &&
+        (await rejectedByDocumentGateBeforeExternalHandoff(ctx, {
+          policyId: String(policyId),
+          state: nextState,
+        }))
+      ) {
+        return { success: true, traceId };
+      }
       if (mode === "full") {
         await ctx.runMutation(internal.policies.pipelineClearLog, {
           jobId: String(policyId),
@@ -3257,13 +3515,9 @@ export const retryPolicyExtraction = internalAction({
       phases,
       storage,
       scheduler,
-      retryMode: mode,
+      retryMode: mode === "restart" ? "full" : mode,
       initialState: {
-        sourceKind: existingState?.sourceKind ?? "upload",
-        fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
-        orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
-        userId: existingState?.userId ?? String(policy.userId ?? ""),
-        policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
+        ...retrySource,
         coverageRecovery,
         traceId,
       },

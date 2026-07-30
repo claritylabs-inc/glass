@@ -387,7 +387,7 @@ describe("policyToCoiData", () => {
     });
 
     expect(data.coverages.map((coverage) => coverage.type)).toEqual([
-      "Errors & Omissions",
+      "Errors and Omissions",
       "Other Liability",
     ]);
     expect(data.coverages.map((coverage) => coverage.lineOfBusiness)).toEqual([

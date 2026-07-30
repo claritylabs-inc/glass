@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDisplayDate,
+  formatDisplayPolicyPeriod,
   formatDisplayDateTime,
   formatDisplayDateTimeWithSeconds,
 } from "@/lib/date-format";
@@ -27,5 +28,27 @@ describe("display date formatting", () => {
   it("uses the caller fallback for missing or invalid values", () => {
     expect(formatDisplayDate(undefined, "Not listed")).toBe("Not listed");
     expect(formatDisplayDate("not-a-date", "Unknown")).toBe("Unknown");
+  });
+
+  it("describes a policy with no expiration as ongoing from its start date", () => {
+    expect(formatDisplayPolicyPeriod("07/28/2026", undefined)).toBe(
+      "Ongoing from Jul 28, 2026",
+    );
+    expect(formatDisplayPolicyPeriod("07/28/2026", "07/28/2027")).toBe(
+      "Jul 28, 2026 – Jul 28, 2027",
+    );
+  });
+
+  it("preserves continuous-term semantics even when an expiration is stored", () => {
+    expect(
+      formatDisplayPolicyPeriod(
+        "07/28/2026",
+        "07/28/2027",
+        "continuous",
+      ),
+    ).toBe("Jul 28, 2026 — Until Cancelled");
+    expect(
+      formatDisplayPolicyPeriod(undefined, "07/28/2027", "CONTINUOUS"),
+    ).toBe("Until Cancelled");
   });
 });

@@ -18,7 +18,7 @@ describe("backfillLinesOfBusinessBatches", () => {
       policyTypes: ["professional_liability", "cyber"],
     })).toEqual({
       before: ["professional_liability", "cyber"],
-      after: ["EO", "OLIB"],
+      after: ["PL", "CYBER"],
       unmappedValues: [],
       changed: true,
     });

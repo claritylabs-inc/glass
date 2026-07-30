@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleAlert, CircleCheck } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import {
   PillButton,
@@ -9,8 +9,6 @@ import {
 } from "@/components/ui/pill-button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-
-const DEFAULT_COLLAPSE_DELAY_MS = 3_500;
 
 type OperationalToastTone = "loading" | "success" | "error";
 
@@ -28,8 +26,6 @@ type OperationalStatusToastProps = {
   description?: string;
   tone: OperationalToastTone;
   actions?: OperationalToastAction[];
-  collapsible?: boolean;
-  collapseDelayMs?: number;
   className?: string;
 };
 
@@ -85,77 +81,51 @@ function OperationalStatusToast({
   description,
   tone,
   actions = [],
-  collapsible = false,
-  collapseDelayMs = DEFAULT_COLLAPSE_DELAY_MS,
   className,
 }: OperationalStatusToastProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const hasRevealContent = Boolean(description || actions.length);
   const accessibleLabel = description ? `${title}. ${description}` : title;
-  const signature = useMemo(() => actionSignature(actions), [actions]);
-
-  useEffect(() => {
-    if (!collapsible || !hasRevealContent) return;
-
-    const collapseTimer = window.setTimeout(() => {
-      setIsCollapsed(true);
-    }, collapseDelayMs);
-
-    return () => window.clearTimeout(collapseTimer);
-  }, [
-    collapsible,
-    collapseDelayMs,
-    description,
-    hasRevealContent,
-    signature,
-    title,
-    tone,
-  ]);
+  const inlineAction = actions.length === 1 ? actions[0] : undefined;
 
   return (
     <div
-      className={cn("glass-operational-toast", className)}
-      data-collapsible={collapsible || undefined}
-      data-collapsed={collapsible && hasRevealContent && isCollapsed}
-      tabIndex={collapsible && hasRevealContent ? 0 : undefined}
+      className={cn(
+        "glass-operational-toast grid min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5",
+        className,
+      )}
       aria-label={accessibleLabel}
     >
-      <div className="grid min-w-0 grid-cols-[1rem_minmax(0,1fr)] gap-3">
-        <div
-          className={cn(
-            "flex h-5 items-center justify-center",
-            tone === "loading" ? "pt-0.5" : "pt-px",
-          )}
-        >
-          <OperationalToastIcon tone={tone} />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-base font-medium leading-5 text-foreground">
-            {title}
-          </p>
-        </div>
+      <div
+        className={cn(
+          "flex h-5 self-start items-center justify-center",
+          tone === "loading" ? "pt-0.5" : "pt-px",
+        )}
+      >
+        <OperationalToastIcon tone={tone} />
       </div>
 
-      {hasRevealContent ? (
-        <div className="glass-operational-toast__reveal">
-          <div className="glass-operational-toast__reveal-inner">
-            {description ? (
-              <p className="text-label leading-4 text-muted-foreground">
-                {description}
-              </p>
-            ) : null}
+      <div className={cn("min-w-0", !inlineAction && "col-span-2")}>
+        <p className="truncate text-base font-medium leading-5 text-foreground">
+          {title}
+        </p>
+        {description ? (
+          <p className="truncate text-label leading-4 text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
+      </div>
 
-            {actions.length ? (
-              <div className={cn("flex flex-wrap gap-2", description && "mt-3")}>
-                {actions.map((action) => (
-                  <OperationalToastActionButton
-                    key={action.id ?? action.label}
-                    action={action}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </div>
+      {inlineAction ? (
+        <OperationalToastActionButton action={inlineAction} />
+      ) : null}
+
+      {actions.length > 1 ? (
+        <div className="col-span-2 col-start-2 flex flex-wrap gap-2 pt-2">
+          {actions.map((action) => (
+            <OperationalToastActionButton
+              key={action.id ?? action.label}
+              action={action}
+            />
+          ))}
         </div>
       ) : null}
     </div>
@@ -171,7 +141,6 @@ function showOperationalStatusToast({
     () => (
       <OperationalStatusToast
         key={[
-          toastProps.collapsible ? "collapsible" : "fixed",
           toastProps.tone,
           toastProps.title,
           toastProps.description ?? "",

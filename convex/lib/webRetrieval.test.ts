@@ -60,7 +60,11 @@ describe("Parallel web retrieval", () => {
 
     expect(result.provider).toBe("parallel");
     expect(result.sources).toEqual([
-      { title: "First result", url: "https://example.com/first" },
+      {
+        title: "First result",
+        url: "https://example.com/first",
+        snippet: "First excerpt Second excerpt",
+      },
     ]);
     expect(result.text).toContain("First excerpt Second excerpt");
     expect(result.text).not.toContain("exceeds maxResults");
@@ -105,6 +109,13 @@ describe("Parallel web retrieval", () => {
 
     expect(result.provider).toBe("parallel");
     expect(result.text).toContain("Example provides commercial insurance services");
+    expect(result.sources).toEqual([
+      {
+        title: "About Example",
+        url: "https://example.com/about",
+        snippet: "Example provides commercial insurance services.",
+      },
+    ]);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.parallel.ai/v1/extract");
