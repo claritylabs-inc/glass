@@ -7,6 +7,7 @@ import {
   fallbackCarrierWebsiteIndex,
   firstPartyCarrierPublicIdentity,
   normalizeCarrierIdentityName,
+  preferredCarrierWebsiteIndex,
   verifiedCarrierNameRelationship,
   verifiedCarrierPublicName,
 } from "./carrierIdentityEnrichment";
@@ -96,6 +97,12 @@ describe("carrier identity enrichment", () => {
         { website: "https://www.hdi.global/", title: "HDI Global" },
       ]),
     ).toBe(0);
+  });
+
+  it("prefers verified evidence over the domain heuristic", () => {
+    expect(preferredCarrierWebsiteIndex(undefined, 0, 1)).toBe(0);
+    expect(preferredCarrierWebsiteIndex(2, 0, 1)).toBe(2);
+    expect(preferredCarrierWebsiteIndex(undefined, -1, 1)).toBe(1);
   });
 
   it("does not accept a directory based on title text alone", () => {

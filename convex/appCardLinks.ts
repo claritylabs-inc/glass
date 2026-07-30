@@ -7,6 +7,11 @@ import { buildCoverageBreakdown } from "./lib/coverageBreakdown";
 import { getClientPortalUrl } from "./lib/domains";
 import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 import { resolveCarrierIdentity } from "./lib/carrierIdentityProjection";
+import {
+  sameCarrierIdentityName,
+  type CarrierIdentity,
+} from "./lib/carrierIdentity";
+import { resolvePolicyPartyContext } from "./lib/policyPartyContext";
 
 const appCardKindValidator = v.union(
   v.literal("policy"),
@@ -36,7 +41,11 @@ function policyTitle(policy: Pick<Doc<"policies">, "policyNumber" | "linesOfBusi
   return policy.fileName ?? "Policy details";
 }
 
-function policySubtitle(policy: Pick<Doc<"policies">, "insuredName" | "security" | "carrier">) {
+function policySubtitle(policy: {
+  insuredName?: string;
+  security?: string;
+  carrier?: string;
+}) {
   return [policy.insuredName, policy.security ?? policy.carrier]
     .filter(Boolean)
     .join(" - ");
@@ -55,12 +64,29 @@ async function publicPolicy(ctx: QueryCtx, policy: Doc<"policies">) {
     ctx,
     policy.carrierIdentity,
   );
+  const partyContext = resolvePolicyPartyContext({
+    ...policy,
+    carrierIdentity,
+  });
+  const carrier =
+    partyContext.carrierDisplayName ??
+    carrierIdentity?.displayName ??
+    policy.carrier;
+  const identityMatchesCarrier = carrierIdentity &&
+    [
+      carrierIdentity.displayName,
+      carrierIdentity.sourceName,
+      carrierIdentity.operatingName,
+      ...carrierIdentity.legalEntities.map((entity) => entity.name),
+    ].some((name) => sameCarrierIdentityName(name, carrier));
+  const publicCarrierIdentity: CarrierIdentity | undefined =
+    identityMatchesCarrier ? carrierIdentity : undefined;
   return {
     id: policy._id,
     title: policyTitle(policy),
     insuredName: policy.insuredName,
-    carrier: carrierIdentity?.displayName ?? policy.carrier,
-    carrierIdentity,
+    carrier,
+    carrierIdentity: publicCarrierIdentity,
     policyNumber: policy.policyNumber,
     linesOfBusiness: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,
@@ -270,13 +296,14 @@ export const getByToken = query({
     if (link.kind === "policy") {
       const policy = await getPolicyForLink(ctx, link.policyId, link.orgId);
       if (!policy) return null;
+      const serializedPolicy = await publicPolicy(ctx, policy);
       return {
         kind: link.kind,
         orgName: org.name,
         title: policyTitle(policy),
-        subtitle: policySubtitle(policy),
+        subtitle: policySubtitle(serializedPolicy),
         label: link.label,
-        policy: await publicPolicy(ctx, policy),
+        policy: serializedPolicy,
       };
     }
 

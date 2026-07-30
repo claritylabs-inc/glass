@@ -387,3 +387,12 @@ export function fallbackCarrierWebsiteIndex(
 
   return bestScore >= 5 ? bestIndex : -1;
 }
+
+export function preferredCarrierWebsiteIndex(
+  firstPartyIndex: number | undefined,
+  modelSelectedIndex: number,
+  domainFallbackIndex: number,
+) {
+  return firstPartyIndex ??
+    (modelSelectedIndex >= 0 ? modelSelectedIndex : domainFallbackIndex);
+}

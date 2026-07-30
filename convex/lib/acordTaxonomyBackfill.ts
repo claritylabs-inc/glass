@@ -104,6 +104,20 @@ function normalizedIdentity(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function matchesPolicyNumberOrFileName(
+  value: string,
+  policy: Record<string, unknown>,
+) {
+  const identity = normalizedIdentity(value);
+  const fileName = text(policy.fileName)
+    ?.replace(/^.*[\\/]/, "")
+    .replace(/\.[^.]+$/, "");
+  return [text(policy.policyNumber), fileName].some(
+    (candidate) =>
+      candidate && normalizedIdentity(candidate) === identity,
+  );
+}
+
 function matchingSpanIds(
   sourceSpans: StoredSourceSpan[],
   value: string,
@@ -136,7 +150,12 @@ function storedProductIdentity(params: {
     readPolicyProductIdentity(params.profile.productIdentity);
   if (existing) return existing;
 
-  const existingProgramName = text(params.policy.programName);
+  const legacyProgramName = text(params.policy.programName);
+  const existingProgramName =
+    legacyProgramName &&
+    !matchesPolicyNumberOrFileName(legacyProgramName, params.policy)
+      ? legacyProgramName
+      : undefined;
   if (existingProgramName) {
     const identity = normalizedIdentity(existingProgramName);
     const matchingNode = params.sourceNodes.find((node) =>

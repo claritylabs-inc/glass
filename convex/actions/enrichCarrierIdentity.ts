@@ -15,6 +15,7 @@ import {
   firstPartyCarrierPublicIdentity,
   isPrimaryCarrierWebsiteCandidate,
   normalizeCarrierIdentityName,
+  preferredCarrierWebsiteIndex,
   verifiedCarrierNameRelationship,
   verifiedCarrierPublicName,
 } from "../lib/carrierIdentityEnrichment";
@@ -480,13 +481,15 @@ Keep the extracted legal name intact; do not shorten it into a guessed brand. Do
       carrierName,
       sites,
     );
-    const selectedIndex =
-      firstPartyIdentity?.candidateIndex ??
-      (domainSelectedIndex >= 0 ? domainSelectedIndex : modelSelectedIndex);
+    const selectedIndex = preferredCarrierWebsiteIndex(
+      firstPartyIdentity?.candidateIndex,
+      modelSelectedIndex,
+      domainSelectedIndex,
+    );
     if (
       !firstPartyIdentity &&
       domainSelectedIndex >= 0 &&
-      domainSelectedIndex !== modelSelectedIndex
+      modelSelectedIndex < 0
     ) {
       publicName = undefined;
       nameRelationship = undefined;

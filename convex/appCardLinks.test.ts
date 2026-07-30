@@ -58,4 +58,73 @@ describe("public app-card policy serialization", () => {
       policyTermType: "continuous",
     });
   });
+
+  it("uses insurer overrides without retaining mismatched extracted branding", async () => {
+    const t = convexTest(schema, modules);
+    const token = "overridden-insurer-policy-card";
+    await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Override Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Extracted Carrier",
+        carrierIdentity: {
+          displayName: "Extracted Brand",
+          sourceName: "Extracted Carrier",
+          legalEntities: [{
+            name: "Extracted Carrier",
+            sourceNodeIds: ["carrier-node"],
+            sourceSpanIds: ["carrier-span"],
+          }],
+          legalEntityRelationship: "single",
+          sourceNodeIds: ["carrier-node"],
+          sourceSpanIds: ["carrier-span"],
+          branding: {
+            website: "https://extracted.example",
+            accentColor: "#123456",
+            confidence: "high",
+            sourceUrls: ["https://extracted.example"],
+            enrichmentVersion: 16,
+            updatedAt: 1,
+          },
+        },
+        policyDetailOverrides: {
+          insurer: {
+            name: "Corrected Insurer",
+            address: {},
+            naicNumber: "",
+          },
+        },
+        policyNumber: "OVERRIDE-1",
+        linesOfBusiness: ["CGL"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Override Client",
+      });
+      await ctx.db.insert("appCardAccessLinks", {
+        orgId,
+        policyId,
+        tokenHash: await tokenHash(token),
+        kind: "policy",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    const view = await t.query(getByTokenFn, { token });
+
+    expect(view).toMatchObject({
+      subtitle: "Override Client - Corrected Insurer",
+      policy: {
+        carrier: "Corrected Insurer",
+      },
+    });
+    expect(view?.policy?.carrierIdentity).toBeUndefined();
+  });
 });

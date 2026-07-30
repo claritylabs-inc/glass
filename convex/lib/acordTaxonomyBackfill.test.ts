@@ -172,6 +172,42 @@ describe("rebuildAcordTaxonomyFromStoredSources", () => {
     expect(decision.patch).not.toHaveProperty("productIdentity");
   });
 
+  it.each([
+    {
+      programName: "POL-1",
+      fileName: "policy.pdf",
+    },
+    {
+      programName: "legacy-policy-file",
+      fileName: "legacy-policy-file.pdf",
+    },
+  ])(
+    "does not promote legacy identifiers as product names ($programName)",
+    ({ programName, fileName }) => {
+      const decision = rebuildAcordTaxonomyFromStoredSources({
+        policy: policy({
+          programName,
+          fileName,
+        }),
+        sourceNodes: [{
+          nodeId: "declarations",
+          title: "Declarations",
+          textExcerpt: `Policy Number ${programName}`,
+          sourceSpanIds: ["declarations-span"],
+          pageStart: 1,
+        }],
+        sourceSpans: [{
+          spanId: "declarations-span",
+          text: `Policy Number ${programName}`,
+          pageStart: 1,
+        }],
+      });
+
+      expect(decision.productIdentityAdded).toBe(false);
+      expect(decision.patch?.productIdentity).toBeUndefined();
+    },
+  );
+
   it("keeps ambiguous policies unclassified", () => {
     const decision = rebuildAcordTaxonomyFromStoredSources({
       policy: policy(),
