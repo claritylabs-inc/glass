@@ -1034,6 +1034,19 @@ const addressValidator = v.object({
   sourceTextHash: v.optional(v.string()),
 });
 
+const operationalAddressValidator = v.object({
+  street1: v.optional(v.string()),
+  street2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  zip: v.optional(v.string()),
+  country: v.optional(v.string()),
+  formatted: v.optional(v.string()),
+  documentNodeId: v.optional(v.string()),
+  sourceSpanIds: v.optional(v.array(v.string())),
+  sourceTextHash: v.optional(v.string()),
+});
+
 const carrierIdentityValidator = v.object({
   displayName: v.string(),
   sourceName: v.optional(v.string()),
@@ -1381,7 +1394,7 @@ export const updateExtraction = mutation({
       amBestNumber: v.optional(v.string()),
       admittedStatus: v.optional(v.string()),
       stateOfDomicile: v.optional(v.string()),
-      address: v.optional(addressValidator),
+      address: v.optional(operationalAddressValidator),
       documentNodeId: v.optional(v.string()),
       sourceSpanIds: v.optional(v.array(v.string())),
       sourceTextHash: v.optional(v.string()),

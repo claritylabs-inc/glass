@@ -1436,7 +1436,7 @@ export default defineSchema({
         stateOfDomicile: v.optional(v.string()),
         address: v.optional(
           v.object({
-            street1: v.string(),
+            street1: v.optional(v.string()),
             street2: v.optional(v.string()),
             city: v.optional(v.string()),
             state: v.optional(v.string()),

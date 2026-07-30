@@ -327,6 +327,37 @@ describe("stored-source carrier identity backfill", () => {
     });
   });
 
+  it("preserves a source-backed insurer address without a street line", () => {
+    const result = rebuildCarrierIdentityFromStoredSources({
+      policyId,
+      policy: {
+        carrier: "Stale Mutual",
+        operationalProfile: {
+          ...operationalProfile,
+          parties: [{
+            ...operationalProfile.parties[0],
+            address: {
+              city: "Chicago",
+              state: "IL",
+              zip: "60601",
+            },
+          }],
+        },
+      },
+      sourceSpans,
+      sourceNodes,
+    });
+
+    expect(result.patch?.insurer).toMatchObject({
+      legalName: "HDI Global Specialty SE",
+      address: {
+        city: "Chicago",
+        state: "IL",
+        zip: "60601",
+      },
+    });
+  });
+
   it("preserves unchanged current-version branding", () => {
     const result = rebuildCarrierIdentityFromStoredSources({
       policyId,

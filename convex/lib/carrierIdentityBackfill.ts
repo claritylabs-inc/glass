@@ -39,17 +39,19 @@ function text(value: unknown) {
 
 function insurerAddress(value: unknown) {
   const address = record(value);
-  const street1 = text(address.street1);
-  if (!street1) return undefined;
-  return {
-    street1,
-    ...(text(address.street2) ? { street2: text(address.street2) } : {}),
-    ...(text(address.city) ? { city: text(address.city) } : {}),
-    ...(text(address.state) ? { state: text(address.state) } : {}),
-    ...(text(address.zip) ? { zip: text(address.zip) } : {}),
-    ...(text(address.country) ? { country: text(address.country) } : {}),
-    ...(text(address.formatted) ? { formatted: text(address.formatted) } : {}),
+  const normalized = {
+    street1: text(address.street1),
+    street2: text(address.street2),
+    city: text(address.city),
+    state: text(address.state),
+    zip: text(address.zip),
+    country: text(address.country),
+    formatted: text(address.formatted),
   };
+  if (!Object.values(normalized).some(Boolean)) return undefined;
+  return Object.fromEntries(
+    Object.entries(normalized).filter((entry) => entry[1] !== undefined),
+  );
 }
 
 function stableHash(input: string) {

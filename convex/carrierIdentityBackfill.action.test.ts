@@ -43,6 +43,9 @@ describe("carrier identity backfill action", () => {
           parties: [{
             role: "carrier",
             name: "HDI Global Specialty SE",
+            address: {
+              formatted: "Chicago, IL 60601",
+            },
             sourceNodeIds: ["node-hdi"],
             sourceSpanIds: ["span-hdi"],
           }],
@@ -135,6 +138,12 @@ describe("carrier identity backfill action", () => {
         sourceNodeIds: ["node-hdi"],
         sourceSpanIds: ["span-hdi"],
       }],
+    });
+    expect(result.policy?.insurer).toMatchObject({
+      legalName: "HDI Global Specialty SE",
+      address: {
+        formatted: "Chicago, IL 60601",
+      },
     });
   });
 
