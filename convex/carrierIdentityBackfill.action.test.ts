@@ -167,7 +167,8 @@ describe("carrier identity backfill action", () => {
         policyYear: 2026,
         isRenewal: false,
         coverages: [],
-        extractionDataStage: "preview",
+        pipelineStatus: "running",
+        extractionDataStage: "final",
       });
       await ctx.db.insert("carrierIdentityBackfillResults", {
         policyId,
@@ -197,7 +198,7 @@ describe("carrier identity backfill action", () => {
     );
     expect(result).toMatchObject({
       outcome: "skipped",
-      reason: "not_final_policy",
+      reason: "extraction_in_progress",
     });
   });
 });

@@ -70,6 +70,12 @@ export function carrierIdentityBackfillSkipReason(policy: {
 }) {
   if (policy.deletedAt !== undefined) return "archived_policy";
   if (policy.pipelineStatus === "error") return "failed_extraction";
+  if (
+    policy.pipelineStatus !== undefined &&
+    policy.pipelineStatus !== "complete"
+  ) {
+    return "extraction_in_progress";
+  }
   const stage =
     policy.extractionDataStage ??
     (policy.pipelineStatus === "complete" ? "final" : "placeholder");

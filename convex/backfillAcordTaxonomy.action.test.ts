@@ -213,6 +213,43 @@ describe("ACORD taxonomy dry-run orchestration", () => {
     });
   });
 
+  it("skips a final-stage policy while its extraction pipeline is running", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Running Extraction Client",
+        type: "client",
+      });
+      await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Travel Carrier",
+        policyNumber: "TRAVEL-RUNNING",
+        linesOfBusiness: ["UN"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        pipelineStatus: "running",
+        extractionDataStage: "final",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Running Extraction Client",
+      });
+    });
+
+    await expect(t.action(backfillFn, {
+      dryRun: true,
+      limit: 1,
+    })).resolves.toMatchObject({
+      status: "completed",
+      scannedCount: 1,
+      changedCount: 0,
+      skippedReasons: {
+        extraction_in_progress: 1,
+      },
+    });
+  });
+
   it("persists write progress and resumes a stranded multi-page run", async () => {
     vi.useFakeTimers();
     const t = convexTest(schema, modules);

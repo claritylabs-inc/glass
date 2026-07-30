@@ -415,6 +415,12 @@ function skipReason(policy: {
 }) {
   if (policy.deletedAt !== undefined) return "archived_policy";
   if (policy.pipelineStatus === "error") return "failed_extraction";
+  if (
+    policy.pipelineStatus !== undefined &&
+    policy.pipelineStatus !== "complete"
+  ) {
+    return "extraction_in_progress";
+  }
   if (effectiveExtractionDataStage(policy) !== "final") {
     return "not_final_policy";
   }
