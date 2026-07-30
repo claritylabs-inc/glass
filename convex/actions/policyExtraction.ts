@@ -156,6 +156,15 @@ function sourceKindForStorage(value: unknown) {
     : "policy_pdf";
 }
 
+function fieldsWithPersistedCarrierIdentity(
+  fields: Record<string, unknown>,
+  policy: { carrierIdentity?: unknown } | null,
+) {
+  return policy?.carrierIdentity
+    ? { ...fields, carrierIdentity: policy.carrierIdentity }
+    : fields;
+}
+
 // ─── State Type ────────────────────────────────────────────────────────────────
 
 export type PolicyExtractionState = {
@@ -1528,7 +1537,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
       const existingPolicy = await convexCtx.runQuery(internal.policies.getInternal, {
         id: policyId as Id<"policies">,
-      }) as { linesOfBusiness?: string[] } | null;
+      }) as {
+        linesOfBusiness?: string[];
+        carrierIdentity?: unknown;
+      } | null;
 
       await convexCtx.runMutation(
         (internal as any).policies.updateExtractionInternal,
@@ -1544,7 +1556,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
               existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
-              existingPolicyFields: fields,
+              existingPolicyFields: fieldsWithPersistedCarrierIdentity(
+                fields,
+                existingPolicy,
+              ),
             }),
             extractionDataStage: "final",
             extractionDataStageUpdatedAt: nowMs(),
@@ -2448,7 +2463,10 @@ async function completeExternalExtractFromPayload(
   const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
   const existingPolicy = await ctx.runQuery(internal.policies.getInternal, {
     id: policyId as Id<"policies">,
-  }) as { linesOfBusiness?: string[] } | null;
+  }) as {
+    linesOfBusiness?: string[];
+    carrierIdentity?: unknown;
+  } | null;
 
   await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
     id: policyId,
@@ -2462,7 +2480,10 @@ async function completeExternalExtractFromPayload(
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
         existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
-        existingPolicyFields: fields,
+        existingPolicyFields: fieldsWithPersistedCarrierIdentity(
+          fields,
+          existingPolicy,
+        ),
       }),
       extractionDataStage: "final",
       extractionDataStageUpdatedAt: nowMs(),

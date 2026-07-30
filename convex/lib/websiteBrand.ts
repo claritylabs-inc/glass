@@ -1,7 +1,10 @@
 "use node";
 
+import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import type { LookupFunction } from "node:net";
 import { convertIndexedToRgb, decode } from "fast-png";
+import { Agent, fetch as undiciFetch } from "undici";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
@@ -24,19 +27,31 @@ type WebsiteBrandSignals = {
   colorCandidates: string[];
 };
 
-function isPrivateIpv4(hostname: string) {
+function isPublicIpv4(hostname: string) {
   const parts = hostname.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
-    return true;
+  if (
+    parts.length !== 4 ||
+    parts.some((part) =>
+      !Number.isInteger(part) || part < 0 || part > 255
+    )
+  ) {
+    return false;
   }
-  const [a, b] = parts;
-  return (
+  const [a, b, c] = parts;
+  return !(
     a === 0 ||
     a === 10 ||
     a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168)
+    (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+    (a === 192 && b === 88 && c === 99) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113) ||
+    a >= 224
   );
 }
 
@@ -109,7 +124,7 @@ export function normalizePublicWebsiteUrl(rawUrl: string) {
   }
   const ipVersion = isIP(hostname);
   if (
-    (ipVersion === 4 && isPrivateIpv4(hostname)) ||
+    (ipVersion === 4 && !isPublicIpv4(hostname)) ||
     (ipVersion === 6 && !isPublicIpv6(hostname))
   ) {
     throw new Error("Private network websites are not supported");
@@ -118,28 +133,118 @@ export function normalizePublicWebsiteUrl(rawUrl: string) {
   return parsed.toString();
 }
 
+type DnsAddress = {
+  address: string;
+  family: number;
+};
+
+type DnsResolver = (hostname: string) => Promise<DnsAddress[]>;
+type PublicResponse =
+  | Response
+  | Awaited<ReturnType<typeof undiciFetch>>;
+
+const resolveDnsAddresses: DnsResolver = async (hostname) =>
+  await dnsLookup(hostname, {
+    all: true,
+    order: "verbatim",
+  });
+
+function isPublicIpAddress(address: string) {
+  const normalized = unbracketHostname(address.toLowerCase());
+  const version = isIP(normalized);
+  return version === 4
+    ? isPublicIpv4(normalized)
+    : version === 6 && isPublicIpv6(normalized);
+}
+
+export async function resolvePublicAddress(
+  hostname: string,
+  resolver: DnsResolver = resolveDnsAddresses,
+) {
+  const normalized = unbracketHostname(hostname.toLowerCase());
+  const literalFamily = isIP(normalized);
+  if (literalFamily) {
+    if (!isPublicIpAddress(normalized)) {
+      throw new Error("Private network websites are not supported");
+    }
+    return { address: normalized, family: literalFamily };
+  }
+
+  const addresses = await resolver(normalized);
+  if (
+    addresses.length === 0 ||
+    addresses.some((answer) => !isPublicIpAddress(answer.address))
+  ) {
+    throw new Error("Private network websites are not supported");
+  }
+  return addresses[0];
+}
+
+const responseDispatchers = new WeakMap<object, Agent>();
+
+async function releaseResponseDispatcher(response: PublicResponse) {
+  const dispatcher = responseDispatchers.get(response);
+  if (!dispatcher) return;
+  responseDispatchers.delete(response);
+  await dispatcher.close();
+}
+
+async function discardPublicResponse(response: PublicResponse) {
+  try {
+    await response.body?.cancel();
+  } finally {
+    await releaseResponseDispatcher(response);
+  }
+}
+
+async function fetchPinned(url: string) {
+  const hostname = unbracketHostname(new URL(url).hostname);
+  const address = await resolvePublicAddress(hostname);
+  const pinnedLookup: LookupFunction = (_hostname, options, callback) => {
+    callback(
+      null,
+      options.all ? [address] : address.address,
+      options.all ? undefined : address.family,
+    );
+  };
+  const dispatcher = new Agent({
+    connect: { lookup: pinnedLookup },
+    connectTimeout: 10_000,
+    headersTimeout: 30_000,
+    bodyTimeout: 30_000,
+    pipelining: 0,
+  });
+  try {
+    const response = await undiciFetch(url, {
+      redirect: "manual",
+      headers: {
+        "User-Agent": USER_AGENT,
+      },
+      dispatcher,
+    });
+    responseDispatchers.set(response, dispatcher);
+    return response;
+  } catch (error) {
+    await dispatcher.close();
+    throw error;
+  }
+}
+
 async function fetchPublic(
   rawUrl: string,
-  init: RequestInit = {},
   redirectsRemaining = MAX_REDIRECTS,
-): Promise<Response> {
+): Promise<PublicResponse> {
   const url = normalizePublicWebsiteUrl(rawUrl);
-  const response = await fetch(url, {
-    ...init,
-    redirect: "manual",
-    headers: {
-      "User-Agent": USER_AGENT,
-      ...init.headers,
-    },
-  });
+  const response = await fetchPinned(url);
   if (response.status < 300 || response.status >= 400) return response;
   const location = response.headers.get("location");
   if (!location || redirectsRemaining <= 0) {
+    await discardPublicResponse(response);
     throw new Error("Website redirected too many times");
   }
+  await discardPublicResponse(response);
   return await fetchPublic(
     new URL(location, url).toString(),
-    init,
     redirectsRemaining - 1,
   );
 }
@@ -366,19 +471,24 @@ export function extractWebsiteStylesheetUrls(html: string, website: string) {
 }
 
 export async function readResponseBytesWithinLimit(
-  response: Response,
+  response: PublicResponse,
   maxBytes: number,
 ) {
   const contentLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    await discardPublicResponse(response);
     throw new Error(`Website response exceeded ${maxBytes} bytes`);
   }
   if (!response.body) {
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength > maxBytes) {
-      throw new Error(`Website response exceeded ${maxBytes} bytes`);
+    try {
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength > maxBytes) {
+        throw new Error(`Website response exceeded ${maxBytes} bytes`);
+      }
+      return new Uint8Array(buffer);
+    } finally {
+      await releaseResponseDispatcher(response);
     }
-    return new Uint8Array(buffer);
   }
 
   const reader = response.body.getReader();
@@ -397,6 +507,7 @@ export async function readResponseBytesWithinLimit(
     }
   } finally {
     reader.releaseLock();
+    await releaseResponseDispatcher(response);
   }
 
   const bytes = new Uint8Array(totalBytes);
@@ -409,7 +520,7 @@ export async function readResponseBytesWithinLimit(
 }
 
 async function readResponseTextWithinLimit(
-  response: Response,
+  response: PublicResponse,
   maxBytes: number,
 ) {
   return new TextDecoder().decode(
@@ -419,9 +530,13 @@ async function readResponseTextWithinLimit(
 
 async function fetchWebsiteHtml(rawUrl: string) {
   const response = await fetchPublic(rawUrl);
-  if (!response.ok) throw new Error(`Website returned ${response.status}`);
+  if (!response.ok) {
+    await discardPublicResponse(response);
+    throw new Error(`Website returned ${response.status}`);
+  }
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("text/html")) {
+    await discardPublicResponse(response);
     throw new Error("Website did not return HTML");
   }
   const html = await readResponseTextWithinLimit(response, MAX_HTML_BYTES);
@@ -436,12 +551,16 @@ async function readStylesheetBrandColors(html: string, website: string) {
     extractWebsiteStylesheetUrls(html, website).map(async (url) => {
       try {
         const response = await fetchPublic(url);
-        if (!response.ok) return [];
+        if (!response.ok) {
+          await discardPublicResponse(response);
+          return [];
+        }
         const contentType = response.headers.get("content-type") ?? "";
         if (
           !contentType.includes("text/css") &&
           !new URL(response.url || url).pathname.endsWith(".css")
         ) {
+          await discardPublicResponse(response);
           return [];
         }
         const css = await readResponseTextWithinLimit(
@@ -500,12 +619,16 @@ async function fetchFaviconFromHtml(html: string, website: string) {
   for (const candidate of extractIconCandidates(html, website)) {
     try {
       const response = await fetchPublic(candidate);
-      if (!response.ok) continue;
+      if (!response.ok) {
+        await discardPublicResponse(response);
+        continue;
+      }
       const contentType = response.headers.get("content-type") ?? "";
       if (
         !contentType.startsWith("image/") &&
         !new URL(candidate).pathname.endsWith(".ico")
       ) {
+        await discardPublicResponse(response);
         continue;
       }
       const bytes = await readResponseBytesWithinLimit(

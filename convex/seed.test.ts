@@ -1,6 +1,18 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
+const { dnsLookupMock, undiciFetchMock } = vi.hoisted(() => ({
+  dnsLookupMock: vi.fn(),
+  undiciFetchMock: vi.fn(),
+}));
+vi.mock("node:dns/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:dns/promises")>();
+  return { ...actual, lookup: dnsLookupMock };
+});
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("undici")>();
+  return { ...actual, fetch: undiciFetchMock };
+});
 import schema from "./schema";
 import {
   insertLocalFixture,
@@ -26,6 +38,8 @@ const currentOperatorFn = currentOperator as any;
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  dnsLookupMock.mockReset();
+  undiciFetchMock.mockReset();
 });
 
 describe("local workspace seed", () => {
@@ -279,9 +293,11 @@ describe("local workspace seed", () => {
   test("stores Montgomery Risk and Cove favicons during the full seed action", async () => {
     vi.stubEnv("GLASS_ENV", "local");
     const fetchedUrls: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request) => {
+    dnsLookupMock.mockResolvedValue([
+      { address: "93.184.216.34", family: 4 },
+    ]);
+    undiciFetchMock.mockImplementation(
+      async (input: string | URL | Request) => {
         const url = String(input instanceof Request ? input.url : input);
         fetchedUrls.push(url);
         if (url.endsWith("/favicon.png")) {
@@ -292,7 +308,7 @@ describe("local workspace seed", () => {
         return new Response('<link rel="icon" href="/favicon.png">', {
           headers: { "content-type": "text/html" },
         });
-      }),
+      },
     );
 
     const t = convexTest(schema, modules);

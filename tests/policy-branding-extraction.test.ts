@@ -19,5 +19,10 @@ describe("policy carrier branding ownership", () => {
     expect(policyPage).not.toContain("enrichCarrierIdentity");
     expect(policyPage).not.toContain("CARRIER_IDENTITY_ENRICHMENT_VERSION");
     expect(carrierIdentityAction).not.toContain("export const ensure = action");
+    expect(
+      extraction.match(
+        /existingPolicyFields: fieldsWithPersistedCarrierIdentity\(\s*fields,\s*existingPolicy,\s*\)/g,
+      ),
+    ).toHaveLength(2);
   });
 });

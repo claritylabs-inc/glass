@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+const { undiciFetchMock } = vi.hoisted(() => ({
+  undiciFetchMock: vi.fn(),
+}));
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("undici")>();
+  return { ...actual, fetch: undiciFetchMock };
+});
 import { encode } from "fast-png";
 import {
   extractImageBrandColors,
@@ -9,10 +16,12 @@ import {
   normalizePublicWebsiteUrl,
   readResponseBytesWithinLimit,
   readWebsiteFaviconSignals,
+  resolvePublicAddress,
 } from "./websiteBrand";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  undiciFetchMock.mockReset();
 });
 
 describe("website brand signals", () => {
@@ -35,6 +44,19 @@ describe("website brand signals", () => {
     expect(() => normalizePublicWebsiteUrl("http://127.0.0.1")).toThrow(
       "Private network",
     );
+    for (const address of [
+      "100.64.0.1",
+      "192.0.2.1",
+      "198.18.0.1",
+      "198.51.100.1",
+      "203.0.113.1",
+      "224.0.0.1",
+      "240.0.0.1",
+    ]) {
+      expect(() => normalizePublicWebsiteUrl(`http://${address}`)).toThrow(
+        "Private network",
+      );
+    }
     expect(() => normalizePublicWebsiteUrl("http://[::1]")).toThrow(
       "Private network",
     );
@@ -50,6 +72,23 @@ describe("website brand signals", () => {
     expect(
       normalizePublicWebsiteUrl("https://[2606:4700:4700::1111]"),
     ).toBe("https://[2606:4700:4700::1111]/");
+  });
+
+  it("rejects any hostname with a non-public DNS answer", async () => {
+    await expect(
+      resolvePublicAddress("carrier.example", async () => [
+        { address: "93.184.216.34", family: 4 },
+        { address: "127.0.0.1", family: 4 },
+      ]),
+    ).rejects.toThrow("Private network");
+    await expect(
+      resolvePublicAddress("carrier.example", async () => [
+        { address: "2606:4700:4700::1111", family: 6 },
+      ]),
+    ).resolves.toEqual({
+      address: "2606:4700:4700::1111",
+      family: 6,
+    });
   });
 
   it("rejects declared and streamed bodies above the byte limit", async () => {
@@ -129,9 +168,11 @@ describe("website brand signals", () => {
         255,
       ]),
     });
-    const fetchMock = vi.fn(async (value: string | URL | Request) => {
+    undiciFetchMock.mockImplementation(async (
+      value: string | URL | Request,
+    ) => {
       const url = String(value);
-      if (url === "https://blocked.example/") {
+      if (url === "https://93.184.216.34/") {
         return new Response("Forbidden", { status: 403 });
       }
       if (url.endsWith("/apple-touch-icon.png")) {
@@ -149,17 +190,23 @@ describe("website brand signals", () => {
       }
       return new Response("Not found", { status: 404 });
     });
-    vi.stubGlobal("fetch", fetchMock);
 
     const signals = await readWebsiteFaviconSignals(
-      "https://blocked.example/",
+      "https://93.184.216.34/",
     );
 
     expect(signals.favicon).toBeInstanceOf(Blob);
     expect(signals.colorCandidates).toEqual(["#1434CB"]);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://blocked.example/favicon.ico",
+    expect(undiciFetchMock).toHaveBeenCalledWith(
+      "https://93.184.216.34/favicon.ico",
       expect.any(Object),
     );
+    const faviconRequest = undiciFetchMock.mock.calls.find(
+      ([value]) => String(value).endsWith("/favicon.ico"),
+    );
+    expect(faviconRequest?.[1]).toMatchObject({
+      dispatcher: expect.any(Object),
+      redirect: "manual",
+    });
   });
 });
