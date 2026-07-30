@@ -187,7 +187,7 @@ async function applyCachedIdentity(
     !existing ||
     existing.enrichmentVersion !== CARRIER_IDENTITY_ENRICHMENT_VERSION
   ) {
-    return false;
+    return { applied: false, identityChanged: false };
   }
   return await ctx.runMutation(
     internal.carrierIdentityCache.applyToPolicyInternal,
@@ -196,6 +196,17 @@ async function applyCachedIdentity(
       cacheEntryId: existing._id,
       normalizedName,
     },
+  );
+}
+
+async function rescheduleChangedCarrierIdentity(
+  ctx: ActionCtx,
+  policyId: Id<"policies">,
+) {
+  await ctx.scheduler.runAfter(
+    0,
+    internal.actions.enrichCarrierIdentity.ensureInternal,
+    { policyId },
   );
 }
 
@@ -249,8 +260,17 @@ async function enrichPolicyCarrierIdentity(
   const normalizedName = normalizeCarrierIdentityName(carrierName);
   const normalizedNames = carrierNames.map(normalizeCarrierIdentityName);
   for (const candidateName of normalizedNames) {
-    if (await applyCachedIdentity(ctx, policyId, candidateName)) {
+    const cachedResult = await applyCachedIdentity(
+      ctx,
+      policyId,
+      candidateName,
+    );
+    if (cachedResult.applied) {
       return { success: true as const, cached: true };
+    }
+    if (cachedResult.identityChanged) {
+      await rescheduleChangedCarrierIdentity(ctx, policyId);
+      return { success: false as const, reason: "in_progress" };
     }
   }
 
@@ -517,11 +537,15 @@ Keep the extracted legal name intact; do not shorten it into a guessed brand. Do
         updatedAt: dayjs().valueOf(),
       },
     );
-    const linked = await ctx.runMutation(
+    const applied = await ctx.runMutation(
       internal.carrierIdentityCache.applyToPolicyInternal,
       { policyId, cacheEntryId, normalizedName },
     );
-    return { success: linked, cached: false };
+    if (applied.identityChanged) {
+      await rescheduleChangedCarrierIdentity(ctx, policyId);
+      return { success: false as const, reason: "in_progress" };
+    }
+    return { success: applied.applied, cached: false };
   } catch (error) {
     console.warn("[carrier-identity] enrichment failed", {
       policyId,

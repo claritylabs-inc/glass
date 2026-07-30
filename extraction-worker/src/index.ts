@@ -62,6 +62,7 @@ import {
   type ClRouterProviderAssets,
 } from "./clRouterClient.js";
 import { applyCarrierIdentityGuidance } from "./extractionPromptGuidance.js";
+import { watchClientDisconnect } from "./httpRequestCancellation.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -1736,23 +1737,18 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
     jsonResponse(res, 401, { error: "Unauthorized" });
     return;
   }
-  const body = await readJsonBody(req);
-  const pdfBase64 = typeof body.pdfBase64 === "string" ? body.pdfBase64 : "";
-  if (!pdfBase64) {
-    jsonResponse(res, 400, { error: "Missing pdfBase64" });
-    return;
-  }
-
-  const abortController = new AbortController();
-  const abortQueuedConversion = () => {
-    if (!res.writableEnded) {
-      abortController.abort();
-    }
-  };
-  req.once("aborted", abortQueuedConversion);
-  req.once("close", abortQueuedConversion);
+  const cancellation = watchClientDisconnect(req, res);
 
   try {
+    const body = await readJsonBody(req);
+    if (cancellation.signal.aborted) {
+      throw new DOMException("Client closed request", "AbortError");
+    }
+    const pdfBase64 = typeof body.pdfBase64 === "string" ? body.pdfBase64 : "";
+    if (!pdfBase64) {
+      jsonResponse(res, 400, { error: "Missing pdfBase64" });
+      return;
+    }
     const pdfBytes = Buffer.from(pdfBase64, "base64");
     const converted = await convertPdfWithLiteParse({
       pdfBytes,
@@ -1761,7 +1757,7 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
       maxPages: LITEPARSE_MAX_PAGES,
       maxFileSize: LITEPARSE_MAX_FILE_SIZE,
       priority: "http",
-      signal: abortController.signal,
+      signal: cancellation.signal,
     });
     jsonResponse(res, 200, {
       ok: true,
@@ -1772,16 +1768,15 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
       metadata: converted.metadata,
     });
   } catch (error) {
-    if (abortController.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
-      if (!res.headersSent) {
+    if (cancellation.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+      if (!res.headersSent && !res.destroyed && !res.writableEnded) {
         jsonResponse(res, 499, { error: "Client closed request" });
       }
       return;
     }
     throw error;
   } finally {
-    req.off("aborted", abortQueuedConversion);
-    req.off("close", abortQueuedConversion);
+    cancellation.dispose();
   }
 }
 
@@ -1810,7 +1805,9 @@ function startHttpServer(): { close: () => void } | null {
     if (req.method === "POST" && url.pathname === "/liteparse/convert") {
       handleConvertRequest(req, res).catch((error) => {
         console.error("LiteParse HTTP conversion failed:", error);
-        jsonResponse(res, 500, { error: errorMessage(error) });
+        if (!res.headersSent && !res.destroyed && !res.writableEnded) {
+          jsonResponse(res, 500, { error: errorMessage(error) });
+        }
       });
       return;
     }

@@ -68,6 +68,7 @@ export function PolicyDetailsTab({
       ) : null}
       <PolicySummary
         carrier={policy.carrier}
+        carrierDisplayName={partyContext.carrierDisplayName}
         carrierIdentity={policy.carrierIdentity}
         policyNumber={policy.policyNumber}
         productIdentity={policy.productIdentity}

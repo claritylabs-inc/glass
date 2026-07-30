@@ -20,6 +20,7 @@ import {
 import { policyCardBranding } from "@/lib/policy-card-branding";
 import {
   readCarrierIdentity,
+  sameCarrierIdentityName,
   type CarrierIdentity,
 } from "@/convex/lib/carrierIdentity";
 import { policyProductName } from "@/convex/lib/policyProductIdentity";
@@ -141,6 +142,7 @@ function ExtractionPendingDetails() {
 
 export interface PolicySummaryProps {
   carrier?: string;
+  carrierDisplayName?: string;
   carrierIdentity?: CarrierIdentity | null;
   policyNumber?: string;
   productIdentity?: unknown;
@@ -160,6 +162,7 @@ export interface PolicySummaryProps {
 
 export function PolicySummary({
   carrier,
+  carrierDisplayName,
   carrierIdentity: carrierIdentityValue,
   policyNumber,
   productIdentity,
@@ -181,11 +184,21 @@ export function PolicySummary({
     policyProductName({ productIdentity, programName }),
   );
   const carrierIdentity = readCarrierIdentity(carrierIdentityValue);
-  const branding = carrierIdentity?.branding;
+  const explicitCarrierDisplayName = realText(carrierDisplayName);
   const issuerName =
+    explicitCarrierDisplayName ??
     realText(carrierIdentity?.displayName) ??
     realText(carrier) ??
     "Insurance carrier";
+  const brandingMatchesIssuer =
+    !explicitCarrierDisplayName ||
+    [
+      carrierIdentity?.displayName,
+      carrierIdentity?.sourceName,
+      carrierIdentity?.operatingName,
+      ...(carrierIdentity?.legalEntities.map((entity) => entity.name) ?? []),
+    ].some((name) => sameCarrierIdentityName(name, explicitCarrierDisplayName));
+  const branding = brandingMatchesIssuer ? carrierIdentity?.branding : undefined;
   const realEffectiveDate = realText(effectiveDate);
   const realExpirationDate = realText(expirationDate);
   const displayEffectiveDate = formatPolicyDate(realEffectiveDate);

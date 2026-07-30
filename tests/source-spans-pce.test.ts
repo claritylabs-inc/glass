@@ -161,6 +161,9 @@ describe("source spans and policy update backend surfaces", () => {
     const pdfSourceSpans = read("convex/lib/pdfSourceSpans.ts");
     const workerLiteparse = read("extraction-worker/src/liteparse.ts");
     const worker = read("extraction-worker/src/index.ts");
+    const workerCancellation = read(
+      "extraction-worker/src/httpRequestCancellation.ts",
+    );
     const conductorSetup = read("scripts/setup-conductor-workspace.mjs");
 
     expect(liteparsePreprocessor).toContain("preparePdfTextWithParserFallback");
@@ -186,7 +189,9 @@ describe("source spans and policy update backend surfaces", () => {
     expect(worker).toContain('priority: "http"');
     expect(worker).toContain('priority: "preview"');
     expect(worker).toContain('priority: "full"');
-    expect(worker).toContain("abortController.abort()");
+    expect(worker).toContain("watchClientDisconnect(req, res)");
+    expect(workerCancellation).toContain('res.once("close", abort)');
+    expect(workerCancellation).toContain('req.socket.once("close", abort)');
     expect(conductorSetup).toContain('EXTRACTION_JOB_CONCURRENCY: "8"');
     expect(conductorSetup).toContain('EXTRACTION_PREVIEW_CONCURRENCY: "2"');
   });

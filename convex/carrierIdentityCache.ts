@@ -123,24 +123,34 @@ export const applyToPolicyInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy) return false;
+    if (!policy) return { applied: false, identityChanged: false };
     const cacheEntry = await ctx.db.get(args.cacheEntryId);
-    if (!cacheEntry) return false;
+    if (!cacheEntry) return { applied: false, identityChanged: false };
     const identity = readCarrierIdentity(policy.carrierIdentity);
-    if (!identity) return false;
-    const currentNames = [
-      identity.sourceName,
-      identity.displayName,
-      identity.operatingName,
-      ...identity.legalEntities.map((entity) => entity.name),
-      policy.carrier,
-      policy.insurer?.legalName,
-      policy.carrierLegalName,
-      policy.security,
-    ]
+    const currentNames = (identity
+      ? [
+          identity.sourceName,
+          identity.displayName,
+          identity.operatingName,
+          ...identity.legalEntities.map((entity) => entity.name),
+        ]
+      : [
+          policy.carrier,
+          policy.insurer?.legalName,
+          policy.carrierLegalName,
+          policy.security,
+        ])
       .filter((name): name is string => typeof name === "string")
       .map(normalizeCarrierIdentityName);
-    if (!currentNames.includes(args.normalizedName)) return false;
+    if (!currentNames.includes(args.normalizedName)) {
+      await ctx.db.patch(args.policyId, {
+        carrierIdentityEnrichmentStatus: undefined,
+        carrierIdentityEnrichmentAttempts: undefined,
+        carrierIdentityEnrichmentAttemptedAt: undefined,
+      });
+      return { applied: false, identityChanged: true };
+    }
+    if (!identity) return { applied: false, identityChanged: false };
 
     const carrierIdentity = applyCarrierIdentityEnrichment(identity, {
       publicName: cacheEntry.publicName,
@@ -163,6 +173,6 @@ export const applyToPolicyInternal = internalMutation({
       carrierBrandAttempts: undefined,
       carrierBrandAttemptedAt: undefined,
     });
-    return true;
+    return { applied: true, identityChanged: false };
   },
 });

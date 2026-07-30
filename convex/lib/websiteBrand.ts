@@ -17,6 +17,9 @@ const MAX_COLOR_CANDIDATES = 8;
 const MAX_STYLESHEETS = 2;
 const ICON_SAMPLE_SIZE = 64;
 const ICON_COLOR_BUCKET_SIZE = 16;
+const MAX_PNG_DIMENSION = 2_048;
+const MAX_PNG_PIXELS = 1_048_576;
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
 
 type WebsiteBrandSignals = {
   website: string;
@@ -301,6 +304,34 @@ export function extractWebsiteBrandColors(html: string) {
   ).slice(0, MAX_COLOR_CANDIDATES);
 }
 
+export function hasSafePngDimensions(bytes: Uint8Array) {
+  if (bytes.byteLength < 24) return false;
+  if (!PNG_SIGNATURE.every((value, index) => bytes[index] === value)) {
+    return false;
+  }
+  const view = new DataView(
+    bytes.buffer,
+    bytes.byteOffset,
+    bytes.byteLength,
+  );
+  const isHeader =
+    view.getUint32(8) === 13 &&
+    bytes[12] === 73 &&
+    bytes[13] === 72 &&
+    bytes[14] === 68 &&
+    bytes[15] === 82;
+  if (!isHeader) return false;
+  const width = view.getUint32(16);
+  const height = view.getUint32(20);
+  return (
+    width > 0 &&
+    height > 0 &&
+    width <= MAX_PNG_DIMENSION &&
+    height <= MAX_PNG_DIMENSION &&
+    width * height <= MAX_PNG_PIXELS
+  );
+}
+
 export async function extractImageBrandColors(input: Uint8Array | ArrayBuffer) {
   try {
     const bytes =
@@ -310,13 +341,14 @@ export async function extractImageBrandColors(input: Uint8Array | ArrayBuffer) {
       return extractWebsiteBrandColors(svgText).slice(0, 4);
     }
 
-    const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
     const pngOffset = bytes.findIndex((_, index) =>
-      pngSignature.every((value, offset) => bytes[index + offset] === value),
+      PNG_SIGNATURE.every((value, offset) => bytes[index + offset] === value),
     );
     if (pngOffset < 0) return [];
 
-    const decoded = decode(bytes.subarray(pngOffset));
+    const pngBytes = bytes.subarray(pngOffset);
+    if (!hasSafePngDimensions(pngBytes)) return [];
+    const decoded = decode(pngBytes);
     const data = decoded.palette
       ? convertIndexedToRgb(decoded)
       : decoded.data;

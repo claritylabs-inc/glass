@@ -164,6 +164,73 @@ describe("carrier identity branding", () => {
     });
   });
 
+  it("releases a stale enrichment lease when the source identity changes", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const cacheEntryId = await ctx.db.insert("carrierBrands", {
+        normalizedName: "original carrier",
+        carrierName: "Original Carrier",
+        website: "https://original.example/",
+        accentColor: "#123456",
+        confidence: "high",
+        sourceUrls: ["https://original.example/"],
+        enrichmentVersion: CARRIER_IDENTITY_ENRICHMENT_VERSION,
+        updatedAt: 1,
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Original Carrier",
+        carrierIdentity: {
+          displayName: "Replacement Carrier",
+          sourceName: "Replacement Carrier Company",
+          legalEntities: [{
+            name: "Replacement Carrier Company",
+            sourceNodeIds: ["replacement-carrier"],
+            sourceSpanIds: ["span-replacement-carrier"],
+          }],
+          legalEntityRelationship: "single",
+          sourceNodeIds: ["replacement-carrier"],
+          sourceSpanIds: ["span-replacement-carrier"],
+        },
+        carrierIdentityEnrichmentStatus: "pending",
+        carrierIdentityEnrichmentAttempts: 2,
+        carrierIdentityEnrichmentAttemptedAt: 100,
+        policyNumber: "R-100",
+        linesOfBusiness: ["AUTOB"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Client",
+      });
+      return { cacheEntryId, policyId };
+    });
+
+    const result = await t.mutation(applyToPolicyInternalFn, {
+      policyId: ids.policyId,
+      cacheEntryId: ids.cacheEntryId,
+      normalizedName: "original carrier",
+    });
+    const policy = await t.run((ctx) => ctx.db.get(ids.policyId));
+
+    expect(result).toEqual({ applied: false, identityChanged: true });
+    expect(policy).toMatchObject({
+      carrier: "Original Carrier",
+      carrierIdentity: {
+        displayName: "Replacement Carrier",
+      },
+    });
+    expect(policy?.carrierIdentityEnrichmentStatus).toBeUndefined();
+    expect(policy?.carrierIdentityEnrichmentAttempts).toBeUndefined();
+    expect(policy?.carrierIdentityEnrichmentAttemptedAt).toBeUndefined();
+  });
+
   it("clears stale optional identity evidence when refreshing a cache row", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {

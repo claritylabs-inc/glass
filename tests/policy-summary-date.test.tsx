@@ -49,4 +49,40 @@ describe("PolicySummary date display", () => {
       "Lloyd&#x27;s Underwriters led by Liberty Managing Agency Limited Syndicate 4472",
     );
   });
+
+  it("gives broker-authored insurer overrides precedence over extracted branding", () => {
+    const markup = renderToStaticMarkup(
+      <PolicySummary
+        carrier="Extracted Carrier"
+        carrierDisplayName="Corrected Carrier"
+        carrierIdentity={{
+          displayName: "Extracted Carrier",
+          sourceName: "Extracted Carrier Company",
+          legalEntities: [{
+            name: "Extracted Carrier Company",
+            sourceNodeIds: [],
+            sourceSpanIds: [],
+          }],
+          legalEntityRelationship: "single",
+          sourceNodeIds: [],
+          sourceSpanIds: [],
+          branding: {
+            website: "https://extracted.example",
+            iconUrl: "https://extracted.example/favicon.png",
+            accentColor: "#120C43",
+            confidence: "high",
+            sourceUrls: [],
+            enrichmentVersion: 9,
+            updatedAt: 1,
+          },
+        }}
+        policyNumber="OVERRIDE-100"
+        linesOfBusiness={["OLIB"]}
+      />,
+    );
+
+    expect(markup).toContain("Corrected Carrier");
+    expect(markup).not.toContain(">Extracted Carrier<");
+    expect(markup).not.toContain("https://extracted.example/favicon.png");
+  });
 });
