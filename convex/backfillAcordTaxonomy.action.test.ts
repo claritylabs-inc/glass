@@ -4,12 +4,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   backfill,
   report,
+  resume,
 } from "./actions/backfillAcordTaxonomy";
+import {
+  recordWriteFailureInternal,
+  startWriteRunInternal,
+} from "./acordTaxonomyBackfillBatches";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const backfillFn = backfill as any;
 const reportFn = report as any;
+const resumeFn = resume as any;
+const recordWriteFailureInternalFn = recordWriteFailureInternal as any;
+const startWriteRunInternalFn = startWriteRunInternal as any;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -50,6 +58,13 @@ describe("ACORD taxonomy dry-run orchestration", () => {
     expect(started).toMatchObject({
       status: "running",
       scannedCount: 2,
+      continuationScheduled: true,
+    });
+    await expect(t.action(resumeFn, {
+      runId: started.runId,
+    })).resolves.toMatchObject({
+      dryRun: true,
+      status: "running",
       continuationScheduled: true,
     });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
@@ -172,10 +187,20 @@ describe("ACORD taxonomy dry-run orchestration", () => {
       limit: 1,
     });
     expect(write).toMatchObject({
+      status: "completed",
       scannedCount: 1,
       changedCount: 1,
       lineChangedCount: 1,
       productIdentitiesAdded: 1,
+    });
+    await expect(t.action(reportFn, {
+      runId: write.runId,
+    })).resolves.toMatchObject({
+      runId: write.runId,
+      dryRun: false,
+      status: "completed",
+      pageCount: 1,
+      scannedCount: 1,
     });
     const policy = await t.run(async (ctx) => await ctx.db.get(policyId));
     expect(policy?.linesOfBusiness).toEqual(["TRVL"]);
@@ -185,6 +210,123 @@ describe("ACORD taxonomy dry-run orchestration", () => {
         sourceNodeIds: ["travel-plan-node"],
         sourceSpanIds: ["travel-plan-span"],
       },
+    });
+  });
+
+  it("persists write progress and resumes a stranded multi-page run", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Write Backfill Client",
+        type: "client",
+      });
+      for (let index = 0; index < 5; index += 1) {
+        await ctx.db.insert("policies", {
+          orgId,
+          carrier: `Carrier ${index}`,
+          policyNumber: `WRITE-BACKFILL-${index}`,
+          linesOfBusiness: ["UN"],
+          documentType: "policy",
+          policyYear: 2026,
+          effectiveDate: "01/01/2026",
+          expirationDate: "01/01/2027",
+          extractionDataStage: "final",
+          isRenewal: false,
+          coverages: [],
+          insuredName: "Write Backfill Client",
+        });
+      }
+    });
+
+    const runId = "stranded-write-run";
+    await t.mutation(startWriteRunInternalFn, {
+      runId,
+      limit: 2,
+      createdAt: 1,
+    });
+    await expect(t.action(resumeFn, { runId })).resolves.toMatchObject({
+      status: "running",
+      continuationScheduled: true,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const completed = await t.action(reportFn, { runId });
+    expect(completed).toMatchObject({
+      runId,
+      dryRun: false,
+      status: "completed",
+      pageCount: 3,
+      scannedCount: 5,
+      continuationScheduled: false,
+      retryCount: 0,
+    });
+    const stored = await t.run(async (ctx) => ({
+      run: await ctx.db
+        .query("acordTaxonomyWriteRuns")
+        .withIndex("by_runId", (query) => query.eq("runId", runId))
+        .unique(),
+      pages: await ctx.db
+        .query("acordTaxonomyWritePages")
+        .withIndex("by_runId", (query) => query.eq("runId", runId))
+        .collect(),
+    }));
+    expect(stored.run).toMatchObject({
+      status: "completed",
+      retryCount: 0,
+    });
+    expect(stored.pages).toHaveLength(3);
+  });
+
+  it("retries a failed write page from its persisted cursor", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Retry Client",
+        type: "client",
+      });
+      await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Retry Carrier",
+        policyNumber: "WRITE-RETRY",
+        linesOfBusiness: ["UN"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        extractionDataStage: "final",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Retry Client",
+      });
+    });
+
+    const runId = "retry-write-run";
+    await t.mutation(startWriteRunInternalFn, {
+      runId,
+      limit: 1,
+      createdAt: 1,
+    });
+    await expect(t.mutation(recordWriteFailureInternalFn, {
+      runId,
+      cursor: null,
+      expectedRetryCount: 0,
+      error: "temporary evidence query failure",
+      updatedAt: 2,
+    })).resolves.toMatchObject({
+      status: "running",
+      continuationScheduled: true,
+      retryCount: 1,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    await expect(t.action(reportFn, { runId })).resolves.toMatchObject({
+      runId,
+      status: "completed",
+      pageCount: 1,
+      scannedCount: 1,
+      retryCount: 0,
     });
   });
 });

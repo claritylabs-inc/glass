@@ -84,6 +84,104 @@ export async function recordCarrierIdentityBackfillResult(
   return await ctx.db.insert("carrierIdentityBackfillResults", value);
 }
 
+export const scheduleRebuildRetryInternal = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+    attempt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("carrierIdentityBackfillResults")
+      .withIndex("by_policyId", (query) =>
+        query.eq("policyId", args.policyId)
+      )
+      .first();
+    if (existing && existing.outcome !== "pending") {
+      return { scheduled: false };
+    }
+    await recordCarrierIdentityBackfillResult(
+      ctx,
+      args.policyId,
+      {
+        outcome: "pending",
+        reason: "source_evidence_retry_scheduled",
+        shouldEnrich: false,
+      },
+      dayjs().valueOf(),
+    );
+    await ctx.scheduler.runAfter(
+      Math.min(2 ** (args.attempt - 1) * 1_000, 30_000),
+      internal.actions.backfillCarrierIdentity.rebuildOne,
+      {
+        policyId: args.policyId,
+        attempt: args.attempt,
+      },
+    );
+    return { scheduled: true };
+  },
+});
+
+export const recordRebuildFailureInternal = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("carrierIdentityBackfillResults")
+      .withIndex("by_policyId", (query) =>
+        query.eq("policyId", args.policyId)
+      )
+      .first();
+    if (existing && existing.outcome !== "pending") {
+      return;
+    }
+    await recordCarrierIdentityBackfillResult(
+      ctx,
+      args.policyId,
+      {
+        outcome: "failed",
+        reason: "source_evidence_retry_exhausted",
+        shouldEnrich: false,
+      },
+      dayjs().valueOf(),
+    );
+  },
+});
+
+export const retryPending = internalMutation({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
+    const page = await ctx.db
+      .query("carrierIdentityBackfillResults")
+      .withIndex("by_outcome", (query) => query.eq("outcome", "pending"))
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: limit,
+      });
+    const now = dayjs().valueOf();
+    for (const result of page.page) {
+      await ctx.db.patch(result._id, {
+        reason: "source_evidence_retry_requested",
+        updatedAt: now,
+      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.backfillCarrierIdentity.rebuildOne,
+        { policyId: result.policyId, attempt: 0 },
+      );
+    }
+    return {
+      scheduled: page.page.length,
+      isDone: page.isDone,
+      continueCursor: page.isDone ? undefined : page.continueCursor,
+    };
+  },
+});
+
 export const getPolicySnapshotInternal = internalQuery({
   args: {
     policyId: v.id("policies"),

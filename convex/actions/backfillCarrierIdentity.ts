@@ -16,6 +16,8 @@ type EvidencePage = {
   isDone: boolean;
 };
 
+const MAX_REBUILD_RETRIES = 3;
+
 async function readAllSourceSpans(
   ctx: ActionCtx,
   policyId: Id<"policies">,
@@ -66,58 +68,88 @@ function serializeResult(result: CarrierIdentityBackfillResult) {
   };
 }
 
-export const rebuildOne = internalAction({
-  args: {
-    policyId: v.id("policies"),
-  },
-  handler: async (ctx, args) => {
-    const snapshot = await ctx.runQuery(
-      internal.carrierIdentityBackfill.getPolicySnapshotInternal,
-      { policyId: args.policyId },
-    );
-    if (!snapshot) {
-      await ctx.runMutation(
-        internal.carrierIdentityBackfill.applyRebuildInternal,
-        {
-          policyId: args.policyId,
-          expectedFingerprint: "",
-          result: serializeResult({
-            outcome: "failed",
-            reason: "policy_missing_during_backfill",
-            shouldEnrich: false,
-          }),
-        },
-      );
-      return;
-    }
-
-    const skipReason = carrierIdentityBackfillSkipReason(snapshot.policy);
-    let result: CarrierIdentityBackfillResult;
-    if (skipReason) {
-      result = {
-        outcome: "skipped",
-        reason: skipReason,
-        shouldEnrich: false,
-      };
-    } else {
-      const [sourceSpans, sourceNodes] = await Promise.all([
-        readAllSourceSpans(ctx, args.policyId),
-        readAllSourceNodes(ctx, args.policyId),
-      ]);
-      result = rebuildCarrierIdentityFromStoredSources({
-        policyId: args.policyId,
-        policy: snapshot.policy,
-        sourceSpans,
-        sourceNodes,
-      });
-    }
+async function rebuildCarrierIdentity(
+  ctx: ActionCtx,
+  policyId: Id<"policies">,
+) {
+  const snapshot = await ctx.runQuery(
+    internal.carrierIdentityBackfill.getPolicySnapshotInternal,
+    { policyId },
+  );
+  if (!snapshot) {
     await ctx.runMutation(
       internal.carrierIdentityBackfill.applyRebuildInternal,
       {
-        policyId: args.policyId,
-        expectedFingerprint: snapshot.fingerprint,
-        result: serializeResult(result),
+        policyId,
+        expectedFingerprint: "",
+        result: serializeResult({
+          outcome: "failed",
+          reason: "policy_missing_during_backfill",
+          shouldEnrich: false,
+        }),
       },
     );
+    return;
+  }
+
+  const skipReason = carrierIdentityBackfillSkipReason(snapshot.policy);
+  let result: CarrierIdentityBackfillResult;
+  if (skipReason) {
+    result = {
+      outcome: "skipped",
+      reason: skipReason,
+      shouldEnrich: false,
+    };
+  } else {
+    const [sourceSpans, sourceNodes] = await Promise.all([
+      readAllSourceSpans(ctx, policyId),
+      readAllSourceNodes(ctx, policyId),
+    ]);
+    result = rebuildCarrierIdentityFromStoredSources({
+      policyId,
+      policy: snapshot.policy,
+      sourceSpans,
+      sourceNodes,
+    });
+  }
+  await ctx.runMutation(
+    internal.carrierIdentityBackfill.applyRebuildInternal,
+    {
+      policyId,
+      expectedFingerprint: snapshot.fingerprint,
+      result: serializeResult(result),
+    },
+  );
+}
+
+export const rebuildOne = internalAction({
+  args: {
+    policyId: v.id("policies"),
+    attempt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const attempt = args.attempt ?? 0;
+    try {
+      await rebuildCarrierIdentity(ctx, args.policyId);
+    } catch (error) {
+      console.error(
+        `[carrier-identity-backfill] rebuild failed for ${args.policyId} on attempt ${attempt}`,
+        error,
+      );
+      if (attempt < MAX_REBUILD_RETRIES) {
+        await ctx.runMutation(
+          internal.carrierIdentityBackfill.scheduleRebuildRetryInternal,
+          {
+            policyId: args.policyId,
+            attempt: attempt + 1,
+          },
+        );
+        return;
+      }
+      await ctx.runMutation(
+        internal.carrierIdentityBackfill.recordRebuildFailureInternal,
+        { policyId: args.policyId },
+      );
+    }
   },
 });

@@ -644,6 +644,33 @@ export default defineSchema({
     .index("by_runId", ["runId"])
     .index("by_runId_cursorKey", ["runId", "cursorKey"]),
 
+  acordTaxonomyWriteRuns: defineTable({
+    runId: v.string(),
+    orgId: v.optional(v.id("organizations")),
+    limit: v.number(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    nextCursor: v.optional(v.string()),
+    retryCount: v.number(),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_runId", ["runId"]),
+
+  acordTaxonomyWritePages: defineTable({
+    runId: v.string(),
+    cursorKey: v.string(),
+    report: acordTaxonomyBackfillReportValidator,
+    nextCursor: v.optional(v.string()),
+    isDone: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_runId", ["runId"])
+    .index("by_runId_cursorKey", ["runId", "cursorKey"]),
+
   operatorAuthNonces: defineTable({
     nonce: v.string(),
     timestamp: v.number(),

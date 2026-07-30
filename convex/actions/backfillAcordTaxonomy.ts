@@ -49,13 +49,41 @@ type StoredDryRunReportPageResult = {
   continueCursor: string;
 };
 
-type DryRunAggregateReport = AcordTaxonomyBackfillReport & {
+type BackfillAggregateReport = AcordTaxonomyBackfillReport & {
   runId: string;
   pageCount: number;
-  status: "running" | "completed";
+  status: "running" | "completed" | "failed";
   resumeCursor?: string;
   orgId?: Id<"organizations">;
   limit?: number;
+  retryCount?: number;
+  lastError?: string;
+};
+
+type WritePageExecutionReport = AcordTaxonomyBackfillReport & {
+  runId: string;
+  status: "running" | "completed" | "failed";
+  resumeCursor?: string;
+  retryCount: number;
+  lastError?: string;
+};
+
+type StoredWriteRun = {
+  runId: string;
+  orgId?: Id<"organizations">;
+  limit: number;
+  status: "running" | "completed" | "failed";
+  nextCursor?: string;
+  retryCount: number;
+  lastError?: string;
+};
+
+type StoredWriteReportPageResult = {
+  page: Array<{
+    report: AcordTaxonomyBackfillReport;
+  }>;
+  isDone: boolean;
+  continueCursor: string;
 };
 
 async function readAllSourceSpans(
@@ -210,41 +238,122 @@ async function runDryRunPage(
 async function runWritePage(
   ctx: ActionCtx,
   args: {
+    runId: string;
     orgId?: Id<"organizations">;
     limit: number;
     cursor: string | null;
+    retryCount: number;
   },
-) {
-  const { page, report } = await runPage(ctx, {
-    ...args,
-    dryRun: false,
-  });
-  if (!page.isDone) {
-    if (!page.nextCursor) {
-      throw new Error("ACORD taxonomy backfill page omitted its continuation");
-    }
-    await ctx.scheduler.runAfter(
-      0,
-      internal.actions.backfillAcordTaxonomy.continueBackfill,
+): Promise<WritePageExecutionReport> {
+  try {
+    const { page, report } = await runPage(ctx, {
+      orgId: args.orgId,
+      limit: args.limit,
+      cursor: args.cursor,
+      dryRun: false,
+    });
+    const recorded: {
+      status: "running" | "completed" | "failed";
+      continuationScheduled: boolean;
+      isDone: boolean;
+    } = await ctx.runMutation(
+      internal.acordTaxonomyBackfillBatches.recordWritePageInternal,
       {
-        orgId: args.orgId,
-        limit: args.limit,
-        cursor: page.nextCursor,
+        runId: args.runId,
+        cursor: args.cursor,
+        cursorKey: args.cursor === null
+          ? "initial"
+          : `cursor:${args.cursor}`,
+        report,
+        nextCursor: page.isDone ? undefined : page.nextCursor ?? undefined,
+        isDone: page.isDone,
+        createdAt: dayjs().valueOf(),
       },
     );
-    report.continuationScheduled = true;
+    return {
+      ...report,
+      runId: args.runId,
+      status: recorded.status,
+      continuationScheduled: recorded.continuationScheduled,
+      resumeCursor: page.isDone ? undefined : page.nextCursor ?? undefined,
+      retryCount: 0,
+    };
+  } catch (error) {
+    const lastError = error instanceof Error
+      ? error.message.slice(0, 500)
+      : "Unknown ACORD taxonomy write-page failure";
+    const retry: {
+      status: string;
+      continuationScheduled: boolean;
+      retryCount?: number;
+    } = await ctx.runMutation(
+      internal.acordTaxonomyBackfillBatches.recordWriteFailureInternal,
+      {
+        runId: args.runId,
+        cursor: args.cursor,
+        expectedRetryCount: args.retryCount,
+        error: lastError,
+        updatedAt: dayjs().valueOf(),
+      },
+    );
+    return {
+      ...emptyAcordTaxonomyBackfillReport(false),
+      runId: args.runId,
+      status: retry.status === "completed"
+        ? "completed"
+        : retry.status === "failed" || retry.status === "missing"
+          ? "failed"
+          : "running",
+      continuationScheduled: retry.continuationScheduled,
+      resumeCursor: args.cursor ?? undefined,
+      retryCount: retry.retryCount ?? args.retryCount,
+      lastError,
+    };
   }
-  return report;
 }
 
 export const continueBackfill = internalAction({
   args: {
-    orgId: v.optional(v.id("organizations")),
-    limit: v.number(),
-    cursor: v.string(),
+    runId: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    retryCount: v.number(),
   },
-  handler: async (ctx, args): Promise<AcordTaxonomyBackfillReport> =>
-    await runWritePage(ctx, args),
+  handler: async (ctx, args): Promise<WritePageExecutionReport> => {
+    const run: StoredWriteRun | null = await ctx.runQuery(
+      internal.acordTaxonomyBackfillBatches.getWriteRunInternal,
+      { runId: args.runId },
+    );
+    if (!run || run.status === "completed") {
+      return {
+        ...emptyAcordTaxonomyBackfillReport(false),
+        runId: args.runId,
+        status: run?.status ?? "failed",
+        continuationScheduled: false,
+        retryCount: run?.retryCount ?? args.retryCount,
+      };
+    }
+    if (
+      run.retryCount !== args.retryCount ||
+      run.nextCursor !== (args.cursor ?? undefined)
+    ) {
+      return {
+        ...emptyAcordTaxonomyBackfillReport(false),
+        runId: args.runId,
+        status: run.status,
+        continuationScheduled: false,
+        resumeCursor: run.nextCursor,
+        retryCount: run.retryCount,
+        lastError: run.lastError,
+      };
+    }
+    return await runWritePage(ctx, {
+      runId: args.runId,
+      orgId: run.orgId,
+      limit: run.limit,
+      cursor: args.cursor,
+      retryCount: args.retryCount,
+    });
+  },
 });
 
 export const continueDryRun = internalAction({
@@ -264,7 +373,49 @@ export const report = internalAction({
   args: {
     runId: v.string(),
   },
-  handler: async (ctx, args): Promise<DryRunAggregateReport> => {
+  handler: async (ctx, args): Promise<BackfillAggregateReport> => {
+    const writeRun: StoredWriteRun | null = await ctx.runQuery(
+      internal.acordTaxonomyBackfillBatches.getWriteRunInternal,
+      { runId: args.runId },
+    );
+    if (writeRun) {
+      let aggregate = emptyAcordTaxonomyBackfillReport(false);
+      let cursor: string | null = null;
+      let pageCount = 0;
+      do {
+        const page: StoredWriteReportPageResult = await ctx.runQuery(
+          internal.acordTaxonomyBackfillBatches
+            .listWriteReportPagesInternal,
+          {
+            runId: args.runId,
+            cursor,
+            limit: DRY_RUN_REPORT_PAGE_SIZE,
+          },
+        );
+        for (const result of page.page) {
+          aggregate = mergeAcordTaxonomyBackfillReports(
+            aggregate,
+            result.report,
+          );
+          pageCount += 1;
+        }
+        cursor = page.isDone ? null : page.continueCursor;
+      } while (cursor);
+      return {
+        ...aggregate,
+        runId: args.runId,
+        pageCount,
+        status: writeRun.status,
+        continuationScheduled: writeRun.status === "running",
+        resumeCursor:
+          writeRun.status === "completed" ? undefined : writeRun.nextCursor,
+        orgId: writeRun.orgId,
+        limit: writeRun.limit,
+        retryCount: writeRun.retryCount,
+        lastError: writeRun.lastError,
+      };
+    }
+
     let aggregate = emptyAcordTaxonomyBackfillReport(true);
     let cursor: string | null = null;
     let pageCount = 0;
@@ -311,6 +462,39 @@ export const report = internalAction({
   },
 });
 
+export const resume = internalAction({
+  args: {
+    runId: v.string(),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    dryRun: boolean;
+    status: "running" | "completed";
+    continuationScheduled: boolean;
+    resumeCursor?: string;
+  }> => {
+    const writeRun: StoredWriteRun | null = await ctx.runQuery(
+      internal.acordTaxonomyBackfillBatches.getWriteRunInternal,
+      { runId: args.runId },
+    );
+    if (writeRun) {
+      return await ctx.runMutation(
+        internal.acordTaxonomyBackfillBatches.resumeWriteRunInternal,
+        {
+          runId: args.runId,
+          updatedAt: dayjs().valueOf(),
+        },
+      );
+    }
+    return await ctx.runMutation(
+      internal.acordTaxonomyBackfillBatches.resumeDryRunInternal,
+      { runId: args.runId },
+    );
+  },
+});
+
 export const backfill = internalAction({
   args: {
     orgId: v.optional(v.id("organizations")),
@@ -320,14 +504,26 @@ export const backfill = internalAction({
   handler: async (
     ctx,
     args,
-  ): Promise<AcordTaxonomyBackfillReport | DryRunPageExecutionReport> => {
+  ): Promise<WritePageExecutionReport | DryRunPageExecutionReport> => {
     const dryRun = args.dryRun ?? true;
     const limit = Math.min(Math.max(args.limit ?? 50, 1), 100);
     if (!dryRun) {
+      const runId = crypto.randomUUID();
+      await ctx.runMutation(
+        internal.acordTaxonomyBackfillBatches.startWriteRunInternal,
+        {
+          runId,
+          orgId: args.orgId,
+          limit,
+          createdAt: dayjs().valueOf(),
+        },
+      );
       return await runWritePage(ctx, {
+        runId,
         orgId: args.orgId,
         limit,
         cursor: null,
+        retryCount: 0,
       });
     }
 

@@ -1,12 +1,18 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { rebuildOne } from "./actions/backfillCarrierIdentity";
+import { retryPending } from "./carrierIdentityBackfill";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const rebuildOneFn = rebuildOne as any;
+const retryPendingFn = retryPending as any;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("carrier identity backfill action", () => {
   it("rebuilds from source evidence beyond one bounded query page", async () => {
@@ -129,6 +135,60 @@ describe("carrier identity backfill action", () => {
         sourceNodeIds: ["node-hdi"],
         sourceSpanIds: ["span-hdi"],
       }],
+    });
+  });
+
+  it("durably requeues stranded pending results", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Pending Carrier",
+        policyNumber: "POL-PENDING",
+        insuredName: "Client",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        extractionDataStage: "preview",
+      });
+      await ctx.db.insert("carrierIdentityBackfillResults", {
+        policyId,
+        outcome: "pending",
+        reason: "source_evidence_paging",
+        shouldEnrich: false,
+        updatedAt: 1,
+      });
+      return policyId;
+    });
+
+    await expect(t.mutation(retryPendingFn, {
+      limit: 25,
+    })).resolves.toMatchObject({
+      scheduled: 1,
+      isDone: true,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const result = await t.run(async (ctx) =>
+      await ctx.db
+        .query("carrierIdentityBackfillResults")
+        .withIndex("by_policyId", (query) =>
+          query.eq("policyId", policyId)
+        )
+        .unique()
+    );
+    expect(result).toMatchObject({
+      outcome: "skipped",
+      reason: "not_final_policy",
     });
   });
 });
