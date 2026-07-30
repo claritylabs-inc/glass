@@ -44,7 +44,7 @@ Certificate holder edits in the shared detail drawer target the selected certifi
 - Thread-linked mailbox review passes the automation item identity to the shared IMAP reader. If a persisted folder UID is stale, `convex/lib/imapMailbox.ts` resolves the stored RFC Message-ID through the provider-listed all-mail or archive folder, returns a current transient email reference for follow-up actions, and surfaces an explicit unavailable state when no live copy remains.
 - Org memory: `convex/orgMemory.ts`, `convex/lib/orgMemoryPolicy.ts`, `convex/lib/orgMemoryExtraction.ts`, and `convex/lib/agentPrompts.ts`. Automated facts require structured high-confidence evidence, a stable source reference, and normalized-content deduplication; policy facts remain in first-class policy/source tables.
 - Public APIs and integrations: `convex/lib/apiAuth.ts`, `convex/lib/apiDto.ts`, `convex/lib/apiError.ts`, and the Convex REST/MCP HTTP handlers. MCP authentication is OAuth-only; local clients use `mcp-remote` against the remote endpoint.
-- Workers/deploy: `extraction-worker/`, `imessage-worker/`, `mailbox-scan-worker/`, `config/deployments.json`, Railway health/env docs in `AGENTS.md`, and `npm run check:shared-package-versions`.
+- Workers/deploy: `extraction-worker/`, `imessage-worker/`, `mailbox-scan-worker/`, `config/deployments.json`, Railway health/env docs in `AGENTS.md`, and `npm run check:shared-package-versions`. Extraction jobs and authenticated conversions run only in Railway's persistent `dev`, `staging`, and `production` environments; ephemeral or unknown environments are health-only and expose that mode on `/health`.
 
 ## Known Cleanup Targets
 

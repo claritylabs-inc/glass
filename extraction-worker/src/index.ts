@@ -63,6 +63,7 @@ import {
 } from "./clRouterClient.js";
 import { applyCarrierIdentityGuidance } from "./extractionPromptGuidance.js";
 import { watchClientDisconnect } from "./httpRequestCancellation.js";
+import { resolveWorkerRuntimeAccess } from "./railwayRuntime.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -327,6 +328,7 @@ const WORKER_CL_SDK_VERSION =
   process.env.EXTRACTION_WORKER_CL_SDK_VERSION
   ?? workerPackage.dependencies?.["@claritylabs/cl-sdk"]
   ?? "unknown";
+const RUNTIME_ACCESS = resolveWorkerRuntimeAccess(process.env);
 const POLL_MS = readBoundedIntEnv("EXTRACTION_WORKER_POLL_MS", 5000, 500, 60_000);
 const IDLE_LOG_MS = readBoundedIntEnv("EXTRACTION_WORKER_IDLE_LOG_MS", 60_000, 5_000, 10 * 60_000);
 const HEARTBEAT_MS = readBoundedIntEnv("EXTRACTION_WORKER_HEARTBEAT_MS", 30_000, 5_000, 5 * 60_000);
@@ -1733,6 +1735,12 @@ function isAuthorized(req: IncomingMessage): boolean {
 }
 
 async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!RUNTIME_ACCESS.conversionsEnabled) {
+    jsonResponse(res, 503, {
+      error: "PDF conversion is disabled in ephemeral Railway environments",
+    });
+    return;
+  }
   if (!isAuthorized(req)) {
     jsonResponse(res, 401, { error: "Unauthorized" });
     return;
@@ -1796,6 +1804,9 @@ function startHttpServer(): { close: () => void } | null {
         railwayEnvironment: process.env.RAILWAY_ENVIRONMENT_NAME,
         gitSha: process.env.RAILWAY_GIT_COMMIT_SHA,
         gitBranch: process.env.RAILWAY_GIT_BRANCH,
+        workerMode: RUNTIME_ACCESS.mode,
+        jobsEnabled: RUNTIME_ACCESS.jobsEnabled,
+        conversionsEnabled: RUNTIME_ACCESS.conversionsEnabled,
         extractionJobConcurrency: EXTRACTION_JOB_CONCURRENCY,
         previewJobConcurrency: PREVIEW_JOB_CONCURRENCY,
         liteParseNativeConcurrency: LITEPARSE_NATIVE_CONCURRENCY,
@@ -2843,6 +2854,20 @@ async function main(): Promise<void> {
     `Glass extraction worker ${WORKER_ID} env=${GLASS_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} previewConcurrency=${PREVIEW_JOB_CONCURRENCY} liteParseNativeConcurrency=${LITEPARSE_NATIVE_CONCURRENCY} connected to ${CONVEX_URL}`,
   );
   const httpServer = startHttpServer();
+  if (!RUNTIME_ACCESS.jobsEnabled) {
+    console.warn(
+      `Extraction job polling and PDF conversion are disabled in Railway environment ${RUNTIME_ACCESS.railwayEnvironment}`,
+    );
+    try {
+      while (!shuttingDown) {
+        await sleep(POLL_MS);
+      }
+    } finally {
+      httpServer?.close();
+    }
+    console.log("Extraction worker shutting down");
+    return;
+  }
   const previewLoop = runPreviewLoop().catch((error) => {
     console.error("Preview extraction loop failed:", error);
   });
