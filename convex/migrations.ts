@@ -69,6 +69,8 @@ export const consolidateCarrierIdentityBranding = migrations.define({
   },
 });
 
+// Write phase only. Audit actual stored-evidence decisions first through
+// actions/backfillCarrierIdentity:audit; migration dry-run rolls back scheduling.
 export const rebuildCarrierIdentitiesFromStoredSources = migrations.define({
   table: "policies",
   batchSize: 1,

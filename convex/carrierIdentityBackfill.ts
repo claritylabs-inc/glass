@@ -182,6 +182,35 @@ export const retryPending = internalMutation({
   },
 });
 
+export const listPolicyIdsPageInternal = internalQuery({
+  args: {
+    orgId: v.optional(v.id("organizations")),
+    cursor: v.union(v.string(), v.null()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const page = args.orgId
+      ? await ctx.db
+          .query("policies")
+          .withIndex("by_orgId", (query) =>
+            query.eq("orgId", args.orgId!)
+          )
+          .paginate({
+            cursor: args.cursor,
+            numItems: args.limit,
+          })
+      : await ctx.db.query("policies").paginate({
+          cursor: args.cursor,
+          numItems: args.limit,
+        });
+    return {
+      policyIds: page.page.map((policy) => policy._id),
+      nextCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
 export const getPolicySnapshotInternal = internalQuery({
   args: {
     policyId: v.id("policies"),

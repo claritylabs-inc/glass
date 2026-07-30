@@ -2,11 +2,15 @@
 
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { rebuildOne } from "./actions/backfillCarrierIdentity";
+import {
+  audit,
+  rebuildOne,
+} from "./actions/backfillCarrierIdentity";
 import { retryPending } from "./carrierIdentityBackfill";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+const auditFn = audit as any;
 const rebuildOneFn = rebuildOne as any;
 const retryPendingFn = retryPending as any;
 
@@ -105,15 +109,51 @@ describe("carrier identity backfill action", () => {
         embedding: Array.from({ length: 32 }, () => 1),
         createdAt: 100,
       });
-      await ctx.db.insert("carrierIdentityBackfillResults", {
-        policyId,
-        outcome: "pending",
-        reason: "source_evidence_paging",
-        shouldEnrich: false,
-        updatedAt: 1,
-      });
       return policyId;
     });
+
+    const audited = await t.action(auditFn, { limit: 1 });
+    expect(audited).toMatchObject({
+      dryRun: true,
+      scannedCount: 1,
+      counts: {
+        pending: 0,
+        rebuilt: 1,
+        unchanged: 0,
+        skipped: 0,
+        failed: 0,
+      },
+      changes: [{
+        policyId,
+        outcome: "rebuilt",
+        shouldEnrich: true,
+        set: {
+          carrier: "HDI Global Specialty SE",
+          carrierIdentity: {
+            displayName: "HDI Global Specialty SE",
+            sourceName: "HDI Global Specialty SE",
+            legalEntities: [{
+              name: "HDI Global Specialty SE",
+              sourceNodeIds: ["node-hdi"],
+              sourceSpanIds: ["span-hdi"],
+            }],
+          },
+        },
+      }],
+      exceptions: [],
+      isDone: true,
+    });
+    const afterAudit = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(policyId),
+      backfill: await ctx.db
+        .query("carrierIdentityBackfillResults")
+        .withIndex("by_policyId", (query) =>
+          query.eq("policyId", policyId)
+        )
+        .unique(),
+    }));
+    expect(afterAudit.policy?.carrierIdentity).toBeUndefined();
+    expect(afterAudit.backfill).toBeNull();
 
     await t.action(rebuildOneFn, { policyId });
 
