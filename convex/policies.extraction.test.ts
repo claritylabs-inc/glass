@@ -381,6 +381,12 @@ describe("policies.updateExtractionInternal", () => {
       jobId: ids.policyId,
       error: "Replacement document is not a bound policy.",
       archivePolicy: false,
+      state: {
+        policyVersionKind: "re_extraction",
+        replacementPromotionStarted: false,
+        fileId: "replacement-file",
+        traceId: "replacement-trace",
+      },
     });
 
     const result = await t.run(async (ctx) => ({
@@ -397,9 +403,18 @@ describe("policies.updateExtractionInternal", () => {
       pipelineStatus: "complete",
     });
     expect(result.run).toMatchObject({
-      pipelineStatus: "error",
-      pipelineError: "Replacement document is not a bound policy.",
+      pipelineStatus: "complete",
+      pipelineCheckpoint: {
+        nextPhase: "extract",
+        state: {
+          policyVersionKind: "re_extraction",
+          replacementPromotionStarted: false,
+          fileId: "replacement-file",
+          externalWorker: true,
+        },
+      },
     });
+    expect(result.run?.pipelineError).toBeUndefined();
     expect(result.policy?.pipelineError).toBeUndefined();
     expect(result.policy?.deletedAt).toBeUndefined();
     expect(result.fact?.active).toBe(true);
@@ -464,8 +479,7 @@ describe("policies.updateExtractionInternal", () => {
     expect(result.policy?.pipelineStatus).toBe("complete");
     expect(result.policy?.pipelineError).toBeUndefined();
     expect(result.run).toMatchObject({
-      pipelineStatus: "error",
-      pipelineError: "Replacement document is not a bound policy.",
+      pipelineStatus: "complete",
       pipelineCheckpoint: {
         nextPhase: "extract",
         state: {
@@ -475,6 +489,7 @@ describe("policies.updateExtractionInternal", () => {
         },
       },
     });
+    expect(result.run?.pipelineError).toBeUndefined();
   });
 
   test("keeps an external replacement checkpoint retryable after worker failure", async () => {
@@ -552,8 +567,7 @@ describe("policies.updateExtractionInternal", () => {
     }));
     expect(result.policy?.pipelineStatus).toBe("complete");
     expect(result.run).toMatchObject({
-      pipelineStatus: "error",
-      pipelineError: "Worker failed before replacement promotion.",
+      pipelineStatus: "complete",
       pipelineCheckpoint: {
         nextPhase: "extract",
         state: {
@@ -562,6 +576,7 @@ describe("policies.updateExtractionInternal", () => {
         },
       },
     });
+    expect(result.run?.pipelineError).toBeUndefined();
   });
 
   test.each([

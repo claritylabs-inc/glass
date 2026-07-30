@@ -14,6 +14,7 @@ import {
 } from "./carrierIdentitySource";
 
 export type CarrierIdentityBackfillOutcome =
+  | "pending"
   | "rebuilt"
   | "unchanged"
   | "skipped"
@@ -30,6 +31,49 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function stableHash(input: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+export function carrierIdentityBackfillSkipReason(policy: {
+  deletedAt?: number;
+  pipelineStatus?: string;
+  extractionDataStage?: "placeholder" | "preview" | "final";
+}) {
+  if (policy.deletedAt !== undefined) return "archived_policy";
+  if (policy.pipelineStatus === "error") return "failed_extraction";
+  const stage =
+    policy.extractionDataStage ??
+    (policy.pipelineStatus === "complete" ? "final" : "placeholder");
+  return stage === "final" ? undefined : "not_final_policy";
+}
+
+export function carrierIdentityBackfillPolicyFingerprint(
+  policy: Record<string, unknown>,
+) {
+  const serialized = JSON.stringify({
+    fileId: policy.fileId,
+    extractionDataStage: policy.extractionDataStage,
+    extractionDataStageUpdatedAt: policy.extractionDataStageUpdatedAt,
+    pipelineStatus: policy.pipelineStatus,
+    deletedAt: policy.deletedAt,
+    operationalProfile: policy.operationalProfile,
+    carrierIdentity: policy.carrierIdentity,
+    carrier: policy.carrier,
+    carrierLegalName: policy.carrierLegalName,
+    security: policy.security,
+    insurer: policy.insurer,
+    generalAgent: policy.generalAgent,
+    mga: policy.mga,
+  });
+  return `${stableHash(serialized)}${stableHash(`carrier:${serialized}`)}`;
 }
 
 function brandingIsCurrent(identity: CarrierIdentity | undefined) {

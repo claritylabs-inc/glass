@@ -34,11 +34,11 @@ describe("carrier identity backfill report", () => {
         });
         await ctx.db.insert("carrierIdentityBackfillResults", {
           policyId,
-          outcome: "rebuilt",
+          outcome: index === 0 ? "pending" : "rebuilt",
           ...(index % 3 === 0
             ? { reason: "source_identity_changed" }
             : {}),
-          shouldEnrich: true,
+          shouldEnrich: index !== 0,
           updatedAt: index + 1,
         });
       }
@@ -48,12 +48,13 @@ describe("carrier identity backfill report", () => {
 
     expect(report).toEqual({
       total: 60,
-      rebuilt: 60,
+      pending: 1,
+      rebuilt: 59,
       unchanged: 0,
       enriched: 0,
       skipped: 0,
       failed: 0,
-      pendingEnrichment: 30,
+      pendingEnrichment: 29,
       enrichmentFailed: 30,
       reasons: {
         source_identity_changed: 20,

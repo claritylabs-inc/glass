@@ -11,6 +11,7 @@
 import type * as acordTaxonomyBackfillBatches from "../acordTaxonomyBackfillBatches.js";
 import type * as actions_archiveNonCoverageRequirements from "../actions/archiveNonCoverageRequirements.js";
 import type * as actions_backfillAcordTaxonomy from "../actions/backfillAcordTaxonomy.js";
+import type * as actions_backfillCarrierIdentity from "../actions/backfillCarrierIdentity.js";
 import type * as actions_backfillChunks from "../actions/backfillChunks.js";
 import type * as actions_backfillComplianceRequirementShape from "../actions/backfillComplianceRequirementShape.js";
 import type * as actions_backfillLinesOfBusiness from "../actions/backfillLinesOfBusiness.js";
@@ -268,6 +269,7 @@ declare const fullApi: ApiFromModules<{
   acordTaxonomyBackfillBatches: typeof acordTaxonomyBackfillBatches;
   "actions/archiveNonCoverageRequirements": typeof actions_archiveNonCoverageRequirements;
   "actions/backfillAcordTaxonomy": typeof actions_backfillAcordTaxonomy;
+  "actions/backfillCarrierIdentity": typeof actions_backfillCarrierIdentity;
   "actions/backfillChunks": typeof actions_backfillChunks;
   "actions/backfillComplianceRequirementShape": typeof actions_backfillComplianceRequirementShape;
   "actions/backfillLinesOfBusiness": typeof actions_backfillLinesOfBusiness;

@@ -37,6 +37,35 @@ export type AcordTaxonomyBackfillDecision = {
   afterLines: string[];
 };
 
+function stableHash(input: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+export function acordTaxonomyBackfillPolicyFingerprint(
+  policy: Record<string, unknown>,
+) {
+  const serialized = JSON.stringify({
+    fileId: policy.fileId,
+    fileName: policy.fileName,
+    policyNumber: policy.policyNumber,
+    extractionDataStage: policy.extractionDataStage,
+    extractionDataStageUpdatedAt: policy.extractionDataStageUpdatedAt,
+    pipelineStatus: policy.pipelineStatus,
+    deletedAt: policy.deletedAt,
+    linesOfBusiness: policy.linesOfBusiness,
+    operationalProfile: policy.operationalProfile,
+    coverages: policy.coverages,
+    productIdentity: policy.productIdentity,
+    programName: policy.programName,
+  });
+  return `${stableHash(serialized)}${stableHash(`taxonomy:${serialized}`)}`;
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>

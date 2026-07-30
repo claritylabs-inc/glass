@@ -618,6 +618,86 @@ async function clearPolicyExtractionArtifacts(
   }
 }
 
+type PolicyPipelineCheckpoint = {
+  nextPhase?: string;
+  state?: {
+    policyVersionKind?: string;
+    replacementPromotionStarted?: boolean;
+  };
+};
+
+function policyPipelineCheckpoint(checkpoint: unknown) {
+  return (
+    checkpoint && typeof checkpoint === "object"
+      ? checkpoint as PolicyPipelineCheckpoint
+      : undefined
+  );
+}
+
+function isRetryablePrePromotionReplacement(
+  policy: { extractionDataStage?: string } | null,
+  checkpoint: unknown,
+) {
+  const typedCheckpoint = policyPipelineCheckpoint(checkpoint);
+  const state = typedCheckpoint?.state;
+  const replacementRun =
+    state?.policyVersionKind === "re_extraction" ||
+    state?.policyVersionKind === "renewal";
+  return (
+    policy?.extractionDataStage === "final" &&
+    replacementRun &&
+    state.replacementPromotionStarted === false &&
+    (
+      typedCheckpoint?.nextPhase === "load_pdf" ||
+      typedCheckpoint?.nextPhase === "extract"
+    )
+  );
+}
+
+function preservesBoundPolicyOnExtractionError(
+  policy: {
+    extractionDataStage?: string;
+    pipelineStatus?: string;
+  } | null,
+  checkpoint: unknown,
+  status: PolicyPipelineStatus,
+) {
+  const policyVersionKind =
+    policyPipelineCheckpoint(checkpoint)?.state?.policyVersionKind;
+  const replacementRun =
+    policyVersionKind === "re_extraction" ||
+    policyVersionKind === "renewal";
+  return (
+    status === "error" &&
+    policy?.extractionDataStage === "final" &&
+    (
+      replacementRun
+        ? isRetryablePrePromotionReplacement(policy, checkpoint)
+        : policy.pipelineStatus === "complete"
+    )
+  );
+}
+
+function canonicalPipelineStatusPatch(
+  policy: {
+    extractionDataStage?: string;
+    pipelineStatus?: string;
+  } | null,
+  checkpoint: unknown,
+  status: PolicyPipelineStatus,
+  error: string | null | undefined,
+) {
+  const preservesBoundPolicy = preservesBoundPolicyOnExtractionError(
+    policy,
+    checkpoint,
+    status,
+  );
+  return {
+    pipelineStatus: preservesBoundPolicy ? "complete" : status,
+    pipelineError: preservesBoundPolicy ? undefined : error ?? undefined,
+  };
+}
+
 function policyPipelineStatusPatch(
   policy: {
     extractionDataStage?: string;
@@ -627,39 +707,8 @@ function policyPipelineStatusPatch(
   status: PolicyPipelineStatus,
   error: string | null | undefined,
 ) {
-  const typedCheckpoint = (
-    checkpoint && typeof checkpoint === "object"
-      ? checkpoint as {
-          nextPhase?: string;
-          state?: {
-            policyVersionKind?: string;
-            replacementPromotionStarted?: boolean;
-          };
-        }
-      : undefined
-  );
-  const state = typedCheckpoint?.state;
-  const replacementRun =
-    state?.policyVersionKind === "re_extraction" ||
-    state?.policyVersionKind === "renewal";
-  const replacementHasNotStartedPromotion =
-    replacementRun &&
-    state.replacementPromotionStarted === false &&
-    (
-      typedCheckpoint?.nextPhase === "load_pdf" ||
-      typedCheckpoint?.nextPhase === "extract"
-    );
-  const preservesBoundPolicy =
-    status === "error" &&
-    policy?.extractionDataStage === "final" &&
-    (
-      replacementRun
-        ? replacementHasNotStartedPromotion
-        : policy.pipelineStatus === "complete"
-    );
   return {
-    pipelineStatus: preservesBoundPolicy ? "complete" : status,
-    pipelineError: preservesBoundPolicy ? undefined : error ?? undefined,
+    ...canonicalPipelineStatusPatch(policy, checkpoint, status, error),
     pipelineCheckpoint: undefined,
     pipelineLog: undefined,
   };
@@ -679,9 +728,14 @@ async function setPolicyPipelineStatus(
     await clearExternalPolicyExtractionQueue(ctx, policyId);
     await clearExternalPolicyExtractionPreviewQueue(ctx, policyId);
   }
+  const canonicalStatus = canonicalPipelineStatusPatch(
+    policy,
+    run?.pipelineCheckpoint,
+    status,
+    error,
+  );
   await patchPolicyExtractionRun(ctx, policyId, {
-    pipelineStatus: status,
-    pipelineError: error ?? undefined,
+    ...canonicalStatus,
   });
   await ctx.db.patch(
     policyId,
@@ -2650,9 +2704,14 @@ export const pipelineSetStatus = internalMutation({
       ]);
       await clearExternalPolicyExtractionQueue(ctx, policyId);
       await clearExternalPolicyExtractionPreviewQueue(ctx, policyId);
+      const canonicalStatus = canonicalPipelineStatusPatch(
+        policy,
+        run?.pipelineCheckpoint,
+        status,
+        error,
+      );
       await patchPolicyExtractionRun(ctx, policyId, {
-        pipelineStatus: status,
-        pipelineError: error ?? undefined,
+        ...canonicalStatus,
         ...(status === "complete" || error === "Cancelled by user"
           ? { pipelineCheckpoint: undefined }
           : {}),
@@ -2779,16 +2838,41 @@ export const pipelineRejectExternalJob = internalMutation({
     error: v.string(),
     userId: v.optional(v.string()),
     archivePolicy: v.boolean(),
+    state: v.optional(v.any()),
   },
-  handler: async (ctx, { jobId, error, userId, archivePolicy }) => {
+  handler: async (
+    ctx,
+    { jobId, error, userId, archivePolicy, state },
+  ) => {
     const policyId = jobId as DataModelId<"policies">;
     const now = nowMs();
     const run = await ensurePolicyExtractionRun(ctx, policyId);
+    const policy = await ctx.db.get(policyId);
+    const retryCheckpoint =
+      !archivePolicy && state
+        ? {
+            nextPhase: "extract",
+            state: {
+              ...state,
+              externalWorker: true,
+            },
+            createdAt: now,
+          }
+        : undefined;
+    const checkpoint = retryCheckpoint ?? run?.pipelineCheckpoint;
+    const canonicalStatus = canonicalPipelineStatusPatch(
+      policy,
+      checkpoint,
+      "error",
+      error,
+    );
     if (run) {
       await ctx.db.patch(run._id, {
-        pipelineStatus: "error",
-        pipelineError: error,
-        pipelineCheckpoint: undefined,
+        ...canonicalStatus,
+        pipelineCheckpoint:
+          canonicalStatus.pipelineStatus === "complete"
+            ? checkpoint
+            : undefined,
         updatedAt: now,
       });
     }
@@ -3314,7 +3398,14 @@ export const pipelineReconcileTerminalState = internalMutation({
 
     await clearExternalPolicyExtractionPreviewQueue(ctx, policyId);
     const clearsRetryState =
-      status === "complete" || error === "Cancelled by user";
+      (
+        status === "complete" &&
+        !isRetryablePrePromotionReplacement(
+          policy,
+          run?.pipelineCheckpoint,
+        )
+      ) ||
+      error === "Cancelled by user";
     if (run && run.pipelineCheckpoint !== undefined) {
       await clearExternalPolicyExtractionQueue(ctx, policyId);
       if (clearsRetryState) {
@@ -3519,13 +3610,23 @@ export const pipelineCompleteLease = internalMutation({
       return false;
     }
 
+    const policy = await ctx.db.get(policyId);
     const patch: Record<string, unknown> = {};
     if ("checkpoint" in args) {
       patch.pipelineCheckpoint = args.checkpoint ?? undefined;
     }
     if (args.status) {
-      patch.pipelineStatus = args.status;
-      patch.pipelineError = args.error ?? undefined;
+      const terminalCheckpoint =
+        "checkpoint" in args ? args.checkpoint : checkpoint;
+      Object.assign(
+        patch,
+        canonicalPipelineStatusPatch(
+          policy,
+          terminalCheckpoint,
+          args.status,
+          args.error,
+        ),
+      );
       if (
         args.status === "complete" ||
         (args.status === "error" && args.error === "Cancelled by user")
@@ -3548,7 +3649,6 @@ export const pipelineCompleteLease = internalMutation({
     }
     patch.updatedAt = nowMs();
 
-    const policy = await ctx.db.get(policyId);
     await ctx.db.patch(run._id, patch);
     if (args.status) {
       if (

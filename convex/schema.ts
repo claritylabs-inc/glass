@@ -618,6 +618,7 @@ export default defineSchema({
   carrierIdentityBackfillResults: defineTable({
     policyId: v.id("policies"),
     outcome: v.union(
+      v.literal("pending"),
       v.literal("rebuilt"),
       v.literal("unchanged"),
       v.literal("skipped"),

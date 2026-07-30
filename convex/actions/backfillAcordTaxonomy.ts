@@ -9,6 +9,10 @@ import {
   type ActionCtx,
 } from "../_generated/server";
 import {
+  rebuildAcordTaxonomyFromStoredSources,
+  type AcordTaxonomyBackfillDecision,
+} from "../lib/acordTaxonomyBackfill";
+import {
   emptyAcordTaxonomyBackfillReport,
   mergeAcordTaxonomyBackfillReports,
   type AcordTaxonomyBackfillReport,
@@ -17,6 +21,12 @@ import {
 type BackfillPage = {
   policyIds: Id<"policies">[];
   nextCursor: string | null;
+  isDone: boolean;
+};
+
+type EvidencePage = {
+  page: Array<Record<string, unknown>>;
+  continueCursor: string;
   isDone: boolean;
 };
 
@@ -48,6 +58,85 @@ type DryRunAggregateReport = AcordTaxonomyBackfillReport & {
   limit?: number;
 };
 
+async function readAllSourceSpans(
+  ctx: ActionCtx,
+  policyId: Id<"policies">,
+) {
+  const sourceSpans: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
+  while (true) {
+    const result: EvidencePage = await ctx.runQuery(
+      internal.acordTaxonomyBackfillBatches.listSourceSpansPageInternal,
+      { policyId, cursor },
+    );
+    sourceSpans.push(...result.page);
+    if (result.isDone) return sourceSpans;
+    cursor = result.continueCursor;
+  }
+}
+
+async function readAllSourceNodes(
+  ctx: ActionCtx,
+  policyId: Id<"policies">,
+) {
+  const sourceNodes: Array<Record<string, unknown>> = [];
+  let cursor: string | null = null;
+  while (true) {
+    const result: EvidencePage = await ctx.runQuery(
+      internal.acordTaxonomyBackfillBatches.listSourceNodesPageInternal,
+      { policyId, cursor },
+    );
+    sourceNodes.push(...result.page);
+    if (result.isDone) return sourceNodes;
+    cursor = result.continueCursor;
+  }
+}
+
+function noOpDecision(reason: string): AcordTaxonomyBackfillDecision {
+  return {
+    lineChanged: false,
+    coverageCodesAdded: 0,
+    productIdentityAdded: false,
+    reason,
+    beforeLines: [],
+    afterLines: [],
+  };
+}
+
+async function runPolicy(
+  ctx: ActionCtx,
+  policyId: Id<"policies">,
+  dryRun: boolean,
+) {
+  const snapshot = await ctx.runQuery(
+    internal.acordTaxonomyBackfillBatches.getPolicySnapshotInternal,
+    { policyId },
+  );
+  let decision: AcordTaxonomyBackfillDecision;
+  if (!snapshot || snapshot.skipReason) {
+    decision = noOpDecision(snapshot?.skipReason ?? "missing_policy");
+  } else {
+    const [sourceSpans, sourceNodes] = await Promise.all([
+      readAllSourceSpans(ctx, policyId),
+      readAllSourceNodes(ctx, policyId),
+    ]);
+    decision = rebuildAcordTaxonomyFromStoredSources({
+      policy: snapshot.policy,
+      sourceSpans,
+      sourceNodes,
+    });
+  }
+  return await ctx.runMutation(
+    internal.acordTaxonomyBackfillBatches.applyPolicyDecisionInternal,
+    {
+      policyId,
+      dryRun,
+      expectedFingerprint: snapshot?.fingerprint ?? "",
+      decision,
+    },
+  );
+}
+
 async function runPage(
   ctx: ActionCtx,
   args: {
@@ -67,14 +156,11 @@ async function runPage(
   );
   let report = emptyAcordTaxonomyBackfillReport(args.dryRun);
   for (const policyId of page.policyIds) {
-    const policyReport: AcordTaxonomyBackfillReport =
-      await ctx.runMutation(
-        internal.acordTaxonomyBackfillBatches.backfillPolicyInternal,
-        {
-          policyId,
-          dryRun: args.dryRun,
-        },
-      );
+    const policyReport: AcordTaxonomyBackfillReport = await runPolicy(
+      ctx,
+      policyId,
+      args.dryRun,
+    );
     report = mergeAcordTaxonomyBackfillReports(report, policyReport);
   }
   return { page, report };

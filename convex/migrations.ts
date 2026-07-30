@@ -5,7 +5,7 @@ import type { DataModel } from "./_generated/dataModel";
 import { effectiveExtractionDataStage } from "./backfillDeclarationFacts";
 import { recordCarrierIdentityBackfillResult } from "./carrierIdentityBackfill";
 import { replacePolicyDeclarationFacts } from "./declarationFacts";
-import { rebuildCarrierIdentityFromStoredSources } from "./lib/carrierIdentityBackfill";
+import { carrierIdentityBackfillSkipReason } from "./lib/carrierIdentityBackfill";
 import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
 import {
   applyCarrierIdentityEnrichment,
@@ -74,14 +74,7 @@ export const rebuildCarrierIdentitiesFromStoredSources = migrations.define({
   batchSize: 1,
   migrateOne: async (ctx, policy) => {
     const now = dayjs().valueOf();
-    const skipReason =
-      policy.deletedAt !== undefined
-        ? "archived_policy"
-        : policy.pipelineStatus === "error"
-          ? "failed_extraction"
-          : effectiveExtractionDataStage(policy) !== "final"
-            ? "not_final_policy"
-            : undefined;
+    const skipReason = carrierIdentityBackfillSkipReason(policy);
     if (skipReason) {
       await recordCarrierIdentityBackfillResult(
         ctx,
@@ -95,42 +88,21 @@ export const rebuildCarrierIdentitiesFromStoredSources = migrations.define({
       );
       return;
     }
-    const [sourceSpans, sourceNodes] = await Promise.all([
-      ctx.db
-        .query("sourceSpans")
-        .withIndex("by_policyId", (query) =>
-          query.eq("policyId", policy._id)
-        )
-        .collect(),
-      ctx.db
-        .query("sourceNodes")
-        .withIndex("by_policyId", (query) =>
-          query.eq("policyId", policy._id)
-        )
-        .collect(),
-    ]);
-    const result = rebuildCarrierIdentityFromStoredSources({
-      policyId: policy._id,
-      policy,
-      sourceSpans,
-      sourceNodes,
-    });
-    if (result.patch) {
-      await ctx.db.patch(policy._id, result.patch);
-    }
     await recordCarrierIdentityBackfillResult(
       ctx,
       policy._id,
-      result,
+      {
+        outcome: "pending",
+        reason: "source_evidence_paging",
+        shouldEnrich: false,
+      },
       now,
     );
-    if (result.shouldEnrich) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.actions.enrichCarrierIdentity.ensureInternal,
-        { policyId: policy._id },
-      );
-    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.actions.backfillCarrierIdentity.rebuildOne,
+      { policyId: policy._id },
+    );
   },
 });
 

@@ -3261,6 +3261,7 @@ async function rejectedByDocumentGateBeforeExternalHandoff(
     error: rejectionSummary,
     userId,
     archivePolicy,
+    state: archivePolicy ? undefined : params.state,
   });
   await completeTraceSession(ctx, traceId, "error", rejectionSummary);
   return true;

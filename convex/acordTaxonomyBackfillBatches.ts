@@ -7,7 +7,7 @@ import {
 } from "./_generated/server";
 import { effectiveExtractionDataStage } from "./backfillDeclarationFacts";
 import {
-  rebuildAcordTaxonomyFromStoredSources,
+  acordTaxonomyBackfillPolicyFingerprint,
   type AcordTaxonomyBackfillDecision,
 } from "./lib/acordTaxonomyBackfill";
 import {
@@ -15,6 +15,18 @@ import {
   emptyAcordTaxonomyBackfillReport,
   type AcordTaxonomyBackfillReport,
 } from "./lib/acordTaxonomyBackfillReport";
+
+const SOURCE_EVIDENCE_PAGE_SIZE = 10;
+
+const backfillDecisionValidator = v.object({
+  patch: v.optional(v.record(v.string(), v.any())),
+  lineChanged: v.boolean(),
+  coverageCodesAdded: v.number(),
+  productIdentityAdded: v.boolean(),
+  reason: v.optional(v.string()),
+  beforeLines: v.array(v.string()),
+  afterLines: v.array(v.string()),
+});
 
 export const recordDryRunPageInternal = internalMutation({
   args: {
@@ -161,10 +173,69 @@ export const listPolicyIdsPageInternal = internalQuery({
   },
 });
 
-export const backfillPolicyInternal = internalMutation({
+export const getPolicySnapshotInternal = internalQuery({
+  args: {
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.policyId);
+    return policy
+      ? {
+          policy,
+          fingerprint: acordTaxonomyBackfillPolicyFingerprint(
+            policy as unknown as Record<string, unknown>,
+          ),
+          skipReason: skipReason(policy),
+        }
+      : null;
+  },
+});
+
+export const listSourceSpansPageInternal = internalQuery({
+  args: {
+    policyId: v.id("policies"),
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) =>
+    await ctx.db
+      .query("sourceSpans")
+      .withIndex("by_policyId", (query) =>
+        query.eq("policyId", args.policyId)
+      )
+      .paginate({
+        cursor: args.cursor,
+        numItems: SOURCE_EVIDENCE_PAGE_SIZE,
+      }),
+});
+
+export const listSourceNodesPageInternal = internalQuery({
+  args: {
+    policyId: v.id("policies"),
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("sourceNodes")
+      .withIndex("by_policyId", (query) =>
+        query.eq("policyId", args.policyId)
+      )
+      .paginate({
+        cursor: args.cursor,
+        numItems: SOURCE_EVIDENCE_PAGE_SIZE,
+      });
+    return {
+      ...page,
+      page: page.page.map(({ embedding: _embedding, ...node }) => node),
+    };
+  },
+});
+
+export const applyPolicyDecisionInternal = internalMutation({
   args: {
     policyId: v.id("policies"),
     dryRun: v.boolean(),
+    expectedFingerprint: v.string(),
+    decision: backfillDecisionValidator,
   },
   handler: async (ctx, args): Promise<AcordTaxonomyBackfillReport> => {
     const report = emptyAcordTaxonomyBackfillReport(args.dryRun);
@@ -179,29 +250,17 @@ export const backfillPolicyInternal = internalMutation({
       recordSkip(report, reason);
       return report;
     }
-
-    const [sourceSpans, sourceNodes] = await Promise.all([
-      ctx.db
-        .query("sourceSpans")
-        .withIndex("by_policyId", (query) =>
-          query.eq("policyId", policy._id)
-        )
-        .collect(),
-      ctx.db
-        .query("sourceNodes")
-        .withIndex("by_policyId", (query) =>
-          query.eq("policyId", policy._id)
-        )
-        .collect(),
-    ]);
-    const decision = rebuildAcordTaxonomyFromStoredSources({
-      policy,
-      sourceSpans,
-      sourceNodes,
-    });
-    recordDecision(report, policy._id, decision);
-    if (!args.dryRun && decision.patch) {
-      await ctx.db.patch(policy._id, decision.patch);
+    if (
+      acordTaxonomyBackfillPolicyFingerprint(
+        policy as unknown as Record<string, unknown>,
+      ) !== args.expectedFingerprint
+    ) {
+      recordSkip(report, "policy_changed_during_backfill");
+      return report;
+    }
+    recordDecision(report, policy._id, args.decision);
+    if (!args.dryRun && args.decision.patch) {
+      await ctx.db.patch(policy._id, args.decision.patch);
     }
     return report;
   },
