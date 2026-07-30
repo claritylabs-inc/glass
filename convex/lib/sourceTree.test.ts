@@ -1856,6 +1856,94 @@ describe("sourceTreePolicyFields", () => {
     });
   });
 
+  it("does not promote an unrelated named-insured DBA to carrier identity", () => {
+    const spans: SourceSpanLike[] = [
+      {
+        id: "span-insured-dba",
+        text: "Acme Holdings LLC doing business as Acme Restaurant.",
+        pageStart: 1,
+      },
+      {
+        id: "span-actual-carrier",
+        text: "Insurer: HDI Global Specialty SE",
+        pageStart: 1,
+      },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "named-insured",
+        documentId: "insured-dba-policy",
+        kind: "section",
+        title: "Named insured",
+        description: spans[0].text,
+        textExcerpt: spans[0].text,
+        sourceSpanIds: ["span-insured-dba"],
+        order: 0,
+        path: "Policy / Named insured",
+      },
+      {
+        id: "actual-carrier",
+        documentId: "insured-dba-policy",
+        kind: "section",
+        title: "Insurer",
+        description: spans[1].text,
+        textExcerpt: spans[1].text,
+        sourceSpanIds: ["span-actual-carrier"],
+        order: 1,
+        path: "Policy / Insurer",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["GL"],
+        coverages: [],
+        insurer: {
+          value: "HDI Global Specialty SE",
+          sourceNodeIds: ["actual-carrier"],
+          sourceSpanIds: ["span-actual-carrier"],
+        },
+        parties: [
+          {
+            role: "named_insured",
+            name: "Acme Holdings LLC",
+            sourceNodeIds: ["named-insured"],
+            sourceSpanIds: ["span-insured-dba"],
+          },
+          {
+            role: "insurer",
+            name: "HDI Global Specialty SE",
+            sourceNodeIds: ["actual-carrier"],
+            sourceSpanIds: ["span-actual-carrier"],
+          },
+        ],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrier).toBe("HDI Global Specialty SE");
+    expect(fields.carrierLegalName).toBe("HDI Global Specialty SE");
+    expect(fields.carrierIdentity).toEqual({
+      displayName: "HDI Global Specialty SE",
+      sourceName: "HDI Global Specialty SE",
+      legalEntities: [{
+        name: "HDI Global Specialty SE",
+        sourceNodeIds: ["actual-carrier"],
+        sourceSpanIds: ["span-actual-carrier"],
+      }],
+      legalEntityRelationship: "single",
+      sourceNodeIds: ["actual-carrier"],
+      sourceSpanIds: ["span-actual-carrier"],
+    });
+  });
+
   it("preserves Lloyd's lead underwriter and syndicates from source evidence", () => {
     const carrierText = [
       "LLOYD'S UNDERWRITERS LED BY: TOKIO",

@@ -1,9 +1,47 @@
-import { internalQuery } from "./_generated/server";
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import {
+  internalAction,
+  internalQuery,
+} from "./_generated/server";
 import type { GenericMutationCtx } from "convex/server";
 import type { DataModel, Id } from "./_generated/dataModel";
 import { readCarrierIdentity } from "./lib/carrierIdentity";
 import { CARRIER_IDENTITY_ENRICHMENT_VERSION } from "./lib/carrierIdentityEnrichment";
 import type { CarrierIdentityBackfillResult } from "./lib/carrierIdentityBackfill";
+
+const REPORT_PAGE_SIZE = 25;
+
+type CarrierIdentityBackfillCounts = {
+  rebuilt: number;
+  unchanged: number;
+  enriched: number;
+  skipped: number;
+  failed: number;
+  pendingEnrichment: number;
+  enrichmentFailed: number;
+};
+
+type CarrierIdentityBackfillReportPage = {
+  total: number;
+  counts: CarrierIdentityBackfillCounts;
+  reasons: Record<string, number>;
+  latestUpdatedAt: number;
+  isDone: boolean;
+  continueCursor: string;
+};
+
+function emptyCounts(): CarrierIdentityBackfillCounts {
+  return {
+    rebuilt: 0,
+    unchanged: 0,
+    enriched: 0,
+    skipped: 0,
+    failed: 0,
+    pendingEnrichment: 0,
+    enrichmentFailed: 0,
+  };
+}
 
 export async function recordCarrierIdentityBackfillResult(
   ctx: Pick<GenericMutationCtx<DataModel>, "db">,
@@ -29,24 +67,23 @@ export async function recordCarrierIdentityBackfillResult(
   return await ctx.db.insert("carrierIdentityBackfillResults", value);
 }
 
-export const reportInternal = internalQuery({
-  args: {},
-  handler: async (ctx) => {
+export const reportPageInternal = internalQuery({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args): Promise<CarrierIdentityBackfillReportPage> => {
     const results = await ctx.db
       .query("carrierIdentityBackfillResults")
-      .collect();
-    const counts = {
-      rebuilt: 0,
-      unchanged: 0,
-      enriched: 0,
-      skipped: 0,
-      failed: 0,
-      pendingEnrichment: 0,
-      enrichmentFailed: 0,
-    };
+      .paginate({
+        cursor: args.cursor,
+        numItems: REPORT_PAGE_SIZE,
+      });
+    const counts = emptyCounts();
     const reasons: Record<string, number> = {};
-    for (const result of results) {
+    let latestUpdatedAt = 0;
+    for (const result of results.page) {
       counts[result.outcome] += 1;
+      latestUpdatedAt = Math.max(latestUpdatedAt, result.updatedAt);
       if (result.reason) {
         reasons[result.reason] = (reasons[result.reason] ?? 0) + 1;
       }
@@ -69,14 +106,50 @@ export const reportInternal = internalQuery({
       }
     }
     return {
-      total: results.length,
+      total: results.page.length,
+      counts,
+      reasons,
+      latestUpdatedAt,
+      isDone: results.isDone,
+      continueCursor: results.continueCursor,
+    };
+  },
+});
+
+export const reportInternal = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const counts = emptyCounts();
+    const reasons: Record<string, number> = {};
+    let total = 0;
+    let latestUpdatedAt = 0;
+    let cursor: string | null = null;
+
+    while (true) {
+      const page: CarrierIdentityBackfillReportPage = await ctx.runQuery(
+        internal.carrierIdentityBackfill.reportPageInternal,
+        { cursor },
+      );
+      total += page.total;
+      latestUpdatedAt = Math.max(latestUpdatedAt, page.latestUpdatedAt);
+      for (const key of Object.keys(counts) as Array<
+        keyof CarrierIdentityBackfillCounts
+      >) {
+        counts[key] += page.counts[key];
+      }
+      for (const [reason, count] of Object.entries(page.reasons)) {
+        reasons[reason] = (reasons[reason] ?? 0) + count;
+      }
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+
+    return {
+      total,
       ...counts,
       reasons,
       enrichmentVersion: CARRIER_IDENTITY_ENRICHMENT_VERSION,
-      latestUpdatedAt: Math.max(
-        0,
-        ...results.map((result) => result.updatedAt),
-      ),
+      latestUpdatedAt,
     };
   },
 });

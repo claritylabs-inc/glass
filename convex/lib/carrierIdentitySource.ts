@@ -579,12 +579,26 @@ function operatingNameAfterMarker(text: string) {
   return tail;
 }
 
-function operatingCarrierIdentity(evidence: CarrierEvidence[]) {
+function operatingCarrierIdentity(
+  evidence: CarrierEvidence[],
+  carrierPartyNames: string[],
+) {
   return evidence
     .flatMap((item) => {
       const legalNames = legalEntityNamesBeforeOperatingMarker(item.text);
       const displayName = operatingNameAfterMarker(item.text);
-      if (!displayName || legalNames.length === 0) return [];
+      const belongsToCarrier = [displayName, ...legalNames].some((name) =>
+        carrierPartyNames.some((partyName) =>
+          sameCarrierIdentityName(name, partyName)
+        )
+      );
+      if (
+        !displayName ||
+        legalNames.length === 0 ||
+        !belongsToCarrier
+      ) {
+        return [];
+      }
       return [{
         displayName,
         legalNames,
@@ -697,8 +711,28 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
     params.sourceTree,
     params.sourceSpans ?? [],
   );
+  const insurerValue = params.operationalProfile.insurer;
+  const insurerValueIsSourceBacked =
+    stringArray(insurerValue?.sourceNodeIds).length > 0 ||
+    stringArray(insurerValue?.sourceSpanIds).length > 0;
+  const insurerValueName =
+    typeof insurerValue?.value === "string" && insurerValueIsSourceBacked
+      ? insurerValue.value.trim()
+      : undefined;
+  const carrierPartyNames = uniqueCarrierNames([
+    ...parties
+      .filter((party) =>
+        ["carrier", "insurer"].includes(party.role.toLowerCase()) &&
+        (party.sourceNodeIds.length > 0 || party.sourceSpanIds.length > 0)
+      )
+      .map((party) => party.name),
+    ...(insurerValueName ? [insurerValueName] : []),
+  ]);
   const lloydsIdentity = lloydsLedByIdentity(evidence);
-  const operatingIdentity = operatingCarrierIdentity(evidence);
+  const operatingIdentity = operatingCarrierIdentity(
+    evidence,
+    carrierPartyNames,
+  );
   const carrierParty = parties.find((party) =>
     party.role.toLowerCase() === "carrier"
   );
@@ -748,7 +782,6 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
     };
   }
 
-  const insurerValue = params.operationalProfile.insurer;
   const insurerParty = insurerParties[0];
   const displayParty = carrierParty ?? insurerParty;
   const displayName =
