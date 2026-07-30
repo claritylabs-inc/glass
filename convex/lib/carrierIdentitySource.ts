@@ -745,15 +745,6 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
     typeof insurerValue?.value === "string" && insurerValueIsSourceBacked
       ? insurerValue.value.trim()
       : undefined;
-  const carrierPartyNames = uniqueCarrierNames([
-    ...parties
-      .filter((party) =>
-        ["carrier", "insurer"].includes(party.role.toLowerCase()) &&
-        (party.sourceNodeIds.length > 0 || party.sourceSpanIds.length > 0)
-      )
-      .map((party) => party.name),
-    ...(insurerValueName ? [insurerValueName] : []),
-  ]);
   const sourceBackedCarrierParties = [
     ...parties.filter((party) =>
       ["carrier", "insurer"].includes(party.role.toLowerCase()) &&
@@ -768,6 +759,9 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
         }]
       : []),
   ];
+  const carrierPartyNames = uniqueCarrierNames(
+    sourceBackedCarrierParties.map((party) => party.name),
+  );
   const lloydsIdentity = lloydsLedByIdentity(
     evidence,
     sourceBackedCarrierParties,
@@ -776,16 +770,20 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
     evidence,
     carrierPartyNames,
   );
-  const carrierParty = parties.find((party) =>
+  const carrierParty = sourceBackedCarrierParties.find((party) =>
     party.role.toLowerCase() === "carrier"
   );
-  const insurerParties = parties.filter((party) =>
+  const insurerParties = sourceBackedCarrierParties.filter((party) =>
     party.role.toLowerCase() === "insurer"
   );
 
   if (lloydsIdentity) {
     const legalEntities = lloydsIdentity.legalNames.map((name) =>
-      carrierLegalEntity(name, parties, lloydsIdentity.evidence)
+      carrierLegalEntity(
+        name,
+        sourceBackedCarrierParties,
+        lloydsIdentity.evidence,
+      )
     );
     return {
       displayName: lloydsIdentity.displayName,
@@ -806,7 +804,11 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
 
   if (operatingIdentity) {
     const legalEntities = operatingIdentity.legalNames.map((name) =>
-      carrierLegalEntity(name, parties, operatingIdentity.evidence)
+      carrierLegalEntity(
+        name,
+        sourceBackedCarrierParties,
+        operatingIdentity.evidence,
+      )
     );
     return {
       displayName: operatingIdentity.displayName,
@@ -829,17 +831,22 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
   const displayParty = carrierParty ?? insurerParty;
   const displayName =
     displayParty?.name ??
-    (typeof insurerValue?.value === "string"
-      ? insurerValue.value.trim()
-      : undefined);
+    insurerValueName;
   if (!displayName) return undefined;
+  const insurerValueMatchesDisplay =
+    insurerValueName !== undefined &&
+    sameCarrierIdentityName(displayName, insurerValueName);
   const displaySourceNodeIds = [
     ...(displayParty?.sourceNodeIds ?? []),
-    ...stringArray(insurerValue?.sourceNodeIds),
+    ...(insurerValueMatchesDisplay
+      ? stringArray(insurerValue?.sourceNodeIds)
+      : []),
   ];
   const displaySourceSpanIds = [
     ...(displayParty?.sourceSpanIds ?? []),
-    ...stringArray(insurerValue?.sourceSpanIds),
+    ...(insurerValueMatchesDisplay
+      ? stringArray(insurerValue?.sourceSpanIds)
+      : []),
   ];
   if (
     displaySourceNodeIds.length === 0 &&
@@ -854,7 +861,7 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
     ...(isCompleteLegalEntityName(displayName) ? [displayName] : []),
   ]);
   const legalEntities = legalNames.map((name) =>
-    carrierLegalEntity(name, parties)
+    carrierLegalEntity(name, sourceBackedCarrierParties)
   );
   return {
     displayName,

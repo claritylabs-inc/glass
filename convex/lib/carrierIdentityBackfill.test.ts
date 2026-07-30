@@ -103,6 +103,60 @@ describe("stored-source carrier identity backfill", () => {
     });
   });
 
+  it("does not attach insurer provenance to an unsourced carrier party", () => {
+    const result = rebuildCarrierIdentityFromStoredSources({
+      policyId,
+      policy: {
+        carrier: "Hallucinated Carrier",
+        operationalProfile: {
+          ...operationalProfile,
+          insurer: {
+            value: "HDI Global Specialty SE",
+            sourceNodeIds: ["node-hdi"],
+            sourceSpanIds: ["span-hdi"],
+          },
+          parties: [
+            {
+              role: "carrier",
+              name: "Hallucinated Carrier",
+              sourceNodeIds: [],
+              sourceSpanIds: [],
+            },
+            {
+              role: "insurer",
+              name: "HDI Global Specialty SE",
+              sourceNodeIds: ["node-hdi"],
+              sourceSpanIds: ["span-hdi"],
+            },
+          ],
+        },
+      },
+      sourceSpans,
+      sourceNodes,
+    });
+
+    expect(result).toMatchObject({
+      outcome: "rebuilt",
+      patch: {
+        carrier: "HDI Global Specialty SE",
+        carrierIdentity: {
+          displayName: "HDI Global Specialty SE",
+          sourceName: "HDI Global Specialty SE",
+          sourceNodeIds: ["node-hdi"],
+          sourceSpanIds: ["span-hdi"],
+          legalEntities: [{
+            name: "HDI Global Specialty SE",
+            sourceNodeIds: ["node-hdi"],
+            sourceSpanIds: ["span-hdi"],
+          }],
+        },
+      },
+    });
+    expect(result.patch?.carrierIdentity).not.toMatchObject({
+      displayName: "Hallucinated Carrier",
+    });
+  });
+
   it("drops stale branding and legal names when source identity changes", () => {
     const result = rebuildCarrierIdentityFromStoredSources({
       policyId,
