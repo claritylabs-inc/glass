@@ -157,6 +157,71 @@ describe("stored-source carrier identity backfill", () => {
     });
   });
 
+  it("preserves every source-backed carrier legal entity", () => {
+    const secondCarrierSpan = {
+      spanId: "span-second-carrier",
+      documentId: policyId,
+      sourceKind: "policy_pdf",
+      pageStart: 1,
+      text: "Carrier: Acme Insurance Company",
+      textHash: "hash-second-carrier",
+    };
+    const secondCarrierNode = {
+      nodeId: "node-second-carrier",
+      documentId: policyId,
+      kind: "section",
+      title: "Carrier",
+      description: "Carrier: Acme Insurance Company",
+      textExcerpt: "Carrier: Acme Insurance Company",
+      sourceSpanIds: ["span-second-carrier"],
+      order: 2,
+      path: "Policy / Carrier 2",
+    };
+    const result = rebuildCarrierIdentityFromStoredSources({
+      policyId,
+      policy: {
+        carrier: "HDI Global Specialty SE",
+        operationalProfile: {
+          ...operationalProfile,
+          parties: [
+            ...operationalProfile.parties,
+            {
+              role: "carrier",
+              name: "Acme Insurance Company",
+              sourceNodeIds: ["node-second-carrier"],
+              sourceSpanIds: ["span-second-carrier"],
+            },
+          ],
+        },
+      },
+      sourceSpans: [...sourceSpans, secondCarrierSpan],
+      sourceNodes: [...sourceNodes, secondCarrierNode],
+    });
+
+    expect(result).toMatchObject({
+      outcome: "rebuilt",
+      patch: {
+        security: undefined,
+        carrierIdentity: {
+          displayName: "HDI Global Specialty SE",
+          legalEntityRelationship: "unspecified",
+          legalEntities: [
+            {
+              name: "HDI Global Specialty SE",
+              sourceNodeIds: ["node-hdi"],
+              sourceSpanIds: ["span-hdi"],
+            },
+            {
+              name: "Acme Insurance Company",
+              sourceNodeIds: ["node-second-carrier"],
+              sourceSpanIds: ["span-second-carrier"],
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it("drops stale branding and legal names when source identity changes", () => {
     const result = rebuildCarrierIdentityFromStoredSources({
       policyId,

@@ -855,10 +855,9 @@ export function buildCarrierIdentityFromSourceEvidence(params: {
     return undefined;
   }
   const legalNames = uniqueCarrierNames([
-    ...insurerParties
+    ...sourceBackedCarrierParties
       .map((party) => party.name)
       .filter(isCompleteLegalEntityName),
-    ...(isCompleteLegalEntityName(displayName) ? [displayName] : []),
   ]);
   const legalEntities = legalNames.map((name) =>
     carrierLegalEntity(name, sourceBackedCarrierParties)

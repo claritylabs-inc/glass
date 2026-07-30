@@ -3368,6 +3368,49 @@ export const startPolicyExtractionFromUpload = internalAction({
 
 // ─── Entry point: retry ────────────────────────────────────────────────────────
 
+export function policyExtractionRetrySource(params: {
+  mode: "resume" | "full";
+  policy: {
+    orgId?: string;
+    userId?: string;
+    uploadedByUserId?: string;
+    fileId?: string;
+    fileName?: string;
+  };
+  existingState?: PolicyExtractionState;
+}): Pick<
+  PolicyExtractionState,
+  | "sourceKind"
+  | "fileId"
+  | "fileName"
+  | "orgId"
+  | "userId"
+  | "policyFileId"
+  | "policyVersionKind"
+  | "replacementPromotionStarted"
+> {
+  const retryState =
+    params.mode === "resume" ? params.existingState : undefined;
+  return {
+    sourceKind: retryState?.sourceKind ?? "upload",
+    fileId: retryState?.fileId ?? params.policy.fileId,
+    fileName: retryState?.fileName ?? params.policy.fileName,
+    orgId: retryState?.orgId ?? String(params.policy.orgId ?? ""),
+    userId:
+      retryState?.userId ??
+      String(params.policy.userId ?? params.policy.uploadedByUserId ?? ""),
+    policyFileId: retryState?.policyFileId,
+    policyVersionKind:
+      params.mode === "full"
+        ? "re_extraction"
+        : retryState?.policyVersionKind,
+    replacementPromotionStarted:
+      params.mode === "full"
+        ? false
+        : retryState?.replacementPromotionStarted,
+  };
+}
+
 export const retryPolicyExtraction = internalAction({
   args: {
     policyId: v.id("policies"),
@@ -3400,11 +3443,17 @@ export const retryPolicyExtraction = internalAction({
       userId?: string;
       uploadedByUserId?: string;
       fileId?: string;
+      fileName?: string;
       pipelineCheckpoint?: { state?: PolicyExtractionState };
     } | null;
     if (!policy) throw new Error("Policy not found");
 
     const existingState = policy.pipelineCheckpoint?.state;
+    const retrySource = policyExtractionRetrySource({
+      mode,
+      policy,
+      existingState,
+    });
     if (!policy.orgId) throw new Error("Policy is missing orgId");
     const coverageRecovery = mode === "resume" && existingState?.coverageRecovery
       ? existingState.coverageRecovery
@@ -3417,10 +3466,10 @@ export const retryPolicyExtraction = internalAction({
         traceId,
         policyId,
         orgId: String(policy.orgId ?? "") as Id<"organizations">,
-        userId: asOptionalId<Id<"users">>(existingState?.userId ?? policy.userId ?? policy.uploadedByUserId),
-        sourceKind: existingState?.sourceKind ?? "upload",
+        userId: asOptionalId<Id<"users">>(retrySource.userId),
+        sourceKind: retrySource.sourceKind,
         trigger: `retry_${mode}`,
-        fileName: existingState?.fileName,
+        fileName: retrySource.fileName,
       });
     } else {
       await traceEvent(ctx, traceId, {
@@ -3431,16 +3480,7 @@ export const retryPolicyExtraction = internalAction({
     }
     if (EXTERNAL_WORKER_MODE) {
       const nextState = {
-        sourceKind: existingState?.sourceKind ?? "upload",
-        fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
-        fileName: existingState?.fileName,
-        orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
-        userId: existingState?.userId ?? String(policy.userId ?? policy.uploadedByUserId ?? ""),
-        policyFileId: existingState?.policyFileId,
-        policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
-        replacementPromotionStarted: mode === "full"
-          ? false
-          : existingState?.replacementPromotionStarted,
+        ...retrySource,
         coverageRecovery,
         traceId,
       };
@@ -3475,14 +3515,7 @@ export const retryPolicyExtraction = internalAction({
       scheduler,
       retryMode: mode,
       initialState: {
-        sourceKind: existingState?.sourceKind ?? "upload",
-        fileId: existingState?.fileId ?? (policy.fileId ? String(policy.fileId) : undefined),
-        orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
-        userId: existingState?.userId ?? String(policy.userId ?? ""),
-        policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
-        replacementPromotionStarted: mode === "full"
-          ? false
-          : existingState?.replacementPromotionStarted,
+        ...retrySource,
         coverageRecovery,
         traceId,
       },

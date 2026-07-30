@@ -9,6 +9,7 @@ import {
   pipelineSetStatus,
   updateExtractionInternal,
 } from "./policies";
+import { policyExtractionRetrySource } from "./actions/policyExtraction";
 
 const modules = import.meta.glob("./**/*.ts");
 const pipelineCompleteLeaseFn = pipelineCompleteLease as any;
@@ -16,6 +17,51 @@ const pipelineReconcileTerminalStateFn = pipelineReconcileTerminalState as any;
 const pipelineRejectExternalJobFn = pipelineRejectExternalJob as any;
 const pipelineSetStatusFn = pipelineSetStatus as any;
 const updateExtractionInternalFn = updateExtractionInternal as any;
+
+describe("policy extraction retry source selection", () => {
+  const policy = {
+    orgId: "org-active",
+    userId: "user-active",
+    uploadedByUserId: "uploader-active",
+    fileId: "active-policy-file",
+    fileName: "active-policy.pdf",
+  };
+  const existingState = {
+    sourceKind: "upload" as const,
+    fileId: "staged-replacement-file",
+    fileName: "staged-replacement.pdf",
+    orgId: "org-active",
+    userId: "user-replacement",
+    policyFileId: "replacement-policy-file-row",
+    policyVersionKind: "re_extraction" as const,
+    replacementPromotionStarted: false,
+  };
+
+  test("full re-extraction selects the active policy file", () => {
+    expect(policyExtractionRetrySource({
+      mode: "full",
+      policy,
+      existingState,
+    })).toEqual({
+      sourceKind: "upload",
+      fileId: "active-policy-file",
+      fileName: "active-policy.pdf",
+      orgId: "org-active",
+      userId: "user-active",
+      policyFileId: undefined,
+      policyVersionKind: "re_extraction",
+      replacementPromotionStarted: false,
+    });
+  });
+
+  test("resume keeps the staged replacement checkpoint source", () => {
+    expect(policyExtractionRetrySource({
+      mode: "resume",
+      policy,
+      existingState,
+    })).toEqual(existingState);
+  });
+});
 
 describe("policies.updateExtractionInternal", () => {
   test("stores SDK-formatted compatibility addresses for extracted policy parties", async () => {

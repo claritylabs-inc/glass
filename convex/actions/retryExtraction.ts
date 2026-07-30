@@ -6,6 +6,7 @@ import { api, internal } from "../_generated/api";
 
 /**
  * Retry policy extraction via cl-pipelines.
+ * Resume keeps the checkpoint source; full restarts from the active policy PDF.
  * Thin wrapper — all logic lives in policyExtraction.ts.
  */
 export const retryExtraction = action({
