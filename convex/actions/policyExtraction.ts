@@ -3369,7 +3369,7 @@ export const startPolicyExtractionFromUpload = internalAction({
 // ─── Entry point: retry ────────────────────────────────────────────────────────
 
 export function policyExtractionRetrySource(params: {
-  mode: "resume" | "full";
+  mode: "resume" | "restart" | "full";
   policy: {
     orgId?: string;
     userId?: string;
@@ -3390,7 +3390,7 @@ export function policyExtractionRetrySource(params: {
   | "replacementPromotionStarted"
 > {
   const retryState =
-    params.mode === "resume" ? params.existingState : undefined;
+    params.mode === "full" ? undefined : params.existingState;
   return {
     sourceKind: retryState?.sourceKind ?? "upload",
     fileId: retryState?.fileId ?? params.policy.fileId,
@@ -3401,9 +3401,7 @@ export function policyExtractionRetrySource(params: {
       String(params.policy.userId ?? params.policy.uploadedByUserId ?? ""),
     policyFileId: retryState?.policyFileId,
     policyVersionKind:
-      params.mode === "full"
-        ? "re_extraction"
-        : retryState?.policyVersionKind,
+      params.mode === "full" ? "re_extraction" : retryState?.policyVersionKind,
     replacementPromotionStarted:
       params.mode === "full"
         ? false
@@ -3414,7 +3412,11 @@ export function policyExtractionRetrySource(params: {
 export const retryPolicyExtraction = internalAction({
   args: {
     policyId: v.id("policies"),
-    mode: v.union(v.literal("resume"), v.literal("full")),
+    mode: v.union(
+      v.literal("resume"),
+      v.literal("restart"),
+      v.literal("full"),
+    ),
   },
   handler: async (ctx, { policyId, mode }) => {
     const mutations = makeMutations();
@@ -3513,7 +3515,7 @@ export const retryPolicyExtraction = internalAction({
       phases,
       storage,
       scheduler,
-      retryMode: mode,
+      retryMode: mode === "restart" ? "full" : mode,
       initialState: {
         ...retrySource,
         coverageRecovery,

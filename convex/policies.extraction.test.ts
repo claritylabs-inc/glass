@@ -61,6 +61,14 @@ describe("policy extraction retry source selection", () => {
       existingState,
     })).toEqual(existingState);
   });
+
+  test("restart reseeds the staged replacement file", () => {
+    expect(policyExtractionRetrySource({
+      mode: "restart",
+      policy,
+      existingState,
+    })).toEqual(existingState);
+  });
 });
 
 describe("policies.updateExtractionInternal", () => {

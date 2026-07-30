@@ -6,13 +6,18 @@ import { api, internal } from "../_generated/api";
 
 /**
  * Retry policy extraction via cl-pipelines.
- * Resume keeps the checkpoint source; full restarts from the active policy PDF.
+ * Resume keeps the checkpoint, restart reseeds its staged file, and full
+ * re-extracts the active policy PDF.
  * Thin wrapper — all logic lives in policyExtraction.ts.
  */
 export const retryExtraction = action({
   args: {
     policyId: v.id("policies"),
-    mode: v.optional(v.union(v.literal("resume"), v.literal("full"))),
+    mode: v.optional(v.union(
+      v.literal("resume"),
+      v.literal("restart"),
+      v.literal("full"),
+    )),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<{ error: string } | { success: boolean }> => {

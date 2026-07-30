@@ -15,7 +15,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
-type RetryMode = "resume" | "full";
+type RetryMode = "resume" | "restart";
 
 type ToastPolicy = {
   _id: string;
@@ -307,8 +307,8 @@ export function PolicyExtractionBanner({
                 disabled: retryingMode !== null,
               },
               {
-                label: retryingMode === "full" ? "Restarting" : "Restart",
-                onClick: () => void handleRetry("full"),
+                label: retryingMode === "restart" ? "Restarting" : "Restart",
+                onClick: () => void handleRetry("restart"),
                 variant: "secondary",
                 disabled: retryingMode !== null,
               },
