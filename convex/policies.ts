@@ -618,12 +618,46 @@ async function clearPolicyExtractionArtifacts(
   }
 }
 
+function policyPipelineStatusPatch(
+  policy: {
+    extractionDataStage?: string;
+    pipelineStatus?: string;
+  } | null,
+  checkpoint: unknown,
+  status: PolicyPipelineStatus,
+  error: string | null | undefined,
+) {
+  const state = (
+    checkpoint && typeof checkpoint === "object"
+      ? (checkpoint as { state?: { policyVersionKind?: string } }).state
+      : undefined
+  );
+  const preservesBoundPolicy =
+    status === "error" &&
+    policy?.extractionDataStage === "final" &&
+    (
+      state?.policyVersionKind === "re_extraction" ||
+      state?.policyVersionKind === "renewal" ||
+      policy.pipelineStatus === "complete"
+    );
+  return {
+    pipelineStatus: preservesBoundPolicy ? "complete" : status,
+    pipelineError: preservesBoundPolicy ? undefined : error ?? undefined,
+    pipelineCheckpoint: undefined,
+    pipelineLog: undefined,
+  };
+}
+
 async function setPolicyPipelineStatus(
   ctx: any,
   policyId: DataModelId<"policies">,
   status: PolicyPipelineStatus,
   error: string | null,
 ) {
+  const [run, policy] = await Promise.all([
+    getPolicyExtractionRun(ctx, policyId),
+    ctx.db.get(policyId),
+  ]);
   if (status !== "running") {
     await clearExternalPolicyExtractionQueue(ctx, policyId);
     await clearExternalPolicyExtractionPreviewQueue(ctx, policyId);
@@ -632,12 +666,15 @@ async function setPolicyPipelineStatus(
     pipelineStatus: status,
     pipelineError: error ?? undefined,
   });
-  await ctx.db.patch(policyId, {
-    pipelineStatus: status,
-    pipelineError: error ?? undefined,
-    pipelineCheckpoint: undefined,
-    pipelineLog: undefined,
-  });
+  await ctx.db.patch(
+    policyId,
+    policyPipelineStatusPatch(
+      policy,
+      run?.pipelineCheckpoint,
+      status,
+      error,
+    ),
+  );
 }
 
 async function appendPolicyPipelineLog(
@@ -2590,6 +2627,10 @@ export const pipelineSetStatus = internalMutation({
   handler: async (ctx, { jobId, status, error }) => {
     const policyId = jobId as DataModelId<"policies">;
     if (status === "complete" || status === "error") {
+      const [run, policy] = await Promise.all([
+        getPolicyExtractionRun(ctx, policyId),
+        ctx.db.get(policyId),
+      ]);
       await clearExternalPolicyExtractionQueue(ctx, policyId);
       await clearExternalPolicyExtractionPreviewQueue(ctx, policyId);
       await patchPolicyExtractionRun(ctx, policyId, {
@@ -2598,10 +2639,12 @@ export const pipelineSetStatus = internalMutation({
         pipelineCheckpoint: undefined,
       });
       await ctx.db.patch(policyId, {
-        pipelineStatus: status,
-        pipelineError: error ?? undefined,
-        pipelineCheckpoint: undefined,
-        pipelineLog: undefined,
+        ...policyPipelineStatusPatch(
+          policy,
+          run?.pipelineCheckpoint,
+          status,
+          error,
+        ),
         ...(status === "complete" ? { extractionPreviewError: undefined } : {}),
       });
       return;
@@ -2732,12 +2775,20 @@ export const pipelineRejectExternalJob = internalMutation({
     }
     await clearExternalPolicyExtractionQueue(ctx, policyId);
     await clearExternalPolicyExtractionPreviewQueue(ctx, policyId);
-    await ctx.db.patch(policyId, {
-      pipelineStatus: "error",
-      pipelineError: error,
-      pipelineCheckpoint: undefined,
-      pipelineLog: undefined,
-    });
+    await ctx.db.patch(
+      policyId,
+      archivePolicy
+        ? {
+            pipelineStatus: "error",
+            pipelineError: error,
+            pipelineCheckpoint: undefined,
+            pipelineLog: undefined,
+          }
+        : {
+            pipelineCheckpoint: undefined,
+            pipelineLog: undefined,
+          },
+    );
     if (archivePolicy) {
       await archiveRejectedPolicyDocument(ctx, policyId, userId);
     }
@@ -3251,12 +3302,15 @@ export const pipelineReconcileTerminalState = internalMutation({
       });
     }
     if (policy) {
-      await ctx.db.patch(policyId, {
-        pipelineStatus: status,
-        pipelineError: error ?? undefined,
-        pipelineCheckpoint: undefined,
-        pipelineLog: undefined,
-      });
+      await ctx.db.patch(
+        policyId,
+        policyPipelineStatusPatch(
+          policy,
+          run?.pipelineCheckpoint,
+          status,
+          error,
+        ),
+      );
     }
 
     return {
@@ -3468,6 +3522,7 @@ export const pipelineCompleteLease = internalMutation({
     }
     patch.updatedAt = nowMs();
 
+    const policy = await ctx.db.get(policyId);
     await ctx.db.patch(run._id, patch);
     if (args.status) {
       if (
@@ -3476,12 +3531,15 @@ export const pipelineCompleteLease = internalMutation({
       ) {
         await clearPolicyExtractionArtifacts(ctx, policyId);
       }
-      await ctx.db.patch(policyId, {
-        pipelineStatus: args.status,
-        pipelineError: args.error ?? undefined,
-        pipelineCheckpoint: undefined,
-        pipelineLog: undefined,
-      });
+      await ctx.db.patch(
+        policyId,
+        policyPipelineStatusPatch(
+          policy,
+          checkpoint,
+          args.status,
+          args.error,
+        ),
+      );
     }
     return true;
   },

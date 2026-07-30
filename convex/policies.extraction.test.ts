@@ -4,11 +4,13 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import {
   pipelineRejectExternalJob,
+  pipelineSetStatus,
   updateExtractionInternal,
 } from "./policies";
 
 const modules = import.meta.glob("./**/*.ts");
 const pipelineRejectExternalJobFn = pipelineRejectExternalJob as any;
+const pipelineSetStatusFn = pipelineSetStatus as any;
 const updateExtractionInternalFn = updateExtractionInternal as any;
 
 describe("policies.updateExtractionInternal", () => {
@@ -353,6 +355,8 @@ describe("policies.updateExtractionInternal", () => {
         policyYear: 2026,
         isRenewal: false,
         coverages: [],
+        pipelineStatus: "complete",
+        extractionDataStage: "final",
       });
       const factId = await ctx.db.insert("policyDeclarationFacts", {
         orgId,
@@ -378,14 +382,79 @@ describe("policies.updateExtractionInternal", () => {
     const result = await t.run(async (ctx) => ({
       policy: await ctx.db.get(ids.policyId),
       fact: await ctx.db.get(ids.factId),
+      run: await ctx.db
+        .query("policyExtractionRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", ids.policyId))
+        .first(),
     }));
     expect(result.policy).toMatchObject({
       carrier: "Known Carrier",
       policyNumber: "POL-REEXTRACT",
+      pipelineStatus: "complete",
+    });
+    expect(result.run).toMatchObject({
       pipelineStatus: "error",
       pipelineError: "Replacement document is not a bound policy.",
     });
+    expect(result.policy?.pipelineError).toBeUndefined();
     expect(result.policy?.deletedAt).toBeUndefined();
     expect(result.fact?.active).toBe(true);
+  });
+
+  test("keeps final policy workflows active when in-process re-extraction fails", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Known Carrier",
+        policyNumber: "POL-IN-PROCESS",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        pipelineStatus: "running",
+        extractionDataStage: "final",
+      });
+      await ctx.db.insert("policyExtractionRuns", {
+        policyId,
+        pipelineStatus: "running",
+        pipelineCheckpoint: {
+          nextPhase: "extract",
+          state: { policyVersionKind: "re_extraction" },
+          createdAt: 1,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return policyId;
+    });
+
+    await t.mutation(pipelineSetStatusFn, {
+      jobId: policyId,
+      status: "error",
+      error: "Replacement document is not a bound policy.",
+    });
+
+    const result = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(policyId),
+      run: await ctx.db
+        .query("policyExtractionRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .first(),
+    }));
+    expect(result.policy?.pipelineStatus).toBe("complete");
+    expect(result.policy?.pipelineError).toBeUndefined();
+    expect(result.run).toMatchObject({
+      pipelineStatus: "error",
+      pipelineError: "Replacement document is not a bound policy.",
+    });
   });
 });
