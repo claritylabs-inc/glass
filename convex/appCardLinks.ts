@@ -7,11 +7,7 @@ import { buildCoverageBreakdown } from "./lib/coverageBreakdown";
 import { getClientPortalUrl } from "./lib/domains";
 import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 import { resolveCarrierIdentity } from "./lib/carrierIdentityProjection";
-import {
-  sameCarrierIdentityName,
-  type CarrierIdentity,
-} from "./lib/carrierIdentity";
-import { resolvePolicyPartyContext } from "./lib/policyPartyContext";
+import { resolvePolicyCarrierDisplay } from "./lib/policyPartyContext";
 
 const appCardKindValidator = v.union(
   v.literal("policy"),
@@ -64,29 +60,18 @@ async function publicPolicy(ctx: QueryCtx, policy: Doc<"policies">) {
     ctx,
     policy.carrierIdentity,
   );
-  const partyContext = resolvePolicyPartyContext({
+  const carrierDisplay = resolvePolicyCarrierDisplay({
     ...policy,
     carrierIdentity,
   });
   const carrier =
-    partyContext.carrierDisplayName ??
-    carrierIdentity?.displayName ??
-    policy.carrier;
-  const identityMatchesCarrier = carrierIdentity &&
-    [
-      carrierIdentity.displayName,
-      carrierIdentity.sourceName,
-      carrierIdentity.operatingName,
-      ...carrierIdentity.legalEntities.map((entity) => entity.name),
-    ].some((name) => sameCarrierIdentityName(name, carrier));
-  const publicCarrierIdentity: CarrierIdentity | undefined =
-    identityMatchesCarrier ? carrierIdentity : undefined;
+    carrierDisplay.carrierDisplayName ?? policy.carrier;
   return {
     id: policy._id,
     title: policyTitle(policy),
     insuredName: policy.insuredName,
     carrier,
-    carrierIdentity: publicCarrierIdentity,
+    carrierIdentity: carrierDisplay.carrierIdentity,
     policyNumber: policy.policyNumber,
     linesOfBusiness: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,

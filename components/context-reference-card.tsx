@@ -9,21 +9,24 @@ import {
 } from "@/components/ui/action-surface";
 import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
+import {
+  resolvePolicyCarrierDisplay,
+  resolvePolicyPartyContext,
+} from "@/convex/lib/policyPartyContext";
 import { useCachedPolicySummary } from "@/lib/sync/glass-cached-queries";
 import { policyCardBranding } from "@/lib/policy-card-branding";
-import { readCarrierIdentity } from "@/convex/lib/carrierIdentity";
 
 function policyCarrierIdentity(policy: {
   carrier?: string;
   security?: string;
   carrierIdentity?: unknown;
+  policyDetailOverrides?: unknown;
 }) {
-  const carrierIdentity = readCarrierIdentity(policy.carrierIdentity);
+  const { carrierDisplayName, carrierIdentity } =
+    resolvePolicyCarrierDisplay(policy);
   const branding = carrierIdentity?.branding;
   const issuerName =
-    carrierIdentity?.displayName ??
-    policy.carrier ??
-    policy.security ??
+    carrierDisplayName ??
     "Insurance carrier";
   return {
     issuerName,
@@ -94,12 +97,10 @@ export function PolicyReferenceCard({
     );
   }
 
+  const { branding, issuerName, patternStyle, surfaceStyle } =
+    policyCarrierIdentity(policy);
   const generalAgent =
-    (policy as { generalAgent?: { agencyName?: string } }).generalAgent?.agencyName ||
-    (policy as { mga?: string }).mga ||
-    policy.carrier ||
-    policy.security ||
-    "Unknown";
+    resolvePolicyPartyContext(policy).generalAgentName ?? issuerName;
   const policyNum = policy.policyNumber;
   const linesOfBusiness = policyLobCodes(policy);
   const primaryLine = linesOfBusiness[0] && linesOfBusiness[0] !== "UN"
@@ -110,9 +111,6 @@ export function PolicyReferenceCard({
   const summary = primaryLine
     ? `${summaryParts} — ${primaryLine}`
     : summaryParts;
-  const { branding, issuerName, patternStyle, surfaceStyle } =
-    policyCarrierIdentity(policy);
-
   return (
     <ActionSurfaceButton
       type="button"
@@ -168,18 +166,15 @@ export function PolicyCitation({
   const policy = useCachedPolicySummary(id as Id<"policies">);
   const { openPreview } = useEntityPreview();
 
+  const brand = policy ? policyCarrierIdentity(policy) : null;
   const label = policy
     ? [
-        readCarrierIdentity(policy.carrierIdentity)?.displayName ||
-          policy.carrier ||
-          policy.security ||
-          "Policy",
+        brand?.issuerName ?? "Policy",
         policy.policyNumber,
       ]
         .filter(Boolean)
         .join(" ")
     : "Policy";
-  const brand = policy ? policyCarrierIdentity(policy) : null;
 
   return (
     <button
@@ -236,18 +231,15 @@ export function PolicySourcePill({
   const policy = useCachedPolicySummary(id as Id<"policies">);
   const { openPreview } = useEntityPreview();
 
+  const brand = policy ? policyCarrierIdentity(policy) : null;
   const label = policy
     ? [
-        readCarrierIdentity(policy.carrierIdentity)?.displayName ||
-          policy.carrier ||
-          policy.security ||
-          "Policy",
+        brand?.issuerName ?? "Policy",
         policy.policyNumber,
       ]
         .filter(Boolean)
         .join(" ")
     : "Policy";
-  const brand = policy ? policyCarrierIdentity(policy) : null;
 
   return (
     <button

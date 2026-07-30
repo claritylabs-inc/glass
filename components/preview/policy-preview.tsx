@@ -31,9 +31,11 @@ import {
 } from "@/lib/date-format";
 import {
   formatCarrierLegalEntityNames,
-  readCarrierIdentity,
-  sameCarrierIdentityName,
 } from "@/convex/lib/carrierIdentity";
+import {
+  resolvePolicyCarrierDisplay,
+  resolvePolicyPartyContext,
+} from "@/convex/lib/policyPartyContext";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -96,27 +98,7 @@ function formatPolicyPeriod(record: Record<string, unknown>) {
 }
 
 function carrierName(record: Record<string, unknown>) {
-  const identity = readCarrierIdentity(record.carrierIdentity);
-  return (
-    identity?.displayName ??
-    realText(record.carrier) ??
-    realText(record.security) ??
-    realText(record.carrierLegalName)
-  );
-}
-
-function generalAgentName(record: Record<string, unknown>) {
-  const identity = readCarrierIdentity(record.carrierIdentity);
-  const generalAgent = record.generalAgent &&
-    typeof record.generalAgent === "object" &&
-    !Array.isArray(record.generalAgent)
-    ? record.generalAgent as Record<string, unknown>
-    : {};
-  const name = realText(generalAgent.agencyName) ?? realText(record.mga);
-  return name &&
-      sameCarrierIdentityName(identity?.operatingName, name)
-    ? undefined
-    : name;
+  return resolvePolicyCarrierDisplay(record).carrierDisplayName;
 }
 
 function policyKind(record: Record<string, unknown>) {
@@ -145,18 +127,20 @@ function metadataRows(
   record: Record<string, unknown>,
   fileCount: number,
 ): MetadataRow[] {
-  const identity = readCarrierIdentity(record.carrierIdentity);
+  const partyContext = resolvePolicyPartyContext(record);
+  const { carrierDisplayName, carrierIdentity } =
+    resolvePolicyCarrierDisplay(record);
   return [
-    { label: "Named insured", value: realText(record.insuredName) },
-    { label: "Carrier", value: carrierName(record) },
+    { label: "Named insured", value: partyContext.insuredName },
+    { label: "Carrier", value: carrierDisplayName },
     {
-      label: identity?.legalEntities.length === 1
+      label: carrierIdentity?.legalEntities.length === 1
         ? "Legal entity"
         : "Legal entities",
-      value: formatCarrierLegalEntityNames(identity),
+      value: formatCarrierLegalEntityNames(carrierIdentity),
     },
-    { label: "General Agent", value: generalAgentName(record) },
-    { label: "Broker", value: realText(record.broker) },
+    { label: "General Agent", value: partyContext.generalAgentName },
+    { label: "Producer", value: partyContext.producerName },
     { label: "Policy number", value: realText(record.policyNumber) },
     { label: "Policy period", value: formatPolicyPeriod(record) },
     { label: "Premium", value: realText(record.premium) },

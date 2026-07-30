@@ -5,12 +5,10 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { BrandIcon } from "@/components/ui/brand-icon";
 import {
-  readCarrierIdentity,
-  sameCarrierIdentityName,
   type CarrierIdentity,
 } from "@/convex/lib/carrierIdentity";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
-import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
+import { resolvePolicyCarrierDisplay } from "@/convex/lib/policyPartyContext";
 import { policyProductName } from "@/convex/lib/policyProductIdentity";
 import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
 import {
@@ -115,24 +113,16 @@ export function PolicyListItem({
   );
   const effectiveClean = formatPolicyDate(effectiveDate);
   const expirationClean = formatPolicyDate(expirationDate);
-  const carrierIdentity = readCarrierIdentity(carrierIdentityValue);
-  const resolvedCarrierDisplayName = resolvePolicyPartyContext({
+  const carrierDisplay = resolvePolicyCarrierDisplay({
     carrier,
     carrierIdentity: carrierIdentityValue,
     policyDetailOverrides,
-  }).carrierDisplayName;
-  const carrierClean = cleanField(resolvedCarrierDisplayName ?? carrier);
-  const brandingMatchesIssuer =
-    !carrierClean ||
-    [
-      carrierIdentity?.displayName,
-      carrierIdentity?.sourceName,
-      carrierIdentity?.operatingName,
-      ...(carrierIdentity?.legalEntities.map((entity) => entity.name) ?? []),
-    ].some((name) => sameCarrierIdentityName(name, carrierClean));
-  const branding = brandingMatchesIssuer
-    ? carrierIdentity?.branding
-    : undefined;
+  });
+  const carrierIdentity = carrierDisplay.carrierIdentity;
+  const carrierClean = cleanField(
+    carrierDisplay.carrierDisplayName ?? carrier,
+  );
+  const branding = carrierIdentity?.branding;
   const productLines = policyLobCodes({ linesOfBusiness })
     .filter((code) => code !== "UN")
     .map(lobLabel);

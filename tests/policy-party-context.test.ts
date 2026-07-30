@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolvePolicyPartyContext } from "../convex/lib/policyPartyContext";
+import {
+  resolvePolicyCarrierDisplay,
+  resolvePolicyPartyContext,
+} from "../convex/lib/policyPartyContext";
 
 describe("policy party context", () => {
   it("materializes historical compatibility parties without using client profile data", () => {
@@ -394,6 +397,53 @@ describe("policy party context", () => {
     ]));
     expect(JSON.stringify(context.parties)).not.toContain("Extracted Broker");
     expect(JSON.stringify(context.parties)).not.toContain("producer-source");
+  });
+
+  it("suppresses extracted branding when a broker override changes the visible insurer", () => {
+    const carrierIdentity = {
+      displayName: "Extracted Carrier",
+      sourceName: "Extracted Carrier",
+      legalEntities: [{
+        name: "Extracted Carrier Insurance Company",
+        sourceNodeIds: ["carrier-identity"],
+        sourceSpanIds: ["span-carrier-identity"],
+      }],
+      legalEntityRelationship: "single",
+      sourceNodeIds: ["carrier-identity"],
+      sourceSpanIds: ["span-carrier-identity"],
+      branding: {
+        website: "https://extracted.example",
+        iconUrl: "https://extracted.example/favicon.png",
+        accentColor: "#123456",
+        confidence: "high",
+        sourceUrls: ["https://extracted.example"],
+        enrichmentVersion: 1,
+        updatedAt: 1,
+      },
+    };
+
+    expect(resolvePolicyCarrierDisplay({
+      carrier: "Extracted Carrier",
+      carrierIdentity,
+      policyDetailOverrides: {
+        insurer: { name: "Corrected Insurer" },
+      },
+    })).toEqual({
+      carrierDisplayName: "Corrected Insurer",
+      carrierIdentity: undefined,
+    });
+    expect(resolvePolicyCarrierDisplay({
+      carrier: "Extracted Carrier",
+      carrierIdentity,
+    })).toEqual({
+      carrierDisplayName: "Extracted Carrier",
+      carrierIdentity: expect.objectContaining({
+        displayName: "Extracted Carrier",
+        branding: expect.objectContaining({
+          iconUrl: "https://extracted.example/favicon.png",
+        }),
+      }),
+    });
   });
 
   it("does not copy identifiers across different party identities", () => {

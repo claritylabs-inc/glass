@@ -8,6 +8,7 @@ import {
   carrierLegalEntityNames,
   formatCarrierLegalEntityNames,
   readCarrierIdentity,
+  sameCarrierIdentityName,
 } from "./carrierIdentity";
 
 export type PolicyPartyAddress = string | OperationalAddress;
@@ -491,5 +492,26 @@ export function resolvePolicyPartyContext(
     generalAgentLicenseNumber,
     operationsDescription,
     additionalNamedInsureds,
+  };
+}
+
+export function resolvePolicyCarrierDisplay(policy: Record<string, any>) {
+  const carrierIdentity = readCarrierIdentity(policy.carrierIdentity);
+  const carrierDisplayName =
+    resolvePolicyPartyContext(policy).carrierDisplayName ??
+    carrierIdentity?.displayName ??
+    text(policy.carrier) ??
+    text(policy.security);
+  const identityMatchesDisplay = carrierIdentity &&
+    [
+      carrierIdentity.displayName,
+      carrierIdentity.sourceName,
+      carrierIdentity.operatingName,
+      ...carrierIdentity.legalEntities.map((entity) => entity.name),
+    ].some((name) => sameCarrierIdentityName(name, carrierDisplayName));
+
+  return {
+    carrierDisplayName,
+    carrierIdentity: identityMatchesDisplay ? carrierIdentity : undefined,
   };
 }
