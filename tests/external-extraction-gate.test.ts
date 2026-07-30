@@ -53,6 +53,7 @@ describe("external extraction document gate", () => {
   it("auto-archives only new uploads rejected as non-insurance", () => {
     const policies = read("convex/policies.ts");
     const actions = read("convex/actions/policyExtraction.ts");
+    const reExtraction = read("convex/actions/reExtractFromFile.ts");
 
     expect(policies).toContain("export const pipelineRejectExternalJob");
     expect(policies).toContain("async function archiveRejectedPolicyDocument");
@@ -73,5 +74,7 @@ describe("external extraction document gate", () => {
       "shouldArchiveRejectedPolicy(state.policyVersionKind)",
     );
     expect(actions).toContain("archiveRejectedDocumentInternal");
+    expect(reExtraction).not.toContain("fields: { fileId: args.fileId }");
+    expect(actions.match(/primaryFileId: state\.fileId/g)).toHaveLength(2);
   });
 });

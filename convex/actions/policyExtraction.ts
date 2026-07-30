@@ -1583,6 +1583,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       await convexCtx.runMutation((internal as any).policies.updateFiles, {
         id: policyId,
         files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+        primaryFileId: state.fileId as Id<"_storage">,
       });
 
       const embeddingPayloadFileId = await storeEmbeddingPayload(convexCtx, policyId, {
@@ -2507,6 +2508,7 @@ async function completeExternalExtractFromPayload(
     await ctx.runMutation((internal as any).policies.updateFiles, {
       id: policyId,
       files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+      primaryFileId: state.fileId as Id<"_storage">,
     });
   }
 

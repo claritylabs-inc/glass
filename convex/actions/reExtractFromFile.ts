@@ -7,8 +7,8 @@ import type { Id } from "../_generated/dataModel";
 
 /**
  * Re-extract a policy from a newly uploaded file (full restart with new PDF).
- * Updates the policy's fileId then delegates to cl-pipelines full restart.
- * Thin wrapper — all extraction logic lives in policyExtraction.ts.
+ * The extraction pipeline promotes the replacement to the policy's primary
+ * file only after the document gate and extraction succeed.
  */
 export const reExtractFromFile = action({
   args: {
@@ -30,12 +30,6 @@ export const reExtractFromFile = action({
       policyId: args.policyId,
       userId,
       action: "pdf_uploaded",
-    });
-
-    // Update fileId on the policy to point at the new file
-    await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
-      id: args.policyId,
-      fields: { fileId: args.fileId },
     });
 
     // Start a full pipeline restart with the new file
