@@ -262,6 +262,71 @@ describe("stored-source carrier identity backfill", () => {
     expect(result.patch?.carrierIdentity).not.toHaveProperty("branding");
   });
 
+  it("drops stale insurer details and rebuilds only matching source fields", () => {
+    const result = rebuildCarrierIdentityFromStoredSources({
+      policyId,
+      policy: {
+        carrier: "Stale Mutual",
+        carrierNaicNumber: "99999",
+        carrierAmBestRating: "A++",
+        carrierAdmittedStatus: "admitted",
+        insurer: {
+          legalName: "Stale Mutual Insurance Company",
+          naicNumber: "99999",
+          amBestRating: "A++",
+          admittedStatus: "admitted",
+          address: {
+            street1: "1 Stale Plaza",
+            city: "Oldtown",
+            state: "NY",
+            zip: "10001",
+          },
+        },
+        operationalProfile: {
+          ...operationalProfile,
+          parties: [{
+            ...operationalProfile.parties[0],
+            naicNumber: "41343",
+            address: {
+              street1: "161 N. Clark Street",
+              city: "Chicago",
+              state: "IL",
+              zip: "60601",
+            },
+          }],
+        },
+      },
+      sourceSpans,
+      sourceNodes,
+    });
+
+    expect(result).toMatchObject({
+      outcome: "rebuilt",
+      patch: {
+        carrierNaicNumber: "41343",
+        carrierAmBestRating: undefined,
+        carrierAdmittedStatus: undefined,
+        insurer: {
+          legalName: "HDI Global Specialty SE",
+          naicNumber: "41343",
+          address: {
+            street1: "161 N. Clark Street",
+            city: "Chicago",
+            state: "IL",
+            zip: "60601",
+          },
+          documentNodeId: "node-hdi",
+          sourceSpanIds: ["span-hdi"],
+        },
+      },
+    });
+    expect(result.patch?.insurer).not.toMatchObject({
+      amBestRating: "A++",
+      admittedStatus: "admitted",
+      address: { street1: "1 Stale Plaza" },
+    });
+  });
+
   it("preserves unchanged current-version branding", () => {
     const result = rebuildCarrierIdentityFromStoredSources({
       policyId,

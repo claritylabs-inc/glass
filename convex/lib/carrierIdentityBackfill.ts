@@ -33,6 +33,25 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function text(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function insurerAddress(value: unknown) {
+  const address = record(value);
+  const street1 = text(address.street1);
+  if (!street1) return undefined;
+  return {
+    street1,
+    ...(text(address.street2) ? { street2: text(address.street2) } : {}),
+    ...(text(address.city) ? { city: text(address.city) } : {}),
+    ...(text(address.state) ? { state: text(address.state) } : {}),
+    ...(text(address.zip) ? { zip: text(address.zip) } : {}),
+    ...(text(address.country) ? { country: text(address.country) } : {}),
+    ...(text(address.formatted) ? { formatted: text(address.formatted) } : {}),
+  };
+}
+
 function stableHash(input: string) {
   let hash = 2166136261;
   for (let index = 0; index < input.length; index += 1) {
@@ -135,6 +154,33 @@ export function rebuildCarrierIdentityFromStoredSources(params: {
     const primaryLegalEntity = carrierIdentity.legalEntities[0];
     const currentInsurer = record(params.policy.insurer);
     const currentGeneralAgent = record(params.policy.generalAgent);
+    const profile = record(params.policy.operationalProfile);
+    const sourceParties = Array.isArray(profile.parties)
+      ? profile.parties.map(record)
+      : [];
+    const primarySourceParty = primaryLegalEntity
+      ? sourceParties.find((party) => {
+          const role = text(party.role)?.toLowerCase();
+          const hasProvenance =
+            (Array.isArray(party.sourceNodeIds) &&
+              party.sourceNodeIds.length > 0) ||
+            (Array.isArray(party.sourceSpanIds) &&
+              party.sourceSpanIds.length > 0);
+          return (
+            (role === "carrier" || role === "insurer") &&
+            hasProvenance &&
+            sameCarrierIdentityName(party.name, primaryLegalEntity.name)
+          );
+        })
+      : undefined;
+    const currentInsurerMatches = primaryLegalEntity
+      ? sameCarrierIdentityName(
+          currentInsurer.legalName,
+          primaryLegalEntity.name,
+        )
+      : false;
+    const sourceNaicNumber = text(primarySourceParty?.naicNumber);
+    const sourceAddress = insurerAddress(primarySourceParty?.address);
     const hasCurrentBranding = brandingIsCurrent(carrierIdentity);
     const patch: Record<string, unknown> = {
       carrier: carrierIdentity.displayName,
@@ -157,11 +203,24 @@ export function rebuildCarrierIdentityFromStoredSources(params: {
       carrierBrandStatus: undefined,
       carrierBrandAttempts: undefined,
       carrierBrandAttemptedAt: undefined,
+      carrierNaicNumber:
+        sourceNaicNumber ??
+        (currentInsurerMatches
+          ? text(params.policy.carrierNaicNumber)
+          : undefined),
+      carrierAmBestRating: currentInsurerMatches
+        ? params.policy.carrierAmBestRating
+        : undefined,
+      carrierAdmittedStatus: currentInsurerMatches
+        ? params.policy.carrierAdmittedStatus
+        : undefined,
     };
     if (primaryLegalEntity) {
       patch.insurer = {
-        ...currentInsurer,
+        ...(currentInsurerMatches ? currentInsurer : {}),
         legalName: primaryLegalEntity.name,
+        ...(sourceNaicNumber ? { naicNumber: sourceNaicNumber } : {}),
+        ...(sourceAddress ? { address: sourceAddress } : {}),
         documentNodeId: primaryLegalEntity.sourceNodeIds[0],
         sourceSpanIds: primaryLegalEntity.sourceSpanIds,
       };
