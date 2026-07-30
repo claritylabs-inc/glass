@@ -168,6 +168,8 @@ export const applyToPolicyInternal = internalMutation({
       carrier: carrierIdentity.displayName,
       carrierIdentity,
       carrierIdentityEnrichmentStatus: "ready",
+      carrierIdentityEnrichmentAttempts: undefined,
+      carrierIdentityEnrichmentAttemptedAt: undefined,
       carrierBrandId: undefined,
       carrierBrandStatus: undefined,
       carrierBrandAttempts: undefined,

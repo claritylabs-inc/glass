@@ -37,6 +37,10 @@ describe("external extraction document gate", () => {
     );
 
     expect(gateBody).toContain("classifyInsuranceExtractability");
+    expect(gateBody).toContain("tryConvertPdfWithLiteParse");
+    expect(gateBody.match(/tryConvertPdfWithLiteParse/g)).toHaveLength(1);
+    expect(gateBody).toContain("preparePdfTextWithPdfJs");
+    expect(gateBody).not.toContain("preparePdfTextWithParserFallback");
     expect(gateBody).toContain("shouldRejectDocument(gateDecision)");
     expect(gateBody).toContain("NON_INSURANCE_DOCUMENT_ERROR");
     expect(gateBody).toContain('status: "not_insurance"');

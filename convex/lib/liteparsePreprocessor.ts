@@ -187,6 +187,17 @@ export async function preparePdfTextWithParserFallback(params: {
     };
   }
 
+  return preparePdfTextWithPdfJs(params, startedAt);
+}
+
+export async function preparePdfTextWithPdfJs(
+  params: {
+    pdfBytes: Uint8Array;
+    documentId: string;
+    sourceKind?: ParsedPdfSourceKind;
+  },
+  startedAt = dayjs().valueOf(),
+): Promise<PdfPreparationResult> {
   const pdfSource = await buildPdfSourceSpans({
     pdfBytes: params.pdfBytes,
     documentId: params.documentId,

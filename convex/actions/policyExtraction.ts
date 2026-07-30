@@ -13,7 +13,11 @@ import {
 import type { Phase, PhaseResult } from "@claritylabs/cl-pipelines";
 import { buildExtractor, runCoverageRecovery } from "../lib/extraction";
 import { deletePolicyRowsInBatches } from "../lib/deletePolicyRowsInBatches";
-import { preparePdfTextWithParserFallback, tryConvertPdfWithLiteParse } from "../lib/liteparsePreprocessor";
+import {
+  preparePdfTextWithParserFallback,
+  preparePdfTextWithPdfJs,
+  tryConvertPdfWithLiteParse,
+} from "../lib/liteparsePreprocessor";
 import type { ExtractionResult, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
 import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";
@@ -3145,7 +3149,7 @@ async function rejectedByDocumentGateBeforeExternalHandoff(
     });
     const sourceSpans = converted?.sourceSpans?.length
       ? converted.sourceSpans
-      : (await preparePdfTextWithParserFallback({
+      : (await preparePdfTextWithPdfJs({
           pdfBytes,
           documentId: params.policyId,
           sourceKind: "policy_pdf",

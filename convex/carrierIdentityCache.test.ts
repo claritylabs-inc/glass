@@ -54,6 +54,9 @@ describe("carrier identity branding", () => {
           sourceNodeIds: ["carrier"],
           sourceSpanIds: ["span-carrier"],
         },
+        carrierIdentityEnrichmentStatus: "pending",
+        carrierIdentityEnrichmentAttempts: 3,
+        carrierIdentityEnrichmentAttemptedAt: 100,
         carrierBrandId: cacheEntryId,
         carrierBrandStatus: "ready",
         policyNumber: "L-100",
@@ -93,6 +96,8 @@ describe("carrier identity branding", () => {
       },
     });
     expect(policy?.carrierBrandId).toBeUndefined();
+    expect(policy?.carrierIdentityEnrichmentAttempts).toBeUndefined();
+    expect(policy?.carrierIdentityEnrichmentAttemptedAt).toBeUndefined();
   });
 
   it("does not replace the source display name without a verified relationship", async () => {

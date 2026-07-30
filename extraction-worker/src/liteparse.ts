@@ -9,6 +9,12 @@ import {
 } from "@claritylabs/cl-sdk";
 import { shouldEmitStructuredLiteParseTable } from "./liteparseTableConfidence.js";
 import { classifyLiteParseTextElement } from "./liteparseTextClassification.js";
+import {
+  INITIAL_LITEPARSE_QUEUE_FAIRNESS_STATE,
+  selectNextLiteParseQueueIndex,
+  type LiteParseQueueFairnessState,
+  type LiteParseQueuePriority,
+} from "./liteparseQueue.js";
 
 type SourceKindInput = Extract<SourceKind, "policy_pdf" | "email" | "attachment" | "manual_note">;
 
@@ -52,7 +58,6 @@ type PositionedRow = {
 
 const LITEPARSE_VERSION = "2.0.3";
 export const LITEPARSE_NATIVE_CONCURRENCY = 1;
-export type LiteParseQueuePriority = "http" | "preview" | "full";
 const LITEPARSE_PRIORITY_RANK: Record<LiteParseQueuePriority, number> = {
   http: 0,
   preview: 1,
@@ -72,6 +77,9 @@ type LiteParseQueueEntry = {
 
 let liteParseRunning = false;
 const liteParseWaitQueue: LiteParseQueueEntry[] = [];
+let liteParseQueueFairnessState: LiteParseQueueFairnessState = {
+  ...INITIAL_LITEPARSE_QUEUE_FAIRNESS_STATE,
+};
 
 function abortError(message = "LiteParse conversion aborted"): Error {
   if (typeof DOMException === "function") {
@@ -94,16 +102,20 @@ function sortLiteParseWaitQueue(): void {
 
 function pumpLiteParseQueue(): void {
   if (liteParseRunning) return;
-  while (liteParseWaitQueue.length > 0) {
-    const next = liteParseWaitQueue[0];
-    if (next.cancelled || next.signal?.aborted) {
-      liteParseWaitQueue.shift();
-      next.reject(abortError());
-      continue;
-    }
-    break;
+  for (let index = liteParseWaitQueue.length - 1; index >= 0; index -= 1) {
+    const queued = liteParseWaitQueue[index];
+    if (!queued.cancelled && !queued.signal?.aborted) continue;
+    liteParseWaitQueue.splice(index, 1);
+    queued.reject(abortError());
   }
-  const entry = liteParseWaitQueue.shift();
+
+  const selection = selectNextLiteParseQueueIndex(
+    liteParseWaitQueue.map((queued) => queued.priority),
+    liteParseQueueFairnessState,
+  );
+  liteParseQueueFairnessState = selection.state;
+  if (selection.index < 0) return;
+  const [entry] = liteParseWaitQueue.splice(selection.index, 1);
   if (!entry) return;
   liteParseRunning = true;
   entry.start();
@@ -125,7 +137,7 @@ async function withSerializedLiteParse<T>(
   return new Promise<T>((resolve, reject) => {
     const entry: LiteParseQueueEntry = {
       priority,
-      enqueuedAt: Date.now(),
+      enqueuedAt: dayjs().valueOf(),
       signal,
       cancelled: false,
       reject,
