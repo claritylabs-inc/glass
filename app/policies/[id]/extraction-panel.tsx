@@ -19,9 +19,18 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
+import {
+  formatCarrierLegalEntityNames,
+  readCarrierIdentity,
+  sameCarrierIdentityName,
+  type CarrierIdentity,
+} from "@/convex/lib/carrierIdentity";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
-import { formatDisplayDate } from "@/lib/date-format";
+import {
+  formatDisplayDate,
+  formatDisplayPolicyPeriod,
+} from "@/lib/date-format";
 import {
   SourceEvidenceButton,
   collectSourceSpanIds,
@@ -258,6 +267,7 @@ type ComplaintContact = {
 
 type PolicyDocument = {
   carrier?: string;
+  carrierIdentity?: CarrierIdentity;
   carrierLegalName?: string;
   security?: string;
   mga?: string;
@@ -268,6 +278,7 @@ type PolicyDocument = {
   insuredName?: string;
   effectiveDate?: string;
   expirationDate?: string;
+  policyTermType?: string;
   linesOfBusiness?: string[];
   coverages?: CoverageEntry[];
   premium?: string;
@@ -2601,15 +2612,31 @@ export function ExtractionCards({
   const exclusions = policyDocument?.exclusions ?? [];
   const conditions = policyDocument?.conditions ?? [];
   const documentOutline = policyDocument?.documentOutline ?? [];
+  const carrierIdentity = readCarrierIdentity(
+    policyDocument?.carrierIdentity,
+  );
   const carrierDisplay =
-    policyDocument?.carrierLegalName ||
+    carrierIdentity?.displayName ||
+    policyDocument?.carrier ||
     policyDocument?.security ||
-    policyDocument?.carrier;
+    policyDocument?.carrierLegalName;
+  const generalAgentDisplay =
+    policyDocument?.generalAgent?.agencyName || policyDocument?.mga;
   const topLevelRows = compactRows([
     carrierDisplay && { label: "Carrier", value: carrierDisplay },
-    (policyDocument?.generalAgent?.agencyName || policyDocument?.mga) && {
+    formatCarrierLegalEntityNames(carrierIdentity) && {
+      label: carrierIdentity?.legalEntities.length === 1
+        ? "Legal entity"
+        : "Legal entities",
+      value: formatCarrierLegalEntityNames(carrierIdentity),
+    },
+    generalAgentDisplay &&
+      !sameCarrierIdentityName(
+        generalAgentDisplay,
+        carrierIdentity?.operatingName,
+      ) && {
       label: "General Agent",
-      value: policyDocument.generalAgent?.agencyName || policyDocument.mga,
+      value: generalAgentDisplay,
     },
     policyDocument?.insurer?.naicNumber && {
       label: "Insurer NAIC number",
@@ -2633,7 +2660,11 @@ export function ExtractionCards({
     },
     (policyDocument?.effectiveDate || policyDocument?.expirationDate) && {
       label: "Policy period",
-      value: `${policyDocument.effectiveDate ? formatDisplayDate(policyDocument.effectiveDate, policyDocument.effectiveDate) : "—"} – ${policyDocument.expirationDate ? formatDisplayDate(policyDocument.expirationDate, policyDocument.expirationDate) : "—"}`,
+      value: formatDisplayPolicyPeriod(
+        policyDocument.effectiveDate,
+        policyDocument.expirationDate,
+        policyDocument.policyTermType,
+      ),
     },
     policyLobCodes(policyDocument ?? {}).filter((code) => code !== "UN").length && {
       label: "Lines of business",

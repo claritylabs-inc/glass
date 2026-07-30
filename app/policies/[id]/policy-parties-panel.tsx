@@ -10,6 +10,10 @@ import {
   resolvePolicyPartyContext,
   type PolicyPartyAddress,
 } from "@/convex/lib/policyPartyContext";
+import {
+  formatCarrierLegalNames,
+  sameCarrierIdentityName,
+} from "@/convex/lib/carrierIdentity";
 import { Pencil } from "lucide-react";
 
 import type { PolicyDetailsEditSection } from "./policy-details-editor";
@@ -91,6 +95,13 @@ export function PolicyPartiesPanel({
   const producerAddress = addressLines(context.producerAddress);
   const insurerAddress = addressLines(context.insurerAddress);
   const generalAgentAddress = addressLines(context.generalAgentAddress);
+  const distinctLegalNames = context.insurerLegalNames.filter(
+    (name) => !sameCarrierIdentityName(name, context.carrierDisplayName),
+  );
+  const legalEntityDisplay = formatCarrierLegalNames(
+    distinctLegalNames,
+    context.carrierLegalEntityRelationship,
+  );
   const hasInsured = Boolean(
     context.insuredName || insuredAddress.length || context.additionalNamedInsureds.length,
   );
@@ -103,7 +114,11 @@ export function PolicyPartiesPanel({
     context.producerEmail,
   );
   const hasInsurer = Boolean(
-    context.insurerName || insurerAddress.length || context.insurerNaicNumber,
+    context.carrierDisplayName ||
+    context.insurerName ||
+    distinctLegalNames.length ||
+    insurerAddress.length ||
+    context.insurerNaicNumber,
   );
   const hasGeneralAgent = Boolean(
     context.generalAgentName ||
@@ -172,11 +187,18 @@ export function PolicyPartiesPanel({
 
         {hasInsurer || canEdit ? (
           <PartyCard
-            title="Insurer"
+            title="Carrier"
             hasDetails={hasInsurer}
             onEdit={canEdit && onEdit ? () => onEdit("insurer") : undefined}
           >
-            <OperationalLabelValueRow label="Name" value={context.insurerName} />
+            <OperationalLabelValueRow
+              label={context.carrierOperatingName ? "Operating name" : "Name"}
+              value={context.carrierDisplayName}
+            />
+            <OperationalLabelValueRow
+              label={distinctLegalNames.length === 1 ? "Legal entity" : "Legal entities"}
+              value={legalEntityDisplay}
+            />
             <OperationalLabelValueRow
               label="NAIC number"
               value={context.insurerNaicNumber}

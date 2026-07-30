@@ -2,7 +2,9 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 import { pipelineFields } from "@claritylabs/cl-pipelines/convex";
+import { acordTaxonomyBackfillReportValidator } from "./lib/acordTaxonomyBackfillReport";
 import { agentStepsValidator } from "./lib/agentSteps";
+import { policyProductIdentityValidator } from "./lib/policyProductIdentity";
 
 const modelProviderValidator = v.union(
   v.literal("openai"),
@@ -29,11 +31,13 @@ const extractionTraceRoutingValidator = v.object({
   routeSource: v.optional(v.string()),
   attemptCount: v.optional(v.number()),
   shadowMode: v.optional(v.boolean()),
-  wouldHaveChosen: v.optional(v.object({
-    provider: modelProviderValidator,
-    model: v.string(),
-    decision: v.string(),
-  })),
+  wouldHaveChosen: v.optional(
+    v.object({
+      provider: modelProviderValidator,
+      model: v.string(),
+      decision: v.string(),
+    }),
+  ),
   wouldHaveMatched: v.optional(v.boolean()),
 });
 
@@ -182,6 +186,52 @@ const policyDetailPartyValidator = v.object({
   address: orgMailingAddressValidator,
 });
 
+const carrierIdentityValidator = v.object({
+  displayName: v.string(),
+  sourceName: v.optional(v.string()),
+  operatingName: v.optional(v.string()),
+  publicNameRelationship: v.optional(
+    v.union(
+      v.literal("same_legal_entity"),
+      v.literal("trading_name"),
+      v.literal("parent_brand"),
+      v.literal("group_brand"),
+    ),
+  ),
+  legalEntities: v.array(
+    v.object({
+      name: v.string(),
+      sourceNodeIds: v.array(v.string()),
+      sourceSpanIds: v.array(v.string()),
+    }),
+  ),
+  legalEntityRelationship: v.union(
+    v.literal("single"),
+    v.literal("and"),
+    v.literal("or"),
+    v.literal("and_or"),
+    v.literal("unspecified"),
+  ),
+  sourceNodeIds: v.array(v.string()),
+  sourceSpanIds: v.array(v.string()),
+  branding: v.optional(
+    v.object({
+      website: v.string(),
+      websiteTitle: v.optional(v.string()),
+      iconStorageId: v.optional(v.id("_storage")),
+      accentColor: v.string(),
+      confidence: v.union(
+        v.literal("high"),
+        v.literal("medium"),
+        v.literal("low"),
+      ),
+      sourceUrls: v.array(v.string()),
+      enrichmentVersion: v.number(),
+      updatedAt: v.number(),
+    }),
+  ),
+});
+
 const policyDetailOverridesValidator = v.object({
   operationsDescription: v.optional(v.string()),
   insured: v.optional(
@@ -201,16 +251,20 @@ const policyDetailOverridesValidator = v.object({
       email: v.string(),
     }),
   ),
-  insurer: v.optional(v.object({
-    name: v.string(),
-    address: orgMailingAddressValidator,
-    naicNumber: v.string(),
-  })),
-  generalAgent: v.optional(v.object({
-    name: v.string(),
-    address: orgMailingAddressValidator,
-    licenseNumber: v.string(),
-  })),
+  insurer: v.optional(
+    v.object({
+      name: v.string(),
+      address: orgMailingAddressValidator,
+      naicNumber: v.string(),
+    }),
+  ),
+  generalAgent: v.optional(
+    v.object({
+      name: v.string(),
+      address: orgMailingAddressValidator,
+      licenseNumber: v.string(),
+    }),
+  ),
   // Read compatibility for overrides saved before General Agent nomenclature.
   mga: v.optional(policyDetailPartyValidator),
 });
@@ -424,7 +478,9 @@ export default defineSchema({
         fein: v.optional(orgProfileScalarFactValidator),
         businessNumber: v.optional(orgProfileScalarFactValidator),
         operationsDescription: v.optional(orgProfileScalarFactValidator),
-        additionalNamedInsureds: v.optional(v.array(orgProfileScalarFactValidator)),
+        additionalNamedInsureds: v.optional(
+          v.array(orgProfileScalarFactValidator),
+        ),
       }),
     ),
     profileFactsUpdatedAt: v.optional(v.number()),
@@ -530,6 +586,102 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_orgId", ["orgId"])
     .index("by_orgId_userId", ["orgId", "userId"]),
+
+  // Internal official-site lookup cache. Consumer-facing identity and
+  // branding are persisted together on policies.carrierIdentity.
+  carrierBrands: defineTable({
+    normalizedName: v.string(),
+    carrierName: v.string(),
+    publicName: v.optional(v.string()),
+    nameRelationship: v.optional(
+      v.union(
+        v.literal("same_legal_entity"),
+        v.literal("trading_name"),
+        v.literal("parent_brand"),
+        v.literal("group_brand"),
+      ),
+    ),
+    website: v.string(),
+    websiteTitle: v.optional(v.string()),
+    iconStorageId: v.optional(v.id("_storage")),
+    accentColor: v.string(),
+    confidence: v.union(
+      v.literal("high"),
+      v.literal("medium"),
+      v.literal("low"),
+    ),
+    sourceUrls: v.array(v.string()),
+    enrichmentVersion: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_normalizedName", ["normalizedName"]),
+
+  carrierIdentityBackfillResults: defineTable({
+    policyId: v.id("policies"),
+    outcome: v.union(
+      v.literal("pending"),
+      v.literal("rebuilt"),
+      v.literal("unchanged"),
+      v.literal("skipped"),
+      v.literal("failed"),
+    ),
+    reason: v.optional(v.string()),
+    shouldEnrich: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_outcome", ["outcome"]),
+
+  acordTaxonomyDryRunPages: defineTable({
+    runId: v.string(),
+    cursorKey: v.string(),
+    orgId: v.optional(v.id("organizations")),
+    limit: v.number(),
+    report: acordTaxonomyBackfillReportValidator,
+    nextCursor: v.optional(v.string()),
+    isDone: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_runId", ["runId"])
+    .index("by_runId_cursorKey", ["runId", "cursorKey"]),
+
+  acordTaxonomyWriteRuns: defineTable({
+    runId: v.string(),
+    orgId: v.optional(v.id("organizations")),
+    limit: v.number(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    nextCursor: v.optional(v.string()),
+    retryCount: v.number(),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_runId", ["runId"]),
+
+  acordTaxonomyWritePages: defineTable({
+    runId: v.string(),
+    cursorKey: v.string(),
+    report: acordTaxonomyBackfillReportValidator,
+    policyResultsRecorded: v.optional(v.boolean()),
+    nextCursor: v.optional(v.string()),
+    isDone: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_runId", ["runId"])
+    .index("by_runId_cursorKey", ["runId", "cursorKey"]),
+
+  acordTaxonomyWritePolicyResults: defineTable({
+    runId: v.string(),
+    cursorKey: v.string(),
+    policyId: v.id("policies"),
+    report: acordTaxonomyBackfillReportValidator,
+    createdAt: v.number(),
+  })
+    .index("by_runId", ["runId"])
+    .index("by_runId_cursorKey", ["runId", "cursorKey"])
+    .index("by_runId_policyId", ["runId", "policyId"]),
 
   operatorAuthNonces: defineTable({
     nonce: v.string(),
@@ -1044,11 +1196,13 @@ export default defineSchema({
     // Legacy staging/prod rows from the pre-redesign requirement model do not
     // have kind/scope yet. Keep these optional until all environments have run
     // the compliance requirement shape backfill.
-    kind: v.optional(v.union(
-      v.literal("coverage"),
-      v.literal("insurer"),
-      v.literal("condition"),
-    )),
+    kind: v.optional(
+      v.union(
+        v.literal("coverage"),
+        v.literal("insurer"),
+        v.literal("condition"),
+      ),
+    ),
     scope: v.optional(v.union(v.literal("own_org"), v.literal("vendors"))),
     title: v.string(),
     requirementText: v.string(),
@@ -1121,11 +1275,7 @@ export default defineSchema({
     deductibleValueType: v.optional(v.string()),
     originalContent: v.optional(v.string()),
     appliesTo: v.optional(
-      v.union(
-        v.literal("vendors"),
-        v.literal("own_org"),
-        v.literal("both"),
-      ),
+      v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
     evaluationTarget: v.optional(
       v.union(
@@ -1201,10 +1351,7 @@ export default defineSchema({
     ),
     checkedByUserId: v.optional(v.id("users")),
   })
-    .index("by_requirementId_subjectOrgId", [
-      "requirementId",
-      "subjectOrgId",
-    ])
+    .index("by_requirementId_subjectOrgId", ["requirementId", "subjectOrgId"])
     .index("by_orgId_subjectOrgId", ["orgId", "subjectOrgId"])
     .index("by_relationshipId", ["relationshipId"])
     .index("by_requirementId_subjectOrgId_checkedBy_checkedAt", [
@@ -1267,10 +1414,22 @@ export default defineSchema({
     carrier: v.string(), // backward compat — prefer security for new extractions
     security: v.optional(v.string()), // insurer/underwriter company (e.g. "Lloyd's Underwriters")
     underwriter: v.optional(v.string()), // named individual underwriter (e.g. "Libby Rudd")
+    carrierBrandId: v.optional(v.id("carrierBrands")),
+    carrierBrandStatus: v.optional(
+      v.union(v.literal("pending"), v.literal("ready"), v.literal("failed")),
+    ),
+    carrierBrandAttempts: v.optional(v.number()),
+    carrierBrandAttemptedAt: v.optional(v.number()),
+    carrierIdentityEnrichmentStatus: v.optional(
+      v.union(v.literal("pending"), v.literal("ready"), v.literal("failed")),
+    ),
+    carrierIdentityEnrichmentAttempts: v.optional(v.number()),
+    carrierIdentityEnrichmentAttemptedAt: v.optional(v.number()),
     // Read compatibility for policies extracted before generalAgent.
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
     // Enriched entity fields (cl-sdk 1.2+)
+    carrierIdentity: v.optional(carrierIdentityValidator),
     carrierLegalName: v.optional(v.string()),
     carrierNaicNumber: v.optional(v.string()),
     carrierAmBestRating: v.optional(v.string()),
@@ -1289,7 +1448,7 @@ export default defineSchema({
         stateOfDomicile: v.optional(v.string()),
         address: v.optional(
           v.object({
-            street1: v.string(),
+            street1: v.optional(v.string()),
             street2: v.optional(v.string()),
             city: v.optional(v.string()),
             state: v.optional(v.string()),
@@ -1370,6 +1529,11 @@ export default defineSchema({
           ),
           relationship: v.optional(v.string()),
           scope: v.optional(v.string()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
+          pageStart: v.optional(v.number()),
+          pageEnd: v.optional(v.number()),
         }),
       ),
     ),
@@ -1391,11 +1555,17 @@ export default defineSchema({
           ),
           relationship: v.optional(v.string()),
           scope: v.optional(v.string()),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
+          pageStart: v.optional(v.number()),
+          pageEnd: v.optional(v.number()),
         }),
       ),
     ),
     priorPolicyNumber: v.optional(v.string()),
     programName: v.optional(v.string()),
+    productIdentity: v.optional(policyProductIdentityValidator),
     isPackage: v.optional(v.boolean()),
     // Insured details (cl-sdk 1.2+)
     insuredDba: v.optional(v.string()),
@@ -1411,6 +1581,8 @@ export default defineSchema({
         documentNodeId: v.optional(v.string()),
         sourceSpanIds: v.optional(v.array(v.string())),
         sourceTextHash: v.optional(v.string()),
+        pageStart: v.optional(v.number()),
+        pageEnd: v.optional(v.number()),
       }),
     ),
     insuredEntityType: v.optional(v.string()), // corporation, llc, partnership, etc.
@@ -1431,6 +1603,11 @@ export default defineSchema({
               formatted: v.optional(v.string()),
             }),
           ),
+          documentNodeId: v.optional(v.string()),
+          sourceSpanIds: v.optional(v.array(v.string())),
+          sourceTextHash: v.optional(v.string()),
+          pageStart: v.optional(v.number()),
+          pageEnd: v.optional(v.number()),
         }),
       ),
     ),

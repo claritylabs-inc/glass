@@ -159,6 +159,12 @@ describe("source spans and policy update backend surfaces", () => {
     const policyExtraction = read("convex/actions/policyExtraction.ts");
     const liteparsePreprocessor = read("convex/lib/liteparsePreprocessor.ts");
     const pdfSourceSpans = read("convex/lib/pdfSourceSpans.ts");
+    const workerLiteparse = read("extraction-worker/src/liteparse.ts");
+    const worker = read("extraction-worker/src/index.ts");
+    const workerCancellation = read(
+      "extraction-worker/src/httpRequestCancellation.ts",
+    );
+    const conductorSetup = read("scripts/setup-conductor-workspace.mjs");
 
     expect(liteparsePreprocessor).toContain("preparePdfTextWithParserFallback");
     expect(liteparsePreprocessor).toContain("tryConvertPdfWithLiteParse");
@@ -175,5 +181,18 @@ describe("source spans and policy update backend surfaces", () => {
     expect(policyExtraction).not.toContain("SDK source-grounding is disabled");
     expect(policyExtraction).toContain("documentChunksForEmbedding");
     expect(policyExtraction).toContain("sourceChunksForEmbedding");
+    expect(workerLiteparse).toContain("withSerializedLiteParse");
+    expect(workerLiteparse).toContain("LiteParseQueuePriority");
+    expect(workerLiteparse).toContain('priority?: LiteParseQueuePriority');
+    expect(workerLiteparse).toContain("signal?: AbortSignal");
+    expect(workerLiteparse).toContain("liteParseWaitQueue");
+    expect(worker).toContain('priority: "http"');
+    expect(worker).toContain('priority: "preview"');
+    expect(worker).toContain('priority: "full"');
+    expect(worker).toContain("watchClientDisconnect(req, res)");
+    expect(workerCancellation).toContain('res.once("close", abort)');
+    expect(workerCancellation).toContain('req.socket.once("close", abort)');
+    expect(conductorSetup).toContain('EXTRACTION_JOB_CONCURRENCY: "8"');
+    expect(conductorSetup).toContain('EXTRACTION_PREVIEW_CONCURRENCY: "2"');
   });
 });

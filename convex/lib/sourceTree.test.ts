@@ -183,7 +183,7 @@ describe("normalizeOperationalProfile", () => {
     expect(profile.premium).toBeUndefined();
     expect(profile.broker).toBeUndefined();
     expect(profile.insurer).toBeUndefined();
-    expect(profile.linesOfBusiness).toEqual(["EO"]);
+    expect(profile.linesOfBusiness).toEqual(["PL"]);
     expect(profile.parties).toEqual([]);
   });
 
@@ -633,7 +633,7 @@ describe("normalizeOperationalProfile", () => {
       benefitSpans,
     );
 
-    expect(profile.linesOfBusiness).toEqual(["UN", "DISAB"]);
+    expect(profile.linesOfBusiness).toEqual(["DISAB"]);
     expect(profile.coverages.map((coverage: PolicyOperationalProfile["coverages"][number]) => coverage.name)).toEqual([
       "Manulife Par with VitalityPlusTM",
       "Death benefit",
@@ -1264,6 +1264,125 @@ describe("normalizeSourceTree", () => {
 });
 
 describe("sourceTreePolicyFields", () => {
+  it("materializes source-backed carrier product identity separately from ACORD classification", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["travel"],
+        productIdentity: {
+          name: {
+            value: "Trip Cancellation & Interruption Plan",
+            confidence: "high",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+          companyProductCode: {
+            value: "TCI",
+            confidence: "high",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+        },
+        coverages: [{
+          name: "Travel Delay",
+          sourceNodeIds: ["named-insured-row"],
+          sourceSpanIds: ["span-named-insured"],
+        }],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+    });
+
+    expect(fields.linesOfBusiness).toEqual(["TRVL"]);
+    expect(fields.programName).toBe(
+      "Trip Cancellation & Interruption Plan",
+    );
+    expect(fields.productIdentity).toMatchObject({
+      name: {
+        value: "Trip Cancellation & Interruption Plan",
+        confidence: "high",
+        sourceNodeIds: ["named-insured-row"],
+        sourceSpanIds: ["span-named-insured"],
+      },
+      companyProductCode: { value: "TCI" },
+    });
+  });
+
+  it("clears stale carrier product projections when final evidence has no product identity", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["travel"],
+        coverages: [],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+      existingPolicyFields: {
+        programName: "Previous Travel Plan",
+        productIdentity: {
+          name: {
+            value: "Previous Travel Plan",
+            sourceNodeIds: ["old-product-node"],
+            sourceSpanIds: ["old-product-span"],
+          },
+        },
+      },
+    });
+
+    expect(fields).toHaveProperty("programName", undefined);
+    expect(fields).toHaveProperty("productIdentity", undefined);
+    expect(fields.sourceTreeFieldClears).toEqual([
+      "productIdentity",
+      "programName",
+    ]);
+  });
+
+  it("keeps source-backed product codes while clearing a stale product name", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        linesOfBusiness: ["travel"],
+        productIdentity: {
+          companyProductCode: {
+            value: "TCI",
+            confidence: "high",
+            sourceNodeIds: ["named-insured-row"],
+            sourceSpanIds: ["span-named-insured"],
+          },
+        },
+        coverages: [],
+      },
+      sourceTree,
+      sourceSpans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree,
+      operationalProfile,
+      existingPolicyFields: {
+        programName: "Previous Travel Plan",
+      },
+    });
+
+    expect(fields).toHaveProperty("programName", undefined);
+    expect(fields.sourceTreeFieldClears).toEqual(["programName"]);
+    expect(fields.productIdentity).toMatchObject({
+      companyProductCode: {
+        value: "TCI",
+        confidence: "high",
+        sourceNodeIds: ["named-insured-row"],
+        sourceSpanIds: ["span-named-insured"],
+      },
+    });
+  });
+
   it("uses preliminary policy types as hints when coverage evidence is not classifiable", () => {
     const operationalProfile = normalizeOperationalProfile(
       {
@@ -1284,9 +1403,9 @@ describe("sourceTreePolicyFields", () => {
       existingLinesOfBusiness: ["professional_liability"],
     });
 
-    expect(fields.linesOfBusiness).toEqual(["EO"]);
-    expect(fields.linesOfBusiness).toEqual(["EO"]);
-    expect((fields.operationalProfile as PolicyOperationalProfile).linesOfBusiness).toEqual(["EO"]);
+    expect(fields.linesOfBusiness).toEqual(["PL"]);
+    expect(fields.linesOfBusiness).toEqual(["PL"]);
+    expect((fields.operationalProfile as PolicyOperationalProfile).linesOfBusiness).toEqual(["PL"]);
     expect((fields.operationalProfile as PolicyOperationalProfile).warnings).toEqual([]);
   });
 
@@ -1320,13 +1439,14 @@ describe("sourceTreePolicyFields", () => {
 
     expect(operationalProfile.linesOfBusiness).toEqual([
       "EO",
-      "OLIB",
+      "TECH",
+      "CYBER",
     ]);
-    expect(fields.linesOfBusiness).toEqual(["EO", "OLIB"]);
-    expect(fields.linesOfBusiness).toEqual(["EO", "OLIB"]);
+    expect(fields.linesOfBusiness).toEqual(["EO", "TECH", "CYBER"]);
+    expect(fields.linesOfBusiness).toEqual(["EO", "TECH", "CYBER"]);
     expect(
       (fields.operationalProfile as PolicyOperationalProfile).linesOfBusiness,
-    ).toEqual(["EO", "OLIB"]);
+    ).toEqual(["EO", "TECH", "CYBER"]);
   });
 
   it("materializes coverage term appliesTo context for policy storage", () => {
@@ -1602,7 +1722,7 @@ describe("sourceTreePolicyFields", () => {
     expect(breakdown.groups).toEqual([
       expect.objectContaining({
         lineOfBusiness: "CGL",
-        label: "Commercial General Liability",
+        label: "General Liability",
       }),
     ]);
   });
@@ -1700,6 +1820,933 @@ describe("sourceTreePolicyFields", () => {
     });
   });
 
+  it("preserves multiple legal insurers while using an operating-as name for display", () => {
+    const carrierText =
+      "CUMIS General Insurance Company, a member of The Co-operators group of companies and/or AZGA Service Canada Inc. operating as Allianz Global Assistance (AGA).";
+    const spans: SourceSpanLike[] = [
+      {
+        id: "span-carrier-identity",
+        text: carrierText,
+        pageStart: 1,
+      },
+      {
+        id: "span-azga-details",
+        text: "AZGA Service Canada Inc. NAIC 54321 100 Secondary St Toronto ON M5V 1A1",
+        pageStart: 1,
+      },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "document",
+        documentId: "carrier-identity-policy",
+        kind: "document",
+        title: "Policy",
+        description: "Policy",
+        sourceSpanIds: ["span-carrier-identity"],
+        order: 0,
+        path: "Policy",
+      },
+      {
+        id: "carrier-identity",
+        documentId: "carrier-identity-policy",
+        parentId: "document",
+        kind: "section",
+        title: "Carrier identity",
+        description: carrierText,
+        textExcerpt: carrierText,
+        sourceSpanIds: ["span-carrier-identity"],
+        order: 1,
+        path: "Policy / Carrier identity",
+      },
+      {
+        id: "azga-details",
+        documentId: "carrier-identity-policy",
+        parentId: "document",
+        kind: "section",
+        title: "Secondary insurer details",
+        description: spans[1].text,
+        textExcerpt: spans[1].text,
+        sourceSpanIds: ["span-azga-details"],
+        order: 2,
+        path: "Policy / Secondary insurer details",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        insurer: {
+          value: "CUMIS General Insurance Company",
+          sourceNodeIds: ["carrier-identity"],
+          sourceSpanIds: ["span-carrier-identity"],
+        },
+        parties: [
+          {
+            role: "insurer",
+            name: "CUMIS General Insurance Company",
+            sourceNodeIds: ["carrier-identity"],
+            sourceSpanIds: ["span-carrier-identity"],
+          },
+          {
+            role: "insurer",
+            name: "AZGA Service Canada Inc.",
+            naicNumber: "54321",
+            address: {
+              street1: "100 Secondary St",
+              city: "Toronto",
+              state: "ON",
+              zip: "M5V 1A1",
+            },
+            sourceNodeIds: ["azga-details"],
+            sourceSpanIds: ["span-azga-details"],
+          },
+          {
+            role: "general_agent",
+            name: "Allianz Global Assistance",
+            sourceNodeIds: ["carrier-identity"],
+            sourceSpanIds: ["span-carrier-identity"],
+          },
+        ],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrier).toBe("Allianz Global Assistance");
+    expect(fields.carrierIdentity).toEqual({
+      displayName: "Allianz Global Assistance",
+      sourceName: "Allianz Global Assistance",
+      operatingName: "Allianz Global Assistance",
+      legalEntities: [
+        {
+          name: "CUMIS General Insurance Company",
+          sourceNodeIds: ["carrier-identity"],
+          sourceSpanIds: ["span-carrier-identity"],
+        },
+        {
+          name: "AZGA Service Canada Inc.",
+          sourceNodeIds: ["azga-details", "carrier-identity"],
+          sourceSpanIds: ["span-azga-details", "span-carrier-identity"],
+        },
+      ],
+      legalEntityRelationship: "and_or",
+      sourceNodeIds: ["carrier-identity", "azga-details"],
+      sourceSpanIds: ["span-carrier-identity", "span-azga-details"],
+    });
+    expect(fields.carrierLegalName).toBe(
+      "CUMIS General Insurance Company",
+    );
+    expect(fields.security).toBeUndefined();
+    expect(fields.generalAgent).toBeUndefined();
+    expect(fields.mga).toBeUndefined();
+    expect(fields.insurer).toMatchObject({
+      legalName: "CUMIS General Insurance Company",
+    });
+    expect(fields.insurer).not.toHaveProperty("address");
+    expect(fields.insurer).not.toHaveProperty("naicNumber");
+    expect(fields.carrierNaicNumber).toBeUndefined();
+  });
+
+  it("does not promote an unrelated named-insured DBA to carrier identity", () => {
+    const spans: SourceSpanLike[] = [
+      {
+        id: "span-insured-dba",
+        text: "Acme Holdings LLC doing business as Acme Restaurant.",
+        pageStart: 1,
+      },
+      {
+        id: "span-actual-carrier",
+        text: "Insurer: HDI Global Specialty SE",
+        pageStart: 1,
+      },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "named-insured",
+        documentId: "insured-dba-policy",
+        kind: "section",
+        title: "Named insured",
+        description: spans[0].text,
+        textExcerpt: spans[0].text,
+        sourceSpanIds: ["span-insured-dba"],
+        order: 0,
+        path: "Policy / Named insured",
+      },
+      {
+        id: "actual-carrier",
+        documentId: "insured-dba-policy",
+        kind: "section",
+        title: "Insurer",
+        description: spans[1].text,
+        textExcerpt: spans[1].text,
+        sourceSpanIds: ["span-actual-carrier"],
+        order: 1,
+        path: "Policy / Insurer",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["GL"],
+        coverages: [],
+        insurer: {
+          value: "HDI Global Specialty SE",
+          sourceNodeIds: ["actual-carrier"],
+          sourceSpanIds: ["span-actual-carrier"],
+        },
+        parties: [
+          {
+            role: "named_insured",
+            name: "Acme Holdings LLC",
+            sourceNodeIds: ["named-insured"],
+            sourceSpanIds: ["span-insured-dba"],
+          },
+          {
+            role: "insurer",
+            name: "HDI Global Specialty SE",
+            sourceNodeIds: ["actual-carrier"],
+            sourceSpanIds: ["span-actual-carrier"],
+          },
+        ],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrier).toBe("HDI Global Specialty SE");
+    expect(fields.carrierLegalName).toBe("HDI Global Specialty SE");
+    expect(fields.carrierIdentity).toEqual({
+      displayName: "HDI Global Specialty SE",
+      sourceName: "HDI Global Specialty SE",
+      legalEntities: [{
+        name: "HDI Global Specialty SE",
+        sourceNodeIds: ["actual-carrier"],
+        sourceSpanIds: ["span-actual-carrier"],
+      }],
+      legalEntityRelationship: "single",
+      sourceNodeIds: ["actual-carrier"],
+      sourceSpanIds: ["span-actual-carrier"],
+    });
+  });
+
+  it("does not promote an incidental Lloyd's clause over the actual carrier", () => {
+    const spans: SourceSpanLike[] = [
+      {
+        id: "span-actual-carrier",
+        text: "Insurer: HDI Global Specialty SE",
+        pageStart: 1,
+      },
+      {
+        id: "span-prior-policy-carrier",
+        text:
+          "Prior policy: Lloyd's Underwriters led by Liberty Managing Agency Limited Syndicate 4472",
+        pageStart: 4,
+      },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "actual-carrier",
+        documentId: "incidental-lloyds-policy",
+        kind: "section",
+        title: "Insurer",
+        description: spans[0].text,
+        textExcerpt: spans[0].text,
+        sourceSpanIds: ["span-actual-carrier"],
+        order: 0,
+        path: "Policy / Insurer",
+      },
+      {
+        id: "prior-insurance",
+        documentId: "incidental-lloyds-policy",
+        kind: "section",
+        title: "Prior insurance",
+        description: spans[1].text,
+        textExcerpt: spans[1].text,
+        sourceSpanIds: ["span-prior-policy-carrier"],
+        order: 1,
+        path: "Policy / Prior insurance",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["GL"],
+        coverages: [],
+        insurer: {
+          value: "HDI Global Specialty SE",
+          sourceNodeIds: ["actual-carrier"],
+          sourceSpanIds: ["span-actual-carrier"],
+        },
+        parties: [{
+          role: "insurer",
+          name: "HDI Global Specialty SE",
+          sourceNodeIds: ["actual-carrier"],
+          sourceSpanIds: ["span-actual-carrier"],
+        }],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrier).toBe("HDI Global Specialty SE");
+    expect(fields.carrierIdentity).toEqual({
+      displayName: "HDI Global Specialty SE",
+      sourceName: "HDI Global Specialty SE",
+      legalEntities: [{
+        name: "HDI Global Specialty SE",
+        sourceNodeIds: ["actual-carrier"],
+        sourceSpanIds: ["span-actual-carrier"],
+      }],
+      legalEntityRelationship: "single",
+      sourceNodeIds: ["actual-carrier"],
+      sourceSpanIds: ["span-actual-carrier"],
+    });
+  });
+
+  it("requires generic Lloyd's parties to share provenance with the led-by clause", () => {
+    const canonicalText =
+      "Lloyd's Underwriters led by Canonical Managing Agency Limited Syndicate 1234";
+    const unrelatedText =
+      "Underlying policy: Lloyd's Underwriters led by Unrelated Managing Agency Limited Syndicate 1111 and Syndicate 2222";
+    const spans: SourceSpanLike[] = [
+      {
+        id: "canonical-lloyds-span",
+        text: canonicalText,
+        pageStart: 1,
+      },
+      {
+        id: "unrelated-lloyds-span",
+        text: unrelatedText,
+        pageStart: 4,
+      },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "canonical-lloyds-carrier",
+        documentId: "generic-lloyds-policy",
+        kind: "section",
+        title: "Insurer",
+        description: canonicalText,
+        textExcerpt: canonicalText,
+        sourceSpanIds: ["canonical-lloyds-span"],
+        order: 0,
+        path: "Policy / Insurer",
+      },
+      {
+        id: "underlying-lloyds-reference",
+        documentId: "generic-lloyds-policy",
+        kind: "section",
+        title: "Underlying policy",
+        description: unrelatedText,
+        textExcerpt: unrelatedText,
+        sourceSpanIds: ["unrelated-lloyds-span"],
+        order: 1,
+        path: "Policy / Underlying policy",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        parties: [{
+          role: "carrier",
+          name: "Lloyd's Underwriters",
+          sourceNodeIds: ["canonical-lloyds-carrier"],
+          sourceSpanIds: ["canonical-lloyds-span"],
+        }],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrierIdentity).toMatchObject({
+      displayName: "Canonical Managing Agency Limited",
+      sourceName:
+        "Lloyd's Underwriters led by: Canonical Managing Agency Limited, Syndicate No. 1234",
+      sourceNodeIds: ["canonical-lloyds-carrier"],
+      sourceSpanIds: ["canonical-lloyds-span"],
+    });
+  });
+
+  it("preserves Lloyd's lead underwriter and syndicates from source evidence", () => {
+    const carrierText = [
+      "LLOYD'S UNDERWRITERS LED BY: TOKIO",
+      "MARINE KILN, SYNDICATE NO. 0510 KLN",
+      "AND SYNDICATE NO. 1880 KLN UNDER",
+      "CONTRACT NUMBER PG109C/26-PC(L)",
+    ];
+    const spans: SourceSpanLike[] = carrierText.map((text, index) => ({
+      id: `span-carrier-${index + 1}`,
+      text,
+      pageStart: 2,
+    }));
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "document",
+        documentId: "tokio-policy",
+        kind: "document",
+        title: "Policy",
+        description: "Policy",
+        sourceSpanIds: spans.map((span) => span.id as string),
+        order: 0,
+        path: "Policy",
+      },
+      {
+        id: "carrier-identity",
+        documentId: "tokio-policy",
+        parentId: "document",
+        kind: "section",
+        title: "Insurer",
+        description: carrierText.join(" "),
+        textExcerpt: carrierText.join(" "),
+        sourceSpanIds: spans.map((span) => span.id as string),
+        order: 1,
+        path: "Policy / Insurer",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        insurer: {
+          value: "Lloyd's Underwriters",
+          sourceNodeIds: ["carrier-identity"],
+          sourceSpanIds: spans.map((span) => span.id as string),
+        },
+        parties: [{
+          role: "carrier",
+          name: "Lloyd's Underwriters",
+          sourceNodeIds: ["carrier-identity"],
+          sourceSpanIds: spans.map((span) => span.id as string),
+        }],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrier).toBe("Tokio Marine Kiln");
+    expect(fields.carrierIdentity).toMatchObject({
+      displayName: "Tokio Marine Kiln",
+      sourceName:
+        "Lloyd's Underwriters led by: Tokio Marine Kiln, Syndicate No. 0510 KLN and Syndicate No. 1880 KLN, under contract number PG109C/26-PC(L)",
+      legalEntities: [
+        { name: "Tokio Marine Kiln, Syndicate No. 0510 KLN" },
+        { name: "Tokio Marine Kiln, Syndicate No. 1880 KLN" },
+      ],
+      legalEntityRelationship: "and",
+      sourceNodeIds: ["carrier-identity"],
+      sourceSpanIds: spans.map((span) => span.id as string),
+    });
+    expect(fields.carrierLegalName).toBe(
+      "Tokio Marine Kiln, Syndicate No. 0510 KLN",
+    );
+    expect(fields.security).toBeUndefined();
+  });
+
+  it("ranks a clean Liberty insurer span above an earlier contaminated page block", () => {
+    const coarseText =
+      "LLOYD'S UNDERWRITERS LED BY Liberty Managing Agency Limited Syndicate 4472 Premium $48,000 Coverage Limit $5,000,000";
+    const cleanText =
+      "LLOYD'S UNDERWRITERS LED BY Liberty Managing Agency Limited Syndicate 4472";
+    const spans: SourceSpanLike[] = [
+      {
+        id: "liberty-page",
+        text: coarseText,
+        pageStart: 1,
+        sourceUnit: "page",
+      },
+      {
+        id: "liberty-insurer",
+        text: cleanText,
+        pageStart: 2,
+        sourceUnit: "text",
+      },
+    ];
+    const nodes: DocumentSourceNode[] = [
+      {
+        id: "document",
+        documentId: "liberty-policy",
+        kind: "document",
+        title: "Policy",
+        description: coarseText,
+        textExcerpt: coarseText,
+        sourceSpanIds: ["liberty-page"],
+        order: 0,
+        path: "Policy",
+      },
+      {
+        id: "insurer-clause",
+        documentId: "liberty-policy",
+        parentId: "document",
+        kind: "clause",
+        title: "Insurer",
+        description: cleanText,
+        textExcerpt: cleanText,
+        sourceSpanIds: ["liberty-insurer"],
+        order: 1,
+        path: "Policy / Insurer",
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        parties: [{
+          role: "carrier",
+          name: "Lloyd's Underwriters",
+          sourceNodeIds: ["insurer-clause"],
+          sourceSpanIds: ["liberty-insurer"],
+        }],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrierIdentity).toMatchObject({
+      displayName: "Liberty Managing Agency Limited",
+      sourceName:
+        "Lloyd's Underwriters led by: Liberty Managing Agency Limited, Syndicate No. 4472",
+      sourceNodeIds: ["insurer-clause"],
+      sourceSpanIds: ["liberty-insurer"],
+    });
+  });
+
+  it("does not absorb reordered Liberty coverage and premium cells into the lead", () => {
+    const coarseText =
+      "THE INSURERS COVERAGE INSURED PREMIUM Lloyd's Underwriters led by Liberty Managing Agency Limited Premises Pollution Liability 100% $2,100 Syndicate 4472 under Contract No. B2429BW2508154";
+    const cleanText =
+      "Lloyd's Underwriters led by Liberty Managing Agency Limited Syndicate 4472 under Contract No. B2429BW2508154 Forward Insurance Managers Ltd. THE INSURERS COVERAGE INSURED Premises Pollution Liability 100% PREMIUM $2,100";
+    const spans: SourceSpanLike[] = [
+      {
+        id: "liberty-reordered-page",
+        text: coarseText,
+        pageStart: 3,
+        sourceUnit: "page",
+      },
+      {
+        id: "liberty-insurer-block",
+        text: cleanText,
+        pageStart: 3,
+        sourceUnit: "text",
+        bbox: [{
+          page: 3,
+          x: 39,
+          y: 274,
+          width: 516,
+          height: 104,
+        }],
+      },
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        parties: [{
+          role: "insurer",
+          name: "Lloyd's Underwriters",
+          sourceNodeIds: [],
+          sourceSpanIds: ["liberty-insurer-block"],
+        }],
+      },
+      [],
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: [],
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrierIdentity).toMatchObject({
+      displayName: "Liberty Managing Agency Limited",
+      sourceName:
+        "Lloyd's Underwriters led by: Liberty Managing Agency Limited, Syndicate No. 4472, under contract no. B2429BW2508154",
+      legalEntities: [{
+        name: "Liberty Managing Agency Limited, Syndicate No. 4472",
+      }],
+      sourceSpanIds: ["liberty-insurer-block"],
+    });
+  });
+
+  it("preserves multiple Tokio Marine Kiln syndicates and Contract No.", () => {
+    const texts = [
+      "LLOYD'S UNDERWRITERS LED BY Tokio Marine Kiln",
+      "Syndicate No. 0510 KLN and Syndicate No. 1880 KLN",
+      "under Contract No. PG109C/26-PC(L)",
+    ];
+    const spans: SourceSpanLike[] = texts.map((text, index) => ({
+      id: `tokio-column-${index + 1}`,
+      text,
+      pageStart: 2,
+      bbox: [{
+        page: 2,
+        x: 40,
+        y: 100 + index * 18,
+        width: 240,
+        height: 12,
+      }],
+    }));
+    const nodes: DocumentSourceNode[] = [{
+      id: "tokio-document",
+      documentId: "tokio-contract-no",
+      kind: "document",
+      title: "Policy",
+      description: "Policy",
+      sourceSpanIds: spans.map((span) => span.id as string),
+      order: 0,
+      path: "Policy",
+    }];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        parties: [{
+          role: "carrier",
+          name: "Lloyd's Underwriters",
+          sourceNodeIds: [],
+          sourceSpanIds: ["tokio-column-1"],
+        }],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrierIdentity).toMatchObject({
+      displayName: "Tokio Marine Kiln",
+      sourceName:
+        "Lloyd's Underwriters led by: Tokio Marine Kiln, Syndicate No. 0510 KLN and Syndicate No. 1880 KLN, under contract no. PG109C/26-PC(L)",
+      legalEntities: [
+        { name: "Tokio Marine Kiln, Syndicate No. 0510 KLN" },
+        { name: "Tokio Marine Kiln, Syndicate No. 1880 KLN" },
+      ],
+      sourceSpanIds: [
+        "tokio-column-1",
+        "tokio-column-2",
+        "tokio-column-3",
+      ],
+    });
+  });
+
+  it("reconstructs only the Allianz same-column operating-name clause", () => {
+    const span = (
+      id: string,
+      text: string,
+      x: number,
+      y: number,
+      width = 250,
+    ): SourceSpanLike => ({
+      id,
+      text,
+      pageStart: 1,
+      bbox: [{ page: 1, x, y, width, height: 12 }],
+    });
+    const spans = [
+      span(
+        "allianz-left-1",
+        "CUMIS General Insurance Company, a member of The Co-operators group of companies",
+        40,
+        100,
+      ),
+      span(
+        "allianz-right-1",
+        "Premium and coverage summary for the insured",
+        340,
+        100,
+      ),
+      span(
+        "allianz-left-2",
+        "and/or AZGA Service Canada Inc. operating as",
+        40,
+        118,
+      ),
+      span(
+        "allianz-right-2",
+        "Coverage limit $5,000,000 and premium $48,000",
+        340,
+        118,
+      ),
+      span("allianz-left-3", "Allianz Global Assistance (AGA).", 40, 136),
+    ];
+    const nodes: DocumentSourceNode[] = [{
+      id: "allianz-document",
+      documentId: "allianz-policy",
+      kind: "document",
+      title: "Policy",
+      description: "Policy",
+      sourceSpanIds: spans.map((item) => item.id as string),
+      order: 0,
+      path: "Policy",
+    }];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        parties: [
+          {
+            role: "insurer",
+            name: "CUMIS General Insurance Company",
+            sourceNodeIds: [],
+            sourceSpanIds: ["allianz-left-1"],
+          },
+          {
+            role: "insurer",
+            name: "AZGA Service Canada Inc.",
+            sourceNodeIds: [],
+            sourceSpanIds: ["allianz-left-2"],
+          },
+        ],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrierIdentity).toEqual({
+      displayName: "Allianz Global Assistance",
+      sourceName: "Allianz Global Assistance",
+      operatingName: "Allianz Global Assistance",
+      legalEntities: [
+        {
+          name: "CUMIS General Insurance Company",
+          sourceNodeIds: [],
+          sourceSpanIds: [
+            "allianz-left-1",
+            "allianz-left-2",
+            "allianz-left-3",
+          ],
+        },
+        {
+          name: "AZGA Service Canada Inc.",
+          sourceNodeIds: [],
+          sourceSpanIds: [
+            "allianz-left-2",
+            "allianz-left-1",
+            "allianz-left-3",
+          ],
+        },
+      ],
+      legalEntityRelationship: "and_or",
+      sourceNodeIds: [],
+      sourceSpanIds: [
+        "allianz-left-1",
+        "allianz-left-2",
+        "allianz-left-3",
+      ],
+    });
+    expect(
+      (fields.carrierIdentity as {
+        legalEntities: Array<{ name: string }>;
+      }).legalEntities.map(
+        (entity: { name: string }) => entity.name,
+      ),
+    ).not.toContain("The Co-operators group of companies");
+  });
+
+  it("rejects a partial legal suffix and reconstructs the complete Allianz clause", () => {
+    const span = (
+      id: string,
+      text: string,
+      y: number,
+    ): SourceSpanLike => ({
+      id,
+      text,
+      pageStart: 9,
+      sourceUnit: "text",
+      bbox: [{ page: 9, x: 313, y, width: 250, height: 12 }],
+    });
+    const spans = [
+      span(
+        "allianz-legal-1",
+        "CUMIS General Insurance Company, a member of The",
+        615,
+      ),
+      span(
+        "allianz-legal-2",
+        "Co-operators group of companies and/or AZGA Service",
+        627,
+      ),
+      span(
+        "allianz-legal-3",
+        "Canada Inc. operating as Allianz Global Assistance (AGA).",
+        639,
+      ),
+    ];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        insurer: {
+          value: "CUMIS General Insurance Company",
+          sourceNodeIds: [],
+          sourceSpanIds: ["allianz-legal-1"],
+        },
+        parties: [
+          {
+            role: "insurer",
+            name: "CUMIS General Insurance Company",
+            sourceNodeIds: [],
+            sourceSpanIds: ["allianz-legal-1"],
+          },
+          {
+            role: "insurer",
+            name: "AZGA Service Canada Inc.",
+            sourceNodeIds: [],
+            sourceSpanIds: ["allianz-legal-2", "allianz-legal-3"],
+          },
+        ],
+      },
+      [],
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: [],
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrierIdentity).toEqual({
+      displayName: "Allianz Global Assistance",
+      sourceName: "Allianz Global Assistance",
+      operatingName: "Allianz Global Assistance",
+      legalEntities: [
+        {
+          name: "CUMIS General Insurance Company",
+          sourceNodeIds: [],
+          sourceSpanIds: [
+            "allianz-legal-1",
+            "allianz-legal-2",
+            "allianz-legal-3",
+          ],
+        },
+        {
+          name: "AZGA Service Canada Inc.",
+          sourceNodeIds: [],
+          sourceSpanIds: [
+            "allianz-legal-2",
+            "allianz-legal-3",
+            "allianz-legal-1",
+          ],
+        },
+      ],
+      legalEntityRelationship: "and_or",
+      sourceNodeIds: [],
+      sourceSpanIds: [
+        "allianz-legal-1",
+        "allianz-legal-2",
+        "allianz-legal-3",
+      ],
+    });
+  });
+
+  it("builds a canonical HDI identity from a source-backed carrier party", () => {
+    const spans: SourceSpanLike[] = [{
+      id: "hdi-carrier",
+      text: "Carrier: HDI Global Specialty SE",
+      pageStart: 1,
+    }];
+    const nodes: DocumentSourceNode[] = [{
+      id: "hdi-carrier-node",
+      documentId: "hdi-policy",
+      kind: "section",
+      title: "Carrier",
+      description: "Carrier: HDI Global Specialty SE",
+      sourceSpanIds: ["hdi-carrier"],
+      order: 0,
+      path: "Policy / Carrier",
+    }];
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["UN"],
+        coverages: [],
+        parties: [{
+          role: "carrier",
+          name: "HDI Global Specialty SE",
+          sourceNodeIds: ["hdi-carrier-node"],
+          sourceSpanIds: ["hdi-carrier"],
+        }],
+      },
+      nodes,
+      spans,
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: nodes,
+      sourceSpans: spans,
+      operationalProfile,
+    });
+
+    expect(fields.carrierIdentity).toEqual({
+      displayName: "HDI Global Specialty SE",
+      sourceName: "HDI Global Specialty SE",
+      legalEntities: [{
+        name: "HDI Global Specialty SE",
+        sourceNodeIds: ["hdi-carrier-node"],
+        sourceSpanIds: ["hdi-carrier"],
+      }],
+      legalEntityRelationship: "single",
+      sourceNodeIds: ["hdi-carrier-node"],
+      sourceSpanIds: ["hdi-carrier"],
+    });
+  });
+
   it("recovers insurer and agency identifiers from exact-party source evidence", () => {
     const span = {
       id: "span-declarations",
@@ -1759,6 +2806,244 @@ describe("sourceTreePolicyFields", () => {
     expect(parties.find(
       (party) => party.role === "producer",
     )).toMatchObject({ licenseNumber: "PR-123", sourceSpanIds: [span.id] });
+  });
+
+  it("resets carrier enrichment state when source extraction changes the identity", () => {
+    const span = {
+      id: "replacement-carrier-span",
+      text: "INSURER Replacement Carrier Insurance Company",
+    };
+    const node: DocumentSourceNode = {
+      id: "replacement-carrier",
+      documentId: "replacement-policy",
+      kind: "section",
+      title: "Insurer",
+      description: span.text,
+      textExcerpt: span.text,
+      sourceSpanIds: [span.id],
+      order: 0,
+      path: "Policy / Insurer",
+    };
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+        insurer: {
+          value: "Replacement Carrier Insurance Company",
+          sourceNodeIds: [node.id],
+          sourceSpanIds: [span.id],
+        },
+        parties: [{
+          role: "insurer",
+          name: "Replacement Carrier Insurance Company",
+          sourceNodeIds: [node.id],
+          sourceSpanIds: [span.id],
+        }],
+      },
+      [node],
+      [span],
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: [node],
+      sourceSpans: [span],
+      operationalProfile,
+      existingPolicyFields: {
+        carrierIdentity: {
+          displayName: "Original Carrier Insurance Company",
+          sourceName: "Original Carrier Insurance Company",
+          legalEntities: [{
+            name: "Original Carrier Insurance Company",
+            sourceNodeIds: ["original-carrier"],
+            sourceSpanIds: ["original-carrier-span"],
+          }],
+          legalEntityRelationship: "single",
+          sourceNodeIds: ["original-carrier"],
+          sourceSpanIds: ["original-carrier-span"],
+        },
+        carrierIdentityEnrichmentStatus: "failed",
+        carrierIdentityEnrichmentAttempts: 3,
+        carrierIdentityEnrichmentAttemptedAt: 100,
+      },
+    });
+
+    expect(fields.carrierIdentity).toMatchObject({
+      sourceName: "Replacement Carrier Insurance Company",
+    });
+    expect(fields).toHaveProperty("carrierIdentityEnrichmentStatus", undefined);
+    expect(fields).toHaveProperty("carrierIdentityEnrichmentAttempts", undefined);
+    expect(fields).toHaveProperty(
+      "carrierIdentityEnrichmentAttemptedAt",
+      undefined,
+    );
+  });
+
+  it("clears stale carrier identity when replacement evidence cannot rebuild it", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+        insurer: {
+          value: "Replacement Carrier Insurance Company",
+          sourceNodeIds: ["missing-replacement-carrier"],
+          sourceSpanIds: ["missing-replacement-carrier-span"],
+        },
+      },
+      [],
+      [],
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: [],
+      sourceSpans: [],
+      operationalProfile,
+      existingPolicyFields: {
+        carrier: "Replacement Carrier Insurance Company",
+        security: "Replacement Carrier Insurance Company",
+        insurer: {
+          legalName: "Replacement Carrier Insurance Company",
+        },
+        carrierLegalName: "Original Carrier Insurance Company",
+        carrierIdentity: {
+          displayName:
+            "Original Carrier Insurance Company and/or Replacement Carrier Insurance Company",
+          sourceName:
+            "Original Carrier Insurance Company and/or Replacement Carrier Insurance Company",
+          legalEntities: [
+            {
+              name: "Original Carrier Insurance Company",
+              sourceNodeIds: ["original-carrier"],
+              sourceSpanIds: ["original-carrier-span"],
+            },
+            {
+              name: "Replacement Carrier Insurance Company",
+              sourceNodeIds: ["original-carrier"],
+              sourceSpanIds: ["original-carrier-span"],
+            },
+          ],
+          legalEntityRelationship: "and_or",
+          sourceNodeIds: ["original-carrier"],
+          sourceSpanIds: ["original-carrier-span"],
+        },
+        carrierBrandId: "legacy-brand-cache",
+        carrierBrandStatus: "ready",
+        carrierBrandAttempts: 1,
+        carrierBrandAttemptedAt: 50,
+        carrierIdentityEnrichmentStatus: "failed",
+        carrierIdentityEnrichmentAttempts: 3,
+        carrierIdentityEnrichmentAttemptedAt: 100,
+      },
+    });
+
+    expect(fields).toMatchObject({
+      carrier: "Replacement Carrier Insurance Company",
+      security: "Replacement Carrier Insurance Company",
+      insurer: {
+        legalName: "Replacement Carrier Insurance Company",
+      },
+    });
+    expect(fields).toHaveProperty("carrierNaicNumber", undefined);
+    expect(fields).toHaveProperty("carrierIdentity", undefined);
+    expect(fields).toHaveProperty("carrierLegalName", undefined);
+    expect(fields).toHaveProperty("carrierBrandId", undefined);
+    expect(fields).toHaveProperty("carrierBrandStatus", undefined);
+    expect(fields).toHaveProperty("carrierBrandAttempts", undefined);
+    expect(fields).toHaveProperty("carrierBrandAttemptedAt", undefined);
+    expect(fields).toHaveProperty("carrierIdentityEnrichmentStatus", undefined);
+    expect(fields).toHaveProperty("carrierIdentityEnrichmentAttempts", undefined);
+    expect(fields).toHaveProperty(
+      "carrierIdentityEnrichmentAttemptedAt",
+      undefined,
+    );
+  });
+
+  it("retains a stored carrier identity when the current designation still matches", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+      },
+      [],
+      [],
+    );
+    const carrierIdentity = {
+      displayName: "Fortegra",
+      sourceName: "Fortegra Specialty Insurance Company",
+      publicNameRelationship: "same_legal_entity" as const,
+      legalEntities: [{
+        name: "Fortegra Specialty Insurance Company",
+        sourceNodeIds: ["stored-carrier"],
+        sourceSpanIds: ["stored-carrier-span"],
+      }],
+      legalEntityRelationship: "single" as const,
+      sourceNodeIds: ["stored-carrier"],
+      sourceSpanIds: ["stored-carrier-span"],
+      branding: {
+        website: "https://www.fortegra.com",
+        accentColor: "#123456",
+        confidence: "high" as const,
+        sourceUrls: ["https://www.fortegra.com"],
+        enrichmentVersion: 1,
+        updatedAt: 100,
+      },
+    };
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: [],
+      sourceSpans: [],
+      operationalProfile,
+      existingPolicyFields: {
+        carrier: "Fortegra Specialty Insurance Company",
+        carrierIdentity,
+      },
+    });
+
+    expect(fields.carrier).toBe("Fortegra");
+    expect(fields.carrierIdentity).toEqual(carrierIdentity);
+  });
+
+  it("clears a stored carrier identity without a positive current carrier match", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+      },
+      [],
+      [],
+    );
+    const fields = sourceTreePolicyFields({
+      sourceTree: [],
+      sourceSpans: [],
+      operationalProfile,
+      existingPolicyFields: {
+        carrier: "Unknown",
+        carrierIdentity: {
+          displayName: "Original Carrier",
+          sourceName: "Original Carrier Insurance Company",
+          legalEntities: [{
+            name: "Original Carrier Insurance Company",
+            sourceNodeIds: ["stored-carrier"],
+            sourceSpanIds: ["stored-carrier-span"],
+          }],
+          legalEntityRelationship: "single",
+          sourceNodeIds: ["stored-carrier"],
+          sourceSpanIds: ["stored-carrier-span"],
+        },
+        carrierLegalName: "Original Carrier Insurance Company",
+        carrierIdentityEnrichmentStatus: "ready",
+      },
+    });
+
+    expect(fields).toMatchObject({
+      carrier: "Unknown",
+      carrierIdentity: undefined,
+      carrierLegalName: undefined,
+      carrierIdentityEnrichmentStatus: undefined,
+    });
   });
 
   it("drops operations descriptions whose evidence ids are invalid", () => {

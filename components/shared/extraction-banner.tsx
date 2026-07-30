@@ -15,7 +15,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
-type RetryMode = "resume" | "full";
+type RetryMode = "resume" | "restart";
 
 type ToastPolicy = {
   _id: string;
@@ -82,7 +82,6 @@ function showExtractionStatusToast({
   tone,
   duration,
   actions,
-  collapsible,
 }: {
   id: string;
   title: string;
@@ -90,7 +89,6 @@ function showExtractionStatusToast({
   tone: OperationalToastTone;
   duration: number;
   actions?: OperationalToastAction[];
-  collapsible?: boolean;
 }) {
   showOperationalStatusToast({
     id,
@@ -99,7 +97,6 @@ function showExtractionStatusToast({
     tone,
     duration,
     actions,
-    collapsible,
   });
 }
 
@@ -121,7 +118,6 @@ export function showPolicyExtractionQueuedToast({
       : "Extraction is queued.",
     tone: "loading",
     duration: 60_000,
-    collapsible: true,
   });
 }
 
@@ -171,7 +167,6 @@ export function showPolicyExtractionReadyToast(
       tone: "success",
       duration: 8_000,
       actions: action,
-      collapsible: true,
     });
     return;
   }
@@ -184,7 +179,6 @@ export function showPolicyExtractionReadyToast(
       tone: "success",
       duration: 6_000,
       actions: action,
-      collapsible: Boolean(action),
     });
   }
 }
@@ -228,7 +222,6 @@ export function PolicyExtractionBanner({
           description: "Queued for the extraction worker.",
           tone: "loading",
           duration: 20_000,
-          collapsible: true,
         });
         const result = await retry({ policyId, mode });
         if (result && typeof result === "object" && "error" in result) {
@@ -278,7 +271,6 @@ export function PolicyExtractionBanner({
             : "Preparing policy details."),
         tone: "loading",
         duration: 120_000,
-        collapsible: true,
         actions: onCancel
           ? [
               {
@@ -315,8 +307,8 @@ export function PolicyExtractionBanner({
                 disabled: retryingMode !== null,
               },
               {
-                label: retryingMode === "full" ? "Restarting" : "Restart",
-                onClick: () => void handleRetry("full"),
+                label: retryingMode === "restart" ? "Restarting" : "Restart",
+                onClick: () => void handleRetry("restart"),
                 variant: "secondary",
                 disabled: retryingMode !== null,
               },

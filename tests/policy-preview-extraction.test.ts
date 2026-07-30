@@ -43,6 +43,19 @@ describe("policy preview extraction", () => {
     expect(worker).not.toContain('required: ["name"]');
   });
 
+  it("re-queues interrupted preview jobs when the main job is re-claimed", () => {
+    const policies = read("convex/policies.ts");
+    const claimBody = policies.slice(
+      policies.indexOf("export const pipelineClaimExternalWorkerJob"),
+      policies.indexOf("export const pipelineExtendLease"),
+    );
+
+    expect(claimBody).toContain("enqueueExternalPolicyExtractionPreview(ctx, run.policyId, run._id, now)");
+    expect(claimBody).toContain('policy.extractionDataStage === "placeholder"');
+    expect(claimBody).toContain("!policy.extractionPreviewError");
+    expect(claimBody).toContain("Re-queued provisional extraction after interrupted preview job");
+  });
+
   it("makes low-risk read surfaces preview-aware", () => {
     for (const path of [
       "convex/lib/agentToolExecutors.ts",

@@ -6,6 +6,8 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { buildCoverageBreakdown } from "./lib/coverageBreakdown";
 import { getClientPortalUrl } from "./lib/domains";
 import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
+import { resolveCarrierIdentity } from "./lib/carrierIdentityProjection";
+import { resolvePolicyCarrierDisplay } from "./lib/policyPartyContext";
 
 const appCardKindValidator = v.union(
   v.literal("policy"),
@@ -35,7 +37,11 @@ function policyTitle(policy: Pick<Doc<"policies">, "policyNumber" | "linesOfBusi
   return policy.fileName ?? "Policy details";
 }
 
-function policySubtitle(policy: Pick<Doc<"policies">, "insuredName" | "security" | "carrier">) {
+function policySubtitle(policy: {
+  insuredName?: string;
+  security?: string;
+  carrier?: string;
+}) {
   return [policy.insuredName, policy.security ?? policy.carrier]
     .filter(Boolean)
     .join(" - ");
@@ -49,16 +55,28 @@ function formatCoverage(coverage: Doc<"policies">["coverages"][number]) {
   };
 }
 
-function publicPolicy(policy: Doc<"policies">) {
+async function publicPolicy(ctx: QueryCtx, policy: Doc<"policies">) {
+  const carrierIdentity = await resolveCarrierIdentity(
+    ctx,
+    policy.carrierIdentity,
+  );
+  const carrierDisplay = resolvePolicyCarrierDisplay({
+    ...policy,
+    carrierIdentity,
+  });
+  const carrier =
+    carrierDisplay.carrierDisplayName ?? policy.carrier;
   return {
     id: policy._id,
     title: policyTitle(policy),
     insuredName: policy.insuredName,
-    carrier: policy.security ?? policy.carrier,
+    carrier,
+    carrierIdentity: carrierDisplay.carrierIdentity,
     policyNumber: policy.policyNumber,
     linesOfBusiness: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
+    policyTermType: policy.policyTermType,
     dataStage: policy.extractionDataStage ?? (
       policy.pipelineStatus === "complete" ? "final" : "placeholder"
     ),
@@ -161,7 +179,7 @@ async function buildCertificateView(
       policyCertificateId: policyCertificate?._id,
       createdAt: certificate.createdAt,
     },
-    policy: publicPolicy(policy),
+    policy: await publicPolicy(ctx, policy),
   };
 }
 
@@ -263,13 +281,14 @@ export const getByToken = query({
     if (link.kind === "policy") {
       const policy = await getPolicyForLink(ctx, link.policyId, link.orgId);
       if (!policy) return null;
+      const serializedPolicy = await publicPolicy(ctx, policy);
       return {
         kind: link.kind,
         orgName: org.name,
         title: policyTitle(policy),
-        subtitle: policySubtitle(policy),
+        subtitle: policySubtitle(serializedPolicy),
         label: link.label,
-        policy: publicPolicy(policy),
+        policy: serializedPolicy,
       };
     }
 

@@ -9,6 +9,12 @@ import {
 } from "@claritylabs/cl-sdk";
 import { shouldEmitStructuredLiteParseTable } from "./liteparseTableConfidence.js";
 import { classifyLiteParseTextElement } from "./liteparseTextClassification.js";
+import {
+  INITIAL_LITEPARSE_QUEUE_FAIRNESS_STATE,
+  selectNextLiteParseQueueIndex,
+  type LiteParseQueueFairnessState,
+  type LiteParseQueuePriority,
+} from "./liteparseQueue.js";
 
 type SourceKindInput = Extract<SourceKind, "policy_pdf" | "email" | "attachment" | "manual_note">;
 
@@ -51,8 +57,139 @@ type PositionedRow = {
 };
 
 const LITEPARSE_VERSION = "2.0.3";
+export const LITEPARSE_NATIVE_CONCURRENCY = 1;
+export const LITEPARSE_MAX_QUEUED_DOCUMENTS = readBoundedIntEnv(
+  "LITEPARSE_MAX_QUEUED_DOCUMENTS",
+  12,
+  1,
+  64,
+);
+const LITEPARSE_PRIORITY_RANK: Record<LiteParseQueuePriority, number> = {
+  http: 0,
+  preview: 1,
+  full: 2,
+};
 const TABLE_HEADER_PATTERN = /\b(coverage|limit|limits?|basis|retroactive|deductible|premium|tax|fee|sub-?limit|aggregate|claim)\b/i;
 const TABLE_VALUE_PATTERN = /\b(CAD|USD|\$|limit|aggregate|claim|shared|claims?-made|prior acts?|full prior|deductible|premium|tax|fee)\b/i;
+
+type LiteParseQueueEntry = {
+  priority: LiteParseQueuePriority;
+  enqueuedAt: number;
+  signal?: AbortSignal;
+  cancelled: boolean;
+  start: () => void;
+  reject: (error: Error) => void;
+};
+
+let liteParseRunning = false;
+const liteParseWaitQueue: LiteParseQueueEntry[] = [];
+let liteParseQueueFairnessState: LiteParseQueueFairnessState = {
+  ...INITIAL_LITEPARSE_QUEUE_FAIRNESS_STATE,
+};
+
+function abortError(message = "LiteParse conversion aborted"): Error {
+  if (typeof DOMException === "function") {
+    return new DOMException(message, "AbortError");
+  }
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+
+function sortLiteParseWaitQueue(): void {
+  liteParseWaitQueue.sort((left, right) => {
+    const rank =
+      LITEPARSE_PRIORITY_RANK[left.priority] -
+      LITEPARSE_PRIORITY_RANK[right.priority];
+    if (rank !== 0) return rank;
+    return left.enqueuedAt - right.enqueuedAt;
+  });
+}
+
+function pumpLiteParseQueue(): void {
+  if (liteParseRunning) return;
+  for (let index = liteParseWaitQueue.length - 1; index >= 0; index -= 1) {
+    const queued = liteParseWaitQueue[index];
+    if (!queued.cancelled && !queued.signal?.aborted) continue;
+    liteParseWaitQueue.splice(index, 1);
+    queued.reject(abortError());
+  }
+
+  const selection = selectNextLiteParseQueueIndex(
+    liteParseWaitQueue.map((queued) => queued.priority),
+    liteParseQueueFairnessState,
+  );
+  liteParseQueueFairnessState = selection.state;
+  if (selection.index < 0) return;
+  const [entry] = liteParseWaitQueue.splice(selection.index, 1);
+  if (!entry) return;
+  liteParseRunning = true;
+  entry.start();
+}
+
+async function withSerializedLiteParse<T>(
+  operation: () => Promise<T>,
+  options?: {
+    priority?: LiteParseQueuePriority;
+    signal?: AbortSignal;
+  },
+): Promise<T> {
+  const priority = options?.priority ?? "full";
+  const signal = options?.signal;
+  if (signal?.aborted) {
+    throw abortError();
+  }
+  if (liteParseWaitQueue.length >= LITEPARSE_MAX_QUEUED_DOCUMENTS) {
+    throw new Error(
+      `LiteParse wait queue is full (${LITEPARSE_MAX_QUEUED_DOCUMENTS} documents)`,
+    );
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const entry: LiteParseQueueEntry = {
+      priority,
+      enqueuedAt: dayjs().valueOf(),
+      signal,
+      cancelled: false,
+      reject,
+      start: () => {
+        if (entry.cancelled || signal?.aborted) {
+          liteParseRunning = false;
+          reject(abortError());
+          pumpLiteParseQueue();
+          return;
+        }
+        Promise.resolve()
+          .then(operation)
+          .then(resolve, reject)
+          .finally(() => {
+            liteParseRunning = false;
+            pumpLiteParseQueue();
+          });
+      },
+    };
+
+    if (signal) {
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (entry.cancelled) return;
+          entry.cancelled = true;
+          const index = liteParseWaitQueue.indexOf(entry);
+          if (index >= 0) {
+            liteParseWaitQueue.splice(index, 1);
+            reject(abortError());
+          }
+        },
+        { once: true },
+      );
+    }
+
+    liteParseWaitQueue.push(entry);
+    sortLiteParseWaitQueue();
+    pumpLiteParseQueue();
+  });
+}
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -548,44 +685,51 @@ export async function convertPdfWithLiteParse(params: {
   sourceKind?: SourceKindInput;
   maxPages?: number;
   maxFileSize?: number;
+  priority?: LiteParseQueuePriority;
+  signal?: AbortSignal;
 }): Promise<LiteParseConversionResult> {
   if (params.maxFileSize && params.pdfBytes.byteLength > params.maxFileSize) {
     throw new Error(`PDF exceeds LiteParse maximum size (${params.pdfBytes.byteLength} > ${params.maxFileSize})`);
   }
 
-  const startedAt = dayjs().valueOf();
-  const parser = new LiteParse({
-    ocrEnabled: readBooleanEnv("LITEPARSE_OCR_ENABLED", false),
-    ocrLanguage: process.env.LITEPARSE_OCR_LANGUAGE ?? "eng",
-    maxPages: params.maxPages ?? readBoundedIntEnv("LITEPARSE_MAX_PAGES", 1000, 1, 5000),
-    dpi: readBoundedIntEnv("LITEPARSE_DPI", 150, 72, 600),
-    quiet: true,
-    numWorkers: readBoundedIntEnv("LITEPARSE_NUM_WORKERS", 4, 1, 32),
-  });
-  const parsed = await parser.parse(Buffer.from(params.pdfBytes));
-  const sourceSpans = buildLiteParseSourceSpans({
-    pages: parsed.pages,
-    text: parsed.text,
-    documentId: params.documentId,
-    sourceKind: params.sourceKind ?? "policy_pdf",
-  });
-  const pageScreenshots = await buildPageScreenshots({
-    parser,
-    pdfBytes: params.pdfBytes,
-    pages: parsed.pages,
-  });
+  return withSerializedLiteParse(async () => {
+    const startedAt = dayjs().valueOf();
+    const parser = new LiteParse({
+      ocrEnabled: readBooleanEnv("LITEPARSE_OCR_ENABLED", false),
+      ocrLanguage: process.env.LITEPARSE_OCR_LANGUAGE ?? "eng",
+      maxPages: params.maxPages ?? readBoundedIntEnv("LITEPARSE_MAX_PAGES", 1000, 1, 5000),
+      dpi: readBoundedIntEnv("LITEPARSE_DPI", 150, 72, 600),
+      quiet: true,
+      numWorkers: readBoundedIntEnv("LITEPARSE_NUM_WORKERS", 4, 1, 32),
+    });
+    const parsed = await parser.parse(Buffer.from(params.pdfBytes));
+    const sourceSpans = buildLiteParseSourceSpans({
+      pages: parsed.pages,
+      text: parsed.text,
+      documentId: params.documentId,
+      sourceKind: params.sourceKind ?? "policy_pdf",
+    });
+    const pageScreenshots = await buildPageScreenshots({
+      parser,
+      pdfBytes: params.pdfBytes,
+      pages: parsed.pages,
+    });
 
-  return {
-    text: parsed.text,
-    sourceSpans,
-    sourceChunks: chunkSourceSpans(sourceSpans),
-    pageScreenshots,
-    metadata: {
-      parserBackend: "liteparse",
-      parserVersion: LITEPARSE_VERSION,
-      parsedAt: dayjs().valueOf(),
-      parsingMs: dayjs().valueOf() - startedAt,
-      pageCount: parsed.pages.length,
-    },
-  };
+    return {
+      text: parsed.text,
+      sourceSpans,
+      sourceChunks: chunkSourceSpans(sourceSpans),
+      pageScreenshots,
+      metadata: {
+        parserBackend: "liteparse",
+        parserVersion: LITEPARSE_VERSION,
+        parsedAt: dayjs().valueOf(),
+        parsingMs: dayjs().valueOf() - startedAt,
+        pageCount: parsed.pages.length,
+      },
+    };
+  }, {
+    priority: params.priority,
+    signal: params.signal,
+  });
 }

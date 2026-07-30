@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import type { Id } from "@/convex/_generated/dataModel";
 import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
+import type { CarrierIdentity } from "@/convex/lib/carrierIdentity";
 
 import { PolicySummary } from "./policy-summary";
 import { PolicyPartiesPanel } from "./policy-parties-panel";
@@ -24,14 +25,18 @@ export function PolicyDetailsTab({
     _id: Id<"policies">;
     policyNumber?: string;
     carrier?: string;
+    carrierIdentity?: CarrierIdentity;
     insuredName?: string;
     effectiveDate?: string;
     expirationDate?: string;
+    policyTermType?: string;
     premium?: string;
     totalCost?: string;
     taxesAndFees?: Array<{ amount?: string; amountValue?: number }>;
     summary?: string;
     isRenewal?: boolean;
+    programName?: string;
+    productIdentity?: unknown;
   };
   fileUrl?: string | null;
   canEdit?: boolean;
@@ -63,14 +68,19 @@ export function PolicyDetailsTab({
         </OperationalPanel>
       ) : null}
       <PolicySummary
+        carrier={policy.carrier}
+        carrierDisplayName={partyContext.carrierDisplayName}
+        carrierIdentity={policy.carrierIdentity}
         policyNumber={policy.policyNumber}
+        productIdentity={policy.productIdentity}
+        programName={policy.programName}
         effectiveDate={policy.effectiveDate}
         expirationDate={policy.expirationDate}
+        policyTermType={policy.policyTermType}
         premium={policy.premium}
         totalCost={policy.totalCost}
         taxesAndFees={policy.taxesAndFees}
         linesOfBusiness={linesOfBusiness}
-        policyTermType={policy.policyTermType as string | undefined}
         operationsDescription={partyContext.operationsDescription}
         isRenewal={policy.isRenewal}
         pdfUrl={fileUrl ?? undefined}

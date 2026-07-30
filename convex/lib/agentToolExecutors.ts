@@ -32,7 +32,10 @@ import { resolvePolicyReferenceForOrg } from "./policyToolResolution";
 import { buildVendorComplianceTools } from "./vendorComplianceTools";
 import type { RequirementScope } from "./complianceTypes";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
-import { resolvePolicyPartyContext } from "./policyPartyContext";
+import {
+  resolvePolicyCarrierDisplay,
+  resolvePolicyPartyContext,
+} from "./policyPartyContext";
 import { effectiveOrganizationProfileFacts } from "./orgProfileFacts";
 import { lookupMapboxAddress } from "./mapboxAddress";
 
@@ -109,6 +112,7 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
     ? policy._clientProfileFacts as Record<string, any>
     : {};
   const partyContext = resolvePolicyPartyContext(policy, { clientProfileFacts });
+  const carrierDisplay = resolvePolicyCarrierDisplay(policy);
   return {
     id: policy._id,
     client:
@@ -134,7 +138,11 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
         ? clientProfileFacts.additionalNamedInsureds.map((fact: Record<string, any>) => fact?.value).filter(Boolean)
         : undefined,
     },
-    carrier: partyContext.insurerName ?? policy.security,
+    carrier: carrierDisplay.carrierDisplayName ??
+      partyContext.carrierDisplayName ??
+      partyContext.insurerName ??
+      policy.security,
+    carrierIdentity: carrierDisplay.carrierIdentity,
     linesOfBusiness: policyLobCodes(policy),
     type: policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", "),
     number: policy.policyNumber,

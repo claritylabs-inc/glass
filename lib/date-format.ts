@@ -49,6 +49,22 @@ export function formatDisplayDate(
   return formatDisplayValue(value, DISPLAY_DATE_FORMAT, fallback);
 }
 
+export function formatDisplayPolicyPeriod(
+  effectiveDate: DisplayDateValue,
+  expirationDate: DisplayDateValue,
+  policyTermType?: string | null,
+) {
+  const effective = formatDisplayDate(effectiveDate);
+  const expiration = formatDisplayDate(expirationDate);
+  if (policyTermType?.trim().toLowerCase() === "continuous") {
+    return effective ? `${effective} — Until Cancelled` : "Until Cancelled";
+  }
+  if (effective && expiration) return `${effective} – ${expiration}`;
+  if (effective) return `Ongoing from ${effective}`;
+  if (expiration) return `Through ${expiration}`;
+  return "";
+}
+
 export function formatDisplayDateTime(
   value: DisplayDateValue,
   fallback = "",

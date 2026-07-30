@@ -265,6 +265,11 @@ function parallelResultContent(result: ParallelResult) {
   return result.excerpts?.filter(Boolean).join("\n\n") || result.full_content;
 }
 
+function parallelResultSnippet(result: ParallelResult) {
+  const content = parallelResultContent(result);
+  return content ? truncateText(content).slice(0, 2_400) : undefined;
+}
+
 async function retrieveWithParallel(
   input: NormalizedInput,
 ): Promise<ProviderResult | null> {
@@ -291,7 +296,11 @@ async function retrieveWithParallel(
     if (!first || !content) return null;
     return {
       text: truncateText([first.title, content].filter(Boolean).join("\n\n")),
-      sources: [{ title: first.title, url: first.url ?? input.url }],
+      sources: [{
+        title: first.title,
+        url: first.url ?? input.url,
+        snippet: parallelResultSnippet(first),
+      }],
     };
   }
 
@@ -333,7 +342,13 @@ async function retrieveWithParallel(
     text: truncateText(blocks),
     sources: normalizeSources(
       results.flatMap((result) =>
-        result.url ? [{ title: result.title, url: result.url }] : [],
+        result.url
+          ? [{
+              title: result.title,
+              url: result.url,
+              snippet: parallelResultSnippet(result),
+            }]
+          : [],
       ),
     ),
   };
