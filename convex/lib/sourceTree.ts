@@ -2047,7 +2047,8 @@ function buildCarrierIdentity(params: {
   existingPolicyFields?: unknown;
 }): {
   carrierIdentity?: CarrierIdentity;
-  conflictingCarrierName?: string;
+  replacementCarrierName?: string;
+  clearExistingIdentity?: boolean;
 } {
   const existingPolicy =
     params.existingPolicyFields &&
@@ -2068,15 +2069,21 @@ function buildCarrierIdentity(params: {
 
   const currentCarrierName =
     currentCompatibilityCarrierName(existingPolicy);
-  const conflictsWithExistingIdentity = Boolean(
+  const matchesExistingIdentity = Boolean(
     currentCarrierName &&
     existingIdentity &&
-    !carrierNameMatchesSourceDesignation(existingIdentity, currentCarrierName),
+    carrierNameMatchesSourceDesignation(existingIdentity, currentCarrierName),
   );
 
-  return conflictsWithExistingIdentity
-    ? { conflictingCarrierName: currentCarrierName }
-    : { carrierIdentity: existingIdentity };
+  if (matchesExistingIdentity) {
+    return { carrierIdentity: existingIdentity };
+  }
+  return existingIdentity
+    ? {
+        replacementCarrierName: currentCarrierName,
+        clearExistingIdentity: true,
+      }
+    : {};
 }
 
 export function sourceTreePolicyFields(params: {
@@ -2187,7 +2194,8 @@ export function sourceTreePolicyFields(params: {
   };
   const {
     carrierIdentity,
-    conflictingCarrierName,
+    replacementCarrierName,
+    clearExistingIdentity,
   } = buildCarrierIdentity({
     operationalProfile,
     sourceTree,
@@ -2195,7 +2203,7 @@ export function sourceTreePolicyFields(params: {
     existingPolicyFields: params.existingPolicyFields,
   });
   if (!carrierIdentity) {
-    if (!conflictingCarrierName) return projected;
+    if (!clearExistingIdentity) return projected;
     const currentSecurity =
       typeof existingPolicy.security === "string" &&
       !isBadOperationalIdentityValue(existingPolicy.security) &&
@@ -2204,7 +2212,7 @@ export function sourceTreePolicyFields(params: {
         : undefined;
     return {
       ...projected,
-      carrier: conflictingCarrierName,
+      carrier: replacementCarrierName ?? "Unknown",
       security: currentSecurity,
       insurer: existingPolicy.insurer,
       carrierNaicNumber: existingPolicy.carrierNaicNumber,

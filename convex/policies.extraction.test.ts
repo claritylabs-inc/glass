@@ -3,12 +3,16 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import {
+  pipelineCompleteLease,
+  pipelineReconcileTerminalState,
   pipelineRejectExternalJob,
   pipelineSetStatus,
   updateExtractionInternal,
 } from "./policies";
 
 const modules = import.meta.glob("./**/*.ts");
+const pipelineCompleteLeaseFn = pipelineCompleteLease as any;
+const pipelineReconcileTerminalStateFn = pipelineReconcileTerminalState as any;
 const pipelineRejectExternalJobFn = pipelineRejectExternalJob as any;
 const pipelineSetStatusFn = pipelineSetStatus as any;
 const updateExtractionInternalFn = updateExtractionInternal as any;
@@ -431,6 +435,7 @@ describe("policies.updateExtractionInternal", () => {
           state: {
             policyVersionKind: "re_extraction",
             replacementPromotionStarted: false,
+            fileId: "replacement-file",
           },
           createdAt: 1,
         },
@@ -445,6 +450,9 @@ describe("policies.updateExtractionInternal", () => {
       status: "error",
       error: "Replacement document is not a bound policy.",
     });
+    await t.mutation(pipelineReconcileTerminalStateFn, {
+      jobId: policyId,
+    });
 
     const result = await t.run(async (ctx) => ({
       policy: await ctx.db.get(policyId),
@@ -458,6 +466,101 @@ describe("policies.updateExtractionInternal", () => {
     expect(result.run).toMatchObject({
       pipelineStatus: "error",
       pipelineError: "Replacement document is not a bound policy.",
+      pipelineCheckpoint: {
+        nextPhase: "extract",
+        state: {
+          policyVersionKind: "re_extraction",
+          replacementPromotionStarted: false,
+          fileId: "replacement-file",
+        },
+      },
+    });
+  });
+
+  test("keeps an external replacement checkpoint retryable after worker failure", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Known Carrier",
+        policyNumber: "POL-EXTERNAL-RETRY",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        pipelineStatus: "running",
+        extractionDataStage: "final",
+      });
+      await ctx.db.insert("policyExtractionRuns", {
+        policyId,
+        pipelineStatus: "running",
+        pipelineCheckpoint: {
+          nextPhase: "extract",
+          state: {
+            policyVersionKind: "re_extraction",
+            replacementPromotionStarted: false,
+            fileId: "replacement-file",
+            externalWorker: true,
+          },
+          createdAt: 1,
+          lease: {
+            id: "replacement-lease",
+            phase: "extract",
+            expiresAt: 100,
+          },
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return policyId;
+    });
+
+    await t.mutation(pipelineCompleteLeaseFn, {
+      jobId: policyId,
+      leaseId: "replacement-lease",
+      status: "error",
+      error: "Worker failed before replacement promotion.",
+      checkpoint: {
+        nextPhase: "extract",
+        state: {
+          policyVersionKind: "re_extraction",
+          replacementPromotionStarted: false,
+          fileId: "replacement-file",
+          externalWorker: true,
+        },
+        createdAt: 2,
+      },
+    });
+    await t.mutation(pipelineReconcileTerminalStateFn, {
+      jobId: policyId,
+    });
+
+    const result = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(policyId),
+      run: await ctx.db
+        .query("policyExtractionRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .first(),
+    }));
+    expect(result.policy?.pipelineStatus).toBe("complete");
+    expect(result.run).toMatchObject({
+      pipelineStatus: "error",
+      pipelineError: "Worker failed before replacement promotion.",
+      pipelineCheckpoint: {
+        nextPhase: "extract",
+        state: {
+          fileId: "replacement-file",
+          replacementPromotionStarted: false,
+        },
+      },
     });
   });
 

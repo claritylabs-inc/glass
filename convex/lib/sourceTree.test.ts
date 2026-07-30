@@ -2907,6 +2907,47 @@ describe("sourceTreePolicyFields", () => {
     expect(fields.carrierIdentity).toEqual(carrierIdentity);
   });
 
+  it("clears a stored carrier identity without a positive current carrier match", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+      },
+      [],
+      [],
+    );
+    const fields = sourceTreePolicyFields({
+      sourceTree: [],
+      sourceSpans: [],
+      operationalProfile,
+      existingPolicyFields: {
+        carrier: "Unknown",
+        carrierIdentity: {
+          displayName: "Original Carrier",
+          sourceName: "Original Carrier Insurance Company",
+          legalEntities: [{
+            name: "Original Carrier Insurance Company",
+            sourceNodeIds: ["stored-carrier"],
+            sourceSpanIds: ["stored-carrier-span"],
+          }],
+          legalEntityRelationship: "single",
+          sourceNodeIds: ["stored-carrier"],
+          sourceSpanIds: ["stored-carrier-span"],
+        },
+        carrierLegalName: "Original Carrier Insurance Company",
+        carrierIdentityEnrichmentStatus: "ready",
+      },
+    });
+
+    expect(fields).toMatchObject({
+      carrier: "Unknown",
+      carrierIdentity: undefined,
+      carrierLegalName: undefined,
+      carrierIdentityEnrichmentStatus: undefined,
+    });
+  });
+
   it("drops operations descriptions whose evidence ids are invalid", () => {
     const profile = normalizeOperationalProfile(
       {

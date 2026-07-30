@@ -2653,7 +2653,9 @@ export const pipelineSetStatus = internalMutation({
       await patchPolicyExtractionRun(ctx, policyId, {
         pipelineStatus: status,
         pipelineError: error ?? undefined,
-        pipelineCheckpoint: undefined,
+        ...(status === "complete" || error === "Cancelled by user"
+          ? { pipelineCheckpoint: undefined }
+          : {}),
       });
       await ctx.db.patch(policyId, {
         ...policyPipelineStatusPatch(
@@ -3311,12 +3313,16 @@ export const pipelineReconcileTerminalState = internalMutation({
     ].filter((traceId): traceId is string => Boolean(traceId));
 
     await clearExternalPolicyExtractionPreviewQueue(ctx, policyId);
+    const clearsRetryState =
+      status === "complete" || error === "Cancelled by user";
     if (run && run.pipelineCheckpoint !== undefined) {
       await clearExternalPolicyExtractionQueue(ctx, policyId);
-      await ctx.db.patch(run._id, {
-        pipelineCheckpoint: undefined,
-        updatedAt: nowMs(),
-      });
+      if (clearsRetryState) {
+        await ctx.db.patch(run._id, {
+          pipelineCheckpoint: undefined,
+          updatedAt: nowMs(),
+        });
+      }
     }
     if (policy) {
       await ctx.db.patch(
@@ -3520,7 +3526,10 @@ export const pipelineCompleteLease = internalMutation({
     if (args.status) {
       patch.pipelineStatus = args.status;
       patch.pipelineError = args.error ?? undefined;
-      if (args.status === "complete" || args.status === "error") {
+      if (
+        args.status === "complete" ||
+        (args.status === "error" && args.error === "Cancelled by user")
+      ) {
         patch.pipelineCheckpoint = undefined;
       }
     }
