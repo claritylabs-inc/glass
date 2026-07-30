@@ -1829,6 +1829,11 @@ describe("sourceTreePolicyFields", () => {
         text: carrierText,
         pageStart: 1,
       },
+      {
+        id: "span-azga-details",
+        text: "AZGA Service Canada Inc. NAIC 54321 100 Secondary St Toronto ON M5V 1A1",
+        pageStart: 1,
+      },
     ];
     const nodes: DocumentSourceNode[] = [
       {
@@ -1853,6 +1858,18 @@ describe("sourceTreePolicyFields", () => {
         order: 1,
         path: "Policy / Carrier identity",
       },
+      {
+        id: "azga-details",
+        documentId: "carrier-identity-policy",
+        parentId: "document",
+        kind: "section",
+        title: "Secondary insurer details",
+        description: spans[1].text,
+        textExcerpt: spans[1].text,
+        sourceSpanIds: ["span-azga-details"],
+        order: 2,
+        path: "Policy / Secondary insurer details",
+      },
     ];
     const operationalProfile = normalizeOperationalProfile(
       {
@@ -1874,8 +1891,15 @@ describe("sourceTreePolicyFields", () => {
           {
             role: "insurer",
             name: "AZGA Service Canada Inc.",
-            sourceNodeIds: ["carrier-identity"],
-            sourceSpanIds: ["span-carrier-identity"],
+            naicNumber: "54321",
+            address: {
+              street1: "100 Secondary St",
+              city: "Toronto",
+              state: "ON",
+              zip: "M5V 1A1",
+            },
+            sourceNodeIds: ["azga-details"],
+            sourceSpanIds: ["span-azga-details"],
           },
           {
             role: "general_agent",
@@ -1908,13 +1932,13 @@ describe("sourceTreePolicyFields", () => {
         },
         {
           name: "AZGA Service Canada Inc.",
-          sourceNodeIds: ["carrier-identity"],
-          sourceSpanIds: ["span-carrier-identity"],
+          sourceNodeIds: ["azga-details", "carrier-identity"],
+          sourceSpanIds: ["span-azga-details", "span-carrier-identity"],
         },
       ],
       legalEntityRelationship: "and_or",
-      sourceNodeIds: ["carrier-identity"],
-      sourceSpanIds: ["span-carrier-identity"],
+      sourceNodeIds: ["carrier-identity", "azga-details"],
+      sourceSpanIds: ["span-carrier-identity", "span-azga-details"],
     });
     expect(fields.carrierLegalName).toBe(
       "CUMIS General Insurance Company",
@@ -1925,6 +1949,9 @@ describe("sourceTreePolicyFields", () => {
     expect(fields.insurer).toMatchObject({
       legalName: "CUMIS General Insurance Company",
     });
+    expect(fields.insurer).not.toHaveProperty("address");
+    expect(fields.insurer).not.toHaveProperty("naicNumber");
+    expect(fields.carrierNaicNumber).toBeUndefined();
   });
 
   it("does not promote an unrelated named-insured DBA to carrier identity", () => {

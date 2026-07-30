@@ -2240,6 +2240,13 @@ export function sourceTreePolicyFields(params: {
     !Array.isArray(projected.insurer)
       ? projected.insurer as Record<string, unknown>
       : {};
+  const currentInsurerMatchesPrimary = Boolean(
+    primaryLegalEntity &&
+    sameCarrierIdentityName(
+      currentInsurer.legalName,
+      primaryLegalEntity.name,
+    ),
+  );
   const currentGeneralAgent =
     projected.generalAgent &&
     typeof projected.generalAgent === "object" &&
@@ -2257,11 +2264,14 @@ export function sourceTreePolicyFields(params: {
       ? {
           carrierLegalName: primaryLegalEntity.name,
           insurer: {
-            ...currentInsurer,
+            ...(currentInsurerMatchesPrimary ? currentInsurer : {}),
             legalName: primaryLegalEntity.name,
             documentNodeId: primaryLegalEntity.sourceNodeIds[0],
             sourceSpanIds: primaryLegalEntity.sourceSpanIds,
           },
+          carrierNaicNumber: currentInsurerMatchesPrimary
+            ? projected.carrierNaicNumber
+            : undefined,
         }
       : {}),
     ...(carrierIdentity.legalEntities.length === 1
