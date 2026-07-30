@@ -61,6 +61,18 @@ describe("chat rendering performance", () => {
     expect(threadContent).not.toContain("el.scrollHeight - el.scrollTop");
   });
 
+  it("expands message sources by default while retaining the collapse toggle", () => {
+    const threadContent = read("components/agent-thread/thread-content.tsx");
+
+    expect(threadContent).toMatch(
+      /const \[isSourcesExpanded, setIsSourcesExpanded\] = useState\(true\);/,
+    );
+    expect(threadContent).toContain("isActive={isSourcesExpanded}");
+    expect(threadContent).toContain(
+      "onClick={() => setIsSourcesExpanded((value) => !value)}",
+    );
+  });
+
   it("persists only settled query results off the render path", () => {
     const cachedQuery = read("lib/sync/use-cached-query.ts");
 

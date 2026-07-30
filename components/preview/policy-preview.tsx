@@ -7,8 +7,13 @@ import {
   buildCoverageBreakdown,
   type CoverageBreakdown,
 } from "@/convex/lib/coverageBreakdown";
-import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
+import { policyLobCodes } from "@/convex/lib/linesOfBusiness";
+import { PolicyListItem } from "@/components/policy-list-item";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+} from "@/components/ui/operational-panel";
 import { usePdf } from "@/components/pdf-context";
 import { useCachedPolicyDetail } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -25,17 +30,8 @@ import {
   coverageSourceNodeIds,
   coverageSourceSpanIds,
 } from "@/app/policies/[id]/policy-coverage-breakdown";
-import {
-  formatDisplayDate,
-  formatDisplayPolicyPeriod,
-} from "@/lib/date-format";
-import {
-  formatCarrierLegalEntityNames,
-} from "@/convex/lib/carrierIdentity";
-import {
-  resolvePolicyCarrierDisplay,
-  resolvePolicyPartyContext,
-} from "@/convex/lib/policyPartyContext";
+import { formatDisplayDate } from "@/lib/date-format";
+import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -45,11 +41,6 @@ interface PolicyPreviewProps {
   citedSections?: string[];
   citedCoverageNames?: string[];
   citedSourceSpanIds?: string[];
-  onHeaderInfo?: (info: {
-    policyId: string;
-    carrier: string;
-    policyNum?: string;
-  }) => void;
   onFooterActions?: (actions: {
     fileUrl?: string;
     policyId: string;
@@ -77,38 +68,6 @@ function realText(value: unknown): string | undefined {
   return text;
 }
 
-function titleLabel(value: string | undefined) {
-  return value
-    ?.replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function formatPolicyPeriod(record: Record<string, unknown>) {
-  return (
-    formatDisplayPolicyPeriod(
-      realText(record.effectiveDate),
-      realText(record.expirationDate),
-      realText(record.policyTermType),
-    ) || undefined
-  );
-}
-
-function carrierName(record: Record<string, unknown>) {
-  return resolvePolicyCarrierDisplay(record).carrierDisplayName;
-}
-
-function policyKind(record: Record<string, unknown>) {
-  const parts = [
-    titleLabel(realText(record.policyTermType)),
-    record.isRenewal === true ? "Renewal" : undefined,
-  ].filter((item): item is string => Boolean(item));
-  return parts.length ? parts.join(" / ") : undefined;
-}
-
 function taxesAndFeesTotal(value: unknown) {
   if (!Array.isArray(value)) return undefined;
   const total = value.reduce((sum, entry) => {
@@ -123,33 +82,34 @@ function taxesAndFeesTotal(value: unknown) {
     : undefined;
 }
 
-function metadataRows(
+function moneyValue(value: string | undefined) {
+  if (!value) return undefined;
+  const amount = Number(value.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+function supportingDetailRows(
   record: Record<string, unknown>,
-  fileCount: number,
+  insuredName: string | undefined,
 ): MetadataRow[] {
-  const partyContext = resolvePolicyPartyContext(record);
-  const { carrierDisplayName, carrierIdentity } =
-    resolvePolicyCarrierDisplay(record);
+  const premium = realText(record.premium);
+  const taxesAndFees = taxesAndFeesTotal(record.taxesAndFees);
+  const totalPayable = realText(record.totalCost);
+  const premiumAmount = moneyValue(premium);
+  const totalPayableAmount = moneyValue(totalPayable);
+  const repeatsPremium =
+    premiumAmount !== undefined &&
+    totalPayableAmount !== undefined &&
+    premiumAmount === totalPayableAmount &&
+    !taxesAndFees;
+
   return [
-    { label: "Named insured", value: partyContext.insuredName },
-    { label: "Carrier", value: carrierDisplayName },
+    { label: "Named insured", value: insuredName },
+    { label: "Premium", value: premium },
+    { label: "Taxes & fees", value: taxesAndFees },
     {
-      label: carrierIdentity?.legalEntities.length === 1
-        ? "Legal entity"
-        : "Legal entities",
-      value: formatCarrierLegalEntityNames(carrierIdentity),
-    },
-    { label: "General Agent", value: partyContext.generalAgentName },
-    { label: "Producer", value: partyContext.producerName },
-    { label: "Policy number", value: realText(record.policyNumber) },
-    { label: "Policy period", value: formatPolicyPeriod(record) },
-    { label: "Premium", value: realText(record.premium) },
-    { label: "Taxes & fees", value: taxesAndFeesTotal(record.taxesAndFees) },
-    { label: "Total payable", value: realText(record.totalCost) },
-    { label: "Policy type", value: policyKind(record) },
-    {
-      label: "Files",
-      value: fileCount > 1 ? `${fileCount} files combined` : undefined,
+      label: "Total payable",
+      value: repeatsPremium ? undefined : totalPayable,
     },
   ].filter((row): row is MetadataRow => Boolean(row.value));
 }
@@ -171,7 +131,9 @@ function coverageTermRows(row: CoverageBreakdownRow) {
     ),
   );
   const hasLabel = (pattern: RegExp) =>
-    terms.some((term) => pattern.test(normalizedCoverageText(term.label) ?? ""));
+    terms.some((term) =>
+      pattern.test(normalizedCoverageText(term.label) ?? ""),
+    );
   const push = (label: string, value: string | undefined) => {
     if (!value) return;
     const key = `${normalizedCoverageText(label)}|${normalizedCoverageText(value)}`;
@@ -199,7 +161,6 @@ export function PolicyPreview({
   id,
   page,
   citedSourceSpanIds,
-  onHeaderInfo,
   onFooterActions,
 }: PolicyPreviewProps) {
   const policy = useCachedPolicyDetail(id as Id<"policies">);
@@ -216,7 +177,6 @@ export function PolicyPreview({
     api.policies.getPolicyFileUrl,
     policy ? { policyId: policy._id } : "skip",
   );
-  const [showAllTypes, setShowAllTypes] = useState(false);
   const coverageSourceNodeIdList = useMemo(
     () => [...new Set(coverageBreakdown.all.flatMap(coverageSourceNodeIds))],
     [coverageBreakdown.all],
@@ -226,12 +186,15 @@ export function PolicyPreview({
     coverageSourceNodeIdList,
   );
   const requestedSourceSpanIds = useMemo(
-    () => [...new Set([
-      ...previewSourceSpanIds,
-      ...coverageBreakdown.all.flatMap((row) =>
-        coverageSourceSpanIds(row, coverageSourceNodes),
-      ),
-    ])].slice(0, 256),
+    () =>
+      [
+        ...new Set([
+          ...previewSourceSpanIds,
+          ...coverageBreakdown.all.flatMap((row) =>
+            coverageSourceSpanIds(row, coverageSourceNodes),
+          ),
+        ]),
+      ].slice(0, 256),
     [coverageBreakdown.all, coverageSourceNodes, previewSourceSpanIds],
   );
   const sourceSpans = useCachedQuery(
@@ -253,14 +216,6 @@ export function PolicyPreview({
   );
 
   const record = policy as Record<string, unknown> | undefined;
-  const carrier = record ? carrierName(record) ?? "Unknown carrier" : "Unknown carrier";
-  const policyNum = record ? realText(record.policyNumber) : undefined;
-
-  useEffect(() => {
-    if (policy && onHeaderInfo) {
-      onHeaderInfo({ policyId: id, carrier, policyNum });
-    }
-  }, [carrier, id, policyNum, policy, onHeaderInfo]);
 
   const highlightBoxes = useMemo(
     () => highlightBoxesForSpans(citedSourceSpans),
@@ -284,17 +239,29 @@ export function PolicyPreview({
   }
 
   const types = policyLobCodes(policy).filter((code) => code !== "UN");
-  const fileCount = Array.isArray(record.files) ? record.files.length : 0;
-  const rows = metadataRows(record, fileCount);
+  const partyContext = resolvePolicyPartyContext(record);
+  const carrier = partyContext.carrierDisplayName ?? "Unknown carrier";
+  const supportingRows = supportingDetailRows(record, partyContext.insuredName);
 
   return (
     <div className="min-w-0 space-y-5 overflow-x-hidden">
-      <PolicyMetadataPreview
-        rows={rows}
-        types={types}
-        showAllTypes={showAllTypes}
-        onShowAllTypes={() => setShowAllTypes(true)}
+      <PolicyListItem
+        carrier={carrier}
+        carrierIdentity={policy.carrierIdentity}
+        policyDetailOverrides={policy.policyDetailOverrides}
+        generalAgent={partyContext.generalAgentName}
+        policyNumber={realText(record.policyNumber) ?? ""}
+        productIdentity={policy.productIdentity}
+        programName={realText(record.programName)}
+        linesOfBusiness={types}
+        effectiveDate={realText(record.effectiveDate)}
+        expirationDate={realText(record.expirationDate)}
+        policyTermType={realText(record.policyTermType)}
+        pipelineStatus={realText(record.pipelineStatus)}
+        extractionDataStage={realText(record.extractionDataStage)}
       />
+
+      <PolicySupportingDetails rows={supportingRows} />
 
       {citedSourceSpans.length > 0 && (
         <ExactSourceLocations sourceSpans={citedSourceSpans} />
@@ -310,69 +277,24 @@ export function PolicyPreview({
   );
 }
 
-function PolicyMetadataPreview({
-  rows,
-  types,
-  showAllTypes,
-  onShowAllTypes,
-}: {
-  rows: MetadataRow[];
-  types: string[];
-  showAllTypes: boolean;
-  onShowAllTypes: () => void;
-}) {
-  if (!rows.length && !types.length) return null;
-  const visibleTypes = showAllTypes ? types : types.slice(0, 3);
-  const hiddenTypeCount = Math.max(0, types.length - visibleTypes.length);
+function PolicySupportingDetails({ rows }: { rows: MetadataRow[] }) {
+  if (!rows.length) return null;
 
   return (
     <section className="min-w-0">
       <p className="mb-2 text-base font-medium text-muted-foreground/60">
-        Key details
+        Policy details
       </p>
-      <dl className="min-w-0 divide-y divide-foreground/6 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
-        {types.length > 0 && (
-          <div className="grid min-w-0 grid-cols-[8rem_minmax(0,1fr)] gap-3 px-3 py-2.5">
-            <dt className="text-label text-muted-foreground/50">
-              Lines of business
-            </dt>
-            <dd className="min-w-0">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                {visibleTypes.map((type) => (
-                  <span
-                    key={type}
-                    className="rounded-full bg-secondary px-2 py-0.5 text-label font-medium text-muted-foreground"
-                  >
-                    {lobLabel(type)}
-                  </span>
-                ))}
-                {hiddenTypeCount > 0 && (
-                  <PillButton
-                    size="compact"
-                    variant="secondary"
-                    onClick={onShowAllTypes}
-                  >
-                    +{hiddenTypeCount} more
-                  </PillButton>
-                )}
-              </div>
-            </dd>
-          </div>
-        )}
+      <OperationalLabelValueList>
         {rows.map((row) => (
-          <div
+          <OperationalLabelValueRow
             key={`${row.label}:${row.value}`}
-            className="grid min-w-0 grid-cols-[8rem_minmax(0,1fr)] gap-3 px-3 py-2.5"
-          >
-            <dt className="text-label text-muted-foreground/50">
-              {row.label}
-            </dt>
-            <dd className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-              {row.value}
-            </dd>
-          </div>
+            label={row.label}
+            value={row.value}
+            align="right"
+          />
         ))}
-      </dl>
+      </OperationalLabelValueList>
     </section>
   );
 }
@@ -419,7 +341,9 @@ type CoveragePreviewGroup = {
   rows: CoverageBreakdownRow[];
 };
 
-function coveragePreviewGroups(breakdown: CoverageBreakdown): CoveragePreviewGroup[] {
+function coveragePreviewGroups(
+  breakdown: CoverageBreakdown,
+): CoveragePreviewGroup[] {
   return [
     ...breakdown.groups.map((group) => ({
       key: group.lineOfBusiness,
@@ -427,11 +351,15 @@ function coveragePreviewGroups(breakdown: CoverageBreakdown): CoveragePreviewGro
       rows: group.items,
     })),
     ...(breakdown.unassigned.length
-      ? [{
-          key: "unassigned",
-          title: breakdown.groups.length ? "Unassigned" : "Coverage schedules",
-          rows: breakdown.unassigned,
-        }]
+      ? [
+          {
+            key: "unassigned",
+            title: breakdown.groups.length
+              ? "Unassigned"
+              : "Coverage schedules",
+            rows: breakdown.unassigned,
+          },
+        ]
       : []),
   ];
 }
@@ -468,7 +396,10 @@ function CoverageListPreview({
   const visibleGroups = showAllCoverages
     ? groups
     : visibleCoveragePreviewGroups(groups, 8);
-  const visibleCount = visibleGroups.reduce((sum, group) => sum + group.rows.length, 0);
+  const visibleCount = visibleGroups.reduce(
+    (sum, group) => sum + group.rows.length,
+    0,
+  );
   const hiddenCount = Math.max(0, totalRows - visibleCount);
 
   return (
@@ -486,16 +417,27 @@ function CoverageListPreview({
       {totalRows > 0 ? (
         <>
           <div className="space-y-2">
-            {visibleGroups.map((group) => (
-              <CoveragePreviewGroupList
-                key={group.key}
-                group={group}
-                showTitle={groups.length > 1 || group.title !== "Coverage schedules"}
-                fileUrl={fileUrl}
-                sourceNodes={sourceNodes}
-                sourceSpans={sourceSpans}
-              />
-            ))}
+            {visibleGroups.map((group) => {
+              const useCoverageNameAsHeader =
+                groups.length === 1 && group.rows.length === 1;
+              return (
+                <CoveragePreviewGroupList
+                  key={group.key}
+                  group={group}
+                  headerTitle={
+                    groups.length > 1
+                      ? group.title
+                      : useCoverageNameAsHeader
+                        ? group.rows[0]?.name
+                        : undefined
+                  }
+                  showRowTitles={!useCoverageNameAsHeader}
+                  fileUrl={fileUrl}
+                  sourceNodes={sourceNodes}
+                  sourceSpans={sourceSpans}
+                />
+              );
+            })}
           </div>
           {hiddenCount > 0 && (
             <div className="mt-2 flex justify-end">
@@ -520,22 +462,24 @@ function CoverageListPreview({
 
 function CoveragePreviewGroupList({
   group,
-  showTitle,
+  headerTitle,
+  showRowTitles,
   fileUrl,
   sourceNodes,
   sourceSpans,
 }: {
   group: CoveragePreviewGroup;
-  showTitle: boolean;
+  headerTitle?: string;
+  showRowTitles: boolean;
   fileUrl?: string | null;
   sourceNodes?: SourceNodeEvidenceDoc[];
   sourceSpans?: SourceSpanDoc[];
 }) {
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
-      {showTitle ? (
-        <div className="border-b border-foreground/6 px-3 py-2 text-label font-medium text-muted-foreground/60">
-          {group.title}
+      {headerTitle ? (
+        <div className="border-b border-foreground/6 px-3 py-2.5 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+          {headerTitle}
         </div>
       ) : null}
       <div className="divide-y divide-foreground/6">
@@ -546,6 +490,7 @@ function CoveragePreviewGroupList({
             fileUrl={fileUrl}
             sourceNodes={sourceNodes}
             sourceSpans={sourceSpans}
+            showName={showRowTitles}
           />
         ))}
       </div>
@@ -558,11 +503,13 @@ function CoverageScheduleRow({
   fileUrl,
   sourceNodes,
   sourceSpans,
+  showName,
 }: {
   row: CoverageBreakdownRow;
   fileUrl?: string | null;
   sourceNodes?: SourceNodeEvidenceDoc[];
   sourceSpans?: SourceSpanDoc[];
+  showName: boolean;
 }) {
   const pdf = usePdf();
   const terms = coverageTermRows(row);
@@ -587,23 +534,39 @@ function CoverageScheduleRow({
       role={canOpenSource ? "button" : undefined}
       tabIndex={canOpenSource ? 0 : undefined}
       title={canOpenSource ? `Open source on page ${target!.page}` : undefined}
-      aria-label={canOpenSource ? `Open source for ${row.name} on page ${target!.page}` : undefined}
+      aria-label={
+        canOpenSource
+          ? `Open source for ${row.name} on page ${target!.page}`
+          : undefined
+      }
       onClick={canOpenSource ? openSource : undefined}
-      onKeyDown={canOpenSource ? (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        openSource();
-      } : undefined}
+      onKeyDown={
+        canOpenSource
+          ? (event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              openSource();
+            }
+          : undefined
+      }
       className={`min-w-0 px-3 py-3 ${
         canOpenSource
           ? "cursor-pointer transition-colors hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
           : ""
       }`}
     >
-      <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
-        {row.name}
-      </div>
-      <dl className="mt-2 divide-y divide-foreground/6">
+      {showName ? (
+        <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+          {row.name}
+        </div>
+      ) : null}
+      <dl
+        className={
+          showName
+            ? "mt-2 divide-y divide-foreground/6"
+            : "divide-y divide-foreground/6"
+        }
+      >
         {visibleTerms.map((term, termIndex) => (
           <div
             key={`${term.label}:${termIndex}`}
