@@ -428,7 +428,10 @@ describe("policies.updateExtractionInternal", () => {
         pipelineStatus: "running",
         pipelineCheckpoint: {
           nextPhase: "extract",
-          state: { policyVersionKind: "re_extraction" },
+          state: {
+            policyVersionKind: "re_extraction",
+            replacementPromotionStarted: false,
+          },
           createdAt: 1,
         },
         createdAt: 1,
@@ -457,4 +460,78 @@ describe("policies.updateExtractionInternal", () => {
       pipelineError: "Replacement document is not a bound policy.",
     });
   });
+
+  test.each([
+    {
+      nextPhase: "extract",
+      replacementPromotionStarted: true,
+    },
+    {
+      nextPhase: "embed_and_store",
+      replacementPromotionStarted: false,
+    },
+  ])(
+    "fails closed when re-extraction errors after replacement promotion ($nextPhase)",
+    async ({ nextPhase, replacementPromotionStarted }) => {
+      const t = convexTest(schema, modules);
+      const policyId = await t.run(async (ctx) => {
+        const orgId = await ctx.db.insert("organizations", {
+          name: "Client",
+          type: "client",
+        });
+        const policyId = await ctx.db.insert("policies", {
+          orgId,
+          carrier: "Replacement Carrier",
+          policyNumber: "POL-PROMOTED",
+          insuredName: "Known Insured",
+          linesOfBusiness: ["CGL"],
+          effectiveDate: "01/01/2026",
+          expirationDate: "01/01/2027",
+          documentType: "policy",
+          policyYear: 2026,
+          isRenewal: false,
+          coverages: [],
+          pipelineStatus: "running",
+          extractionDataStage: "final",
+        });
+        await ctx.db.insert("policyExtractionRuns", {
+          policyId,
+          pipelineStatus: "running",
+          pipelineCheckpoint: {
+            nextPhase,
+            state: {
+              policyVersionKind: "re_extraction",
+              replacementPromotionStarted,
+            },
+            createdAt: 1,
+          },
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        return policyId;
+      });
+
+      await t.mutation(pipelineSetStatusFn, {
+        jobId: policyId,
+        status: "error",
+        error: "Replacement evidence persistence failed.",
+      });
+
+      const result = await t.run(async (ctx) => ({
+        policy: await ctx.db.get(policyId),
+        run: await ctx.db
+          .query("policyExtractionRuns")
+          .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+          .first(),
+      }));
+      expect(result.policy).toMatchObject({
+        pipelineStatus: "error",
+        pipelineError: "Replacement evidence persistence failed.",
+      });
+      expect(result.run).toMatchObject({
+        pipelineStatus: "error",
+        pipelineError: "Replacement evidence persistence failed.",
+      });
+    },
+  );
 });

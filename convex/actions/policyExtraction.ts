@@ -181,6 +181,11 @@ export type PolicyExtractionState = {
   userId: string;
   policyFileId?: string;
   policyVersionKind?: "new_policy" | "re_extraction" | "renewal";
+  /**
+   * Set before replacement fields or files are written. Replacement failures
+   * remain operationally complete only while this is explicitly false.
+   */
+  replacementPromotionStarted?: boolean;
   traceId?: string;
   externalWorker?: boolean;
   /** Client-owned feature snapshot. It must not be re-read during a run. */
@@ -1553,6 +1558,14 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         linesOfBusiness?: string[];
         carrierIdentity?: unknown;
       } | null;
+      const promotionState: PolicyExtractionState =
+        state.policyVersionKind === "re_extraction" ||
+        state.policyVersionKind === "renewal"
+          ? { ...state, replacementPromotionStarted: true }
+          : state;
+      if (promotionState !== state) {
+        await pCtx.saveState(promotionState);
+      }
 
       await convexCtx.runMutation(
         (internal as any).policies.updateExtractionInternal,
@@ -1594,7 +1607,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       });
       const chunkIds = chunks.map((c: { id: string }) => c.id);
       const nextState: PolicyExtractionState = {
-        ...state,
+        ...promotionState,
         embeddingPayloadFileId,
         chunkIds,
         sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
@@ -2480,6 +2493,24 @@ async function completeExternalExtractFromPayload(
     linesOfBusiness?: string[];
     carrierIdentity?: unknown;
   } | null;
+  const promotionState: PolicyExtractionState =
+    state.policyVersionKind === "re_extraction" ||
+    state.policyVersionKind === "renewal"
+      ? { ...state, replacementPromotionStarted: true }
+      : state;
+  const promotionLeaseCurrent = await ctx.runMutation(
+    (internal as any).policies.pipelineSaveStateForLease,
+    {
+      jobId: policyId,
+      leaseId: args.leaseId,
+      nextPhase: "extract",
+      state: promotionState,
+      leaseExpiresAt: nowMs() + EXTERNAL_WORKER_LEASE_MS,
+    },
+  ) as boolean;
+  if (!promotionLeaseCurrent) {
+    return { ok: false };
+  }
 
   await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
     id: policyId,
@@ -2519,7 +2550,7 @@ async function completeExternalExtractFromPayload(
     sourceNodesForStorage: sourceNodes,
   });
   const nextState: PolicyExtractionState = {
-    ...state,
+    ...promotionState,
     embeddingPayloadFileId,
     chunkIds: chunks.map((chunk) => String(chunk.id)),
     sourceSpanIds: canonicalSpans.map((span) => String(span.id)),
@@ -3270,6 +3301,10 @@ export const startPolicyExtractionFromUpload = internalAction({
         userId: String(userId),
         policyFileId: policyFileId ? String(policyFileId) : undefined,
         policyVersionKind,
+        replacementPromotionStarted:
+          policyVersionKind === "re_extraction" || policyVersionKind === "renewal"
+            ? false
+            : undefined,
         coverageRecovery,
         traceId,
       };
@@ -3319,6 +3354,10 @@ export const startPolicyExtractionFromUpload = internalAction({
         userId: String(userId),
         policyFileId: policyFileId ? String(policyFileId) : undefined,
         policyVersionKind,
+        replacementPromotionStarted:
+          policyVersionKind === "re_extraction" || policyVersionKind === "renewal"
+            ? false
+            : undefined,
         coverageRecovery,
         traceId,
       },
@@ -3398,6 +3437,9 @@ export const retryPolicyExtraction = internalAction({
         userId: existingState?.userId ?? String(policy.userId ?? policy.uploadedByUserId ?? ""),
         policyFileId: existingState?.policyFileId,
         policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
+        replacementPromotionStarted: mode === "full"
+          ? false
+          : existingState?.replacementPromotionStarted,
         coverageRecovery,
         traceId,
       };
@@ -3437,6 +3479,9 @@ export const retryPolicyExtraction = internalAction({
         orgId: existingState?.orgId ?? String(policy.orgId ?? ""),
         userId: existingState?.userId ?? String(policy.userId ?? ""),
         policyVersionKind: mode === "full" ? "re_extraction" : existingState?.policyVersionKind,
+        replacementPromotionStarted: mode === "full"
+          ? false
+          : existingState?.replacementPromotionStarted,
         coverageRecovery,
         traceId,
       },

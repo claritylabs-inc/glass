@@ -627,18 +627,35 @@ function policyPipelineStatusPatch(
   status: PolicyPipelineStatus,
   error: string | null | undefined,
 ) {
-  const state = (
+  const typedCheckpoint = (
     checkpoint && typeof checkpoint === "object"
-      ? (checkpoint as { state?: { policyVersionKind?: string } }).state
+      ? checkpoint as {
+          nextPhase?: string;
+          state?: {
+            policyVersionKind?: string;
+            replacementPromotionStarted?: boolean;
+          };
+        }
       : undefined
   );
+  const state = typedCheckpoint?.state;
+  const replacementRun =
+    state?.policyVersionKind === "re_extraction" ||
+    state?.policyVersionKind === "renewal";
+  const replacementHasNotStartedPromotion =
+    replacementRun &&
+    state.replacementPromotionStarted === false &&
+    (
+      typedCheckpoint?.nextPhase === "load_pdf" ||
+      typedCheckpoint?.nextPhase === "extract"
+    );
   const preservesBoundPolicy =
     status === "error" &&
     policy?.extractionDataStage === "final" &&
     (
-      state?.policyVersionKind === "re_extraction" ||
-      state?.policyVersionKind === "renewal" ||
-      policy.pipelineStatus === "complete"
+      replacementRun
+        ? replacementHasNotStartedPromotion
+        : policy.pipelineStatus === "complete"
     );
   return {
     pipelineStatus: preservesBoundPolicy ? "complete" : status,
