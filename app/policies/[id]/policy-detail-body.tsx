@@ -71,6 +71,7 @@ import {
   formatDisplayDateTime,
   formatDisplayPolicyPeriod,
 } from "@/lib/date-format";
+import { policyTermTypeFromVersionSnapshot } from "@/convex/lib/policyVersioning";
 import type { PipelineStatus, LogEntry } from "@claritylabs/cl-pipelines";
 import { PolicyDetailSkeleton } from "./policy-detail-skeleton";
 import { PolicyExtractionBanner } from "@/components/shared/extraction-banner";
@@ -124,6 +125,7 @@ type PolicyVersionRow = {
   policyNumber?: string;
   summary?: string;
   fieldDiffs?: PolicyVersionFieldDiff[];
+  snapshot?: unknown;
   createdAt: number;
 };
 
@@ -159,7 +161,11 @@ function formatVersionDate(value: number) {
 
 function formatPolicyTerm(version: PolicyVersionRow) {
   return (
-    formatDisplayPolicyPeriod(version.effectiveDate, version.expirationDate) ||
+    formatDisplayPolicyPeriod(
+      version.effectiveDate,
+      version.expirationDate,
+      policyTermTypeFromVersionSnapshot(version.snapshot),
+    ) ||
     "Not recorded"
   );
 }
