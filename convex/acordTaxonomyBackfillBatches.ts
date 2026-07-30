@@ -184,6 +184,36 @@ export const listWriteReportPagesInternal = internalQuery({
       }),
 });
 
+export const listWritePolicyResultsInternal = internalQuery({
+  args: {
+    runId: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) =>
+    await ctx.db
+      .query("acordTaxonomyWritePolicyResults")
+      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .paginate({
+        cursor: args.cursor,
+        numItems: args.limit,
+      }),
+});
+
+export const getWritePolicyResultInternal = internalQuery({
+  args: {
+    runId: v.string(),
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) =>
+    await ctx.db
+      .query("acordTaxonomyWritePolicyResults")
+      .withIndex("by_runId_policyId", (query) =>
+        query.eq("runId", args.runId).eq("policyId", args.policyId)
+      )
+      .unique(),
+});
+
 export const recordWritePageInternal = internalMutation({
   args: {
     runId: v.string(),
@@ -234,6 +264,7 @@ export const recordWritePageInternal = internalMutation({
         runId: args.runId,
         cursorKey: args.cursorKey,
         report: args.report,
+        policyResultsRecorded: true,
         nextCursor: args.nextCursor,
         isDone: args.isDone,
         createdAt: args.createdAt,
@@ -543,31 +574,78 @@ export const applyPolicyDecisionInternal = internalMutation({
     dryRun: v.boolean(),
     expectedFingerprint: v.string(),
     decision: backfillDecisionValidator,
+    writeContext: v.optional(v.object({
+      runId: v.string(),
+      cursor: v.union(v.string(), v.null()),
+      cursorKey: v.string(),
+      createdAt: v.number(),
+    })),
   },
   handler: async (ctx, args): Promise<AcordTaxonomyBackfillReport> => {
+    if (args.dryRun === Boolean(args.writeContext)) {
+      throw new Error(
+        "ACORD taxonomy writes require a durable write context",
+      );
+    }
+    if (args.writeContext) {
+      const existing = await ctx.db
+        .query("acordTaxonomyWritePolicyResults")
+        .withIndex("by_runId_policyId", (query) =>
+          query
+            .eq("runId", args.writeContext!.runId)
+            .eq("policyId", args.policyId)
+        )
+        .unique();
+      if (existing) return existing.report;
+
+      const run = await ctx.db
+        .query("acordTaxonomyWriteRuns")
+        .withIndex("by_runId", (query) =>
+          query.eq("runId", args.writeContext!.runId)
+        )
+        .unique();
+      if (
+        !run ||
+        run.status !== "running" ||
+        run.nextCursor !== (args.writeContext.cursor ?? undefined)
+      ) {
+        throw new Error(
+          `ACORD taxonomy write run ${args.writeContext.runId} is stale`,
+        );
+      }
+    }
+
     const report = emptyAcordTaxonomyBackfillReport(args.dryRun);
     const policy = await ctx.db.get(args.policyId);
     if (!policy) {
       recordSkip(report, "missing_policy");
-      return report;
+    } else {
+      report.scannedCount = 1;
+      const reason = skipReason(policy);
+      if (reason) {
+        recordSkip(report, reason);
+      } else if (
+        acordTaxonomyBackfillPolicyFingerprint(
+          policy as unknown as Record<string, unknown>,
+        ) !== args.expectedFingerprint
+      ) {
+        recordSkip(report, "policy_changed_during_backfill");
+      } else {
+        recordDecision(report, policy._id, args.decision);
+        if (!args.dryRun && args.decision.patch) {
+          await ctx.db.patch(policy._id, args.decision.patch);
+        }
+      }
     }
-    report.scannedCount = 1;
-    const reason = skipReason(policy);
-    if (reason) {
-      recordSkip(report, reason);
-      return report;
-    }
-    if (
-      acordTaxonomyBackfillPolicyFingerprint(
-        policy as unknown as Record<string, unknown>,
-      ) !== args.expectedFingerprint
-    ) {
-      recordSkip(report, "policy_changed_during_backfill");
-      return report;
-    }
-    recordDecision(report, policy._id, args.decision);
-    if (!args.dryRun && args.decision.patch) {
-      await ctx.db.patch(policy._id, args.decision.patch);
+
+    if (args.writeContext) {
+      await ctx.db.insert("acordTaxonomyWritePolicyResults", {
+        runId: args.writeContext.runId,
+        cursorKey: args.writeContext.cursorKey,
+        policyId: args.policyId,
+        report,
+        createdAt: args.writeContext.createdAt,
+      });
     }
     return report;
   },

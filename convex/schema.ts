@@ -664,12 +664,24 @@ export default defineSchema({
     runId: v.string(),
     cursorKey: v.string(),
     report: acordTaxonomyBackfillReportValidator,
+    policyResultsRecorded: v.optional(v.boolean()),
     nextCursor: v.optional(v.string()),
     isDone: v.boolean(),
     createdAt: v.number(),
   })
     .index("by_runId", ["runId"])
     .index("by_runId_cursorKey", ["runId", "cursorKey"]),
+
+  acordTaxonomyWritePolicyResults: defineTable({
+    runId: v.string(),
+    cursorKey: v.string(),
+    policyId: v.id("policies"),
+    report: acordTaxonomyBackfillReportValidator,
+    createdAt: v.number(),
+  })
+    .index("by_runId", ["runId"])
+    .index("by_runId_cursorKey", ["runId", "cursorKey"])
+    .index("by_runId_policyId", ["runId", "policyId"]),
 
   operatorAuthNonces: defineTable({
     nonce: v.string(),

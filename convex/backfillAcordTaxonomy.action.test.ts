@@ -7,15 +7,18 @@ import {
   resume,
 } from "./actions/backfillAcordTaxonomy";
 import {
+  applyPolicyDecisionInternal,
   recordWriteFailureInternal,
   startWriteRunInternal,
 } from "./acordTaxonomyBackfillBatches";
+import { acordTaxonomyBackfillPolicyFingerprint } from "./lib/acordTaxonomyBackfill";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const backfillFn = backfill as any;
 const reportFn = report as any;
 const resumeFn = resume as any;
+const applyPolicyDecisionInternalFn = applyPolicyDecisionInternal as any;
 const recordWriteFailureInternalFn = recordWriteFailureInternal as any;
 const startWriteRunInternalFn = startWriteRunInternal as any;
 
@@ -364,6 +367,94 @@ describe("ACORD taxonomy dry-run orchestration", () => {
       pageCount: 1,
       scannedCount: 1,
       retryCount: 0,
+    });
+  });
+
+  it("reports a committed policy before its write page is checkpointed", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Partial Page Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Travel Carrier",
+        policyNumber: "PARTIAL-PAGE-TRAVEL",
+        linesOfBusiness: ["UN"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        extractionDataStage: "final",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Partial Page Client",
+      });
+    });
+    const policy = await t.run(async (ctx) => await ctx.db.get(policyId));
+    const expectedFingerprint = acordTaxonomyBackfillPolicyFingerprint(
+      policy as unknown as Record<string, unknown>,
+    );
+    const runId = "partial-page-write-run";
+    await t.mutation(startWriteRunInternalFn, {
+      runId,
+      limit: 2,
+      createdAt: 1,
+    });
+    const args = {
+      policyId,
+      dryRun: false,
+      expectedFingerprint,
+      decision: {
+        patch: {
+          linesOfBusiness: ["TRVL"],
+        },
+        lineChanged: true,
+        coverageCodesAdded: 0,
+        productIdentityAdded: false,
+        beforeLines: ["UN"],
+        afterLines: ["TRVL"],
+      },
+      writeContext: {
+        runId,
+        cursor: null,
+        cursorKey: "initial",
+        createdAt: 2,
+      },
+    };
+
+    await expect(
+      t.mutation(applyPolicyDecisionInternalFn, args),
+    ).resolves.toMatchObject({
+      scannedCount: 1,
+      changedCount: 1,
+      lineChangedCount: 1,
+    });
+    await expect(
+      t.mutation(applyPolicyDecisionInternalFn, args),
+    ).resolves.toMatchObject({
+      scannedCount: 1,
+      changedCount: 1,
+      lineChangedCount: 1,
+    });
+
+    const stored = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(policyId),
+      results: await ctx.db
+        .query("acordTaxonomyWritePolicyResults")
+        .withIndex("by_runId", (query) => query.eq("runId", runId))
+        .collect(),
+    }));
+    expect(stored.policy?.linesOfBusiness).toEqual(["TRVL"]);
+    expect(stored.results).toHaveLength(1);
+    await expect(t.action(reportFn, { runId })).resolves.toMatchObject({
+      runId,
+      status: "running",
+      pageCount: 0,
+      scannedCount: 1,
+      changedCount: 1,
+      lineChangedCount: 1,
     });
   });
 });

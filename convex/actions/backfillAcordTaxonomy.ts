@@ -81,6 +81,15 @@ type StoredWriteRun = {
 type StoredWriteReportPageResult = {
   page: Array<{
     report: AcordTaxonomyBackfillReport;
+    policyResultsRecorded?: boolean;
+  }>;
+  isDone: boolean;
+  continueCursor: string;
+};
+
+type StoredWritePolicyResultPageResult = {
+  page: Array<{
+    report: AcordTaxonomyBackfillReport;
   }>;
   isDone: boolean;
   continueCursor: string;
@@ -135,7 +144,25 @@ async function runPolicy(
   ctx: ActionCtx,
   policyId: Id<"policies">,
   dryRun: boolean,
+  writeContext?: {
+    runId: string;
+    cursor: string | null;
+    cursorKey: string;
+  },
 ) {
+  if (writeContext) {
+    const existing: {
+      report: AcordTaxonomyBackfillReport;
+    } | null = await ctx.runQuery(
+      internal.acordTaxonomyBackfillBatches
+        .getWritePolicyResultInternal,
+      {
+        runId: writeContext.runId,
+        policyId,
+      },
+    );
+    if (existing) return existing.report;
+  }
   const snapshot = await ctx.runQuery(
     internal.acordTaxonomyBackfillBatches.getPolicySnapshotInternal,
     { policyId },
@@ -161,6 +188,12 @@ async function runPolicy(
       dryRun,
       expectedFingerprint: snapshot?.fingerprint ?? "",
       decision,
+      writeContext: writeContext
+        ? {
+            ...writeContext,
+            createdAt: dayjs().valueOf(),
+          }
+        : undefined,
     },
   );
 }
@@ -172,6 +205,7 @@ async function runPage(
     dryRun: boolean;
     limit: number;
     cursor: string | null;
+    writeRunId?: string;
   },
 ) {
   const page: BackfillPage = await ctx.runQuery(
@@ -183,11 +217,21 @@ async function runPage(
     },
   );
   let report = emptyAcordTaxonomyBackfillReport(args.dryRun);
+  const cursorKey = args.cursor === null
+    ? "initial"
+    : `cursor:${args.cursor}`;
   for (const policyId of page.policyIds) {
     const policyReport: AcordTaxonomyBackfillReport = await runPolicy(
       ctx,
       policyId,
       args.dryRun,
+      args.writeRunId
+        ? {
+            runId: args.writeRunId,
+            cursor: args.cursor,
+            cursorKey,
+          }
+        : undefined,
     );
     report = mergeAcordTaxonomyBackfillReports(report, policyReport);
   }
@@ -251,6 +295,7 @@ async function runWritePage(
       limit: args.limit,
       cursor: args.cursor,
       dryRun: false,
+      writeRunId: args.runId,
     });
     const recorded: {
       status: "running" | "completed" | "failed";
@@ -393,14 +438,37 @@ export const report = internalAction({
           },
         );
         for (const result of page.page) {
+          pageCount += 1;
+          if (!result.policyResultsRecorded) {
+            aggregate = mergeAcordTaxonomyBackfillReports(
+              aggregate,
+              result.report,
+            );
+          }
+        }
+        cursor = page.isDone ? null : page.continueCursor;
+      } while (cursor);
+
+      cursor = null;
+      do {
+        const page: StoredWritePolicyResultPageResult = await ctx.runQuery(
+          internal.acordTaxonomyBackfillBatches
+            .listWritePolicyResultsInternal,
+          {
+            runId: args.runId,
+            cursor,
+            limit: DRY_RUN_REPORT_PAGE_SIZE,
+          },
+        );
+        for (const result of page.page) {
           aggregate = mergeAcordTaxonomyBackfillReports(
             aggregate,
             result.report,
           );
-          pageCount += 1;
         }
         cursor = page.isDone ? null : page.continueCursor;
       } while (cursor);
+
       return {
         ...aggregate,
         runId: args.runId,
