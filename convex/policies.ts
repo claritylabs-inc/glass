@@ -2391,6 +2391,7 @@ const PREVIEW_EXTRACTION_FIELD_ALLOWLIST = new Set([
   "generalAgent",
   "broker",
   "policyNumber",
+  "programName",
   "linesOfBusiness",
   "documentType",
   "policyYear",

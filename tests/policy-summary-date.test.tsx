@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PolicySummary } from "@/app/policies/[id]/policy-summary";
@@ -32,6 +34,17 @@ describe("PolicySummary date display", () => {
     expect(markup).toContain(">Active<");
     expect(markup).not.toContain(">Expired<");
     expect(markup).not.toContain("Jan 1, 2020");
+  });
+
+  it("passes continuous-term semantics through the Extraction tab", () => {
+    const extractionPanel = readFileSync(
+      join(process.cwd(), "app/policies/[id]/extraction-panel.tsx"),
+      "utf8",
+    );
+
+    expect(extractionPanel).toMatch(
+      /formatDisplayPolicyPeriod\(\s*policyDocument\.effectiveDate,\s*policyDocument\.expirationDate,\s*policyDocument\.policyTermType,\s*\)/,
+    );
   });
 
   it("uses the verified public carrier name in the policy overview", () => {

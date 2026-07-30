@@ -31,9 +31,11 @@ describe("COI agent wording", () => {
 
     expect(executors).toContain("policyParties: partyContext.parties");
     expect(executors).toContain(
-      "carrier: partyContext.carrierDisplayName ??",
+      "carrier: carrierDisplay.carrierDisplayName ??",
     );
-    expect(executors).toContain("carrierIdentity: policy.carrierIdentity");
+    expect(executors).toContain(
+      "carrierIdentity: carrierDisplay.carrierIdentity",
+    );
     expect(partyContext).toContain("options.clientProfileFacts?.operationsDescription");
     expect(partyContext.indexOf("address(policy.insuredAddress)")).toBeLessThan(
       partyContext.indexOf("options.clientProfileFacts?.mailingAddress"),

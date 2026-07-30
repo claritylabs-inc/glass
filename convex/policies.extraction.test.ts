@@ -8,6 +8,7 @@ import {
   pipelineRejectExternalJob,
   pipelineSetStatus,
   updateExtractionInternal,
+  updatePreviewExtractionInternal,
 } from "./policies";
 import { policyExtractionRetrySource } from "./actions/policyExtraction";
 
@@ -17,6 +18,8 @@ const pipelineReconcileTerminalStateFn = pipelineReconcileTerminalState as any;
 const pipelineRejectExternalJobFn = pipelineRejectExternalJob as any;
 const pipelineSetStatusFn = pipelineSetStatus as any;
 const updateExtractionInternalFn = updateExtractionInternal as any;
+const updatePreviewExtractionInternalFn =
+  updatePreviewExtractionInternal as any;
 
 describe("policy extraction retry source selection", () => {
   const policy = {
@@ -68,6 +71,47 @@ describe("policy extraction retry source selection", () => {
       policy,
       existingState,
     })).toEqual(existingState);
+  });
+});
+
+describe("policies.updatePreviewExtractionInternal", () => {
+  test("persists the provisional carrier product name", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Unknown",
+        policyNumber: "Unknown",
+        insuredName: "Unknown",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        extractionDataStage: "placeholder",
+      });
+    });
+
+    await expect(t.mutation(updatePreviewExtractionInternalFn, {
+      id: policyId,
+      fields: {
+        programName: "Trip Cancellation & Interruption Plan",
+      },
+      previewVersion: "preview-test",
+    })).resolves.toEqual({ updated: true });
+
+    const policy = await t.run(async (ctx) => ctx.db.get(policyId));
+    expect(policy).toMatchObject({
+      programName: "Trip Cancellation & Interruption Plan",
+      extractionDataStage: "preview",
+      extractionPreviewVersion: "preview-test",
+    });
   });
 });
 

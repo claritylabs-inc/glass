@@ -278,6 +278,7 @@ type PolicyDocument = {
   insuredName?: string;
   effectiveDate?: string;
   expirationDate?: string;
+  policyTermType?: string;
   linesOfBusiness?: string[];
   coverages?: CoverageEntry[];
   premium?: string;
@@ -2662,6 +2663,7 @@ export function ExtractionCards({
       value: formatDisplayPolicyPeriod(
         policyDocument.effectiveDate,
         policyDocument.expirationDate,
+        policyDocument.policyTermType,
       ),
     },
     policyLobCodes(policyDocument ?? {}).filter((code) => code !== "UN").length && {
