@@ -3,6 +3,34 @@ import { describe, expect, it } from "vitest";
 import { PolicyListItem } from "../components/policy-list-item";
 
 describe("PolicyListItem", () => {
+  it("gives interactive policy cards restrained surface, press, and focus states", () => {
+    const interactiveMarkup = renderToStaticMarkup(
+      <PolicyListItem
+        carrier="Clearcover"
+        policyNumber="CC-100"
+        pipelineStatus="complete"
+        href="/policies/cc-100"
+      />,
+    );
+    const staticMarkup = renderToStaticMarkup(
+      <PolicyListItem
+        carrier="Clearcover"
+        policyNumber="CC-100"
+        pipelineStatus="complete"
+      />,
+    );
+
+    expect(interactiveMarkup).toContain("cursor-pointer");
+    expect(interactiveMarkup).toContain("before:duration-100");
+    expect(interactiveMarkup).toContain("hover:before:border-white/25");
+    expect(interactiveMarkup).toContain("hover:before:bg-white/[0.04]");
+    expect(interactiveMarkup).toContain("active:before:bg-black/[0.035]");
+    expect(interactiveMarkup).toContain("focus-visible:ring-inset");
+    expect(interactiveMarkup).not.toContain("hover:-translate-y");
+    expect(interactiveMarkup).not.toContain("hover:shadow-");
+    expect(staticMarkup).not.toContain("hover:before:bg-white/[0.04]");
+  });
+
   it("renders canonical display dates for differently formatted stored values", () => {
     const numeric = renderToStaticMarkup(
       <PolicyListItem

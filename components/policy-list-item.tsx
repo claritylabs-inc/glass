@@ -154,15 +154,16 @@ export function PolicyListItem({
   const cardClassName = cn(
     "group relative flex min-h-44 min-w-0 flex-col overflow-hidden rounded-xl border border-black/10 text-left shadow-[0_2px_8px_rgba(0,0,0,0.08)]",
     isInteractive && [
-      "transition-[filter,box-shadow] duration-150 ease-out",
-      "hover:brightness-[0.97] hover:shadow-[0_6px_18px_rgba(0,0,0,0.12)]",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2",
-      "focus-within:ring-2 focus-within:ring-ring/30",
+      "cursor-pointer before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-xl before:border before:border-transparent before:bg-transparent before:content-[''] before:transition-[background-color,border-color] before:duration-100",
+      "hover:before:border-white/25 hover:before:bg-white/[0.04]",
+      "active:before:border-white/20 active:before:bg-black/[0.035]",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/40 focus-visible:before:border-white/30 focus-visible:before:bg-white/[0.04]",
+      "focus-within:ring-2 focus-within:ring-inset focus-within:ring-white/30 focus-within:before:border-white/30",
     ],
   );
 
   const content = (
-    <div className="relative flex h-full min-h-44 flex-col overflow-hidden p-4">
+    <div className="relative z-10 flex h-full min-h-44 flex-col overflow-hidden p-4">
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 opacity-70"
@@ -271,7 +272,9 @@ export function PolicyListItem({
         <Link href={href} prefetch className="min-h-0 flex-1">
           {content}
         </Link>
-        <div className="flex justify-end px-4 pb-4">{trailingAction}</div>
+        <div className="relative z-10 flex justify-end px-4 pb-4">
+          {trailingAction}
+        </div>
       </div>
     );
   }
