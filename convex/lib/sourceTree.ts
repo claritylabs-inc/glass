@@ -24,6 +24,7 @@ import { readCarrierIdentity, sameCarrierIdentityName } from "./carrierIdentity"
 import {
   buildCarrierIdentityFromSourceEvidence,
   preserveCurrentCarrierBranding,
+  sourceCarrierIdentityUnchanged,
 } from "./carrierIdentitySource";
 import { mergeCoverageRows } from "./coverageScoping";
 import { normalizeCoverageName, normalizeText } from "./coverageNames";
@@ -2122,6 +2123,13 @@ export function sourceTreePolicyFields(params: {
     existingPolicyFields: params.existingPolicyFields,
   });
   if (!carrierIdentity) return projected;
+  const existingCarrierIdentity = readCarrierIdentity(
+    existingPolicy.carrierIdentity,
+  );
+  const carrierIdentityChanged = !sourceCarrierIdentityUnchanged(
+    existingCarrierIdentity,
+    carrierIdentity,
+  );
 
   const primaryLegalEntity = carrierIdentity.legalEntities[0];
   const currentInsurer =
@@ -2140,6 +2148,13 @@ export function sourceTreePolicyFields(params: {
     ...projected,
     carrier: carrierIdentity.displayName,
     carrierIdentity,
+    ...(carrierIdentityChanged
+      ? {
+        carrierIdentityEnrichmentStatus: undefined,
+        carrierIdentityEnrichmentAttempts: undefined,
+        carrierIdentityEnrichmentAttemptedAt: undefined,
+      }
+      : {}),
     ...(primaryLegalEntity
       ? {
           carrierLegalName: primaryLegalEntity.name,

@@ -2638,6 +2638,77 @@ describe("sourceTreePolicyFields", () => {
     )).toMatchObject({ licenseNumber: "PR-123", sourceSpanIds: [span.id] });
   });
 
+  it("resets carrier enrichment state when source extraction changes the identity", () => {
+    const span = {
+      id: "replacement-carrier-span",
+      text: "INSURER Replacement Carrier Insurance Company",
+    };
+    const node: DocumentSourceNode = {
+      id: "replacement-carrier",
+      documentId: "replacement-policy",
+      kind: "section",
+      title: "Insurer",
+      description: span.text,
+      textExcerpt: span.text,
+      sourceSpanIds: [span.id],
+      order: 0,
+      path: "Policy / Insurer",
+    };
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+        insurer: {
+          value: "Replacement Carrier Insurance Company",
+          sourceNodeIds: [node.id],
+          sourceSpanIds: [span.id],
+        },
+        parties: [{
+          role: "insurer",
+          name: "Replacement Carrier Insurance Company",
+          sourceNodeIds: [node.id],
+          sourceSpanIds: [span.id],
+        }],
+      },
+      [node],
+      [span],
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: [node],
+      sourceSpans: [span],
+      operationalProfile,
+      existingPolicyFields: {
+        carrierIdentity: {
+          displayName: "Original Carrier Insurance Company",
+          sourceName: "Original Carrier Insurance Company",
+          legalEntities: [{
+            name: "Original Carrier Insurance Company",
+            sourceNodeIds: ["original-carrier"],
+            sourceSpanIds: ["original-carrier-span"],
+          }],
+          legalEntityRelationship: "single",
+          sourceNodeIds: ["original-carrier"],
+          sourceSpanIds: ["original-carrier-span"],
+        },
+        carrierIdentityEnrichmentStatus: "failed",
+        carrierIdentityEnrichmentAttempts: 3,
+        carrierIdentityEnrichmentAttemptedAt: 100,
+      },
+    });
+
+    expect(fields.carrierIdentity).toMatchObject({
+      sourceName: "Replacement Carrier Insurance Company",
+    });
+    expect(fields).toHaveProperty("carrierIdentityEnrichmentStatus", undefined);
+    expect(fields).toHaveProperty("carrierIdentityEnrichmentAttempts", undefined);
+    expect(fields).toHaveProperty(
+      "carrierIdentityEnrichmentAttemptedAt",
+      undefined,
+    );
+  });
+
   it("drops operations descriptions whose evidence ids are invalid", () => {
     const profile = normalizeOperationalProfile(
       {
