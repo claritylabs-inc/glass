@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { GLOBE_PATH, ogFonts } from "../../../opengraph-image";
 import { policyCardBranding } from "@/lib/policy-card-branding";
+import { readCarrierIdentity } from "@/convex/lib/carrierIdentity";
 import {
   compactList,
   loadAppCardView,
@@ -231,12 +232,14 @@ function PolicyPattern({
 }
 
 function BrandedPolicyImage({ policy, orgName }: { policy: Policy; orgName: string }) {
+  const carrierIdentity = readCarrierIdentity(policy.carrierIdentity);
+  const branding = carrierIdentity?.branding;
   const issuerName =
-    policy.carrierBrand?.name ?? policy.carrier ?? "Insurance carrier";
+    carrierIdentity?.displayName ?? policy.carrier ?? "Insurance carrier";
   const lines = policyLineBusinessLabels(policy);
   const { cardColor, patternVariant, textColor } = policyCardBranding(
     issuerName,
-    policy.carrierBrand?.accentColor,
+    branding?.accentColor,
   );
   const details = [
     ["Named insured", policy.insuredName || "Not listed"],
@@ -268,9 +271,9 @@ function BrandedPolicyImage({ policy, orgName }: { policy: Policy; orgName: stri
         <div style={{ fontSize: 23, color: textColor, opacity: 0.65 }}>Policy</div>
       </div>
       <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 18, marginTop: 48 }}>
-        {policy.carrierBrand?.iconUrl ? (
+        {branding?.iconUrl ? (
           <img
-            src={policy.carrierBrand.iconUrl}
+            src={branding.iconUrl}
             alt=""
             width={56}
             height={56}

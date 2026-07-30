@@ -38,18 +38,30 @@ describe("PolicyListItem", () => {
     );
 
     expect(markup).toContain("<li");
-    expect(markup).toContain("Errors &amp; Omissions");
+    expect(markup).toContain("Errors and Omissions");
     expect(markup).toContain("Other Liability");
-    expect(markup).not.toContain("Errors &amp; Omissions · Other Liability");
+    expect(markup).not.toContain("Errors and Omissions · Other Liability");
   });
 
   it("uses a restrained carrier-derived color, readable text, a favicon, and a softly masked pattern", () => {
     const markup = renderToStaticMarkup(
       <PolicyListItem
         carrier="Clearcover"
-        carrierBrand={{
-          accentColor: "#FDE047",
-          iconUrl: "https://clearcover.example/favicon.png",
+        carrierIdentity={{
+          displayName: "Clearcover",
+          legalEntities: [],
+          legalEntityRelationship: "single",
+          sourceNodeIds: [],
+          sourceSpanIds: [],
+          branding: {
+            website: "https://clearcover.example",
+            accentColor: "#FDE047",
+            iconUrl: "https://clearcover.example/favicon.png",
+            confidence: "high",
+            sourceUrls: [],
+            enrichmentVersion: 9,
+            updatedAt: 1,
+          },
         }}
         policyNumber="CC-100"
         linesOfBusiness={["AUTOB"]}
@@ -64,5 +76,41 @@ describe("PolicyListItem", () => {
     expect(markup).toContain("https://clearcover.example/favicon.png");
     expect(markup).not.toContain("uppercase");
     expect(markup).not.toContain("inset-x-0 top-0 h-1");
+  });
+
+  it("uses the verified public brand instead of the extracted legal insurer on branded surfaces", () => {
+    const markup = renderToStaticMarkup(
+      <PolicyListItem
+        carrier="Lloyd's Underwriters led by Liberty Managing Agency Limited Syndicate 4472"
+        carrierIdentity={{
+          displayName: "Liberty Specialty Markets",
+          sourceName:
+            "Lloyd's Underwriters led by Liberty Managing Agency Limited Syndicate 4472",
+          publicNameRelationship: "trading_name",
+          legalEntities: [],
+          legalEntityRelationship: "single",
+          sourceNodeIds: [],
+          sourceSpanIds: [],
+          branding: {
+            website: "https://libertyspecialtymarkets.example",
+            accentColor: "#002D72",
+            iconUrl:
+              "https://libertyspecialtymarkets.example/favicon.png",
+            confidence: "high",
+            sourceUrls: [],
+            enrichmentVersion: 9,
+            updatedAt: 1,
+          },
+        }}
+        policyNumber="PRP0000104-01"
+        linesOfBusiness={["OLIB"]}
+        pipelineStatus="complete"
+      />,
+    );
+
+    expect(markup).toContain("Liberty Specialty Markets");
+    expect(markup).not.toContain(
+      "Lloyd&#x27;s Underwriters led by Liberty Managing Agency Limited Syndicate 4472",
+    );
   });
 });

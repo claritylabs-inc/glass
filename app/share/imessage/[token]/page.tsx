@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { policyCardBranding } from "@/lib/policy-card-branding";
+import { readCarrierIdentity } from "@/convex/lib/carrierIdentity";
 import { buildCoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 import { CoverageBreakdownCards } from "@/app/policies/[id]/policy-coverage-breakdown";
 import {
@@ -67,12 +68,14 @@ function GlassWordmark() {
 }
 
 function BrandedPolicyIdentity({ policy }: { policy: Policy }) {
+  const carrierIdentity = readCarrierIdentity(policy.carrierIdentity);
+  const branding = carrierIdentity?.branding;
   const issuerName =
-    policy.carrierBrand?.name ?? policy.carrier ?? "Insurance carrier";
+    carrierIdentity?.displayName ?? policy.carrier ?? "Insurance carrier";
   const linesOfBusiness = policyLineBusinessLabels(policy);
   const { patternStyle, surfaceStyle } = policyCardBranding(
     issuerName,
-    policy.carrierBrand?.accentColor,
+    branding?.accentColor,
   );
 
   return (
@@ -87,7 +90,7 @@ function BrandedPolicyIdentity({ policy }: { policy: Policy }) {
       />
       <div className="relative z-10 flex min-w-0 items-center gap-3">
         <BrandIcon
-          src={policy.carrierBrand?.iconUrl}
+          src={branding?.iconUrl}
           name={issuerName}
           size="lg"
           className="size-10 rounded-lg bg-background"

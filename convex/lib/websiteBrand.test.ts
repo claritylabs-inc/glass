@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { encode } from "fast-png";
 import {
   extractImageBrandColors,
   extractWebsiteBrandColors,
+  extractWebsiteIdentityEvidence,
+  extractWebsiteSiteName,
   extractWebsiteStylesheetUrls,
   normalizePublicWebsiteUrl,
+  readWebsiteFaviconSignals,
 } from "./websiteBrand";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("website brand signals", () => {
   it("prioritizes useful website theme and stylesheet colors", () => {
@@ -37,13 +45,83 @@ describe("website brand signals", () => {
     ).toEqual(["https://markel.com/assets/brand.css"]);
   });
 
-  it("uses saturated favicon pixels as primary brand-color evidence", async () => {
-    const svg = new TextEncoder().encode(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-        <rect width="32" height="32" fill="#FF4E00" />
-      </svg>
-    `);
+  it("reads the public brand name advertised by the official site", () => {
+    expect(
+      extractWebsiteSiteName(
+        '<meta property="og:site_name" content="Liberty Specialty Markets">',
+      ),
+    ).toBe("Liberty Specialty Markets");
+  });
 
-    expect(await extractImageBrandColors(svg)).toEqual(["#FF4E00"]);
+  it("retains bounded first-party carrier relationship evidence", () => {
+    expect(
+      extractWebsiteIdentityEvidence(`
+        <main>
+          Liberty Specialty Markets is a trading name for Liberty Managing
+          Agency Limited, for and on behalf of Syndicate 4472 at Lloyd's.
+        </main>
+      `),
+    ).toContain(
+      "Liberty Specialty Markets is a trading name for Liberty Managing Agency Limited",
+    );
+  });
+
+  it("uses saturated favicon pixels as primary brand-color evidence", async () => {
+    const favicon = encode({
+      width: 2,
+      height: 2,
+      channels: 4,
+      depth: 8,
+      data: new Uint8Array([
+        255, 78, 0, 255, 255, 78, 0, 255, 255, 78, 0, 255, 255, 78, 0, 255,
+      ]),
+    });
+
+    expect(await extractImageBrandColors(favicon)).toEqual(["#FF4E00"]);
+  });
+
+  it("recovers a canonical domain favicon and color when website HTML is blocked", async () => {
+    const favicon = encode({
+      width: 2,
+      height: 2,
+      channels: 4,
+      depth: 8,
+      data: new Uint8Array([
+        20, 52, 203, 255, 20, 52, 203, 255, 20, 52, 203, 255, 20, 52, 203,
+        255,
+      ]),
+    });
+    const fetchMock = vi.fn(async (value: string | URL | Request) => {
+      const url = String(value);
+      if (url === "https://blocked.example/") {
+        return new Response("Forbidden", { status: 403 });
+      }
+      if (url.endsWith("/apple-touch-icon.png")) {
+        return new Response("Not found", { status: 404 });
+      }
+      if (url.endsWith("/favicon.ico")) {
+        const body = favicon.buffer.slice(
+          favicon.byteOffset,
+          favicon.byteOffset + favicon.byteLength,
+        ) as ArrayBuffer;
+        return new Response(body, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        });
+      }
+      return new Response("Not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const signals = await readWebsiteFaviconSignals(
+      "https://blocked.example/",
+    );
+
+    expect(signals.favicon).toBeInstanceOf(Blob);
+    expect(signals.colorCandidates).toEqual(["#1434CB"]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://blocked.example/favicon.ico",
+      expect.any(Object),
+    );
   });
 });

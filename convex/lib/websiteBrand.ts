@@ -1,7 +1,7 @@
 "use node";
 
 import { isIP } from "node:net";
-import sharp from "sharp";
+import { convertIndexedToRgb, decode } from "fast-png";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 
@@ -18,6 +18,8 @@ const ICON_COLOR_BUCKET_SIZE = 16;
 type WebsiteBrandSignals = {
   website: string;
   title?: string;
+  siteName?: string;
+  identityEvidence?: string;
   primaryColor?: string;
   colorCandidates: string[];
 };
@@ -162,28 +164,46 @@ export function extractWebsiteBrandColors(html: string) {
 export async function extractImageBrandColors(input: Uint8Array | ArrayBuffer) {
   try {
     const bytes =
-      input instanceof ArrayBuffer
-        ? Buffer.from(new Uint8Array(input))
-        : Buffer.from(input);
-    const { data, info } = await sharp(bytes)
-      .resize({
-        width: ICON_SAMPLE_SIZE,
-        height: ICON_SAMPLE_SIZE,
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+      input instanceof ArrayBuffer ? new Uint8Array(input) : input;
+    const svgText = new TextDecoder().decode(bytes.subarray(0, 8_192));
+    if (/<svg[\s>]/i.test(svgText)) {
+      return extractWebsiteBrandColors(svgText).slice(0, 4);
+    }
+
+    const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+    const pngOffset = bytes.findIndex((_, index) =>
+      pngSignature.every((value, offset) => bytes[index + offset] === value),
+    );
+    if (pngOffset < 0) return [];
+
+    const decoded = decode(bytes.subarray(pngOffset));
+    const data = decoded.palette
+      ? convertIndexedToRgb(decoded)
+      : decoded.data;
+    const channels = decoded.palette?.[0]?.length ?? decoded.channels;
+    if (channels < 3) return [];
+    const maxChannelValue = decoded.depth === 16 ? 65_535 : 255;
+    const totalPixels = decoded.width * decoded.height;
+    const sampleStep = Math.max(
+      1,
+      Math.ceil(totalPixels / ICON_SAMPLE_SIZE ** 2),
+    );
     const buckets = new Map<
       string,
       { red: number; green: number; blue: number; count: number }
     >();
-    for (let index = 0; index < data.length; index += info.channels) {
-      const red = data[index];
-      const green = data[index + 1];
-      const blue = data[index + 2];
-      const alpha = data[index + 3];
+    for (
+      let pixelIndex = 0;
+      pixelIndex < totalPixels;
+      pixelIndex += sampleStep
+    ) {
+      const index = pixelIndex * channels;
+      const channel = (offset: number) =>
+        Math.round((data[index + offset] / maxChannelValue) * 255);
+      const red = channel(0);
+      const green = channel(1);
+      const blue = channel(2);
+      const alpha = channels === 4 ? channel(3) : 255;
       if (alpha < 128) continue;
       const spread = Math.max(red, green, blue) - Math.min(red, green, blue);
       const luminance = (red * 0.299 + green * 0.587 + blue * 0.114) / 255;
@@ -228,6 +248,43 @@ export async function extractImageBrandColors(input: Uint8Array | ArrayBuffer) {
 function extractTitle(html: string) {
   const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   return match?.[1]?.replace(/\s+/g, " ").trim().slice(0, 160) || undefined;
+}
+
+export function extractWebsiteSiteName(html: string) {
+  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = match[0];
+    const key = tag.match(/\b(?:name|property)=["']([^"']+)["']/i)?.[1];
+    if (!key || !/^(?:og:site_name|application-name)$/i.test(key)) continue;
+    const content = tag.match(/\bcontent=["']([^"']+)["']/i)?.[1];
+    const siteName = content?.replace(/\s+/g, " ").trim().slice(0, 120);
+    if (siteName) return siteName;
+  }
+  return undefined;
+}
+
+export function extractWebsiteIdentityEvidence(html: string) {
+  const text = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&apos;|&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  const snippets: string[] = [];
+  const relationship =
+    /\b(?:trading name|doing business as|d\s*[/.-]\s*b\s*[/.-]\s*a|dba|operating as|operates under|managed by|on behalf of|parent company|subsidiary of|part of|member of)\b/gi;
+  for (const match of text.matchAll(relationship)) {
+    const start = Math.max(0, (match.index ?? 0) - 240);
+    const end = Math.min(text.length, (match.index ?? 0) + 440);
+    snippets.push(text.slice(start, end).trim());
+    if (snippets.length >= 4) break;
+  }
+  return snippets.length > 0
+    ? Array.from(new Set(snippets)).join("\n").slice(0, 2_400)
+    : undefined;
 }
 
 function extractIconCandidates(html: string, website: string) {
@@ -324,6 +381,8 @@ export async function readWebsiteBrandSignals(
   return {
     website,
     title: extractTitle(html),
+    siteName: extractWebsiteSiteName(html),
+    identityEvidence: extractWebsiteIdentityEvidence(html),
     primaryColor: faviconColors[0],
     colorCandidates: Array.from(
       new Set([
@@ -338,8 +397,13 @@ export async function readWebsiteBrandSignals(
 export async function fetchWebsiteFavicon(
   rawUrl: string,
 ): Promise<Blob | null> {
-  const { html, website } = await fetchWebsiteHtml(rawUrl);
-  return await fetchFaviconFromHtml(html, website);
+  const website = normalizePublicWebsiteUrl(rawUrl);
+  try {
+    const page = await fetchWebsiteHtml(website);
+    return await fetchFaviconFromHtml(page.html, page.website);
+  } catch {
+    return await fetchFaviconFromHtml("", website);
+  }
 }
 
 async function fetchFaviconFromHtml(html: string, website: string) {
@@ -364,6 +428,16 @@ async function fetchFaviconFromHtml(html: string, website: string) {
     }
   }
   return null;
+}
+
+export async function readWebsiteFaviconSignals(rawUrl: string) {
+  const favicon = await fetchWebsiteFavicon(rawUrl);
+  return {
+    favicon,
+    colorCandidates: favicon
+      ? await extractImageBrandColors(await favicon.arrayBuffer())
+      : [],
+  };
 }
 
 export async function storeWebsiteFavicon(

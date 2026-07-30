@@ -4,6 +4,11 @@ import type {
   PolicyOperationalProfile,
   SourceBackedValue,
 } from "@claritylabs/cl-sdk";
+import {
+  carrierLegalEntityNames,
+  formatCarrierLegalEntityNames,
+  readCarrierIdentity,
+} from "./carrierIdentity";
 
 export type PolicyPartyAddress = string | OperationalAddress;
 
@@ -176,7 +181,8 @@ export function resolvePolicyPartyContext(
 
   const insuredParty = profileParty(profile, ["named_insured", "insured", "client"]);
   const producerParty = profileParty(profile, ["producer", "broker", "agent"]);
-  const insurerParty = profileParty(profile, ["insurer", "carrier"]);
+  const insurerParty = profileParty(profile, ["insurer"]);
+  const carrierParty = profileParty(profile, ["carrier"]);
   const generalAgentParty = profileParty(profile, [
     "general_agent",
     "mga",
@@ -240,47 +246,91 @@ export function resolvePolicyPartyContext(
         identifier: policy.brokerLicenseNumber,
       },
     ]);
+  const carrierIdentity = insurerOverride
+    ? undefined
+    : readCarrierIdentity(policy.carrierIdentity);
+  const extractedCarrierLegalNames = carrierLegalEntityNames(carrierIdentity);
   const insurerName = insurerOverride
     ? text(insurerOverride.name)
-    : insurerParty?.name ??
+    : formatCarrierLegalEntityNames(carrierIdentity) ??
+      insurerParty?.name ??
+      carrierParty?.name ??
       sourceBackedText(profile.insurer) ??
       text(insurer.legalName) ??
       text(policy.carrierLegalName) ??
       text(policy.security) ??
       text(policy.carrier) ??
       declarationValue("insurerName");
+  const carrierDisplayName = insurerOverride
+    ? text(insurerOverride.name)
+    : carrierIdentity?.displayName ??
+      carrierParty?.name ??
+      text(policy.carrier) ??
+      insurerName;
+  const carrierOperatingName = insurerOverride
+    ? undefined
+    : carrierIdentity?.operatingName;
+  const insurerLegalNames = insurerOverride
+    ? [text(insurerOverride.name)].filter(
+      (value): value is string => Boolean(value),
+    )
+    : extractedCarrierLegalNames.length > 0
+      ? extractedCarrierLegalNames
+      : [insurerName].filter((value): value is string => Boolean(value));
+  const hasMultipleLegalEntities = insurerLegalNames.length > 1;
+  const resolvedInsurerParty =
+    insurerParty ?? (carrierIdentity ? undefined : carrierParty);
   const insurerAddress = insurerOverride
     ? address(insurerOverride.address)
-    : insurerParty?.address ??
+    : hasMultipleLegalEntities
+      ? undefined
+      : resolvedInsurerParty?.address ??
       address(insurer.address) ??
       joinLines(declarationValue("insurerAddress1"), declarationValue("insurerCityStateZip"));
   const insurerNaicNumber = insurerOverride
     ? text(insurerOverride.naicNumber)
-    : matchingIdentifier(insurerName, [
-      { name: insurerParty?.name, identifier: insurerParty?.naicNumber },
+    : hasMultipleLegalEntities
+      ? undefined
+      : matchingIdentifier(insurerName, [
+      {
+        name: resolvedInsurerParty?.name,
+        identifier: resolvedInsurerParty?.naicNumber,
+      },
       { name: insurer.legalName, identifier: insurer.naicNumber },
       {
         name: text(policy.carrierLegalName) ?? text(policy.security) ?? text(policy.carrier),
         identifier: policy.carrierNaicNumber,
       },
     ]);
+  const extractedGeneralAgentName =
+    generalAgentParty?.name ??
+    text(generalAgent.agencyName) ??
+    text(generalAgent.name) ??
+    text(legacyMga.name) ??
+    text(legacyMga.agencyName) ??
+    text(policy.mga) ??
+    declarationValue("generalAgentName", "mgaName", "administratorName");
+  const suppressExtractedGeneralAgent = Boolean(
+    !generalAgentOverride &&
+    carrierOperatingName &&
+    normalizedIdentity(extractedGeneralAgentName) ===
+      normalizedIdentity(carrierOperatingName),
+  );
   const generalAgentName = generalAgentOverride
     ? text(generalAgentOverride.name)
-    : generalAgentParty?.name ??
-      text(generalAgent.agencyName) ??
-      text(generalAgent.name) ??
-      text(legacyMga.name) ??
-      text(legacyMga.agencyName) ??
-      text(policy.mga) ??
-      declarationValue("generalAgentName", "mgaName", "administratorName");
+    : suppressExtractedGeneralAgent ? undefined : extractedGeneralAgentName;
   const generalAgentAddress = generalAgentOverride
     ? address(generalAgentOverride.address)
-    : generalAgentParty?.address ??
+    : suppressExtractedGeneralAgent
+      ? undefined
+      : generalAgentParty?.address ??
       address(generalAgent.address) ??
       address(legacyMga.address);
   const generalAgentLicenseNumber = generalAgentOverride
     ? text(generalAgentOverride.licenseNumber)
-    : matchingIdentifier(generalAgentName, [
+    : suppressExtractedGeneralAgent
+      ? undefined
+      : matchingIdentifier(generalAgentName, [
       {
         name: generalAgentParty?.name,
         identifier: generalAgentParty?.licenseNumber,
@@ -334,6 +384,14 @@ export function resolvePolicyPartyContext(
         text((party as { name?: unknown }).name) &&
         !overriddenRoles.has(
           String((party as { role?: unknown }).role).toLowerCase(),
+        ) &&
+        !(
+          suppressExtractedGeneralAgent &&
+          ["general_agent", "mga", "administrator"].includes(
+            String((party as { role?: unknown }).role).toLowerCase(),
+          ) &&
+          normalizedIdentity((party as { name?: unknown }).name) ===
+            normalizedIdentity(carrierOperatingName)
         ),
       ),
     )
@@ -372,16 +430,18 @@ export function resolvePolicyPartyContext(
       ? { ...producerOverride, licenseNumber: producerLicenseNumber }
       : { ...producer, licenseNumber: producerLicenseNumber },
   );
-  upsertResolvedParty(
-    parties,
-    ["insurer", "carrier"],
-    "insurer",
-    insurerName,
-    insurerAddress,
-    insurerOverride
-      ? { ...insurerOverride, naicNumber: insurerNaicNumber }
-      : { ...insurer, naicNumber: insurerNaicNumber },
-  );
+  if (!hasMultipleLegalEntities || insurerOverride) {
+    upsertResolvedParty(
+      parties,
+      ["insurer"],
+      "insurer",
+      insurerName,
+      insurerAddress,
+      insurerOverride
+        ? { ...insurerOverride, naicNumber: insurerNaicNumber }
+        : { ...insurer, naicNumber: insurerNaicNumber },
+    );
+  }
   upsertResolvedParty(
     parties,
     ["general_agent", "mga", "administrator"],
@@ -412,7 +472,12 @@ export function resolvePolicyPartyContext(
     producerPhone,
     producerEmail,
     producerLicenseNumber,
+    carrierDisplayName,
+    carrierOperatingName,
+    carrierLegalEntityRelationship:
+      carrierIdentity?.legalEntityRelationship ?? "single",
     insurerName,
+    insurerLegalNames,
     insurerAddress,
     insurerNaicNumber,
     generalAgentName,

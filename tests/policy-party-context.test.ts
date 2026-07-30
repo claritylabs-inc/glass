@@ -61,6 +61,100 @@ describe("policy party context", () => {
     expect(context.parties.some((party) => party.role === "broker")).toBe(false);
   });
 
+  it("keeps multiple legal insurers distinct from the operating carrier name", () => {
+    const context = resolvePolicyPartyContext({
+      carrier: "Allianz Global Assistance",
+      carrierIdentity: {
+        displayName: "Allianz Global Assistance",
+        operatingName: "Allianz Global Assistance",
+        legalEntities: [
+          {
+            name: "CUMIS General Insurance Company",
+            sourceNodeIds: ["carrier-identity"],
+            sourceSpanIds: ["span-carrier-identity"],
+          },
+          {
+            name: "AZGA Service Canada Inc.",
+            sourceNodeIds: ["carrier-identity"],
+            sourceSpanIds: ["span-carrier-identity"],
+          },
+        ],
+        legalEntityRelationship: "and_or",
+        sourceNodeIds: ["carrier-identity"],
+        sourceSpanIds: ["span-carrier-identity"],
+      },
+      insurer: {
+        legalName: "CUMIS General Insurance Company",
+        naicNumber: "12345",
+        address: { street1: "Ambiguous insurer address" },
+      },
+      generalAgent: {
+        agencyName: "Allianz Global Assistance",
+        licenseNumber: "Misclassified operating name",
+      },
+      operationalProfile: {
+        parties: [
+          {
+            role: "insurer",
+            name: "CUMIS General Insurance Company",
+            sourceNodeIds: ["carrier-identity"],
+            sourceSpanIds: ["span-carrier-identity"],
+          },
+          {
+            role: "insurer",
+            name: "AZGA Service Canada Inc.",
+            sourceNodeIds: ["carrier-identity"],
+            sourceSpanIds: ["span-carrier-identity"],
+          },
+          {
+            role: "carrier",
+            name: "Allianz Global Assistance",
+            sourceNodeIds: ["carrier-identity"],
+            sourceSpanIds: ["span-carrier-identity"],
+          },
+          {
+            role: "administrator",
+            name: "Allianz Global Assistance",
+            sourceNodeIds: ["carrier-identity"],
+            sourceSpanIds: ["span-carrier-identity"],
+          },
+        ],
+      },
+    });
+
+    expect(context).toMatchObject({
+      carrierDisplayName: "Allianz Global Assistance",
+      carrierOperatingName: "Allianz Global Assistance",
+      carrierLegalEntityRelationship: "and_or",
+      insurerName:
+        "CUMIS General Insurance Company and/or AZGA Service Canada Inc.",
+      insurerLegalNames: [
+        "CUMIS General Insurance Company",
+        "AZGA Service Canada Inc.",
+      ],
+      generalAgentName: undefined,
+      insurerAddress: undefined,
+      insurerNaicNumber: undefined,
+    });
+    expect(context.parties).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "insurer",
+        name: "CUMIS General Insurance Company",
+      }),
+      expect.objectContaining({
+        role: "insurer",
+        name: "AZGA Service Canada Inc.",
+      }),
+      expect.objectContaining({
+        role: "carrier",
+        name: "Allianz Global Assistance",
+      }),
+    ]));
+    expect(
+      context.parties.some((party) => party.role === "general_agent"),
+    ).toBe(false);
+  });
+
   it("ignores legacy manual overrides and keeps policy parties extraction-backed", () => {
     const context = resolvePolicyPartyContext({
       policyProfileOverrides: {

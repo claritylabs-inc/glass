@@ -6,6 +6,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { buildCoverageBreakdown } from "./lib/coverageBreakdown";
 import { getClientPortalUrl } from "./lib/domains";
 import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
+import { resolveCarrierIdentity } from "./lib/carrierIdentityProjection";
 
 const appCardKindValidator = v.union(
   v.literal("policy"),
@@ -50,28 +51,20 @@ function formatCoverage(coverage: Doc<"policies">["coverages"][number]) {
 }
 
 async function publicPolicy(ctx: QueryCtx, policy: Doc<"policies">) {
-  const carrierBrand = policy.carrierBrandId
-    ? await ctx.db.get(policy.carrierBrandId)
-    : null;
+  const carrierIdentity = await resolveCarrierIdentity(
+    ctx,
+    policy.carrierIdentity,
+  );
   return {
     id: policy._id,
     title: policyTitle(policy),
     insuredName: policy.insuredName,
-    carrier: policy.security ?? policy.carrier,
+    carrier: carrierIdentity?.displayName ?? policy.carrier,
+    carrierIdentity,
     policyNumber: policy.policyNumber,
     linesOfBusiness: policyLobCodes(policy),
     effectiveDate: policy.effectiveDate,
     expirationDate: policy.expirationDate,
-    carrierBrand: carrierBrand
-      ? {
-          name: carrierBrand.carrierName,
-          website: carrierBrand.website,
-          accentColor: carrierBrand.accentColor,
-          iconUrl: carrierBrand.iconStorageId
-            ? await ctx.storage.getUrl(carrierBrand.iconStorageId)
-            : null,
-        }
-      : undefined,
     dataStage: policy.extractionDataStage ?? (
       policy.pipelineStatus === "complete" ? "final" : "placeholder"
     ),

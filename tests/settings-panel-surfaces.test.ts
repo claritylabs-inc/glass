@@ -99,7 +99,7 @@ describe("settings panel surfaces", () => {
     expect(policy).toContain("OperationalLabelValueRow");
     expect(policy).toContain('title="Insured"');
     expect(policy).toContain('title="Producer"');
-    expect(policy).toContain('title="Insurer"');
+    expect(policy).toContain('title="Carrier"');
     expect(policy).toContain('title="General Agent"');
     expect(policy).toContain('onEdit("insured")');
     expect(policy).toContain('onEdit("producer")');
@@ -125,8 +125,8 @@ describe("settings panel surfaces", () => {
     expect(summary).toContain('label="Taxes & fees"');
     expect(summary).toContain('label="Total payable"');
     expect(summary).toContain("sm:items-end");
-    expect(summary.match(/<OperationalLabelValueRow/g)).toHaveLength(7);
-    expect(summary.match(/align="right"/g)).toHaveLength(7);
+    expect(summary.match(/<OperationalLabelValueRow/g)).toHaveLength(8);
+    expect(summary.match(/align="right"/g)).toHaveLength(8);
     expect(summary).toContain("@lg:flex-row @lg:items-start");
     expect(summary).not.toContain("@lg:items-center");
     expect(summary).toContain("@lg:pr-4");

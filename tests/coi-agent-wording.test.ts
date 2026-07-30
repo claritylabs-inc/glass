@@ -30,7 +30,10 @@ describe("COI agent wording", () => {
     const chatTools = read("convex/lib/chatTools.ts");
 
     expect(executors).toContain("policyParties: partyContext.parties");
-    expect(executors).toContain("carrier: partyContext.insurerName ?? policy.security");
+    expect(executors).toContain(
+      "carrier: partyContext.carrierDisplayName ??",
+    );
+    expect(executors).toContain("carrierIdentity: policy.carrierIdentity");
     expect(partyContext).toContain("options.clientProfileFacts?.operationsDescription");
     expect(partyContext.indexOf("address(policy.insuredAddress)")).toBeLessThan(
       partyContext.indexOf("options.clientProfileFacts?.mailingAddress"),

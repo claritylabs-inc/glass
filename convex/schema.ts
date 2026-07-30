@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 import { pipelineFields } from "@claritylabs/cl-pipelines/convex";
 import { agentStepsValidator } from "./lib/agentSteps";
+import { policyProductIdentityValidator } from "./lib/policyProductIdentity";
 
 const modelProviderValidator = v.union(
   v.literal("openai"),
@@ -182,6 +183,52 @@ const orgMailingAddressValidator = v.object({
 const policyDetailPartyValidator = v.object({
   name: v.string(),
   address: orgMailingAddressValidator,
+});
+
+const carrierIdentityValidator = v.object({
+  displayName: v.string(),
+  sourceName: v.optional(v.string()),
+  operatingName: v.optional(v.string()),
+  publicNameRelationship: v.optional(
+    v.union(
+      v.literal("same_legal_entity"),
+      v.literal("trading_name"),
+      v.literal("parent_brand"),
+      v.literal("group_brand"),
+    ),
+  ),
+  legalEntities: v.array(
+    v.object({
+      name: v.string(),
+      sourceNodeIds: v.array(v.string()),
+      sourceSpanIds: v.array(v.string()),
+    }),
+  ),
+  legalEntityRelationship: v.union(
+    v.literal("single"),
+    v.literal("and"),
+    v.literal("or"),
+    v.literal("and_or"),
+    v.literal("unspecified"),
+  ),
+  sourceNodeIds: v.array(v.string()),
+  sourceSpanIds: v.array(v.string()),
+  branding: v.optional(
+    v.object({
+      website: v.string(),
+      websiteTitle: v.optional(v.string()),
+      iconStorageId: v.optional(v.id("_storage")),
+      accentColor: v.string(),
+      confidence: v.union(
+        v.literal("high"),
+        v.literal("medium"),
+        v.literal("low"),
+      ),
+      sourceUrls: v.array(v.string()),
+      enrichmentVersion: v.number(),
+      updatedAt: v.number(),
+    }),
+  ),
 });
 
 const policyDetailOverridesValidator = v.object({
@@ -539,12 +586,20 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_orgId_userId", ["orgId", "userId"]),
 
-  // Public carrier identity cached from the carrier's official website.
-  // Policies link to this shared record so repeated carriers reuse one model
-  // lookup, favicon, and accent selection.
+  // Internal official-site lookup cache. Consumer-facing identity and
+  // branding are persisted together on policies.carrierIdentity.
   carrierBrands: defineTable({
     normalizedName: v.string(),
     carrierName: v.string(),
+    publicName: v.optional(v.string()),
+    nameRelationship: v.optional(
+      v.union(
+        v.literal("same_legal_entity"),
+        v.literal("trading_name"),
+        v.literal("parent_brand"),
+        v.literal("group_brand"),
+      ),
+    ),
     website: v.string(),
     websiteTitle: v.optional(v.string()),
     iconStorageId: v.optional(v.id("_storage")),
@@ -558,6 +613,21 @@ export default defineSchema({
     enrichmentVersion: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_normalizedName", ["normalizedName"]),
+
+  carrierIdentityBackfillResults: defineTable({
+    policyId: v.id("policies"),
+    outcome: v.union(
+      v.literal("rebuilt"),
+      v.literal("unchanged"),
+      v.literal("skipped"),
+      v.literal("failed"),
+    ),
+    reason: v.optional(v.string()),
+    shouldEnrich: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_policyId", ["policyId"])
+    .index("by_outcome", ["outcome"]),
 
   operatorAuthNonces: defineTable({
     nonce: v.string(),
@@ -1296,10 +1366,16 @@ export default defineSchema({
     ),
     carrierBrandAttempts: v.optional(v.number()),
     carrierBrandAttemptedAt: v.optional(v.number()),
+    carrierIdentityEnrichmentStatus: v.optional(
+      v.union(v.literal("pending"), v.literal("ready"), v.literal("failed")),
+    ),
+    carrierIdentityEnrichmentAttempts: v.optional(v.number()),
+    carrierIdentityEnrichmentAttemptedAt: v.optional(v.number()),
     // Read compatibility for policies extracted before generalAgent.
     mga: v.optional(v.string()),
     broker: v.optional(v.string()),
     // Enriched entity fields (cl-sdk 1.2+)
+    carrierIdentity: v.optional(carrierIdentityValidator),
     carrierLegalName: v.optional(v.string()),
     carrierNaicNumber: v.optional(v.string()),
     carrierAmBestRating: v.optional(v.string()),
@@ -1435,6 +1511,7 @@ export default defineSchema({
     ),
     priorPolicyNumber: v.optional(v.string()),
     programName: v.optional(v.string()),
+    productIdentity: v.optional(policyProductIdentityValidator),
     isPackage: v.optional(v.boolean()),
     // Insured details (cl-sdk 1.2+)
     insuredDba: v.optional(v.string()),

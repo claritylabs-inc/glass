@@ -6,7 +6,6 @@ import {
 } from "./types";
 
 const propertyLobCodes = new Set([
-  "PROPC",
   "PROP",
   "CFIRE",
   "CFRM",
@@ -21,7 +20,6 @@ const propertyLobCodes = new Set([
 
 const liabilityLobCodes = new Set([
   "CGL",
-  "GL",
   "BOP",
   "BOPGL",
   "AUTO",
@@ -95,7 +93,7 @@ export function selectCertificateForm(args: {
   }
 
   if (
-    lobCodes.some((code) => code === "COMAR" || code === "BOAT")
+    lobCodes.some((code) => code === "COMR" || code === "BOAT")
   ) {
     return "acord31";
   }

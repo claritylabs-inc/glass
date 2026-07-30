@@ -40,6 +40,7 @@ import {
   modelCapabilitiesForTask,
   modelSupportsImageInput,
 } from "./modelCatalog";
+import { applyCarrierIdentityGuidance } from "./extractionPromptGuidance";
 import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
 import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
 import { internal } from "../_generated/api";
@@ -916,9 +917,20 @@ export function makeGenerateObject(
   };
 
   return async (params) => {
-    const { prompt, system, schema, maxTokens, providerOptions } = params;
+    const {
+      prompt: rawPrompt,
+      system,
+      schema,
+      maxTokens,
+      providerOptions,
+    } = params;
     const taskKind = readTaskKind(params as ParamsWithOptionalTaskKind);
     const trace = readTraceDetails(params as ParamsWithOptionalTaskKind);
+    const prompt = applyCarrierIdentityGuidance(
+      rawPrompt,
+      taskKind,
+      trace?.extractorName,
+    );
     const effectiveTask = modelTaskForCall(task, taskKind);
     let traceRoute: ModelRoute = MODEL_ROUTING[effectiveTask];
     let routeSource = "static";

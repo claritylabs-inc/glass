@@ -134,7 +134,10 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
         ? clientProfileFacts.additionalNamedInsureds.map((fact: Record<string, any>) => fact?.value).filter(Boolean)
         : undefined,
     },
-    carrier: partyContext.insurerName ?? policy.security,
+    carrier: partyContext.carrierDisplayName ??
+      partyContext.insurerName ??
+      policy.security,
+    carrierIdentity: policy.carrierIdentity,
     linesOfBusiness: policyLobCodes(policy),
     type: policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", "),
     number: policy.policyNumber,

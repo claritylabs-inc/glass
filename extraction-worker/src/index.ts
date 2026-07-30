@@ -15,7 +15,10 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import {
+  ACORD_LOB_CODES,
   createExtractor,
+  resolveAcordCoverageCode,
+  toLobCodes,
   type GenerateObject,
   type ExtractionResult,
   type ModelCapabilities,
@@ -58,6 +61,7 @@ import {
   type ClRouterGenerateResponse,
   type ClRouterProviderAssets,
 } from "./clRouterClient.js";
+import { applyCarrierIdentityGuidance } from "./extractionPromptGuidance.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -1417,6 +1421,11 @@ function buildWorkerExtractor(opts: {
   const generateObject: GenerateObject = async (params) => {
     const taskKind = readTaskKind(params);
     const trace = readTraceDetails(params);
+    const prompt = applyCarrierIdentityGuidance(
+      params.prompt,
+      taskKind,
+      trace?.extractorName,
+    );
     const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
     const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
     const label = modelTraceLabel("generateObject", taskKind, route.task, trace);
@@ -1428,7 +1437,7 @@ function buildWorkerExtractor(opts: {
         task: route.task,
         taskKind,
         label,
-        prompt: params.prompt,
+        prompt,
         system: params.system,
         schema: routerSchema as Record<string, unknown>,
         maxOutputTokens,
@@ -1466,7 +1475,7 @@ function buildWorkerExtractor(opts: {
       const result = await withModelCallTimeout(aiGenerateText({
         model: route.model,
         system: params.system,
-        ...buildPromptInput(params.prompt, providerOptions, route.route),
+        ...buildPromptInput(prompt, providerOptions, route.route),
         output: Output.object({
           schema: structuredOutputSchemaForProvider(params.schema, route.route.provider),
         }),
@@ -1488,7 +1497,7 @@ function buildWorkerExtractor(opts: {
           label,
           task: route.task,
           taskKind,
-          prompt: params.prompt,
+          prompt,
           system: params.system,
           maxOutputTokens,
           providerOptions: callProviderOptions,
@@ -1502,7 +1511,7 @@ function buildWorkerExtractor(opts: {
         usage,
       };
     } catch (error) {
-      if (shouldReturnEmptySections(params.prompt, error)) {
+      if (shouldReturnEmptySections(prompt, error)) {
         await recordModelCallSoftFailure({
           job: opts.job,
           route,
@@ -1515,7 +1524,7 @@ function buildWorkerExtractor(opts: {
             label,
             task: route.task,
             taskKind,
-            prompt: params.prompt,
+            prompt,
             system: params.system,
             maxOutputTokens,
             providerOptions: callProviderOptions,
@@ -1540,7 +1549,7 @@ function buildWorkerExtractor(opts: {
           label,
           task: route.task,
           taskKind,
-          prompt: params.prompt,
+          prompt,
           system: params.system,
           maxOutputTokens,
           providerOptions: callProviderOptions,
@@ -1574,7 +1583,7 @@ function buildWorkerExtractor(opts: {
         const fallbackResult = await withModelCallTimeout(aiGenerateText({
           model: fallback.model,
           system: params.system,
-          ...buildPromptInput(params.prompt, providerOptions, fallback.route),
+          ...buildPromptInput(prompt, providerOptions, fallback.route),
           output: Output.object({
             schema: structuredOutputSchemaForProvider(params.schema, fallback.route.provider),
           }),
@@ -1596,7 +1605,7 @@ function buildWorkerExtractor(opts: {
             label,
             task: fallback.task,
             taskKind,
-            prompt: params.prompt,
+            prompt,
             system: params.system,
             maxOutputTokens: fallbackMaxOutputTokens,
             providerOptions: fallbackProviderOptions,
@@ -1623,7 +1632,7 @@ function buildWorkerExtractor(opts: {
             label,
             task: fallback.task,
             taskKind,
-            prompt: params.prompt,
+            prompt,
             system: params.system,
             maxOutputTokens: fallbackMaxOutputTokens,
             providerOptions: fallbackProviderOptions,
@@ -1958,6 +1967,7 @@ const PREVIEW_TOP_LEVEL_FIELDS = [
   "generalAgentName",
   "broker",
   "policyNumber",
+  "productName",
   "linesOfBusiness",
   "effectiveDate",
   "expirationDate",
@@ -2010,6 +2020,7 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
     generalAgentName: { type: ["string", "null"] },
     broker: { type: ["string", "null"] },
     policyNumber: { type: ["string", "null"] },
+    productName: { type: ["string", "null"] },
     linesOfBusiness: {
       type: "array",
       items: { type: "string" },
@@ -2097,145 +2108,12 @@ function cleanPreviewParagraph(value: unknown): string | undefined {
   return trimmed ? trimmed.slice(0, 1000) : undefined;
 }
 
-const PREVIEW_LOB_CODES = new Set([
-  "AUTOB",
-  "AUTOP",
-  "BOP",
-  "BOAT",
-  "CFRM",
-  "CGL",
-  "COMAR",
-  "CRIME",
-  "DFIRE",
-  "DISAB",
-  "DO",
-  "EO",
-  "EPLI",
-  "EQ",
-  "EXLIA",
-  "FIDUC",
-  "FLOOD",
-  "GARAG",
-  "GL",
-  "HOME",
-  "INMAR",
-  "INMRC",
-  "INMRP",
-  "MHOME",
-  "Motorcycle",
-  "OLIB",
-  "PROP",
-  "PROPC",
-  "RECV",
-  "SURE",
-  "TRUCK",
-  "UMBRC",
-  "UMBRL",
-  "UMBRP",
-  "UN",
-  "WORK",
-]);
-
-const PREVIEW_LEGACY_LOB: Record<string, string[]> = {
-  general_liability: ["CGL"],
-  commercial_property: ["PROPC"],
-  property: ["PROP"],
-  commercial_auto: ["AUTOB"],
-  non_owned_auto: ["AUTOB"],
-  auto: ["AUTOB"],
-  personal_auto: ["AUTOP"],
-  workers_comp: ["WORK"],
-  umbrella: ["UMBRC"],
-  personal_umbrella: ["UMBRP"],
-  excess_liability: ["EXLIA"],
-  professional_liability: ["EO"],
-  cyber: ["OLIB"],
-  environmental: ["OLIB"],
-  product_liability: ["OLIB"],
-  epli: ["EPLI"],
-  directors_officers: ["DO"],
-  d_and_o: ["DO"],
-  d_o: ["DO"],
-  fiduciary_liability: ["FIDUC"],
-  fiduciary: ["FIDUC"],
-  crime_fidelity: ["CRIME"],
-  crime: ["CRIME"],
-  inland_marine: ["INMRC"],
-  builders_risk: ["INMRC"],
-  ocean_marine: ["COMAR"],
-  surety: ["SURE"],
-  bop: ["BOP"],
-  management_liability_package: ["DO", "EPLI", "FIDUC"],
-  homeowners_ho3: ["HOME"],
-  homeowners_ho5: ["HOME"],
-  homeowners: ["HOME"],
-  renters_ho4: ["HOME"],
-  renters: ["HOME"],
-  condo_ho6: ["HOME"],
-  dwelling_fire: ["DFIRE"],
-  mobile_home: ["MHOME"],
-  flood_nfip: ["FLOOD"],
-  flood_private: ["FLOOD"],
-  flood: ["FLOOD"],
-  earthquake: ["EQ"],
-  personal_inland_marine: ["INMRP"],
-  watercraft: ["BOAT"],
-  boat: ["BOAT"],
-  recreational_vehicle: ["RECV"],
-  farm_ranch: ["CFRM"],
-  disability: ["DISAB"],
-  critical_illness: ["DISAB"],
-  life: ["UN"],
-  long_term_care: ["UN"],
-  pet: ["UN"],
-  travel: ["UN"],
-  identity_theft: ["UN"],
-  title: ["UN"],
-  other: ["UN"],
-  unknown: ["UN"],
-};
-
-function normalizePreviewLobKey(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_+/g, "_");
-}
-
 function previewLobCodes(values: unknown): string[] {
   if (!Array.isArray(values) || values.length === 0) return [];
-  const codes: string[] = [];
-  for (const value of values) {
-    const cleaned = cleanPreviewString(value);
-    if (!cleaned) continue;
-    if (PREVIEW_LOB_CODES.has(cleaned)) {
-      codes.push(cleaned);
-      continue;
-    }
-    if (cleaned.toLowerCase() === "motorcycle") {
-      codes.push("Motorcycle");
-      continue;
-    }
-    const upper = cleaned.toUpperCase();
-    if (upper === "CRIM") {
-      codes.push("CRIME");
-      continue;
-    }
-    const mapped = PREVIEW_LEGACY_LOB[normalizePreviewLobKey(cleaned)];
-    if (mapped) {
-      codes.push(...mapped);
-      continue;
-    }
-    if (PREVIEW_LOB_CODES.has(upper)) {
-      codes.push(upper);
-      continue;
-    }
-    codes.push("UN");
-  }
-  return Array.from(new Set(codes)).slice(0, 12);
+  const source = values
+    .map(cleanPreviewString)
+    .filter((value): value is string => Boolean(value));
+  return source.length > 0 ? toLobCodes(source).slice(0, 12) : [];
 }
 
 function compactRecord(value: unknown, allowedKeys: readonly string[]): Record<string, string> | undefined {
@@ -2273,6 +2151,8 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
   if (generalAgentName) {
     fields.generalAgent = { agencyName: generalAgentName };
   }
+  const productName = cleanPreviewString(input.productName);
+  if (productName) fields.programName = productName;
   const summary = cleanPreviewParagraph(input.summary);
   if (summary) fields.summary = summary;
   const linesOfBusiness = previewLobCodes(input.linesOfBusiness);
@@ -2287,7 +2167,7 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
         return stripUndefined({
           name,
           lineOfBusiness: cleanPreviewString(row.lineOfBusiness),
-          coverageCode: cleanPreviewString(row.coverageCode),
+          coverageCode: resolveAcordCoverageCode(row.coverageCode, name),
           limit: cleanPreviewString(row.limit),
           limitType: cleanPreviewString(row.limitType),
           deductible: cleanPreviewString(row.deductible),
@@ -2348,14 +2228,19 @@ async function extractPreviewFields(job: ClaimedPreviewJob, sourceText: string) 
 Return only fields that are explicitly present or strongly implied by the document text.
 Leave unknown fields null or empty. Do not invent carriers, dates, limits, policy numbers, insured names, or coverages.
 This output is provisional and will be overwritten by a later source-backed extraction.`;
-  const prompt = `Extract a provisional policy summary from this LiteParse/PDF text.
+  const prompt = applyCarrierIdentityGuidance(
+    `Extract a provisional policy summary from this LiteParse/PDF text.
 
 Use concise display strings for dates, money, limits, deductibles, and coverage names.
 Populate generalAgentName only when the document identifies a General Agent, including source labels such as managing general agent, MGA, program administrator, or administrator. Normalize a source-labeled Broker or Agent to Producer; do not use the Producer or insurer name as the General Agent.
-For linesOfBusiness and coverages[].lineOfBusiness, use ACORD Line of Business codes such as CGL, AUTOB, AUTOP, WORK, UMBRC, EXLIA, EO, OLIB, EPLI, DO, FIDUC, CRIME, INMRC, COMAR, PROPC, PROP, BOP, HOME, DFIRE, FLOOD, GARAG, or UN. Use UN only when no more specific policy-level ACORD code fits. Omit coverages[].lineOfBusiness when a coverage row cannot be assigned to exactly one line.
+Populate productName only from a source-stated carrier product, policy program, or plan name. Preserve the source wording; do not use the policy number, form number, carrier name, ACORD line label, or generic "insurance policy" text.
+For linesOfBusiness and coverages[].lineOfBusiness, use only a current ACORD LOBCd from this list: ${ACORD_LOB_CODES.join(", ")}. Travel insurance is TRVL and commercial cyber/privacy liability is CYBER. Use UN only when no more specific code fits. Omit coverages[].lineOfBusiness when a coverage row cannot be assigned to exactly one line.
+For coverages[].coverageCode, use ACORD CoverageCd only when the source prints the code or the coverage name has an unambiguous exact match. Otherwise omit it.
 
 Document text:
-${sourceText}`;
+${sourceText}`,
+    "extraction_preview",
+  );
   if (clRouter && isClRouterTaskEnabled(
     CL_ROUTER_TASK_FLAGS,
     route.task,

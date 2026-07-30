@@ -33,6 +33,8 @@ import {
   normalizeStoredOperationalProfile,
   normalizeSourceTree,
   operationalProfilePolicyFields,
+  sourceNodeFromStoredSource,
+  sourceSpanLikeFromStoredSource,
   sourceSpansForSdk,
   sourceTreePolicyFields,
   type DocumentSourceNode,
@@ -1538,6 +1540,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             ...sourceTreePolicyFields({
               sourceTree: sourceNodes,
               operationalProfile,
+              sourceSpans: canonicalSpans,
               existingDocumentMetadata: doc.documentMetadata,
               existingDeclarations: doc.declarations,
               existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
@@ -1771,7 +1774,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     },
   };
 
-  // ── Phase 4: post_process (terminal — schedules downstream work) ──────────────
+  // ── Phase 4: post_process (terminal — persists enrichment and downstream work)
   const postProcessPhase: Phase<PolicyExtractionState> = {
     name: "post_process",
     run: async (pCtx): Promise<PhaseResult<PolicyExtractionState>> => {
@@ -1838,7 +1841,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
       } catch { /* non-critical */ }
 
-      // Broker activity record
+      // Final policy enrichment and downstream work
       try {
         const finalPolicy = await convexCtx.runQuery(
           internal.policies.getInternal,
@@ -1851,6 +1854,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           policyNumber?: string;
           carrier?: string;
         } | null;
+        let carrierDisplayName = finalPolicy?.carrier;
         if (finalPolicy?.uploadedByBrokerOrgId && finalPolicy.orgId) {
           await convexCtx.runMutation(
             (internal as any).brokerActivity.record,
@@ -1865,11 +1869,32 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           );
         }
         if (finalPolicy?.orgId) {
-          await convexCtx.scheduler.runAfter(
-            0,
-            internal.actions.enrichCarrierBrand.ensureInternal,
-            { policyId: policyId as Id<"policies"> },
-          );
+          try {
+            const carrierIdentity = await convexCtx.runAction(
+              internal.actions.enrichCarrierIdentity.ensureInternal,
+              { policyId: policyId as Id<"policies"> },
+            ) as { success: boolean };
+            await pCtx.log(
+              carrierIdentity.success
+                ? "Stored carrier branding"
+                : "Carrier branding unavailable",
+              carrierIdentity.success ? "info" : "warn",
+            );
+            if (carrierIdentity.success) {
+              const enrichedPolicy = await convexCtx.runQuery(
+                internal.policies.getInternal,
+                { id: policyId as Id<"policies"> },
+              );
+              carrierDisplayName =
+                enrichedPolicy?.carrier ?? carrierDisplayName;
+            }
+          } catch (error) {
+            console.warn(
+              "[policyExtraction] carrier branding failed",
+              error,
+            );
+            await pCtx.log("Carrier branding could not be stored", "warn");
+          }
           await convexCtx.runMutation(
             (internal as any).declarationFacts.syncPolicyInternal,
             { policyId },
@@ -1884,7 +1909,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               orgId: finalPolicy.orgId as Id<"organizations">,
               policyId,
               policyNumber: finalPolicy.policyNumber,
-              carrier: finalPolicy.carrier,
+              carrier: carrierDisplayName,
               questionCount: reviewQuestions.length,
             });
             await pCtx.log(
@@ -2433,6 +2458,7 @@ async function completeExternalExtractFromPayload(
       ...sourceTreePolicyFields({
         sourceTree: sourceNodes,
         operationalProfile: normalizedOperationalProfile,
+        sourceSpans: canonicalSpans,
         existingDocumentMetadata: doc.documentMetadata,
         existingDeclarations: doc.declarations,
         existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
@@ -2777,28 +2803,6 @@ export const rematerializeSourceTreeProfile = internalAction({
   },
 });
 
-function storedSourceSpanLike(span: Record<string, any>, policyId: Id<"policies">): SourceSpanLike {
-  return {
-    id: String(span.spanId),
-    spanId: String(span.spanId),
-    documentId: typeof span.documentId === "string" ? span.documentId : policyId,
-    sourceKind: typeof span.sourceKind === "string" ? span.sourceKind : "policy_pdf",
-    kind: "pdf_text",
-    pageStart: typeof span.pageStart === "number" ? span.pageStart : undefined,
-    pageEnd: typeof span.pageEnd === "number" ? span.pageEnd : undefined,
-    sectionId: typeof span.sectionId === "string" ? span.sectionId : undefined,
-    formNumber: typeof span.formNumber === "string" ? span.formNumber : undefined,
-    sourceUnit: typeof span.sourceUnit === "string" ? span.sourceUnit : undefined,
-    parentSpanId: typeof span.parentSpanId === "string" ? span.parentSpanId : undefined,
-    table: span.table,
-    location: span.location,
-    text: typeof span.text === "string" ? span.text : "",
-    textHash: typeof span.textHash === "string" ? span.textHash : undefined,
-    bbox: span.bbox,
-    metadata: span.metadata,
-  };
-}
-
 const SEMANTIC_SOURCE_NODE_KINDS = new Set([
   "page_group",
   "form",
@@ -2807,29 +2811,6 @@ const SEMANTIC_SOURCE_NODE_KINDS = new Set([
   "schedule",
   "clause",
 ]);
-
-function storedSourceNodeTreeInput(node: Record<string, any>, policyId: Id<"policies">): Record<string, unknown> | undefined {
-  if (typeof node.nodeId !== "string" || !node.nodeId.trim()) return undefined;
-  if (typeof node.kind !== "string" || !node.kind.trim()) return undefined;
-  return {
-    id: node.nodeId,
-    documentId: typeof node.documentId === "string" ? node.documentId : policyId,
-    parentId: typeof node.parentNodeId === "string" ? node.parentNodeId : undefined,
-    kind: node.kind,
-    title: typeof node.title === "string" ? node.title : node.kind,
-    description: typeof node.description === "string" ? node.description : node.kind,
-    textExcerpt: typeof node.textExcerpt === "string" ? node.textExcerpt : undefined,
-    sourceSpanIds: Array.isArray(node.sourceSpanIds)
-      ? node.sourceSpanIds.filter((spanId): spanId is string => typeof spanId === "string")
-      : [],
-    pageStart: typeof node.pageStart === "number" ? node.pageStart : undefined,
-    pageEnd: typeof node.pageEnd === "number" ? node.pageEnd : undefined,
-    bbox: node.bbox,
-    order: typeof node.order === "number" ? node.order : 0,
-    path: typeof node.path === "string" ? node.path : "",
-    metadata: node.metadata,
-  };
-}
 
 function hasSemanticSourceHierarchy(nodes: Array<Record<string, unknown>>): boolean {
   return nodes.some((node) =>
@@ -2863,15 +2844,23 @@ export const rebuildStoredSourceNodes = internalAction({
       throw new Error("Policy is missing stored source spans");
     }
 
-    const sourceSpans = spanDocs.map((span) => storedSourceSpanLike(span, args.policyId));
+    const sourceSpans = spanDocs.map((span) =>
+      sourceSpanLikeFromStoredSource(span, args.policyId)
+    );
     const canonicalSpans = canonicalSourceSpans(sourceSpans);
     const existingNodeDocs = await ctx.runQuery(
       (internal as any).sourceNodes.listByPolicyInternal,
       { policyId: args.policyId },
     ) as Array<Record<string, any>>;
     const existingSourceTree = existingNodeDocs
-      .map((node) => storedSourceNodeTreeInput(node, args.policyId))
-      .filter((node): node is Record<string, unknown> => Boolean(node));
+      .map((node) => sourceNodeFromStoredSource(node, args.policyId))
+      .filter(
+        (
+          node,
+        ): node is NonNullable<
+          ReturnType<typeof sourceNodeFromStoredSource>
+        > => Boolean(node),
+      );
     const sourceNodes = normalizeSourceTree(
       hasSemanticSourceHierarchy(existingSourceTree) ? existingSourceTree : [],
       canonicalSpans,
@@ -2907,6 +2896,7 @@ export const rebuildStoredSourceNodes = internalAction({
         ...sourceTreePolicyFields({
           sourceTree: sourceNodes,
           operationalProfile,
+          sourceSpans: canonicalSpans,
           existingDocumentMetadata: policy.documentMetadata,
           existingDeclarations: policy.declarations,
           existingLinesOfBusiness: policy.linesOfBusiness,
@@ -3023,11 +3013,19 @@ export const backfillStoredCoverageRecovery = internalAction({
     }
 
     const sourceSpans = canonicalSourceSpans(
-      spanDocs.map((span) => storedSourceSpanLike(span, args.policyId)),
+      spanDocs.map((span) =>
+        sourceSpanLikeFromStoredSource(span, args.policyId)
+      ),
     );
     const storedSourceTree = nodeDocs
-      .map((node) => storedSourceNodeTreeInput(node, args.policyId))
-      .filter((node): node is Record<string, unknown> => Boolean(node));
+      .map((node) => sourceNodeFromStoredSource(node, args.policyId))
+      .filter(
+        (
+          node,
+        ): node is NonNullable<
+          ReturnType<typeof sourceNodeFromStoredSource>
+        > => Boolean(node),
+      );
     const sourceTree = normalizeSourceTree(storedSourceTree, sourceSpans, args.policyId);
     const sdkSourceSpans = sourceSpansForSdk(sourceSpans, args.policyId);
     const primaryProfile = normalizeOperationalProfile(

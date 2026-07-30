@@ -19,9 +19,9 @@ describe("policyDeliveryMatching", () => {
     ).toBe(true);
   });
 
-  it("matches cyber text to an OLIB policy through coverage evidence", () => {
+  it("matches cyber text to a CYBER policy through coverage evidence", () => {
     expect(policyLineHaystacks({
-      linesOfBusiness: ["OLIB"],
+      linesOfBusiness: ["CYBER"],
       coverages: [{ name: "Cyber Liability" }],
     })).toContain("cyber liability");
     expect(
@@ -32,7 +32,7 @@ describe("policyDeliveryMatching", () => {
           },
         },
         {
-          linesOfBusiness: ["OLIB"],
+          linesOfBusiness: ["CYBER"],
           coverages: [{ name: "Cyber Liability" }],
         },
       ),

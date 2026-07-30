@@ -77,11 +77,12 @@ export default function ConnectedVendorPoliciesPage({
               <PolicyListItem
                 key={policy._id}
                 carrier={policy.carrier}
-                carrierBrand={policy.carrierBrand}
+                carrierIdentity={policy.carrierIdentity}
                 generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                 policyNumber={policy.policyNumber}
+                productIdentity={policy.productIdentity}
+                programName={policy.programName}
                 linesOfBusiness={policy.linesOfBusiness}
-                fileName={policy.fileName}
                 effectiveDate={policy.effectiveDate}
                 expirationDate={policy.expirationDate}
                 pipelineStatus={policy.pipelineStatus}

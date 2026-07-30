@@ -1,7 +1,11 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { normalizeCarrierBrandName } from "./lib/carrierBrand";
+import { normalizeCarrierIdentityName } from "./lib/carrierIdentityEnrichment";
+import {
+  applyCarrierIdentityEnrichment,
+  readCarrierIdentity,
+} from "./lib/carrierIdentity";
 
 const PENDING_LEASE_MINUTES = 10;
 
@@ -26,24 +30,25 @@ export const markPolicyPendingInternal = internalMutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
     const pendingIsFresh =
-      policy?.carrierBrandStatus === "pending" &&
-      policy.carrierBrandAttemptedAt !== undefined &&
+      policy?.carrierIdentityEnrichmentStatus === "pending" &&
+      policy.carrierIdentityEnrichmentAttemptedAt !== undefined &&
       dayjs(args.attemptedAt).diff(
-        dayjs(policy.carrierBrandAttemptedAt),
+        dayjs(policy.carrierIdentityEnrichmentAttemptedAt),
         "minute",
       ) < PENDING_LEASE_MINUTES;
     if (
       !policy ||
-      (policy.carrierBrandStatus === "ready" && !args.allowReady) ||
+      (policy.carrierIdentityEnrichmentStatus === "ready" &&
+        !args.allowReady) ||
       pendingIsFresh
     ) {
       return 0;
     }
-    const attempts = (policy.carrierBrandAttempts ?? 0) + 1;
+    const attempts = (policy.carrierIdentityEnrichmentAttempts ?? 0) + 1;
     await ctx.db.patch(args.policyId, {
-      carrierBrandStatus: "pending",
-      carrierBrandAttempts: attempts,
-      carrierBrandAttemptedAt: args.attemptedAt,
+      carrierIdentityEnrichmentStatus: "pending",
+      carrierIdentityEnrichmentAttempts: attempts,
+      carrierIdentityEnrichmentAttemptedAt: args.attemptedAt,
     });
     return attempts;
   },
@@ -53,10 +58,11 @@ export const markPolicyFailedInternal = internalMutation({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy || policy.carrierBrandStatus === "ready") return false;
+    if (!policy || policy.carrierIdentityEnrichmentStatus === "ready") {
+      return false;
+    }
     await ctx.db.patch(args.policyId, {
-      carrierBrandId: undefined,
-      carrierBrandStatus: "failed",
+      carrierIdentityEnrichmentStatus: "failed",
     });
     return true;
   },
@@ -66,6 +72,15 @@ export const upsertInternal = internalMutation({
   args: {
     normalizedName: v.string(),
     carrierName: v.string(),
+    publicName: v.optional(v.string()),
+    nameRelationship: v.optional(
+      v.union(
+        v.literal("same_legal_entity"),
+        v.literal("trading_name"),
+        v.literal("parent_brand"),
+        v.literal("group_brand"),
+      ),
+    ),
     website: v.string(),
     websiteTitle: v.optional(v.string()),
     iconStorageId: v.optional(v.id("_storage")),
@@ -87,34 +102,66 @@ export const upsertInternal = internalMutation({
       )
       .first();
     if (existing) {
-      await ctx.db.patch(existing._id, args);
+      await ctx.db.patch(existing._id, {
+        ...args,
+        publicName: args.publicName,
+        nameRelationship: args.nameRelationship,
+        websiteTitle: args.websiteTitle,
+        iconStorageId: args.iconStorageId,
+      });
       return existing._id;
     }
     return await ctx.db.insert("carrierBrands", args);
   },
 });
 
-export const linkPolicyInternal = internalMutation({
+export const applyToPolicyInternal = internalMutation({
   args: {
     policyId: v.id("policies"),
-    carrierBrandId: v.id("carrierBrands"),
+    cacheEntryId: v.id("carrierBrands"),
     normalizedName: v.string(),
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
     if (!policy) return false;
+    const cacheEntry = await ctx.db.get(args.cacheEntryId);
+    if (!cacheEntry) return false;
+    const identity = readCarrierIdentity(policy.carrierIdentity);
+    if (!identity) return false;
     const currentNames = [
+      identity.sourceName,
+      identity.displayName,
+      identity.operatingName,
+      ...identity.legalEntities.map((entity) => entity.name),
+      policy.carrier,
       policy.insurer?.legalName,
       policy.carrierLegalName,
-      policy.carrier,
       policy.security,
     ]
       .filter((name): name is string => typeof name === "string")
-      .map(normalizeCarrierBrandName);
+      .map(normalizeCarrierIdentityName);
     if (!currentNames.includes(args.normalizedName)) return false;
+
+    const carrierIdentity = applyCarrierIdentityEnrichment(identity, {
+      publicName: cacheEntry.publicName,
+      nameRelationship: cacheEntry.nameRelationship,
+      website: cacheEntry.website,
+      websiteTitle: cacheEntry.websiteTitle,
+      iconStorageId: cacheEntry.iconStorageId,
+      accentColor: cacheEntry.accentColor,
+      confidence: cacheEntry.confidence,
+      sourceUrls: cacheEntry.sourceUrls,
+      enrichmentVersion: cacheEntry.enrichmentVersion ?? 0,
+      updatedAt: cacheEntry.updatedAt,
+    });
     await ctx.db.patch(args.policyId, {
-      carrierBrandId: args.carrierBrandId,
-      carrierBrandStatus: "ready",
+      carrier: carrierIdentity.displayName,
+      carrierIdentity,
+      carrierIdentityEnrichmentStatus: "ready",
+      carrierBrandId: undefined,
+      carrierBrandStatus: undefined,
+      carrierBrandAttempts: undefined,
+      carrierBrandAttemptedAt: undefined,
     });
     return true;
   },

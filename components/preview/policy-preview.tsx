@@ -29,6 +29,11 @@ import {
   formatDisplayDate,
   formatDisplayPolicyPeriod,
 } from "@/lib/date-format";
+import {
+  formatCarrierLegalEntityNames,
+  readCarrierIdentity,
+  sameCarrierIdentityName,
+} from "@/convex/lib/carrierIdentity";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -90,20 +95,27 @@ function formatPolicyPeriod(record: Record<string, unknown>) {
 }
 
 function carrierName(record: Record<string, unknown>) {
+  const identity = readCarrierIdentity(record.carrierIdentity);
   return (
-    realText(record.carrierLegalName) ??
+    identity?.displayName ??
+    realText(record.carrier) ??
     realText(record.security) ??
-    realText(record.carrier)
+    realText(record.carrierLegalName)
   );
 }
 
 function generalAgentName(record: Record<string, unknown>) {
+  const identity = readCarrierIdentity(record.carrierIdentity);
   const generalAgent = record.generalAgent &&
     typeof record.generalAgent === "object" &&
     !Array.isArray(record.generalAgent)
     ? record.generalAgent as Record<string, unknown>
     : {};
-  return realText(generalAgent.agencyName) ?? realText(record.mga);
+  const name = realText(generalAgent.agencyName) ?? realText(record.mga);
+  return name &&
+      sameCarrierIdentityName(identity?.operatingName, name)
+    ? undefined
+    : name;
 }
 
 function policyKind(record: Record<string, unknown>) {
@@ -132,9 +144,16 @@ function metadataRows(
   record: Record<string, unknown>,
   fileCount: number,
 ): MetadataRow[] {
+  const identity = readCarrierIdentity(record.carrierIdentity);
   return [
     { label: "Named insured", value: realText(record.insuredName) },
     { label: "Carrier", value: carrierName(record) },
+    {
+      label: identity?.legalEntities.length === 1
+        ? "Legal entity"
+        : "Legal entities",
+      value: formatCarrierLegalEntityNames(identity),
+    },
     { label: "General Agent", value: generalAgentName(record) },
     { label: "Broker", value: realText(record.broker) },
     { label: "Policy number", value: realText(record.policyNumber) },

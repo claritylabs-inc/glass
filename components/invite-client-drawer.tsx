@@ -27,6 +27,7 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import type { CarrierIdentity } from "@/convex/lib/carrierIdentity";
 
 const INPUT_CLASSES =
   "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
@@ -75,12 +76,9 @@ type DraftPolicyRow = {
   pipelineStatus?: string;
   extractionDataStage?: string;
   uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email";
-  carrierBrand?: {
-    name?: string | null;
-    website?: string | null;
-    accentColor?: string | null;
-    iconUrl?: string | null;
-  } | null;
+  carrierIdentity?: CarrierIdentity | null;
+  productIdentity?: unknown;
+  programName?: string;
 };
 
 type BrokerClientRow = {
@@ -604,11 +602,12 @@ export function InviteClientDrawer({
                 <PolicyListItem
                   key={policy._id}
                   carrier={policy.carrier ?? ""}
-                  carrierBrand={policy.carrierBrand}
+                  carrierIdentity={policy.carrierIdentity}
                   generalAgent={policy.generalAgent?.agencyName ?? policy.mga}
                   policyNumber={policy.policyNumber ?? ""}
+                  productIdentity={policy.productIdentity}
+                  programName={policy.programName}
                   linesOfBusiness={policy.linesOfBusiness}
-                  fileName={policy.fileName}
                   effectiveDate={policy.effectiveDate}
                   expirationDate={policy.expirationDate}
                   pipelineStatus={policy.pipelineStatus}

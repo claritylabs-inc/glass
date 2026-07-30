@@ -6,18 +6,14 @@ import {
   formatDisplayDate,
   formatDisplayPolicyPeriod,
 } from "@/lib/date-format";
+import type { CarrierIdentity } from "@/convex/lib/carrierIdentity";
 
 export type Policy = {
   id: string;
   title: string;
   insuredName: string;
   carrier?: string;
-  carrierBrand?: {
-    name?: string | null;
-    website?: string | null;
-    accentColor?: string | null;
-    iconUrl?: string | null;
-  } | null;
+  carrierIdentity?: CarrierIdentity | null;
   policyNumber: string;
   linesOfBusiness?: string[];
   effectiveDate: string;

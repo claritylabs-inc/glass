@@ -435,7 +435,7 @@ export function PolicyDetailBody({
       setPageContext({
         pageType: "policy",
         entityId: policy._id,
-        summary: `${parties.generalAgentName ?? parties.insurerName ?? "Unknown"} ${policy.policyNumber ?? ""} — ${lines.join(", ")}`,
+        summary: `${parties.generalAgentName ?? parties.carrierDisplayName ?? parties.insurerName ?? "Unknown"} ${policy.policyNumber ?? ""} — ${lines.join(", ")}`,
       });
     }
     return () => setPageContext(null);
@@ -454,7 +454,10 @@ export function PolicyDetailBody({
 
   const p = (policy ?? {}) as unknown as Record<string, unknown>;
   const policyParties = resolvePolicyPartyContext(p);
-  const carrierName = policyParties.insurerName ?? "";
+  const carrierName =
+    policyParties.carrierDisplayName ??
+    policyParties.insurerName ??
+    "";
   const generalAgentName = policyParties.generalAgentName ?? "";
   const displayName = generalAgentName || carrierName;
   const policyNumber = (p.policyNumber as string | undefined) ?? "";

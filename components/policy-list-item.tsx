@@ -4,7 +4,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { BrandIcon } from "@/components/ui/brand-icon";
+import {
+  readCarrierIdentity,
+  type CarrierIdentity,
+} from "@/convex/lib/carrierIdentity";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
+import { policyProductName } from "@/convex/lib/policyProductIdentity";
 import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
 import {
   formatDisplayDate,
@@ -20,20 +25,14 @@ type UploadedBySide =
   | "agent_email"
   | undefined;
 
-type CarrierBrand = {
-  name?: string | null;
-  website?: string | null;
-  accentColor?: string | null;
-  iconUrl?: string | null;
-};
-
 interface PolicyListItemProps {
   carrier: string;
-  carrierBrand?: CarrierBrand | null;
+  carrierIdentity?: CarrierIdentity | null;
   generalAgent?: string;
   policyNumber: string;
+  productIdentity?: unknown;
+  programName?: string;
   linesOfBusiness?: readonly string[];
-  fileName?: string | null;
   effectiveDate?: string;
   expirationDate?: string;
   pipelineStatus?: string;
@@ -84,11 +83,12 @@ function formatPolicyDate(value: string | undefined): string | undefined {
 
 export function PolicyListItem({
   carrier,
-  carrierBrand,
+  carrierIdentity: carrierIdentityValue,
   generalAgent,
   policyNumber,
+  productIdentity,
+  programName,
   linesOfBusiness,
-  fileName,
   effectiveDate,
   expirationDate,
   pipelineStatus,
@@ -105,9 +105,13 @@ export function PolicyListItem({
   const carrierClean = cleanField(carrier);
   const generalAgentClean = cleanField(generalAgent);
   const policyNumberClean = cleanField(policyNumber);
-  const fileNameClean = cleanField(fileName ?? undefined);
+  const productNameClean = cleanField(
+    policyProductName({ productIdentity, programName }),
+  );
   const effectiveClean = formatPolicyDate(effectiveDate);
   const expirationClean = formatPolicyDate(expirationDate);
+  const carrierIdentity = readCarrierIdentity(carrierIdentityValue);
+  const branding = carrierIdentity?.branding;
   const productLines = policyLobCodes({ linesOfBusiness })
     .filter((code) => code !== "UN")
     .map(lobLabel);
@@ -117,20 +121,19 @@ export function PolicyListItem({
     productLines.length - visibleProductLines.length,
   );
   const issuerName =
+    cleanField(carrierIdentity?.displayName) ??
     carrierClean ??
-    cleanField(carrierBrand?.name ?? undefined) ??
     generalAgentClean ??
     "Insurance carrier";
   const coveragePeriod =
     formatDisplayPolicyPeriod(effectiveClean, expirationClean) ||
     (isProcessing || isProvisional ? "Pending extraction" : "Not listed");
   const fallbackTitle =
-    policyNumberClean ??
-    fileNameClean ??
-    (isProcessing ? "New policy upload" : "Policy");
+    productNameClean ??
+    (isProcessing || isProvisional ? "Pending classification" : "Not classified");
   const { patternStyle, surfaceStyle } = policyCardBranding(
     issuerName,
-    carrierBrand?.accentColor,
+    branding?.accentColor,
   );
   const isInteractive = Boolean(href || onClick);
   const cardClassName = cn(
@@ -153,7 +156,7 @@ export function PolicyListItem({
       <div className="relative z-10 flex min-w-0 items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <BrandIcon
-            src={carrierBrand?.iconUrl}
+            src={branding?.iconUrl}
             name={issuerName}
             size="lg"
             className="size-8 rounded-md bg-background"
@@ -217,6 +220,11 @@ export function PolicyListItem({
           <p className="mt-1 text-tag text-current opacity-55">
             +{hiddenProductLineCount} more{" "}
             {hiddenProductLineCount === 1 ? "coverage" : "coverages"}
+          </p>
+        ) : null}
+        {productNameClean && productNameClean !== visibleProductLines[0] ? (
+          <p className="mt-1 truncate text-tag text-current opacity-65">
+            {productNameClean}
           </p>
         ) : null}
       </div>

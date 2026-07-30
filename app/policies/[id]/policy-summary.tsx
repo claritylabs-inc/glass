@@ -18,6 +18,11 @@ import {
   formatDisplayPolicyPeriod,
 } from "@/lib/date-format";
 import { policyCardBranding } from "@/lib/policy-card-branding";
+import {
+  readCarrierIdentity,
+  type CarrierIdentity,
+} from "@/convex/lib/carrierIdentity";
+import { policyProductName } from "@/convex/lib/policyProductIdentity";
 
 const PolicyPdfThumbnail = dynamic(
   () =>
@@ -136,12 +141,10 @@ function ExtractionPendingDetails() {
 
 export interface PolicySummaryProps {
   carrier?: string;
-  carrierBrand?: {
-    name?: string | null;
-    accentColor?: string | null;
-    iconUrl?: string | null;
-  } | null;
+  carrierIdentity?: CarrierIdentity | null;
   policyNumber?: string;
+  productIdentity?: unknown;
+  programName?: string;
   effectiveDate?: string;
   expirationDate?: string;
   premium?: string;
@@ -157,8 +160,10 @@ export interface PolicySummaryProps {
 
 export function PolicySummary({
   carrier,
-  carrierBrand,
+  carrierIdentity: carrierIdentityValue,
   policyNumber,
+  productIdentity,
+  programName,
   effectiveDate,
   expirationDate,
   premium,
@@ -172,9 +177,14 @@ export function PolicySummary({
   onEdit,
 }: PolicySummaryProps) {
   const realPolicyNumber = realText(policyNumber);
+  const realProductName = realText(
+    policyProductName({ productIdentity, programName }),
+  );
+  const carrierIdentity = readCarrierIdentity(carrierIdentityValue);
+  const branding = carrierIdentity?.branding;
   const issuerName =
+    realText(carrierIdentity?.displayName) ??
     realText(carrier) ??
-    realText(carrierBrand?.name ?? undefined) ??
     "Insurance carrier";
   const realEffectiveDate = realText(effectiveDate);
   const realExpirationDate = realText(expirationDate);
@@ -203,6 +213,7 @@ export function PolicySummary({
 
   const hasExtractedDetails =
     !!realPolicyNumber ||
+    !!realProductName ||
     realLinesOfBusiness.length > 0 ||
     !!periodValue ||
     !!realPremium ||
@@ -211,6 +222,7 @@ export function PolicySummary({
     !!realOperationsDescription;
   const hasOverviewRows =
     !!realPolicyNumber ||
+    !!realProductName ||
     realLinesOfBusiness.length > 0 ||
     !!periodValue ||
     !!realPremium ||
@@ -218,7 +230,7 @@ export function PolicySummary({
     !!realTotalCost;
   const { patternStyle, surfaceStyle } = policyCardBranding(
     issuerName,
-    carrierBrand?.accentColor,
+    branding?.accentColor,
   );
 
   return (
@@ -231,7 +243,7 @@ export function PolicySummary({
         />
         <div className="relative z-10 flex items-start gap-3">
           <BrandIcon
-            src={carrierBrand?.iconUrl}
+            src={branding?.iconUrl}
             name={issuerName}
             size="lg"
             className="size-9 rounded-md bg-background"
@@ -288,6 +300,11 @@ export function PolicySummary({
                 <OperationalLabelValueRow
                   label="Policy number"
                   value={realPolicyNumber}
+                  align="right"
+                />
+                <OperationalLabelValueRow
+                  label="Product / plan"
+                  value={realProductName}
                   align="right"
                 />
                 {realLinesOfBusiness.length > 0 ? (

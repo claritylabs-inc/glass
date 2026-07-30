@@ -11,27 +11,24 @@ import { useEntityPreview } from "@/hooks/use-entity-preview";
 import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { useCachedPolicySummary } from "@/lib/sync/glass-cached-queries";
 import { policyCardBranding } from "@/lib/policy-card-branding";
+import { readCarrierIdentity } from "@/convex/lib/carrierIdentity";
 
-type PolicyCarrierBrand = {
-  name?: string | null;
-  accentColor?: string | null;
-  iconUrl?: string | null;
-};
-
-function policyCarrierBrand(policy: {
+function policyCarrierIdentity(policy: {
   carrier?: string;
   security?: string;
-  carrierBrand?: PolicyCarrierBrand | null;
+  carrierIdentity?: unknown;
 }) {
+  const carrierIdentity = readCarrierIdentity(policy.carrierIdentity);
+  const branding = carrierIdentity?.branding;
   const issuerName =
-    policy.carrierBrand?.name ??
+    carrierIdentity?.displayName ??
     policy.carrier ??
     policy.security ??
     "Insurance carrier";
   return {
     issuerName,
-    carrierBrand: policy.carrierBrand,
-    ...policyCardBranding(issuerName, policy.carrierBrand?.accentColor),
+    branding,
+    ...policyCardBranding(issuerName, branding?.accentColor),
   };
 }
 
@@ -113,8 +110,8 @@ export function PolicyReferenceCard({
   const summary = primaryLine
     ? `${summaryParts} — ${primaryLine}`
     : summaryParts;
-  const { carrierBrand, issuerName, patternStyle, surfaceStyle } =
-    policyCarrierBrand(policy);
+  const { branding, issuerName, patternStyle, surfaceStyle } =
+    policyCarrierIdentity(policy);
 
   return (
     <ActionSurfaceButton
@@ -138,7 +135,7 @@ export function PolicyReferenceCard({
         style={patternStyle}
       />
       <BrandIcon
-        src={carrierBrand?.iconUrl}
+        src={branding?.iconUrl}
         name={issuerName}
         size="sm"
         className="relative z-10 size-5 rounded bg-background"
@@ -172,11 +169,17 @@ export function PolicyCitation({
   const { openPreview } = useEntityPreview();
 
   const label = policy
-    ? [policy.carrier || policy.security || "Policy", policy.policyNumber]
+    ? [
+        readCarrierIdentity(policy.carrierIdentity)?.displayName ||
+          policy.carrier ||
+          policy.security ||
+          "Policy",
+        policy.policyNumber,
+      ]
         .filter(Boolean)
         .join(" ")
     : "Policy";
-  const brand = policy ? policyCarrierBrand(policy) : null;
+  const brand = policy ? policyCarrierIdentity(policy) : null;
 
   return (
     <button
@@ -203,7 +206,7 @@ export function PolicyCitation({
             style={brand.patternStyle}
           />
           <BrandIcon
-            src={brand.carrierBrand?.iconUrl}
+            src={brand.branding?.iconUrl}
             name={brand.issuerName}
             size="xs"
             className="relative z-10 size-3 rounded-sm bg-background"
@@ -234,11 +237,17 @@ export function PolicySourcePill({
   const { openPreview } = useEntityPreview();
 
   const label = policy
-    ? [policy.carrier || policy.security || "Policy", policy.policyNumber]
+    ? [
+        readCarrierIdentity(policy.carrierIdentity)?.displayName ||
+          policy.carrier ||
+          policy.security ||
+          "Policy",
+        policy.policyNumber,
+      ]
         .filter(Boolean)
         .join(" ")
     : "Policy";
-  const brand = policy ? policyCarrierBrand(policy) : null;
+  const brand = policy ? policyCarrierIdentity(policy) : null;
 
   return (
     <button
@@ -265,7 +274,7 @@ export function PolicySourcePill({
             style={brand.patternStyle}
           />
           <BrandIcon
-            src={brand.carrierBrand?.iconUrl}
+            src={brand.branding?.iconUrl}
             name={brand.issuerName}
             size="xs"
             className="relative z-10 size-3 rounded-sm bg-background"

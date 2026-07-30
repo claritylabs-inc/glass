@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import type { Id } from "@/convex/_generated/dataModel";
 import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
+import type { CarrierIdentity } from "@/convex/lib/carrierIdentity";
 
 import { PolicySummary } from "./policy-summary";
 import { PolicyPartiesPanel } from "./policy-parties-panel";
@@ -24,11 +25,7 @@ export function PolicyDetailsTab({
     _id: Id<"policies">;
     policyNumber?: string;
     carrier?: string;
-    carrierBrand?: {
-      name?: string | null;
-      accentColor?: string | null;
-      iconUrl?: string | null;
-    } | null;
+    carrierIdentity?: CarrierIdentity;
     insuredName?: string;
     effectiveDate?: string;
     expirationDate?: string;
@@ -37,6 +34,8 @@ export function PolicyDetailsTab({
     taxesAndFees?: Array<{ amount?: string; amountValue?: number }>;
     summary?: string;
     isRenewal?: boolean;
+    programName?: string;
+    productIdentity?: unknown;
   };
   fileUrl?: string | null;
   canEdit?: boolean;
@@ -69,8 +68,10 @@ export function PolicyDetailsTab({
       ) : null}
       <PolicySummary
         carrier={policy.carrier}
-        carrierBrand={policy.carrierBrand}
+        carrierIdentity={policy.carrierIdentity}
         policyNumber={policy.policyNumber}
+        productIdentity={policy.productIdentity}
+        programName={policy.programName}
         effectiveDate={policy.effectiveDate}
         expirationDate={policy.expirationDate}
         premium={policy.premium}

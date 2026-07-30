@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LEGACY_POLICY_TYPE_TO_LOB as SDK_LEGACY_POLICY_TYPE_TO_LOB,
   normalizeOperationalLinesOfBusiness,
-} from "@claritylabs/cl-sdk";
+} from "@claritylabs/cl-sdk/policy-taxonomy";
 import {
   ACORD_LOB_LABELS,
   EXCLUDED_ACORD_LOB_CODES,
@@ -77,19 +77,20 @@ describe("linesOfBusiness", () => {
     }
   });
 
-  it("does not expose excluded or duplicate ACORD codes", () => {
+  it("does not expose retired ACORD codes", () => {
     for (const code of EXCLUDED_ACORD_LOB_CODES) {
       expect(ACORD_LOB_LABELS).not.toHaveProperty(code);
     }
-    expect(ACORD_LOB_LABELS).not.toHaveProperty("CRIM");
-    expect(toLobCodes(["CRIM"])).toEqual(["CRIME"]);
+    expect(ACORD_LOB_LABELS.CRIM).toBe("Crime");
+    expect(toLobCodes(["CRIM"])).toEqual(["CRIM"]);
   });
 
   it("normalizes idempotently with aliases, dedupe, fallback, and 1-to-N expansion", () => {
     expect(toLobCodes(["CGL", "general_liability", "General Liability"])).toEqual(["CGL"]);
-    expect(toLobCodes(["management_liability_package"])).toEqual(["DO", "EPLI", "FIDUC"]);
-    expect(toLobCodes(["d_and_o", "D&O", "fiduciary", "crime"])).toEqual(["DO", "FIDUC", "CRIME"]);
-    expect(toLobCodes(["cyber", "environmental", "product_liability"])).toEqual(["OLIB"]);
+    expect(toLobCodes(["management_liability_package"])).toEqual(["MGMLI"]);
+    expect(toLobCodes(["d_and_o", "D&O", "fiduciary", "crime"])).toEqual(["DO", "FIDUC", "CRIM"]);
+    expect(toLobCodes(["cyber", "environmental", "product_liability"])).toEqual(["CYBER", "OLIB"]);
+    expect(toLobCodes(["travel", "Trip Cancellation"])).toEqual(["TRVL"]);
     expect(toLobCodes(["not_a_real_type"])).toEqual(["UN"]);
     expect(toLobCodes([])).toEqual(["UN"]);
   });
@@ -103,12 +104,12 @@ describe("linesOfBusiness", () => {
 
   it("labels and badge-colors codes and legacy keys through the same path", () => {
     expect(lobLabel("general_liability")).toBe(lobLabel("CGL"));
-    expect(lobLabel("cyber")).toBe("Other Liability");
+    expect(lobLabel("cyber")).toBe("Commercial Cyber and Privacy Liability");
     expect(lobBadgeClass("general_liability")).toBe(lobBadgeClass("CGL"));
   });
 
   it("normalizes the canonical policy linesOfBusiness field", () => {
-    expect(policyLobCodes({ linesOfBusiness: ["CGL", "cyber"] })).toEqual(["CGL", "OLIB"]);
+    expect(policyLobCodes({ linesOfBusiness: ["CGL", "cyber"] })).toEqual(["CGL", "CYBER"]);
     expect(policyLobCodes({})).toEqual(["UN"]);
   });
 });

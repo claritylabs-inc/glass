@@ -105,7 +105,7 @@ type ComplianceApi = {
 
 const complianceApi = api as unknown as ComplianceApi;
 
-const COMMON_LOBS = ["CGL", "AUTOB", "WORK", "UMBRC", "EXLIA", "EO", "PROPC", "BOP", "CRIME", "EPLI"] as const;
+const COMMON_LOBS = ["CGL", "AUTOB", "WORK", "UMBRC", "EXLIA", "EO", "PROP", "BOP", "CRIM", "EPLI", "CYBER"] as const;
 
 const LIMIT_KIND_OPTIONS: RequirementLimitKind[] = [...REQUIREMENT_LIMIT_KINDS];
 

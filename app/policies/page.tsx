@@ -25,7 +25,6 @@ import {
   showPolicyExtractionReadyToast,
 } from "@/components/shared/extraction-banner";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
-import { CARRIER_BRAND_ENRICHMENT_VERSION } from "@/convex/lib/carrierBrand";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -42,14 +41,6 @@ type PolicyListToastRow = {
   extractionDataStage?: string | null;
   extractionPreviewError?: string | null;
   uploadedBySide?: string;
-  carrierBrandStatus?: "pending" | "ready" | "failed";
-  carrierBrand?: {
-    name?: string | null;
-    website?: string | null;
-    accentColor?: string | null;
-    iconUrl?: string | null;
-    enrichmentVersion?: number;
-  } | null;
 };
 
 export default function PoliciesPage() {
@@ -61,7 +52,6 @@ export default function PoliciesPage() {
   const pendingExtractionToastsRef = useRef<
     Record<string, { fileName?: string | null }>
   >({});
-  const attemptedCarrierBrandIdsRef = useRef(new Set<string>());
 
   const policies = useCachedPolicyList(showArchived);
   const viewerOrg = useCachedViewerOrg();
@@ -73,7 +63,6 @@ export default function PoliciesPage() {
   const extractFromUpload = useAction(
     api.actions.extractFromUpload.extractFromUpload,
   );
-  const ensureCarrierBrand = useAction(api.actions.enrichCarrierBrand.ensure);
   const restorePolicy = useMutation(api.policies.restore);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
@@ -266,30 +255,6 @@ export default function PoliciesPage() {
     );
   }, [policies, resolvePendingExtractionToasts]);
 
-  useEffect(() => {
-    if (!policies) return;
-    for (const policy of policies as PolicyListToastRow[]) {
-      const isFinal =
-        policy.extractionDataStage === "final" ||
-        policy.pipelineStatus === "complete";
-      if (
-        !isFinal ||
-        policy.carrierBrand?.enrichmentVersion ===
-          CARRIER_BRAND_ENRICHMENT_VERSION ||
-        policy.carrierBrandStatus === "pending" ||
-        attemptedCarrierBrandIdsRef.current.has(policy._id)
-      ) {
-        continue;
-      }
-      attemptedCarrierBrandIdsRef.current.add(policy._id);
-      void ensureCarrierBrand({
-        policyId: policy._id as Id<"policies">,
-      }).catch(() => {
-        attemptedCarrierBrandIdsRef.current.delete(policy._id);
-      });
-    }
-  }, [ensureCarrierBrand, policies]);
-
   return (
     <AppShell
       actions={
@@ -357,11 +322,12 @@ export default function PoliciesPage() {
               <PolicyListItem
                 key={p._id}
                 carrier={p.carrier}
-                carrierBrand={p.carrierBrand}
+                carrierIdentity={p.carrierIdentity}
                 generalAgent={p.generalAgent?.agencyName ?? p.mga}
                 policyNumber={p.policyNumber}
+                productIdentity={p.productIdentity}
+                programName={p.programName}
                 linesOfBusiness={p.linesOfBusiness}
-                fileName={p.fileName}
                 effectiveDate={p.effectiveDate}
                 expirationDate={p.expirationDate}
                 pipelineStatus={p.pipelineStatus}
