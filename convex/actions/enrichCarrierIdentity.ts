@@ -258,20 +258,17 @@ async function enrichPolicyCarrierIdentity(
     return { success: false as const, reason: "missing_carrier" };
   }
   const normalizedName = normalizeCarrierIdentityName(carrierName);
-  const normalizedNames = carrierNames.map(normalizeCarrierIdentityName);
-  for (const candidateName of normalizedNames) {
-    const cachedResult = await applyCachedIdentity(
-      ctx,
-      policyId,
-      candidateName,
-    );
-    if (cachedResult.applied) {
-      return { success: true as const, cached: true };
-    }
-    if (cachedResult.identityChanged) {
-      await rescheduleChangedCarrierIdentity(ctx, policyId);
-      return { success: false as const, reason: "in_progress" };
-    }
+  const cachedResult = await applyCachedIdentity(
+    ctx,
+    policyId,
+    normalizedName,
+  );
+  if (cachedResult.applied) {
+    return { success: true as const, cached: true };
+  }
+  if (cachedResult.identityChanged) {
+    await rescheduleChangedCarrierIdentity(ctx, policyId);
+    return { success: false as const, reason: "in_progress" };
   }
 
   const attemptedAt = dayjs().valueOf();
@@ -288,13 +285,9 @@ async function enrichPolicyCarrierIdentity(
   }
 
   try {
-    const cachedIdentities = await Promise.all(
-      normalizedNames.map((candidateName) =>
-        ctx.runQuery(
-          internal.carrierIdentityCache.getByNormalizedNameInternal,
-          { normalizedName: candidateName },
-        )
-      ),
+    const cachedIdentity = await ctx.runQuery(
+      internal.carrierIdentityCache.getByNormalizedNameInternal,
+      { normalizedName },
     );
     const retrievals = await Promise.all(
       carrierNames.slice(0, 2).map((researchName) =>
@@ -313,7 +306,7 @@ async function enrichPolicyCarrierIdentity(
     ) ?? "";
     const reusablePreviousSources = reusableCacheSources(
       carrierName,
-      cachedIdentities,
+      [cachedIdentity],
     );
     let sites = (
       await Promise.all(

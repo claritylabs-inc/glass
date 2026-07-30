@@ -35,6 +35,7 @@ interface PolicyListItemProps {
   linesOfBusiness?: readonly string[];
   effectiveDate?: string;
   expirationDate?: string;
+  policyTermType?: string;
   pipelineStatus?: string;
   extractionDataStage?: string;
   uploadedBySide?: UploadedBySide;
@@ -91,6 +92,7 @@ export function PolicyListItem({
   linesOfBusiness,
   effectiveDate,
   expirationDate,
+  policyTermType,
   pipelineStatus,
   extractionDataStage,
   uploadedBySide,
@@ -126,7 +128,11 @@ export function PolicyListItem({
     generalAgentClean ??
     "Insurance carrier";
   const coveragePeriod =
-    formatDisplayPolicyPeriod(effectiveClean, expirationClean) ||
+    formatDisplayPolicyPeriod(
+      effectiveClean,
+      expirationClean,
+      policyTermType,
+    ) ||
     (isProcessing || isProvisional ? "Pending extraction" : "Not listed");
   const fallbackTitle =
     productNameClean ??

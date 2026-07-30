@@ -330,6 +330,7 @@ export default function PoliciesPage() {
                 linesOfBusiness={p.linesOfBusiness}
                 effectiveDate={p.effectiveDate}
                 expirationDate={p.expirationDate}
+                policyTermType={p.policyTermType}
                 pipelineStatus={p.pipelineStatus}
                 extractionDataStage={p.extractionDataStage}
                 uploadedBySide={p.uploadedBySide}

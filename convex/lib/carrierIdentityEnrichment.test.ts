@@ -38,6 +38,37 @@ describe("carrier identity enrichment", () => {
       ]);
   });
 
+  it("keeps a composite source designation as the canonical cache identity", () => {
+    const sourceName =
+      "Entity A Insurance Company and Entity B Insurance Company";
+    const identity = {
+      displayName: sourceName,
+      sourceName,
+      legalEntities: [
+        {
+          name: "Entity A Insurance Company",
+          sourceNodeIds: ["carrier-a"],
+          sourceSpanIds: ["span-carrier-a"],
+        },
+        {
+          name: "Entity B Insurance Company",
+          sourceNodeIds: ["carrier-b"],
+          sourceSpanIds: ["span-carrier-b"],
+        },
+      ],
+      legalEntityRelationship: "and" as const,
+      sourceNodeIds: ["carrier-a", "carrier-b"],
+      sourceSpanIds: ["span-carrier-a", "span-carrier-b"],
+    };
+
+    expect(carrierIdentityResearchName(identity)).toBe(sourceName);
+    expect(carrierIdentityResearchNames(identity)).toEqual([
+      sourceName,
+      "Entity A Insurance Company",
+      "Entity B Insurance Company",
+    ]);
+  });
+
   it("falls back to the matching official domain when model selection fails", () => {
     const candidates = [
       {

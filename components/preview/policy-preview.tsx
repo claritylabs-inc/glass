@@ -90,6 +90,7 @@ function formatPolicyPeriod(record: Record<string, unknown>) {
     formatDisplayPolicyPeriod(
       realText(record.effectiveDate),
       realText(record.expirationDate),
+      realText(record.policyTermType),
     ) || undefined
   );
 }

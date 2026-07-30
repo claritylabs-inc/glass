@@ -44,11 +44,13 @@ describe("external extraction document gate", () => {
     expect(gateBody).toContain("shouldRejectDocument(gateDecision)");
     expect(gateBody).toContain("NON_INSURANCE_DOCUMENT_ERROR");
     expect(gateBody).toContain('status: "not_insurance"');
+    expect(gateBody).toContain("shouldArchiveRejectedPolicy");
+    expect(gateBody).toContain("archivePolicy");
     expect(gateBody).toContain("pipelineRejectExternalJob");
     expect(gateBody).toContain("Document gate failed; continuing extraction");
   });
 
-  it("auto-archives rejected non-insurance documents in both extraction modes", () => {
+  it("auto-archives only new uploads rejected as non-insurance", () => {
     const policies = read("convex/policies.ts");
     const actions = read("convex/actions/policyExtraction.ts");
 
@@ -61,9 +63,15 @@ describe("external extraction document gate", () => {
       policies.indexOf("export const pipelineRejectExternalJob"),
       policies.indexOf("export const pipelineClaimExternalWorkerJob"),
     );
-    expect(rejectBody).toContain("archiveRejectedPolicyDocument(ctx, policyId, userId)");
+    expect(rejectBody).toContain("if (archivePolicy)");
+    expect(rejectBody).toContain(
+      "archiveRejectedPolicyDocument(ctx, policyId, userId)",
+    );
 
-    // The in-Convex extract phase shares the same auto-archive on rejection.
+    // The in-Convex path uses the same new-upload guard.
+    expect(actions).toContain(
+      "shouldArchiveRejectedPolicy(state.policyVersionKind)",
+    );
     expect(actions).toContain("archiveRejectedDocumentInternal");
   });
 });

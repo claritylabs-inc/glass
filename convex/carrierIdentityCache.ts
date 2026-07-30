@@ -2,7 +2,10 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { normalizeCarrierIdentityName } from "./lib/carrierIdentityEnrichment";
+import {
+  carrierIdentityResearchName,
+  normalizeCarrierIdentityName,
+} from "./lib/carrierIdentityEnrichment";
 import {
   applyCarrierIdentityEnrichment,
   readCarrierIdentity,
@@ -10,23 +13,17 @@ import {
 
 const PENDING_LEASE_MINUTES = 10;
 
-function normalizedPolicyCarrierNames(policy: Doc<"policies">) {
+function normalizedPolicyCarrierName(policy: Doc<"policies">) {
   const identity = readCarrierIdentity(policy.carrierIdentity);
-  return (identity
-    ? [
-        identity.sourceName,
-        identity.displayName,
-        identity.operatingName,
-        ...identity.legalEntities.map((entity) => entity.name),
-      ]
-    : [
-        policy.carrier,
-        policy.insurer?.legalName,
-        policy.carrierLegalName,
-        policy.security,
-      ])
-    .filter((name): name is string => typeof name === "string")
-    .map(normalizeCarrierIdentityName);
+  const carrierName = carrierIdentityResearchName(identity, [
+    policy.carrier,
+    policy.insurer?.legalName,
+    policy.carrierLegalName,
+    policy.security,
+  ]);
+  return carrierName
+    ? normalizeCarrierIdentityName(carrierName)
+    : undefined;
 }
 
 export const getByNormalizedNameInternal = internalQuery({
@@ -88,7 +85,7 @@ export const markPolicyFailedInternal = internalMutation({
     }
     if (
       args.normalizedName &&
-      !normalizedPolicyCarrierNames(policy).includes(args.normalizedName)
+      normalizedPolicyCarrierName(policy) !== args.normalizedName
     ) {
       if (
         args.attemptedAt === undefined ||
@@ -174,9 +171,11 @@ export const applyToPolicyInternal = internalMutation({
     if (!policy) return { applied: false, identityChanged: false };
     const cacheEntry = await ctx.db.get(args.cacheEntryId);
     if (!cacheEntry) return { applied: false, identityChanged: false };
+    if (cacheEntry.normalizedName !== args.normalizedName) {
+      return { applied: false, identityChanged: false };
+    }
     const identity = readCarrierIdentity(policy.carrierIdentity);
-    const currentNames = normalizedPolicyCarrierNames(policy);
-    if (!currentNames.includes(args.normalizedName)) {
+    if (normalizedPolicyCarrierName(policy) !== args.normalizedName) {
       await ctx.db.patch(args.policyId, {
         carrierIdentityEnrichmentStatus: undefined,
         carrierIdentityEnrichmentAttempts: undefined,

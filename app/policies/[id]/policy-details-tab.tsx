@@ -29,6 +29,7 @@ export function PolicyDetailsTab({
     insuredName?: string;
     effectiveDate?: string;
     expirationDate?: string;
+    policyTermType?: string;
     premium?: string;
     totalCost?: string;
     taxesAndFees?: Array<{ amount?: string; amountValue?: number }>;
@@ -75,6 +76,7 @@ export function PolicyDetailsTab({
         programName={policy.programName}
         effectiveDate={policy.effectiveDate}
         expirationDate={policy.expirationDate}
+        policyTermType={policy.policyTermType}
         premium={policy.premium}
         totalCost={policy.totalCost}
         taxesAndFees={policy.taxesAndFees}

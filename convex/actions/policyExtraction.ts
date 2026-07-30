@@ -228,6 +228,12 @@ export type PolicyExtractionState = {
   operationalProfile?: PolicyOperationalProfile;
 };
 
+function shouldArchiveRejectedPolicy(
+  policyVersionKind: PolicyExtractionState["policyVersionKind"],
+) {
+  return !policyVersionKind || policyVersionKind === "new_policy";
+}
+
 type EmbeddingPayload = Pick<
   PolicyExtractionState,
   "documentChunksForEmbedding" | "sourceSpansForStorage" | "sourceChunksForEmbedding" | "sourceNodesForStorage"
@@ -1389,45 +1395,47 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
         if (shouldRejectDocument(gateDecision)) {
           const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
-          await convexCtx.runMutation(
-            (internal as any).policies.updateExtractionInternal,
-            {
-              id: policyId,
-              fields: {
-                carrier: "Non-insurance document",
-                policyNumber: "Not applicable",
-                linesOfBusiness: ["UN"],
-                insuredName: "Not applicable",
-                effectiveDate: "Not applicable",
-                expirationDate: "Not applicable",
-                summary: rejectionSummary,
-                excludeFromSearch: true,
-              },
-            },
-          );
-
-          if (state.fileId) {
-            await convexCtx.runMutation((internal as any).policies.updateFiles, {
-              id: policyId,
-              files: [
-                {
-                  fileId: state.fileId as Id<"_storage">,
-                  fileName: state.fileName || "upload.pdf",
-                  fileType: "unknown",
-                  status: "not_insurance",
+          if (shouldArchiveRejectedPolicy(state.policyVersionKind)) {
+            await convexCtx.runMutation(
+              (internal as any).policies.updateExtractionInternal,
+              {
+                id: policyId,
+                fields: {
+                  carrier: "Non-insurance document",
+                  policyNumber: "Not applicable",
+                  linesOfBusiness: ["UN"],
+                  insuredName: "Not applicable",
+                  effectiveDate: "Not applicable",
+                  expirationDate: "Not applicable",
+                  summary: rejectionSummary,
+                  excludeFromSearch: true,
                 },
-              ],
-              reconciliationStatus: "error" as const,
-            });
-          }
+              },
+            );
 
-          await convexCtx.runMutation(
-            (internal as any).policies.archiveRejectedDocumentInternal,
-            {
-              id: policyId,
-              userId: state.userId,
-            },
-          );
+            if (state.fileId) {
+              await convexCtx.runMutation((internal as any).policies.updateFiles, {
+                id: policyId,
+                files: [
+                  {
+                    fileId: state.fileId as Id<"_storage">,
+                    fileName: state.fileName || "upload.pdf",
+                    fileType: "unknown",
+                    status: "not_insurance",
+                  },
+                ],
+                reconciliationStatus: "error" as const,
+              });
+            }
+
+            await convexCtx.runMutation(
+              (internal as any).policies.archiveRejectedDocumentInternal,
+              {
+                id: policyId,
+                userId: state.userId,
+              },
+            );
+          }
 
           return { kind: "error", error: rejectionSummary };
         }
@@ -3133,6 +3141,7 @@ async function rejectedByDocumentGateBeforeExternalHandoff(
       orgId?: string;
       userId?: string;
       traceId?: string;
+      policyVersionKind?: PolicyExtractionState["policyVersionKind"];
     };
   },
 ): Promise<boolean> {
@@ -3181,38 +3190,44 @@ async function rejectedByDocumentGateBeforeExternalHandoff(
   if (!shouldRejectDocument(gateDecision)) return false;
 
   const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
-  await ctx.runMutation(
-    (internal as any).policies.updateExtractionInternal,
-    {
-      id: params.policyId,
-      fields: {
-        carrier: "Non-insurance document",
-        policyNumber: "Not applicable",
-        linesOfBusiness: ["UN"],
-        insuredName: "Not applicable",
-        effectiveDate: "Not applicable",
-        expirationDate: "Not applicable",
-        summary: rejectionSummary,
-        excludeFromSearch: true,
-      },
-    },
+  const archivePolicy = shouldArchiveRejectedPolicy(
+    params.state.policyVersionKind,
   );
-  await ctx.runMutation((internal as any).policies.updateFiles, {
-    id: params.policyId,
-    files: [
+  if (archivePolicy) {
+    await ctx.runMutation(
+      (internal as any).policies.updateExtractionInternal,
       {
-        fileId: fileId as Id<"_storage">,
-        fileName: fileName || "upload.pdf",
-        fileType: "unknown",
-        status: "not_insurance",
+        id: params.policyId,
+        fields: {
+          carrier: "Non-insurance document",
+          policyNumber: "Not applicable",
+          linesOfBusiness: ["UN"],
+          insuredName: "Not applicable",
+          effectiveDate: "Not applicable",
+          expirationDate: "Not applicable",
+          summary: rejectionSummary,
+          excludeFromSearch: true,
+        },
       },
-    ],
-    reconciliationStatus: "error" as const,
-  });
+    );
+    await ctx.runMutation((internal as any).policies.updateFiles, {
+      id: params.policyId,
+      files: [
+        {
+          fileId: fileId as Id<"_storage">,
+          fileName: fileName || "upload.pdf",
+          fileType: "unknown",
+          status: "not_insurance",
+        },
+      ],
+      reconciliationStatus: "error" as const,
+    });
+  }
   await ctx.runMutation((internal as any).policies.pipelineRejectExternalJob, {
     jobId: params.policyId,
     error: rejectionSummary,
     userId,
+    archivePolicy,
   });
   await completeTraceSession(ctx, traceId, "error", rejectionSummary);
   return true;

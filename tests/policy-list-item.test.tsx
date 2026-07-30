@@ -27,6 +27,22 @@ describe("PolicyListItem", () => {
     expect(named).toContain("Mar 8, 2026 – Mar 8, 2027");
   });
 
+  it("keeps continuous policy terms open-ended", () => {
+    const markup = renderToStaticMarkup(
+      <PolicyListItem
+        carrier="Continuous Carrier"
+        policyNumber="CONTINUOUS-100"
+        effectiveDate="07/28/2026"
+        expirationDate="07/28/2027"
+        policyTermType="continuous"
+        pipelineStatus="complete"
+      />,
+    );
+
+    expect(markup).toContain("Jul 28, 2026 — Until Cancelled");
+    expect(markup).not.toContain("Jul 28, 2027");
+  });
+
   it("renders each product line separately instead of joining them with dots", () => {
     const markup = renderToStaticMarkup(
       <PolicyListItem

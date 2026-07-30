@@ -22,6 +22,10 @@ describe("policy carrier branding ownership", () => {
     expect(carrierIdentityAction).toMatch(
       /failureResult\.status === "identity_changed"[\s\S]*rescheduleChangedCarrierIdentity/,
     );
+    expect(carrierIdentityAction).not.toContain("normalizedNames");
+    expect(carrierIdentityAction).toMatch(
+      /applyCachedIdentity\(\s*ctx,\s*policyId,\s*normalizedName,\s*\)/,
+    );
     expect(
       extraction.match(
         /existingPolicyFields: fieldsWithPersistedCarrierIdentity\(\s*fields,\s*existingPolicy,\s*\)/g,

@@ -38,4 +38,17 @@ describe("display date formatting", () => {
       "Jul 28, 2026 – Jul 28, 2027",
     );
   });
+
+  it("preserves continuous-term semantics even when an expiration is stored", () => {
+    expect(
+      formatDisplayPolicyPeriod(
+        "07/28/2026",
+        "07/28/2027",
+        "continuous",
+      ),
+    ).toBe("Jul 28, 2026 — Until Cancelled");
+    expect(
+      formatDisplayPolicyPeriod(undefined, "07/28/2027", "CONTINUOUS"),
+    ).toBe("Until Cancelled");
+  });
 });

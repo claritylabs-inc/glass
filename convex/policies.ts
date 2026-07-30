@@ -2709,16 +2709,16 @@ export const pipelineStartExternalWorkerJob = internalMutation({
 
 // Marks an extraction run as rejected before it is handed to the external
 // worker queue (document intake gate). No lease exists yet, so this cannot go
-// through pipelineCompleteLease. Rejected documents are auto-archived so they
-// move to the archived list instead of lingering as failed policy rows; the
-// stored error and summary still explain the rejection on the detail page.
+// through pipelineCompleteLease. New upload rows are auto-archived; rejection
+// during re-extraction or renewal leaves the existing bound policy active.
 export const pipelineRejectExternalJob = internalMutation({
   args: {
     jobId: v.string(),
     error: v.string(),
     userId: v.optional(v.string()),
+    archivePolicy: v.boolean(),
   },
-  handler: async (ctx, { jobId, error, userId }) => {
+  handler: async (ctx, { jobId, error, userId, archivePolicy }) => {
     const policyId = jobId as DataModelId<"policies">;
     const now = nowMs();
     const run = await ensurePolicyExtractionRun(ctx, policyId);
@@ -2738,7 +2738,9 @@ export const pipelineRejectExternalJob = internalMutation({
       pipelineCheckpoint: undefined,
       pipelineLog: undefined,
     });
-    await archiveRejectedPolicyDocument(ctx, policyId, userId);
+    if (archivePolicy) {
+      await archiveRejectedPolicyDocument(ctx, policyId, userId);
+    }
     await insertPipelineTraceLog(ctx, policyId, {
       timestamp: now,
       message: error,

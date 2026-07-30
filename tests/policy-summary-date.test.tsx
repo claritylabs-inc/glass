@@ -17,6 +17,23 @@ describe("PolicySummary date display", () => {
     expect(markup).not.toContain("03/08/2026");
   });
 
+  it("renders a continuous policy as active and until cancelled", () => {
+    const markup = renderToStaticMarkup(
+      <PolicySummary
+        policyNumber="CONTINUOUS-100"
+        effectiveDate="07/28/2026"
+        expirationDate="01/01/2020"
+        policyTermType="continuous"
+        linesOfBusiness={["CGL"]}
+      />,
+    );
+
+    expect(markup).toContain("Jul 28, 2026 — Until Cancelled");
+    expect(markup).toContain(">Active<");
+    expect(markup).not.toContain(">Expired<");
+    expect(markup).not.toContain("Jan 1, 2020");
+  });
+
   it("uses the verified public carrier name in the policy overview", () => {
     const markup = renderToStaticMarkup(
       <PolicySummary

@@ -38,7 +38,18 @@ const PolicyPdfThumbnail = dynamic(
   },
 );
 
-function StatusBadge({ expirationDate }: { expirationDate?: string }) {
+function StatusBadge({
+  expirationDate,
+  continuous,
+}: {
+  expirationDate?: string;
+  continuous: boolean;
+}) {
+  const className =
+    "inline-flex items-center rounded-full border border-current/20 bg-transparent px-2.5 py-0.5 text-tag font-medium text-current";
+  if (continuous) {
+    return <span className={className}>Active</span>;
+  }
   const now = dayjs();
   const expiry = dayjs(
     expirationDate,
@@ -51,9 +62,6 @@ function StatusBadge({ expirationDate }: { expirationDate?: string }) {
 
   const isExpired = expiry.isBefore(now, "day");
   const isExpiringSoon = !isExpired && expiry.diff(now, "day") <= 30;
-  const className =
-    "inline-flex items-center rounded-full border border-current/20 bg-transparent px-2.5 py-0.5 text-tag font-medium text-current";
-
   if (isExpired) {
     return <span className={className}>Expired</span>;
   }
@@ -149,6 +157,7 @@ export interface PolicySummaryProps {
   programName?: string;
   effectiveDate?: string;
   expirationDate?: string;
+  policyTermType?: string;
   premium?: string;
   totalCost?: string;
   taxesAndFees?: Array<{ amount?: string; amountValue?: number }>;
@@ -169,6 +178,7 @@ export function PolicySummary({
   programName,
   effectiveDate,
   expirationDate,
+  policyTermType,
   premium,
   totalCost,
   taxesAndFees,
@@ -201,6 +211,8 @@ export function PolicySummary({
   const branding = brandingMatchesIssuer ? carrierIdentity?.branding : undefined;
   const realEffectiveDate = realText(effectiveDate);
   const realExpirationDate = realText(expirationDate);
+  const continuous =
+    realText(policyTermType)?.toLowerCase() === "continuous";
   const displayEffectiveDate = formatPolicyDate(realEffectiveDate);
   const displayExpirationDate = formatPolicyDate(realExpirationDate);
   const realPremium = realText(premium);
@@ -221,7 +233,11 @@ export function PolicySummary({
   const realLinesOfBusiness =
     toLobCodes(linesOfBusiness).filter(isRealLineOfBusiness);
   const periodValue =
-    formatDisplayPolicyPeriod(displayEffectiveDate, displayExpirationDate) ||
+    formatDisplayPolicyPeriod(
+      displayEffectiveDate,
+      displayExpirationDate,
+      policyTermType,
+    ) ||
     undefined;
 
   const hasExtractedDetails =
@@ -275,7 +291,10 @@ export function PolicySummary({
                 Renewal
               </span>
             ) : null}
-            <StatusBadge expirationDate={realExpirationDate} />
+            <StatusBadge
+              expirationDate={realExpirationDate}
+              continuous={continuous}
+            />
             {onEdit ? (
               <PillButton
                 type="button"

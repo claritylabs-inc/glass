@@ -171,6 +171,84 @@ describe("carrier identity branding", () => {
     });
   });
 
+  it("does not apply one constituent's cache entry to a composite identity", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const cacheEntryId = await ctx.db.insert("carrierBrands", {
+        normalizedName: "entity b insurance company",
+        carrierName: "Entity B Insurance Company",
+        publicName: "Entity B",
+        nameRelationship: "trading_name",
+        website: "https://entity-b.example/",
+        accentColor: "#123456",
+        confidence: "high",
+        sourceUrls: ["https://entity-b.example/"],
+        enrichmentVersion: CARRIER_IDENTITY_ENRICHMENT_VERSION,
+        updatedAt: 1,
+      });
+      const sourceName =
+        "Entity A Insurance Company and Entity B Insurance Company";
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: sourceName,
+        carrierIdentity: {
+          displayName: sourceName,
+          sourceName,
+          legalEntities: [
+            {
+              name: "Entity A Insurance Company",
+              sourceNodeIds: ["carrier-a"],
+              sourceSpanIds: ["span-carrier-a"],
+            },
+            {
+              name: "Entity B Insurance Company",
+              sourceNodeIds: ["carrier-b"],
+              sourceSpanIds: ["span-carrier-b"],
+            },
+          ],
+          legalEntityRelationship: "and",
+          sourceNodeIds: ["carrier-a", "carrier-b"],
+          sourceSpanIds: ["span-carrier-a", "span-carrier-b"],
+        },
+        carrierIdentityEnrichmentStatus: "pending",
+        carrierIdentityEnrichmentAttempts: 1,
+        carrierIdentityEnrichmentAttemptedAt: 100,
+        policyNumber: "C-100",
+        linesOfBusiness: ["OLIB"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Client",
+      });
+      return { cacheEntryId, policyId, sourceName };
+    });
+
+    const result = await t.mutation(applyToPolicyInternalFn, {
+      policyId: ids.policyId,
+      cacheEntryId: ids.cacheEntryId,
+      normalizedName: "entity b insurance company",
+    });
+    const policy = await t.run((ctx) => ctx.db.get(ids.policyId));
+
+    expect(result).toEqual({ applied: false, identityChanged: true });
+    expect(policy).toMatchObject({
+      carrier: ids.sourceName,
+      carrierIdentity: {
+        displayName: ids.sourceName,
+        sourceName: ids.sourceName,
+      },
+    });
+    expect(policy?.carrierIdentity?.branding).toBeUndefined();
+    expect(policy?.carrierIdentityEnrichmentStatus).toBeUndefined();
+  });
+
   it("releases a stale enrichment lease when the source identity changes", async () => {
     const t = convexTest(schema, modules);
     const ids = await t.run(async (ctx) => {

@@ -85,6 +85,7 @@ export default function ConnectedVendorPoliciesPage({
                 linesOfBusiness={policy.linesOfBusiness}
                 effectiveDate={policy.effectiveDate}
                 expirationDate={policy.expirationDate}
+                policyTermType={policy.policyTermType}
                 pipelineStatus={policy.pipelineStatus}
                 extractionDataStage={policy.extractionDataStage}
                 uploadedBySide={policy.uploadedBySide}

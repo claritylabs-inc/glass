@@ -2,9 +2,13 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
-import { updateExtractionInternal } from "./policies";
+import {
+  pipelineRejectExternalJob,
+  updateExtractionInternal,
+} from "./policies";
 
 const modules = import.meta.glob("./**/*.ts");
+const pipelineRejectExternalJobFn = pipelineRejectExternalJob as any;
 const updateExtractionInternalFn = updateExtractionInternal as any;
 
 describe("policies.updateExtractionInternal", () => {
@@ -328,5 +332,60 @@ describe("policies.updateExtractionInternal", () => {
       premium: "$100",
       extractionDataStage: "final",
     });
+  });
+
+  test("leaves an existing bound policy active when re-extraction is rejected", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Known Carrier",
+        policyNumber: "POL-REEXTRACT",
+        insuredName: "Known Insured",
+        linesOfBusiness: ["CGL"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+      const factId = await ctx.db.insert("policyDeclarationFacts", {
+        orgId,
+        policyId,
+        fieldPath: "coverages.0.limit",
+        fieldGroup: "coverage_limit:general_liability",
+        displayValue: "General Liability: $1,000,000",
+        normalizedValue: "general liability 1000000",
+        valueKind: "money",
+        observedAt: 1,
+        active: true,
+        recordHash: "re-extraction-fact",
+      });
+      return { factId, policyId };
+    });
+
+    await t.mutation(pipelineRejectExternalJobFn, {
+      jobId: ids.policyId,
+      error: "Replacement document is not a bound policy.",
+      archivePolicy: false,
+    });
+
+    const result = await t.run(async (ctx) => ({
+      policy: await ctx.db.get(ids.policyId),
+      fact: await ctx.db.get(ids.factId),
+    }));
+    expect(result.policy).toMatchObject({
+      carrier: "Known Carrier",
+      policyNumber: "POL-REEXTRACT",
+      pipelineStatus: "error",
+      pipelineError: "Replacement document is not a bound policy.",
+    });
+    expect(result.policy?.deletedAt).toBeUndefined();
+    expect(result.fact?.active).toBe(true);
   });
 });
