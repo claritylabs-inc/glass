@@ -155,6 +155,91 @@ describe("policy party context", () => {
     ).toBe(false);
   });
 
+  it("retains identifiers from a carrier party that matches the legal entity", () => {
+    const context = resolvePolicyPartyContext({
+      carrier: "Fortegra Specialty Insurance Company",
+      carrierIdentity: {
+        displayName: "Fortegra Specialty Insurance Company",
+        sourceName: "Fortegra Specialty Insurance Company",
+        legalEntities: [{
+          name: "Fortegra Specialty Insurance Company",
+          sourceNodeIds: ["carrier-identity"],
+          sourceSpanIds: ["span-carrier-identity"],
+        }],
+        legalEntityRelationship: "single",
+        sourceNodeIds: ["carrier-identity"],
+        sourceSpanIds: ["span-carrier-identity"],
+      },
+      insurer: {
+        legalName: "Fortegra Specialty Insurance Company",
+      },
+      operationalProfile: {
+        parties: [{
+          role: "carrier",
+          name: "Fortegra Specialty Insurance Company",
+          address: {
+            street1: "10751 Deerwood Park Blvd",
+            city: "Jacksonville",
+            state: "FL",
+            zip: "32256",
+          },
+          naicNumber: "16823",
+          sourceNodeIds: ["carrier-party"],
+          sourceSpanIds: ["span-carrier-party"],
+        }],
+      },
+    });
+
+    expect(context).toMatchObject({
+      insurerName: "Fortegra Specialty Insurance Company",
+      insurerAddress: {
+        street1: "10751 Deerwood Park Blvd",
+        city: "Jacksonville",
+        state: "FL",
+        zip: "32256",
+      },
+      insurerNaicNumber: "16823",
+    });
+  });
+
+  it("does not assign operating-carrier identifiers to a legal insurer", () => {
+    const context = resolvePolicyPartyContext({
+      carrier: "Allianz Global Assistance",
+      carrierIdentity: {
+        displayName: "Allianz Global Assistance",
+        sourceName: "Allianz Global Assistance",
+        operatingName: "Allianz Global Assistance",
+        legalEntities: [{
+          name: "CUMIS General Insurance Company",
+          sourceNodeIds: ["carrier-identity"],
+          sourceSpanIds: ["span-carrier-identity"],
+        }],
+        legalEntityRelationship: "single",
+        sourceNodeIds: ["carrier-identity"],
+        sourceSpanIds: ["span-carrier-identity"],
+      },
+      insurer: {
+        legalName: "CUMIS General Insurance Company",
+      },
+      operationalProfile: {
+        parties: [{
+          role: "carrier",
+          name: "Allianz Global Assistance",
+          address: { street1: "Operating carrier address" },
+          naicNumber: "99999",
+          sourceNodeIds: ["carrier-party"],
+          sourceSpanIds: ["span-carrier-party"],
+        }],
+      },
+    });
+
+    expect(context).toMatchObject({
+      insurerName: "CUMIS General Insurance Company",
+      insurerAddress: undefined,
+      insurerNaicNumber: undefined,
+    });
+  });
+
   it("ignores legacy manual overrides and keeps policy parties extraction-backed", () => {
     const context = resolvePolicyPartyContext({
       policyProfileOverrides: {

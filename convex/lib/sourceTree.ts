@@ -20,7 +20,11 @@ import {
   type SourceSpanUnit,
 } from "@claritylabs/cl-sdk";
 import dayjs from "dayjs";
-import { readCarrierIdentity, sameCarrierIdentityName } from "./carrierIdentity";
+import {
+  readCarrierIdentity,
+  sameCarrierIdentityName,
+  type CarrierIdentity,
+} from "./carrierIdentity";
 import {
   buildCarrierIdentityFromSourceEvidence,
   preserveCurrentCarrierBranding,
@@ -1829,6 +1833,50 @@ function profileValue(profile: PolicyOperationalProfile, key: keyof PolicyOperat
     : undefined;
 }
 
+function currentCompatibilityCarrierName(
+  existingPolicy: Record<string, unknown>,
+) {
+  if (typeof existingPolicy.carrier !== "string") return undefined;
+  const carrierName = normalizeWhitespace(existingPolicy.carrier);
+  if (
+    isBadOperationalIdentityValue(carrierName) ||
+    /^(?:unknown|unspecified|n\/?a)$/i.test(carrierName)
+  ) {
+    return undefined;
+  }
+  return carrierName;
+}
+
+function carrierNameMatchesSourceDesignation(
+  identity: CarrierIdentity,
+  carrierName: string,
+) {
+  const sourceNames = identity.sourceName
+    ? [identity.sourceName]
+    : [
+        identity.displayName,
+        identity.operatingName,
+        ...(identity.legalEntities.length === 1
+          ? [identity.legalEntities[0].name]
+          : []),
+      ];
+  return sourceNames.some((name) =>
+    sameCarrierIdentityName(name, carrierName),
+  );
+}
+
+function clearedCarrierIdentityState() {
+  return {
+    carrierBrandId: undefined,
+    carrierBrandStatus: undefined,
+    carrierBrandAttempts: undefined,
+    carrierBrandAttemptedAt: undefined,
+    carrierIdentityEnrichmentStatus: undefined,
+    carrierIdentityEnrichmentAttempts: undefined,
+    carrierIdentityEnrichmentAttemptedAt: undefined,
+  };
+}
+
 function profileField(profile: PolicyOperationalProfile, key: keyof PolicyOperationalProfile): SourceBackedValue | undefined {
   const value = profile[key];
   return value && typeof value === "object" && !Array.isArray(value) && "value" in value
@@ -1997,7 +2045,10 @@ function buildCarrierIdentity(params: {
   sourceTree: DocumentSourceNode[];
   sourceSpans?: SourceSpanLike[];
   existingPolicyFields?: unknown;
-}) {
+}): {
+  carrierIdentity?: CarrierIdentity;
+  conflictingCarrierName?: string;
+} {
   const existingPolicy =
     params.existingPolicyFields &&
     typeof params.existingPolicyFields === "object" &&
@@ -2006,8 +2057,26 @@ function buildCarrierIdentity(params: {
       : {};
   const existingIdentity = readCarrierIdentity(existingPolicy.carrierIdentity);
   const rebuilt = buildCarrierIdentityFromSourceEvidence(params);
-  if (!rebuilt) return existingIdentity;
-  return preserveCurrentCarrierBranding(rebuilt, existingIdentity);
+  if (rebuilt) {
+    return {
+      carrierIdentity: preserveCurrentCarrierBranding(
+        rebuilt,
+        existingIdentity,
+      ),
+    };
+  }
+
+  const currentCarrierName =
+    currentCompatibilityCarrierName(existingPolicy);
+  const conflictsWithExistingIdentity = Boolean(
+    currentCarrierName &&
+    existingIdentity &&
+    !carrierNameMatchesSourceDesignation(existingIdentity, currentCarrierName),
+  );
+
+  return conflictsWithExistingIdentity
+    ? { conflictingCarrierName: currentCarrierName }
+    : { carrierIdentity: existingIdentity };
 }
 
 export function sourceTreePolicyFields(params: {
@@ -2116,13 +2185,34 @@ export function sourceTreePolicyFields(params: {
     ...fields,
     ...operationalProfilePolicyFields(operationalProfile, params.existingPolicyFields),
   };
-  const carrierIdentity = buildCarrierIdentity({
+  const {
+    carrierIdentity,
+    conflictingCarrierName,
+  } = buildCarrierIdentity({
     operationalProfile,
     sourceTree,
     sourceSpans: params.sourceSpans,
     existingPolicyFields: params.existingPolicyFields,
   });
-  if (!carrierIdentity) return projected;
+  if (!carrierIdentity) {
+    if (!conflictingCarrierName) return projected;
+    const currentSecurity =
+      typeof existingPolicy.security === "string" &&
+      !isBadOperationalIdentityValue(existingPolicy.security) &&
+      !/^(?:unknown|unspecified|n\/?a)$/i.test(existingPolicy.security)
+        ? normalizeWhitespace(existingPolicy.security)
+        : undefined;
+    return {
+      ...projected,
+      carrier: conflictingCarrierName,
+      security: currentSecurity,
+      insurer: existingPolicy.insurer,
+      carrierNaicNumber: existingPolicy.carrierNaicNumber,
+      carrierIdentity: undefined,
+      carrierLegalName: undefined,
+      ...clearedCarrierIdentityState(),
+    };
+  }
   const existingCarrierIdentity = readCarrierIdentity(
     existingPolicy.carrierIdentity,
   );
@@ -2149,11 +2239,7 @@ export function sourceTreePolicyFields(params: {
     carrier: carrierIdentity.displayName,
     carrierIdentity,
     ...(carrierIdentityChanged
-      ? {
-        carrierIdentityEnrichmentStatus: undefined,
-        carrierIdentityEnrichmentAttempts: undefined,
-        carrierIdentityEnrichmentAttemptedAt: undefined,
-      }
+      ? clearedCarrierIdentityState()
       : {}),
     ...(primaryLegalEntity
       ? {

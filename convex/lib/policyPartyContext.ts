@@ -278,8 +278,14 @@ export function resolvePolicyPartyContext(
       ? extractedCarrierLegalNames
       : [insurerName].filter((value): value is string => Boolean(value));
   const hasMultipleLegalEntities = insurerLegalNames.length > 1;
-  const resolvedInsurerParty =
-    insurerParty ?? (carrierIdentity ? undefined : carrierParty);
+  const resolvedInsurerParty = carrierIdentity
+    ? [insurerParty, carrierParty].find((party) =>
+        party &&
+        extractedCarrierLegalNames.some((legalName) =>
+          normalizedIdentity(party.name) === normalizedIdentity(legalName),
+        ),
+      )
+    : insurerParty ?? carrierParty;
   const insurerAddress = insurerOverride
     ? address(insurerOverride.address)
     : hasMultipleLegalEntities

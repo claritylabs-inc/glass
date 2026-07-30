@@ -2709,6 +2709,132 @@ describe("sourceTreePolicyFields", () => {
     );
   });
 
+  it("clears stale carrier identity when replacement evidence cannot rebuild it", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+        insurer: {
+          value: "Replacement Carrier Insurance Company",
+          sourceNodeIds: ["missing-replacement-carrier"],
+          sourceSpanIds: ["missing-replacement-carrier-span"],
+        },
+      },
+      [],
+      [],
+    );
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: [],
+      sourceSpans: [],
+      operationalProfile,
+      existingPolicyFields: {
+        carrier: "Replacement Carrier Insurance Company",
+        security: "Replacement Carrier Insurance Company",
+        insurer: {
+          legalName: "Replacement Carrier Insurance Company",
+        },
+        carrierLegalName: "Original Carrier Insurance Company",
+        carrierIdentity: {
+          displayName:
+            "Original Carrier Insurance Company and/or Replacement Carrier Insurance Company",
+          sourceName:
+            "Original Carrier Insurance Company and/or Replacement Carrier Insurance Company",
+          legalEntities: [
+            {
+              name: "Original Carrier Insurance Company",
+              sourceNodeIds: ["original-carrier"],
+              sourceSpanIds: ["original-carrier-span"],
+            },
+            {
+              name: "Replacement Carrier Insurance Company",
+              sourceNodeIds: ["original-carrier"],
+              sourceSpanIds: ["original-carrier-span"],
+            },
+          ],
+          legalEntityRelationship: "and_or",
+          sourceNodeIds: ["original-carrier"],
+          sourceSpanIds: ["original-carrier-span"],
+        },
+        carrierBrandId: "legacy-brand-cache",
+        carrierBrandStatus: "ready",
+        carrierBrandAttempts: 1,
+        carrierBrandAttemptedAt: 50,
+        carrierIdentityEnrichmentStatus: "failed",
+        carrierIdentityEnrichmentAttempts: 3,
+        carrierIdentityEnrichmentAttemptedAt: 100,
+      },
+    });
+
+    expect(fields).toMatchObject({
+      carrier: "Replacement Carrier Insurance Company",
+      security: "Replacement Carrier Insurance Company",
+      insurer: {
+        legalName: "Replacement Carrier Insurance Company",
+      },
+    });
+    expect(fields).toHaveProperty("carrierNaicNumber", undefined);
+    expect(fields).toHaveProperty("carrierIdentity", undefined);
+    expect(fields).toHaveProperty("carrierLegalName", undefined);
+    expect(fields).toHaveProperty("carrierBrandId", undefined);
+    expect(fields).toHaveProperty("carrierBrandStatus", undefined);
+    expect(fields).toHaveProperty("carrierBrandAttempts", undefined);
+    expect(fields).toHaveProperty("carrierBrandAttemptedAt", undefined);
+    expect(fields).toHaveProperty("carrierIdentityEnrichmentStatus", undefined);
+    expect(fields).toHaveProperty("carrierIdentityEnrichmentAttempts", undefined);
+    expect(fields).toHaveProperty(
+      "carrierIdentityEnrichmentAttemptedAt",
+      undefined,
+    );
+  });
+
+  it("retains a stored carrier identity when the current designation still matches", () => {
+    const operationalProfile = normalizeOperationalProfile(
+      {
+        documentType: "policy",
+        linesOfBusiness: ["CGL"],
+        coverages: [],
+      },
+      [],
+      [],
+    );
+    const carrierIdentity = {
+      displayName: "Fortegra",
+      sourceName: "Fortegra Specialty Insurance Company",
+      publicNameRelationship: "same_legal_entity" as const,
+      legalEntities: [{
+        name: "Fortegra Specialty Insurance Company",
+        sourceNodeIds: ["stored-carrier"],
+        sourceSpanIds: ["stored-carrier-span"],
+      }],
+      legalEntityRelationship: "single" as const,
+      sourceNodeIds: ["stored-carrier"],
+      sourceSpanIds: ["stored-carrier-span"],
+      branding: {
+        website: "https://www.fortegra.com",
+        accentColor: "#123456",
+        confidence: "high" as const,
+        sourceUrls: ["https://www.fortegra.com"],
+        enrichmentVersion: 1,
+        updatedAt: 100,
+      },
+    };
+
+    const fields = sourceTreePolicyFields({
+      sourceTree: [],
+      sourceSpans: [],
+      operationalProfile,
+      existingPolicyFields: {
+        carrier: "Fortegra Specialty Insurance Company",
+        carrierIdentity,
+      },
+    });
+
+    expect(fields.carrier).toBe("Fortegra");
+    expect(fields.carrierIdentity).toEqual(carrierIdentity);
+  });
+
   it("drops operations descriptions whose evidence ids are invalid", () => {
     const profile = normalizeOperationalProfile(
       {
