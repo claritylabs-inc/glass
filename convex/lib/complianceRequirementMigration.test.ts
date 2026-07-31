@@ -63,6 +63,27 @@ describe("compliance requirement shape migration", () => {
     expect(migrated.noticeDays).toBe(30);
   });
 
+  it("normalizes legacy crime requirements to the current CRIM code", () => {
+    const fromText = migrateLegacyComplianceRequirement({
+      ...baseLegacy,
+      title: "Employee fidelity coverage",
+      category: "other",
+      limitAmount: 100_000,
+      requirementText: "Maintain crime and fidelity insurance.",
+    });
+    const fromRetiredCode = migrateLegacyComplianceRequirement({
+      ...baseLegacy,
+      title: "Employee dishonesty",
+      category: "other",
+      coverageCode: "CRIME",
+      limitAmount: 100_000,
+      requirementText: "Employee dishonesty coverage is required.",
+    });
+
+    expect(fromText.lineOfBusiness).toBe("CRIM");
+    expect(fromRetiredCode.lineOfBusiness).toBe("CRIM");
+  });
+
   it("does not backfill rows that already have redesigned discriminators", () => {
     expect(
       requirementNeedsLegacyShapeBackfill({
