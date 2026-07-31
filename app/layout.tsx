@@ -5,6 +5,7 @@ import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { ConvexClientProvider } from "@/components/providers";
 import { AuthGuard } from "@/components/auth-guard";
 import { AppToaster } from "@/components/ui/toaster";
+import { SmoothCornersProvider } from "@/components/ui/smooth-corners-provider";
 import { BrandThemeApplier } from "@/components/brand-theme-applier";
 import { getViewerBranding } from "@/lib/viewer-branding";
 import { getClientPortalUrl } from "@/convex/lib/domains";
@@ -78,6 +79,7 @@ export default function RootLayout({
         <body
           className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} antialiased`}
         >
+          <SmoothCornersProvider />
           <ConvexClientProvider>
             <BrandThemeApplier />
             <AuthGuard>{children}</AuthGuard>

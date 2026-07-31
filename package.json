@@ -55,6 +55,7 @@
     "@claritylabs/cl-sync": "^0.1.1",
     "@convex-dev/auth": "^0.0.91",
     "@convex-dev/migrations": "^0.3.5",
+    "@lisse/core": "0.6.2",
     "@mapbox/search-js-react": "^1.5.1",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
