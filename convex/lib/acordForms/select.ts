@@ -41,7 +41,7 @@ const liabilityLobCodes = new Set([
   "EPLI",
   "DO",
   "FIDUC",
-  "CRIME",
+  "CRIM",
 ]);
 
 function normalizeRelationship(value?: CertificateHolderRelationship) {

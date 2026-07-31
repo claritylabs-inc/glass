@@ -14,6 +14,7 @@ import {
   REQUIREMENT_LIMIT_KINDS,
   REQUIREMENT_PROVISIONS,
   REQUIREMENT_SCOPES,
+  normalizeRequirementLineOfBusiness,
   type RequirementScope,
 } from "../lib/complianceTypes";
 import { ACORD_LOB_LABELS, isLobCode } from "../lib/linesOfBusiness";
@@ -29,7 +30,7 @@ const COMMON_COMMERCIAL_LOBS = [
   "PL",
   "PROP",
   "BOP",
-  "CRIME",
+  "CRIM",
   "EPLI",
   "DO",
   "FIDUC",
@@ -145,7 +146,9 @@ function normalizeImportedRequirement(
     scope: requirement.scope ?? defaultScope,
     title: requirement.title.trim(),
     requirementText: requirement.requirementText.trim(),
-    lineOfBusiness: optionalString(requirement.lineOfBusiness),
+    lineOfBusiness: normalizeRequirementLineOfBusiness(
+      requirement.lineOfBusiness,
+    ),
     limits: (requirement.limits ?? []).map((limit) => ({
       kind: limit.kind,
       amount: limit.amount,

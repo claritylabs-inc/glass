@@ -1223,8 +1223,9 @@ const INLAND_MARINE_LOB_CODES = new Set([
   "CEQFL", "EDP", "EQPFL", "FINEA", "INBR", "INMAR", "INMRC", "INMRP",
   "MTRTK", "SCHPR", "SIGNS", "TRANS",
 ]);
-const CRIME_LOB_CODES = new Set(["CRIME", "FIDTY"]);
+const CRIME_LOB_CODES = new Set(["CRIM", "CRIME", "FIDTY"]);
 const EQUIPMENT_BREAKDOWN_LOB_CODES = new Set(["BANDM"]);
+const MARINE_ENERGY_LOB_CODES = new Set(["COMR", "COMAR", "BOAT"]);
 
 export function classifyPropertyCoverageSection(
   coverage: Pick<CertificateCoverageLine, "lineOfBusiness" | "type" | "limits">,
@@ -2056,7 +2057,7 @@ function orderPropertyCoverageRows(
       return 3;
     }
     if (formCode === "acord31") {
-      if (["COMAR", "BOAT"].includes(code ?? "")) return 0;
+      if (code && MARINE_ENERGY_LOB_CODES.has(code)) return 0;
       if (row.section === "inland_marine") return 1;
       return 2;
     }
@@ -2081,7 +2082,7 @@ function propertySectionLabel(row: PropertyCoverageRow, formCode: PropertyFormCo
     return "FLOOD";
   }
   if (formCode === "acord31") {
-    if (["COMAR", "BOAT"].includes(code ?? "")) return "MARINE / ENERGY";
+    if (code && MARINE_ENERGY_LOB_CODES.has(code)) return "MARINE / ENERGY";
     if (row.section === "inland_marine") return "INLAND MARINE";
   }
   return {
