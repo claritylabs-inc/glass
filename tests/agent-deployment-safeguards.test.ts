@@ -139,6 +139,7 @@ afterAll(async () => {
 describe("agent deployment safeguards", () => {
   it("builds every mission-critical worker before deploys can pass", () => {
     const workflow = read(".github/workflows/agent-safeguards.yml");
+    const healthScript = read("scripts/check-agent-deployment-health.mjs");
     const packageJson = read("package.json");
 
     expect(workflow).toContain(
@@ -149,6 +150,9 @@ describe("agent deployment safeguards", () => {
     expect(workflow).toContain("working-directory: extraction-worker");
     expect(workflow).toContain("node --check mailbox-scan-worker/src/index.js");
     expect(packageJson).toContain("check:agent-workers");
+    expect(healthScript).toContain(
+      "if (!deployment.slack?.required) return undefined;",
+    );
   });
 
   it("requires validation gates before Convex deploy and package publish", () => {

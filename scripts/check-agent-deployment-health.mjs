@@ -61,6 +61,8 @@ function optionalClRouterHealthUrl() {
 }
 
 function optionalSlackWorkerHealthUrl() {
+  if (!deployment.slack?.required) return undefined;
+
   const explicit = process.env.GLASS_SLACK_WORKER_HEALTH_URL?.trim();
   if (explicit) return explicit;
   const configured = deployment.slackWorkerHealthUrlEnv
@@ -68,14 +70,11 @@ function optionalSlackWorkerHealthUrl() {
     : undefined;
   if (configured) return configured;
   if (deployment.slackWorkerHealthUrl) return deployment.slackWorkerHealthUrl;
-  if (deployment.slack?.required) {
-    return envOrDefault(
-      deployment.slackWorkerHealthUrlEnv,
-      deployment.slackWorkerHealthUrl,
-      "Slack worker health URL",
-    );
-  }
-  return undefined;
+  return envOrDefault(
+    deployment.slackWorkerHealthUrlEnv,
+    deployment.slackWorkerHealthUrl,
+    "Slack worker health URL",
+  );
 }
 
 const urls = {
