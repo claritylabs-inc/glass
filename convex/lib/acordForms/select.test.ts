@@ -40,6 +40,9 @@ describe("selectCertificateForm", () => {
   });
 
   it("routes marine, garage, and default liability forms", () => {
+    expect(selectCertificateForm({ linesOfBusiness: ["COMR"] })).toBe(
+      "acord31",
+    );
     expect(selectCertificateForm({ linesOfBusiness: ["COMAR"] })).toBe(
       "acord31",
     );

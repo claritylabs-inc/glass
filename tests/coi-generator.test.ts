@@ -344,6 +344,7 @@ describe("policyToCoiData", () => {
     expect(classifyPropertyCoverageSection(coverage("PROPC", "Property - Commercial"))).toBe("property");
     expect(classifyPropertyCoverageSection(coverage("INMRC", "Inland Marine - Commercial"))).toBe("inland_marine");
     expect(classifyPropertyCoverageSection(coverage("MTRTK", "Motor Truck Cargo"))).toBe("inland_marine");
+    expect(classifyPropertyCoverageSection(coverage("CRIM", "Employee Dishonesty"))).toBe("crime");
     expect(classifyPropertyCoverageSection(coverage("CRIME", "Crime"))).toBe("crime");
     expect(classifyPropertyCoverageSection(coverage("BANDM", "Boiler & Machinery"))).toBe("equipment_breakdown");
     expect(classifyPropertyCoverageSection(coverage("AUTOB", "Business Auto Physical Damage"))).toBe("other");
@@ -1108,6 +1109,43 @@ describe("COI PDF generation", () => {
       expect(extracted.pages[0]).toContain("POLICY NUMBER");
       expect(extracted.pages[0]).toContain("LIMIT / DEDUCTIBLE");
     }
+  });
+
+  it("prioritizes and labels canonical COMR coverage on ACORD 31", async () => {
+    const base = policyToCoiData({
+      linesOfBusiness: ["COMR"],
+      policyNumber: "MARINE-31-001",
+      effectiveDate: "02/01/2026",
+      expirationDate: "02/01/2027",
+      carrier: "Marine Carrier",
+      insuredName: "Marine Insured",
+    });
+    const extracted = await pdfText(await generateCoiPdf({
+      ...base,
+      formCode: "acord31",
+      coverages: [
+        {
+          type: "Ancillary Coverage",
+          lineOfBusiness: "OLIB",
+          policyNumber: "OTHER-31-001",
+          limits: [{ label: "Limit", value: "$50,000" }],
+        },
+        {
+          type: "Ocean Marine",
+          lineOfBusiness: "COMR",
+          policyNumber: "MARINE-31-001",
+          limits: [{ label: "Hull Limit", value: "$1,000,000" }],
+        },
+      ],
+    }));
+
+    expect(extracted.pages[0]).toContain("MARINE / ENERGY");
+    expect(extracted.pages[0]).toMatch(
+      /MARINE \/ ENERGY\s+Ocean Marine\s+MARINE-31-001/,
+    );
+    expect(extracted.pages[0].indexOf("MARINE-31-001")).toBeLessThan(
+      extracted.pages[0].indexOf("OTHER-31-001"),
+    );
   });
 
   it("leaves unavailable property certificate cells blank", async () => {

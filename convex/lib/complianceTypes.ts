@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { toLobCodes, type AcordLobCode } from "./linesOfBusiness";
 
 export const REQUIREMENT_KINDS = ["coverage", "insurer", "condition"] as const;
 export type RequirementKind = (typeof REQUIREMENT_KINDS)[number];
@@ -160,4 +161,15 @@ export function isRequirementSourceType(
     typeof value === "string" &&
     (REQUIREMENT_SOURCE_TYPES as readonly string[]).includes(value)
   );
+}
+
+export function normalizeRequirementLineOfBusiness(
+  value: unknown,
+): AcordLobCode | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const sourceCode = value.trim().toUpperCase();
+  if (sourceCode === "CRIME") return "CRIM";
+  if (sourceCode === "UN") return "UN";
+  const [code] = toLobCodes([sourceCode]);
+  return code === "UN" ? undefined : code;
 }

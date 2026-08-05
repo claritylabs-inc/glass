@@ -44,6 +44,7 @@ function input(
     pseudoOutside: false,
     childOutside: false,
     boxShadow: "none",
+    focusRingVisible: false,
     existingFilter: "none",
     pageLeft: 0,
     pageTop: 0,
@@ -104,14 +105,28 @@ describe("computeSmoothCornerPlan", () => {
     ).toEqual({ action: "skip", reason: "outline" });
   });
 
-  test("releases clipping for spread-only focus rings", () => {
+  test("releases clipping for active spread-only focus rings", () => {
     expect(
       computeSmoothCornerPlan(
         input({
           boxShadow: "rgb(42, 151, 255) 0px 0px 0px 2px",
+          focusRingVisible: true,
         }),
       ),
     ).toEqual({ action: "skip", reason: "shadow-spread" });
+  });
+
+  test("converts always-on spread rings without skipping smoothing", () => {
+    const plan = computeSmoothCornerPlan(
+      input({
+        boxShadow: "rgb(0, 0, 0) 0px 0px 0px 1px",
+      }),
+    );
+
+    expect(plan.action).toBe("apply");
+    if (plan.action === "apply") {
+      expect(plan.filter).toContain("drop-shadow");
+    }
   });
 
   test("redraws a uniform border over the squircle path", () => {
