@@ -28,6 +28,7 @@ const certificateSourceValidator = v.union(
   v.literal("chat"),
   v.literal("email"),
   v.literal("imessage"),
+  v.literal("slack"),
   v.literal("sms"),
   v.literal("api"),
   v.literal("mcp"),

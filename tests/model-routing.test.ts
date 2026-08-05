@@ -641,7 +641,6 @@ describe("model fallback policy", () => {
     const orgAgentFiles = [
       "../convex/actions/mcpChat.ts",
       "../convex/actions/handleInboundEmail.ts",
-      "../convex/actions/handleInboundImessage.ts",
       "../convex/actions/mailboxCoordinator.ts",
       "../convex/lib/emailSubagent.ts",
     ];
@@ -651,6 +650,19 @@ describe("model fallback policy", () => {
       expect(source).toContain("sessionKey:");
       expect(source).toContain("traceId:");
     }
+
+    const imessageAgent = readFileSync(
+      join(__dirname, "../convex/actions/handleInboundImessage.ts"),
+      "utf-8",
+    );
+    const channelRunner = readFileSync(
+      join(__dirname, "../convex/lib/channelAgentRunner.ts"),
+      "utf-8",
+    );
+    expect(imessageAgent).toContain("runChannelAgent(ctx");
+    expect(imessageAgent).toContain("sessionKey:");
+    expect(imessageAgent).toContain("traceId:");
+    expect(channelRunner).toContain("generateAgentTextForOrg(");
 
     const webChat = readFileSync(
       join(__dirname, "../convex/actions/processThreadChat.ts"),

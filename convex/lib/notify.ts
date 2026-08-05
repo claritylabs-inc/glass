@@ -10,6 +10,7 @@ import {
   buildCoalesceKey,
   type NotificationSeverity,
   type NotificationType,
+  slackNotificationCategory,
 } from "./notificationTypes";
 import { resolveChannelPreference } from "../notificationPreferences";
 
@@ -134,6 +135,7 @@ export const notifyInternal = internalMutation({
       lastEventAt: nowMs,
       emailStatus: "not_scheduled",
       imessageStatus: "not_scheduled",
+      slackStatus: "not_scheduled",
       createdAt: nowMs,
     });
 
@@ -191,6 +193,52 @@ export const notifyInternal = internalMutation({
       const hasPrefs = memberships.length > 0;
       await ctx.db.patch(notificationId, {
         imessageStatus: hasPrefs ? "suppressed_by_preference" : "not_scheduled",
+      });
+    }
+
+    const slackCategory = args.userId ? null : slackNotificationCategory(type);
+    const channelSettings = slackCategory
+      ? await ctx.db
+          .query("agentChannelSettings")
+          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.orgId))
+          .first()
+      : null;
+    const shouldSendSlack = channelSettings?.slackEnabled === true &&
+      (slackCategory === "safe"
+        ? channelSettings.slackSafeAlertsEnabled
+        : channelSettings.slackVendorAlertsEnabled);
+    if (shouldSendSlack) {
+      const connection = await ctx.db
+        .query("slackWorkspaceConnections")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.orgId).eq("status", "active"),
+        )
+        .first();
+      const primary = connection
+        ? await ctx.db
+            .query("slackChannelBindings")
+            .withIndex("by_connectionId_and_status", (q) =>
+              q.eq("connectionId", connection._id).eq("status", "active"),
+            )
+            .first()
+        : null;
+      if (connection && primary) {
+        await ctx.db.patch(notificationId, { slackStatus: "scheduled" });
+        await ctx.scheduler.runAfter(
+          0,
+          (internal as any).actions.sendNotificationSlack.send,
+          { notificationId },
+        );
+      } else {
+        await ctx.db.patch(notificationId, {
+          slackStatus: "suppressed_by_preference",
+        });
+      }
+    } else {
+      await ctx.db.patch(notificationId, {
+        slackStatus: slackCategory
+          ? "suppressed_by_preference"
+          : "not_scheduled",
       });
     }
 

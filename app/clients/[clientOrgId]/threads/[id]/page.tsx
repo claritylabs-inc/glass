@@ -37,7 +37,7 @@ export default function ClientThreadReadOnlyPage() {
           entityId?: string;
           summary?: string;
         };
-        originChannel?: "chat" | "email" | "imessage";
+        originChannel?: "chat" | "email" | "imessage" | "slack";
       }
     | null
     | undefined;

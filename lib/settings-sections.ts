@@ -24,6 +24,7 @@ export type SettingsTabId =
   | "broker"
   | "team"
   | "behavior"
+  | "channels"
   | "memory"
   | "models"
   | "delivery"
@@ -84,6 +85,7 @@ export function getSettingsNavigation({
       label: "Agent",
       icon: GlassStarIcon,
       tabs: [
+        ...(!isBroker ? [{ id: "channels" as const, label: "Channels" }] : []),
         ...(isBroker || isStandaloneClient
           ? [{ id: "behavior" as const, label: "Behavior" }]
           : []),
@@ -96,7 +98,7 @@ export function getSettingsNavigation({
       label: "Workflows",
       icon: isBroker ? Send : FileBadge2,
       tabs: [
-        ...(isBroker ? [{ id: "delivery" as const, label: "Delivery" }] : []),
+        { id: "delivery", label: "Delivery" },
         { id: "certificates", label: "Certificates" },
         { id: "notifications", label: "Notifications" },
       ],

@@ -21,6 +21,7 @@ import {
   ArchiveRestore,
   Check,
   FileText,
+  Hash,
   Mail as MailIcon,
   MessageCircle,
   Copy,
@@ -1025,7 +1026,7 @@ function UnifiedThreadActions({
   thread: {
     title: string;
     archivedAt?: number;
-    originChannel?: "chat" | "email" | "imessage";
+    originChannel?: "chat" | "email" | "imessage" | "slack";
     threadEmail?: string;
   };
   messages?: ThreadMessage[];
@@ -1069,7 +1070,9 @@ function UnifiedThreadActions({
           ? " [Email]"
           : msg.channel === "imessage"
             ? " [iMessage]"
-            : " [Chat]";
+            : msg.channel === "slack"
+              ? " [Slack]"
+              : " [Chat]";
       lines.push("");
       lines.push(`${sender}${channel} — ${time}`);
       if (msg.operatorInitiated?.operatorEmail) {
@@ -1362,6 +1365,8 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
       <MailIcon className="w-3 h-3 text-muted-foreground/30" />
     ) : msg.channel === "imessage" || mirroredToImessage ? (
       <MessageCircle className="w-3 h-3 text-muted-foreground/30" />
+    ) : msg.channel === "slack" ? (
+      <Hash className="w-3 h-3 text-muted-foreground/30" />
     ) : null;
   const agentTargets = useCachedAgentTargets(msg.orgId);
   const promptReferences = useMemo(
@@ -2499,29 +2504,39 @@ export function UnifiedThreadContent({
             </div>
           )}
           {/* Padding so last message clears the input overlay */}
-          {messages && messages.length > 0 && <div className="h-40" />}
+          {messages && messages.length > 0 ? (
+            <div className={thread.originChannel === "slack" ? "h-24" : "h-40"} />
+          ) : null}
         </div>
       </div>
       {/* Input — overlaid at bottom, content scrolls under it */}
       <ChatInputOverlay>
-        {queuedMessage ? (
-          <QueuedThreadMessage
-            message={queuedMessage}
-            sending={sendingQueuedNow}
-            onSendNow={sendQueuedNow}
-            onCancel={() => setQueuedMessage(null)}
-          />
-        ) : null}
-        <GlassPromptInput
-          ref={chatInputRef}
-          onSubmit={handleSend}
-          placeholder="Reply to this thread..."
-          showAttach
-          disabled={isInputBusy}
-          status={isInputBusy ? "submitted" : undefined}
-          submittedLabel={inputBusyLabel}
-          orgId={thread.orgId}
-        />
+        {thread.originChannel === "slack" ? (
+          <div className="rounded-xl border border-foreground/8 bg-background px-4 py-3 text-base text-muted-foreground shadow-sm">
+            Continue this conversation in Slack. Replies there stay attached to this client record.
+          </div>
+        ) : (
+          <>
+            {queuedMessage ? (
+              <QueuedThreadMessage
+                message={queuedMessage}
+                sending={sendingQueuedNow}
+                onSendNow={sendQueuedNow}
+                onCancel={() => setQueuedMessage(null)}
+              />
+            ) : null}
+            <GlassPromptInput
+              ref={chatInputRef}
+              onSubmit={handleSend}
+              placeholder="Reply to this thread..."
+              showAttach
+              disabled={isInputBusy}
+              status={isInputBusy ? "submitted" : undefined}
+              submittedLabel={inputBusyLabel}
+              orgId={thread.orgId}
+            />
+          </>
+        )}
       </ChatInputOverlay>
     </div>
   );

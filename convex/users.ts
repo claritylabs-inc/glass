@@ -609,7 +609,7 @@ export const findManyByPhones = internalQuery({
           .first(),
       ),
     );
-    return users.filter(Boolean);
+    return users.filter((user) => user && !user.serviceAccountKind);
   },
 });
 

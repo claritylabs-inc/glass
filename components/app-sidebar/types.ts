@@ -20,7 +20,7 @@ export type ClientThreadItem = {
   _creationTime: number;
   title: string;
   lastMessageAt?: number;
-  originChannel?: "chat" | "email" | "imessage";
+  originChannel?: "chat" | "email" | "imessage" | "slack";
   threadPhone?: string;
 };
 

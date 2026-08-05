@@ -1,5 +1,11 @@
 export type OrgMemoryType = "fact" | "preference" | "risk_note" | "observation";
-export type OrgMemorySource = "extraction" | "analysis" | "chat" | "email" | "imessage";
+export type OrgMemorySource =
+  | "extraction"
+  | "analysis"
+  | "chat"
+  | "email"
+  | "imessage"
+  | "slack";
 
 export const COMPANY_CONTEXT_MEMORY_MAX_LENGTH = 280;
 

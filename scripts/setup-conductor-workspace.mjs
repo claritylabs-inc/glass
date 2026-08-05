@@ -142,6 +142,7 @@ function buildWorkerImages() {
   const workers = [
     ["extraction-worker", "extraction-worker"],
     ["imessage-worker", "imessage-worker"],
+    ["slack-worker", "slack-worker"],
     ["mailbox-scan-worker", "mailbox-scan-worker"],
   ];
   for (const [imageName, directory] of workers) {
@@ -208,6 +209,7 @@ if (new Set([terminalPhone, terminalClientPhone, terminalPublicPhone]).size !== 
 run("npm", ["ci"]);
 run("npm", ["--prefix", "extraction-worker", "ci"]);
 run("npm", ["--prefix", "imessage-worker", "ci"]);
+run("npm", ["--prefix", "slack-worker", "ci"]);
 
 mkdirSync(contextDirectory, { recursive: true });
 const convex = path.join(repoRoot, "node_modules", ".bin", "convex");
@@ -236,7 +238,7 @@ if (createdLocalDeployment) {
   stripCloudConvexSelection();
 }
 
-const { web, extraction, imessage, convexCloud, convexSite } = conductorPorts();
+const { web, extraction, imessage, slack, convexCloud, convexSite } = conductorPorts();
 run(
   convex,
   [
@@ -292,6 +294,14 @@ const imessageSecret = createdLocalDeployment
   ? randomBytes(32).toString("hex")
   : optionalConvexEnv(convex, "IMESSAGE_WORKER_SECRET") ||
     randomBytes(32).toString("hex");
+const slackSecret = createdLocalDeployment
+  ? randomBytes(32).toString("hex")
+  : optionalConvexEnv(convex, "SLACK_WORKER_SECRET") ||
+    randomBytes(32).toString("hex");
+const slackWebhookSecret = createdLocalDeployment
+  ? randomBytes(32).toString("hex")
+  : optionalConvexEnv(convex, "PHOTON_WEBHOOK_SIGNING_SECRET") ||
+    randomBytes(32).toString("hex");
 const localAppUrl = `http://localhost:${web}`;
 const overridesPath = path.join(contextDirectory, "convex-local-overrides.env");
 
@@ -310,6 +320,10 @@ try {
     IMESSAGE_TERMINAL_PUBLIC_PHONE: terminalPublicPhone,
     IMESSAGE_WORKER_URL: `http://127.0.0.1:${imessage}`,
     IMESSAGE_WORKER_SECRET: imessageSecret,
+    SLACK_ENABLED: "true",
+    SLACK_WORKER_URL: `http://127.0.0.1:${slack}`,
+    SLACK_WORKER_SECRET: slackSecret,
+    PHOTON_WEBHOOK_SIGNING_SECRET: slackWebhookSecret,
     EXTRACTION_WORKER_MODE: "external",
     EXTRACTION_WORKER_URL: `http://127.0.0.1:${extraction}`,
     EXTRACTION_WORKER_SECRET: extractionSecret,
@@ -368,6 +382,12 @@ writeRuntimeEnv("imessage-worker.env", {
   IMESSAGE_TERMINAL_SPACE_ID:
     imessageEnv.get("IMESSAGE_TERMINAL_SPACE_ID")?.trim() || "chat-1",
 });
+writeRuntimeEnv("slack-worker.env", {
+  GLASS_ENV: "local",
+  SLACK_WORKER_MODE: "mock",
+  SLACK_WORKER_SECRET: slackSecret,
+  PHOTON_WEBHOOK_SIGNING_SECRET: slackWebhookSecret,
+});
 
 run("npm", ["run", "check:agent-workers"]);
 
@@ -377,5 +397,5 @@ if (process.env.CONDUCTOR_IS_LOCAL !== "0") {
 }
 
 console.log(
-  "\nConductor workspace ready with its own local Convex database. Run the default Local dev template to start Glass, Convex, extraction, and the Spectrum terminal.",
+  "\nConductor workspace ready with its own local Convex database. Run the default Local dev template to start Glass, Convex, extraction, Spectrum terminal, and the Slack mock worker.",
 );

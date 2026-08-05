@@ -17,7 +17,7 @@ export type EmailDraftArtifactContext = {
   orgId: Id<"organizations">;
   threadId?: Id<"threads">;
   chatMessageId?: Id<"threadMessages">;
-  channel: "web" | "email" | "imessage" | "mcp";
+  channel: "web" | "email" | "imessage" | "slack" | "mcp";
   fromHeader: string;
   agentAddress: string;
   replyTo?: string;

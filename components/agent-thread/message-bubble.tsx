@@ -11,7 +11,7 @@ export const ThreadMessageBubble = memo(function ThreadMessageBubble({
   children,
 }: {
   role: "agent" | "user";
-  channel?: "chat" | "email" | "imessage";
+  channel?: "chat" | "email" | "imessage" | "slack";
   isOwnMessage?: boolean;
   isError?: boolean;
   children: ReactNode;

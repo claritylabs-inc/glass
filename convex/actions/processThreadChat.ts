@@ -6,6 +6,7 @@ import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { z } from "zod";
 import mammoth from "mammoth";
 import JSZip from "jszip";
 import {
@@ -703,8 +704,11 @@ export const run = internalAction({
     userId: v.id("users"),
     userMessageId: v.id("threadMessages"),
     agentMessageId: v.optional(v.id("threadMessages")),
+    surface: v.optional(v.union(v.literal("web"), v.literal("slack"))),
+    slackActorId: v.optional(v.id("slackActors")),
   },
   handler: async (ctx, args) => {
+    const surface = args.surface ?? "web";
     const startingMessages = await ctx.runQuery(
       internal.threads.messagesInternal,
       { threadId: args.threadId },
@@ -837,8 +841,9 @@ export const run = internalAction({
         {
           orgId: args.orgId,
           userId: args.userId,
-          surface: "web",
+          surface,
           operatorInitiatedUserMessageId: args.userMessageId,
+          slackActorId: args.slackActorId,
         },
       )) as AgentScope;
       const operatorCopyUser = scope.operatorInitiated
@@ -1032,7 +1037,7 @@ export const run = internalAction({
       // Web chat addendum — adjust email flow based on autoSendEmails setting
       const autoSend = org.autoSendEmails === true; // default false (require confirmation)
       const webChatAddendum = buildChannelInstructions({
-        platform: "web",
+        platform: surface,
         isMixedThread,
         canSendEmail,
         autoSendEmails: autoSend,
@@ -1288,9 +1293,10 @@ export const run = internalAction({
       let lastToolName = "";
 
       // streamText with tools — supports both streaming Q&A and tool calls
+      const slackActorId = args.slackActorId;
       const tools = {
         ...buildAgentToolExecutors(ctx, {
-          surface: "web",
+          surface,
           orgId: args.orgId,
           userId: args.userId,
           scope,
@@ -1308,7 +1314,7 @@ export const run = internalAction({
             toolArtifacts.push(artifact);
           },
         }),
-        create_imessage_group_chat: {
+        ...(surface === "web" ? { create_imessage_group_chat: {
           ...createImessageGroupChat,
           execute: async (input: {
             recipients: string[];
@@ -1331,7 +1337,30 @@ export const run = internalAction({
               },
             );
           },
-        },
+        } } : {}),
+        ...(surface === "slack" && slackActorId
+          ? {
+              request_human_service: {
+                description:
+                  "Pause the Slack AI thread and request help from a Glass human operator. Use when the customer explicitly asks for a human or the task requires human service.",
+                inputSchema: z.object({
+                  reason: z
+                    .string()
+                    .describe(
+                      "A compact internal reason. It remains in the canonical source thread and is not copied into the primary-channel notice.",
+                    ),
+                }),
+                execute: async () =>
+                  await ctx.runMutation(
+                    (internal as any).slack.requestHandoffFromAgent,
+                    {
+                      threadId: args.threadId,
+                      slackActorId,
+                    },
+                  ),
+              },
+            }
+          : {}),
         coordinate_mailbox_task: {
           ...coordinateMailboxTask,
           execute: async (input: { task: string }) => {
@@ -1397,7 +1426,7 @@ export const run = internalAction({
                 threadId: args.threadId,
                 chatMessageId: agentMsgId,
                 routingParentId: String(agentMsgId),
-                channel: "web",
+                channel: surface,
                 fromHeader: emailIdentity.fromHeader,
                 agentAddress: emailIdentity.agentAddress,
                 brokerBranding: emailIdentity.brokerBranding,
@@ -1475,6 +1504,7 @@ export const run = internalAction({
         confirm_policy_fact: "Confirming policy facts...",
         generate_coi: "Generating COI...",
         create_imessage_group_chat: "Starting iMessage group...",
+        request_human_service: "Requesting human service...",
         coordinate_mailbox_task: "Coordinating mailbox task...",
         web_research: "Searching the web...",
         render_email_preview: "Rendering email preview...",
@@ -1493,7 +1523,7 @@ export const run = internalAction({
           parentRequestId: String(args.userMessageId),
           label: "convex.processThreadChat",
           phase: "query_reason",
-          channel: "web",
+          channel: surface,
         },
       } as const;
       const chatModel = await getAgentLanguageModelForOrg(

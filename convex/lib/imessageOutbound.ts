@@ -41,7 +41,7 @@ export type ImessageOutboundRoute = {
 };
 
 export type ImessageThreadRouteSource = {
-  originChannel?: "chat" | "email" | "imessage";
+  originChannel?: "chat" | "email" | "imessage" | "slack";
   threadPhone?: string;
   imessageChatGuid?: string;
   imessageIsGroup?: boolean;

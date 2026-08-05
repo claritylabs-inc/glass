@@ -37,8 +37,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 
-type Channel = "email" | "imessage";
-type DeliveryAction = "auto_send" | "broker_review" | "do_not_send";
+type Channel = "email" | "imessage" | "slack";
+type DeliveryAction = "auto_send" | "broker_review" | "service_review" | "do_not_send";
 type SettingsRow = {
   _id?: Id<"policyDeliverySettings">;
   updatedAt?: number;
@@ -59,11 +59,6 @@ type RuleRow = {
   channels?: Channel[];
   copyInstructions?: string;
 };
-type ClientSettingsResult = {
-  override: SettingsRow | null;
-  brokerSettings: SettingsRow | null;
-};
-
 const DEFAULT_SETTINGS: SettingsRow = {
   enabled: false,
   channels: ["email"],
@@ -75,13 +70,19 @@ const DEFAULT_SETTINGS: SettingsRow = {
 const ACTION_LABELS: Record<DeliveryAction, string> = {
   auto_send: "Send automatically",
   broker_review: "Hold for broker review",
+  service_review: "Hold for Glass service review",
   do_not_send: "Do not send",
 };
 
 function channelsLabel(channels: Channel[] | undefined) {
   if (!channels?.length) return "Inherit";
-  if (channels.length === 2) return "Email + iMessage";
-  return channels[0] === "email" ? "Email" : "iMessage";
+  return channels
+    .map((channel) =>
+      channel === "imessage"
+        ? "iMessage"
+        : channel[0].toUpperCase() + channel.slice(1),
+    )
+    .join(" + ");
 }
 
 function parseList(value: string) {
@@ -91,11 +92,14 @@ function parseList(value: string) {
     .filter(Boolean);
 }
 
-function toDraftSettings(settings: SettingsRow | null | undefined): SettingsRow {
+function toDraftSettings(
+  settings: SettingsRow | null | undefined,
+  defaultAction: DeliveryAction = DEFAULT_SETTINGS.defaultAction,
+): SettingsRow {
   return {
     enabled: settings?.enabled ?? DEFAULT_SETTINGS.enabled,
     channels: settings?.channels ?? DEFAULT_SETTINGS.channels,
-    defaultAction: settings?.defaultAction ?? DEFAULT_SETTINGS.defaultAction,
+    defaultAction: settings?.defaultAction ?? defaultAction,
     deliverBeforeClientAcceptance:
       settings?.deliverBeforeClientAcceptance ?? DEFAULT_SETTINGS.deliverBeforeClientAcceptance,
     copyInstructions: settings?.copyInstructions ?? DEFAULT_SETTINGS.copyInstructions,
@@ -133,7 +137,7 @@ function ChannelToggles({
   }
   return (
     <div className="flex gap-2">
-      {(["email", "imessage"] as Channel[]).map((channel) => (
+      {(["email", "imessage", "slack"] as Channel[]).map((channel) => (
         <button
           key={channel}
           type="button"
@@ -145,7 +149,9 @@ function ChannelToggles({
               : "border-foreground/8 text-muted-foreground hover:bg-foreground/4"
           } disabled:cursor-not-allowed disabled:opacity-50`}
         >
-          {channel === "email" ? "Email" : "iMessage"}
+          {channel === "imessage"
+            ? "iMessage"
+            : channel[0].toUpperCase() + channel.slice(1)}
         </button>
       ))}
     </div>
@@ -175,6 +181,7 @@ function ActionSelect({
       <SelectContent>
         <SelectItem value="auto_send">Send automatically</SelectItem>
         <SelectItem value="broker_review">Hold for broker review</SelectItem>
+        <SelectItem value="service_review">Hold for Glass service review</SelectItem>
         <SelectItem value="do_not_send">Do not send</SelectItem>
       </SelectContent>
     </Select>
@@ -311,21 +318,24 @@ export function PolicyDeliverySection({
   setRightPanel?: (node: ReactNode) => void;
 }) {
   const currentOrg = useCurrentOrg();
+  const ownerClientOrgId =
+    currentOrg?.orgType === "client" && !clientOrgId
+      ? currentOrg.orgId
+      : clientOrgId;
+  const clientOwned = Boolean(ownerClientOrgId);
   const brokerSettings = useQuery(
     api.policyDelivery.getBrokerSettings,
-    clientOrgId ? "skip" : {},
+    clientOwned ? "skip" : {},
   ) as SettingsRow | null | undefined;
-  const clientSettings = useQuery(
-    api.policyDelivery.getClientSettings,
-    clientOrgId ? { clientOrgId } : "skip",
-  ) as ClientSettingsResult | undefined;
+  const ownedSettings = useQuery(
+    api.policyDelivery.getClientOwnedSettings,
+    ownerClientOrgId ? { clientOrgId: ownerClientOrgId } : "skip",
+  ) as SettingsRow | null | undefined;
   const rules = useQuery(api.policyDelivery.listRules, clientOrgId ? { clientOrgId } : {}) as RuleRow[] | undefined;
 
-  const clientOverride = clientOrgId ? (clientSettings?.override ?? null) : null;
-  const inheritedSettings = clientOrgId ? (clientSettings?.brokerSettings ?? null) : null;
-  const settings = clientOrgId ? clientOverride : brokerSettings;
+  const settings = clientOwned ? ownedSettings : brokerSettings;
 
-  if ((clientOrgId ? clientSettings === undefined : brokerSettings === undefined) || rules === undefined) {
+  if ((clientOwned ? ownedSettings === undefined : brokerSettings === undefined) || rules === undefined) {
     return (
       <div className="flex h-48 items-center justify-center text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
@@ -333,17 +343,18 @@ export function PolicyDeliverySection({
     );
   }
 
-  const draftKey = `${clientOrgId ?? currentOrg?.orgId ?? "broker"}:${
-    clientOrgId ? (clientOverride ? "override" : "inherited") : "direct"
+  const draftKey = `${ownerClientOrgId ?? currentOrg?.orgId ?? "broker"}:${
+    clientOwned ? "client-owned" : "broker"
   }`;
 
   return (
     <PolicyDeliveryEditor
       key={draftKey}
       clientOrgId={clientOrgId}
-      settings={toDraftSettings(settings ?? inheritedSettings)}
-      hasClientOverride={!clientOrgId || !!clientOverride}
-      canEdit={currentOrg?.role === "admin"}
+      settings={toDraftSettings(settings, clientOwned ? "service_review" : "broker_review")}
+      hasClientOverride
+      clientOwned={clientOwned}
+      canEdit={currentOrg?.role === "admin" && !clientOrgId}
       rules={rules}
       setRightPanelOverride={setRightPanelOverride}
     />
@@ -354,6 +365,7 @@ function PolicyDeliveryEditor({
   clientOrgId,
   settings,
   hasClientOverride,
+  clientOwned,
   canEdit,
   rules,
   setRightPanelOverride,
@@ -361,6 +373,7 @@ function PolicyDeliveryEditor({
   clientOrgId?: Id<"organizations">;
   settings: SettingsRow;
   hasClientOverride: boolean;
+  clientOwned: boolean;
   canEdit: boolean;
   rules: RuleRow[];
   setRightPanelOverride?: (node: ReactNode) => void;
@@ -368,6 +381,7 @@ function PolicyDeliveryEditor({
   const { setRightPanel: setSettingsRightPanel } = useSettingsActions();
   const setRightPanel = setRightPanelOverride ?? setSettingsRightPanel;
   const updateBrokerSettings = useMutation(api.policyDelivery.updateBrokerSettings);
+  const updateClientOwnedSettings = useMutation(api.policyDelivery.updateClientOwnedSettings);
   const updateClientOverride = useMutation(api.policyDelivery.updateClientOverride);
   const clearOverride = useMutation(api.policyDelivery.clearClientOverride);
   const deleteRule = useMutation(api.policyDelivery.deleteRule);
@@ -385,7 +399,9 @@ function PolicyDeliveryEditor({
     enabled: canEdit && !isInheritedClientSettings,
     autoSave: !copyInstructionsFocused,
     flush: (args) =>
-      clientOrgId
+      clientOwned && !clientOrgId
+        ? updateClientOwnedSettings(args)
+        : clientOrgId
         ? updateClientOverride({ clientOrgId, ...args })
         : updateBrokerSettings(args),
     errorMessage: "Policy delivery settings could not be saved.",
@@ -444,7 +460,7 @@ function PolicyDeliveryEditor({
       <OperationalPanel>
         <OperationalPanelHeader
           title="Automatic policy delivery"
-          description="After a bound policy or endorsement finishes processing, Glass can send the PDF to the client's primary contact."
+          description="After a bound policy or endorsement finishes processing, Glass can deliver the PDF through client-owned channels."
           className="px-5 py-4"
           action={(
             isInheritedClientSettings ? (
@@ -453,7 +469,7 @@ function PolicyDeliveryEditor({
               <AutoSaveStatus status={settingsAutoSave.status} />
             ) : (
               <span className="text-label text-muted-foreground">
-                Broker admins can edit
+                Client admins and Glass operators can edit
               </span>
             )
           )}

@@ -204,7 +204,14 @@ export type AgentModelRunOptions = {
     parentRequestId?: string;
     label: string;
     phase: string;
-    channel: "web" | "imessage" | "mcp" | "email" | "mailbox" | "public_demo";
+    channel:
+      | "web"
+      | "imessage"
+      | "slack"
+      | "mcp"
+      | "email"
+      | "mailbox"
+      | "public_demo";
   };
   onResponse?: ClRouterLanguageModelOptions["onResponse"];
   onDirectFallback?: ClRouterLanguageModelOptions["onDirectFallback"];

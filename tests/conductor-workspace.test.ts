@@ -46,6 +46,7 @@ describe("Conductor workspace identity", () => {
     expect(conductorImageTags(workspace)).toEqual([
       "glass-extraction-worker:conductor-glass-feature-qa",
       "glass-imessage-worker:conductor-glass-feature-qa",
+      "glass-slack-worker:conductor-glass-feature-qa",
       "glass-mailbox-scan-worker:conductor-glass-feature-qa",
     ]);
   });

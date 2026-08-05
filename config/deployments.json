@@ -10,6 +10,12 @@
     },
     "extractionWorkerHealthUrl": "https://glass-extraction-worker-production.up.railway.app/health",
     "imessageWorkerHealthUrl": "https://glass-production-4618.up.railway.app/health",
+    "slackWorkerHealthUrlEnv": "GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL",
+    "slack": {
+      "enabled": false,
+      "mode": "slack",
+      "required": false
+    },
     "imessage": {
       "transport": "imessage",
       "imessageEnabled": true,
@@ -40,6 +46,12 @@
     "extractionWorkerHealthUrl": "https://glass-extraction-worker-staging.up.railway.app/health",
     "imessageWorkerHealthUrlEnv": "GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL",
     "imessageWorkerHealthUrl": "https://imessage-worker-staging.up.railway.app/health",
+    "slackWorkerHealthUrlEnv": "GLASS_STAGING_SLACK_WORKER_HEALTH_URL",
+    "slack": {
+      "enabled": false,
+      "mode": "slack",
+      "required": false
+    },
     "imessage": {
       "transport": "terminal",
       "imessageEnabled": false,
@@ -63,6 +75,12 @@
     "clientPortalUrl": "http://localhost:8080",
     "extractionWorkerHealthUrl": "http://localhost:8787/health",
     "imessageWorkerHealthUrl": "http://localhost:3001/health",
+    "slackWorkerHealthUrl": "http://localhost:8085/health",
+    "slack": {
+      "enabled": true,
+      "mode": "mock",
+      "required": true
+    },
     "imessage": {
       "transport": "terminal",
       "imessageEnabled": false,

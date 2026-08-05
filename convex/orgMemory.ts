@@ -27,6 +27,7 @@ const orgMemorySourceValidator = v.union(
   v.literal("chat"),
   v.literal("email"),
   v.literal("imessage"),
+  v.literal("slack"),
 );
 
 async function orgNameById(
@@ -237,6 +238,7 @@ export const bulkInsert = internalMutation({
           v.literal("chat"),
           v.literal("email"),
           v.literal("imessage"),
+          v.literal("slack"),
         ),
         policyId: v.optional(v.id("policies")),
         sourceRef: v.optional(v.string()),

@@ -25,8 +25,12 @@ import {
 } from "../lib/linesOfBusiness";
 import { deterministicRuleMatch } from "../lib/policyDeliveryMatching";
 
-type Channel = "email" | "imessage";
-type DeliveryAction = "auto_send" | "broker_review" | "do_not_send";
+type Channel = "email" | "imessage" | "slack";
+type DeliveryAction =
+  | "auto_send"
+  | "broker_review"
+  | "service_review"
+  | "do_not_send";
 type DeliveryRule = Doc<"policyDeliveryRules">;
 
 const llmDecisionSchema = z.object({
@@ -114,7 +118,7 @@ async function chooseDecision(ctx: any, data: any): Promise<{
   details?: Record<string, unknown>;
 }> {
   const policy = data.policy as Doc<"policies">;
-  const settings = data.clientSettings ?? data.brokerSettings;
+  const settings = data.ownerSettings ?? data.clientSettings ?? data.brokerSettings;
   if (data.job.action === "auto_send" && data.job.decisionSummary && data.job.channels?.length) {
     return {
       action: "auto_send",
@@ -127,14 +131,16 @@ async function chooseDecision(ctx: any, data: any): Promise<{
     return {
       action: "do_not_send",
       channels: [],
-      summary: "Policy delivery is disabled for this broker or client.",
+      summary: "Policy delivery is disabled for this client.",
     };
   }
   if (hasOpenExtractionReview(policy)) {
     return {
-      action: "broker_review",
+      action: data.ownerSettings ? "service_review" : "broker_review",
       channels: settings.channels,
-      summary: "Extraction has open review questions, so delivery requires broker review.",
+      summary: data.ownerSettings
+        ? "Extraction has open review questions, so delivery requires Glass service review."
+        : "Extraction has open review questions, so delivery requires broker review.",
     };
   }
   for (const rule of data.rules as DeliveryRule[]) {
@@ -155,10 +161,12 @@ async function chooseDecision(ctx: any, data: any): Promise<{
       };
     } catch (error) {
       return {
-        action: "broker_review",
+        action: data.ownerSettings ? "service_review" : "broker_review",
         channels: settings.channels,
         rule,
-        summary: `Rule "${rule.name}" needs broker review because LLM evaluation failed.`,
+        summary: data.ownerSettings
+          ? `Rule "${rule.name}" needs Glass service review because evaluation failed.`
+          : `Rule "${rule.name}" needs broker review because evaluation failed.`,
         details: { error: error instanceof Error ? error.message : String(error) },
       };
     }
@@ -200,8 +208,11 @@ function sourceLabel(data: any) {
 
 async function buildDeliveryCopy(ctx: any, data: any, instructions?: string) {
   const policy = data.policy as Doc<"policies">;
-  const broker = data.broker as Doc<"organizations">;
+  const broker = data.broker as Doc<"organizations"> | null;
   const client = data.client as Doc<"organizations">;
+  const serviceOrganization = data.ownerSettings
+    ? "Glass"
+    : broker?.name ?? "Glass";
   const label = sourceLabel(data);
   const fallbackSubject =
     label === "endorsement"
@@ -219,10 +230,10 @@ async function buildDeliveryCopy(ctx: any, data: any, instructions?: string) {
   if (!instructions?.trim()) return { subject: fallbackSubject, body: fallbackBody };
 
   try {
-    const prompt = `Write concise commercial insurance delivery copy from a broker to a policyholder.
+    const prompt = `Write concise commercial insurance delivery copy from an insurance service team to a policyholder.
 
 Use these variables:
-Broker: ${broker.name}
+Service organization: ${serviceOrganization}
 Client org: ${client.name}
 Recipient: ${client.primaryContactName ?? "policyholder"}
 Document type: ${label}
@@ -231,7 +242,7 @@ Policy number: ${policy.policyNumber}
 Insured: ${policy.insuredName}
 Effective date: ${policy.effectiveDate}
 Expiration date: ${policy.expirationDate}
-Broker instructions:
+Service instructions:
 ${instructions}
 
 Requirements:
@@ -258,16 +269,18 @@ Respond only with JSON: {"subject":"...","body":"..."}`;
 function availableChannels(requested: Channel[], settingsChannels: Channel[], recipient: {
   email?: string;
   phone?: string;
-}) {
+}, slackAvailable: boolean) {
   const result: Channel[] = [];
   for (const channel of requested) {
     if (channel === "email" && recipient.email) result.push("email");
     if (channel === "imessage" && recipient.phone) result.push("imessage");
+    if (channel === "slack" && slackAvailable) result.push("slack");
   }
   if (result.length === requested.length) return [...new Set(result)];
   for (const channel of settingsChannels) {
     if (channel === "email" && recipient.email && !result.includes("email")) result.push("email");
     if (channel === "imessage" && recipient.phone && !result.includes("imessage")) result.push("imessage");
+    if (channel === "slack" && slackAvailable && !result.includes("slack")) result.push("slack");
   }
   return result;
 }
@@ -281,6 +294,7 @@ async function insertAttempt(ctx: any, data: any, args: {
   await ctx.runMutation((internal as any).policyDelivery.insertAttemptInternal, {
     jobId: data.job._id,
     brokerOrgId: data.job.brokerOrgId,
+    deliveryOwnerOrgId: data.job.deliveryOwnerOrgId ?? data.job.clientOrgId,
     clientOrgId: data.job.clientOrgId,
     policyId: data.job.policyId,
     ...args,
@@ -293,10 +307,10 @@ export const processJob = internalAction({
     const data = await ctx.runQuery((internal as any).policyDelivery.getContextInternal, {
       jobId: args.jobId,
     });
-    if (!data?.job || !data.policy || !data.client || !data.broker) return;
+    if (!data?.job || !data.policy || !data.client) return;
     if (!["queued", "failed"].includes(data.job.status)) return;
 
-    const settings = data.clientSettings ?? data.brokerSettings;
+    const settings = data.ownerSettings ?? data.clientSettings ?? data.brokerSettings;
     const decision = await chooseDecision(ctx, data);
     const recipient = resolveRecipient(data);
     const attachment = sourceAttachment(data);
@@ -329,7 +343,26 @@ export const processJob = internalAction({
       });
       return;
     }
-    if (decision.action === "broker_review") {
+    if (
+      decision.action === "broker_review" ||
+      decision.action === "service_review"
+    ) {
+      if (
+        decision.action === "service_review" &&
+        data.connection &&
+        data.primarySlackChannel &&
+        data.agentChannels?.slackEnabled === true
+      ) {
+        await ctx.runAction((internal as any).actions.sendSlack.send, {
+          idempotencyKey: `${data.job.idempotencyKey}:service-review`,
+          orgId: data.client._id,
+          connectionId: data.connection._id,
+          channelId:
+            data.primarySlackChannel.customerChannelId ??
+            data.primarySlackChannel.hostChannelId,
+          content: `Policy delivery needs Glass service review for ${data.policy.policyNumber || "a client policy"}. ${decision.summary}`,
+        });
+      }
       await ctx.runMutation((internal as any).policyDelivery.patchJobInternal, {
         id: args.jobId,
         ...basePatch,
@@ -347,7 +380,18 @@ export const processJob = internalAction({
       return;
     }
 
-    const channels = availableChannels(decision.channels, settings?.channels ?? [], recipient);
+    const slackAvailable = Boolean(
+      data.connection &&
+        data.primarySlackChannel &&
+        data.agentChannels?.slackEnabled === true &&
+        data.agentChannels?.slackPolicyDeliveryEnabled === true,
+    );
+    const channels = availableChannels(
+      decision.channels,
+      settings?.channels ?? [],
+      recipient,
+      slackAvailable,
+    );
     if (channels.length === 0) {
       await ctx.runMutation((internal as any).policyDelivery.patchJobInternal, {
         id: args.jobId,
@@ -364,7 +408,7 @@ export const processJob = internalAction({
         id: args.jobId,
         ...basePatch,
         status: "blocked",
-        lastError: "No broker user is available to own the delivery thread.",
+        lastError: "No authorized user is available to own the delivery thread.",
       });
       return;
     }
@@ -392,6 +436,7 @@ export const processJob = internalAction({
 
     let emailSent = false;
     let imessageSent = false;
+    let slackSent = false;
     let lastError: string | undefined;
 
     if (channels.includes("email") && recipient.email) {
@@ -483,7 +528,58 @@ export const processJob = internalAction({
       }
     }
 
-    const sentCount = Number(emailSent) + Number(imessageSent);
+    if (channels.includes("slack") && data.connection && data.primarySlackChannel) {
+      try {
+        const channelId =
+          data.primarySlackChannel.customerChannelId ??
+          data.primarySlackChannel.hostChannelId;
+        const result = await ctx.runAction(
+          (internal as any).actions.sendSlack.send,
+          {
+            idempotencyKey: `${data.job.idempotencyKey}:slack`,
+            orgId: data.client._id,
+            connectionId: data.connection._id,
+            channelId,
+            content: copy.body,
+            attachments: [
+              {
+                fileId: attachment.fileId,
+                filename: attachment.filename,
+                contentType: attachment.contentType,
+              },
+            ],
+          },
+        );
+        if (result?.status !== "sent" || !result.providerMessageId) {
+          throw new Error(result?.error ?? "Slack policy delivery failed");
+        }
+        slackSent = true;
+        await insertAttempt(ctx, data, {
+          channel: "slack",
+          status: "sent",
+          messageId: result.providerMessageId,
+        });
+        await ctx.runMutation((internal as any).slack.createDeliveryRecord, {
+          orgId: data.client._id,
+          connectionId: data.connection._id,
+          channelId,
+          threadTs: result.providerMessageId,
+          content: copy.body,
+          attachment,
+          policyId: data.policy._id,
+          idempotencyKey: data.job.idempotencyKey,
+        });
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        await insertAttempt(ctx, data, {
+          channel: "slack",
+          status: "failed",
+          error: lastError,
+        });
+      }
+    }
+
+    const sentCount = Number(emailSent) + Number(imessageSent) + Number(slackSent);
     const status =
       sentCount === channels.length
         ? "sent"
@@ -495,6 +591,7 @@ export const processJob = internalAction({
       status,
       emailSentAt: emailSent ? dayjs().valueOf() : undefined,
       imessageSentAt: imessageSent ? dayjs().valueOf() : undefined,
+      slackSentAt: slackSent ? dayjs().valueOf() : undefined,
       sentAt: sentCount > 0 ? dayjs().valueOf() : undefined,
       lastError,
     });

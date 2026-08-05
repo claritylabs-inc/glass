@@ -262,6 +262,7 @@ export const listMembers = query({
     const members = await Promise.all(
       memberships.map(async (m) => {
         const user = await ctx.db.get(m.userId);
+        if (!user || user.serviceAccountKind) return null;
         const pendingEmailChanges = await ctx.db
           .query("userEmailChangeRequests")
           .withIndex("by_target_status", (q) =>
@@ -292,8 +293,7 @@ export const listMembers = query({
         };
       }),
     );
-
-    return members;
+    return members.filter((member) => member !== null);
   },
 });
 
@@ -1773,11 +1773,12 @@ export const listMembersForOrg = query({
       .query("orgMemberships")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
       .collect();
-    return Promise.all(
+    return (await Promise.all(
       memberships.map(async (m) => {
         const user = await ctx.db.get(m.userId);
+        if (!user || user.serviceAccountKind) return null;
         return { userId: m.userId, role: m.role, name: user?.name, email: user?.email };
       }),
-    );
+    )).filter((member) => member !== null);
   },
 });

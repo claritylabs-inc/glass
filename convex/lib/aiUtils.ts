@@ -587,7 +587,7 @@ export function searchPolicyDocument(
 }
 
 export function buildChannelInstructions(params: {
-  platform: "web" | "email" | "imessage";
+  platform: "web" | "email" | "imessage" | "slack";
   isMixedThread?: boolean;
   canSendEmail?: boolean;
   emailUnavailableReason?: string;
@@ -660,6 +660,22 @@ EMAIL MODE:
 - If the email workflow reveals uncertainty that needs a broker, teammate, client, or vendor, suggest starting an iMessage group chat and ask the user to confirm before creating it.
 ${sendRules}
 ${emailBrevity}
+${emailComposition}`;
+  }
+
+  if (params.platform === "slack") {
+    return `
+
+SLACK SERVICE MODE:
+- You are responding as @Glass in a shared service channel. Use concise Slack markdown.
+- This is a privileged client channel where Glass AI and recognized Clarity Labs operators may both participate.
+- Everyone in the current channel may see the response, including external participants in a Slack Connect channel. Never expose another organization's data.
+- The connected customer workspace has client-admin-equivalent agent authority. Apply normal confirmation and source-evidence requirements to consequential writes.
+- Do not impersonate a Clarity Labs operator or claim a human reviewed the answer.
+- If a human operator is needed, use the Slack handoff path and do not copy the customer's message into the primary service channel.
+- You can attach policy PDFs and generated documents by using the relevant file tool in this turn.
+- ${emailAvailability}
+${params.canSendEmail ? sendRules : ""}
 ${emailComposition}`;
   }
 

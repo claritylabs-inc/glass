@@ -1965,6 +1965,7 @@ export const confirmPolicyFactFromSource = internalMutation({
       v.literal("chat"),
       v.literal("email"),
       v.literal("imessage"),
+      v.literal("slack"),
     )),
     fieldUpdates: v.optional(v.object({
       carrier: v.optional(v.string()),

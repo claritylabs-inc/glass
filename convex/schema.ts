@@ -124,11 +124,13 @@ const publicDemoCtaStatusValidator = v.union(
 const policyDeliveryChannelValidator = v.union(
   v.literal("email"),
   v.literal("imessage"),
+  v.literal("slack"),
 );
 
 const policyDeliveryActionValidator = v.union(
   v.literal("auto_send"),
   v.literal("broker_review"),
+  v.literal("service_review"),
   v.literal("do_not_send"),
 );
 
@@ -154,6 +156,7 @@ const certificateSourceValidator = v.union(
   v.literal("chat"),
   v.literal("email"),
   v.literal("imessage"),
+  v.literal("slack"),
   v.literal("sms"),
   v.literal("api"),
   v.literal("mcp"),
@@ -428,6 +431,7 @@ export default defineSchema({
     accountKind: v.optional(
       v.union(v.literal("customer"), v.literal("operator")),
     ),
+    serviceAccountKind: v.optional(v.literal("slack")),
     // Personal profile fields
     title: v.optional(v.string()),
     // Onboarding & admin
@@ -696,11 +700,14 @@ export default defineSchema({
     email: v.string(),
     role: v.union(v.literal("operator"), v.literal("owner")),
     status: v.union(v.literal("active"), v.literal("disabled")),
+    slackTeamId: v.optional(v.string()),
+    slackUserId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_userId", ["userId"])
     .index("by_email", ["email"])
+    .index("by_slackTeamId_and_slackUserId", ["slackTeamId", "slackUserId"])
     .index("by_status", ["status"]),
 
   operatorImpersonationSessions: defineTable({
@@ -965,6 +972,7 @@ export default defineSchema({
       v.literal("chat"),
       v.literal("email"),
       v.literal("imessage"),
+      v.literal("slack"),
     ),
     policyId: v.optional(v.id("policies")),
     sourceRef: v.optional(v.string()),
@@ -1013,8 +1021,102 @@ export default defineSchema({
     .index("by_orgId_producerId", ["orgId", "producerId"])
     .index("by_clientOrgId", ["clientOrgId"]),
 
+  agentChannelSettings: defineTable({
+    clientOrgId: v.id("organizations"),
+    emailEnabled: v.boolean(),
+    imessageEnabled: v.boolean(),
+    slackEnabled: v.boolean(),
+    slackSafeAlertsEnabled: v.boolean(),
+    slackVendorAlertsEnabled: v.boolean(),
+    slackPolicyDeliveryEnabled: v.boolean(),
+    updatedByUserId: v.optional(v.id("users")),
+    updatedByOperatorUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_clientOrgId", ["clientOrgId"]),
+
+  slackWorkspaceConnections: defineTable({
+    clientOrgId: v.id("organizations"),
+    teamId: v.string(),
+    teamName: v.string(),
+    appId: v.optional(v.string()),
+    installationId: v.optional(v.string()),
+    botUserId: v.optional(v.string()),
+    grantedScopes: v.array(v.string()),
+    status: v.union(
+      v.literal("active"),
+      v.literal("revoked"),
+      v.literal("disconnected"),
+    ),
+    serviceUserId: v.id("users"),
+    installedByUserId: v.optional(v.id("users")),
+    installedByOperatorUserId: v.optional(v.id("users")),
+    thirdPartyVisibilityAcknowledged: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    disconnectedAt: v.optional(v.number()),
+  })
+    .index("by_clientOrgId_and_status", ["clientOrgId", "status"])
+    .index("by_teamId_and_status", ["teamId", "status"]),
+
+  slackChannelBindings: defineTable({
+    connectionId: v.optional(v.id("slackWorkspaceConnections")),
+    clientOrgId: v.id("organizations"),
+    kind: v.literal("primary"),
+    hostTeamId: v.string(),
+    hostChannelId: v.string(),
+    customerChannelId: v.optional(v.string()),
+    channelName: v.string(),
+    status: v.union(v.literal("active"), v.literal("archived")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_connectionId_and_status", ["connectionId", "status"])
+    .index("by_clientOrgId_and_status", ["clientOrgId", "status"])
+    .index("by_hostTeamId_and_hostChannelId", ["hostTeamId", "hostChannelId"])
+    .index("by_connectionId_and_customerChannelId", [
+      "connectionId",
+      "customerChannelId",
+    ]),
+
+  slackActors: defineTable({
+    connectionId: v.id("slackWorkspaceConnections"),
+    clientOrgId: v.id("organizations"),
+    teamId: v.string(),
+    slackUserId: v.string(),
+    classification: v.union(
+      v.literal("customer_member"),
+      v.literal("glass_operator"),
+      v.literal("external"),
+      v.literal("bot"),
+    ),
+    operatorUserId: v.optional(v.id("users")),
+    displayName: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_connectionId_and_teamId_and_slackUserId", [
+      "connectionId",
+      "teamId",
+      "slackUserId",
+    ])
+    .index("by_operatorUserId", ["operatorUserId"]),
+
+  slackOAuthStates: defineTable({
+    stateHash: v.string(),
+    clientOrgId: v.id("organizations"),
+    initiatedByUserId: v.optional(v.id("users")),
+    initiatedByOperatorUserId: v.optional(v.id("users")),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_stateHash", ["stateHash"])
+    .index("by_expiresAt", ["expiresAt"]),
+
   policyDeliverySettings: defineTable({
-    brokerOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    deliveryOwnerOrgId: v.optional(v.id("organizations")),
     clientOrgId: v.optional(v.id("organizations")),
     enabled: v.boolean(),
     channels: v.array(policyDeliveryChannelValidator),
@@ -1026,10 +1128,15 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_brokerOrgId", ["brokerOrgId"])
+    .index("by_deliveryOwnerOrgId_and_clientOrgId", [
+      "deliveryOwnerOrgId",
+      "clientOrgId",
+    ])
     .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"]),
 
   policyDeliveryRules: defineTable({
-    brokerOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    deliveryOwnerOrgId: v.optional(v.id("organizations")),
     clientOrgId: v.optional(v.id("organizations")),
     name: v.string(),
     enabled: v.boolean(),
@@ -1045,11 +1152,16 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_brokerOrgId", ["brokerOrgId"])
+    .index("by_deliveryOwnerOrgId_and_clientOrgId", [
+      "deliveryOwnerOrgId",
+      "clientOrgId",
+    ])
     .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"])
     .index("by_brokerOrgId_priority", ["brokerOrgId", "priority"]),
 
   policyDeliveryJobs: defineTable({
-    brokerOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    deliveryOwnerOrgId: v.optional(v.id("organizations")),
     clientOrgId: v.id("organizations"),
     policyId: v.id("policies"),
     policyFileId: v.optional(v.id("policyFiles")),
@@ -1068,6 +1180,7 @@ export default defineSchema({
     threadId: v.optional(v.id("threads")),
     emailSentAt: v.optional(v.number()),
     imessageSentAt: v.optional(v.number()),
+    slackSentAt: v.optional(v.number()),
     sentAt: v.optional(v.number()),
     lastError: v.optional(v.string()),
     createdAt: v.number(),
@@ -1075,6 +1188,11 @@ export default defineSchema({
   })
     .index("by_brokerOrgId_status_updatedAt", [
       "brokerOrgId",
+      "status",
+      "updatedAt",
+    ])
+    .index("by_deliveryOwnerOrgId_and_status_and_updatedAt", [
+      "deliveryOwnerOrgId",
       "status",
       "updatedAt",
     ])
@@ -1089,7 +1207,8 @@ export default defineSchema({
 
   policyDeliveryAttempts: defineTable({
     jobId: v.id("policyDeliveryJobs"),
-    brokerOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    deliveryOwnerOrgId: v.optional(v.id("organizations")),
     clientOrgId: v.id("organizations"),
     policyId: v.id("policies"),
     channel: policyDeliveryChannelValidator,
@@ -1104,6 +1223,10 @@ export default defineSchema({
   })
     .index("by_jobId", ["jobId"])
     .index("by_brokerOrgId_createdAt", ["brokerOrgId", "createdAt"])
+    .index("by_deliveryOwnerOrgId_and_createdAt", [
+      "deliveryOwnerOrgId",
+      "createdAt",
+    ])
     .index("by_clientOrgId_createdAt", ["clientOrgId", "createdAt"]),
 
   connectedOrgRelationships: defineTable({
@@ -2370,6 +2493,7 @@ export default defineSchema({
         v.literal("chat"),
         v.literal("email"),
         v.literal("imessage"),
+        v.literal("slack"),
         v.literal("sms"),
         v.literal("api"),
         v.literal("mcp"),
@@ -2402,6 +2526,7 @@ export default defineSchema({
         v.literal("chat"),
         v.literal("email"),
         v.literal("imessage"),
+        v.literal("slack"),
         v.literal("sms"),
         v.literal("api"),
         v.literal("mcp"),
@@ -2519,6 +2644,16 @@ export default defineSchema({
       ),
     ),
     imessageSentAt: v.optional(v.number()),
+    slackStatus: v.optional(
+      v.union(
+        v.literal("not_scheduled"),
+        v.literal("scheduled"),
+        v.literal("sent"),
+        v.literal("suppressed_by_preference"),
+        v.literal("failed"),
+      ),
+    ),
+    slackSentAt: v.optional(v.number()),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_status", ["orgId", "status"])
@@ -2681,6 +2816,7 @@ export default defineSchema({
       v.literal("chat"),
       v.literal("email"),
       v.literal("imessage"),
+      v.literal("slack"),
       v.literal("mcp"),
       v.literal("cli"),
       v.literal("uploaded_document"),
@@ -2960,7 +3096,12 @@ export default defineSchema({
     lastMessageAt: v.number(),
     archivedAt: v.optional(v.number()),
     originChannel: v.optional(
-      v.union(v.literal("chat"), v.literal("email"), v.literal("imessage")),
+      v.union(
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("slack"),
+      ),
     ),
     emailMode: v.optional(
       v.union(
@@ -2990,6 +3131,16 @@ export default defineSchema({
     imessageScope: v.optional(
       v.union(v.literal("single_org"), v.literal("multi_org")),
     ),
+    slackConnectionId: v.optional(v.id("slackWorkspaceConnections")),
+    slackChannelId: v.optional(v.string()),
+    slackThreadTs: v.optional(v.string()),
+    slackState: v.optional(
+      v.union(
+        v.literal("active"),
+        v.literal("human_paused"),
+        v.literal("resolved"),
+      ),
+    ),
   })
     .index("by_orgId", ["orgId"])
     .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
@@ -2999,7 +3150,12 @@ export default defineSchema({
     .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
     .index("by_orgId_deliveryContactKey", ["orgId", "deliveryContactKey"])
     .index("by_imessageChatGuid", ["imessageChatGuid"])
-    .index("by_orgId_imessageChatGuid", ["orgId", "imessageChatGuid"]),
+    .index("by_orgId_imessageChatGuid", ["orgId", "imessageChatGuid"])
+    .index("by_slackConnectionId_and_slackChannelId_and_slackThreadTs", [
+      "slackConnectionId",
+      "slackChannelId",
+      "slackThreadTs",
+    ]),
 
   threadMessages: defineTable({
     threadId: v.id("threads"),
@@ -3009,6 +3165,7 @@ export default defineSchema({
       v.literal("chat"),
       v.literal("email"),
       v.literal("imessage"),
+      v.literal("slack"),
     ),
     role: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
     // User messages
@@ -3017,6 +3174,11 @@ export default defineSchema({
     operatorInitiated: v.optional(operatorInitiatedMessageValidator),
     imessageSenderAddress: v.optional(v.string()),
     imessageParticipantLabel: v.optional(v.string()),
+    slackActorId: v.optional(v.id("slackActors")),
+    slackTeamId: v.optional(v.string()),
+    slackUserId: v.optional(v.string()),
+    slackMessageTs: v.optional(v.string()),
+    slackEditedAt: v.optional(v.number()),
     // Email messages
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
@@ -3098,7 +3260,155 @@ export default defineSchema({
     .index("by_messageId", ["messageId"])
     .index("by_responseMessageId", ["responseMessageId"])
     .index("by_resendEmailId", ["resendEmailId"])
-    .index("by_replyToMessageId", ["replyToMessageId"]),
+    .index("by_replyToMessageId", ["replyToMessageId"])
+    .index("by_slackTeamId_and_slackMessageTs", [
+      "slackTeamId",
+      "slackMessageTs",
+    ]),
+
+  slackInboundEvents: defineTable({
+    eventKey: v.string(),
+    spectrumMessageId: v.optional(v.string()),
+    connectionId: v.optional(v.id("slackWorkspaceConnections")),
+    teamId: v.string(),
+    channelId: v.string(),
+    threadTs: v.string(),
+    messageTs: v.string(),
+    senderTeamId: v.optional(v.string()),
+    senderUserId: v.string(),
+    senderDisplayName: v.optional(v.string()),
+    senderIsBot: v.optional(v.boolean()),
+    content: v.string(),
+    attachment: v.optional(
+      v.object({
+        providerFileId: v.string(),
+        filename: v.string(),
+        contentType: v.string(),
+        size: v.optional(v.number()),
+        fileId: v.optional(v.id("_storage")),
+      }),
+    ),
+    eventType: v.union(v.literal("message"), v.literal("edit")),
+    isPrimaryChannel: v.boolean(),
+    mentionsGlass: v.boolean(),
+    mentionedBotUserId: v.optional(v.string()),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("ignored"),
+      v.literal("error"),
+    ),
+    attemptCount: v.number(),
+    error: v.optional(v.string()),
+    receivedAt: v.number(),
+    scheduledFor: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_eventKey", ["eventKey"])
+    .index("by_connectionId_and_channelId_and_threadTs", [
+      "connectionId",
+      "channelId",
+      "threadTs",
+    ])
+    .index("by_status_and_receivedAt", ["status", "receivedAt"]),
+
+  slackMessageRevisions: defineTable({
+    threadMessageId: v.id("threadMessages"),
+    slackTeamId: v.string(),
+    slackMessageTs: v.string(),
+    previousContent: v.string(),
+    revisedContent: v.string(),
+    editedAt: v.number(),
+  })
+    .index("by_threadMessageId_and_editedAt", ["threadMessageId", "editedAt"])
+    .index("by_slackTeamId_and_slackMessageTs", [
+      "slackTeamId",
+      "slackMessageTs",
+    ]),
+
+  slackOutboundSends: defineTable({
+    idempotencyKey: v.string(),
+    orgId: v.id("organizations"),
+    threadId: v.optional(v.id("threads")),
+    threadMessageId: v.optional(v.id("threadMessages")),
+    connectionId: v.id("slackWorkspaceConnections"),
+    channelId: v.string(),
+    threadTs: v.optional(v.string()),
+    content: v.string(),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          fileId: v.id("_storage"),
+          filename: v.string(),
+          contentType: v.string(),
+        }),
+      ),
+    ),
+    status: v.union(
+      v.literal("sending"),
+      v.literal("sent"),
+      v.literal("failed"),
+    ),
+    providerMessageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    attemptCount: v.number(),
+    nextAttemptAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_idempotencyKey", ["idempotencyKey"])
+    .index("by_threadMessageId", ["threadMessageId"]),
+
+  slackHandoffs: defineTable({
+    clientOrgId: v.id("organizations"),
+    connectionId: v.id("slackWorkspaceConnections"),
+    sourceChannelId: v.string(),
+    sourceThreadTs: v.string(),
+    primaryChannelId: v.string(),
+    primaryThreadTs: v.optional(v.string()),
+    sourceThreadId: v.optional(v.id("threads")),
+    primaryThreadId: v.optional(v.id("threads")),
+    createdByActorId: v.id("slackActors"),
+    status: v.union(v.literal("open"), v.literal("resolved")),
+    createdAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_connectionId_and_sourceChannelId_and_sourceThreadTs", [
+      "connectionId",
+      "sourceChannelId",
+      "sourceThreadTs",
+    ])
+    .index("by_clientOrgId_and_status", ["clientOrgId", "status"]),
+
+  agentActionAuditEvents: defineTable({
+    orgId: v.id("organizations"),
+    threadId: v.optional(v.id("threads")),
+    threadMessageId: v.optional(v.id("threadMessages")),
+    actorKind: v.union(
+      v.literal("user"),
+      v.literal("slack"),
+      v.literal("operator"),
+      v.literal("system"),
+    ),
+    userId: v.optional(v.id("users")),
+    slackActorId: v.optional(v.id("slackActors")),
+    operatorUserId: v.optional(v.id("users")),
+    authorizationKind: v.union(
+      v.literal("user_membership"),
+      v.literal("slack_workspace"),
+      v.literal("operator"),
+      v.literal("system"),
+    ),
+    action: v.string(),
+    input: v.optional(v.string()),
+    output: v.optional(v.string()),
+    status: v.union(v.literal("succeeded"), v.literal("failed")),
+    createdAt: v.number(),
+  })
+    .index("by_orgId_and_createdAt", ["orgId", "createdAt"])
+    .index("by_threadId_and_createdAt", ["threadId", "createdAt"])
+    .index("by_slackActorId_and_createdAt", ["slackActorId", "createdAt"]),
 
   imessageInboundEvents: defineTable({
     eventKey: v.string(),

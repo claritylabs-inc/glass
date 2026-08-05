@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   Archive,
   Bell,
+  Hash,
   LogOut,
   Mail,
   MessageCircle,
@@ -353,6 +354,8 @@ function SidebarThreadRow({
     >
       {isImessageConversation(item) ? (
         <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+      ) : item.kind === "slack" ? (
+        <Hash className="w-3.5 h-3.5 shrink-0" />
       ) : item.kind === "email" ? (
         <Mail className="w-3.5 h-3.5 shrink-0" />
       ) : (
@@ -445,6 +448,8 @@ function CollapsedThreadList({
           >
             {isImessageConversation(item) ? (
               <MessageCircle className="w-3.5 h-3.5" />
+            ) : item.kind === "slack" ? (
+              <Hash className="w-3.5 h-3.5" />
             ) : item.kind === "email" ? (
               <Mail className="w-3.5 h-3.5" />
             ) : (
