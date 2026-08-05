@@ -162,4 +162,54 @@ describe("createSmoothCornersEngine", () => {
     expect(card.style.clipPath).not.toBe("");
     expect(child.style.clipPath).not.toBe("");
   });
+
+  test("rechecks rounded ancestors when nested escaping children change", async () => {
+    document.body.innerHTML = `
+      <div id="card" style="width: 100px; height: 100px; overflow: visible; border-radius: 16px; background: white">
+        <div id="wrapper"></div>
+      </div>
+    `;
+    const card = document.querySelector<HTMLElement>("#card")!;
+    const wrapper = document.querySelector<HTMLElement>("#wrapper")!;
+    vi.spyOn(card, "getBoundingClientRect").mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 100, height: 100 }),
+    );
+    vi.spyOn(wrapper, "getBoundingClientRect").mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 50, height: 50 }),
+    );
+    const readStyles = globalThis.getComputedStyle;
+    vi.spyOn(globalThis, "getComputedStyle").mockImplementation(
+      (element, pseudoElement) => {
+        const styles = readStyles(element, pseudoElement);
+        if (element !== card) return styles;
+        return new Proxy(styles, {
+          get(target, property) {
+            if (property === "overflowX" || property === "overflowY") {
+              return "visible";
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+    );
+    const engine = createSmoothCornersEngine();
+    destroyEngine = () => engine.destroy();
+
+    await flushFrames();
+    expect(card.style.clipPath).not.toBe("");
+
+    const popover = document.createElement("div");
+    popover.style.position = "absolute";
+    vi.spyOn(popover, "getBoundingClientRect").mockReturnValue(
+      DOMRect.fromRect({ x: 80, y: 80, width: 40, height: 40 }),
+    );
+    wrapper.append(popover);
+    await flushFrames();
+    expect(card.style.clipPath).toBe("");
+
+    popover.remove();
+    await flushFrames();
+    expect(card.style.clipPath).not.toBe("");
+  });
 });

@@ -342,7 +342,7 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
           } else {
             scanSubtree(element);
           }
-          enqueueManagedAncestors(element);
+          enqueueAncestors(element);
           continue;
         }
 
@@ -360,13 +360,14 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
         }
 
         enqueue(element);
-        enqueueManagedAncestors(element);
+        enqueueAncestors(element);
         continue;
       }
 
       const parent = record.target;
-      if (parent instanceof HTMLElement && !shouldSkipElement(parent)) {
-        enqueue(parent);
+      if (parent instanceof HTMLElement) {
+        if (!shouldSkipElement(parent)) enqueue(parent);
+        enqueueAncestors(parent);
       }
       for (const node of record.addedNodes) {
         if (node instanceof HTMLElement) scanSubtree(node);
@@ -386,10 +387,10 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
     }
   }
 
-  function enqueueManagedAncestors(element: Element): void {
+  function enqueueAncestors(element: Element): void {
     let current = element.parentElement;
     for (let depth = 0; current && depth < 12; depth += 1) {
-      if (managed.has(current)) enqueue(current);
+      enqueue(current);
       current = current.parentElement;
     }
   }
