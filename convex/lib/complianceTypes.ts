@@ -169,6 +169,7 @@ export function normalizeRequirementLineOfBusiness(
   if (typeof value !== "string" || !value.trim()) return undefined;
   const sourceCode = value.trim().toUpperCase();
   if (sourceCode === "CRIME") return "CRIM";
+  if (sourceCode === "UN") return "UN";
   const [code] = toLobCodes([sourceCode]);
   return code === "UN" ? undefined : code;
 }
