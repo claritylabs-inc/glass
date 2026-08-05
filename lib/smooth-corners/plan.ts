@@ -54,6 +54,7 @@ export interface SmoothCornerPlanInput {
   pseudoOutside: boolean;
   childOutside: boolean;
   boxShadow: string;
+  focusRingVisible: boolean;
   existingFilter: string;
   pageLeft: number;
   pageTop: number;
@@ -122,7 +123,10 @@ function colorWithOpacity(color: string, opacity: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
 }
 
-function boxShadowToFilter(raw: string): string | null | "skip" {
+function boxShadowToFilter(
+  raw: string,
+  focusRingVisible: boolean,
+): string | null | "skip" {
   const { shadow } = parseBoxShadow(raw);
   if (!shadow?.length) return null;
 
@@ -130,7 +134,7 @@ function boxShadowToFilter(raw: string): string | null | "skip" {
   for (const entry of shadow) {
     if (
       Math.abs(entry.spread) > MAX_SHADOW_SPREAD ||
-      (entry.blur === 0 && entry.spread !== 0)
+      (focusRingVisible && entry.blur === 0 && entry.spread !== 0)
     ) {
       return "skip";
     }
@@ -280,7 +284,10 @@ export function computeSmoothCornerPlan(
     bottomRight: corner(input.radii.bottomRight),
     bottomLeft: corner(input.radii.bottomLeft),
   });
-  const shadowFilter = boxShadowToFilter(input.boxShadow);
+  const shadowFilter = boxShadowToFilter(
+    input.boxShadow,
+    input.focusRingVisible,
+  );
 
   if (shadowFilter === "skip") {
     return { action: "skip", reason: "shadow-spread" };

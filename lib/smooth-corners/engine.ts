@@ -330,6 +330,22 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
     for (const record of records) {
       if (record.type === "attributes") {
         const element = record.target as HTMLElement;
+
+        if (element === document.documentElement) {
+          for (const current of managed.keys()) enqueue(current);
+          continue;
+        }
+
+        if (record.attributeName === "data-smooth-corners") {
+          if (shouldSkipElement(element)) {
+            unmanageSubtree(element);
+          } else {
+            scanSubtree(element);
+          }
+          enqueueManagedAncestors(element);
+          continue;
+        }
+
         if (shouldSkipElement(element)) continue;
 
         if (record.attributeName === "style") {
@@ -343,12 +359,8 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
           if (entry) syncChangedInlineStyles(element, entry);
         }
 
-        if (element === document.documentElement) {
-          for (const current of managed.keys()) enqueue(current);
-        } else {
-          enqueue(element);
-          enqueueManagedAncestors(element);
-        }
+        enqueue(element);
+        enqueueManagedAncestors(element);
         continue;
       }
 
@@ -469,6 +481,7 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
       pseudoOutside: pseudoEscapes(element, width, height),
       childOutside: childrenEscape(element, styles),
       boxShadow: styles.boxShadow,
+      focusRingVisible: element.contains(document.activeElement),
       existingFilter: styles.filter,
       pageLeft: bounds.left + window.scrollX,
       pageTop: bounds.top + window.scrollY,

@@ -1,9 +1,10 @@
 import dayjs from "dayjs";
 import type { Doc, Id } from "../_generated/dataModel";
-import { isLobCode, lobLabel, policyLobCodes } from "./linesOfBusiness";
+import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 import {
   isRequirementLimitKind,
   isRequirementProvision,
+  normalizeRequirementLineOfBusiness,
   REQUIREMENT_LIMIT_KIND_LABELS,
   REQUIREMENT_PROVISION_LABELS,
   type ComplianceCheckStatus,
@@ -174,7 +175,18 @@ function coverageLobMatches(
 ) {
   const required = requirement.lineOfBusiness;
   if (!required || required === "UN") return true;
-  if (isLobCode(required) && policyLobCodes(policy).includes(required)) {
+  const requiredCode = normalizeRequirementLineOfBusiness(required);
+  if (
+    requiredCode &&
+    (policyLobCodes(policy).some(
+      (code) => normalizeRequirementLineOfBusiness(code) === requiredCode,
+    ) ||
+      (policy.coverages ?? []).some(
+        (coverage) =>
+          normalizeRequirementLineOfBusiness(coverage.lineOfBusiness) ===
+          requiredCode,
+      ))
+  ) {
     return true;
   }
   const requiredText = normalizeText(`${required} ${lobLabel(required)}`);
@@ -296,6 +308,7 @@ function bestCoverageForRequirement(
   requirement: Doc<"insuranceRequirements">,
 ) {
   const required = requirement.lineOfBusiness;
+  const requiredCode = normalizeRequirementLineOfBusiness(required);
   const requiredText = normalizeText(
     [required, required ? lobLabel(required) : undefined].join(" "),
   );
@@ -307,8 +320,9 @@ function bestCoverageForRequirement(
     const matches =
       !requiredText ||
       text.includes(requiredText) ||
-      (coverage.lineOfBusiness &&
-        normalizeText(coverage.lineOfBusiness) === normalizeText(required));
+      (requiredCode &&
+        normalizeRequirementLineOfBusiness(coverage.lineOfBusiness) ===
+          requiredCode);
     if (!matches) continue;
     if (!best) {
       best = coverage;

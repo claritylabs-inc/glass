@@ -1,12 +1,10 @@
 import dayjs from "dayjs";
 import type { Id } from "../_generated/dataModel";
-import {
-  isLobCode,
-  type AcordLobCode,
-} from "./linesOfBusiness";
+import type { AcordLobCode } from "./linesOfBusiness";
 import {
   isRequirementLimitKind,
   isRequirementProvision,
+  normalizeRequirementLineOfBusiness,
   type RequirementKind,
   type RequirementLimitKind,
   type RequirementScope,
@@ -121,15 +119,15 @@ function scopeFromLegacy(value: LegacyRequirementScope | undefined): Requirement
 }
 
 function lineOfBusinessFromLegacy(row: LegacyComplianceRequirement) {
-  const direct = cleanString(row.coverageCode).toUpperCase();
-  if (isLobCode(direct)) return direct;
+  const direct = normalizeRequirementLineOfBusiness(row.coverageCode);
+  if (direct) return direct;
   const category = cleanString(row.category);
   if (category && CATEGORY_LOB[category]) return CATEGORY_LOB[category];
 
   const text = normalizeText(
     [row.title, row.name, row.requirementText, row.originalContent].join(" "),
   );
-  if (/\b(crime|fidelity)\b/.test(text)) return "CRIME";
+  if (/\b(crime|fidelity)\b/.test(text)) return "CRIM";
   if (/\b(umbrella|excess)\b/.test(text)) return "UMBRC";
   if (/\b(workers?|employers?)\b/.test(text)) return "WORK";
   if (/\b(auto|automobile|vehicle)\b/.test(text)) return "AUTOB";

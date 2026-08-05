@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { createSmoothCornersEngine } from "./engine";
 
 let destroyEngine: (() => void) | undefined;
@@ -14,6 +14,7 @@ async function flushFrames(): Promise<void> {
 afterEach(() => {
   destroyEngine?.();
   destroyEngine = undefined;
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
@@ -73,5 +74,92 @@ describe("createSmoothCornersEngine", () => {
     await flushFrames();
 
     expect(button.style.clipPath).toBe("");
+  });
+
+  test("releases clipping for a focus-within ring", async () => {
+    document.body.innerHTML = `
+      <div id="field" style="width: 160px; height: 48px; border-radius: 12px; background: white; box-shadow: rgb(42, 151, 255) 0 0 0 2px">
+        <input id="input" />
+      </div>
+    `;
+    const engine = createSmoothCornersEngine();
+    destroyEngine = () => engine.destroy();
+    const field = document.querySelector<HTMLElement>("#field")!;
+    const input = document.querySelector<HTMLInputElement>("#input")!;
+
+    await flushFrames();
+    expect(field.style.clipPath).not.toBe("");
+
+    input.focus();
+    await flushFrames();
+
+    expect(field.style.clipPath).toBe("");
+  });
+
+  test("reapplies managed styles after the root theme changes", async () => {
+    document.body.innerHTML = `
+      <div class="themed-card" style="width: 120px; height: 60px; border-radius: 16px; background: white"></div>
+    `;
+    const card = document.querySelector<HTMLElement>(".themed-card")!;
+    const readStyles = globalThis.getComputedStyle;
+    vi.spyOn(globalThis, "getComputedStyle").mockImplementation(
+      (element, pseudoElement) => {
+        const styles = readStyles(element, pseudoElement);
+        if (element !== card || !document.documentElement.classList.contains("dark")) {
+          return styles;
+        }
+        return new Proxy(styles, {
+          get(target, property) {
+            if (
+              property === "borderTopLeftRadius" ||
+              property === "borderTopRightRadius" ||
+              property === "borderBottomRightRadius" ||
+              property === "borderBottomLeftRadius"
+            ) {
+              return "24px";
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+    );
+    const engine = createSmoothCornersEngine();
+    destroyEngine = () => engine.destroy();
+
+    await flushFrames();
+    const lightClipPath = card.style.clipPath;
+
+    document.documentElement.classList.add("dark");
+    await flushFrames();
+
+    expect(card.style.clipPath).not.toBe(lightClipPath);
+    document.documentElement.classList.remove("dark");
+  });
+
+  test("unmanages and restores dynamically opted-out subtrees", async () => {
+    document.body.innerHTML = `
+      <div id="card" style="width: 160px; height: 80px; border-radius: 16px; background: white">
+        <div id="child" style="width: 80px; height: 40px; border-radius: 8px; background: black"></div>
+      </div>
+    `;
+    const engine = createSmoothCornersEngine();
+    destroyEngine = () => engine.destroy();
+    const card = document.querySelector<HTMLElement>("#card")!;
+    const child = document.querySelector<HTMLElement>("#child")!;
+
+    await flushFrames();
+    expect(card.style.clipPath).not.toBe("");
+    expect(child.style.clipPath).not.toBe("");
+
+    card.dataset.smoothCorners = "off";
+    await flushFrames();
+    expect(card.style.clipPath).toBe("");
+    expect(child.style.clipPath).toBe("");
+
+    delete card.dataset.smoothCorners;
+    await flushFrames();
+    expect(card.style.clipPath).not.toBe("");
+    expect(child.style.clipPath).not.toBe("");
   });
 });

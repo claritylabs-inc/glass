@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import { describe, expect, it } from "vitest";
 import type { Doc, Id } from "../_generated/dataModel";
 import { assessRequirementCompliance } from "./complianceCheck";
@@ -62,13 +63,49 @@ describe("assessRequirementCompliance", () => {
       requirement({}),
       [policy({})],
       {
-        now: new Date("2026-07-01").valueOf(),
+        now: dayjs("2026-07-01").valueOf(),
         expectedInsuredName: "Acme",
       },
     );
 
     expect(result.status).toBe("met");
     expect(result.matchedPolicyIds).toEqual(["policy1"]);
+  });
+
+  it("matches normalized CRIM requirements to legacy CRIME policies", () => {
+    const result = assessRequirementCompliance(
+      requirement({
+        title: "Crime coverage",
+        requirementText: "Crime coverage with a $1M limit is required.",
+        lineOfBusiness: "CRIM",
+        limits: [{ kind: "other", amount: 1_000_000 }],
+      }),
+      [
+        policy({
+          linesOfBusiness: ["CGL"],
+          coverages: [
+            {
+              name: "Commercial General Liability",
+              lineOfBusiness: "CGL",
+              limitAmount: 2_000_000,
+            },
+            {
+              name: "Crime",
+              lineOfBusiness: "CRIME",
+              limitAmount: 1_000_000,
+            },
+          ],
+        }),
+      ],
+      {
+        now: dayjs("2026-07-01").valueOf(),
+        expectedInsuredName: "Acme",
+      },
+    );
+
+    expect(result.status).toBe("met");
+    expect(result.matchedPolicyIds).toEqual(["policy1"]);
+    expect(result.matchedPolicy?.coverageName).toBe("Crime");
   });
 
   it("returns not_met with a reason when the matching limit is too low", () => {
@@ -94,7 +131,7 @@ describe("assessRequirementCompliance", () => {
           ],
         }),
       ],
-      { now: new Date("2026-07-01").valueOf() },
+      { now: dayjs("2026-07-01").valueOf() },
     );
 
     expect(result.status).toBe("not_met");
@@ -111,7 +148,7 @@ describe("assessRequirementCompliance", () => {
     });
 
     const result = assessRequirementCompliance(req, [], {
-      now: new Date("2026-07-01").valueOf(),
+      now: dayjs("2026-07-01").valueOf(),
       existingChecks: [
         {
           status: "met",
@@ -140,7 +177,7 @@ describe("assessRequirementCompliance", () => {
       }),
       [],
       {
-        now: new Date("2026-07-01").valueOf(),
+        now: dayjs("2026-07-01").valueOf(),
         existingChecks: [
           {
             status: "met",
