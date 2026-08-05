@@ -321,6 +321,7 @@ try {
     IMESSAGE_WORKER_URL: `http://127.0.0.1:${imessage}`,
     IMESSAGE_WORKER_SECRET: imessageSecret,
     SLACK_ENABLED: "true",
+    SLACK_MODE: "mock",
     SLACK_WORKER_URL: `http://127.0.0.1:${slack}`,
     SLACK_WORKER_SECRET: slackSecret,
     PHOTON_WEBHOOK_SIGNING_SECRET: slackWebhookSecret,

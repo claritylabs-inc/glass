@@ -210,6 +210,11 @@ const checks = [
           `slack.enabled expected ${String(deployment.slack?.enabled)} got ${String(slackEnabled)}`,
         );
       }
+      if (payload.slack?.mode !== deployment.slack?.mode) {
+        throw new Error(
+          `slack.mode expected ${String(deployment.slack?.mode)} got ${String(payload.slack?.mode)}`,
+        );
+      }
     },
   },
   {

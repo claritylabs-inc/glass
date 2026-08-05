@@ -39,6 +39,10 @@ function convexHealth(expectedClSdkVersion: string) {
       expectedProtocolVersion: "source-tree-v1",
       expectedClSdkVersion,
     },
+    slack: {
+      enabled: true,
+      mode: "mock",
+    },
   };
 }
 
@@ -75,6 +79,17 @@ function clRouterHealth() {
   };
 }
 
+function slackWorkerHealth() {
+  return {
+    ok: true,
+    service: "glass-slack-worker",
+    glassEnv: "staging",
+    mode: "mock",
+    workerSecretConfigured: true,
+    outboundEnabled: true,
+  };
+}
+
 async function runAgentHealth(convexPath: string, clRouterPath = "/cl-router") {
   return execFileAsync(
     process.execPath,
@@ -88,6 +103,7 @@ async function runAgentHealth(convexPath: string, clRouterPath = "/cl-router") {
         GLASS_CONVEX_AGENT_HEALTH_URL: `${healthBaseUrl}${convexPath}`,
         GLASS_IMESSAGE_WORKER_HEALTH_URL: `${healthBaseUrl}/imessage`,
         GLASS_EXTRACTION_WORKER_HEALTH_URL: `${healthBaseUrl}/extraction-worker`,
+        GLASS_STAGING_SLACK_WORKER_HEALTH_URL: `${healthBaseUrl}/slack-worker`,
         GLASS_STAGING_CL_ROUTER_HEALTH_URL: `${healthBaseUrl}${clRouterPath}`,
       },
       timeout: 10_000,
@@ -101,6 +117,7 @@ beforeAll(async () => {
     if (req.url === "/convex-stale-sdk") return writeJson(res, convexHealth("^0.0.0"));
     if (req.url === "/imessage") return writeJson(res, imessageHealth());
     if (req.url === "/extraction-worker") return writeJson(res, extractionWorkerHealth(expectedClSdkSpec));
+    if (req.url === "/slack-worker") return writeJson(res, slackWorkerHealth());
     if (req.url === "/cl-router") return writeJson(res, clRouterHealth());
     if (req.url === "/cl-router-unfrozen") {
       return writeJson(res, { ...clRouterHealth(), frozen: false });
@@ -184,6 +201,9 @@ describe("agent deployment safeguards", () => {
     );
     expect(workflow).toContain(
       "GLASS_STAGING_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_STAGING_CL_ROUTER_HEALTH_URL }}",
+    );
+    expect(workflow).toContain(
+      "GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL }}",
     );
     expect(deployments).toContain("https://merry-platypus-82.convex.site/agent-health");
     expect(deployments).toContain("https://glass-production-4618.up.railway.app/health");

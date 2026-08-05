@@ -81,6 +81,7 @@ jobs:
           AGENT_HEALTH_ATTEMPTS: 30
           AGENT_HEALTH_RETRY_DELAY_MS: 10000
           GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL }}
+          GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL }}
 
   staging-agent-health:
     if: github.event_name != 'pull_request' && ((github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'staging' || github.event.inputs.environment == 'all')) || (github.event_name != 'workflow_dispatch' && github.ref_name == 'staging'))

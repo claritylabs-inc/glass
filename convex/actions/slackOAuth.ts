@@ -13,6 +13,7 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "../lib/userFacingErrors";
+import { isSlackMockMode } from "../lib/slackConfig";
 
 const internalApi = internal as any;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -64,6 +65,9 @@ export const begin = action({
   handler: async (ctx, args) => {
     if (process.env.SLACK_ENABLED !== "true") {
       throw new Error("Slack is not enabled for this environment");
+    }
+    if (isSlackMockMode()) {
+      throw new Error("Slack OAuth is unavailable in mock mode");
     }
     if (!args.thirdPartyVisibilityAcknowledged) {
       throw new Error(
@@ -139,6 +143,9 @@ async function removePhotonInstallation(
 export const complete = internalAction({
   args: { code: v.string(), state: v.string() },
   handler: async (ctx, args) => {
+    if (isSlackMockMode()) {
+      return settingsRedirect({ slack: "error", reason: "mock_mode" });
+    }
     const state = await ctx.runMutation(
       internalApi.agentChannels.claimOAuthState,
       { state: args.state },
@@ -251,13 +258,15 @@ export const disconnect = action({
     );
     if (!authorized) return { disconnected: false };
 
-    const projectId = requiredEnv("PHOTON_PROJECT_ID");
-    const response = await removePhotonInstallation(
-      projectId,
-      authorized.connection.teamId,
-    );
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Photon disconnect failed (${response.status})`);
+    if (!isSlackMockMode()) {
+      const projectId = requiredEnv("PHOTON_PROJECT_ID");
+      const response = await removePhotonInstallation(
+        projectId,
+        authorized.connection.teamId,
+      );
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`Photon disconnect failed (${response.status})`);
+      }
     }
     await ctx.runMutation(internalApi.agentChannels.disconnectInternal, {
       connectionId: authorized.connection._id,
