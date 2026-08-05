@@ -13,9 +13,9 @@
     "slackWorkerHealthUrlEnv": "GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL",
     "slack": {
       "appId": "A0BMW4TG7JB",
-      "enabled": false,
+      "enabled": true,
       "mode": "slack",
-      "required": false
+      "required": true
     },
     "imessage": {
       "transport": "imessage",
@@ -51,7 +51,7 @@
     "slack": {
       "appId": "A0BNBFDE25Q",
       "enabled": true,
-      "mode": "mock",
+      "mode": "slack",
       "required": true
     },
     "imessage": {

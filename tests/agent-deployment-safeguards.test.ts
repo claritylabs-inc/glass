@@ -41,7 +41,7 @@ function convexHealth(expectedClSdkVersion: string) {
     },
     slack: {
       enabled: true,
-      mode: "mock",
+      mode: "slack",
     },
   };
 }
@@ -84,7 +84,7 @@ function slackWorkerHealth() {
     ok: true,
     service: "glass-slack-worker",
     glassEnv: "staging",
-    mode: "mock",
+    mode: "slack",
     workerSecretConfigured: true,
     tokenBrokerConfigured: true,
     clarityTeamConfigured: true,

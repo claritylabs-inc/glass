@@ -3,13 +3,13 @@
     "major_version": 2
   },
   "display_information": {
-    "name": "Glass Staging",
-    "description": "Test service channel for Glass staging",
-    "background_color": "#52525B"
+    "name": "Glass (Staging)",
+    "description": "AI-native insurance management and expert support in Slack — staging.",
+    "background_color": "#171717"
   },
   "features": {
     "bot_user": {
-      "display_name": "Glass Staging",
+      "display_name": "Glass (Staging)",
       "always_online": true
     }
   },
