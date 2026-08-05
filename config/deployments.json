@@ -48,9 +48,9 @@
     "imessageWorkerHealthUrl": "https://imessage-worker-staging.up.railway.app/health",
     "slackWorkerHealthUrlEnv": "GLASS_STAGING_SLACK_WORKER_HEALTH_URL",
     "slack": {
-      "enabled": false,
-      "mode": "slack",
-      "required": false
+      "enabled": true,
+      "mode": "mock",
+      "required": true
     },
     "imessage": {
       "transport": "terminal",

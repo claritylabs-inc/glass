@@ -12,6 +12,7 @@ import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import { canAccessThread } from "./lib/threadAccess";
 import { parseSlackWebhookPayload } from "./lib/slackPayload";
 import { verifySpectrumWebhook } from "./lib/slackSecurity";
+import { getSlackMode } from "./lib/slackConfig";
 import {
   type McpPolicySummarySource,
   policyMatchesMcpFilters,
@@ -150,6 +151,7 @@ http.route({
   method: "GET",
   handler: httpAction(async () => {
     const slackEnabled = process.env.SLACK_ENABLED === "true";
+    const slackMode = getSlackMode();
     const checks = {
       imessageInboundEnabled: isImessageInboundEnabled(),
       imessageWorkerUrlConfigured: Boolean(getImessageWorkerUrl()),
@@ -166,7 +168,9 @@ http.route({
       slackWebhookConfigured:
         !slackEnabled || Boolean(process.env.PHOTON_WEBHOOK_SIGNING_SECRET),
       slackOAuthConfigured:
-        !slackEnabled || process.env.GLASS_ENV === "local" ||
+        !slackEnabled ||
+        slackMode === "mock" ||
+        process.env.GLASS_ENV === "local" ||
         Boolean(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET),
     };
     const ok = Object.values(checks).every(Boolean);
@@ -185,6 +189,7 @@ http.route({
         },
         slack: {
           enabled: slackEnabled,
+          mode: slackMode,
           workerUrlConfigured: Boolean(process.env.SLACK_WORKER_URL),
           workerSecretConfigured: Boolean(process.env.SLACK_WORKER_SECRET),
           webhookSigningSecretConfigured: Boolean(

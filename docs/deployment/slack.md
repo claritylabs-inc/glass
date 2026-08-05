@@ -7,11 +7,11 @@ one private `#glass-<client-slug>` Slack Connect channel hosted by
 normal Slack identities; the canonical conversation, agent actions, delivery
 evidence, and failures are stored in Convex.
 
-Staging and production must use separate distributed Slack apps and separate
-Photon projects. The committed deployment map keeps both environments disabled
-until their app, worker, secrets, and staging validation have been approved.
-Do not reuse production credentials in staging or create a production app as
-part of an ordinary code deployment.
+Production uses a distributed Slack app in the production Photon project.
+Staging is intentionally a mock-only lane: it exercises the signed inbound,
+durable processing, and worker contracts without Slack OAuth or Photon
+credentials. Never copy production Photon or Slack app credentials into
+staging.
 
 Before customer OAuth, configure the environment's Slack app in its Photon
 project. Either use Photon's manifest setup flow (`POST
@@ -82,6 +82,7 @@ Convex requires:
 | Variable | Purpose |
 | --- | --- |
 | `SLACK_ENABLED` | `true` only after the lane passes the rollout gates |
+| `SLACK_MODE` | `slack` in production; `mock` in staging/local |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Environment-specific Slack OAuth app |
 | `SLACK_OAUTH_REDIRECT_URI` | Optional explicit callback; otherwise the Convex site callback above |
 | `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET` | Register OAuth tokens with Photon and remove installations |
@@ -90,11 +91,14 @@ Convex requires:
 | `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Private outbound/attachment worker endpoint and bearer secret |
 | `NEXT_PUBLIC_APP_URL` or `APP_URL` | Post-OAuth settings redirect |
 
-The isolated Railway `slack-worker` requires `GLASS_ENV`,
-`SLACK_WORKER_MODE=slack`, `SLACK_WORKER_SECRET`, `PHOTON_PROJECT_ID`,
-`PHOTON_PROJECT_SECRET`, `SLACK_CLARITY_TEAM_ID`, and Railway's `PORT`. Its
-`/health` response must report the expected environment and live mode before
-`SLACK_ENABLED` is changed. Configure its public health URL through
+The isolated Railway `slack-worker` always requires `GLASS_ENV`,
+`SLACK_WORKER_SECRET`, and Railway's `PORT`. Production additionally requires
+`SLACK_WORKER_MODE=slack`, `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`, and
+`SLACK_CLARITY_TEAM_ID`. Staging uses `SLACK_WORKER_MODE=mock`, has no Photon
+credentials, and uses a non-production fixture team ID. Convex must use the
+matching `SLACK_MODE`. The worker's `/health` response must report the expected
+environment and mode before `SLACK_ENABLED` is changed. Configure its public
+health URL through
 `GLASS_STAGING_SLACK_WORKER_HEALTH_URL` or
 `GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL`; set the matching deployment
 configuration's Slack `required` flag only when the worker is part of that
@@ -172,8 +176,9 @@ only when the customer requests removal or the installation has been revoked;
 disconnecting removes the Photon installation and prevents outbound retries.
 
 Live OAuth, Slack Connect, Photon delivery, uninstall/revocation, and real file
-round trips require usable staging credentials. Local fixture results do not
-substitute for that gate.
+round trips are production-only. Staging validates the mock worker and signed
+fixture path; those results do not substitute for production Photon and Slack
+installation checks.
 
 After `npm run conductor:setup` and while `npm run conductor:dev` is running,
 exercise the seeded Cove channel with:
