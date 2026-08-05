@@ -16,6 +16,7 @@ import {
 const MAX_MANAGED_ELEMENTS = 1500;
 const FRAME_BUDGET_MS = 6;
 const READ_CHUNK_SIZE = 32;
+const SCAN_CHUNK_SIZE = 128;
 const ESCAPING_CHILD_SCAN_LIMIT = 200;
 const REPLACED_ELEMENTS = new Set([
   "IMG",
@@ -323,6 +324,13 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
   const smoothing = options?.smoothing ?? DEFAULT_SMOOTHING;
   const managed = new Map<HTMLElement, ManagedElement>();
   const queue = new Set<HTMLElement>();
+  const deferredCandidates = new Set<HTMLElement>();
+  const pendingScans: Array<{
+    root: HTMLElement;
+    includeRoot: boolean;
+    walker: TreeWalker;
+    next: HTMLElement | null;
+  }> = [];
   let animationFrame: number | null = null;
   let destroyed = false;
 
@@ -374,6 +382,7 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
       }
       for (const node of record.removedNodes) {
         if (!(node instanceof HTMLElement)) continue;
+        discardPendingScans(node);
         unmanageSubtree(node);
       }
     }
@@ -381,6 +390,7 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
 
   function enqueue(element: HTMLElement): void {
     if (destroyed) return;
+    deferredCandidates.delete(element);
     queue.add(element);
     if (animationFrame === null) {
       animationFrame = requestAnimationFrame(flush);
@@ -396,6 +406,7 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
   }
 
   function unmanage(element: HTMLElement): void {
+    deferredCandidates.delete(element);
     const entry = managed.get(element);
     if (!entry) return;
     restoreStyles(element, entry.original);
@@ -496,12 +507,18 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
     plan: SmoothCornerPlan | null,
   ): void {
     if (!plan || plan.action === "skip") {
+      deferredCandidates.delete(element);
       unmanage(element);
       return;
     }
 
     const entry = managed.get(element);
     const original = entry?.original ?? originalStyles(element);
+    if (!entry && managed.size >= MAX_MANAGED_ELEMENTS) {
+      deferredCandidates.add(element);
+      return;
+    }
+    deferredCandidates.delete(element);
 
     element.style.clipPath = plan.clipPath;
     element.style.filter = plan.filter ?? original.filter;
@@ -557,22 +574,95 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
     for (const operation of operations) {
       applyPlan(operation.element, operation.plan);
     }
-    if (queue.size) animationFrame = requestAnimationFrame(flush);
+    if (queue.size) {
+      animationFrame = requestAnimationFrame(flush);
+    } else {
+      resumeDeferredCandidates();
+      if (queue.size === 0) pumpScans();
+    }
+  }
+
+  function resumeDeferredCandidates(): void {
+    let available = MAX_MANAGED_ELEMENTS - managed.size;
+    for (const element of deferredCandidates) {
+      if (available <= 0) break;
+      deferredCandidates.delete(element);
+      enqueue(element);
+      available -= 1;
+    }
   }
 
   function scanSubtree(root: HTMLElement): void {
     if (shouldSkipElement(root)) return;
-    if (managed.size + queue.size >= MAX_MANAGED_ELEMENTS) return;
-    enqueue(root);
+    scheduleScan(root, true);
+  }
+
+  function scheduleScan(root: HTMLElement, includeRoot: boolean): void {
+    if (destroyed) return;
 
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-    let current = walker.nextNode() as HTMLElement | null;
-    while (
-      current &&
-      managed.size + queue.size < MAX_MANAGED_ELEMENTS
+    pendingScans.push({
+      root,
+      includeRoot,
+      walker,
+      next: includeRoot
+        ? root
+        : (walker.nextNode() as HTMLElement | null),
+    });
+    pumpScans();
+  }
+
+  function discardPendingScans(root: HTMLElement): void {
+    for (let index = pendingScans.length - 1; index >= 0; index -= 1) {
+      const scanRoot = pendingScans[index].root;
+      if (scanRoot === root || root.contains(scanRoot)) {
+        pendingScans.splice(index, 1);
+      }
+    }
+  }
+
+  function pumpScans(): void {
+    if (
+      destroyed ||
+      queue.size > 0 ||
+      managed.size >= MAX_MANAGED_ELEMENTS
     ) {
+      return;
+    }
+
+    let remaining = SCAN_CHUNK_SIZE;
+    while (
+      remaining > 0 &&
+      pendingScans.length > 0 &&
+      managed.size < MAX_MANAGED_ELEMENTS
+    ) {
+      const scan = pendingScans[0];
+      if (!scan.root.isConnected) {
+        pendingScans.shift();
+        continue;
+      }
+      const current = scan.next;
+      if (!current) {
+        pendingScans.shift();
+        continue;
+      }
+      if (!current.isConnected) {
+        scan.walker = document.createTreeWalker(
+          scan.root,
+          NodeFilter.SHOW_ELEMENT,
+        );
+        scan.next = scan.includeRoot
+          ? scan.root
+          : (scan.walker.nextNode() as HTMLElement | null);
+        continue;
+      }
+      scan.next = scan.walker.nextNode() as HTMLElement | null;
       if (!shouldSkipElement(current)) enqueue(current);
-      current = walker.nextNode() as HTMLElement | null;
+      remaining -= 1;
+    }
+
+    if (pendingScans.length > 0 && animationFrame === null) {
+      animationFrame = requestAnimationFrame(flush);
     }
   }
 
@@ -603,10 +693,7 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
   document.addEventListener("pointerout", enqueueEventPath, true);
   window.addEventListener("resize", handleWindowResize);
 
-  for (const element of document.querySelectorAll<HTMLElement>("body *")) {
-    if (managed.size + queue.size >= MAX_MANAGED_ELEMENTS) break;
-    if (!shouldSkipElement(element)) enqueue(element);
-  }
+  scheduleScan(document.body, false);
 
   return {
     destroy() {
@@ -622,6 +709,8 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
       window.removeEventListener("resize", handleWindowResize);
       for (const element of [...managed.keys()]) unmanage(element);
       queue.clear();
+      deferredCandidates.clear();
+      pendingScans.length = 0;
     },
   };
 }
