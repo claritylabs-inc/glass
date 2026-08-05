@@ -167,20 +167,22 @@ export const send = internalAction({
     }
 
     const parts = [];
+    let attachmentThreadTs = args.threadTs;
     if (args.content.trim()) {
-      parts.push(
-        await sendSingle(ctx, {
-          ...args,
-          idempotencyKey: `${args.idempotencyKey}:text`,
-          attachments: undefined,
-        }),
-      );
+      const textPart = await sendSingle(ctx, {
+        ...args,
+        idempotencyKey: `${args.idempotencyKey}:text`,
+        attachments: undefined,
+      });
+      parts.push(textPart);
+      attachmentThreadTs ??= textPart?.providerMessageId;
     }
     for (const attachment of attachments) {
       parts.push(
         await sendSingle(ctx, {
           ...args,
           idempotencyKey: `${args.idempotencyKey}:file:${attachment.fileId}`,
+          threadTs: attachmentThreadTs,
           content: "",
           attachments: [attachment],
         }),
