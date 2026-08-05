@@ -223,6 +223,49 @@ describe("createSmoothCornersEngine", () => {
     expect(card.style.clipPath).not.toBe("");
   });
 
+  test("releases clipping when an escaping child follows the scan limit", async () => {
+    const denseChildren = Array.from(
+      { length: 200 },
+      (_, index) => `<div data-index="${index}"></div>`,
+    ).join("");
+    document.body.innerHTML = `
+      <div id="card" style="width: 100px; height: 100px; overflow: visible; border-radius: 16px; background: white">
+        ${denseChildren}
+        <div id="popover" style="position: absolute"></div>
+      </div>
+    `;
+    const card = document.querySelector<HTMLElement>("#card")!;
+    const popover = document.querySelector<HTMLElement>("#popover")!;
+    vi.spyOn(card, "getBoundingClientRect").mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 100, height: 100 }),
+    );
+    vi.spyOn(popover, "getBoundingClientRect").mockReturnValue(
+      DOMRect.fromRect({ x: 80, y: 80, width: 40, height: 40 }),
+    );
+    const readStyles = globalThis.getComputedStyle;
+    vi.spyOn(globalThis, "getComputedStyle").mockImplementation(
+      (element, pseudoElement) => {
+        const styles = readStyles(element, pseudoElement);
+        if (element !== card) return styles;
+        return new Proxy(styles, {
+          get(target, property) {
+            if (property === "overflowX" || property === "overflowY") {
+              return "visible";
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+    );
+    const engine = createSmoothCornersEngine();
+    destroyEngine = () => engine.destroy();
+
+    await flushFrames();
+
+    expect(card.style.clipPath).toBe("");
+  });
+
   test("scans rounded controls after large runs of plain startup nodes", async () => {
     const plainNodes = Array.from(
       { length: 1_600 },

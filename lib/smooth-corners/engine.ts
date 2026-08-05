@@ -231,7 +231,7 @@ function childrenEscape(
     current = walker.nextNode() as HTMLElement | null;
   }
 
-  return false;
+  return current !== null;
 }
 
 function originalStyles(element: HTMLElement): OriginalStyles {
